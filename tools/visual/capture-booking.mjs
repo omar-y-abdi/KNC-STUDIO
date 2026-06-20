@@ -1,6 +1,6 @@
-// Booking-flow state capture (desktop). Drives the flow deterministically (fixed clock = June 2026,
-// today=19) and screenshots: the service/time builder, the pristine details popup, the per-field
-// error popup (invalid phone), and the confirmation. Same selectors work on the original + new build.
+// Booking-flow capture (desktop). Waits for each step to appear before acting, then screenshots
+// the pristine details popup and the per-field error popup (invalid phone).
+// Run against a FIXED-clock build (VITE_CLOCK=fixed → June 2026, Sat 20 selectable).
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 
@@ -19,34 +19,27 @@ async function flow(scheme) {
   })
   const page = await ctx.newPage()
   await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 })
-  await page.waitForSelector('#root > *', { timeout: 15000 })
+  await page.waitForSelector('#root > *')
 
-  await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click() // expand fold
-  await page.getByRole('button').filter({ hasText: 'Hassan' }).click()
-  await page.waitForTimeout(400)
-  await page.getByRole('button', { name: '20', exact: true }).click() // Sat 20 June (selectable)
-  await page.getByRole('button').filter({ hasText: 'Hårklippning + skägg' }).first().click()
-  await page.waitForTimeout(400)
-  if (scheme === 'light') await page.screenshot({ path: `${OUT}/bk-builder-light.png`, fullPage: true })
+  await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+  await page.getByText('Välj din barberare').waitFor({ state: 'visible', timeout: 10000 })
+  await page.getByRole('button', { name: /Hassan/ }).click()
+  await page.getByText('Välj en dag').waitFor({ state: 'visible', timeout: 10000 })
+  await page.getByRole('button', { name: '20', exact: true }).click()
+  await page.getByText('Hårklippning + skägg').first().waitFor({ state: 'visible', timeout: 10000 })
+  await page.getByText('Hårklippning + skägg').first().click()
+  const slot = page.getByRole('button', { name: '10:30', exact: true })
+  await slot.waitFor({ state: 'visible', timeout: 10000 })
+  await slot.click()
+  await page.getByText('Dina uppgifter').waitFor({ state: 'visible', timeout: 10000 })
+  if (scheme === 'light') await page.screenshot({ path: `${OUT}/bk-popup-pristine.png` })
 
-  await page.getByRole('button', { name: '10:30', exact: true }).click() // free slot -> popup
-  await page.waitForTimeout(500)
-  if (scheme === 'light') await page.screenshot({ path: `${OUT}/bk-popup-pristine-light.png` })
-
-  // invalid phone -> per-field red + note
   await page.getByPlaceholder('För- och efternamn').fill('Test Testsson')
   await page.getByPlaceholder('07X XXX XX XX').fill('abc')
   await page.getByRole('button', { name: 'SMS', exact: true }).click()
   await page.getByRole('button', { name: 'Boka tid', exact: true }).last().click()
-  await page.waitForTimeout(400)
+  await page.getByRole('alert').first().waitFor({ state: 'visible', timeout: 6000 })
   await page.screenshot({ path: `${OUT}/bk-popup-error-${scheme}.png` })
-
-  if (scheme === 'light') {
-    await page.getByPlaceholder('07X XXX XX XX').fill('0701234567') // valid -> book -> confirmation
-    await page.getByRole('button', { name: 'Boka tid', exact: true }).last().click()
-    await page.waitForTimeout(600)
-    await page.screenshot({ path: `${OUT}/bk-confirm-light.png` })
-  }
   await ctx.close()
 }
 

@@ -26,3 +26,4 @@ dist-ssr
 # Coverage + design-tool artifacts
 coverage
 .thumbnail
+.vercel

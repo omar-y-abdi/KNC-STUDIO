@@ -69,6 +69,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     position: 'absolute',
     zIndex: 6,
     margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '7px',
     whiteSpace: 'nowrap',
     fontFamily: "'SF Pro Display'",
     fontWeight: 700,
@@ -80,6 +83,21 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     opacity: mob ? 1 : 0,
     pointerEvents: 'none',
     transition: 'opacity .4s ease',
+  }
+  // Barber-pole logo: above the wordmark on the homepage hero; left of it in the compact
+  // booking header. currentColor SVG inverted per theme like the other mobile icons.
+  const heroLogoStyle: JSX.CSSProperties = {
+    alignSelf: 'center',
+    width: '50px',
+    height: '50px',
+    margin: '0 0 14px',
+    filter: 'var(--mob-icon)',
+  }
+  const headerLogoStyle: JSX.CSSProperties = {
+    width: '20px',
+    height: '20px',
+    flex: 'none',
+    filter: 'var(--mob-icon)',
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
@@ -203,10 +221,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
 
         <div style={headerKncStyle} aria-hidden="true">
+          <img src="/assets/icons/knc-logo-pole.svg" alt="" style={headerLogoStyle} />
           KNC STUDIO
         </div>
 
         <div style={heroExtrasStyle}>
+          <img src="/assets/icons/knc-logo-pole.svg" alt="" style={heroLogoStyle} />
           <h1 style={heroKncStyle}>KNC STUDIO</h1>
           <div
             style={{
