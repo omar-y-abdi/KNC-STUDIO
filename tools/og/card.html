@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Social-card source for /og-image.png. Rendered to 1200x630 by tools/og/render.mjs.
+         Served from public/ so /fonts and /assets resolve. -->
+    <style>
+      @font-face {
+        font-family: 'SFD';
+        src: url('/fonts/SF-Pro-Display-Bold.woff2') format('woff2');
+        font-weight: 700;
+      }
+      @font-face {
+        font-family: 'SFT';
+        src: url('/fonts/SF-Pro-Text-Semibold.woff2') format('woff2');
+        font-weight: 600;
+      }
+      * { margin: 0; box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; }
+      .card {
+        width: 1200px;
+        height: 630px;
+        background: #f4f3f0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        -webkit-font-smoothing: antialiased;
+      }
+      .logo { width: 188px; height: 188px; margin-bottom: 34px; }
+      .name {
+        font-family: 'SFD', sans-serif;
+        font-weight: 700;
+        font-size: 80px;
+        letter-spacing: 9px;
+        color: #1c1c1e;
+        line-height: 1;
+      }
+      .sub {
+        font-family: 'SFT', sans-serif;
+        font-weight: 600;
+        font-size: 25px;
+        letter-spacing: 5px;
+        color: #1c1c1e;
+        opacity: 0.45;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="logo" src="/assets/icons/knc-logo-pole.svg" alt="" />
+      <div class="name">KNC STUDIO</div>
+      <div class="sub">BARBERSHOP · GÖTEBORG</div>
+    </div>
+  </body>
+</html>
