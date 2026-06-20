@@ -1,0 +1,14 @@
+/* Global baseline + animations. Values copied verbatim from the original mock to preserve pixels. */
+@keyframes kncFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes kncOverlay { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kncPop { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+html, body { margin: 0; }
+
+/* On phones the booking/confirm modal stays a FLOATING CENTERED card; zoom shrinks the whole
+   card (box + text + padding + fields) ~1/4 and reflows so it no longer fills the screen.
+   `zoom` is kept deliberately: it reflows the layout box (unlike transform:scale) and is supported
+   across modern Chrome, Safari and Firefox. Position unchanged. */
+@media (max-width: 768px) {
+  .knc-sheet-card { zoom: 0.85; }
+}

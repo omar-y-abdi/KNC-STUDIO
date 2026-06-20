@@ -1,13 +1,28 @@
-# OS / editor cruft
-.DS_Store
-.thumbnail
-*.swp
-.idea/
-.vscode/
-
-# Logs & temp
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Temporary test harnesses
-__*.html
-compare.html
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Coverage + design-tool artifacts
+coverage
+.thumbnail
