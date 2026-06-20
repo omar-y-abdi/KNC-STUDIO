@@ -142,8 +142,8 @@ export function App(): JSX.Element {
   const themeTrackIconStyle: JSX.CSSProperties = dark
     ? { position: 'absolute', top: '8px', left: '9px', width: '14px', height: '14px', opacity: 0.5, filter: 'invert(1)' }
     : { position: 'absolute', top: '8px', right: '9px', width: '14px', height: '14px', opacity: 0.5, filter: 'none' }
-  const themeKnobIconSrc = dark ? '/assets/icons/moon.svg' : '/assets/icons/sun.max.svg'
-  const themeTrackIconSrc = dark ? '/assets/icons/sun.max.svg' : '/assets/icons/moon.svg'
+  const themeKnobIconSrc = dark ? '/icons/moon.svg' : '/icons/sun.max.svg'
+  const themeTrackIconSrc = dark ? '/icons/sun.max.svg' : '/icons/moon.svg'
   const langWrapStyle: JSX.CSSProperties = {
     display: 'flex',
     background: dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)',

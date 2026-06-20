@@ -95,14 +95,14 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         </h1>
         <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
           <a href={mapsHref} target="_blank" rel="noopener noreferrer" style={props.findUsStyle}>
-            <img src="/assets/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
+            <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
             {tx.findUs}
           </a>
           <a
             href={`tel:${BUSINESS.phoneTel}`}
             style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
           >
-            <img src="/assets/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
+            <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
             {BUSINESS.phoneDisplay}
           </a>
           {props.langToggle}

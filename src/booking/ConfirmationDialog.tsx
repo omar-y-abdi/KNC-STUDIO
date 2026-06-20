@@ -45,7 +45,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
       </button>
       <div style="padding:28px 22px 20px;text-align:center;">
         <div style={s.successCircleStyle}>
-          <img src="/assets/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
+          <img src="/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
         </div>
         <div id="knc-booked-title" style="font-family:'SF Pro Display';font-weight:600;font-size:20px;margin-bottom:6px;">
           {t.bookedTitle}
@@ -79,7 +79,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >
-            <img src="/assets/icons/calendar.badge.plus.svg" alt="" style={s.calIconStyle} />
+            <img src="/icons/calendar.badge.plus.svg" alt="" style={s.calIconStyle} />
             {t.calApple}
           </a>
           <a
@@ -89,7 +89,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >
-            <img src="/assets/icons/calendar.svg" alt="" style={s.calIconStyle} />
+            <img src="/icons/calendar.svg" alt="" style={s.calIconStyle} />
             {t.calGoogle}
           </a>
           <a
@@ -98,7 +98,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >
-            <img src="/assets/icons/calendar.svg" alt="" style={s.calIconStyle} />
+            <img src="/icons/calendar.svg" alt="" style={s.calIconStyle} />
             {t.calIcs}
           </a>
           {props.showDirections ? (
@@ -109,7 +109,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
               style={s.calRowStyle}
               class={pseudoClass('hover', props.calRowHover)}
             >
-              <img src="/assets/icons/mappin.circle.fill.svg" alt="" style={s.calIconStyle} />
+              <img src="/icons/mappin.circle.fill.svg" alt="" style={s.calIconStyle} />
               {t.directions}
             </a>
           ) : null}

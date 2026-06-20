@@ -499,7 +499,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   </span>
                 </span>
                 {b.selected ? (
-                  <img src="/assets/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
+                  <img src="/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
                 ) : null}
               </button>
             ))}
@@ -521,7 +521,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     onClick={canPrev ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 })) : undefined}
                     style={navBtn(canPrev)}
                   >
-                    <img src="/assets/icons/chevron.left.svg" alt="prev" style={s.navIconStyle} />
+                    <img src="/icons/chevron.left.svg" alt="prev" style={s.navIconStyle} />
                   </button>
                   <span style="font-family:'SF Pro Display';font-weight:600;font-size:15px;">
                     {monthLabelText}
@@ -530,7 +530,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     onClick={canNext ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 })) : undefined}
                     style={navBtn(canNext)}
                   >
-                    <img src="/assets/icons/chevron.right.svg" alt="next" style={s.navIconStyle} />
+                    <img src="/icons/chevron.right.svg" alt="next" style={s.navIconStyle} />
                   </button>
                 </div>
                 <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
@@ -598,13 +598,13 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                               <span style="font-weight:600;font-size:15px;">{it.priceLabel}</span>
                               {it.selected ? (
                                 <img
-                                  src="/assets/icons/checkmark.circle.fill.svg"
+                                  src="/icons/checkmark.circle.fill.svg"
                                   alt=""
                                   style={s.checkIconStyle}
                                 />
                               ) : null}
                               {it.notSelected ? (
-                                <img src="/assets/icons/chevron.right.svg" alt="" style={s.chevronStyle} />
+                                <img src="/icons/chevron.right.svg" alt="" style={s.chevronStyle} />
                               ) : null}
                             </span>
                           </button>

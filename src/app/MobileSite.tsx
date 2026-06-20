@@ -192,7 +192,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               }}
             >
               <img
-                src="/assets/icons/phone.svg"
+                src="/icons/phone.svg"
                 alt={tx.ariaCall}
                 style={{
                   background: 'var(--mob-btn-bg)',
@@ -211,7 +211,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               {props.themeToggle}
               <button onClick={props.closeMobBooking} style={expandChevStyle} title={tx.ariaBackHome}>
                 <img
-                  src="/assets/icons/chevron.down.svg"
+                  src="/icons/chevron.down.svg"
                   alt={tx.ariaBackHome}
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)' }}
                 />
@@ -221,12 +221,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
 
         <div style={headerKncStyle} aria-hidden="true">
-          <img src="/assets/icons/knc-logo-pole.svg" alt="" style={headerLogoStyle} />
+          <img src="/icons/knc-logo-pole.svg" alt="" style={headerLogoStyle} />
           KNC STUDIO
         </div>
 
         <div style={heroExtrasStyle}>
-          <img src="/assets/icons/knc-logo-pole.svg" alt="" style={heroLogoStyle} />
+          <img src="/icons/knc-logo-pole.svg" alt="" style={heroLogoStyle} />
           <h1 style={heroKncStyle}>KNC STUDIO</h1>
           <div
             style={{
@@ -279,7 +279,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 }}
               >
                 <img
-                  src="/assets/icons/clock.svg"
+                  src="/icons/clock.svg"
                   alt=""
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.5 }}
                 />
@@ -295,7 +295,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 }}
               >
                 <img
-                  src="/assets/icons/mappin.circle.fill.svg"
+                  src="/icons/mappin.circle.fill.svg"
                   alt=""
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.6 }}
                 />
@@ -323,7 +323,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               }}
             >
               {tx.findUs}
-              <img src="/assets/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
+              <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
             </a>
           </div>
         </div>
