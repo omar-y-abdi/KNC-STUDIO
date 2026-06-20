@@ -1,0 +1,13 @@
+# OS / editor cruft
+.DS_Store
+.thumbnail
+*.swp
+.idea/
+.vscode/
+
+# Logs & temp
+*.log
+
+# Temporary test harnesses
+__*.html
+compare.html

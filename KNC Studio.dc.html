@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@font-face{font-family:'SF Pro Text';src:url('fonts/SF-Pro-Text-Regular.woff2') format('woff2');font-weight:400;font-display:swap;}
+@font-face{font-family:'SF Pro Text';src:url('fonts/SF-Pro-Text-Medium.woff2') format('woff2');font-weight:500;font-display:swap;}
+@font-face{font-family:'SF Pro Text';src:url('fonts/SF-Pro-Text-Semibold.woff2') format('woff2');font-weight:600;font-display:swap;}
+@font-face{font-family:'SF Pro Text';src:url('fonts/SF-Pro-Text-Bold.woff2') format('woff2');font-weight:700;font-display:swap;}
+@font-face{font-family:'SF Pro Display';src:url('fonts/SF-Pro-Display-Regular.woff2') format('woff2');font-weight:400;font-display:swap;}
+@font-face{font-family:'SF Pro Display';src:url('fonts/SF-Pro-Display-Medium.woff2') format('woff2');font-weight:500;font-display:swap;}
+@font-face{font-family:'SF Pro Display';src:url('fonts/SF-Pro-Display-Semibold.woff2') format('woff2');font-weight:600;font-display:swap;}
+@font-face{font-family:'SF Pro Display';src:url('fonts/SF-Pro-Display-Bold.woff2') format('woff2');font-weight:700;font-display:swap;}
+@keyframes kncFade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div style="width:max-content;min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e7e5df;font-family:'SF Pro Text',-apple-system,system-ui,sans-serif;color:#1b1b1d;-webkit-font-smoothing:antialiased;">
+
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100" height="100" rx="20" fill="#16161a"></rect>
+      <text x="50" y="45" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="700" font-size="17" letter-spacing="1.5" fill="#ffffff">KNC</text>
+      <text x="50" y="62" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="700" font-size="9" letter-spacing="2" fill="#ffffff">STUDIO</text>
+      <rect x="34" y="70" width="32" height="3" rx="1.5" fill="#ffffff" opacity="0.55"></rect>
+    </svg>
+  </template>
+
+  <!-- HEADER + CONTROLS -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:30px;max-width:1760px;margin-bottom:40px;flex-wrap:wrap;">
+    <div style="max-width:760px;">
+      <div style="font-family:'SF Pro Display';font-weight:700;font-size:12px;letter-spacing:2.5px;opacity:.5;margin-bottom:10px;">KNC STUDIO · BOKNING</div>
+      <h1 style="font-family:'SF Pro Display';font-weight:600;font-size:29px;letter-spacing:-.5px;margin:0 0 11px;">Startsida &amp; bokningsflöde — webb och mobil</h1>
+      <p style="font-size:14.5px;line-height:1.6;color:#5a5a5f;margin:0;">Tryck <b>Boka tid</b> — på webben fälls bokningen ner under knappen, på mobilen viks startsidan upp till headern och barberarvalet fälls fram. Måne-ikonen växlar mörkt läge på båda.</p>
+    </div>
+
+  </div>
+
+  <div style="display:flex;gap:56px;align-items:flex-start;" data-comment-anchor="ac5c96b243-div">
+
+    <!-- ===================== WEBB (Design A) ===================== -->
+    <div style="flex:none;width:1280px;">
+      <div style="font-size:13px;font-weight:600;color:#5a5a5f;margin-bottom:10px;">WEBB · Design A — Editorial</div>
+      <div style="{{ deskWinStyle }}" data-screen-label="Webb">
+        <div style="{{ barStyle }}">
+          <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57;"></span><span style="width:11px;height:11px;border-radius:50%;background:#febc2e;"></span><span style="width:11px;height:11px;border-radius:50%;background:#28c840;"></span>
+          <span style="{{ pillStyle }}">kncstudio.se</span>
+        </div>
+        <div style="{{ scrollStyle }}">
+          <div style="{{ navStyle }}" data-comment-anchor="06844f6ea9-div">
+            <span style="font-family: 'SF Pro Display'; font-weight: 700; letter-spacing: 2px; font-size: 20px">KNC STUDIO</span>
+            <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
+              <a href="{{ mapsHref }}" target="_blank" rel="noopener" style="{{ findUsStyle }}"><img src="assets/icons/mappin.circle.fill.svg" alt="" style="{{ chromeIcon }}">{{ tx.findUs }}</a>
+              <a href="tel:0793043671" style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"><img src="assets/icons/phone.svg" alt="Ring" style="{{ chromeIcon }}">079‑304 36 71</a>
+              <div style="{{ langWrapStyle }}"><button onClick="{{ setSv }}" style="{{ svMiniStyle }}">SV</button><button onClick="{{ setEn }}" style="{{ enMiniStyle }}">EN</button></div><button onClick="{{ toggleMode }}" style="{{ themeTrackStyle }}" title="Växla ljust/mörkt" data-comment-anchor="ab9123121b-div"><img src="{{ themeTrackIconSrc }}" alt="" style="{{ themeTrackIconStyle }}"><span style="{{ themeKnobStyle }}"><img src="{{ themeKnobIconSrc }}" alt="" style="{{ themeKnobIconStyle }}"></span></button>
+            </div>
+          </div>
+          <div style="text-align: center; padding: 74px 40px 60px; color: inherit" data-comment-anchor="2636a5f284-div">
+            <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin-bottom: 16px; color: inherit">{{ tx.kicker }}</div>
+            <h2 style="font-family: 'SF Pro Display'; font-weight: 600; font-size: 54px; letter-spacing: -1.5px; line-height: 1.05; margin: 0 auto 16px; max-width: 640px; color: inherit">hmu</h2>
+            <p style="font-size: 18px; line-height: 1.5; opacity: .5; max-width: 500px; margin: 0 auto 32px; color: inherit">for a fresh fade</p>
+            <button onClick="{{ toggleDeskBooking }}" style="{{ heroBtnStyle }}" data-comment-anchor="28277d2306-button" type="button">{{ tx.book }}</button>
+          </div>
+          <div style="{{ deskFoldStyle }}">
+            <div style="{{ deskFoldInnerStyle }}">
+              <div style="border-top:.5px solid {{ lineColor }};"><dc-import name="BookingFlow" mode="{{ mode }}" default-lang="{{ lang }}" show-header="{{ false }}" hint-size="100%,560px"></dc-import>
+                
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="{{ footerStyle }}" data-comment-anchor="27601471ef-div">
+          <span>{{ tx.hours }}</span>
+          <span>{{ tx.addr }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MOBIL (M3) ===================== -->
+    <div style="flex:none;width:392px;">
+      <div style="font-size:13px;font-weight:600;color:#5a5a5f;margin-bottom:10px;">MOBIL · M3 — Startsida ↕ bokning</div>
+      <div style="{{ bezelStyle }}" data-comment-anchor="b3be076884-div" data-screen-label="Mobil">
+        <div style="{{ phoneScreenStyle }}">
+          <div style="{{ notchStyle }}"></div>
+
+          <div style="{{ phoneScrollStyle }}">
+
+            <!-- FOLDING PANEL: full-screen homepage ↕ compact header (one element) -->
+            <div style="{{ foldingPanelStyle }}" data-comment-anchor="cda69cbb5a-div">
+              <div style="{{ panelTopStyle }}" data-comment-anchor="af2a924473-div">
+                <div style="height:30px;"></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:var(--phone-shift);transition:margin-top .6s cubic-bezier(.32,.72,0,1);">
+                  <a href="tel:0793043671" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--mob-text);font-size:12px;"><img src="assets/icons/phone.svg" alt="Ring" style="background:var(--mob-btn-bg);width:28px;height:28px;padding:7px;box-sizing:border-box;border-radius:50%;filter:var(--mob-icon)">079‑304 36 71</a>
+                  <div style="display:flex;align-items:center;gap:6px;flex:none;">
+                    <div style="{{ langWrapStyle }}"><button onClick="{{ setSv }}" style="{{ svMiniStyle }}">SV</button><button onClick="{{ setEn }}" style="{{ enMiniStyle }}">EN</button></div>
+                    <button onClick="{{ toggleMode }}" style="{{ themeTrackStyle }}" title="Växla ljust/mörkt"><img src="{{ themeTrackIconSrc }}" alt="" style="{{ themeTrackIconStyle }}"><span style="{{ themeKnobStyle }}"><img src="{{ themeKnobIconSrc }}" alt="" style="{{ themeKnobIconStyle }}"></span></button>
+                    <button onClick="{{ closeMobBooking }}" style="{{ expandChevStyle }}" title="Till startsidan" data-comment-anchor="0491815270-button"><img src="assets/icons/chevron.down.svg" alt="Till startsidan" style="width:13px;height:13px;filter:var(--mob-icon)"></button>
+                  </div>
+                </div>
+              </div><div style="{{ kncMorphStyle }}" data-comment-anchor="bbdbc1db3a-div">KNC STUDIO</div><div style="{{ heroExtrasStyle }}" data-comment-anchor="ebd9b14f25-div">
+                
+                <div style="font-size: 11px; font-weight: 600; letter-spacing: 2.5px; color: var(--mob-muted); margin-bottom: 10px; width: 336px; height: 28px; text-align: center; padding-top: 2px; margin-top: 10px">{{ tx.kicker }}</div><h2 style="font-family: 'SF Pro Display'; font-weight: 600; font-size: 30px; letter-spacing: 2.5px; line-height: 1.08; margin: 0 0 10px; width: 336px; height: 28px; text-align: center">hmu</h2>
+                
+                <p style="font-size: 14px; line-height: 1.55; color: var(--mob-muted); margin: 0 0 24px; max-width: 336px; width: 336px; height: 26px; text-align: center">for a fresh fade</p><button onClick="{{ openMobBooking }}" style="{{ heroBtnDarkStyle }}" data-comment-anchor="6960c6eea3-button">{{ tx.book }}</button><div style="display: flex; align-items: stretch; gap: 6px; font-size: 12px; color: var(--mob-muted); margin-top: 22px; align-self: auto; position: fixed; left: 27px; top: 707px; bottom: 69px; right: 148px; width: 217px; height: 14.01px"><img src="assets/icons/clock.svg" alt="" style="width:13px;height:13px;filter:var(--mob-icon);opacity:.5;">{{ tx.hours }}</div><div style="display: flex; align-items: stretch; gap: 5px; font-size: 12px; color: var(--mob-muted); margin-top: 8px; position: fixed; left: 27px; top: 741px; bottom: 47px; right: 148px; width: 217px; height: 14.01px; text-align: left; flex-direction: row" data-comment-anchor="c367bdf299-span"><img src="assets/icons/mappin.circle.fill.svg" alt="" style="width: 13px; height: 13px; filter: var(--mob-icon); opacity: .6; padding-right: 2px">Geijersgatan 10, Göteborg</div>
+                
+              </div>
+
+              
+            <a href="{{ mapsHref }}" target="_blank" rel="noopener" style="text-decoration-line: none; color: var(--mob-text); font-weight: 600; display: flex; align-items: stretch; gap: 8px; border-radius: 999px; opacity: 0.92; font-size: 13px; border-width: 1.8px; border-style: solid; border-color: var(--mob-border); flex-direction: row; position: absolute; left: 260px; top: 745px; text-align: right; overflow: auto; padding-top: 2px; padding-right: 0px; padding-bottom: 8px; padding-left: 8px; width: 80px; height: 11px">{{ tx.findUs }}<img src="assets/icons/mappin.circle.fill.svg" alt="" style="{{ chromeIcon }}"></a></div>
+
+            <!-- BOOKING BODY (slides up as the panel folds) -->
+            <div style="{{ m3BodyStyle }}">
+              <dc-import name="BookingFlow" mode="{{ mode }}" default-lang="{{ lang }}" show-header="{{ false }}" hint-size="100%,560px"></dc-import>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;sv&quot;,&quot;en&quot;],&quot;default&quot;:&quot;sv&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { mode: 'light', lang: 'sv', deskBooking: false, mobBooking: false };
+
+  T = {
+    sv: { findUs:'Hitta oss', book:'Boka tid', kicker:'BARBERSHOP · GÖTEBORG',
+      tagline:'Valfri text', desc:'Valfri text',
+      hours:'Öppet Mån–Lör 09–18 · Sön stängt', addr:'Geijersgatan 10, 411 34 Göteborg' },
+    en: { findUs:'Find us', book:'Book appointment', kicker:'BARBERSHOP · GOTHENBURG',
+      tagline:'Valfri text', desc:'Valfri text',
+      hours:'Open Mon–Sat 09–18 · Sun closed', addr:'Geijersgatan 10, 411 34 Gothenburg' },
+  };
+
+  // Mobile homepage/header surface — same dark gray as the web dark theme, in both modes,
+  // so dark mode is identical across web and mobile.
+  PANEL = '#1c1c1e';
+  PANEL_FULL = '812px';   // full-screen homepage height
+  PANEL_COMPACT = '112px'; // collapsed header height
+  EASE = 'cubic-bezier(.32,.72,0,1)';
+
+  renderVals(){
+    const dark = this.state.mode === 'dark';
+    const lang = this.state.lang;
+    const tx = this.T[lang];
+    const mob = this.state.mobBooking;
+    const c = dark ? {
+      bg:'#1c1c1e', text:'#f5f5f7', line:'rgba(255,255,255,.1)', navBg:'#262629', barBg:'#2a2a2c',
+      footer:'#161618', accent:'#f5f5f7', accentText:'#1c1c1e', iconF:'invert(1)',
+    } : {
+      bg:'#ffffff', text:'#1c1c1e', line:'rgba(0,0,0,.08)', navBg:'#f1f0ec', barBg:'#f6f5f2',
+      footer:'#faf9f6', accent:'#1c1c1e', accentText:'#ffffff', iconF:'none',
+    };
+    // Mobile surface follows the mode exactly like the web side.
+    const mobMuted = dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)';
+    const mobBtnBg = dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.06)';
+    const tab = (on) => ({ border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:'12.5px', fontWeight:600,
+      padding:'6px 15px', borderRadius:'999px', background: on?'#1b1b1d':'transparent', color: on?'#fff':'#8a8a8e' });
+    const langMini = (on) => ({ border:'none', cursor:'pointer', fontFamily:'inherit', fontSize:'11px', fontWeight:700, letterSpacing:'.3px', padding:'4px 9px', borderRadius:'999px', background: on?(dark?'#f5f5f7':'#1c1c1e'):'transparent', color: on?(dark?'#1c1c1e':'#fff'):(dark?'rgba(255,255,255,.55)':'rgba(0,0,0,.5)') });
+
+    return {
+      mode: this.state.mode, lang, tx, lineColor:c.line,
+      mapsHref:'https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg',
+      setSv:()=>this.setState({lang:'sv'}), setEn:()=>this.setState({lang:'en'}),
+      svTabStyle:tab(lang==='sv'), enTabStyle:tab(lang==='en'),
+      toggleMode:()=>this.setState(s=>({mode: s.mode==='dark'?'light':'dark'})),
+
+      // Desktop booking — Boka tid toggles the fold open/closed; button stays.
+      deskBooking:this.state.deskBooking,
+      toggleDeskBooking:()=>this.setState(s=>({deskBooking:!s.deskBooking})),
+      // Mobile fold
+      openMobBooking:()=>this.setState({mobBooking:true}),
+      closeMobBooking:()=>this.setState({mobBooking:false}),
+
+      deskWinStyle:{ position:'relative', display:'flex', flexDirection:'column', width:'100%', height:'880px',
+        overflow:'hidden', transform:'translateZ(0)', borderRadius:'10px', boxShadow:'0 6px 24px rgba(0,0,0,.16)', background:c.bg, color:c.text },
+      scrollStyle:{ flex:1, minHeight:0, overflow:'auto' },
+      barStyle:{ display:'flex', alignItems:'center', gap:'8px', padding:'11px 16px', background:c.barBg, flex:'none', zIndex:2 },
+      pillStyle:{ marginLeft:'14px', background:c.bg, border:'.5px solid '+c.line, borderRadius:'6px', padding:'4px 14px', fontSize:'12px', opacity:.5 },
+      // Nav connected to the chrome above — square top, only bottom corners rounded.
+      navStyle:{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'15px 30px',
+        borderRadius:'0 0 18px 18px', background:c.navBg, borderBottom:'.5px solid '+c.line },
+      chromeIcon:{ width:'15px', height:'15px', filter:c.iconF, opacity:.7 },
+      findUsStyle:{ display:'flex', alignItems:'center', gap:'6px', padding:'7px 14px', borderRadius:'999px',
+        border:'.5px solid '+(dark?'rgba(255,255,255,.22)':'rgba(0,0,0,.16)'), color:c.text, textDecoration:'none', fontWeight:600, opacity:.92 },
+      moonBtnStyle:{ display:'flex', alignItems:'center', justifyContent:'center', width:'34px', height:'34px', borderRadius:'50%', cursor:'pointer',
+        border:'.5px solid '+(dark?'rgba(255,255,255,.22)':'rgba(0,0,0,.16)'), background: dark?'rgba(255,255,255,.1)':'transparent' },
+      moonIconStyle:{ width:'16px', height:'16px', filter:c.iconF, opacity:.8 },
+      themeTrackStyle:{ position:'relative', width:'54px', height:'30px', borderRadius:'999px', border:'none', cursor:'pointer', padding:0, flex:'none', background: dark?'rgba(120,120,128,.42)':'rgba(120,120,128,.26)' },
+      themeKnobStyle:{ position:'absolute', top:'3px', left: dark?'27px':'3px', width:'24px', height:'24px', borderRadius:'50%', background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 1px 2px rgba(0,0,0,.3)', transition:'left .32s '+this.EASE },
+      themeKnobIconStyle:{ width:'14px', height:'14px', opacity:.92 },
+      themeTrackIconStyle:{ position:'absolute', top:'8px', [dark?'left':'right']:'9px', width:'14px', height:'14px', opacity:.5, filter: dark?'invert(1)':'none' },
+      themeKnobIconSrc: dark ? 'assets/icons/moon.svg' : 'assets/icons/sun.max.svg',
+      themeTrackIconSrc: dark ? 'assets/icons/sun.max.svg' : 'assets/icons/moon.svg',
+      langWrapStyle:{ display:'flex', background: dark?'rgba(255,255,255,.08)':'rgba(0,0,0,.06)', borderRadius:'999px', padding:'2px', flex:'none' },
+      svMiniStyle: langMini(lang==='sv'),
+      enMiniStyle: langMini(lang==='en'),
+      // Active (booking open) = inverted/outline so the press is shown by a colour change.
+      heroBtnStyle: this.state.deskBooking
+        ? { display:'inline-flex', alignItems:'center', gap:'8px', cursor:'pointer', fontFamily:'inherit', background:'transparent', color:c.text,
+            border:'1.5px solid '+c.text, fontWeight:600, fontSize:'15px', padding:'11.5px 26.5px', borderRadius:'11px' }
+        : { display:'inline-flex', alignItems:'center', gap:'8px', border:'none', cursor:'pointer', fontFamily:'inherit', background:c.accent, color:c.accentText,
+            fontWeight:600, fontSize:'15px', padding:'13px 28px', borderRadius:'11px' },
+      heroBtnChevron:{ width:'13px', height:'13px', filter: dark?'none':'invert(1)', opacity:.85,
+        transform: this.state.deskBooking?'rotate(180deg)':'none', transition:'transform .4s cubic-bezier(.32,.72,0,1)' },
+      // Modern grid-rows fold: animates to intrinsic (auto) content height, both ways.
+      deskFoldStyle:{ display:'grid', gridTemplateRows: this.state.deskBooking?'1fr':'0fr',
+        opacity: this.state.deskBooking?1:0,
+        transition:'grid-template-rows .58s '+this.EASE+', opacity .42s ease' },
+      deskFoldInnerStyle:{ overflow:'hidden', minHeight:0 },
+      footerStyle:{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 40px', borderTop:'.5px solid '+c.line,
+        background:c.footer, fontSize:'13px', opacity:.6, flex:'none' },
+
+      bezelStyle:{ width:'392px', background:'#0c0c0e', borderRadius:'54px', padding:'13px', boxShadow:'0 12px 40px rgba(0,0,0,.28)' },
+      phoneScreenStyle:{ position:'relative', overflow:'hidden', height:'812px', background:c.bg, transform:'translateZ(0)', borderRadius:'42px' },
+      phoneScrollStyle:{ position:'absolute', inset:0, overflowY: mob?'auto':'hidden', overflowX:'hidden' },
+      notchStyle:{ position:'absolute', top:0, left:'50%', transform:'translateX(-50%)', width:'150px', height:'30px', background:'#0c0c0e', borderRadius:'0 0 18px 18px', zIndex:30 },
+
+      // The single folding element. Homepage = full screen; booking = compact header.
+      // One real height transition — the booking body below reflows up as it folds.
+      foldingPanelStyle:{ position:'relative', display:'flex', flexDirection:'column', overflow:'hidden',
+        background:(dark?'#242427':'#f4f3f0'), color:c.text, borderRadius:'0 0 28px 28px',
+        height: mob ? this.PANEL_COMPACT : this.PANEL_FULL,
+        transition:'height .66s '+this.EASE, '--mob-text':c.text, '--mob-muted':mobMuted,
+        '--mob-icon':c.iconF, '--mob-btn-bg':mobBtnBg, '--mob-border':c.line, '--phone-shift': mob?'24px':'0px' },
+      // KNC STUDIO morphs: hero centre (homepage) → above the phone number (folded).
+      kncMorphStyle:{ position:'absolute', zIndex:6, margin:0, whiteSpace:'nowrap', fontFamily:"'SF Pro Display'", fontWeight:700, color:'var(--mob-text)',
+        top: mob?'34px':'318px', left: mob?'22px':'50%', transform: mob?'translateX(0)':'translateX(-50%)',
+        fontSize: mob?'16px':'22px', letterSpacing: mob?'2px':'2.5px',
+        transition:'top .62s '+this.EASE+', left .62s '+this.EASE+', transform .62s '+this.EASE+', font-size .62s '+this.EASE+', letter-spacing .62s '+this.EASE },
+      panelTopStyle:{ flex:'none', padding:'0 22px 16px' },
+      expandChevStyle:{ display: mob?'flex':'none', alignItems:'center', justifyContent:'center', width:'32px', height:'32px',
+        padding:0, borderRadius:'50%', border:'none', cursor:'pointer', background:mobBtnBg },
+      mobMoonBtnStyle:{ display:'flex', alignItems:'center', justifyContent:'center', width:'32px', height:'32px',
+        borderRadius:'50%', border:'none', cursor:'pointer', background:mobBtnBg },
+      heroExtrasStyle:{ flex:1, minHeight:0, overflow:'hidden', display:'flex', flexDirection:'column', alignItems:'flex-start',
+        justifyContent:'center', textAlign:'left', padding:'0 26px 30px',
+        opacity: mob?0:1, transition:'opacity .34s ease' },
+      heroBtnDarkStyle:{ alignSelf:'stretch', border:'none', cursor:'pointer', fontFamily:'inherit', background:c.accent, color:c.accentText,
+        fontWeight:600, fontSize:'16px', padding:'15px', borderRadius:'13px' },
+
+      m3BodyStyle:{ background:c.bg, color:c.text, minHeight:'700px' },
+    };
+  }
+}
+</script>
+</body>
+</html>
