@@ -15,6 +15,13 @@ html, body { margin: 0; }
    card (box + text + padding + fields) ~1/4 and reflows so it no longer fills the screen.
    `zoom` is kept deliberately: it reflows the layout box (unlike transform:scale) and is supported
    across modern Chrome, Safari and Firefox. Position unchanged. */
+/* Booking-popup input font-size lives here (not inline) so the mobile override below wins.
+   Desktop: 15px (matches the source; no zoom, no iOS auto-zoom problem). */
+.knc-sheet-card input { font-size: 15px; }
+
 @media (max-width: 768px) {
   .knc-sheet-card { zoom: 0.85; }
+  /* The card is zoomed 0.85, so a 15px input renders ~12.75px and iOS Safari auto-zooms on focus
+     (and stays zoomed after the keyboard closes). 19px → ~16px effective, which stops that zoom. */
+  .knc-sheet-card input { font-size: 19px; }
 }
