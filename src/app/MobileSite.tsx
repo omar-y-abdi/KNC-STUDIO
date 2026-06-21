@@ -39,7 +39,7 @@ export interface MobileSiteProps {
 export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mob, mobMutedColor, mobBtnBgColor, mapsHref } = props
   const chromeIcon = props.chromeIconStyle
-  const phoneShift = mob ? '24px' : '0px'
+  const phoneShift = mob ? '42px' : '0px'
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
