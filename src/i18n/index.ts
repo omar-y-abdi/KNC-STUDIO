@@ -32,7 +32,6 @@ export interface BookingStrings {
   addToCal: string
   calApple: string
   calGoogle: string
-  calIcs: string
   directions: string
   newBooking: string
   grpWedSat: string

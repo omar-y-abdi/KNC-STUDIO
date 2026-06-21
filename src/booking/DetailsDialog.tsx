@@ -122,8 +122,12 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
 
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
-          {field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone)}
-          {field(t.email, props.emailValue, props.onEmail, 'namn@exempel.se', 'email', e.email, t.errEmail)}
+          {props.methodIsSms
+            ? field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone)
+            : null}
+          {props.methodIsEmail
+            ? field(t.email, props.emailValue, props.onEmail, 'namn@exempel.se', 'email', e.email, t.errEmail)
+            : null}
 
           <div style="margin-top:4px;">
             <span style="font-size:12px;font-weight:600;opacity:.55;">{t.confirmVia}</span>

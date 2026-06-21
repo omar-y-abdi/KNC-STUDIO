@@ -77,13 +77,13 @@ export function parsePhone(raw: string): ValidationResult<Phone> {
 export type ContactMethod = 'sms' | 'email'
 
 /**
- * Validated contact details ready to attach to a `Booking`. `email` is optional: an SMS booking
- * does not require one (the source's button-enable check only demands email for email
- * confirmations — see `bookDisabled`).
+ * Validated contact details ready to attach to a `Booking`. Only the channel the customer chose is
+ * collected + validated — `phone` for an SMS booking, `email` for an email booking — so each is
+ * optional here.
  */
 export interface ValidContact {
   readonly name: Name
-  readonly phone: Phone
+  readonly phone?: Phone
   readonly email?: Email
 }
 
@@ -104,31 +104,33 @@ export type ContactValidation =
   | { readonly ok: false; readonly fields: FieldErrors }
 
 /**
- * Validate every field of the contact form for the chosen confirm method, reporting which
- * field(s) failed (not just the first). Name + phone are always validated; email is validated
- * ONLY when `method === 'email'` (matching the source's conditional email requirement — an SMS
- * booking with an empty email is valid). On success, returns the branded `ValidContact`.
+ * Validate the contact form for the chosen confirm method, reporting which field(s) failed. Name is
+ * always validated; only the chosen channel is collected + validated — `phone` for SMS, `email` for
+ * email — so the other field stays unflagged. On success, returns the branded `ValidContact`.
  */
 export function parseContact(
   input: { name: string; phone: string; email: string },
   method: ContactMethod,
 ): ContactValidation {
   const name = parseName(input.name)
-  const phone = parsePhone(input.phone)
+  const phone = method === 'sms' ? parsePhone(input.phone) : null
   const email = method === 'email' ? parseEmail(input.email) : null
 
   const fields: FieldErrors = {
     name: !name.ok,
-    phone: !phone.ok,
+    phone: phone !== null && !phone.ok,
     email: email !== null && !email.ok,
   }
   if (fields.name || fields.phone || fields.email) {
     return { ok: false, fields }
   }
-  // All required fields valid (the `.ok` checks above are exhaustive for the flagged fields).
-  if (!name.ok || !phone.ok) return { ok: false, fields }
-  if (email !== null && email.ok) {
-    return { ok: true, value: { name: name.value, phone: phone.value, email: email.value } }
+  // narrowing for the success branch (the fields check above already guarantees validity):
+  if (!name.ok) return { ok: false, fields }
+  if (phone !== null && phone.ok) {
+    return { ok: true, value: { name: name.value, phone: phone.value } }
   }
-  return { ok: true, value: { name: name.value, phone: phone.value } }
+  if (email !== null && email.ok) {
+    return { ok: true, value: { name: name.value, email: email.value } }
+  }
+  return { ok: true, value: { name: name.value } }
 }

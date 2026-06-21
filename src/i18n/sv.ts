@@ -32,7 +32,6 @@ export const bookingSv: BookingStrings = {
   addToCal: 'Lägg till i kalender',
   calApple: 'Apple Kalender',
   calGoogle: 'Google Kalender',
-  calIcs: 'Ladda ner .ics',
   directions: 'Vägbeskrivning till salongen',
   newBooking: 'Boka en ny tid',
   grpWedSat: 'Herr · onsdag–lördag',

@@ -331,9 +331,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const method: ConfirmMethod | null = S.confirmMethod
   const bookDisabled = !(
     f.name.trim() &&
-    f.phone.trim() &&
     method &&
-    (method === 'sms' || f.email.trim())
+    ((method === 'sms' && f.phone.trim()) || (method === 'email' && f.email.trim()))
   )
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
@@ -426,7 +425,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       end,
       confirmMethod: method,
       customerName: contact.value.name,
-      phone: contact.value.phone,
+      phone: contact.value.phone ?? '',
       email: contact.value.email ?? '',
       lang,
     }

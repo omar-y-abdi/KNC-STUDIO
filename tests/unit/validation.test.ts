@@ -58,17 +58,28 @@ describe('parseContact (method-aware)', () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.fields.email).toBe(true)
   })
-  it('reports EVERY failing field, not just the first', () => {
+  it('flags only the fields collected for the chosen method', () => {
+    // email method: name + email validated; phone is not collected
     const r = parseContact({ name: '', phone: 'abc', email: 'bad' }, 'email')
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: true, email: true })
+    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: false, email: true })
+    // sms method: name + phone validated; email is not collected
+    const r2 = parseContact({ name: '', phone: 'abc', email: 'bad' }, 'sms')
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.fields).toEqual({ name: true, phone: true, email: false })
   })
-  it('valid input returns the branded contact', () => {
-    const r = parseContact(valid, 'email')
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      expect(r.value.name).toBe('Omar')
-      expect(r.value.phone).toBe('0701234567')
+  it('returns the branded contact for the chosen channel', () => {
+    const sms = parseContact(valid, 'sms')
+    expect(sms.ok).toBe(true)
+    if (sms.ok) {
+      expect(sms.value.name).toBe('Omar')
+      expect(sms.value.phone).toBe('0701234567')
+    }
+    const email = parseContact(valid, 'email')
+    expect(email.ok).toBe(true)
+    if (email.ok) {
+      expect(email.value.name).toBe('Omar')
+      expect(email.value.email).toBe('a@b.se')
     }
   })
 })

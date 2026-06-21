@@ -32,7 +32,6 @@ export const bookingEn: BookingStrings = {
   addToCal: 'Add to calendar',
   calApple: 'Apple Calendar',
   calGoogle: 'Google Calendar',
-  calIcs: 'Download .ics',
   directions: 'Directions to the studio',
   newBooking: 'Book another time',
   grpWedSat: 'Men · Wed–Sat',

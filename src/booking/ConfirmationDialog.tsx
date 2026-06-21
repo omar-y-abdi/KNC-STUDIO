@@ -92,15 +92,6 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
             <img src="/icons/calendar.svg" alt="" style={s.calIconStyle} />
             {t.calGoogle}
           </a>
-          <a
-            href={props.icsHref}
-            download="knc-studio.ics"
-            style={s.calRowStyle}
-            class={pseudoClass('hover', props.calRowHover)}
-          >
-            <img src="/icons/calendar.svg" alt="" style={s.calIconStyle} />
-            {t.calIcs}
-          </a>
           {props.showDirections ? (
             <a
               href={props.mapsHref}
