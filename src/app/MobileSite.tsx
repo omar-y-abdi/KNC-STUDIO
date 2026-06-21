@@ -11,6 +11,7 @@
 import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
 import { BUSINESS } from '../config'
+import { PoleLogo } from '../ui/PoleLogo'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { Mode, ShellPalette } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
@@ -84,20 +85,21 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     pointerEvents: 'none',
     transition: 'opacity .4s ease',
   }
-  // Barber-pole logo: above the wordmark on the homepage hero; left of it in the compact
-  // booking header. currentColor SVG inverted per theme like the other mobile icons.
+  // Barber-pole logo (inline SVG, crisp on Retina — an <img>+filter is rasterized blurry by iOS
+  // Safari): above the wordmark on the homepage hero; left of it in the compact booking header.
+  // Colour follows the theme through currentColor.
   const heroLogoStyle: JSX.CSSProperties = {
     alignSelf: 'center',
-    width: '50px',
-    height: '50px',
-    margin: '0 0 14px',
-    filter: 'var(--mob-icon)',
+    width: '66px',
+    height: '66px',
+    margin: '0 0 16px',
+    color: 'var(--mob-text)',
   }
   const headerLogoStyle: JSX.CSSProperties = {
-    width: '20px',
-    height: '20px',
+    width: '30px',
+    height: '30px',
     flex: 'none',
-    filter: 'var(--mob-icon)',
+    color: 'var(--mob-text)',
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
@@ -221,12 +223,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
 
         <div style={headerKncStyle} aria-hidden="true">
-          <img src="/icons/knc-logo-pole.svg" alt="" style={headerLogoStyle} />
+          <PoleLogo uid="hdr" style={headerLogoStyle} />
           KNC STUDIO
         </div>
 
         <div style={heroExtrasStyle}>
-          <img src="/icons/knc-logo-pole.svg" alt="" style={heroLogoStyle} />
+          <PoleLogo uid="hero" style={heroLogoStyle} />
           <h1 style={heroKncStyle}>KNC STUDIO</h1>
           <div
             style={{

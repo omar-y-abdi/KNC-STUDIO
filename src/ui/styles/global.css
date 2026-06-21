@@ -5,6 +5,12 @@
 
 html, body { margin: 0; }
 
+/* Barber-pole logo: the diagonal stripes scroll upward (the pole-spin illusion), clipped to the
+   pole. Paused for visitors who prefer reduced motion. */
+.knc-stripes { animation: knc-spin 1.6s linear infinite; }
+@keyframes knc-spin { from { transform: translateY(0); } to { transform: translateY(-7px); } }
+@media (prefers-reduced-motion: reduce) { .knc-stripes { animation: none; } }
+
 /* On phones the booking/confirm modal stays a FLOATING CENTERED card; zoom shrinks the whole
    card (box + text + padding + fields) ~1/4 and reflows so it no longer fills the screen.
    `zoom` is kept deliberately: it reflows the layout box (unlike transform:scale) and is supported
