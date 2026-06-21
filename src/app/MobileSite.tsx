@@ -123,7 +123,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     alignItems: 'stretch',
     justifyContent: 'center',
     textAlign: 'center',
-    padding: '0 26px',
+    // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
+    // the screen's TRUE vertical centre instead of the centre of the area below the top row.
+    padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
     opacity: mob ? 0 : 1,
     pointerEvents: mob ? 'none' : 'auto',
     transition: 'opacity .34s ease',
