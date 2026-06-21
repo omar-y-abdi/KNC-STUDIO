@@ -3,7 +3,8 @@
 // border + a localized red note under each invalid field) rendered ONLY after a failed submit,
 // so the default popup is byte-identical to the source.
 
-import type { JSX } from 'preact'
+import type { JSX, Ref } from 'preact'
+import { useEffect, useRef } from 'preact/hooks'
 import type { BookingStrings } from '../i18n/index'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
@@ -47,6 +48,13 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   const { t, s } = props
   const e = props.fieldErrors
 
+  // When a confirm method is picked, the matching phone/email input appears — move focus (and the
+  // on-screen keyboard) straight to it so the customer doesn't have to tap the field again.
+  const contactInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (props.methodIsSms || props.methodIsEmail) contactInputRef.current?.focus()
+  }, [props.methodIsSms, props.methodIsEmail])
+
   // A field's input swaps to the error style (red border + ring) when flagged; a localized red
   // note renders directly under it inside the same label column. When not flagged, the markup is
   // byte-identical to the source.
@@ -58,10 +66,12 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
     inputMode: 'tel' | 'email' | undefined,
     invalid: boolean,
     note: string,
+    inputRef?: Ref<HTMLInputElement>,
   ): JSX.Element => (
     <label style="display:flex;flex-direction:column;gap:5px;">
       <span style="font-size:12px;font-weight:600;opacity:.55;">{label}</span>
       <input
+        {...(inputRef ? { ref: inputRef } : {})}
         value={value}
         onInput={onInput}
         placeholder={placeholder}
@@ -123,19 +133,29 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
           {props.methodIsSms
-            ? field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone)
+            ? field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone, contactInputRef)
             : null}
           {props.methodIsEmail
-            ? field(t.email, props.emailValue, props.onEmail, 'namn@exempel.se', 'email', e.email, t.errEmail)
+            ? field(t.email, props.emailValue, props.onEmail, 'namn@exempel.se', 'email', e.email, t.errEmail, contactInputRef)
             : null}
 
           <div style="margin-top:4px;">
             <span style="font-size:12px;font-weight:600;opacity:.55;">{t.confirmVia}</span>
             <div style="display:flex;gap:8px;margin-top:6px;">
-              <button onClick={props.onSelectSms} aria-pressed={props.methodIsSms} style={props.smsStyle}>
+              <button
+                onMouseDown={(ev) => ev.preventDefault()}
+                onClick={props.onSelectSms}
+                aria-pressed={props.methodIsSms}
+                style={props.smsStyle}
+              >
                 {t.sms}
               </button>
-              <button onClick={props.onSelectEmail} aria-pressed={props.methodIsEmail} style={props.emailMethodStyle}>
+              <button
+                onMouseDown={(ev) => ev.preventDefault()}
+                onClick={props.onSelectEmail}
+                aria-pressed={props.methodIsEmail}
+                style={props.emailMethodStyle}
+              >
                 {t.emailM}
               </button>
             </div>
