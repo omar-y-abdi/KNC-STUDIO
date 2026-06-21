@@ -39,7 +39,7 @@ export interface MobileSiteProps {
 export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mob, mobMutedColor, mobBtnBgColor, mapsHref } = props
   const chromeIcon = props.chromeIconStyle
-  const phoneShift = mob ? '42px' : '0px'
+  const phoneShift = mob ? '24px' : '0px'
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -79,7 +79,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     fontSize: '16px',
     letterSpacing: '2px',
     color: 'var(--mob-text)',
-    top: 'calc(env(safe-area-inset-top, 0px) + 34px)',
+    top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
     opacity: mob ? 1 : 0,
     pointerEvents: 'none',
@@ -96,8 +96,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: 'var(--mob-text)',
   }
   const headerLogoStyle: JSX.CSSProperties = {
-    width: '30px',
-    height: '30px',
+    width: '28px',
+    height: '28px',
     flex: 'none',
     color: 'var(--mob-text)',
   }
