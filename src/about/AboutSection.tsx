@@ -127,6 +127,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxSizing: 'border-box',
     padding: '64px 24px 72px',
   }
+  // Full-bleed breakout for the marquee galleries: span the FULL viewport width so tiles scroll in
+  // from the screen edge, not from inside the centered content column. The standard centered-container
+  // breakout; ancestors clip overflow (desktop fold-inner / mobile shell are overflow:hidden), so it
+  // adds no horizontal page scroll.
+  const fullBleedStyle: JSX.CSSProperties = {
+    width: '100vw',
+    marginLeft: 'calc(50% - 50vw)',
+  }
   const eyebrowStyle: JSX.CSSProperties = {
     fontSize: '12px',
     fontWeight: 700,
@@ -234,9 +242,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </h2>
         <p style={introStyle}>{tx.intro}</p>
 
-        {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it). */}
+        {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it).
+            Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
-        <GalleryMarquee ids={salonIds} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+        <div style={fullBleedStyle}>
+          <GalleryMarquee ids={salonIds} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+        </div>
 
         {/* Stylists */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
@@ -257,9 +268,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           })}
         </div>
 
-        {/* Customer-cuts gallery — same interactive marquee, scissors glyph. */}
+        {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
-        <GalleryMarquee ids={cutIds} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+        <div style={fullBleedStyle}>
+          <GalleryMarquee ids={cutIds} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+        </div>
 
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
