@@ -16,6 +16,7 @@ import { FOCUS_CLS } from '../ui/pseudo'
 import type { AboutStrings, Lang } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
+import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
 import type { Rating, Review, ReviewDraft } from './reviews/domain'
 import { emptyReviewDraft } from './reviews/domain'
@@ -155,11 +156,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     letterSpacing: '-0.3px',
     margin: '48px 0 16px',
   }
-  const galleryGridStyle: JSX.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: '12px',
-  }
   const stylistGridStyle: JSX.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -225,9 +221,9 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const stylistCopy = (id: BarberId): { role: string; bio: string } | undefined =>
     id === 'hassan' || id === 'victor' || id === 'salman' ? tx.stylists[id] : undefined
 
-  // 6 salon tiles + 6 customer-cut tiles (placeholder surfaces). Plain index arrays for stable keys.
-  const salonTiles = [0, 1, 2, 3, 4, 5]
-  const cutTiles = [0, 1, 2, 3, 4, 5]
+  // Placeholder photo ids — one per real photo later. Each gallery feeds these to two marquee rows.
+  const salonIds = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
+  const cutIds = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
 
   return (
     <section id={ABOUT_SECTION_ID} style={sectionStyle} aria-labelledby="om-oss-heading">
@@ -238,13 +234,9 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </h2>
         <p style={introStyle}>{tx.intro}</p>
 
-        {/* Salon gallery */}
+        {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it). */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
-        <div style={galleryGridStyle}>
-          {salonTiles.map((i) => (
-            <PlaceholderPhoto key={i} c={c} dark={dark} glyph="camera" alt={tx.galleryAlt} ratio="4 / 3" />
-          ))}
-        </div>
+        <GalleryMarquee ids={salonIds} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
 
         {/* Stylists */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
@@ -265,13 +257,9 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           })}
         </div>
 
-        {/* Customer-cuts gallery */}
+        {/* Customer-cuts gallery — same interactive marquee, scissors glyph. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
-        <div style={galleryGridStyle}>
-          {cutTiles.map((i) => (
-            <PlaceholderPhoto key={i} c={c} dark={dark} glyph="scissors" alt={tx.cutsAlt} ratio="1 / 1" />
-          ))}
-        </div>
+        <GalleryMarquee ids={cutIds} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
 
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
