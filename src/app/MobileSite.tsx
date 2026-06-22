@@ -15,7 +15,7 @@ import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
 import { PoleLogo } from '../ui/PoleLogo'
 import type { AppStrings, Lang } from '../i18n/index'
-import type { Mode, ShellPalette } from './shared'
+import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
 
 /** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
@@ -27,7 +27,7 @@ export interface MobileSiteProps {
   readonly tx: AppStrings
   readonly dark: boolean
   readonly c: ShellPalette
-  readonly mob: boolean
+  readonly view: View
   readonly mobMutedColor: string
   readonly mobBtnBgColor: string
   readonly mapsHref: string
@@ -35,15 +35,22 @@ export interface MobileSiteProps {
   readonly themeToggle: JSX.Element
   readonly langToggle: JSX.Element
   readonly openMobBooking: () => void
+  /** Animate to the About state. */
+  readonly openMobAbout: () => void
+  /** Back chevron — collapse the section and return to the static home hero. */
   readonly closeMobBooking: () => void
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
-  const { c, tx, dark, mob, mobMutedColor, mobBtnBgColor, mapsHref } = props
+  const { c, tx, dark, mobMutedColor, mobBtnBgColor, mapsHref } = props
+  const view = props.view
+  // In a section (booking or about) the panel is collapsed, content shows below, page scrolls.
+  // On home the panel fills the screen and the page does NOT scroll (static, minimal hero).
+  const inSection = view !== 'home'
   const chromeIcon = props.chromeIconStyle
-  const phoneShift = mob ? '24px' : '0px'
+  const phoneShift = inSection ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
 
@@ -54,8 +61,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     overflow: 'hidden',
     background: dark ? '#242427' : '#f4f3f0',
     color: c.text,
-    borderRadius: mob ? '0 0 28px 28px' : '0',
-    height: mob ? PANEL_COMPACT : PANEL_FULL,
+    borderRadius: inSection ? '0 0 28px 28px' : '0',
+    height: inSection ? PANEL_COMPACT : PANEL_FULL,
     transition: 'height .66s ' + EASE,
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
@@ -87,7 +94,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: 'var(--mob-text)',
     top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
-    opacity: mob ? 1 : 0,
+    opacity: inSection ? 1 : 0,
     pointerEvents: 'none',
     transition: 'opacity .4s ease',
   }
@@ -109,7 +116,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
-    display: mob ? 'flex' : 'none',
+    display: inSection ? 'flex' : 'none',
     alignItems: 'center',
     justifyContent: 'center',
     width: '32px',
@@ -132,8 +139,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
     // the screen's TRUE vertical centre instead of the centre of the area below the top row.
     padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
-    opacity: mob ? 0 : 1,
-    pointerEvents: mob ? 'none' : 'auto',
+    opacity: inSection ? 0 : 1,
+    pointerEvents: inSection ? 'none' : 'auto',
     transition: 'opacity .34s ease',
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
@@ -168,11 +175,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     <div
       style={{
         position: 'relative',
-        // Min-height (not fixed height) + always-scrollable so the homepage can scroll past the
-        // full-height hero panel down to the booking flow and the About section below it. (Was
-        // `height:100dvh; overflowY: mob ? 'auto' : 'hidden'`, which locked the homepage.)
-        minHeight: '100dvh',
+        // Fixed full-height shell driving the home/booking/about state machine. On home the hero
+        // panel fills the screen and the page does NOT scroll (overflowY hidden) — booking/about are
+        // unreachable by scrolling. In a section the panel collapses and the content below scrolls.
+        height: '100dvh',
         overflowX: 'hidden',
+        overflowY: inSection ? 'auto' : 'hidden',
         background: c.bg,
         color: c.text,
         fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
@@ -283,6 +291,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
             color={heroLinkColor}
+            onOpenAbout={props.openMobAbout}
             onOpenCancel={props.openCancel}
             marginTop="16px"
           />
@@ -348,11 +357,17 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         </div>
       </div>
 
-      <div style={m3BodyStyle}>
-        <BookingFlow mode={props.mode} defaultLang={props.lang} showHeader={false} />
-        {/* Scroll target — the "Om oss" hero link smooth-scrolls here (hero → booking → about). */}
-        <AboutSection mode={props.mode} lang={props.lang} />
-      </div>
+      {/* Section content below the collapsed panel — only one is mounted, and only when not on home
+          (the panel covers the swap, so conditional rendering here is smooth). */}
+      {inSection ? (
+        <div style={m3BodyStyle}>
+          {view === 'booking' ? (
+            <BookingFlow mode={props.mode} defaultLang={props.lang} showHeader={false} />
+          ) : (
+            <AboutSection mode={props.mode} lang={props.lang} />
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

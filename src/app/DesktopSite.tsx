@@ -7,20 +7,24 @@ import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
 import type { AppStrings } from '../i18n/index'
-import type { ShellProps } from './shared'
+import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
 
 export interface DesktopSiteProps extends ShellProps {
   readonly tx: AppStrings
-  readonly deskBooking: boolean
+  readonly view: View
   readonly toggleDeskBooking: () => void
+  readonly toggleDeskAbout: () => void
   readonly findUsStyle: JSX.CSSProperties
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
-  const { c, tx, mapsHref, deskBooking } = props
+  const { c, tx, mapsHref, view } = props
+  // Hero stays put; each link toggles its own fold below it (same grid-rows animation for both).
+  const booking = view === 'booking'
+  const about = view === 'about'
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
@@ -33,7 +37,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
     background: c.navBg,
     borderBottom: '.5px solid ' + c.line,
   }
-  const heroBtnStyle: JSX.CSSProperties = deskBooking
+  const heroBtnStyle: JSX.CSSProperties = booking
     ? {
         display: 'inline-flex',
         alignItems: 'center',
@@ -62,12 +66,15 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         padding: '13px 28px',
         borderRadius: '11px',
       }
-  const deskFoldStyle: JSX.CSSProperties = {
+  // One fold per state — both always mounted, each collapsed to 0fr unless active. Keeping both
+  // mounted means open AND close animate smoothly (no content unmounting mid-collapse), and the
+  // booking fold's render path is byte-identical to before.
+  const foldStyle = (open: boolean): JSX.CSSProperties => ({
     display: 'grid',
-    gridTemplateRows: deskBooking ? '1fr' : '0fr',
-    opacity: deskBooking ? 1 : 0,
+    gridTemplateRows: open ? '1fr' : '0fr',
+    opacity: open ? 1 : 0,
     transition: 'grid-template-rows .58s ' + EASE + ', opacity .42s ease',
-  }
+  })
   const deskFoldInnerStyle: JSX.CSSProperties = { overflow: 'hidden', minHeight: 0 }
   const footerStyle: JSX.CSSProperties = {
     display: 'flex',
@@ -95,11 +102,6 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         WebkitFontSmoothing: 'antialiased',
       }}
     >
-      {/* First screen: nav + the centered hero/booking fold, isolated in its own 100vh flex column
-          so the hero stays vertically centred regardless of the (tall) About section below it.
-          Without this wrapper, About's height would consume the root's free space and the hero
-          would collapse to the top — the original editorial centering must be preserved. */}
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div style={navStyle}>
         <h1 style="font-family: 'SF Pro Display'; font-weight: 700; letter-spacing: 2px; font-size: 20px; margin: 0">
           KNC STUDIO
@@ -139,11 +141,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
             color={heroLinkColor}
+            onOpenAbout={props.toggleDeskAbout}
             onOpenCancel={props.openCancel}
             marginTop="20px"
           />
         </div>
-        <div style={deskFoldStyle}>
+        {/* Booking fold — unchanged: same grid-rows animation, BookingFlow render path intact. */}
+        <div style={foldStyle(booking)} data-testid="fold-booking">
           <div style={deskFoldInnerStyle}>
             <div
               style={
@@ -156,11 +160,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             </div>
           </div>
         </div>
+        {/* About fold — identical animation; AboutSection brings its own border-top + max-width. */}
+        <div style={foldStyle(about)} data-testid="fold-about">
+          <div style={deskFoldInnerStyle}>
+            <AboutSection mode={props.mode} lang={props.lang} />
+          </div>
+        </div>
       </div>
-      </div>
-
-      {/* Scroll target — the "Om oss" hero link smooth-scrolls here (hero → about → footer). */}
-      <AboutSection mode={props.mode} lang={props.lang} />
 
       <div style={footerStyle}>
         <span>{tx.hours}</span>

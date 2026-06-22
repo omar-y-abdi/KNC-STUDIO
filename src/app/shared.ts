@@ -7,6 +7,13 @@ import type { Lang } from '../i18n/index'
 
 export type Mode = 'light' | 'dark'
 
+/**
+ * Which of the three mutually-exclusive site states is showing. The homepage is `'home'` (static
+ * hero); pressing "Boka tid" animates to `'booking'`, "Om oss" animates to `'about'` — each its own
+ * fold, same animation. A single closed union means no invalid "booking AND about" inhabitant.
+ */
+export type View = 'home' | 'booking' | 'about'
+
 /** Site-shell palette for a given mode (source `c = dark ? {...} : {...}`). */
 export interface ShellPalette {
   bg: string
