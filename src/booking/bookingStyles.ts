@@ -230,6 +230,12 @@ export function buildBookingStyles(
       position: 'relative',
       background: c.bg,
       color: c.text,
+      // The card declares its own font so the popup matches the site WHEREVER it mounts. The booking
+      // popup renders inside the font-bearing booking root and would inherit this anyway; the
+      // cancellation popup renders at app level (outside that root), so without this its text falls
+      // back to the browser default serif. Inputs/buttons inherit from here via `fontFamily:inherit`.
+      fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+      WebkitFontSmoothing: 'antialiased',
       borderRadius: '16px',
       boxShadow: '0 24px 60px rgba(0,0,0,.4),0 0 0 .5px ' + c.line,
       animation: 'kncPop .3s cubic-bezier(.32,.72,0,1) both',
