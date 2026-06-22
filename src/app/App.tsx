@@ -9,6 +9,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { BUSINESS } from '../config'
 import type { Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
+import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode } from './shared'
@@ -25,6 +26,8 @@ interface AppState {
   readonly lang: Lang
   readonly deskBooking: boolean
   readonly mobBooking: boolean
+  /** Whether the "Avbokning" (cancellation) popup is open. Lives here alongside the booking folds. */
+  readonly cancelOpen: boolean
 }
 
 export function App(): JSX.Element {
@@ -34,6 +37,7 @@ export function App(): JSX.Element {
     lang: 'sv',
     deskBooking: false,
     mobBooking: false,
+    cancelOpen: false,
   }))
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
@@ -96,6 +100,8 @@ export function App(): JSX.Element {
   const toggleDeskBooking = (): void => setState((s) => ({ deskBooking: !s.deskBooking }))
   const openMobBooking = (): void => setState({ mobBooking: true })
   const closeMobBooking = (): void => setState({ mobBooking: false })
+  const openCancel = (): void => setState({ cancelOpen: true })
+  const closeCancel = (): void => setState({ cancelOpen: false })
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -173,41 +179,53 @@ export function App(): JSX.Element {
     </div>
   )
 
+  const cancelDialog = state.cancelOpen ? (
+    <CancellationDialog mode={state.mode} lang={lang} onClose={closeCancel} />
+  ) : null
+
   if (isMobile) {
     return (
-      <MobileSite
-        mode={state.mode}
-        lang={lang}
-        tx={tx}
-        dark={dark}
-        c={c}
-        mob={mob}
-        mobMutedColor={mobMutedColor}
-        mobBtnBgColor={mobBtnBgColor}
-        mapsHref={mapsHref}
-        chromeIconStyle={chromeIconStyle}
-        themeToggle={themeToggle}
-        langToggle={langToggle}
-        openMobBooking={openMobBooking}
-        closeMobBooking={closeMobBooking}
-      />
+      <>
+        <MobileSite
+          mode={state.mode}
+          lang={lang}
+          tx={tx}
+          dark={dark}
+          c={c}
+          mob={mob}
+          mobMutedColor={mobMutedColor}
+          mobBtnBgColor={mobBtnBgColor}
+          mapsHref={mapsHref}
+          chromeIconStyle={chromeIconStyle}
+          themeToggle={themeToggle}
+          langToggle={langToggle}
+          openMobBooking={openMobBooking}
+          closeMobBooking={closeMobBooking}
+          openCancel={openCancel}
+        />
+        {cancelDialog}
+      </>
     )
   }
 
   return (
-    <DesktopSite
-      mode={state.mode}
-      lang={lang}
-      dark={dark}
-      c={c}
-      mapsHref={mapsHref}
-      themeToggle={themeToggle}
-      langToggle={langToggle}
-      chromeIconStyle={chromeIconStyle}
-      tx={tx}
-      deskBooking={state.deskBooking}
-      toggleDeskBooking={toggleDeskBooking}
-      findUsStyle={findUsStyle}
-    />
+    <>
+      <DesktopSite
+        mode={state.mode}
+        lang={lang}
+        dark={dark}
+        c={c}
+        mapsHref={mapsHref}
+        themeToggle={themeToggle}
+        langToggle={langToggle}
+        chromeIconStyle={chromeIconStyle}
+        tx={tx}
+        deskBooking={state.deskBooking}
+        toggleDeskBooking={toggleDeskBooking}
+        findUsStyle={findUsStyle}
+        openCancel={openCancel}
+      />
+      {cancelDialog}
+    </>
   )
 }

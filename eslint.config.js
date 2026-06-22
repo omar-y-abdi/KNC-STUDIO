@@ -7,7 +7,9 @@ import nounsan from 'eslint-plugin-no-unsanitized'
 // and DOM-sink XSS (no-unsanitized). Type-aware rules are intentionally omitted to keep
 // linting fast + stable on the bleeding-edge TS toolchain.
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png'] },
+  // `reference/` is the read-only original mock (legacy HTML + its bundled support.js) — not part
+  // of the app source, so it is excluded from linting alongside build output.
+  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'reference/**'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,

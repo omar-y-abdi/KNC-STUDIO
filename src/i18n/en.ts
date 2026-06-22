@@ -1,4 +1,4 @@
-import type { AppStrings, BookingStrings, CalendarLabels } from './index'
+import type { AboutStrings, AppStrings, BookingStrings, CalendarLabels, CancelStrings } from './index'
 
 // English strings — copied verbatim from the source `BF_STR.en`, `APP_T.en`,
 // and the BF_WD/BF_MON/BF_HEAD `en` rows.
@@ -60,6 +60,82 @@ export const appEn: AppStrings = {
   ariaTheme: 'Toggle light/dark',
   ariaBackHome: 'Back to home',
   ariaCall: 'Call',
+  aboutLink: 'About',
+  cancelLink: 'Cancel booking',
+}
+
+// NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
+// reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
+export const aboutEn: AboutStrings = {
+  eyebrow: 'ABOUT',
+  heading: 'Craft, not just a haircut',
+  intro:
+    'KNC Studio is a barbershop on Geijersgatan in Gothenburg. We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
+  galleryTitle: 'Inside the shop',
+  galleryAlt: 'Photo from the salon (placeholder)',
+  stylistsTitle: 'The barbers',
+  stylists: {
+    hassan: {
+      role: 'Barber',
+      bio: 'Specialist in skin fades and precise lines. Hassan has had the scissors in hand since his teens and works with a steady calm.',
+    },
+    victor: {
+      role: 'Barber',
+      bio: 'Classic cuts with a modern touch. Victor listens to what you want and delivers every time — beards are his signature.',
+    },
+    salman: {
+      role: 'Barber',
+      bio: 'Textured hair and clean transitions. Salman happily takes the extra minute to get the detail exactly right.',
+    },
+  },
+  stylistAvatarAlt: 'Portrait (placeholder)',
+  cutsTitle: 'Work we’ve done',
+  cutsAlt: 'Customer haircut (placeholder)',
+  reviewsTitle: 'Reviews',
+  reviewName: 'Name',
+  reviewNamePh: 'First and last name',
+  reviewRating: 'Rating',
+  reviewText: 'Your review',
+  reviewTextPh: 'Tell us about your visit …',
+  reviewSubmit: 'Leave a review',
+  reviewThanks: 'Thanks for your review!',
+  reviewErrName: 'Name is too long',
+  reviewErrText: 'Please write something about your visit',
+  reviewErrRating: 'Please choose a rating',
+  ratingValueLabel: 'Rating: {n} of 5',
+  ratingStarLabel: '{n} stars',
+  ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
+}
+
+// NOTE: Cancellation flow is a MOCK — the looked-up booking is generated on the fly and nothing
+// is persisted. Copy here is real, the appointment behind it is demo data.
+export const cancelEn: CancelStrings = {
+  title: 'Cancel booking',
+  methodLabel: 'Your chosen booking method',
+  sms: 'SMS',
+  emailM: 'Email',
+  phone: 'Phone',
+  phonePh: '07X XXX XX XX',
+  email: 'Email',
+  emailPh: 'name@example.com',
+  lookupBtn: 'Cancel appointment',
+  lookingUp: 'Looking up …',
+  errPhone: 'Invalid phone number',
+  errEmail: 'Invalid email address',
+  errLookup: 'Could not find the booking. Please try again.',
+  foundLead: 'We found your booking',
+  fBarber: 'Barber',
+  fWhen: 'Time',
+  fService: 'Service',
+  confirmQuestion: 'Do you want to cancel this appointment?',
+  confirmBtn: 'Cancel it',
+  abortBtn: 'Go back',
+  cancelling: 'Cancelling …',
+  errCancel: 'Something went wrong while cancelling. Please try again.',
+  doneTitle: 'Your appointment is cancelled',
+  doneVia: 'A confirmation will be sent by {method}.',
+  doneBtn: 'Close',
+  ariaClose: 'Close',
 }
 
 export const labelsEn: CalendarLabels = {

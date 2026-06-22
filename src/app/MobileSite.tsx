@@ -10,6 +10,8 @@
 
 import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
+import { AboutSection } from '../about/AboutSection'
+import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
 import { PoleLogo } from '../ui/PoleLogo'
 import type { AppStrings, Lang } from '../i18n/index'
@@ -34,12 +36,16 @@ export interface MobileSiteProps {
   readonly langToggle: JSX.Element
   readonly openMobBooking: () => void
   readonly closeMobBooking: () => void
+  /** Open the "Avbokning" (cancellation) popup. */
+  readonly openCancel: () => void
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mob, mobMutedColor, mobBtnBgColor, mapsHref } = props
   const chromeIcon = props.chromeIconStyle
   const phoneShift = mob ? '24px' : '0px'
+  // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
+  const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -162,8 +168,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     <div
       style={{
         position: 'relative',
-        height: '100dvh',
-        overflowY: mob ? 'auto' : 'hidden',
+        // Min-height (not fixed height) + always-scrollable so the homepage can scroll past the
+        // full-height hero panel down to the booking flow and the About section below it. (Was
+        // `height:100dvh; overflowY: mob ? 'auto' : 'hidden'`, which locked the homepage.)
+        minHeight: '100dvh',
         overflowX: 'hidden',
         background: c.bg,
         color: c.text,
@@ -271,6 +279,13 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
             {tx.book}
           </button>
+          <HeroLinks
+            aboutLabel={tx.aboutLink}
+            cancelLabel={tx.cancelLink}
+            color={heroLinkColor}
+            onOpenCancel={props.openCancel}
+            marginTop="16px"
+          />
           <div style={infoBlockStyle}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
               <span
@@ -335,6 +350,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
       <div style={m3BodyStyle}>
         <BookingFlow mode={props.mode} defaultLang={props.lang} showHeader={false} />
+        {/* Scroll target — the "Om oss" hero link smooth-scrolls here (hero → booking → about). */}
+        <AboutSection mode={props.mode} lang={props.lang} />
       </div>
     </div>
   )

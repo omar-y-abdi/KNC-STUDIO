@@ -3,6 +3,8 @@
 
 import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
+import { AboutSection } from '../about/AboutSection'
+import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
 import type { AppStrings } from '../i18n/index'
 import type { ShellProps } from './shared'
@@ -13,11 +15,15 @@ export interface DesktopSiteProps extends ShellProps {
   readonly deskBooking: boolean
   readonly toggleDeskBooking: () => void
   readonly findUsStyle: JSX.CSSProperties
+  /** Open the "Avbokning" (cancellation) popup. */
+  readonly openCancel: () => void
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const { c, tx, mapsHref, deskBooking } = props
   const lineColor = c.line
+  // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
+  const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
 
   const navStyle: JSX.CSSProperties = {
     display: 'flex',
@@ -89,6 +95,11 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         WebkitFontSmoothing: 'antialiased',
       }}
     >
+      {/* First screen: nav + the centered hero/booking fold, isolated in its own 100vh flex column
+          so the hero stays vertically centred regardless of the (tall) About section below it.
+          Without this wrapper, About's height would consume the root's free space and the hero
+          would collapse to the top — the original editorial centering must be preserved. */}
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div style={navStyle}>
         <h1 style="font-family: 'SF Pro Display'; font-weight: 700; letter-spacing: 2px; font-size: 20px; margin: 0">
           KNC STUDIO
@@ -124,6 +135,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <button onClick={props.toggleDeskBooking} style={heroBtnStyle} type="button">
             {tx.book}
           </button>
+          <HeroLinks
+            aboutLabel={tx.aboutLink}
+            cancelLabel={tx.cancelLink}
+            color={heroLinkColor}
+            onOpenCancel={props.openCancel}
+            marginTop="20px"
+          />
         </div>
         <div style={deskFoldStyle}>
           <div style={deskFoldInnerStyle}>
@@ -139,6 +157,10 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           </div>
         </div>
       </div>
+      </div>
+
+      {/* Scroll target — the "Om oss" hero link smooth-scrolls here (hero → about → footer). */}
+      <AboutSection mode={props.mode} lang={props.lang} />
 
       <div style={footerStyle}>
         <span>{tx.hours}</span>
