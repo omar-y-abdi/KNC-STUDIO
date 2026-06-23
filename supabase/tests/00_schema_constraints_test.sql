@@ -44,7 +44,9 @@ select throws_ok(
        customer_name, method, phone, email, lang)
     values ('nope','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
             'X','sms','0701234567',null,'sv')$$,
-  '23514', null, 'barber_id ''nope'' rejected'
+  -- Was a CHECK (23514) in 0001; migration 0009 replaced the hardcoded barber list with a FK to
+  -- public.barbers, so an unknown barber now raises foreign_key_violation (23503). Still rejected.
+  '23503', null, 'barber_id ''nope'' rejected (now by the FK to barbers)'
 );
 
 select throws_ok(
