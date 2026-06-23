@@ -19,6 +19,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
     "preact": "^10.29.1",
+    "wouter-preact": "^3.10.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

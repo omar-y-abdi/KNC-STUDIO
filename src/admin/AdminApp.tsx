@@ -1,0 +1,91 @@
+// The `/admin` gate. On mount it resolves the active session's profile:
+//   - no session / no profile -> redirect to `/login` (the public login screen handles sign-in).
+//   - backend unconfigured -> redirect to `/login` (which shows the "not configured" notice).
+//   - resolved -> render the role's `AdminShell`.
+// Sign-out clears the session and routes back to `/login`.
+//
+// This component (and everything it imports) lives behind a dynamic import in `Root`, so none of the
+// admin/auth/supabase-auth code ships on the public critical path.
+
+import type { JSX } from 'preact'
+import { useEffect, useState } from 'preact/hooks'
+import { useLocation } from 'wouter-preact'
+import { isBackendConfigured } from '../backend/config'
+import { palette } from '../booking/bookingStyles'
+import { getActiveProfile, signOut } from './auth'
+import { AdminShell } from './AdminShell'
+import { useTheme } from './useTheme'
+import type { AdminProfile } from './types'
+
+type Gate =
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'authed'; readonly profile: AdminProfile }
+  | { readonly kind: 'redirecting' }
+
+export function AdminApp(): JSX.Element {
+  const theme = useTheme()
+  const [, navigate] = useLocation()
+  const [gate, setGate] = useState<Gate>({ kind: 'checking' })
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      if (!isBackendConfigured()) {
+        if (active) setGate({ kind: 'redirecting' })
+        navigate('/login', { replace: true })
+        return
+      }
+      const result = await getActiveProfile()
+      if (!active) return
+      if (result.ok) {
+        setGate({ kind: 'authed', profile: result.value })
+      } else {
+        setGate({ kind: 'redirecting' })
+        navigate('/login', { replace: true })
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [navigate])
+
+  const onSignOut = async (): Promise<void> => {
+    await signOut()
+    setGate({ kind: 'redirecting' })
+    navigate('/login', { replace: true })
+  }
+
+  const c = palette(theme.dark)
+
+  if (gate.kind !== 'authed') {
+    // A minimal, on-brand placeholder while resolving / redirecting (never a flash of admin UI).
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: c.bg,
+          color: c.text,
+          fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+          fontSize: '14px',
+          opacity: 0.7,
+        }}
+      >
+        Laddar …
+      </div>
+    )
+  }
+
+  return (
+    <AdminShell
+      profile={gate.profile}
+      dark={theme.dark}
+      lang={theme.lang}
+      toggleMode={theme.toggleMode}
+      setLang={theme.setLang}
+      onSignOut={() => void onSignOut()}
+    />
+  )
+}

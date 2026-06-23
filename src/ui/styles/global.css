@@ -25,3 +25,44 @@ html, body { margin: 0; }
      (and stays zoomed after the keyboard closes). 19px → ~16px effective, which stops that zoom. */
   .knc-sheet-card input { font-size: 19px; }
 }
+
+/* ---------------------------------------------------------------------------------------------
+   Admin panel responsiveness. These rules ONLY target `.knc-admin-*` elements (the admin shell),
+   so the public marketing site — which uses none of these classes — is completely unaffected.
+   On phones the fixed left sidebar becomes a horizontal, scrollable tab bar at the top so a barber
+   can use the panel one-handed.
+   --------------------------------------------------------------------------------------------- */
+.knc-admin-signout-top { display: none; }
+
+/* NOTE: the shell/sidebar/navlist carry INLINE layout styles (display/width/flex-direction), which
+   beat plain class selectors. The mobile overrides below therefore need `!important` to win — that is
+   the only way a media-query class rule can override an inline style. Scoped to `.knc-admin-*`, so the
+   public site is untouched. */
+@media (max-width: 760px) {
+  .knc-admin-shell { display: block !important; }
+  .knc-admin-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    overflow-x: auto;
+    padding: 10px 12px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* The brand label shrinks; the nav list scrolls horizontally as a tab strip. */
+  .knc-admin-sidebar > div:first-child { padding: 0 8px 0 2px !important; font-size: 15px !important; white-space: nowrap; }
+  .knc-admin-navlist {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 4px !important;
+    overflow-x: auto;
+    flex: 1 1 auto !important;
+  }
+  /* The bottom sign-out belongs in the top bar on mobile (it would scroll off the tab strip). */
+  .knc-admin-signout-bottom { display: none !important; }
+  .knc-admin-signout-top { display: inline-flex !important; }
+}
