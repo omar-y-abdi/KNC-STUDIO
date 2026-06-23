@@ -25,7 +25,7 @@ import { parseEmail, parsePhone } from '../booking/validation'
 import type { Lang } from '../i18n/index'
 import { cancelStrings } from '../i18n/index'
 import type { CancelBooking, CancelMethod } from './domain'
-import { mockCancellationAdapter } from './adapters/mockCancellation'
+import { defaultCancellationPort } from './adapters/index'
 import type { CancellationPort } from './port'
 
 type Mode = 'light' | 'dark'
@@ -51,7 +51,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   const s = buildBookingStyles(c, dark, false)
   const methodBtn = makeMethodBtn(c)
   const red = systemRed(dark)
-  const port: CancellationPort = props.port ?? mockCancellationAdapter
+  const port: CancellationPort = props.port ?? defaultCancellationPort
 
   const [step, setStep] = useState<Step>('lookup')
   const [method, setMethod] = useState<CancelMethod | null>(null)

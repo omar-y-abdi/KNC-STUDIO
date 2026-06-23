@@ -20,7 +20,7 @@ import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
 import type { Rating, Review, ReviewDraft } from './reviews/domain'
 import { emptyReviewDraft } from './reviews/domain'
-import { mockReviewsAdapter } from './reviews/adapters/mockReviews'
+import { defaultReviewsPort } from './reviews/adapters/index'
 import type { ReviewsPort } from './reviews/port'
 import { NO_REVIEW_ERRORS, parseReview } from './reviewValidation'
 import type { ReviewFieldErrors } from './reviewValidation'
@@ -49,7 +49,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const c = palette(dark)
   const s = buildBookingStyles(c, dark, false)
   const red = systemRed(dark)
-  const port: ReviewsPort = props.port ?? mockReviewsAdapter
+  const port: ReviewsPort = props.port ?? defaultReviewsPort
 
   // Reviews list (seed from the port, then prepend new ones). Submitted reviews are NOT persisted.
   const [reviews, setReviews] = useState<readonly Review[]>([])

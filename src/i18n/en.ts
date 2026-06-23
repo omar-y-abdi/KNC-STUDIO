@@ -10,6 +10,7 @@ export const bookingEn: BookingStrings = {
   chooseService: 'Choose a service',
   pickDayForService: 'Pick a day to see available services.',
   pickServiceForTime: 'Choose a service to see open times.',
+  loadingTimes: 'Loading times …',
   legendChosen: 'Selected',
   legendClosed: 'Closed / booked',
   yourDetails: 'Your details',

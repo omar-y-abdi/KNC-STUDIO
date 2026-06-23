@@ -8,8 +8,10 @@ import nounsan from 'eslint-plugin-no-unsanitized'
 // linting fast + stable on the bleeding-edge TS toolchain.
 export default tseslint.config(
   // `reference/` is the read-only original mock (legacy HTML + its bundled support.js) — not part
-  // of the app source, so it is excluded from linting alongside build output.
-  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'reference/**'] },
+  // of the app source, so it is excluded from linting alongside build output. `supabase/` is a
+  // separate Deno project (edge functions) + SQL/pgTAP; it has its own runtime + globals (Deno,
+  // server-side `console`) and is not in the app tsconfig, so it is excluded here too.
+  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'reference/**', 'supabase/**'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,

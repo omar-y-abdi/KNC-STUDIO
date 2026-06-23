@@ -8,4 +8,9 @@
 interface ImportMetaEnv {
   readonly VITE_SITE_URL?: string
   readonly VITE_CLOCK?: string
+  // Supabase backend (PUBLIC anon key — RLS is the boundary). Both BLANK -> offline mock adapters
+  // (default). Set BOTH to switch the live site to the real backend. Optional so the mock path
+  // type-checks (and runs) with zero Supabase env.
+  readonly VITE_SUPABASE_URL?: string
+  readonly VITE_SUPABASE_ANON_KEY?: string
 }

@@ -11,6 +11,8 @@ export interface BookingStrings {
   chooseService: string
   pickDayForService: string
   pickServiceForTime: string
+  /** Shown in the time column while real availability is loading from the backend. */
+  loadingTimes: string
   legendChosen: string
   legendClosed: string
   yourDetails: string

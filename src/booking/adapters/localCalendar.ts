@@ -6,9 +6,11 @@
 // pure `buildIcs`, so the ICS builder stays referentially transparent.
 
 import { BUSINESS } from '../../config'
+import { barberIndex } from '../barbers'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
-import type { BookingPort } from '../port'
+import type { AvailabilityParams, BookingPort } from '../port'
+import { SLOTS, slotTaken } from '../slots'
 
 /** Apple Maps directions URL for the studio (matches the source `mapsHref` constant byte-for-byte). */
 const MAPS_HREF = BUSINESS.mapsHref
@@ -62,14 +64,31 @@ export function buildLinks(booking: Booking, now: Date = new Date()): BookingLin
   }
 }
 
+/** Day-of-month from a `YYYY-MM-DD` string (the only part `slotTaken` needs), or 0 if malformed. */
+function dayOfMonth(dateIso: string): number {
+  const day = Number(dateIso.split('-')[2])
+  return Number.isFinite(day) ? day : 0
+}
+
 /**
  * Local-only BookingPort: always succeeds, producing the calendar/map links. This is the
  * exact current behavior of the mock (the .ics + Google Cal + maps links), now hardened.
+ *
+ * `availability` reproduces the ORIGINAL UI greying formula verbatim so the offline/demo/visual
+ * baseline is unchanged: for the date + barber, it includes each `SLOTS[i]` whose
+ * `slotTaken(dayOfMonth, barberIndex, i, durationMin)` is true. Under the mock the UI's
+ * `takenTimes.includes(time)` check therefore matches the old inline `slotTaken(...)` exactly.
  */
 export const localCalendarAdapter: BookingPort = {
   submit(booking: Booking): Promise<BookingResult> {
     const links = buildLinks(booking)
     const result: BookingResult = { ok: true, booking, links }
     return Promise.resolve(result)
+  },
+  availability(params: AvailabilityParams): Promise<readonly string[]> {
+    const day = dayOfMonth(params.dateIso)
+    const bi = barberIndex(params.barberId)
+    const taken = SLOTS.filter((_time, i) => slotTaken(day, bi, i, params.durationMin))
+    return Promise.resolve(taken)
   },
 }

@@ -3,9 +3,24 @@
 // concrete implementation today is `localCalendarAdapter` (no network). Future adapters
 // (Supabase, webhook) would implement the same interface — they are intentionally not stubbed.
 
-import type { Booking, BookingResult } from './domain'
+import type { Booking, BookingResult, BarberId } from './domain'
+
+/** Inputs for an availability query: which barber, which local day, and the chosen service length. */
+export interface AvailabilityParams {
+  readonly barberId: BarberId
+  /** Local date `YYYY-MM-DD` (the calendar's selected day). */
+  readonly dateIso: string
+  /** Selected service duration in minutes (a slot is blocked iff it would overlap a booking). */
+  readonly durationMin: number
+}
 
 export interface BookingPort {
   /** Submit a confirmed booking. Pure-local adapters resolve synchronously-wrapped. */
   submit(booking: Booking): Promise<BookingResult>
+  /**
+   * The TAKEN slot times for `barberId` on `dateIso` given `durationMin` — a subset of `SLOTS`
+   * (e.g. `['09:45','13:30']`). The UI greys a slot iff its time is in this list (simple membership;
+   * all overlap math lives inside the adapter). Resolves to the taken times.
+   */
+  availability(params: AvailabilityParams): Promise<readonly string[]>
 }

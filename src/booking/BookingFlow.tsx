@@ -4,21 +4,21 @@
 // `localCalendarAdapter`) so a future real adapter is a one-line swap.
 
 import type { JSX } from 'preact'
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
 import { bookingStrings } from '../i18n/index'
-import { BARBERS, barberIndex, findBarber } from './barbers'
+import { BARBERS, findBarber } from './barbers'
 import { cap, buildWeeks, iso, monthLabel, weekdayLabel, headerLabels } from './calendar'
 import type { Barber, Booking, BookingDraft, BookingResult, ConfirmMethod } from './domain'
 import { initialDraft } from './domain'
 import { pricing } from './pricing'
-import { localCalendarAdapter } from './adapters/localCalendar'
+import { defaultBookingPort } from './adapters/index'
 import type { BookingPort } from './port'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
-import { SLOTS, slotTaken } from './slots'
+import { SLOTS } from './slots'
 import { buildBookingStyles, makeMethodBtn, makeNavBtn, makeTab, palette } from './bookingStyles'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
@@ -47,6 +47,11 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [result, setResult] = useState<BookingResult | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // Real availability: the TAKEN slot times for the chosen barber+date+service, loaded through the
+  // port (DB-backed when configured, the original `slotTaken` formula under the mock). The grid
+  // greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
+  const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
+  const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
 
   const setState = (u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
@@ -83,9 +88,39 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const showDirections = props.showDirections !== false
   const showHeader = props.showHeader !== false
   const clock: Clock = props.clock ?? defaultClock
-  const port: BookingPort = props.port ?? localCalendarAdapter
+  const port: BookingPort = props.port ?? defaultBookingPort
   const today = clock()
   const S = state
+
+  // Load real availability whenever barber + date + service are all chosen. The result is the set of
+  // TAKEN slot times; the grid greys those (simple membership — no overlap math in the UI). A
+  // `cancelled` flag drops stale responses so fast re-selection can't show the wrong day's slots.
+  // On any failure we fall back to "nothing taken" (the DB exclusion constraint is the backstop).
+  const serviceDur = S.service?.dur
+  useEffect(() => {
+    if (S.barberId === null || S.dateIso === null || serviceDur === undefined) {
+      setTakenTimes([])
+      setSlotsLoading(false)
+      return
+    }
+    let cancelled = false
+    setSlotsLoading(true)
+    void port
+      .availability({ barberId: S.barberId, dateIso: S.dateIso, durationMin: serviceDur })
+      .then((times) => {
+        if (cancelled) return
+        setTakenTimes(times)
+        setSlotsLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setTakenTimes([])
+        setSlotsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [port, S.barberId, S.dateIso, serviceDur])
 
   const c = palette(dark)
   const tab = makeTab(c)
@@ -213,7 +248,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     selDate = new Date(yy, mm - 1, dd)
     dateLabelLong = cap(weekdayLabel(lang, selDate.getDay())) + ' ' + dd + ' ' + monthLabel(lang, mm - 1)
   }
-  const bi = barberIndex(S.barberId)
 
   interface ServiceRow {
     name: string
@@ -267,7 +301,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     }))
   }
 
-  const dur = S.service ? S.service.dur : 0
   interface TimeSlot {
     label: string
     chipStyle: JSX.CSSProperties
@@ -275,9 +308,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   }
   const timeSlots: TimeSlot[] =
     selDate !== null && S.service !== null
-      ? SLOTS.map((time, i) => {
-          const dayOfMonth = (selDate as Date).getDate()
-          const taken = slotTaken(dayOfMonth, bi, i, dur)
+      ? SLOTS.map((time) => {
+          // A slot is taken iff its time is in the loaded availability set (membership only — all
+          // overlap math lives in the adapter). Under the mock this equals the old `slotTaken` output.
+          const taken = takenTimes.includes(time)
           const sel = S.time === time
           let bg = c.card
           let color = 'inherit'
@@ -623,7 +657,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   {t.chooseTime}
                 </span>
               </div>
-              {timesReady ? (
+              {timesReady && slotsLoading ? (
+                <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
+              ) : null}
+              {timesReady && !slotsLoading ? (
                 <div>
                   <div style="font-size:13px;opacity:.5;margin:0 0 13px 0;">{timeSubLabel}</div>
                   <div style="display:flex;flex-wrap:wrap;gap:8px;">
