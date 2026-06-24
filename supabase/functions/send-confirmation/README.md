@@ -38,12 +38,16 @@ Invalid shapes → `400 { ok: false, error: "invalid_payload", detail: "<why>" }
 
 ```bash
 npx supabase start                      # boots the stack (Docker)
-npx supabase functions serve send-confirmation
-# in another shell:
+# WEBHOOK_SECRET is REQUIRED (fail-closed). For local serve, put it in supabase/functions/.env:
+echo 'WEBHOOK_SECRET=dev-secret' >> supabase/functions/.env
+npx supabase functions serve send-confirmation --env-file supabase/functions/.env
+# in another shell — send the secret header, and use the id of a booking that EXISTS (the function
+# re-reads the recipient from that row). <booking-id> = a real public.bookings.id:
 curl -i -X POST http://127.0.0.1:54321/functions/v1/send-confirmation \
-  -H 'content-type: application/json' \
-  -d '{"id":"00000000-0000-0000-0000-000000000001","method":"email","email":"test@example.com","phone":null,"start_at":"2026-07-01T09:00:00+02:00","barber_id":"hassan","service_name":"Hår & Skägg"}'
-# -> 200 { "ok": true, "skipped": "no_provider_configured" }
+  -H 'content-type: application/json' -H 'x-webhook-secret: dev-secret' \
+  -d '{"id":"<booking-id>","method":"email","email":"ignored@example.com","phone":null,"start_at":"2026-07-01T09:00:00+02:00","barber_id":"hassan","service_name":"Hår & Skägg"}'
+# -> 200 { "ok": true, "skipped": "no_provider_configured" }   (no provider key set)
+# Missing/!wrong x-webhook-secret -> 401; WEBHOOK_SECRET unset -> 503; unknown booking id -> 404.
 ```
 
 ---
@@ -83,8 +87,15 @@ post-deploy step (NOT auto-created by this repo).
    - Table: `public.bookings`, Events: **Insert**.
    - Type: **Supabase Edge Functions** → select `send-confirmation` (or HTTP Request → the URL).
    - Method: `POST`. The webhook auto-attaches the project's auth header.
-3. **Secure it** (recommended): add a custom header `x-webhook-secret: <value>` in the webhook
-   config, store it via `npx supabase secrets set WEBHOOK_SECRET=<value>`, and uncomment the
-   `TODO(security)` check in `index.ts` so the function rejects requests without the header.
+3. **Secure it (REQUIRED — fail-closed).** The function rejects **every** request with
+   `503 not_configured` until `WEBHOOK_SECRET` is set, and then requires a matching `x-webhook-secret`
+   header (else `401 unauthorized`). This is enforced in code (no TODO to uncomment), so the function
+   can never be an open relay. BEFORE configuring any provider key:
+   `npx supabase secrets set WEBHOOK_SECRET=<random-value>`, then add a custom header
+   `x-webhook-secret: <same-value>` in the webhook config.
 
 That's it: every new `bookings` INSERT now fires this function, which sends the confirmation.
+
+> **Recipient is DB-authoritative.** The function re-reads the customer's phone/email from the
+> `bookings` row by `id` (service-role) and sends ONLY there — the posted `phone`/`email` are validated
+> for shape but never used as the send target, so a forged webhook payload cannot redirect the message.

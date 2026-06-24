@@ -86,6 +86,32 @@ export async function fetchPersistedBookingByPhone(
   }
 }
 
+/**
+ * Read the persisted `start_at` (as an ISO-8601 UTC string) for the confirmed booking with `phone`,
+ * via the superuser connection. Used to assert the WRITE-path timezone fix (H2): the adapter must
+ * store the Europe/Stockholm instant for the selected wall-clock, regardless of the caller's tz.
+ * Parameterized query — no string interpolation.
+ */
+export async function fetchPersistedStartAtByPhone(
+  dbUrl: string,
+  phone: string,
+): Promise<string | null> {
+  const client = new Client({ connectionString: dbUrl })
+  await client.connect()
+  try {
+    const res = await client.query<{ start_at: Date }>(
+      "select start_at from public.bookings where phone = $1 and status = 'confirmed' limit 1",
+      [phone],
+    )
+    const row = res.rows[0]
+    if (row === undefined) return null
+    // node-postgres returns timestamptz as a JS Date (an absolute instant); normalize to UTC ISO.
+    return new Date(row.start_at).toISOString()
+  } finally {
+    await client.end()
+  }
+}
+
 // --- run-unique fixtures -------------------------------------------------------------------------
 // Even though we truncate per test, fixtures are made unique PER RUN as defense in depth (so a
 // crashed run that skipped a truncate can't collide on the exclusion constraint). A monotonic

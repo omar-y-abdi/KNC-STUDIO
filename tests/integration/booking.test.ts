@@ -8,7 +8,14 @@ import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooki
 import { BARBERS } from '../../src/booking/barbers'
 import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
-import { backendReady, fetchPersistedBookingByPhone, readStackEnv, truncateAll, uniquePhone } from './_helpers'
+import {
+  backendReady,
+  fetchPersistedBookingByPhone,
+  fetchPersistedStartAtByPhone,
+  readStackEnv,
+  truncateAll,
+  uniquePhone,
+} from './_helpers'
 
 const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
@@ -127,5 +134,44 @@ describe.skipIf(!backendReady())('supabaseBookingAdapter (integration)', () => {
       durationMin: HAIRCUT.dur,
     })
     expect(victorSlots).not.toContain(time)
+  })
+
+  // H2 — the adapter stores the Europe/Stockholm instant for the SELECTED wall-clock, not the
+  // browser-local instant. `bookingAt('2040-03-14','13:30')` builds `start` from local components, so
+  // its `.getHours()` reads back 13 in ANY runner tz; the adapter re-anchors that to Stockholm. The
+  // stored instant must therefore be 12:30:00Z (13:30 CET, +01:00) — proven directly against the row.
+  // (Cross-timezone correctness of the helper itself is covered tz-independently in the unit suite.)
+  it('stores the Europe/Stockholm instant for the selected slot (tz-correct write)', async () => {
+    const env = readStackEnv()
+    expect(env).not.toBeNull()
+    if (!env) return
+
+    const phone = uniquePhone()
+    const result = await supabaseBookingAdapter.submit(bookingAt('2040-03-14', '13:30', { phone }))
+    expect(result.ok).toBe(true)
+
+    const storedStartAt = await fetchPersistedStartAtByPhone(env.dbUrl, phone)
+    // 2040-03-14 is before the last-Sunday-of-March DST switch, so Stockholm is CET (UTC+1).
+    expect(storedStartAt).toBe('2040-03-14T12:30:00.000Z')
+  })
+
+  // H1 — create_booking now enforces working hours server-side. A booking OUTSIDE the barber's
+  // 09:00–18:00 window (here 07:00 Stockholm, before opening) is rejected by the RPC; the adapter maps
+  // the {ok:false,error:'outside_hours'} Result to a submit failure (no throw, no row written).
+  it('rejects a booking outside the barber working hours (server-side schedule gate)', async () => {
+    const env = readStackEnv()
+    expect(env).not.toBeNull()
+    if (!env) return
+
+    const phone = uniquePhone()
+    const result = await supabaseBookingAdapter.submit(
+      bookingAt('2040-03-14', '07:00', { phone }),
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.kind).toBe('submit')
+
+    // Nothing persisted for the rejected booking.
+    const persisted = await fetchPersistedBookingByPhone(env.dbUrl, phone)
+    expect(persisted).toBeNull()
   })
 })

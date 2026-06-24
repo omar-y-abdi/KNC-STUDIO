@@ -26,6 +26,7 @@ import {
 import type { Booking, BookingError, BookingResult } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { SLOTS } from '../slots'
+import { localWallClockToStockholmIso } from '../stockholmTime'
 import { buildLinks } from './localCalendar'
 
 /** A short, friendly submit error. The UI shows `t.errSubmit`; this keeps the domain error localized. */
@@ -42,7 +43,10 @@ export const supabaseBookingAdapter: BookingPort = {
         p_service_name: booking.service.name,
         p_price: booking.service.price,
         p_duration_min: booking.service.dur,
-        p_start_at: booking.start.toISOString(),
+        // `booking.start` is the SELECTED slot built from local components (its wall-clock reads back
+        // "13:30" in any browser tz). Re-anchor those numbers to Europe/Stockholm so the stored instant
+        // matches what `available_slots` reasoned about — for a visitor in ANY timezone, not just Sweden.
+        p_start_at: localWallClockToStockholmIso(booking.start),
         p_method: booking.confirmMethod,
         // Only the chosen channel carries a value; the other is null (the RPC also enforces this).
         p_phone: booking.phone === '' ? null : booking.phone,

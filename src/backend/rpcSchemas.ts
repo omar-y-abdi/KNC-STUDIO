@@ -45,10 +45,11 @@ const createBookingOk = z.object({
   }),
 })
 
-/** create_booking error codes (closed set from the RPC). */
+/** create_booking error codes (closed set from the RPC). `outside_hours` = off day / time-off /
+ * outside the barber's working hours (server-side schedule enforcement, mirroring available_slots). */
 const createBookingErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['invalid_time', 'invalid_contact', 'slot_taken', 'invalid']),
+  error: z.enum(['invalid_time', 'invalid_contact', 'outside_hours', 'slot_taken', 'invalid']),
 })
 
 export const createBookingResponse = z.discriminatedUnion('ok', [createBookingOk, createBookingErr])

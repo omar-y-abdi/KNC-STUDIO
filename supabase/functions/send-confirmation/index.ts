@@ -11,6 +11,8 @@
 //
 // Deno entrypoint. Run locally with `npx supabase functions serve send-confirmation`.
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 // --- Types ------------------------------------------------------------------------------------
 
 type Method = "sms" | "email";
@@ -96,6 +98,27 @@ function parseBooking(raw: unknown): ParseResult {
   };
 }
 
+// --- Recipient lookup (DB-authoritative; never the request body) ------------------------------
+
+// Re-fetch the customer's contact from the `bookings` row by id using the service-role key (which
+// Edge Functions inject as SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY). The send TARGET therefore comes
+// from the database, NOT the POST body — a webhook caller cannot redirect the message to an arbitrary
+// recipient even if they forge the payload.
+async function fetchRecipient(id: string, method: Method): Promise<string | null> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !serviceKey) return null;
+  const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("phone, email")
+    .eq("id", id)
+    .single();
+  if (error || data === null) return null;
+  const value = method === "sms" ? data.phone : data.email;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 // --- Provider send (DOCUMENTED TODO — gated on env that is absent now) -------------------------
 
 interface SendOutcome {
@@ -103,14 +126,17 @@ interface SendOutcome {
   readonly skipped?: string;
 }
 
-async function sendConfirmation(booking: BookingPayload): Promise<SendOutcome> {
+async function sendConfirmation(booking: BookingPayload, recipient: string): Promise<SendOutcome> {
+  // `recipient` is the DB-sourced destination (see fetchRecipient) — never the request body.
+  if (recipient.length === 0) return { sent: false, skipped: "no_recipient" };
+
   if (booking.method === "email") {
     const resendKey = Deno.env.get("RESEND_API_KEY");
     if (!resendKey) {
       return { sent: false, skipped: "no_provider_configured" };
     }
     // TODO(email/Resend): POST https://api.resend.com/emails with
-    //   Authorization: `Bearer ${resendKey}`, from: a verified sender, to: booking.email,
+    //   Authorization: `Bearer ${resendKey}`, from: a verified sender, to: `recipient`,
     //   subject + html built from booking.service_name / booking.start_at (format in
     //   Europe/Stockholm). Return { sent: true } on 2xx, throw on failure.
     //   Docs: https://resend.com/docs/api-reference/emails/send-email
@@ -124,7 +150,7 @@ async function sendConfirmation(booking: BookingPayload): Promise<SendOutcome> {
     return { sent: false, skipped: "no_provider_configured" };
   }
   // TODO(sms/46elks): POST https://api.46elks.com/a1/sms with HTTP Basic auth
-  //   (`${elksUser}:${elksPass}`), form fields from=<sender>, to=booking.phone,
+  //   (`${elksUser}:${elksPass}`), form fields from=<sender>, to=`recipient`,
   //   message=<confirmation text>. Return { sent: true } on 2xx, throw on failure.
   //   Docs: https://46elks.com/docs/send-sms
   //   (Twilio alternative: POST .../Messages.json with TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.)
@@ -145,12 +171,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
-  // TODO(security): in production, require a shared secret the webhook sends, e.g.
-  //   const secret = Deno.env.get("WEBHOOK_SECRET");
-  //   if (secret && req.headers.get("x-webhook-secret") !== secret) {
-  //     return json({ ok: false, error: "unauthorized" }, 401);
-  //   }
-  // Set it with `supabase secrets set WEBHOOK_SECRET=...` and add the header in the webhook config.
+  // Shared-secret auth — FAIL-CLOSED. The webhook is server->server (verify_jwt = false), so this
+  // shared secret is the only authentication. If WEBHOOK_SECRET is unset the function is NOT safe to
+  // run (it would be a publicly-invokable relay), so reject everything; if set, require the matching
+  // header. Set it with `supabase secrets set WEBHOOK_SECRET=...` and send it as `x-webhook-secret`
+  // from the Database Webhook config.
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
+  if (!webhookSecret) {
+    return json({ ok: false, error: "not_configured" }, 503);
+  }
+  if (req.headers.get("x-webhook-secret") !== webhookSecret) {
+    return json({ ok: false, error: "unauthorized" }, 401);
+  }
 
   let raw: unknown;
   try {
@@ -164,8 +196,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: "invalid_payload", detail: parsed.error }, 400);
   }
 
+  // Re-fetch the send target from the DB by id — never trust the posted phone/email as the recipient.
+  const recipient = await fetchRecipient(parsed.booking.id, parsed.booking.method);
+  if (recipient === null) {
+    console.error(`send-confirmation: no recipient for booking ${parsed.booking.id}`);
+    return json({ ok: false, error: "recipient_not_found" }, 404);
+  }
+
   try {
-    const outcome = await sendConfirmation(parsed.booking);
+    const outcome = await sendConfirmation(parsed.booking, recipient);
     if (!outcome.sent) {
       // No provider wired yet (expected today): log and succeed so the webhook is not retried.
       console.log(
