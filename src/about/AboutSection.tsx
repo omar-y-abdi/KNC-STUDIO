@@ -9,12 +9,12 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { BARBERS } from '../booking/barbers'
-import type { BarberId } from '../booking/domain'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { FOCUS_CLS } from '../ui/pseudo'
-import type { AboutStrings, Lang } from '../i18n/index'
+import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
+import { useRoster } from '../booking/useRoster'
+import type { BarbersPort } from '../booking/barbersPort'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
 import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
@@ -24,6 +24,11 @@ import { defaultReviewsPort } from './reviews/adapters/index'
 import type { ReviewsPort } from './reviews/port'
 import { NO_REVIEW_ERRORS, parseReview } from './reviewValidation'
 import type { ReviewFieldErrors } from './reviewValidation'
+import { aboutContentIsMock, defaultAboutContentPort } from './content/index'
+import type { AboutContentPort, AboutOverlay } from './content/port'
+import { mergeAbout, stylistCopyFor } from './content/merge'
+import { useGallery } from './gallery/useGallery'
+import type { GalleryPort } from './gallery/port'
 
 type Mode = 'light' | 'dark'
 
@@ -35,6 +40,12 @@ export interface AboutSectionProps {
   readonly lang: Lang
   /** Injected reviews seam — swap for a real backend adapter (default: local, nothing persisted). */
   readonly port?: ReviewsPort
+  /** Injected roster seam — the barbers shown in the stylist cards (default: env-selected). */
+  readonly barbersPort?: BarbersPort
+  /** Injected About-copy seam — the editable section copy overlay (default: env-selected). */
+  readonly aboutContentPort?: AboutContentPort
+  /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = placeholders). */
+  readonly galleryPort?: GalleryPort
 }
 
 /** Fill `{n}` / `{method}`-style single-token templates without a formatting lib. */
@@ -44,12 +55,42 @@ function fill(template: string, value: string): string {
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
   const lang = props.lang
-  const tx: AboutStrings = aboutStrings(lang)
+  const base: AboutStrings = aboutStrings(lang)
   const dark = props.mode === 'dark'
   const c = palette(dark)
   const s = buildBookingStyles(c, dark, false)
   const red = systemRed(dark)
   const port: ReviewsPort = props.port ?? defaultReviewsPort
+
+  // Editable About copy: i18n is the base; a configured backend overlays the 7 DB-editable keys.
+  // Under the mock the overlay stays empty, so `tx` === the i18n copy, byte-identical to today (and
+  // the ~13 non-DB strings — alts, the whole review form, rating labels — always come from i18n).
+  const contentPort: AboutContentPort = props.aboutContentPort ?? defaultAboutContentPort
+  const [overlay, setOverlay] = useState<AboutOverlay>({})
+  useEffect(() => {
+    if (aboutContentIsMock) return // mock overlay is empty — nothing to fetch, no flash
+    let live = true
+    void contentPort
+      .overlay(lang)
+      .then((o) => {
+        if (live) setOverlay(o)
+      })
+      .catch(() => {
+        /* keep the i18n base on error */
+      })
+    return () => {
+      live = false
+    }
+  }, [contentPort, lang])
+  const tx: AboutStrings = mergeAbout(base, overlay)
+
+  // The stylist cards' roster (constant under the mock, immediate; DB rows under a backend). The
+  // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
+  const { roster } = useRoster(props.barbersPort)
+
+  // Gallery photos per kind: empty under the mock (placeholder tiles), Storage URLs under a backend.
+  const salonPhotos = useGallery('salon', props.galleryPort)
+  const cutPhotos = useGallery('cuts', props.galleryPort)
 
   // Reviews list (seed from the port, then prepend new ones). Submitted reviews are NOT persisted.
   const [reviews, setReviews] = useState<readonly Review[]>([])
@@ -226,10 +267,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
 
-  const stylistCopy = (id: BarberId): { role: string; bio: string } | undefined =>
-    id === 'hassan' || id === 'victor' || id === 'salman' ? tx.stylists[id] : undefined
+  // The i18n stylist table as a string-keyed view (so an open `BarberId` indexes it for the fallback
+  // copy when a roster entry carries no DB copy — i.e. under the mock).
+  const i18nStylists: Readonly<Record<string, StylistCopy>> = tx.stylists
 
-  // Placeholder photo ids — one per real photo later. Each gallery feeds these to two marquee rows.
+  // Placeholder photo ids — used for the placeholder tiles + their keys when there are no DB photos.
   const salonIds = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
   const cutIds = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
 
@@ -246,14 +288,16 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={salonIds} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+          <GalleryMarquee ids={salonIds} photos={salonPhotos} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
         </div>
 
-        {/* Stylists */}
+        {/* Stylists — driven by the roster (N barbers, not exactly 3). DB copy when present, i18n
+            fallback otherwise; the name/handle + optional role/bio markup is unchanged. */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
         <div style={stylistGridStyle}>
-          {BARBERS.map((b) => {
-            const copy = stylistCopy(b.id)
+          {roster.map((entry) => {
+            const b = entry.barber
+            const copy = stylistCopyFor(entry, lang, i18nStylists)
             return (
               <div key={b.id} style={stylistCardStyle}>
                 <PlaceholderPhoto c={c} dark={dark} glyph="person" alt={tx.stylistAvatarAlt} ratio="1 / 1" />
@@ -271,7 +315,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={cutIds} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+          <GalleryMarquee ids={cutIds} photos={cutPhotos} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
         </div>
 
         {/* Reviews */}

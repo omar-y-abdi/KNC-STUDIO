@@ -10,6 +10,7 @@
 import { BARBERS } from '../booking/barbers'
 import { cap, monthLabel, weekdayLabel } from '../booking/calendar'
 import type { Barber } from '../booking/domain'
+import { asBarberId } from '../booking/domain'
 import { pricing } from '../booking/pricing'
 import { SLOTS } from '../booking/slots'
 import { bookingStrings } from '../i18n/index'
@@ -17,7 +18,7 @@ import type { Lang } from '../i18n/index'
 import type { CancelBooking, CancelMethod } from './domain'
 
 /** Fallback barber if the roster were ever empty (BARBERS is a non-empty constant). */
-const FALLBACK_BARBER: Barber = { id: 'hassan', name: 'Hassan', ig: 'freebandzcuts' }
+const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
 /** First upcoming OPEN day at/after `today` (the salon is closed on Sundays, `getDay() === 0`). */
 function nextOpenDay(today: Date): Date {

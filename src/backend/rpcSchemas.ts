@@ -107,6 +107,61 @@ export const reviewRow = z.object({
 })
 export type ReviewRow = z.infer<typeof reviewRow>
 
+// --- public barbers row (direct table select) ----------------------------------------------------
+// The ACTIVE roster the public site reads (booking grid + About cards). Same column set the admin
+// reads, but consumed read-only by anon via the `barbers` public-select RLS policy. `active` is
+// included so a malformed/unexpected row can be dropped; the adapter filters active in the query.
+
+export const publicBarberRow = z.object({
+  id: z.string(),
+  name: z.string(),
+  ig: z.string(),
+  role_sv: z.string(),
+  role_en: z.string(),
+  bio_sv: z.string(),
+  bio_en: z.string(),
+  active: z.boolean(),
+  sort_order: z.number(),
+})
+export type PublicBarberRow = z.infer<typeof publicBarberRow>
+
+// --- public about_content row (direct table select) ----------------------------------------------
+// One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.
+
+export const aboutContentRow = z.object({
+  key: z.enum([
+    'eyebrow',
+    'heading',
+    'intro',
+    'galleryTitle',
+    'cutsTitle',
+    'stylistsTitle',
+    'reviewsTitle',
+  ]),
+  lang: z.enum(['sv', 'en']),
+  value: z.string(),
+})
+export type AboutContentRow = z.infer<typeof aboutContentRow>
+
+// --- public gallery_images row (direct table select) ---------------------------------------------
+// A Storage-backed photo: its kind, the object path, and alt text. The adapter resolves the path to
+// a public URL. `sort_order` drives display order.
+
+export const galleryImageRow = z.object({
+  id: z.string(),
+  kind: z.enum(['salon', 'cuts']),
+  storage_path: z.string(),
+  alt: z.string(),
+  sort_order: z.number(),
+})
+export type GalleryImageRow = z.infer<typeof galleryImageRow>
+
+// --- available_slots RPC -------------------------------------------------------------------------
+// `setof text` -> PostgREST returns an array of `HH:MM` strings (the AVAILABLE slots, schedule-aware).
+
+export const availableSlotsResponse = z.array(z.string())
+export type AvailableSlotsResponse = z.infer<typeof availableSlotsResponse>
+
 // --- parse helper --------------------------------------------------------------------------------
 
 /** Result-shaped parse (no throw): `{ ok:true, value }` or `{ ok:false, error }` with a message. */

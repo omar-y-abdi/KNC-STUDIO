@@ -11,8 +11,21 @@ export interface Barber {
   readonly ig: string
 }
 
-/** Closed set of barber ids (the only valid `barberId` values). */
-export type BarberId = 'hassan' | 'victor' | 'salman'
+/**
+ * A barber id. Originally a closed union (`'hassan' | 'victor' | 'salman'`); now an OPEN branded
+ * string so an owner-added DB barber (any id matching `^[a-z0-9-]+$`) is a valid value, while the
+ * `BARBERS` constant + `findBarber`/`barberIndex` keep working as the offline fallback (ADMIN_SPEC
+ * §5). The brand is purely nominal — it erases to `string` at runtime and carries no cost — yet it
+ * keeps a `barberId` from being confused with an arbitrary string: a raw string is narrowed to a
+ * `BarberId` only at the boundaries (the seed constants, the DB-row mapper, the `BookingDraft`'s own
+ * state), never implicitly.
+ */
+export type BarberId = string & { readonly __brand: 'BarberId' }
+
+/** Narrow a raw string (a seed id or a DB `barbers.id`) into a `BarberId` at the boundary. */
+export function asBarberId(raw: string): BarberId {
+  return raw as BarberId
+}
 
 /** A single bookable service line (source pricing item). */
 export interface ServiceItem {

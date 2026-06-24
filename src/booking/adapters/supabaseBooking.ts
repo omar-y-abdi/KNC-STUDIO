@@ -1,21 +1,28 @@
 // The real (Supabase) BookingPort adapter. `submit` calls the `create_booking` RPC; `availability`
-// calls `taken_slots` and computes which fixed SLOTS would overlap a confirmed booking. Links for a
-// successful submit are built with the EXACT same `buildLinks` the mock uses, so the confirmation
-// modal (.ics + Google Cal + maps) is identical regardless of backend.
+// calls the schedule-aware `available_slots` RPC and returns the TAKEN set = `SLOTS` minus the
+// AVAILABLE slots the RPC reports. Returning TAKEN (not available) keeps the BookingFlow change
+// minimal: the UI still greys a slot iff its time is in this list (`takenTimes.includes(time)`).
+// Links for a successful submit are built with the EXACT same `buildLinks` the mock uses, so the
+// confirmation modal (.ics + Google Cal + maps) is identical regardless of backend.
+//
+// `available_slots(p_barber_id, p_date, p_duration_min)` is schedule-aware: it returns NOTHING when
+// the barber is off that weekday or on time-off, and otherwise the fixed SLOTS that fit the working
+// hours AND don't overlap a confirmed booking — all computed in Europe/Stockholm on the server. So
+// an OFF day yields every slot TAKEN here (the whole grid greys), exactly matching "barber off".
 //
 // Boundary discipline: every RPC response is Zod-parsed (never trust the wire) and every failure —
 // transport error, malformed payload, or `{ok:false}` — is mapped to a `BookingError`/empty
-// availability rather than thrown. The UI shows `t.errSubmit` on a submit failure; on an availability
-// error we fall back to "nothing taken" and let the DB exclusion constraint be the backstop.
+// availability rather than thrown. On a submit failure the UI shows `t.errSubmit`. On an availability
+// error we fall back to "nothing taken" (an empty TAKEN set) and let the DB exclusion constraint be
+// the backstop, so a transient read error never blocks booking.
 
 import { bookingStrings } from '../../i18n/index'
 import { getSupabase } from '../../backend/supabaseClient'
 import {
+  availableSlotsResponse,
   createBookingResponse,
   parseWith,
-  takenSlotsResponse,
 } from '../../backend/rpcSchemas'
-import type { TakenSlotRow } from '../../backend/rpcSchemas'
 import type { Booking, BookingError, BookingResult } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { SLOTS } from '../slots'
@@ -24,23 +31,6 @@ import { buildLinks } from './localCalendar'
 /** A short, friendly submit error. The UI shows `t.errSubmit`; this keeps the domain error localized. */
 function submitError(booking: Booking): BookingError {
   return { kind: 'submit', message: bookingStrings(booking.lang).errSubmit }
-}
-
-/** Parse `YYYY-MM-DD` into numeric parts (NaN-safe; callers build local Dates from these). */
-function parseDateIso(dateIso: string): { year: number; month: number; day: number } {
-  const [y, m, d] = dateIso.split('-').map(Number)
-  return { year: y ?? 0, month: m ?? 1, day: d ?? 1 }
-}
-
-/** Parse `HH:MM` into numeric parts (NaN-safe). */
-function parseTime(time: string): { hours: number; minutes: number } {
-  const [hh, mm] = time.split(':').map(Number)
-  return { hours: hh ?? 0, minutes: mm ?? 0 }
-}
-
-/** Does `[candStart, candEnd)` overlap `[rangeStart, rangeEnd)`? (half-open, instant comparison) */
-function overlaps(candStart: Date, candEnd: Date, rangeStart: Date, rangeEnd: Date): boolean {
-  return candStart < rangeEnd && candEnd > rangeStart
 }
 
 export const supabaseBookingAdapter: BookingPort = {
@@ -75,34 +65,25 @@ export const supabaseBookingAdapter: BookingPort = {
   },
 
   async availability(params: AvailabilityParams): Promise<readonly string[]> {
-    const { year, month, day } = parseDateIso(params.dateIso)
-    // Browser-LOCAL day window [00:00, next 00:00) — matches BookingFlow's slot-start convention
-    // (`new Date(y, m-1, d, hh, mm)`), serialized to instants for the timestamptz query.
-    const from = new Date(year, month - 1, day, 0, 0, 0)
-    const to = new Date(year, month - 1, day + 1, 0, 0, 0)
-
-    let rows: readonly TakenSlotRow[]
+    let available: ReadonlySet<string>
     try {
-      const { data, error } = await getSupabase().rpc('taken_slots', {
+      // `p_date` is the calendar's local `YYYY-MM-DD` — the RPC derives the weekday in
+      // Europe/Stockholm, so the day window matches the salon's timezone (correct on a UTC server).
+      const { data, error } = await getSupabase().rpc('available_slots', {
         p_barber_id: params.barberId,
-        p_from: from.toISOString(),
-        p_to: to.toISOString(),
+        p_date: params.dateIso,
+        p_duration_min: params.durationMin,
       })
       if (error !== null) return []
-      const parsed = parseWith(takenSlotsResponse, data)
+      const parsed = parseWith(availableSlotsResponse, data)
       if (!parsed.ok) return []
-      rows = parsed.value
+      available = new Set(parsed.value)
     } catch {
       return []
     }
 
-    const ranges = rows.map((r) => ({ start: new Date(r.start_at), end: new Date(r.end_at) }))
-    // A slot is taken iff its [start, start+duration) window overlaps ANY confirmed booking range.
-    return SLOTS.filter((time) => {
-      const { hours, minutes } = parseTime(time)
-      const candStart = new Date(year, month - 1, day, hours, minutes)
-      const candEnd = new Date(candStart.getTime() + params.durationMin * 60000)
-      return ranges.some((rng) => overlaps(candStart, candEnd, rng.start, rng.end))
-    })
+    // TAKEN = the fixed grid minus what the RPC reports as available. A slot the RPC omits (booked,
+    // outside hours, off day, or on time-off) is greyed; an OFF day greys the whole grid.
+    return SLOTS.filter((time) => !available.has(time))
   },
 }

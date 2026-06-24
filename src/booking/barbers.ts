@@ -1,11 +1,15 @@
 // The barber roster — copied verbatim from the source `BF_BARBERS` (index.html lines 112-116).
+// This is the OFFLINE FALLBACK + the DB seed: with no backend it IS the public roster, byte-for-byte
+// as before. Each id is narrowed to a `BarberId` at this boundary (the type is now an open branded
+// string — ADMIN_SPEC §5 — so a DB-added barber id is equally valid).
 
 import type { Barber, BarberId } from './domain'
+import { asBarberId } from './domain'
 
 export const BARBERS: readonly Barber[] = [
-  { id: 'hassan', name: 'Hassan', ig: 'freebandzcuts' },
-  { id: 'victor', name: 'Victor', ig: 'vic.barber1' },
-  { id: 'salman', name: 'Salman', ig: 'frescobarbiere' },
+  { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' },
+  { id: asBarberId('victor'), name: 'Victor', ig: 'vic.barber1' },
+  { id: asBarberId('salman'), name: 'Salman', ig: 'frescobarbiere' },
 ]
 
 /** Index of a barber in `BARBERS`, or -1 (source `bi = findIndex`). */

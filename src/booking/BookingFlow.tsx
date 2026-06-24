@@ -9,13 +9,14 @@ import { defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
 import { bookingStrings } from '../i18n/index'
-import { BARBERS, findBarber } from './barbers'
 import { cap, buildWeeks, iso, monthLabel, weekdayLabel, headerLabels } from './calendar'
 import type { Barber, Booking, BookingDraft, BookingResult, ConfirmMethod } from './domain'
 import { initialDraft } from './domain'
 import { pricing } from './pricing'
 import { defaultBookingPort } from './adapters/index'
 import type { BookingPort } from './port'
+import type { BarbersPort } from './barbersPort'
+import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
 import { SLOTS } from './slots'
@@ -38,6 +39,8 @@ export interface BookingFlowProps {
   readonly clock?: Clock
   /** Injected submit seam — swap this for a real backend adapter (default: local, no network). */
   readonly port?: BookingPort
+  /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
+  readonly barbersPort?: BarbersPort
 }
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
@@ -89,6 +92,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const showHeader = props.showHeader !== false
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
+  // The roster shown in step 1. Under the mock this is the constant `BARBERS` immediately (no flash);
+  // a configured backend replaces it with the active DB rows once they load (race-guarded in-hook).
+  const { roster } = useRoster(props.barbersPort)
   const today = clock()
   const S = state
 
@@ -127,7 +133,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const navBtn = makeNavBtn(c)
   const methodBtn = makeMethodBtn(c)
 
-  const barbers = BARBERS.map((b) => {
+  const barbers = roster.map((entry) => {
+    const b = entry.barber
     const sel = S.barberId === b.id
     return {
       ...b,
@@ -355,7 +362,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const timeSubLabel =
     dateLabelLong !== '' && S.service !== null ? cap(dateLabelLong) + ' · ' + S.service.name : ''
 
-  const barberObj: Barber | undefined = findBarber(S.barberId)
+  // Resolve the chosen barber from the LOADED roster (so a DB-only barber resolves too, not just the
+  // constants). The selected id always comes from a roster card, so this finds it.
+  const barberObj: Barber | undefined = roster.find((e) => e.barber.id === S.barberId)?.barber
   const sumBarber = barberObj ? barberObj.name : ''
   const sumWhen = dateLabelLong !== '' && S.time ? cap(dateLabelLong) + ', ' + S.time : ''
   const sumService = S.service ? S.service.name : ''

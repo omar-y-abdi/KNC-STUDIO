@@ -7,9 +7,10 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
 import { BARBERS } from '../../src/booking/barbers'
 import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
+import { asBarberId } from '../../src/booking/domain'
 import { backendReady, fetchPersistedBookingByPhone, readStackEnv, truncateAll, uniquePhone } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? { id: 'hassan', name: 'Hassan', ig: 'freebandzcuts' }
+const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
 /** A 45-min haircut (matches a real pricing item; only the fields the adapter sends matter). */
 const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
