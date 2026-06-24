@@ -35,7 +35,7 @@ export async function readWeek(barberId: AdminBarberId): Promise<AdminResult<Wee
     if (!parsed.ok) return err('malformed', READ_ERROR)
 
     const days = parsed.value.map((r) => ({
-      weekday: r.weekday as WeekSchedule[number]['weekday'],
+      weekday: r.weekday,
       working: r.working,
       startMin: r.start_min,
       endMin: r.end_min,

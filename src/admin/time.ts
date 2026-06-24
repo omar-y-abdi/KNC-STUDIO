@@ -84,7 +84,7 @@ export function defaultWeek(): WeekSchedule {
     working: weekday >= 1 && weekday <= 6,
     startMin: DEFAULT_START_MIN,
     endMin: DEFAULT_END_MIN,
-  })) as unknown as WeekSchedule
+  }))
 }
 
 /**
@@ -95,7 +95,7 @@ export function toWeekSchedule(rows: readonly DaySchedule[]): WeekSchedule {
   const base = defaultWeek()
   const byDay = new Map<Weekday, DaySchedule>()
   for (const r of rows) byDay.set(r.weekday, r)
-  return base.map((d) => byDay.get(d.weekday) ?? d) as unknown as WeekSchedule
+  return base.map((d) => byDay.get(d.weekday) ?? d)
 }
 
 /**
@@ -103,16 +103,12 @@ export function toWeekSchedule(rows: readonly DaySchedule[]): WeekSchedule {
  * `working` flag and the non-working days untouched. Returns a NEW week (no mutation).
  */
 export function sameTimeAllDays(week: WeekSchedule, startMin: number, endMin: number): WeekSchedule {
-  return week.map((d) =>
-    d.working ? { ...d, startMin, endMin } : d,
-  ) as unknown as WeekSchedule
+  return week.map((d) => (d.working ? { ...d, startMin, endMin } : d))
 }
 
 /** Toggle a single weekday's `working` flag, returning a NEW week. */
 export function toggleWorking(week: WeekSchedule, weekday: Weekday): WeekSchedule {
-  return week.map((d) =>
-    d.weekday === weekday ? { ...d, working: !d.working } : d,
-  ) as unknown as WeekSchedule
+  return week.map((d) => (d.weekday === weekday ? { ...d, working: !d.working } : d))
 }
 
 /** Set a single weekday's start/end (minutes), returning a NEW week. */
@@ -122,9 +118,7 @@ export function setDayHours(
   startMin: number,
   endMin: number,
 ): WeekSchedule {
-  return week.map((d) =>
-    d.weekday === weekday ? { ...d, startMin, endMin } : d,
-  ) as unknown as WeekSchedule
+  return week.map((d) => (d.weekday === weekday ? { ...d, startMin, endMin } : d))
 }
 
 /** Does the whole week validate (every day's window is legal)? Gate for the Save button. */

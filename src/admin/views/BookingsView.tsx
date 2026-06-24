@@ -9,7 +9,7 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { cap, monthLabel, pad2, weekdayLabel } from '../../booking/calendar'
+import { formatWhenLabel } from '../../booking/calendar'
 import type { Lang } from '../../i18n/index'
 import { cancelBooking, listBookings } from '../adapters/bookingsAdmin'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -34,21 +34,6 @@ type Load =
   | { readonly kind: 'loading' }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'ready'; readonly bookings: readonly AdminBooking[] }
-
-/** "Tors 14 Aug, 11:15" — localized weekday + day + month + zero-padded time. */
-function whenLabel(lang: Lang, d: Date): string {
-  return (
-    cap(weekdayLabel(lang, d.getDay())) +
-    ' ' +
-    d.getDate() +
-    ' ' +
-    monthLabel(lang, d.getMonth()) +
-    ', ' +
-    pad2(d.getHours()) +
-    ':' +
-    pad2(d.getMinutes())
-  )
-}
 
 export function BookingsView(props: BookingsViewProps): JSX.Element {
   const { s, lang } = props
@@ -143,7 +128,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
               const cancelled = b.status === 'cancelled'
               return (
                 <tr key={b.id}>
-                  <td style={s.td}>{whenLabel(lang, b.startAt)}</td>
+                  <td style={s.td}>{formatWhenLabel(lang, b.startAt)}</td>
                   {props.allBarbers ? <td style={s.td}>{barberName(b.barberId)}</td> : null}
                   <td style={s.td}>{b.customerName}</td>
                   <td style={s.td}>
@@ -215,7 +200,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         <ConfirmDialog
           dark={props.dark}
           title="Avboka bokningen?"
-          body={`${pendingCancel.customerName} · ${whenLabel(lang, pendingCancel.startAt)}. Detta går inte att ångra.`}
+          body={`${pendingCancel.customerName} · ${formatWhenLabel(lang, pendingCancel.startAt)}. Detta går inte att ångra.`}
           confirmLabel="Avboka"
           cancelLabel="Behåll"
           danger

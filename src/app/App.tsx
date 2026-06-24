@@ -67,7 +67,7 @@ export function App(): JSX.Element {
     document.documentElement.style.background = pageBg
     document.body.style.background = pageBg
     let meta = document.querySelector('meta[name="theme-color"]')
-    if (!meta) {
+    if (meta === null) {
       meta = document.createElement('meta')
       meta.setAttribute('name', 'theme-color')
       document.head.appendChild(meta)

@@ -11,7 +11,7 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { cap, monthLabel, weekdayLabel } from '../../booking/calendar'
+import { cap, monthLabel, parseDateIso, weekdayLabel } from '../../booking/calendar'
 import type { Lang } from '../../i18n/index'
 import { availableSlotsFor, readWeek, saveWeek } from '../adapters/schedulesAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
@@ -551,8 +551,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
 
 /** `2026-08-14` -> "14 Aug" using the localized month label (date-only, salon-local). */
 function isoToLabel(lang: Lang, iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (y === undefined || m === undefined || d === undefined) return iso
-  const date = new Date(y, m - 1, d)
+  const parts = parseDateIso(iso)
+  if (parts === null) return iso
+  const date = new Date(parts.year, parts.month - 1, parts.day)
   return `${date.getDate()} ${cap(monthLabel(lang, date.getMonth()))}`
 }

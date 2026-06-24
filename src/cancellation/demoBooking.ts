@@ -8,7 +8,7 @@
 // SLOTS/BARBERS are non-empty constants, so the fallbacks are unreachable in practice.
 
 import { BARBERS } from '../booking/barbers'
-import { cap, monthLabel, weekdayLabel } from '../booking/calendar'
+import { formatWhenLabel } from '../booking/calendar'
 import type { Barber } from '../booking/domain'
 import { asBarberId } from '../booking/domain'
 import { pricing } from '../booking/pricing'
@@ -63,14 +63,7 @@ export function buildDemoBooking(
   const [hh, mm] = time.split(':').map(Number)
   const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh ?? 12, mm ?? 0)
 
-  const whenLabel =
-    cap(weekdayLabel(lang, day.getDay())) +
-    ' ' +
-    day.getDate() +
-    ' ' +
-    monthLabel(lang, day.getMonth()) +
-    ', ' +
-    time
+  const whenLabel = formatWhenLabel(lang, start)
 
   return {
     id: `demo-${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`,

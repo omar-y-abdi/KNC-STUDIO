@@ -59,7 +59,7 @@ type Load =
   | { readonly kind: 'ready'; readonly barbers: readonly AdminBarber[] }
 
 export function BarbersView(props: BarbersViewProps): JSX.Element {
-  const { s, lang } = props
+  const { s } = props
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [linked, setLinked] = useState<ReadonlySet<AdminBarberId>>(new Set())
   const [editingId, setEditingId] = useState<AdminBarberId | null>(null)
@@ -383,7 +383,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           </table>
         </div>
       )}
-      <p style={{ ...s.mutedText, marginTop: '14px' }} lang={lang === 'en' ? 'en' : 'sv'}>
+      <p style={{ ...s.mutedText, marginTop: '14px' }} lang="sv">
         Tips: för att ge en barberare inloggning, skapa kontot under Auth → Users i Supabase och lägg
         till en rad i <code>profiles</code> med deras barber-id.
       </p>

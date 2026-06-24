@@ -5,11 +5,11 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { defaultClock } from '../config'
+import { BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
 import { bookingStrings } from '../i18n/index'
-import { cap, buildWeeks, iso, monthLabel, weekdayLabel, headerLabels } from './calendar'
+import { cap, buildWeeks, iso, monthLabel, parseDateIso, weekdayLabel, headerLabels } from './calendar'
 import type { Barber, Booking, BookingDraft, BookingResult, ConfirmMethod } from './domain'
 import { initialDraft } from './domain'
 import { pricing } from './pricing'
@@ -248,10 +248,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   let dateLabelLong = ''
   let selDate: Date | null = null
   if (S.dateIso) {
-    const [y, m, d] = S.dateIso.split('-').map(Number)
-    const yy = y ?? 0
-    const mm = m ?? 1
-    const dd = d ?? 1
+    const parts = parseDateIso(S.dateIso)
+    const yy = parts?.year ?? 0
+    const mm = parts?.month ?? 1
+    const dd = parts?.day ?? 1
     selDate = new Date(yy, mm - 1, dd)
     dateLabelLong = cap(weekdayLabel(lang, selDate.getDay())) + ' ' + dd + ' ' + monthLabel(lang, mm - 1)
   }
@@ -382,7 +382,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
   const icsHref = result?.ok === true ? result.links.icsHref : '#'
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
-  const mapsHref = result?.ok === true ? result.links.mapsHref : 'https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg'
+  const mapsHref = result?.ok === true ? result.links.mapsHref : BUSINESS.mapsHref
 
   // Confirmation sentence — computed from live state (persists until reset), as in the source.
   let confirmSentLine = ''

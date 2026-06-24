@@ -12,7 +12,7 @@ import type { Review, ReviewResult, ValidReview } from '../domain'
 import type { ReviewsPort } from '../port'
 
 /** Friendly submit-error message (the form only surfaces a generic failure, but keep it human). */
-const SUBMIT_ERROR_MESSAGE = 'Could not submit the review. Please try again.'
+const SUBMIT_ERROR_MESSAGE = 'Kunde inte skicka recensionen. Försök igen.'
 
 function submitError(): ReviewResult {
   return { ok: false, error: { kind: 'submit', message: SUBMIT_ERROR_MESSAGE } }

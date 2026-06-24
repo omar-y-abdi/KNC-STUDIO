@@ -15,6 +15,7 @@ import type { JSX, Ref } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
+import { fillToken } from '../ui/fillToken'
 import {
   buildBookingStyles,
   makeMethodBtn,
@@ -185,7 +186,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   )
 
   // Confirmation sentence for the done step (same phrasing pattern as the booking confirmation).
-  const doneVia = booking ? fillMethod(t.doneVia, methodLabel(booking.method)) : ''
+  const doneVia = booking ? fillToken(t.doneVia, '{method}', methodLabel(booking.method)) : ''
 
   return (
     <Dialog
@@ -349,9 +350,4 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       </div>
     </Dialog>
   )
-}
-
-/** Fill the `{method}` token in the done-step confirmation sentence. */
-function fillMethod(template: string, method: string): string {
-  return template.replace('{method}', method)
 }

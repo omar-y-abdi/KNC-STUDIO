@@ -55,13 +55,6 @@ const createBookingErr = z.object({
 export const createBookingResponse = z.discriminatedUnion('ok', [createBookingOk, createBookingErr])
 export type CreateBookingResponse = z.infer<typeof createBookingResponse>
 
-// --- taken_slots ---------------------------------------------------------------------------------
-// `returns table (...)` -> PostgREST gives an ARRAY of rows.
-
-const takenSlotRow = z.object({ start_at: isoTimestamp, end_at: isoTimestamp })
-export const takenSlotsResponse = z.array(takenSlotRow)
-export type TakenSlotRow = z.infer<typeof takenSlotRow>
-
 // --- lookup_booking / cancel_booking -------------------------------------------------------------
 // Both return the SAME ok booking shape (echoing the proven contact) and the same not_found error.
 

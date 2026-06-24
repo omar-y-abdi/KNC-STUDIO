@@ -13,11 +13,6 @@ const textSchema = z
   .transform((s) => s.trim())
   .pipe(z.string().min(1, 'Review text is required').max(MAX_TEXT, 'Review text is too long'))
 
-/** A rating is valid only when one has been chosen; returns the narrowed value or null. */
-function parseRating(raw: Rating | null): Rating | null {
-  return raw
-}
-
 /**
  * Per-field validity flags — `true` means that field FAILED validation. Drives the per-field red
  * note in the review form, exactly like the booking form's `FieldErrors`.
@@ -46,7 +41,7 @@ export function parseReview(input: {
   text: string
 }): ReviewValidation {
   const name = parseName(input.name)
-  const rating = parseRating(input.rating)
+  const rating = input.rating
   const text = textSchema.safeParse(input.text)
 
   const fields: ReviewFieldErrors = {

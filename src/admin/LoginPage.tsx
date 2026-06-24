@@ -132,7 +132,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
 
             <div aria-live="assertive" style={{ minHeight: '18px', marginBottom: '12px' }}>
               {status.kind === 'error' ? (
-                <span role="alert" style={s.errorText}>
+                <span style={s.errorText}>
                   {status.message}
                 </span>
               ) : null}

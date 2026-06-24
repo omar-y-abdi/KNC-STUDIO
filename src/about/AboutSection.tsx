@@ -11,6 +11,7 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { FOCUS_CLS } from '../ui/pseudo'
+import { fillToken } from '../ui/fillToken'
 import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
 import { useRoster } from '../booking/useRoster'
@@ -35,6 +36,11 @@ type Mode = 'light' | 'dark'
 /** The id the "Om oss" hero link scroll-targets. */
 export const ABOUT_SECTION_ID = 'om-oss'
 
+// Placeholder photo ids — the placeholder tiles + their keys when there are no DB photos. Module-
+// scope constants (stable identities) so they aren't reallocated on every render.
+const SALON_IDS: readonly string[] = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
+const CUT_IDS: readonly string[] = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
+
 export interface AboutSectionProps {
   readonly mode: Mode
   readonly lang: Lang
@@ -46,11 +52,6 @@ export interface AboutSectionProps {
   readonly aboutContentPort?: AboutContentPort
   /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = placeholders). */
   readonly galleryPort?: GalleryPort
-}
-
-/** Fill `{n}` / `{method}`-style single-token templates without a formatting lib. */
-function fill(template: string, value: string): string {
-  return template.replace('{n}', value).replace('{method}', value)
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
@@ -271,10 +272,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // copy when a roster entry carries no DB copy — i.e. under the mock).
   const i18nStylists: Readonly<Record<string, StylistCopy>> = tx.stylists
 
-  // Placeholder photo ids — used for the placeholder tiles + their keys when there are no DB photos.
-  const salonIds = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
-  const cutIds = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
-
   return (
     <section id={ABOUT_SECTION_ID} style={sectionStyle} aria-labelledby="om-oss-heading">
       <div style={innerStyle}>
@@ -288,7 +285,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={salonIds} photos={salonPhotos} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+          <GalleryMarquee ids={SALON_IDS} photos={salonPhotos} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
         </div>
 
         {/* Stylists — driven by the roster (N barbers, not exactly 3). DB copy when present, i18n
@@ -315,7 +312,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={cutIds} photos={cutPhotos} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+          <GalleryMarquee ids={CUT_IDS} photos={cutPhotos} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
         </div>
 
         {/* Reviews */}
@@ -325,7 +322,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             <div key={r.id} style={reviewCardStyle}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                 <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
-                <StarDisplay rating={r.rating} c={c} label={fill(tx.ratingValueLabel, String(r.rating))} />
+                <StarDisplay rating={r.rating} c={c} label={fillToken(tx.ratingValueLabel, '{n}', String(r.rating))} />
               </div>
               <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>{r.text}</p>
             </div>
@@ -362,7 +359,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               onChange={setRating}
               c={c}
               groupLabel={tx.ratingGroupLabel}
-              starLabel={(n) => fill(tx.ratingStarLabel, String(n))}
+              starLabel={(n) => fillToken(tx.ratingStarLabel, '{n}', String(n))}
               invalid={errors.rating}
               errorColor={red}
             />

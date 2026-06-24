@@ -41,6 +41,26 @@ export function iso(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
+/** The three numeric parts of a calendar date (1-based month, as written in `YYYY-MM-DD`). */
+export interface DateParts {
+  readonly year: number
+  readonly month: number
+  readonly day: number
+}
+
+/**
+ * Parse a `YYYY-MM-DD` string into its numeric parts, or `null` if it is not three finite-integer
+ * fields. Total (no throw) — the inverse of `iso`. Callers apply their own fallback for `null`.
+ */
+export function parseDateIso(isoDate: string): DateParts | null {
+  const parts = isoDate.split('-')
+  if (parts.length !== 3) return null
+  const [year, month, day] = parts.map(Number)
+  if (year === undefined || month === undefined || day === undefined) return null
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null
+  return { year, month, day }
+}
+
 /** Long weekday name for a `Date.getDay()` index, in the given language. */
 export function weekdayLabel(lang: Lang, dayIndex: number): string {
   const labels: CalendarLabels = calendarLabels(lang)
@@ -51,6 +71,25 @@ export function weekdayLabel(lang: Lang, dayIndex: number): string {
 export function monthLabel(lang: Lang, monthIndex: number): string {
   const labels: CalendarLabels = calendarLabels(lang)
   return labels.months[monthIndex] ?? ''
+}
+
+/**
+ * "Weekday D Month, HH:MM" for an appointment instant — capitalised localized weekday, day-of-month,
+ * localized month, then the zero-padded LOCAL time. The single source of this label across the admin
+ * bookings table, the cancellation lookup, and the demo booking (output is byte-identical to each).
+ */
+export function formatWhenLabel(lang: Lang, date: Date): string {
+  return (
+    cap(weekdayLabel(lang, date.getDay())) +
+    ' ' +
+    date.getDate() +
+    ' ' +
+    monthLabel(lang, date.getMonth()) +
+    ', ' +
+    pad2(date.getHours()) +
+    ':' +
+    pad2(date.getMinutes())
+  )
 }
 
 /** The seven Monday-first weekday headers, in the given language. */

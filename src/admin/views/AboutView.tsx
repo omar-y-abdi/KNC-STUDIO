@@ -97,7 +97,7 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
     const ck = cellKey(key, lang)
     setSavingKey(ck)
     setErrorFor(null)
-    const result: Awaited<ReturnType<typeof saveAbout>> = await saveAbout(key, lang, valueFor(key, lang))
+    const result = await saveAbout(key, lang, valueFor(key, lang))
     setSavingKey(null)
     if (!result.ok) {
       setErrorFor({ key: ck, message: result.error.message })

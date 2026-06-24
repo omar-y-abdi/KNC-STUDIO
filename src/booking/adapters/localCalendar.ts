@@ -7,6 +7,7 @@
 
 import { BUSINESS } from '../../config'
 import { barberIndex } from '../barbers'
+import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
 import type { AvailabilityParams, BookingPort } from '../port'
@@ -66,8 +67,7 @@ export function buildLinks(booking: Booking, now: Date = new Date()): BookingLin
 
 /** Day-of-month from a `YYYY-MM-DD` string (the only part `slotTaken` needs), or 0 if malformed. */
 function dayOfMonth(dateIso: string): number {
-  const day = Number(dateIso.split('-')[2])
-  return Number.isFinite(day) ? day : 0
+  return parseDateIso(dateIso)?.day ?? 0
 }
 
 /**

@@ -4,5 +4,5 @@ import './ui/styles/fonts.css'
 import './ui/styles/global.css'
 
 const root = document.getElementById('root')
-if (!root) throw new Error('Fatal: #root mount node not found')
+if (root === null) throw new Error('Fatal: #root mount node not found')
 render(<Root />, root)

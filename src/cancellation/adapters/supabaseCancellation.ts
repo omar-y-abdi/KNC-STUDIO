@@ -11,11 +11,10 @@
 import { getSupabase } from '../../backend/supabaseClient'
 import { bookingLookupResponse, parseWith } from '../../backend/rpcSchemas'
 import { BARBERS } from '../../booking/barbers'
-import { cap, monthLabel, pad2, weekdayLabel } from '../../booking/calendar'
+import { formatWhenLabel } from '../../booking/calendar'
 import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { cancelStrings } from '../../i18n/index'
-import type { Lang } from '../../i18n/index'
 import type { CancelBooking, CancelLookupResult, CancelResult } from '../domain'
 import type { CancellationPort, CancelLookupParams } from '../port'
 
@@ -25,23 +24,6 @@ const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 
 /** Resolve a barber by its (wire-string) id without narrowing the input to `BarberId`. */
 function barberFromId(id: string): Barber {
   return BARBERS.find((b) => b.id === id) ?? FALLBACK_BARBER
-}
-
-/**
- * "Weekday D Month, HH:MM" — byte-identical to `buildDemoBooking`'s label: capitalised localized
- * weekday, day-of-month, localized month, then the zero-padded local time.
- */
-function whenLabelFor(lang: Lang, start: Date): string {
-  const time = pad2(start.getHours()) + ':' + pad2(start.getMinutes())
-  return (
-    cap(weekdayLabel(lang, start.getDay())) +
-    ' ' +
-    start.getDate() +
-    ' ' +
-    monthLabel(lang, start.getMonth()) +
-    ', ' +
-    time
-  )
 }
 
 export const supabaseCancellationAdapter: CancellationPort = {
@@ -65,7 +47,7 @@ export const supabaseCancellationAdapter: CancellationPort = {
         serviceName: b.service_name,
         price: b.price,
         start,
-        whenLabel: whenLabelFor(params.lang, start),
+        whenLabel: formatWhenLabel(params.lang, start),
         method: b.method,
         contact: b.contact,
       }

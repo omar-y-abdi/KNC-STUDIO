@@ -48,7 +48,17 @@ export const barberRows = z.array(barberRow)
 
 export const scheduleRow = z.object({
   barber_id: z.string(),
-  weekday: z.number().int().min(0).max(6),
+  // Literal union so the inferred `weekday` is exactly `0|1|…|6` (structurally `Weekday`), letting
+  // the adapter map a parsed row straight into a `DaySchedule` with no cast (cf. `ratingInt`).
+  weekday: z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ]),
   working: z.boolean(),
   start_min: z.number().int().min(0).max(1440),
   end_min: z.number().int().min(0).max(1440),

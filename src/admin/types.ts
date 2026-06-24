@@ -75,16 +75,12 @@ export interface DaySchedule {
   readonly endMin: number
 }
 
-/** The full week as a fixed 7-entry list (index === weekday), the unit the editor operates on. */
-export type WeekSchedule = readonly [
-  DaySchedule,
-  DaySchedule,
-  DaySchedule,
-  DaySchedule,
-  DaySchedule,
-  DaySchedule,
-  DaySchedule,
-]
+/**
+ * The full week as a weekday-indexed list (index === weekday), the unit the editor operates on.
+ * Normalized by `toWeekSchedule` to hold all 7 days in order; consumers guard index access
+ * (`noUncheckedIndexedAccess`) rather than relying on a fixed-length tuple.
+ */
+export type WeekSchedule = readonly DaySchedule[]
 
 /** A time-off block (inclusive date range), matching `barber_time_off`. */
 export interface TimeOff {
