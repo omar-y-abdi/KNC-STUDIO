@@ -23,7 +23,7 @@ import type { CancellationPort, CancelLookupParams } from '../port'
 export function makeMockCancellationAdapter(clock: Clock = defaultClock): CancellationPort {
   return {
     lookup(params: CancelLookupParams): Promise<CancelLookupResult> {
-      const booking = buildDemoBooking(clock(), params.lang, params.method, params.contact)
+      const booking = buildDemoBooking(clock(), params.lang, params.contact)
       return Promise.resolve({ ok: true, booking })
     },
     cancel(booking: CancelBooking): Promise<CancelResult> {

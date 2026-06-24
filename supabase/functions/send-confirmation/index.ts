@@ -1,13 +1,17 @@
-// send-confirmation — Supabase Edge Function (Deno) — SKELETON.
+// send-confirmation — Supabase Edge Function (Deno).
 //
-// Purpose: when a booking is INSERTed, send the customer a confirmation over the channel they
-// chose (SMS via 46elks/Twilio, email via Resend). No provider key exists yet, so this skeleton
-// VALIDATES the payload and then SKIPS sending (logs + returns 200 { ok: true, skipped: ... }).
-// Wire it to a Database Webhook on `bookings` INSERT — see README.md in this folder.
+// Purpose: when a booking is INSERTed, send the customer an SMS confirmation. Email is removed
+// (PLAN §1) — every booking is `method='sms'`, so this builds a localized SMS message from the
+// DB-authoritative booking row and hands it to an iPhone via a Pushcut webhook (PLAN §4):
 //
-// Invocation: server -> server from a trusted Supabase Database Webhook, so it receives no user
-// JWT (config.toml: verify_jwt = false). Secure it with a shared header secret in production
-// (see README.md) — never expose it as a public send endpoint.
+//   Supabase DB Webhook (bookings INSERT) -> this function -> Pushcut webhook URL -> iPhone
+//   notification -> a Pushcut/Shortcuts automation sends the SMS from the phone's Messages app.
+//
+// With no PUSHCUT_WEBHOOK_URL set it VALIDATES + logs and returns 200 { ok:true, skipped: ... } (no
+// send), so the webhook is wired before the bridge exists without retry storms.
+//
+// Invocation: server -> server from a trusted Supabase Database Webhook, so it receives no user JWT
+// (config.toml: verify_jwt = false). Secured by a shared header secret (WEBHOOK_SECRET, fail-closed).
 //
 // Deno entrypoint. Run locally with `npx supabase functions serve send-confirmation`.
 
@@ -15,29 +19,28 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // --- Types ------------------------------------------------------------------------------------
 
-type Method = "sms" | "email";
-
-interface BookingPayload {
-  readonly id: string;
-  readonly method: Method;
-  readonly phone: string | null;
-  readonly email: string | null;
-  readonly start_at: string; // ISO timestamptz
-  readonly barber_id: string;
-  readonly service_name: string;
-}
-
-type ParseResult =
-  | { readonly ok: true; readonly booking: BookingPayload }
-  | { readonly ok: false; readonly error: string };
-
-// A Database Webhook posts { type, table, record, old_record, schema }. We accept either that
-// envelope (use `.record`) or a bare booking object (for manual testing / direct invokes).
+// We accept either a Database Webhook envelope ({ type, table, record, ... }, we read `record`) or a
+// bare booking object (for manual curl tests). Only `id` is required from the payload — every field
+// used to BUILD the message is re-read from the DB by id (see fetchBooking), so a forged payload can
+// neither redirect the SMS nor alter its contents.
 interface WebhookEnvelope {
   readonly type?: string;
   readonly table?: string;
   readonly record?: unknown;
 }
+
+interface BookingRow {
+  readonly phone: string;
+  readonly customer_name: string;
+  readonly start_at: string; // ISO timestamptz
+  readonly service_name: string;
+  readonly barber_name: string;
+  readonly lang: string;
+}
+
+type IdResult =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly error: string };
 
 // --- Validation (boundary; never trust the request body) --------------------------------------
 
@@ -45,116 +48,123 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
 }
 
-function parseBooking(raw: unknown): ParseResult {
+// Extract the booking id from the payload (envelope `record.id` or a bare `id`). Everything else is
+// read from the DB, so the id is all we need from the (untrusted) body.
+function parseBookingId(raw: unknown): IdResult {
   if (typeof raw !== "object" || raw === null) {
     return { ok: false, error: "payload must be a JSON object" };
   }
-  // Unwrap a Database Webhook envelope if present.
   const env = raw as WebhookEnvelope;
-  const candidate: unknown =
-    env.record !== undefined ? env.record : raw;
-
+  const candidate: unknown = env.record !== undefined ? env.record : raw;
   if (typeof candidate !== "object" || candidate === null) {
     return { ok: false, error: "missing booking record" };
   }
   const r = candidate as Record<string, unknown>;
-
   if (!isNonEmptyString(r.id)) return { ok: false, error: "id is required" };
-  if (r.method !== "sms" && r.method !== "email") {
-    return { ok: false, error: "method must be 'sms' or 'email'" };
-  }
-  if (!isNonEmptyString(r.start_at)) {
-    return { ok: false, error: "start_at is required" };
-  }
-  if (!isNonEmptyString(r.barber_id)) {
-    return { ok: false, error: "barber_id is required" };
-  }
-  if (!isNonEmptyString(r.service_name)) {
-    return { ok: false, error: "service_name is required" };
-  }
-
-  const phone = isNonEmptyString(r.phone) ? r.phone : null;
-  const email = isNonEmptyString(r.email) ? r.email : null;
-
-  // The chosen channel must carry a destination.
-  if (r.method === "sms" && phone === null) {
-    return { ok: false, error: "sms booking requires phone" };
-  }
-  if (r.method === "email" && email === null) {
-    return { ok: false, error: "email booking requires email" };
-  }
-
-  return {
-    ok: true,
-    booking: {
-      id: r.id,
-      method: r.method,
-      phone,
-      email,
-      start_at: r.start_at,
-      barber_id: r.barber_id,
-      service_name: r.service_name,
-    },
-  };
+  return { ok: true, id: r.id };
 }
 
-// --- Recipient lookup (DB-authoritative; never the request body) ------------------------------
+// --- DB-authoritative read (service-role; never the request body) -----------------------------
 
-// Re-fetch the customer's contact from the `bookings` row by id using the service-role key (which
-// Edge Functions inject as SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY). The send TARGET therefore comes
-// from the database, NOT the POST body — a webhook caller cannot redirect the message to an arbitrary
-// recipient even if they forge the payload.
-async function fetchRecipient(id: string, method: Method): Promise<string | null> {
+// Re-fetch the booking by id with the service-role key (Edge Functions inject SUPABASE_URL /
+// SUPABASE_SERVICE_ROLE_KEY). bookings is PII and RPC-gated even for service_role (migration 0002), so
+// we read through the definer RPC booking_confirmation_details(p_id) which returns EXACTLY the SMS
+// fields (incl. the barber's display name). The send TARGET (phone) AND the message content both come
+// from the DATABASE, NOT the POST body — a forged webhook payload cannot redirect or rewrite the SMS (M3).
+async function fetchBooking(id: string): Promise<BookingRow | null> {
   const url = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceKey) return null;
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-  const { data, error } = await supabase
-    .from("bookings")
-    .select("phone, email")
-    .eq("id", id)
-    .single();
-  if (error || data === null) return null;
-  const value = method === "sms" ? data.phone : data.email;
-  return typeof value === "string" && value.length > 0 ? value : null;
+  const { data, error } = await supabase.rpc("booking_confirmation_details", { p_id: id });
+  if (error || data === null || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+
+  // A null phone (e.g. a legacy email-method row) means there is no SMS recipient.
+  if (
+    !isNonEmptyString(d.phone) ||
+    !isNonEmptyString(d.customer_name) ||
+    !isNonEmptyString(d.start_at) ||
+    !isNonEmptyString(d.service_name) ||
+    !isNonEmptyString(d.barber_name) ||
+    !isNonEmptyString(d.lang)
+  ) {
+    return null;
+  }
+  return {
+    phone: d.phone,
+    customer_name: d.customer_name,
+    start_at: d.start_at,
+    service_name: d.service_name,
+    barber_name: d.barber_name,
+    lang: d.lang,
+  };
 }
 
-// --- Provider send (DOCUMENTED TODO — gated on env that is absent now) -------------------------
+// --- Message building (Stockholm-local, localized) --------------------------------------------
+
+// First name only — the SMS greets "Hej Hassan!", not the full booked name.
+function firstName(customerName: string): string {
+  const first = customerName.trim().split(/\s+/)[0];
+  return first && first.length > 0 ? first : customerName;
+}
+
+function buildMessage(booking: BookingRow, barberName: string): string {
+  const when = new Date(booking.start_at);
+  const isEn = booking.lang === "en";
+  const locale = isEn ? "en-GB" : "sv-SE";
+  // Stockholm wall-clock, regardless of the server's timezone (DST-safe via Intl + timeZone).
+  const date = new Intl.DateTimeFormat(locale, {
+    timeZone: "Europe/Stockholm",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(when);
+  const time = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Stockholm",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(when);
+
+  const name = firstName(booking.customer_name);
+  if (isEn) {
+    return `Hi ${name}! Your appointment with ${barberName} at KNC Studio is booked: ` +
+      `${date} at ${time} (${booking.service_name}). See you soon!`;
+  }
+  return `Hej ${name}! Din tid hos ${barberName} på KNC Studio är bokad: ` +
+    `${date} kl ${time} (${booking.service_name}). Välkommen!`;
+}
+
+// --- Pushcut bridge ---------------------------------------------------------------------------
 
 interface SendOutcome {
   readonly sent: boolean;
   readonly skipped?: string;
 }
 
-async function sendConfirmation(booking: BookingPayload, recipient: string): Promise<SendOutcome> {
-  // `recipient` is the DB-sourced destination (see fetchRecipient) — never the request body.
-  if (recipient.length === 0) return { sent: false, skipped: "no_recipient" };
-
-  if (booking.method === "email") {
-    const resendKey = Deno.env.get("RESEND_API_KEY");
-    if (!resendKey) {
-      return { sent: false, skipped: "no_provider_configured" };
-    }
-    // TODO(email/Resend): POST https://api.resend.com/emails with
-    //   Authorization: `Bearer ${resendKey}`, from: a verified sender, to: `recipient`,
-    //   subject + html built from booking.service_name / booking.start_at (format in
-    //   Europe/Stockholm). Return { sent: true } on 2xx, throw on failure.
-    //   Docs: https://resend.com/docs/api-reference/emails/send-email
-    return { sent: false, skipped: "email_provider_todo" };
+// POST { phone, message } (server -> server) to the Pushcut webhook URL, which fires an iPhone
+// notification whose Pushcut/Shortcuts automation sends the SMS. Unset URL -> skip (current behavior).
+//
+// HONEST iOS CAVEAT: iOS does NOT allow a Shortcut to send an SMS fully unattended in the background —
+// "Send Message" typically requires a tap to confirm on the device (and reliable triggering usually
+// needs Pushcut Automation Server / a always-on device). So this bridge DELIVERS the ready-to-send
+// message to the phone; the final send is semi-automatic. Documented in README.md.
+async function sendViaPushcut(phone: string, message: string): Promise<SendOutcome> {
+  const pushcutUrl = Deno.env.get("PUSHCUT_WEBHOOK_URL");
+  if (!pushcutUrl) {
+    return { sent: false, skipped: "no_pushcut_configured" };
   }
-
-  // method === "sms"
-  const elksUser = Deno.env.get("ELKS_API_USERNAME");
-  const elksPass = Deno.env.get("ELKS_API_PASSWORD");
-  if (!elksUser || !elksPass) {
-    return { sent: false, skipped: "no_provider_configured" };
+  const res = await fetch(pushcutUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    // Pushcut reads { text/title } for the notification; we also pass phone + message explicitly so a
+    // Shortcut automation can populate the Messages recipient + body from the webhook payload.
+    body: JSON.stringify({ phone, message, title: "KNC Studio", text: message }),
+  });
+  if (!res.ok) {
+    throw new Error(`Pushcut webhook returned ${res.status}`);
   }
-  // TODO(sms/46elks): POST https://api.46elks.com/a1/sms with HTTP Basic auth
-  //   (`${elksUser}:${elksPass}`), form fields from=<sender>, to=`recipient`,
-  //   message=<confirmation text>. Return { sent: true } on 2xx, throw on failure.
-  //   Docs: https://46elks.com/docs/send-sms
-  //   (Twilio alternative: POST .../Messages.json with TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN.)
-  return { sent: false, skipped: "sms_provider_todo" };
+  return { sent: true };
 }
 
 // --- HTTP handler -----------------------------------------------------------------------------
@@ -174,8 +184,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Shared-secret auth — FAIL-CLOSED. The webhook is server->server (verify_jwt = false), so this
   // shared secret is the only authentication. If WEBHOOK_SECRET is unset the function is NOT safe to
   // run (it would be a publicly-invokable relay), so reject everything; if set, require the matching
-  // header. Set it with `supabase secrets set WEBHOOK_SECRET=...` and send it as `x-webhook-secret`
-  // from the Database Webhook config.
+  // header. Set it with `supabase secrets set WEBHOOK_SECRET=...` and send it as `x-webhook-secret`.
   const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
   if (!webhookSecret) {
     return json({ ok: false, error: "not_configured" }, 503);
@@ -191,33 +200,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const parsed = parseBooking(raw);
+  const parsed = parseBookingId(raw);
   if (!parsed.ok) {
     return json({ ok: false, error: "invalid_payload", detail: parsed.error }, 400);
   }
 
-  // Re-fetch the send target from the DB by id — never trust the posted phone/email as the recipient.
-  const recipient = await fetchRecipient(parsed.booking.id, parsed.booking.method);
-  if (recipient === null) {
-    console.error(`send-confirmation: no recipient for booking ${parsed.booking.id}`);
+  // Re-read the booking from the DB by id — the phone AND the message content are DB-authoritative.
+  const booking = await fetchBooking(parsed.id);
+  if (booking === null) {
+    console.error(`send-confirmation: no sendable booking for id ${parsed.id}`);
     return json({ ok: false, error: "recipient_not_found" }, 404);
   }
 
   try {
-    const outcome = await sendConfirmation(parsed.booking, recipient);
+    const message = buildMessage(booking, booking.barber_name);
+    const outcome = await sendViaPushcut(booking.phone, message);
     if (!outcome.sent) {
-      // No provider wired yet (expected today): log and succeed so the webhook is not retried.
-      console.log(
-        `send-confirmation: skipped (${outcome.skipped}) for booking ${parsed.booking.id} ` +
-          `[${parsed.booking.method}]`,
-      );
-      return json({ ok: true, skipped: outcome.skipped ?? "no_provider_configured" }, 200);
+      // No Pushcut URL wired yet: log and succeed so the webhook is not retried.
+      console.log(`send-confirmation: skipped (${outcome.skipped}) for booking ${parsed.id} [sms]`);
+      return json({ ok: true, skipped: outcome.skipped ?? "no_pushcut_configured" }, 200);
     }
-    console.log(`send-confirmation: sent for booking ${parsed.booking.id} [${parsed.booking.method}]`);
+    console.log(`send-confirmation: sent for booking ${parsed.id} [sms]`);
     return json({ ok: true, sent: true }, 200);
   } catch (err) {
-    // Provider failure: log detail server-side, return a generic error (no PII leak).
-    console.error(`send-confirmation: provider error for booking ${parsed.booking.id}:`, err);
+    // Bridge failure: log detail server-side, return a generic error (no PII leak).
+    console.error(`send-confirmation: pushcut error for booking ${parsed.id}:`, err);
     return json({ ok: false, error: "send_failed" }, 502);
   }
 });

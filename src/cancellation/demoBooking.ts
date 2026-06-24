@@ -15,7 +15,7 @@ import { pricing } from '../booking/pricing'
 import { SLOTS } from '../booking/slots'
 import { bookingStrings } from '../i18n/index'
 import type { Lang } from '../i18n/index'
-import type { CancelBooking, CancelMethod } from './domain'
+import type { CancelBooking } from './domain'
 
 /** Fallback barber if the roster were ever empty (BARBERS is a non-empty constant). */
 const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
@@ -45,12 +45,7 @@ function pickTime(): string {
  * Build a plausible upcoming appointment for the demo cancellation lookup. The service is the first
  * item of the first pricing group for that weekday (always present — kids group is the floor).
  */
-export function buildDemoBooking(
-  today: Date,
-  lang: Lang,
-  method: CancelMethod,
-  contact: string,
-): CancelBooking {
+export function buildDemoBooking(today: Date, lang: Lang, contact: string): CancelBooking {
   const day = nextOpenDay(today)
   const t = bookingStrings(lang)
   const groups = pricing(day, t)
@@ -72,7 +67,6 @@ export function buildDemoBooking(
     price,
     start,
     whenLabel,
-    method,
     contact,
   }
 }

@@ -5,9 +5,6 @@
 
 import type { Barber } from '../booking/domain'
 
-/** The channel the customer used to book — reused for both the lookup key and the confirmation. */
-export type CancelMethod = 'sms' | 'email'
-
 /**
  * An appointment returned by a lookup. Carries everything the confirm step needs to render the
  * booking summary (barber, when, service · price). Pre-formatted display strings keep the dialog
@@ -22,13 +19,11 @@ export interface CancelBooking {
   readonly start: Date
   /** Localised "Weekday D Month, HH:MM" line for the summary (built by the demo builder). */
   readonly whenLabel: string
-  /** Channel the booking was made through (drives the confirmation sentence). */
-  readonly method: CancelMethod
-  /** Contact the lookup was performed with (echoed for the confirmation line). */
+  /** Contact (phone) the lookup was performed with (echoed for the confirmation line). */
   readonly contact: string
 }
 
-/** Result of looking up a booking by contact + method. */
+/** Result of looking up a booking by contact (phone). */
 export type CancelLookupResult =
   | { readonly ok: true; readonly booking: CancelBooking }
   | { readonly ok: false; readonly error: string }

@@ -1,9 +1,10 @@
 // Boundary validation for the review form (Zod + Result shape, mirroring booking/validation.ts).
-// The name parser is reused from the booking validation (same branded `Name`); the review text
-// and rating get their own schemas here. Per-field flags drive the same red-border + note UI.
+// The phone parser is reused from the booking validation (same branded `Phone`, Swedish-mobile
+// rule); the review text and rating get their own schemas here. Per-field flags drive the same
+// red-border + note UI. The phone is the review gate — a finished booking is proven by it.
 
 import { z } from 'zod'
-import { parseName } from '../booking/validation'
+import { parsePhone } from '../booking/validation'
 import type { Rating, ValidReview } from './reviews/domain'
 
 const MAX_TEXT = 600
@@ -18,13 +19,13 @@ const textSchema = z
  * note in the review form, exactly like the booking form's `FieldErrors`.
  */
 export interface ReviewFieldErrors {
-  readonly name: boolean
+  readonly phone: boolean
   readonly rating: boolean
   readonly text: boolean
 }
 
 /** No fields flagged — the pristine form. */
-export const NO_REVIEW_ERRORS: ReviewFieldErrors = { name: false, rating: false, text: false }
+export const NO_REVIEW_ERRORS: ReviewFieldErrors = { phone: false, rating: false, text: false }
 
 /** Result of validating the whole review form. */
 export type ReviewValidation =
@@ -32,27 +33,28 @@ export type ReviewValidation =
   | { readonly ok: false; readonly fields: ReviewFieldErrors }
 
 /**
- * Validate the review form, reporting which field(s) failed. Name is validated with the shared
- * booking name parser; rating must be chosen; text must be non-empty and within the length cap.
+ * Validate the review form, reporting which field(s) failed. Phone is validated with the shared
+ * booking phone parser (Swedish mobile); rating must be chosen; text must be non-empty and within
+ * the length cap.
  */
 export function parseReview(input: {
-  name: string
+  phone: string
   rating: Rating | null
   text: string
 }): ReviewValidation {
-  const name = parseName(input.name)
+  const phone = parsePhone(input.phone)
   const rating = input.rating
   const text = textSchema.safeParse(input.text)
 
   const fields: ReviewFieldErrors = {
-    name: !name.ok,
+    phone: !phone.ok,
     rating: rating === null,
     text: !text.success,
   }
-  if (fields.name || fields.rating || fields.text) {
+  if (fields.phone || fields.rating || fields.text) {
     return { ok: false, fields }
   }
   // All three guaranteed valid here; re-narrow for the type system (no `!`, no casts of unions).
-  if (!name.ok || rating === null || !text.success) return { ok: false, fields }
-  return { ok: true, value: { name: name.value, rating, text: text.data } }
+  if (!phone.ok || rating === null || !text.success) return { ok: false, fields }
+  return { ok: true, value: { phone: phone.value, rating, text: text.data } }
 }

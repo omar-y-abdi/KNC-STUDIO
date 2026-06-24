@@ -101,23 +101,6 @@ export function makeNavBtn(c: Palette): (on: boolean) => JSX.CSSProperties {
   })
 }
 
-/** Confirm-method button (source `methodBtn`). */
-export function makeMethodBtn(c: Palette): (on: boolean) => JSX.CSSProperties {
-  return (on) => ({
-    flex: 1,
-    padding: '9px',
-    borderRadius: '9px',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: '14px',
-    fontWeight: 600,
-    border: on ? '1px solid ' + c.accent : '0.5px solid ' + c.inputLine,
-    background: on ? c.accent : c.input,
-    color: on ? c.accentText : 'inherit',
-    opacity: on ? 1 : 0.7,
-  })
-}
-
 /** The static style objects (those not dependent on per-item selection state). */
 export interface BookingStyles {
   badgeStyle: JSX.CSSProperties

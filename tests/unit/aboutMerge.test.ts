@@ -33,7 +33,7 @@ describe('mergeAbout', () => {
     expect(merged.eyebrow).toBe(baseEn.eyebrow)
     expect(merged.galleryTitle).toBe(baseEn.galleryTitle)
     // Non-DB fields are untouched.
-    expect(merged.reviewName).toBe(baseEn.reviewName)
+    expect(merged.reviewSubmit).toBe(baseEn.reviewSubmit)
   })
 
   it('all 7 editable keys can be overridden at once', () => {

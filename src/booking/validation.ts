@@ -15,7 +15,6 @@ type Brand<T, B> = T & { readonly [brand]: B }
 
 export type Name = Brand<string, 'Name'>
 export type Phone = Brand<string, 'Phone'>
-export type Email = Brand<string, 'Email'>
 
 /** Result-shaped output (no exceptions for control flow). */
 export type ValidationResult<T> =
@@ -30,11 +29,6 @@ const nameSchema = z
   .string()
   .transform((s) => s.trim())
   .pipe(z.string().min(1, 'Name is required').max(MAX_NAME, 'Name is too long'))
-
-const emailSchema = z
-  .string()
-  .transform((s) => s.trim())
-  .pipe(z.string().email('Invalid email address'))
 
 // Swedish mobile: accept `07XXXXXXXX` with spaces/dashes tolerated; an optional `+46`/`0046`
 // country prefix is normalised to a leading `0`. Validation runs on the digit-normalised form
@@ -65,72 +59,47 @@ export function parseName(raw: string): ValidationResult<Name> {
   return toResult(nameSchema.safeParse(raw), (v) => v as Name)
 }
 
-export function parseEmail(raw: string): ValidationResult<Email> {
-  return toResult(emailSchema.safeParse(raw), (v) => v as Email)
-}
-
 export function parsePhone(raw: string): ValidationResult<Phone> {
   return toResult(phoneSchema.safeParse(raw), (v) => v as Phone)
 }
 
-/** Confirmation channel — must mirror the domain `ConfirmMethod`. */
-export type ContactMethod = 'sms' | 'email'
-
 /**
- * Validated contact details ready to attach to a `Booking`. Only the channel the customer chose is
- * collected + validated — `phone` for an SMS booking, `email` for an email booking — so each is
- * optional here.
+ * Validated contact details ready to attach to a `Booking`. Email was removed — the only channel is
+ * SMS, so a validated phone is always present.
  */
 export interface ValidContact {
   readonly name: Name
-  readonly phone?: Phone
-  readonly email?: Email
+  readonly phone: Phone
 }
 
 /**
  * Per-field validity flags — `true` means that field FAILED validation. Drives the per-field red
- * border + localized note in the UI. `email` is only ever flagged when the confirm method is
- * 'email' (otherwise it is not validated and stays `false`).
+ * border + localized note in the UI.
  */
 export interface FieldErrors {
   readonly name: boolean
   readonly phone: boolean
-  readonly email: boolean
 }
 
-/** Result of validating the whole contact form for a confirm method. */
+/** Result of validating the whole contact form. */
 export type ContactValidation =
   | { readonly ok: true; readonly value: ValidContact }
   | { readonly ok: false; readonly fields: FieldErrors }
 
 /**
- * Validate the contact form for the chosen confirm method, reporting which field(s) failed. Name is
- * always validated; only the chosen channel is collected + validated — `phone` for SMS, `email` for
- * email — so the other field stays unflagged. On success, returns the branded `ValidContact`.
+ * Validate the contact form (name + phone, both always required now that SMS is the only channel),
+ * reporting which field(s) failed. On success, returns the branded `ValidContact`.
  */
-export function parseContact(
-  input: { name: string; phone: string; email: string },
-  method: ContactMethod,
-): ContactValidation {
+export function parseContact(input: { name: string; phone: string }): ContactValidation {
   const name = parseName(input.name)
-  const phone = method === 'sms' ? parsePhone(input.phone) : null
-  const email = method === 'email' ? parseEmail(input.email) : null
+  const phone = parsePhone(input.phone)
 
   const fields: FieldErrors = {
     name: !name.ok,
-    phone: phone !== null && !phone.ok,
-    email: email !== null && !email.ok,
+    phone: !phone.ok,
   }
-  if (fields.name || fields.phone || fields.email) {
+  if (!name.ok || !phone.ok) {
     return { ok: false, fields }
   }
-  // narrowing for the success branch (the fields check above already guarantees validity):
-  if (!name.ok) return { ok: false, fields }
-  if (phone !== null && phone.ok) {
-    return { ok: true, value: { name: name.value, phone: phone.value } }
-  }
-  if (email !== null && email.ok) {
-    return { ok: true, value: { name: name.value, email: email.value } }
-  }
-  return { ok: true, value: { name: name.value } }
+  return { ok: true, value: { name: name.value, phone: phone.value } }
 }

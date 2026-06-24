@@ -6,3 +6,6 @@
 .env.keys
 .env.local
 .env.*.local
+
+# Edge function local secrets (functions serve --env-file). Never commit; deploy via `supabase secrets set`.
+functions/.env

@@ -42,18 +42,15 @@ export interface ServiceGroup {
   readonly items: readonly ServiceItem[]
 }
 
-/** The confirmation channel the customer picks (source `confirmMethod`). */
-export type ConfirmMethod = 'sms' | 'email'
-
-/** The customer-entered contact form (raw, unvalidated — mirrors source `state.form`). */
+/** The customer-entered contact form (raw, unvalidated). Email was removed — every booking is
+ * confirmed over SMS, so the only contact is the phone. */
 export interface ContactForm {
   readonly name: string
   readonly phone: string
-  readonly email: string
 }
 
 /** Empty contact form (source initial `form`). */
-export const emptyContactForm: ContactForm = { name: '', phone: '', email: '' }
+export const emptyContactForm: ContactForm = { name: '', phone: '' }
 
 /**
  * The full mutable-by-replacement booking draft — a 1:1 model of the source `BookingFlow`
@@ -68,7 +65,6 @@ export interface BookingDraft {
   readonly service: ServiceItem | null
   readonly showPopup: boolean
   readonly booked: boolean
-  readonly confirmMethod: ConfirmMethod | null
   readonly form: ContactForm
 }
 
@@ -82,7 +78,6 @@ export const initialDraft: BookingDraft = {
   service: null,
   showPopup: false,
   booked: false,
-  confirmMethod: null,
   form: emptyContactForm,
 }
 
@@ -97,11 +92,12 @@ export interface Booking {
   readonly start: Date
   /** Local appointment end (start + service duration). */
   readonly end: Date
-  readonly confirmMethod: ConfirmMethod
   readonly customerName: string
   readonly phone: string
-  readonly email: string
   readonly lang: Lang
+  /** Cloudflare Turnstile token, proving the submitter is human, attached at submit time. Empty
+   * when the widget is unconfigured/offline (the gateway fails open on a missing secret). */
+  readonly turnstileToken: string
 }
 
 /** Calendar / map links derived from a confirmed booking (produced by a `BookingPort`). */

@@ -2,11 +2,9 @@
 // the SAME booking-popup styling (knc-sheet-backdrop / knc-sheet-card, the mobile zoom + 19px input
 // rule). A single Dialog holds three internal steps:
 //
-//   1. lookup  — pick SMS / E‑post (copied EXACTLY from DetailsDialog: methodBtn styling,
-//                aria-pressed, onMouseDown preventDefault + auto-focus the revealed input), enter the
-//                matching contact, validate (parsePhone / parseEmail), then CancellationPort.lookup.
+//   1. lookup  — enter the booking phone number, validate (parsePhone), then CancellationPort.lookup.
 //   2. confirm — show the looked-up booking (barber · when · service · price) with Avboka / Avbryt.
-//   3. done    — "Din tid är avbokad" + the confirmation-method line, with a close button.
+//   3. done    — "Din tid är avbokad" + the SMS confirmation line, with a close button.
 //
 // Effects (the lookup/cancel calls) go through the injectable CancellationPort (default: the mock
 // adapter, nothing persisted). The dialog is fully theme-aware via the booking palette.
@@ -15,17 +13,11 @@ import type { JSX, Ref } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
-import { fillToken } from '../ui/fillToken'
-import {
-  buildBookingStyles,
-  makeMethodBtn,
-  palette,
-  systemRed,
-} from '../booking/bookingStyles'
-import { parseEmail, parsePhone } from '../booking/validation'
+import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
+import { parsePhone } from '../booking/validation'
 import type { Lang } from '../i18n/index'
 import { cancelStrings } from '../i18n/index'
-import type { CancelBooking, CancelMethod } from './domain'
+import type { CancelBooking } from './domain'
 import { defaultCancellationPort } from './adapters/index'
 import type { CancellationPort } from './port'
 
@@ -50,54 +42,33 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   const dark = props.mode === 'dark'
   const c = palette(dark)
   const s = buildBookingStyles(c, dark, false)
-  const methodBtn = makeMethodBtn(c)
   const red = systemRed(dark)
   const port: CancellationPort = props.port ?? defaultCancellationPort
 
   const [step, setStep] = useState<Step>('lookup')
-  const [method, setMethod] = useState<CancelMethod | null>(null)
   const [phone, setPhone] = useState<string>('')
-  const [email, setEmail] = useState<string>('')
   const [contactError, setContactError] = useState<boolean>(false)
   const [systemError, setSystemError] = useState<string | null>(null)
   const [busy, setBusy] = useState<boolean>(false)
   const [booking, setBooking] = useState<CancelBooking | null>(null)
 
-  // Copied EXACTLY from DetailsDialog: when a method is picked the matching input appears — move
-  // focus (and the on-screen keyboard) straight to it so the customer doesn't tap the field again.
+  // Move focus (and the on-screen keyboard) straight to the phone field when the lookup step shows.
   const contactInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (method !== null) contactInputRef.current?.focus()
-  }, [method])
+    if (step === 'lookup') contactInputRef.current?.focus()
+  }, [step])
 
-  const onSelectSms = (): void => {
-    setSystemError(null)
-    setContactError(false)
-    setMethod('sms')
-  }
-  const onSelectEmail = (): void => {
-    setSystemError(null)
-    setContactError(false)
-    setMethod('email')
-  }
   const onPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     if (contactError) setContactError(false)
     setSystemError(null)
     setPhone(e.currentTarget.value)
   }
-  const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    if (contactError) setContactError(false)
-    setSystemError(null)
-    setEmail(e.currentTarget.value)
-  }
 
-  const contactValue = method === 'sms' ? phone : email
-  const lookupDisabled = busy || method === null || contactValue.trim() === ''
+  const lookupDisabled = busy || phone.trim() === ''
 
-  // Step 1 → 2: validate the chosen contact, then look the booking up through the port.
+  // Step 1 → 2: validate the phone, then look the booking up through the port.
   const onLookup = async (): Promise<void> => {
-    if (method === null) return
-    const parsed = method === 'sms' ? parsePhone(phone) : parseEmail(email)
+    const parsed = parsePhone(phone)
     if (!parsed.ok) {
       setContactError(true)
       return
@@ -105,7 +76,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     setBusy(true)
     setSystemError(null)
     try {
-      const result = await port.lookup({ contact: parsed.value, method, lang })
+      const result = await port.lookup({ contact: parsed.value, lang })
       if (result.ok) {
         setBooking(result.booking)
         setStep('confirm')
@@ -154,14 +125,12 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     if (e.target === e.currentTarget) props.onClose()
   }
 
-  const methodLabel = (m: CancelMethod): string => (m === 'sms' ? t.sms : t.emailM)
-
   const contactField = (
     label: string,
     value: string,
     onInput: (ev: JSX.TargetedInputEvent<HTMLInputElement>) => void,
     placeholder: string,
-    inputMode: 'tel' | 'email',
+    inputMode: 'tel',
     note: string,
     inputRef: Ref<HTMLInputElement>,
   ): JSX.Element => (
@@ -186,7 +155,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   )
 
   // Confirmation sentence for the done step (same phrasing pattern as the booking confirmation).
-  const doneVia = booking ? fillToken(t.doneVia, '{method}', methodLabel(booking.method)) : ''
+  const doneVia = t.doneVia
 
   return (
     <Dialog
@@ -210,32 +179,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       <div style="padding:16px 18px 18px;">
         {step === 'lookup' ? (
           <div>
-            <span style="font-size:12px;font-weight:600;opacity:.55;">{t.methodLabel}</span>
-            <div style="display:flex;gap:8px;margin-top:6px;">
-              <button
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={onSelectSms}
-                aria-pressed={method === 'sms'}
-                style={methodBtn(method === 'sms')}
-              >
-                {t.sms}
-              </button>
-              <button
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={onSelectEmail}
-                aria-pressed={method === 'email'}
-                style={methodBtn(method === 'email')}
-              >
-                {t.emailM}
-              </button>
-            </div>
-
-            {method === 'sms'
-              ? contactField(t.phone, phone, onPhone, t.phonePh, 'tel', t.errPhone, contactInputRef)
-              : null}
-            {method === 'email'
-              ? contactField(t.email, email, onEmail, t.emailPh, 'email', t.errEmail, contactInputRef)
-              : null}
+            {contactField(t.phone, phone, onPhone, t.phonePh, 'tel', t.errPhone, contactInputRef)}
 
             {systemError !== null ? (
               <p role="alert" style={{ ...s.submitErrorStyle, marginTop: '14px' }}>

@@ -3,8 +3,7 @@
 // border + a localized red note under each invalid field) rendered ONLY after a failed submit,
 // so the default popup is byte-identical to the source.
 
-import type { JSX, Ref } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
@@ -23,12 +22,6 @@ export interface DetailsDialogProps {
   readonly sumPrice: string
   readonly nameValue: string
   readonly phoneValue: string
-  readonly emailValue: string
-  readonly smsStyle: JSX.CSSProperties
-  readonly emailMethodStyle: JSX.CSSProperties
-  /** Whether each confirm-method button is the active selection (drives `aria-pressed`). */
-  readonly methodIsSms: boolean
-  readonly methodIsEmail: boolean
   readonly bookDisabled: boolean
   /** Per-field error flags from the last failed submit (all false = pristine popup). */
   readonly fieldErrors: FieldErrors
@@ -36,24 +29,17 @@ export interface DetailsDialogProps {
   readonly submitError: string | null
   readonly onName: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
   readonly onPhone: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
-  readonly onEmail: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
-  readonly onSelectSms: () => void
-  readonly onSelectEmail: () => void
   readonly onBook: () => void
   readonly onClose: () => void
   readonly onBackdropClick: (e: JSX.TargetedMouseEvent<HTMLDivElement>) => void
+  /** The Cloudflare Turnstile widget (or null when unconfigured/offline), rendered above the
+   * Book button. Kept as an injected node so this dialog stays presentational. */
+  readonly turnstile: JSX.Element | null
 }
 
 export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   const { t, s } = props
   const e = props.fieldErrors
-
-  // When a confirm method is picked, the matching phone/email input appears — move focus (and the
-  // on-screen keyboard) straight to it so the customer doesn't have to tap the field again.
-  const contactInputRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (props.methodIsSms || props.methodIsEmail) contactInputRef.current?.focus()
-  }, [props.methodIsSms, props.methodIsEmail])
 
   // A field's input swaps to the error style (red border + ring) when flagged; a localized red
   // note renders directly under it inside the same label column. When not flagged, the markup is
@@ -66,12 +52,10 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
     inputMode: 'tel' | 'email' | undefined,
     invalid: boolean,
     note: string,
-    inputRef?: Ref<HTMLInputElement>,
   ): JSX.Element => (
     <label style="display:flex;flex-direction:column;gap:5px;">
       <span style="font-size:12px;font-weight:600;opacity:.55;">{label}</span>
       <input
-        {...(inputRef ? { ref: inputRef } : {})}
         value={value}
         onInput={onInput}
         placeholder={placeholder}
@@ -132,37 +116,14 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
 
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
-          {props.methodIsSms
-            ? field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone, contactInputRef)
-            : null}
-          {props.methodIsEmail
-            ? field(t.email, props.emailValue, props.onEmail, 'namn@exempel.se', 'email', e.email, t.errEmail, contactInputRef)
-            : null}
-
-          <div style="margin-top:4px;">
-            <span style="font-size:12px;font-weight:600;opacity:.55;">{t.confirmVia}</span>
-            <div style="display:flex;gap:8px;margin-top:6px;">
-              <button
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={props.onSelectSms}
-                aria-pressed={props.methodIsSms}
-                style={props.smsStyle}
-              >
-                {t.sms}
-              </button>
-              <button
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={props.onSelectEmail}
-                aria-pressed={props.methodIsEmail}
-                style={props.emailMethodStyle}
-              >
-                {t.emailM}
-              </button>
-            </div>
-          </div>
+          {field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone)}
         </div>
 
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>
+
+        {props.turnstile !== null ? (
+          <div style="display:flex;justify-content:center;margin:0 0 14px;">{props.turnstile}</div>
+        ) : null}
 
         {props.submitError !== null ? (
           <p role="alert" style={s.submitErrorStyle}>

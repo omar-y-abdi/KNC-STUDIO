@@ -7,7 +7,7 @@ const TODAY = new Date(2026, 5, 19)
 
 describe('buildDemoBooking', () => {
   it('skips Sunday and lands on the next open day', () => {
-    const b = buildDemoBooking(TODAY, 'sv', 'sms', '0701234567')
+    const b = buildDemoBooking(TODAY, 'sv', '0701234567')
     // Monday 2026-06-22.
     expect(b.start.getFullYear()).toBe(2026)
     expect(b.start.getMonth()).toBe(5)
@@ -16,7 +16,7 @@ describe('buildDemoBooking', () => {
   })
 
   it('uses a real barber, a SLOTS time and a weekday-appropriate service/price', () => {
-    const b = buildDemoBooking(TODAY, 'sv', 'sms', '0701234567')
+    const b = buildDemoBooking(TODAY, 'sv', '0701234567')
     // Day-of-month 22 % 3 barbers = index 1 → Victor.
     expect(b.barber.name).toBe('Victor')
     // Mid-list slot → 13:30.
@@ -28,18 +28,17 @@ describe('buildDemoBooking', () => {
   })
 
   it('localizes the when-label and service name', () => {
-    const sv = buildDemoBooking(TODAY, 'sv', 'sms', '0701234567')
-    const en = buildDemoBooking(TODAY, 'en', 'sms', '0701234567')
+    const sv = buildDemoBooking(TODAY, 'sv', '0701234567')
+    const en = buildDemoBooking(TODAY, 'en', '0701234567')
     expect(sv.whenLabel).toContain('Måndag')
     expect(sv.whenLabel).toContain('13:30')
     expect(en.whenLabel).toContain('Monday')
     expect(en.serviceName).toBe('Haircut + beard')
   })
 
-  it('echoes the method and contact, and produces a stable id', () => {
-    const b = buildDemoBooking(TODAY, 'en', 'email', 'a@b.se')
-    expect(b.method).toBe('email')
-    expect(b.contact).toBe('a@b.se')
+  it('echoes the contact, and produces a stable id', () => {
+    const b = buildDemoBooking(TODAY, 'en', '0709999999')
+    expect(b.contact).toBe('0709999999')
     expect(b.id).toBe('demo-2026-6-22')
   })
 })

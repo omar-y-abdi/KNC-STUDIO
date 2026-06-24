@@ -34,31 +34,52 @@ function submitError(booking: Booking): BookingError {
   return { kind: 'submit', message: bookingStrings(booking.lang).errSubmit }
 }
 
+/** Map a gateway/RPC error code to a localized `BookingError`. `rate_limited` + `failed_challenge`
+ * (added by the submit-booking gateway) get their own messages; every create_booking error code
+ * (slot_taken, outside_hours, invalid_time, …) collapses to the generic submit error. */
+function bookingErrorFor(booking: Booking, code: string): BookingError {
+  const t = bookingStrings(booking.lang)
+  const message =
+    code === 'rate_limited'
+      ? t.errRateLimited
+      : code === 'failed_challenge'
+        ? t.errChallenge
+        : t.errSubmit
+  return { kind: 'submit', message }
+}
+
 export const supabaseBookingAdapter: BookingPort = {
   async submit(booking: Booking): Promise<BookingResult> {
     try {
-      const { data, error } = await getSupabase().rpc('create_booking', {
-        p_barber_id: booking.barber.id,
-        p_service_id: booking.service.id,
-        p_service_name: booking.service.name,
-        p_price: booking.service.price,
-        p_duration_min: booking.service.dur,
-        // `booking.start` is the SELECTED slot built from local components (its wall-clock reads back
-        // "13:30" in any browser tz). Re-anchor those numbers to Europe/Stockholm so the stored instant
-        // matches what `available_slots` reasoned about — for a visitor in ANY timezone, not just Sweden.
-        p_start_at: localWallClockToStockholmIso(booking.start),
-        p_method: booking.confirmMethod,
-        // Only the chosen channel carries a value; the other is null (the RPC also enforces this).
-        p_phone: booking.phone === '' ? null : booking.phone,
-        p_email: booking.email === '' ? null : booking.email,
-        p_lang: booking.lang,
-        // 11th arg — REQUIRED by the DB (customer_name is NOT NULL); echoed back to nobody.
-        p_customer_name: booking.customerName,
+      // The browser no longer calls create_booking directly — it POSTs to the `submit-booking` edge
+      // function (the gateway: Turnstile verification + IP/phone rate-limit, then create_booking via
+      // service_role). `functions.invoke` attaches the anon apikey and parses the JSON response; the
+      // gateway returns HTTP 200 with the create_booking Result verbatim (or a rate_limited /
+      // failed_challenge Result), so a `{ok:false}` is a real rejection, not a transport error.
+      const { data, error } = await getSupabase().functions.invoke('submit-booking', {
+        body: {
+          booking: {
+            barberId: booking.barber.id,
+            serviceId: booking.service.id,
+            serviceName: booking.service.name,
+            price: booking.service.price,
+            durationMin: booking.service.dur,
+            // H2: `booking.start` is the selected slot in the BROWSER's local components (its wall-clock
+            // reads back "13:30" in any tz). Re-anchor to Europe/Stockholm and send the STRING — sending
+            // the raw Date would let JSON.stringify serialize it in the browser tz and shift the instant.
+            startAt: localWallClockToStockholmIso(booking.start),
+            phone: booking.phone,
+            lang: booking.lang,
+            customerName: booking.customerName,
+          },
+          turnstileToken: booking.turnstileToken,
+        },
       })
       if (error !== null) return { ok: false, error: submitError(booking) }
 
       const parsed = parseWith(createBookingResponse, data)
-      if (!parsed.ok || !parsed.value.ok) return { ok: false, error: submitError(booking) }
+      if (!parsed.ok) return { ok: false, error: submitError(booking) }
+      if (!parsed.value.ok) return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
 
       // Success — build the calendar/map links from the SAME builder the mock uses.
       const links = buildLinks(booking)

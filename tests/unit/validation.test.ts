@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   parsePhone,
-  parseEmail,
   parseName,
   parseContact,
   normalizePhone,
@@ -28,15 +27,6 @@ describe('normalizePhone', () => {
   })
 })
 
-describe('parseEmail', () => {
-  it('valid / trims / invalid / empty', () => {
-    expect(parseEmail('a@b.se').ok).toBe(true)
-    expect(parseEmail('  a@b.se  ').ok).toBe(true)
-    expect(parseEmail('bad').ok).toBe(false)
-    expect(parseEmail('').ok).toBe(false)
-  })
-})
-
 describe('parseName', () => {
   it('non-empty, trimmed, max 80 chars', () => {
     expect(parseName('Omar').ok).toBe(true)
@@ -47,39 +37,28 @@ describe('parseName', () => {
   })
 })
 
-describe('parseContact (method-aware)', () => {
-  const valid = { name: 'Omar', phone: '0701234567', email: 'a@b.se' }
+describe('parseContact (name + phone, SMS-only)', () => {
+  const valid = { name: 'Omar', phone: '0701234567' }
 
-  it('SMS booking does not require an email', () => {
-    expect(parseContact({ ...valid, email: '' }, 'sms').ok).toBe(true)
+  it('accepts a valid name + phone', () => {
+    expect(parseContact(valid).ok).toBe(true)
   })
-  it('email method requires a valid email', () => {
-    const r = parseContact({ ...valid, email: '' }, 'email')
+  it('flags a missing name and an invalid phone independently', () => {
+    const r = parseContact({ name: '', phone: 'abc' })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.fields.email).toBe(true)
+    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: true })
   })
-  it('flags only the fields collected for the chosen method', () => {
-    // email method: name + email validated; phone is not collected
-    const r = parseContact({ name: '', phone: 'abc', email: 'bad' }, 'email')
+  it('flags only the phone when the name is valid', () => {
+    const r = parseContact({ name: 'Omar', phone: 'abc' })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: false, email: true })
-    // sms method: name + phone validated; email is not collected
-    const r2 = parseContact({ name: '', phone: 'abc', email: 'bad' }, 'sms')
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.fields).toEqual({ name: true, phone: true, email: false })
+    if (!r.ok) expect(r.fields).toEqual({ name: false, phone: true })
   })
-  it('returns the branded contact for the chosen channel', () => {
-    const sms = parseContact(valid, 'sms')
-    expect(sms.ok).toBe(true)
-    if (sms.ok) {
-      expect(sms.value.name).toBe('Omar')
-      expect(sms.value.phone).toBe('0701234567')
-    }
-    const email = parseContact(valid, 'email')
-    expect(email.ok).toBe(true)
-    if (email.ok) {
-      expect(email.value.name).toBe('Omar')
-      expect(email.value.email).toBe('a@b.se')
+  it('returns the branded contact on success', () => {
+    const r = parseContact(valid)
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.name).toBe('Omar')
+      expect(r.value.phone).toBe('0701234567')
     }
   })
 })

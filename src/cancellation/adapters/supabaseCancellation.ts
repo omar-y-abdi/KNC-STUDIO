@@ -2,7 +2,7 @@
 // caller's NEXT upcoming confirmed booking by PROVEN contact — wrong contact -> not_found, so no
 // enumeration of others); `cancel` calls `cancel_booking` (contact-guarded, idempotent).
 //
-// The looked-up booking carries only barber_id + service_name + price + start_at + method + contact
+// The looked-up booking carries only barber_id + service_name + price + start_at + contact
 // (no other PII). We map barber_id -> Barber on the client (barbers are a frontend constant) and
 // build the SAME "Weekday D Month, HH:MM" label `buildDemoBooking` produces, so the confirm step
 // renders identically to the mock. Boundary discipline: parse every response; map failure to a
@@ -32,7 +32,6 @@ export const supabaseCancellationAdapter: CancellationPort = {
     try {
       const { data, error } = await getSupabase().rpc('lookup_booking', {
         p_contact: params.contact,
-        p_method: params.method,
       })
       if (error !== null) return notFound
 
@@ -48,7 +47,6 @@ export const supabaseCancellationAdapter: CancellationPort = {
         price: b.price,
         start,
         whenLabel: formatWhenLabel(params.lang, start),
-        method: b.method,
         contact: b.contact,
       }
       return { ok: true, booking }

@@ -10,7 +10,7 @@ import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
 import { bookingStrings } from '../i18n/index'
 import { cap, buildWeeks, iso, monthLabel, parseDateIso, weekdayLabel, headerLabels } from './calendar'
-import type { Barber, Booking, BookingDraft, BookingResult, ConfirmMethod } from './domain'
+import type { Barber, Booking, BookingDraft, BookingResult } from './domain'
 import { initialDraft } from './domain'
 import { pricing } from './pricing'
 import { defaultBookingPort } from './adapters/index'
@@ -20,7 +20,8 @@ import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
 import { SLOTS } from './slots'
-import { buildBookingStyles, makeMethodBtn, makeNavBtn, makeTab, palette } from './bookingStyles'
+import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyles'
+import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
 import { pseudoClass } from '../ui/pseudo'
@@ -28,7 +29,7 @@ import { pseudoClass } from '../ui/pseudo'
 type Mode = 'light' | 'dark'
 
 /** Pristine per-field error state — nothing flagged (the default popup). */
-const NO_FIELD_ERRORS: FieldErrors = { name: false, phone: false, email: false }
+const NO_FIELD_ERRORS: FieldErrors = { name: false, phone: false }
 
 export interface BookingFlowProps {
   readonly mode?: Mode
@@ -55,6 +56,11 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
   const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
+  // Turnstile token (proves the submitter is human; verified by the submit-booking gateway) + a
+  // nonce bumped after each submit attempt to force a FRESH token (Turnstile tokens are single-use
+  // and expire ~5 min). Empty token = unconfigured/offline → the gateway fails open.
+  const [turnstileToken, setTurnstileToken] = useState<string>('')
+  const [turnstileNonce, setTurnstileNonce] = useState<number>(0)
 
   const setState = (u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
@@ -62,6 +68,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     setResult(null)
     setFieldErrors(NO_FIELD_ERRORS)
     setSubmitError(null)
+    setTurnstileToken('')
     setState({
       barberId: null,
       dateIso: null,
@@ -69,14 +76,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       service: null,
       showPopup: false,
       booked: false,
-      confirmMethod: null,
       monthOffset: 0,
-      form: { name: '', phone: '', email: '' },
+      form: { name: '', phone: '' },
     })
   }
   const closePopup = (): void => {
     setFieldErrors(NO_FIELD_ERRORS)
     setSubmitError(null)
+    setTurnstileToken('')
     setState({ showPopup: false })
   }
   /** Clear one field's error (and any stale system error) when the user edits that field. */
@@ -131,7 +138,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const c = palette(dark)
   const tab = makeTab(c)
   const navBtn = makeNavBtn(c)
-  const methodBtn = makeMethodBtn(c)
 
   const barbers = roster.map((entry) => {
     const b = entry.barber
@@ -371,12 +377,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const sumPrice = S.service ? S.service.price + ' kr' : ''
 
   const f = S.form
-  const method: ConfirmMethod | null = S.confirmMethod
-  const bookDisabled = !(
-    f.name.trim() &&
-    method &&
-    ((method === 'sms' && f.phone.trim()) || (method === 'email' && f.email.trim()))
-  )
+  // SMS is the only channel now — a booking just needs a name + a phone.
+  const bookDisabled = !(f.name.trim() && f.phone.trim())
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
@@ -384,26 +386,18 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
   const mapsHref = result?.ok === true ? result.links.mapsHref : BUSINESS.mapsHref
 
-  // Confirmation sentence — computed from live state (persists until reset), as in the source.
+  // Confirmation sentence — computed from live state (persists until reset). SMS is the only channel.
   let confirmSentLine = ''
   if (selDate !== null && S.time && S.service) {
-    const dest = method === 'sms' ? f.phone || '' : f.email || ''
+    const dest = f.phone || ''
     confirmSentLine =
       lang === 'sv'
-        ? 'En bekräftelse skickas via ' +
-          (method === 'sms' ? 'SMS' : 'e‑post') +
-          (dest ? ' till ' + dest : '') +
-          '.'
-        : 'A confirmation will be sent by ' +
-          (method === 'sms' ? 'SMS' : 'email') +
-          (dest ? ' to ' + dest : '') +
-          '.'
+        ? 'En bekräftelse skickas via SMS' + (dest ? ' till ' + dest : '') + '.'
+        : 'A confirmation will be sent by SMS' + (dest ? ' to ' + dest : '') + '.'
   }
 
   const s = buildBookingStyles(c, dark, bookDisabled)
   const calRowHover = 'background:' + c.subtle + ';'
-  const smsStyle = methodBtn(method === 'sms')
-  const emailMethodStyle = methodBtn(method === 'email')
 
   const onPopupBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget) closePopup()
@@ -419,20 +413,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     clearFieldError('phone')
     setState((st) => ({ form: { ...st.form, phone: e.currentTarget.value } }))
   }
-  const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    clearFieldError('email')
-    setState((st) => ({ form: { ...st.form, email: e.currentTarget.value } }))
-  }
-  const onSelectSms = (): void => {
-    // Switching to SMS means email is no longer required → clear any stale email error.
-    clearFieldError('email')
-    setSubmitError(null)
-    setState({ confirmMethod: 'sms' })
-  }
-  const onSelectEmail = (): void => {
-    setSubmitError(null)
-    setState({ confirmMethod: 'email' })
-  }
 
   // Submit seam: validate, build a real Booking, send it through the BookingPort, store the
   // result, then advance. Two distinct failure modes:
@@ -441,10 +421,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   //    fields left untouched. (The local adapter never fails; a future networked one might.)
   const onBook = async (): Promise<void> => {
     if (bookDisabled) return
-    // unreachable: bookDisabled guarantees method + a selected date/time/service/barber are set.
-    if (method === null || selDate === null || S.time === null || S.service === null) return
+    // unreachable: bookDisabled + the step gating guarantee a selected date/time/service/barber.
+    if (selDate === null || S.time === null || S.service === null) return
     if (barberObj === undefined) return
-    const contact = parseContact({ name: f.name, phone: f.phone, email: f.email }, method)
+    const contact = parseContact({ name: f.name, phone: f.phone })
     if (!contact.ok) {
       setSubmitError(null)
       setFieldErrors(contact.fields)
@@ -466,17 +446,20 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       service: S.service,
       start,
       end,
-      confirmMethod: method,
       customerName: contact.value.name,
-      phone: contact.value.phone ?? '',
-      email: contact.value.email ?? '',
+      phone: contact.value.phone,
       lang,
+      turnstileToken,
     }
     try {
       const submitResult = await port.submit(booking)
+      // The Turnstile token is single-use — force a fresh challenge for any subsequent attempt
+      // (e.g. a slot_taken/rate_limited retry, where the popup stays open).
+      setTurnstileNonce((n) => n + 1)
       if (!submitResult.ok) {
         setFieldErrors(NO_FIELD_ERRORS)
-        setSubmitError(t.errSubmit)
+        // The adapter localizes the reason (rate_limited / failed_challenge / generic) into the message.
+        setSubmitError(submitResult.error.message)
         return
       }
       setResult(submitResult)
@@ -485,6 +468,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       setState({ showPopup: false, booked: true })
     } catch {
       // A thrown adapter error is a system failure, not a field error.
+      setTurnstileNonce((n) => n + 1)
       setFieldErrors(NO_FIELD_ERRORS)
       setSubmitError(t.errSubmit)
     }
@@ -697,22 +681,19 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           sumPrice={sumPrice}
           nameValue={f.name}
           phoneValue={f.phone}
-          emailValue={f.email}
-          smsStyle={smsStyle}
-          emailMethodStyle={emailMethodStyle}
-          methodIsSms={method === 'sms'}
-          methodIsEmail={method === 'email'}
           bookDisabled={bookDisabled}
           fieldErrors={fieldErrors}
           submitError={submitError}
           onName={onName}
           onPhone={onPhone}
-          onEmail={onEmail}
-          onSelectSms={onSelectSms}
-          onSelectEmail={onSelectEmail}
           onBook={onBookClick}
           onClose={closePopup}
           onBackdropClick={onPopupBackdrop}
+          turnstile={
+            turnstileConfigured ? (
+              <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+            ) : null
+          }
         />
       ) : null}
 

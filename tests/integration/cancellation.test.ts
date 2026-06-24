@@ -1,32 +1,43 @@
-// Cancellation adapter ↔ live stack. Seeds a booking through the booking adapter, then drives
-// `supabaseCancellationAdapter`: lookup(correct contact) finds it → cancel → re-lookup not_found;
-// and lookup(WRONG contact) → not_found (the contact-proving security guarantee). Truncates first.
+// Cancellation adapter ↔ live stack. Seeds a confirmed FUTURE booking via the create_booking RPC
+// (the booking path's HTTP gateway can't be served by a `pg` connection — see booking.test.ts), then
+// drives `supabaseCancellationAdapter`: lookup(correct phone) finds it → cancel → re-lookup not_found;
+// and lookup(WRONG phone) → not_found (the contact-proving security guarantee). Phone-only now: the
+// lookup is 1-arg (no method), and cancel matches on the proven phone alone. Truncates first.
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
 import { supabaseCancellationAdapter } from '../../src/cancellation/adapters/supabaseCancellation'
 import { BARBERS } from '../../src/booking/barbers'
-import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
-import { backendReady, readStackEnv, truncateAll, uniquePhone } from './_helpers'
+import type { Barber } from '../../src/booking/domain'
+import { asBarberId } from '../../src/booking/domain'
+import type { CreateBookingArgs } from './_helpers'
+import { backendReady, callCreateBooking, readStackEnv, truncateAll, uniquePhone } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? { id: 'hassan', name: 'Hassan', ig: 'freebandzcuts' }
-const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
+const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
-/** A future SMS booking for `phone` on a fixed far-future local slot. */
-function smsBooking(phone: string): Booking {
-  const start = new Date(2041, 4, 9, 11, 15) // 2041-05-09 11:15 local
-  const end = new Date(start.getTime() + HAIRCUT.dur * 60000)
+// 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST CET) = 12:30:00Z — a valid future
+// working-hours slot the create_booking schedule gate accepts.
+const SEED_START_UTC = '2040-03-14T12:30:00.000Z'
+
+/** Args for a future SMS booking for `phone` at the seed slot. */
+function seedArgs(phone: string): CreateBookingArgs {
   return {
-    barber: HASSAN,
-    service: HAIRCUT,
-    start,
-    end,
-    confirmMethod: 'sms',
-    customerName: 'Cancel Tester',
+    barberId: HASSAN.id,
+    serviceId: 'h',
+    serviceName: 'Hårklippning',
+    price: 350,
+    durationMin: 45,
+    startAt: SEED_START_UTC,
     phone,
-    email: '',
     lang: 'sv',
+    customerName: 'Cancel Tester',
   }
+}
+
+/** The wall-clock "HH:MM" the adapter renders for the seed instant, in the runner's local tz. */
+function expectedWhenTime(): string {
+  const start = new Date(SEED_START_UTC)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${pad(start.getHours())}:${pad(start.getMinutes())}`
 }
 
 describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', () => {
@@ -35,36 +46,42 @@ describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', ()
     if (env) await truncateAll(env.dbUrl)
   })
 
-  it('lookup(correct contact) finds the booking, cancel cancels it, re-lookup is not_found', async () => {
+  it('lookup(correct phone) finds the booking, cancel cancels it, re-lookup is not_found', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
     const phone = uniquePhone()
-    const created = await supabaseBookingAdapter.submit(smsBooking(phone))
+    const created = await callCreateBooking(env.dbUrl, seedArgs(phone))
     expect(created.ok).toBe(true)
 
-    const found = await supabaseCancellationAdapter.lookup({ contact: phone, method: 'sms', lang: 'sv' })
+    const found = await supabaseCancellationAdapter.lookup({ contact: phone, lang: 'sv' })
     expect(found.ok).toBe(true)
     if (!found.ok) return
     expect(found.booking.barber.id).toBe(HASSAN.id)
-    expect(found.booking.serviceName).toBe(HAIRCUT.name)
+    expect(found.booking.serviceName).toBe('Hårklippning')
     expect(found.booking.contact).toBe(phone)
-    // whenLabel mirrors buildDemoBooking's format: "Weekday D Month, HH:MM" (zero-padded time).
-    expect(found.booking.whenLabel).toContain('11:15')
+    // whenLabel mirrors buildDemoBooking's "Weekday D Month, HH:MM" (zero-padded local time).
+    expect(found.booking.whenLabel).toContain(expectedWhenTime())
 
     const cancelled = await supabaseCancellationAdapter.cancel(found.booking)
     expect(cancelled.ok).toBe(true)
 
     // Idempotent: the booking is now cancelled → no longer found.
-    const again = await supabaseCancellationAdapter.lookup({ contact: phone, method: 'sms', lang: 'sv' })
+    const again = await supabaseCancellationAdapter.lookup({ contact: phone, lang: 'sv' })
     expect(again.ok).toBe(false)
   })
 
-  it('lookup(WRONG contact) returns not_found (cannot find someone else’s booking)', async () => {
+  it('lookup(WRONG phone) returns not_found (cannot find someone else’s booking)', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
     const realPhone = uniquePhone()
-    const created = await supabaseBookingAdapter.submit(smsBooking(realPhone))
+    const created = await callCreateBooking(env.dbUrl, seedArgs(realPhone))
     expect(created.ok).toBe(true)
 
     // A different, non-matching phone must never surface the existing booking.
     const wrong = uniquePhone()
-    const result = await supabaseCancellationAdapter.lookup({ contact: wrong, method: 'sms', lang: 'sv' })
+    const result = await supabaseCancellationAdapter.lookup({ contact: wrong, lang: 'sv' })
     expect(result.ok).toBe(false)
   })
 })

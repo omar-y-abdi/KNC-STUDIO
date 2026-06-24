@@ -1,15 +1,21 @@
-// Booking adapter ↔ live stack. Drives `supabaseBookingAdapter` (the real RLS path via the anon
-// key) end to end: submit persists + returns links; an overlapping second booking is rejected; and
-// `availability` reports the booked slot's time afterwards. Truncates `bookings`/`reviews` before
-// each test (superuser) for a clean slate.
+// create_booking RPC contract ↔ live stack. The browser booking path now POSTs to the
+// `submit-booking` edge function (Turnstile + rate-limit, then create_booking via service_role) — an
+// HTTP gateway a `pg` connection cannot serve. So this suite tests the create_booking 9-arg RPC
+// CONTRACT directly via pg (as service_role): valid future working-hours slot → ok; phone null →
+// invalid_contact; bad barber → invalid; overlap → slot_taken; outside hours → outside_hours; and the
+// persisted row (customer_name / phone / email-null) + the stored Stockholm instant. The availability
+// READ path (the anon `available_slots` RPC, NOT behind the gateway) is still exercised through the
+// real adapter. The gateway HTTP layer (Turnstile + rate-limit) is verified separately.
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
 import { BARBERS } from '../../src/booking/barbers'
-import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
+import type { Barber } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
+import type { CreateBookingArgs } from './_helpers'
 import {
   backendReady,
+  callCreateBooking,
   fetchPersistedBookingByPhone,
   fetchPersistedStartAtByPhone,
   readStackEnv,
@@ -18,39 +24,33 @@ import {
 } from './_helpers'
 
 const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
+const VICTOR: Barber = BARBERS[1] ?? HASSAN
 
-/** A 45-min haircut (matches a real pricing item; only the fields the adapter sends matter). */
-const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
+// 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST → CET +01) = 12:30:00Z. Passing the
+// absolute instant keeps the test tz-independent: create_booking re-derives the salon wall-clock
+// (13:30) for the schedule gate, and the row stores exactly this instant.
+const VALID_DATE_ISO = '2040-03-14'
+const VALID_TIME = '13:30'
+const VALID_START_UTC = '2040-03-14T12:30:00.000Z'
+// 07:00 Stockholm (CET) — before the 09:00 opening, so the schedule gate rejects it.
+const EARLY_START_UTC = '2040-03-14T06:00:00.000Z'
 
-/**
- * Build a Booking whose `start` is a BROWSER-LOCAL slot time on `dateIso` — exactly how BookingFlow
- * constructs it — so the same instant lines up with the adapter's availability window.
- */
-function bookingAt(
-  dateIso: string,
-  time: string,
-  opts: { barber?: Barber; service?: ServiceItem; phone?: string } = {},
-): Booking {
-  const barber = opts.barber ?? HASSAN
-  const service = opts.service ?? HAIRCUT
-  const [y, m, d] = dateIso.split('-').map(Number)
-  const [hh, mm] = time.split(':').map(Number)
-  const start = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0)
-  const end = new Date(start.getTime() + service.dur * 60000)
+/** Default valid 45-min haircut args for `phone` at the valid working-hours slot. */
+function validArgs(phone: string | null): CreateBookingArgs {
   return {
-    barber,
-    service,
-    start,
-    end,
-    confirmMethod: 'sms',
-    customerName: 'Integration Tester',
-    phone: opts.phone ?? '0701234567',
-    email: '',
+    barberId: HASSAN.id,
+    serviceId: 'h',
+    serviceName: 'Hårklippning',
+    price: 350,
+    durationMin: 45,
+    startAt: VALID_START_UTC,
+    phone,
     lang: 'sv',
+    customerName: 'Integration Tester',
   }
 }
 
-describe.skipIf(!backendReady())('supabaseBookingAdapter (integration)', () => {
+describe.skipIf(!backendReady())('create_booking RPC contract (integration)', () => {
   beforeAll(() => {
     // Guarded by skipIf, but assert presence so a misconfigured run fails loudly, not silently.
     expect(readStackEnv()).not.toBeNull()
@@ -61,117 +61,106 @@ describe.skipIf(!backendReady())('supabaseBookingAdapter (integration)', () => {
     if (env) await truncateAll(env.dbUrl)
   })
 
-  it('submit persists the booking (incl. customer_name) and returns calendar/map links', async () => {
+  it('valid future working-hours slot → ok, persists customer_name/phone (email null) + Stockholm instant', async () => {
     const env = readStackEnv()
     expect(env).not.toBeNull()
     if (!env) return
 
     const phone = uniquePhone()
-    const result = await supabaseBookingAdapter.submit(
-      bookingAt('2040-03-14', '13:30', { phone }),
-    )
+    const result = await callCreateBooking(env.dbUrl, validArgs(phone))
     expect(result.ok).toBe(true)
-    if (result.ok) {
-      // Links are built by the same builder the mock uses.
-      expect(result.links.icsHref.startsWith('data:text/calendar')).toBe(true)
-      expect(result.links.gcalHref.startsWith('https://calendar.google.com/')).toBe(true)
-      expect(result.links.mapsHref.length).toBeGreaterThan(0)
-    }
+    if (result.ok) expect(result.booking.method).toBe('sms') // email removed: always sms now
 
-    // GENUINE persistence check: the RPC's ok payload omits customer_name/phone by design, so read
-    // the row directly (superuser) to prove the 11th arg `p_customer_name` landed in the NOT-NULL
-    // column AND the chosen channel's contact persisted (email null for an SMS booking).
+    // GENUINE persistence check: the RPC's ok payload omits customer_name/phone by design, so read the
+    // row directly (superuser) to prove `p_customer_name` landed in the NOT-NULL column AND the SMS
+    // contact persisted (email null for every booking now).
     const persisted = await fetchPersistedBookingByPhone(env.dbUrl, phone)
     expect(persisted).not.toBeNull()
     expect(persisted?.customerName).toBe('Integration Tester')
     expect(persisted?.phone).toBe(phone)
     expect(persisted?.email).toBeNull()
+
+    // The row stores exactly the instant we passed — 13:30 Stockholm (CET) = 12:30:00Z.
+    const storedStartAt = await fetchPersistedStartAtByPhone(env.dbUrl, phone)
+    expect(storedStartAt).toBe(VALID_START_UTC)
   })
 
-  it('rejects a second booking that OVERLAPS the first (same barber, same time)', async () => {
-    const first = await supabaseBookingAdapter.submit(bookingAt('2040-03-14', '13:30'))
+  it('phone null → invalid_contact (the contact guard, defense in depth)', async () => {
+    const env = readStackEnv()
+    if (!env) return
+    const result = await callCreateBooking(env.dbUrl, validArgs(null))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('invalid_contact')
+  })
+
+  it('unknown barber → invalid', async () => {
+    const env = readStackEnv()
+    if (!env) return
+    const result = await callCreateBooking(env.dbUrl, { ...validArgs(uniquePhone()), barberId: 'nope' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('invalid')
+  })
+
+  it('a second booking that OVERLAPS the first (same barber, same time) → slot_taken', async () => {
+    const env = readStackEnv()
+    if (!env) return
+    const first = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(first.ok).toBe(true)
 
-    // Same barber + same start → overlaps → the exclusion constraint fires → ok:false (no throw).
-    const second = await supabaseBookingAdapter.submit(
-      bookingAt('2040-03-14', '13:30', { phone: '0709999999' }),
-    )
+    const second = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(second.ok).toBe(false)
-    if (!second.ok) expect(second.error.kind).toBe('submit')
+    if (!second.ok) expect(second.error).toBe('slot_taken')
   })
 
-  it('availability reports the booked slot time after a booking', async () => {
-    const dateIso = '2040-03-14'
-    const time = '13:30'
-
-    const before = await supabaseBookingAdapter.availability({
-      barberId: HASSAN.id,
-      dateIso,
-      durationMin: HAIRCUT.dur,
-    })
-    expect(before).not.toContain(time)
-
-    const booked = await supabaseBookingAdapter.submit(bookingAt(dateIso, time))
-    expect(booked.ok).toBe(true)
-
-    const after = await supabaseBookingAdapter.availability({
-      barberId: HASSAN.id,
-      dateIso,
-      durationMin: HAIRCUT.dur,
-    })
-    expect(after).toContain(time)
-  })
-
-  it('a different barber is NOT blocked by another barber’s booking at the same time', async () => {
-    const dateIso = '2040-03-14'
-    const time = '13:30'
-    const victor = BARBERS[1] ?? HASSAN
-
-    await supabaseBookingAdapter.submit(bookingAt(dateIso, time, { barber: HASSAN }))
-    const victorSlots = await supabaseBookingAdapter.availability({
-      barberId: victor.id,
-      dateIso,
-      durationMin: HAIRCUT.dur,
-    })
-    expect(victorSlots).not.toContain(time)
-  })
-
-  // H2 — the adapter stores the Europe/Stockholm instant for the SELECTED wall-clock, not the
-  // browser-local instant. `bookingAt('2040-03-14','13:30')` builds `start` from local components, so
-  // its `.getHours()` reads back 13 in ANY runner tz; the adapter re-anchors that to Stockholm. The
-  // stored instant must therefore be 12:30:00Z (13:30 CET, +01:00) — proven directly against the row.
-  // (Cross-timezone correctness of the helper itself is covered tz-independently in the unit suite.)
-  it('stores the Europe/Stockholm instant for the selected slot (tz-correct write)', async () => {
+  it('a slot outside the barber working hours → outside_hours (server-side schedule gate)', async () => {
     const env = readStackEnv()
-    expect(env).not.toBeNull()
     if (!env) return
-
     const phone = uniquePhone()
-    const result = await supabaseBookingAdapter.submit(bookingAt('2040-03-14', '13:30', { phone }))
-    expect(result.ok).toBe(true)
-
-    const storedStartAt = await fetchPersistedStartAtByPhone(env.dbUrl, phone)
-    // 2040-03-14 is before the last-Sunday-of-March DST switch, so Stockholm is CET (UTC+1).
-    expect(storedStartAt).toBe('2040-03-14T12:30:00.000Z')
-  })
-
-  // H1 — create_booking now enforces working hours server-side. A booking OUTSIDE the barber's
-  // 09:00–18:00 window (here 07:00 Stockholm, before opening) is rejected by the RPC; the adapter maps
-  // the {ok:false,error:'outside_hours'} Result to a submit failure (no throw, no row written).
-  it('rejects a booking outside the barber working hours (server-side schedule gate)', async () => {
-    const env = readStackEnv()
-    expect(env).not.toBeNull()
-    if (!env) return
-
-    const phone = uniquePhone()
-    const result = await supabaseBookingAdapter.submit(
-      bookingAt('2040-03-14', '07:00', { phone }),
-    )
+    const result = await callCreateBooking(env.dbUrl, { ...validArgs(phone), startAt: EARLY_START_UTC })
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error.kind).toBe('submit')
+    if (!result.ok) expect(result.error).toBe('outside_hours')
 
     // Nothing persisted for the rejected booking.
     const persisted = await fetchPersistedBookingByPhone(env.dbUrl, phone)
     expect(persisted).toBeNull()
+  })
+
+  // The availability READ path is the anon `available_slots` RPC (NOT behind the gateway), so it is
+  // still driven through the real adapter — seeding the booking via the create_booking RPC above.
+  it('availability reports the booked slot time as taken after a booking', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const before = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+    })
+    expect(before).not.toContain(VALID_TIME)
+
+    const booked = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(booked.ok).toBe(true)
+
+    const after = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+    })
+    expect(after).toContain(VALID_TIME)
+  })
+
+  it('a different barber is NOT blocked by another barber’s booking at the same time', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const booked = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(booked.ok).toBe(true)
+
+    const victorSlots = await supabaseBookingAdapter.availability({
+      barberId: VICTOR.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+    })
+    expect(victorSlots).not.toContain(VALID_TIME)
   })
 })

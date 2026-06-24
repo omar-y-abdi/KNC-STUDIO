@@ -396,6 +396,14 @@ deno_version = 2
 enabled = true
 verify_jwt = false
 
+# submit-booking: the PUBLIC booking gateway — invoked by the browser (anon) cross-origin, so it does
+# NOT receive a Supabase user JWT -> verify_jwt = false. It is CORS-enabled and self-protects with
+# server-side Turnstile + per-IP/per-phone backstops before calling create_booking via service_role.
+# See supabase/functions/submit-booking/README.md.
+[functions.submit-booking]
+enabled = true
+verify_jwt = false
+
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local
 # Postgres container to be OOM-killed (exit 137) during `db reset` on this 8 GiB Docker host. It is

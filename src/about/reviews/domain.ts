@@ -1,6 +1,9 @@
 // Domain ADTs for the About-section reviews. Mirrors the booking domain's shape: branded-ish
 // closed types, `null` for "not yet chosen", and a Result union for the port. A `Review` is an
 // already-published item shown in the list; a `ReviewDraft` is the raw, unvalidated form state.
+// The reviewer proves a finished booking by PHONE; the displayed name is derived server-side.
+
+import type { Phone } from '../../booking/validation'
 
 /** A star rating, constrained to the 1..5 the UI can produce. */
 export type Rating = 1 | 2 | 3 | 4 | 5
@@ -17,26 +20,31 @@ export interface Review {
 }
 
 /** Raw review-form state (unvalidated — mirrors the booking `ContactForm`). `rating` is `null`
- *  until the customer picks a star. */
+ *  until the customer picks a star. The reviewer enters the PHONE they booked with. */
 export interface ReviewDraft {
-  readonly name: string
+  readonly phone: string
   readonly rating: Rating | null
   readonly text: string
 }
 
 /** The pristine review draft. */
-export const emptyReviewDraft: ReviewDraft = { name: '', rating: null, text: '' }
+export const emptyReviewDraft: ReviewDraft = { phone: '', rating: null, text: '' }
 
-/** A validated review ready to publish — every field present and within bounds. */
+/** A validated review ready to submit — phone validated, rating chosen, text within bounds. The
+ *  published name comes back from the server (derived from the matched booking). */
 export interface ValidReview {
-  readonly name: string
+  readonly phone: Phone
   readonly rating: Rating
   readonly text: string
 }
 
-/** Domain error for submitting a review (single kind today; a future backend may add more). */
+/**
+ * Domain error for submitting a review. `invalid` = the server rejected the shape; `no_booking` =
+ * the phone has no finished, not-yet-reviewed confirmed booking (the review gate — one review per
+ * finished haircut); `submit` = a transport / unexpected failure.
+ */
 export interface ReviewError {
-  readonly kind: 'submit'
+  readonly kind: 'invalid' | 'no_booking' | 'submit'
   readonly message: string
 }
 

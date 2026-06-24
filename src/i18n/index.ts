@@ -24,10 +24,6 @@ export interface BookingStrings {
   name: string
   namePh: string
   phone: string
-  email: string
-  confirmVia: string
-  sms: string
-  emailM: string
   book: string
   policy: string
   bookedTitle: string
@@ -49,8 +45,11 @@ export interface BookingStrings {
   min: string
   errName: string
   errPhone: string
-  errEmail: string
   errSubmit: string
+  /** Gateway rejection: too many booking attempts (per-IP/phone backstop). */
+  errRateLimited: string
+  /** Gateway rejection: the Turnstile human-verification challenge failed. */
+  errChallenge: string
 }
 
 /** Strings used by the site shell (ported verbatim from the source `APP_T`, plus a11y labels). */
@@ -94,18 +93,23 @@ export interface AboutStrings {
   /** Customer-cuts gallery. */
   cutsTitle: string
   cutsAlt: string
-  /** Reviews block + form. */
+  /** Reviews block + form. The reviewer proves a finished booking by phone; the displayed name is
+   * derived server-side from that booking ("Förnamn E."), so the form asks for the phone, not a name. */
   reviewsTitle: string
-  reviewName: string
-  reviewNamePh: string
+  reviewPhone: string
+  reviewPhonePh: string
+  /** Helper line under the phone field explaining the gate + derived name. */
+  reviewPhoneHint: string
   reviewRating: string
   reviewText: string
   reviewTextPh: string
   reviewSubmit: string
   reviewThanks: string
-  reviewErrName: string
+  reviewErrPhone: string
   reviewErrText: string
   reviewErrRating: string
+  /** Shown when the phone has no finished, not-yet-reviewed confirmed booking. */
+  reviewErrNoBooking: string
   /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
   ratingValueLabel: string
   /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */
@@ -116,18 +120,12 @@ export interface AboutStrings {
 /** Strings for the "Avbokning" / cancellation dialog flow (mock — nothing persists). */
 export interface CancelStrings {
   title: string
-  /** Step 1 — choose method + enter contact. */
-  methodLabel: string
-  sms: string
-  emailM: string
+  /** Step 1 — enter the phone the booking was made with (email was removed; phone-only). */
   phone: string
   phonePh: string
-  email: string
-  emailPh: string
   lookupBtn: string
   lookingUp: string
   errPhone: string
-  errEmail: string
   errLookup: string
   /** Step 2 — the looked-up booking + confirm/abort. */
   foundLead: string

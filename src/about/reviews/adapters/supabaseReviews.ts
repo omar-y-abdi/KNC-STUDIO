@@ -8,14 +8,18 @@
 
 import { getSupabase } from '../../../backend/supabaseClient'
 import { createReviewResponse, parseWith, reviewRow } from '../../../backend/rpcSchemas'
-import type { Review, ReviewResult, ValidReview } from '../domain'
+import type { Review, ReviewError, ReviewResult, ValidReview } from '../domain'
 import type { ReviewsPort } from '../port'
 
-/** Friendly submit-error message (the form only surfaces a generic failure, but keep it human). */
+/** Friendly submit-error message (the form maps the kind to its own localized note, but keep it human). */
 const SUBMIT_ERROR_MESSAGE = 'Kunde inte skicka recensionen. Försök igen.'
+/** No finished, not-yet-reviewed booking matches the phone — the review gate. */
+const NO_BOOKING_MESSAGE = 'Vi hittade ingen avslutad bokning för det numret.'
+/** The server rejected the review shape (phone / rating / text). */
+const INVALID_MESSAGE = 'Recensionen kunde inte valideras.'
 
-function submitError(): ReviewResult {
-  return { ok: false, error: { kind: 'submit', message: SUBMIT_ERROR_MESSAGE } }
+function reviewError(kind: ReviewError['kind'], message: string): ReviewResult {
+  return { ok: false, error: { kind, message } }
 }
 
 export const supabaseReviewsAdapter: ReviewsPort = {
@@ -43,17 +47,23 @@ export const supabaseReviewsAdapter: ReviewsPort = {
   async submit(review: ValidReview): Promise<ReviewResult> {
     try {
       const { data, error } = await getSupabase().rpc('create_review', {
-        p_name: review.name,
+        p_phone: review.phone,
         p_rating: review.rating,
         p_text: review.text,
       })
-      if (error !== null) return submitError()
+      if (error !== null) return reviewError('submit', SUBMIT_ERROR_MESSAGE)
 
       const parsed = parseWith(createReviewResponse, data)
-      if (!parsed.ok || !parsed.value.ok) return submitError()
+      if (!parsed.ok) return reviewError('submit', SUBMIT_ERROR_MESSAGE)
+      if (!parsed.value.ok) {
+        // Map the server's gate outcome to a domain error the form can localize.
+        return parsed.value.error === 'no_booking'
+          ? reviewError('no_booking', NO_BOOKING_MESSAGE)
+          : reviewError('invalid', INVALID_MESSAGE)
+      }
       return { ok: true, review: parsed.value.review }
     } catch {
-      return submitError()
+      return reviewError('submit', SUBMIT_ERROR_MESSAGE)
     }
   },
 }

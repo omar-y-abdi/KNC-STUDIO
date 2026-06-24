@@ -45,11 +45,21 @@ const createBookingOk = z.object({
   }),
 })
 
-/** create_booking error codes (closed set from the RPC). `outside_hours` = off day / time-off /
- * outside the barber's working hours (server-side schedule enforcement, mirroring available_slots). */
+/** Booking error codes. The create_booking RPC produces `invalid_time` / `invalid_contact` /
+ * `outside_hours` (off day, time-off, or outside working hours) / `slot_taken` / `invalid`; the
+ * `submit-booking` edge-fn gateway adds `failed_challenge` (Turnstile) + `rate_limited` (IP/phone
+ * backstop). All arrive as HTTP 200 `{ok:false,error}` so the adapter can map each to a message. */
 const createBookingErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['invalid_time', 'invalid_contact', 'outside_hours', 'slot_taken', 'invalid']),
+  error: z.enum([
+    'invalid_time',
+    'invalid_contact',
+    'outside_hours',
+    'slot_taken',
+    'invalid',
+    'failed_challenge',
+    'rate_limited',
+  ]),
 })
 
 export const createBookingResponse = z.discriminatedUnion('ok', [createBookingOk, createBookingErr])
@@ -64,7 +74,8 @@ const cancelBookingShape = z.object({
   service_name: z.string(),
   price: z.number(),
   start_at: isoTimestamp,
-  method: z.enum(['sms', 'email']),
+  // Email was removed; lookup/cancel are phone-only, so the echoed method is always 'sms'.
+  method: z.literal('sms'),
   contact: z.string(),
 })
 
@@ -85,7 +96,12 @@ const createReviewOk = z.object({
     text: z.string(),
   }),
 })
-const createReviewErr = z.object({ ok: z.literal(false), error: z.literal('invalid') })
+// `invalid` = bad rating/text/phone shape; `no_booking` = the phone has no finished, not-yet-reviewed
+// confirmed booking (the review gate — one review per finished haircut).
+const createReviewErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['invalid', 'no_booking']),
+})
 
 export const createReviewResponse = z.discriminatedUnion('ok', [createReviewOk, createReviewErr])
 export type CreateReviewResponse = z.infer<typeof createReviewResponse>

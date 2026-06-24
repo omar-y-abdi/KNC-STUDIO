@@ -79,7 +79,7 @@ the contact-proving RPCs, not key secrecy. **Never** set the `service_role` key 
 **Redeploy** (Vercel → Deployments → Redeploy, or push a commit). The live site now:
 
 - persists bookings (with the no-double-booking guarantee enforced in the DB),
-- greys time slots from **real** availability (`taken_slots`),
+- greys time slots from **real** availability (`available_slots`),
 - persists + lists real reviews,
 - looks up + cancels real bookings by proven contact.
 
@@ -108,25 +108,59 @@ Security is enforced by **RLS**, not the UI: a barber cannot read or change anot
 even if they tamper with the client. The `service_role` key is **never** used in the browser or set
 in Vercel — the admin uses the signed-in user's Auth session + the public anon key.
 
-## 7. (Optional, later) Confirmation messages — Edge Function + webhook
+## 7. Go-live: spam protection + SMS
 
-The `supabase/functions/send-confirmation` function is a **skeleton**: it validates the booking
-payload and, with no provider key, logs and returns `{ ok: true, skipped: "no_provider_configured" }`.
-To enable real SMS/email confirmations:
+Bookings now route through the **`submit-booking` edge function** (the public gateway), not a direct
+`create_booking` call — the browser's `anon` role can **no longer execute `create_booking`** (revoked).
+The gateway runs server-side **Cloudflare Turnstile** + coarse rate limits, then calls `create_booking`
+as `service_role`. Confirmations are sent as **SMS** through an iPhone/Pushcut bridge. Email is gone.
 
-1. **Deploy the function:**
+### a. Deploy the edge functions
+
+```bash
+npx supabase functions deploy submit-booking      # the booking gateway (verify_jwt = false; the frontend calls it via functions.invoke)
+npx supabase functions deploy send-confirmation   # the SMS bridge (see step c)
+```
+
+The frontend already targets `submit-booking` — no app change needed.
+
+### b. Turnstile (bot protection)
+
+1. Cloudflare dashboard → **Turnstile → Add site** → add the domain `knc-studio.vercel.app`.
+2. **Site key** (public, safe to inline in the client bundle) → Vercel env `VITE_TURNSTILE_SITE_KEY`.
+3. **Secret key** + a random IP salt → Supabase secrets (server-only):
    ```bash
-   npx supabase functions deploy send-confirmation
+   npx supabase secrets set TURNSTILE_SECRET=<cloudflare-secret>
+   npx supabase secrets set IP_SALT=<random-string>
    ```
-2. **Add a provider key** (Project Settings → Edge Functions → Secrets, or
-   `npx supabase secrets set ...`):
-   - Email: `RESEND_API_KEY`
-   - SMS: `ELKS_*` (46elks) or your Twilio credentials
-   Then implement the documented `TODO` send in `index.ts` (see its `README.md`).
-3. **Wire a Database Webhook** (dashboard → Database → Webhooks): on `bookings` **INSERT**, POST the
-   row to the function's URL. The function runs server→server (`verify_jwt = false`); secure it with
-   a shared header secret as described in `supabase/functions/send-confirmation/README.md`. Do **not**
-   create the webhook before the function is deployed (it needs the live function URL).
+
+> **⚠️ The gateway FAILS OPEN on Turnstile.** Until `TURNSTILE_SECRET` is set, the challenge is
+> **SKIPPED** — Turnstile bot protection is **INACTIVE**, and a deploy that forgets the secret has
+> **none**. The coarse backstops *always* apply regardless: **per-IP 10 / 10 min** and **per-phone
+> 5 / 24 h** (generous on purpose — tuned not to false-positive on shared salon Wi-Fi or a parent
+> booking self + 2 kids). Set the secret to actually turn bot protection on.
+
+### c. SMS bridge (iPhone / Pushcut)
+
+`send-confirmation` builds a localized SMS from the booking row and pushes it to an iPhone via Pushcut.
+Set the webhook URL to activate it (unset = it **skips cleanly**, returning `{ ok: true, skipped: ... }`,
+no error — so the DB webhook can be wired before the bridge exists):
+
+```bash
+npx supabase secrets set PUSHCUT_WEBHOOK_URL=<your-pushcut-webhook>
+```
+
+The full iPhone/Pushcut/Shortcuts setup — and the honest iOS auto-send caveat — is in
+`supabase/functions/send-confirmation/README.md`. Then wire a **Database Webhook** (dashboard →
+Database → Webhooks) on `bookings` **INSERT** → `send-confirmation`, secured with a fail-closed
+`WEBHOOK_SECRET` header, exactly as that README describes (deploy the function first — it needs the
+live URL).
+
+### d. Contract changes (no extra setup)
+
+- **Email removed** — booking **and** cancellation are **phone-only** (`method='sms'`, every booking).
+- **Reviews are phone-gated** — a review can be left only by a phone with a *finished* booking, one per
+  booking, and the shown name is derived server-side ("Anna A."). Nothing to configure.
 
 ## 8. Free-tier operational notes
 

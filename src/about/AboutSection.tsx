@@ -19,7 +19,7 @@ import type { BarbersPort } from '../booking/barbersPort'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
 import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
-import type { Rating, Review, ReviewDraft } from './reviews/domain'
+import type { Rating, Review, ReviewDraft, ReviewError } from './reviews/domain'
 import { emptyReviewDraft } from './reviews/domain'
 import { defaultReviewsPort } from './reviews/adapters/index'
 import type { ReviewsPort } from './reviews/port'
@@ -105,32 +105,37 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     }
   }, [port])
 
-  // Review form state — raw draft + per-field errors + a transient thank-you flag.
+  // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
+  // error (the phone gate `no_booking`, or a generic invalid/transport failure).
   const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft)
   const [errors, setErrors] = useState<ReviewFieldErrors>(NO_REVIEW_ERRORS)
   const [thanks, setThanks] = useState<boolean>(false)
+  const [submitError, setSubmitError] = useState<ReviewError | null>(null)
   const [submitting, setSubmitting] = useState<boolean>(false)
 
-  const setName = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+  const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     setThanks(false)
-    setErrors((p) => (p.name ? { ...p, name: false } : p))
+    setSubmitError(null)
+    setErrors((p) => (p.phone ? { ...p, phone: false } : p))
     const v = e.currentTarget.value
-    setDraft((d) => ({ ...d, name: v }))
+    setDraft((d) => ({ ...d, phone: v }))
   }
   const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void => {
     setThanks(false)
+    setSubmitError(null)
     setErrors((p) => (p.text ? { ...p, text: false } : p))
     const v = e.currentTarget.value
     setDraft((d) => ({ ...d, text: v }))
   }
   const setRating = (r: Rating): void => {
     setThanks(false)
+    setSubmitError(null)
     setErrors((p) => (p.rating ? { ...p, rating: false } : p))
     setDraft((d) => ({ ...d, rating: r }))
   }
 
   const submit = async (): Promise<void> => {
-    const parsed = parseReview({ name: draft.name, rating: draft.rating, text: draft.text })
+    const parsed = parseReview({ phone: draft.phone, rating: draft.rating, text: draft.text })
     if (!parsed.ok) {
       setErrors(parsed.fields)
       return
@@ -142,7 +147,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         setReviews((prev) => [result.review, ...prev])
         setDraft(emptyReviewDraft)
         setErrors(NO_REVIEW_ERRORS)
+        setSubmitError(null)
         setThanks(true)
+      } else {
+        setThanks(false)
+        setSubmitError(result.error)
       }
     } finally {
       setSubmitting(false)
@@ -249,6 +258,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     gap: '14px',
   }
   const labelStyle: JSX.CSSProperties = { fontSize: '12px', fontWeight: 600, opacity: 0.55 }
+  const hintStyle: JSX.CSSProperties = { fontSize: '11.5px', opacity: 0.5, lineHeight: 1.45 }
   const fieldColStyle: JSX.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '6px' }
   const textareaBase: JSX.CSSProperties = {
     border: '.5px solid ' + c.inputLine,
@@ -336,18 +346,20 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           </span>
 
           <label style={fieldColStyle}>
-            <span style={labelStyle}>{tx.reviewName}</span>
+            <span style={labelStyle}>{tx.reviewPhone}</span>
             <input
-              value={draft.name}
-              onInput={setName}
-              placeholder={tx.reviewNamePh}
-              aria-invalid={errors.name ? 'true' : undefined}
-              style={errors.name ? s.inputErrorStyle : s.inputStyle}
+              value={draft.phone}
+              onInput={setPhone}
+              placeholder={tx.reviewPhonePh}
+              inputMode="tel"
+              aria-invalid={errors.phone ? 'true' : undefined}
+              style={errors.phone ? s.inputErrorStyle : s.inputStyle}
               class={FOCUS_CLS}
             />
-            {errors.name ? (
+            <span style={hintStyle}>{tx.reviewPhoneHint}</span>
+            {errors.phone ? (
               <span role="alert" style={s.fieldErrorNoteStyle}>
-                {tx.reviewErrName}
+                {tx.reviewErrPhone}
               </span>
             ) : null}
           </label>
@@ -386,6 +398,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               </span>
             ) : null}
           </label>
+
+          {submitError !== null ? (
+            <p role="alert" style={s.submitErrorStyle}>
+              {submitError.kind === 'no_booking' ? tx.reviewErrNoBooking : tx.reviewErrPhone}
+            </p>
+          ) : null}
 
           {thanks ? (
             <p role="status" style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}>
