@@ -86,7 +86,29 @@ the contact-proving RPCs, not key secrecy. **Never** set the `service_role` key 
 With the env **unset**, it silently falls back to the mocks — so a missing/typo'd var degrades
 gracefully rather than breaking the page.
 
-## 6. (Optional, later) Confirmation messages — Edge Function + webhook
+## 6. Admin panel — create the login accounts
+
+The admin panel lives at `/login` + `/admin`. It needs Supabase Auth accounts: one **owner** (you,
+full access) and one **barber** per barber who should manage their own schedule + bookings. After
+`db push`:
+
+1. **Create the users** — dashboard → **Authentication → Users → Add user**: add your owner email +
+   a strong password, and one per barber. (Email confirmation can be turned off for staff accounts.)
+2. **Assign roles** — **SQL Editor**, once per user (the `id` is that user's UID from the Users list):
+   ```sql
+   -- owner (you): full access, no barber link
+   insert into public.profiles (id, role, barber_id) values ('<owner-uid>', 'owner', null);
+   -- each barber: scoped to their own barber row (barber_id matches a public.barbers.id)
+   insert into public.profiles (id, role, barber_id) values ('<barber-uid>', 'barber', 'hassan');
+   ```
+3. Sign in at `https://<your-site>/login`. The owner sees + manages everything (all barbers,
+   bookings, Om oss text, gallery); a barber sees ONLY their own bookings + schedule.
+
+Security is enforced by **RLS**, not the UI: a barber cannot read or change another barber's data
+even if they tamper with the client. The `service_role` key is **never** used in the browser or set
+in Vercel — the admin uses the signed-in user's Auth session + the public anon key.
+
+## 7. (Optional, later) Confirmation messages — Edge Function + webhook
 
 The `supabase/functions/send-confirmation` function is a **skeleton**: it validates the booking
 payload and, with no provider key, logs and returns `{ ok: true, skipped: "no_provider_configured" }`.
@@ -106,7 +128,7 @@ To enable real SMS/email confirmations:
    a shared header secret as described in `supabase/functions/send-confirmation/README.md`. Do **not**
    create the webhook before the function is deployed (it needs the live function URL).
 
-## 7. Free-tier operational notes
+## 8. Free-tier operational notes
 
 - **Auto-pause:** a free project **pauses after ~7 days of inactivity**. A static site that gets
   occasional traffic may go cold. Add a tiny keep-alive (e.g. a scheduled GitHub Action / cron that
