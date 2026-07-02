@@ -1,7 +1,7 @@
 // The 4-step booking flow (barber → date → service → time), ported from the original mock; the
 // details + confirmation modals live in their own components. Inline styles/literals match the
-// mock's rendering. Submit flows through the injectable `BookingPort` (default
-// `localCalendarAdapter`) so a real adapter is a one-line swap.
+// mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
+// Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'

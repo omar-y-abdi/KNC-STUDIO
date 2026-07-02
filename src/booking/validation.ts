@@ -2,9 +2,9 @@
 // details before producing a `Booking`. Branded types make a validated value impossible to
 // confuse with a raw string.
 //
-// NOTE (pixel parity): the source has NO format validation and NO error UI — its button is
-// gated purely on non-empty fields. This module is used *inside the submit seam* only; it does
-// not drive any visible disabled/error state, so it cannot move a pixel.
+// NOTE (pixel parity): the original mock had NO format validation and NO error UI — its button
+// was gated purely on non-empty fields. This module is used *inside the submit seam* only; it
+// does not drive any visible disabled/error state, so it cannot move a pixel.
 
 import { z } from 'zod'
 

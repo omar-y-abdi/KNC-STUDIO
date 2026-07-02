@@ -21,12 +21,12 @@ function locationLine(): string {
   return `${BUSINESS.name}, ${BUSINESS.street}, ${BUSINESS.postalCode} ${BUSINESS.city}`
 }
 
-/** Event title (source: `'KNC Studio – ' + service.name + ' (' + barber + ')'`). */
+/** Event title: "KNC Studio – <service> (<barber>)". */
 function eventTitle(booking: Booking): string {
   return `${BUSINESS.name} – ${booking.service.name} (${booking.barber.name})`
 }
 
-/** Event description (source: localised "Appointment with <barber> · <price> kr"). */
+/** Event description: localised "Appointment with <barber> · <price> kr". */
 function eventDescription(booking: Booking): string {
   const lead = booking.lang === 'sv' ? 'Bokning hos ' : 'Appointment with '
   return `${lead}${booking.barber.name} · ${booking.service.price} kr`
@@ -71,13 +71,13 @@ function dayOfMonth(dateIso: string): number {
 }
 
 /**
- * Local-only BookingPort: always succeeds, producing the calendar/map links. This is the
- * exact current behavior of the mock (the .ics + Google Cal + maps links), now hardened.
+ * Local-only BookingPort: always succeeds, producing the calendar/map links (the .ics + Google
+ * Cal + maps links the original mock produced, now hardened).
  *
- * `availability` reproduces the ORIGINAL UI greying formula verbatim so the offline/demo/visual
- * baseline is unchanged: for the date + barber, it includes each `SLOTS[i]` whose
- * `slotTaken(dayOfMonth, barberIndex, i, durationMin)` is true. Under the mock the UI's
- * `takenTimes.includes(time)` check therefore matches the old inline `slotTaken(...)` exactly.
+ * `availability` reproduces the mock's UI greying formula so the offline/demo/visual baseline is
+ * unchanged: for the date + barber, it includes each `SLOTS[i]` whose
+ * `slotTaken(dayOfMonth, barberIndex, i, durationMin)` is true — so the UI's
+ * `takenTimes.includes(time)` check matches `slotTaken(...)` exactly.
  */
 export const localCalendarAdapter: BookingPort = {
   submit(booking: Booking): Promise<BookingResult> {
