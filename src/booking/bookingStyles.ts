@@ -1,11 +1,11 @@
 // Pure style bundle for the booking flow. Extracted from BookingFlow to keep that file under the
-// size budget. Every style object/literal is copied verbatim from the source (index.html
-// 201-344); nothing here changes rendered output. The per-item styles that depend on selection
-// state (barber card, calendar cell, service row, time chip) stay inline in BookingFlow.
+// size budget. Every style object/literal mirrors the original mock; nothing here changes rendered
+// output. The per-item styles that depend on selection state (barber card, calendar cell, service
+// row, time chip) stay inline in BookingFlow.
 
 import type { JSX } from 'preact'
 
-/** Palette for a given mode (source `c = dark ? {...} : {...}`). */
+/** Palette for a given mode. */
 export interface Palette {
   bg: string
   card: string
@@ -58,7 +58,7 @@ export function palette(dark: boolean): Palette {
   return dark ? DARK : LIGHT
 }
 
-/** Icon sizing/filter helper (source `ic`). */
+/** Icon sizing/filter helper. */
 export function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperties {
   return (sz, op) => ({
     width: sz + 'px',
@@ -68,7 +68,7 @@ export function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperti
   })
 }
 
-/** Language tab button (source `tab`). */
+/** Language tab button. */
 export function makeTab(c: Palette): (on: boolean) => JSX.CSSProperties {
   return (on) => ({
     border: 'none',
@@ -85,7 +85,7 @@ export function makeTab(c: Palette): (on: boolean) => JSX.CSSProperties {
   })
 }
 
-/** Calendar prev/next nav button (source `navBtn`). */
+/** Calendar prev/next nav button. */
 export function makeNavBtn(c: Palette): (on: boolean) => JSX.CSSProperties {
   return (on) => ({
     border: 'none',
@@ -142,8 +142,8 @@ export function systemRed(dark: boolean): string {
 }
 
 /**
- * Build the static style bundle. `bookDisabled` only affects `bookBtnStyle` (exactly as the
- * source); all other objects depend solely on the palette + dark flag.
+ * Build the static style bundle. `bookDisabled` only affects `bookBtnStyle`; all other objects
+ * depend solely on the palette + dark flag.
  */
 export function buildBookingStyles(
   c: Palette,

@@ -1,7 +1,6 @@
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
-// Ported verbatim from index.html lines 642-709. All styles/literals unchanged.
 //
-// Invariants preserved exactly:
+// Invariants:
 //  - folding panel: borderRadius `0 0 28px 28px` when booking, flush `0` on homepage;
 //    height PANEL_COMPACT (booking) vs PANEL_FULL (homepage).
 //  - "KNC STUDIO" cross-fades between heroKnc (centered hero flow) and headerKnc (absolute

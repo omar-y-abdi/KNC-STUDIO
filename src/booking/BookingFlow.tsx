@@ -1,7 +1,7 @@
-// Port of the source `BookingFlow` (index.html lines 185-549). The 4-step flow (barber → date →
-// service → time); the details + confirmation modals live in their own components. Every inline
-// style/literal is verbatim. Submit flows through the injectable `BookingPort` (default
-// `localCalendarAdapter`) so a future real adapter is a one-line swap.
+// The 4-step booking flow (barber → date → service → time), ported from the original mock; the
+// details + confirmation modals live in their own components. Inline styles/literals match the
+// mock's rendering. Submit flows through the injectable `BookingPort` (default
+// `localCalendarAdapter`) so a real adapter is a one-line swap.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -60,7 +60,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<string | null>(null)
   // Real availability: the TAKEN slot times for the chosen barber+date+service, loaded through the
-  // port (DB-backed when configured, the original `slotTaken` formula under the mock). The grid
+  // port (DB-backed when configured, the deterministic `slotTaken` formula under the mock). The grid
   // greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
   const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
@@ -333,7 +333,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     selDate !== null && S.service !== null
       ? SLOTS.map((time) => {
           // A slot is taken iff its time is in the loaded availability set (membership only — all
-          // overlap math lives in the adapter). Under the mock this equals the old `slotTaken` output.
+          // overlap math lives in the adapter). Under the mock this equals the `slotTaken` output.
           const taken = takenTimes.includes(time)
           const sel = S.time === time
           let bg = c.card

@@ -1,7 +1,7 @@
-// The booking "details" modal — port of index.html lines 470-515, wrapped in the accessible
-// Dialog. Markup/styles are verbatim; the only addition is per-field validation feedback (red
-// border + a localized red note under each invalid field) rendered ONLY after a failed submit,
-// so the default popup is byte-identical to the source.
+// The booking "details" modal — ported from the original mock, wrapped in the accessible
+// Dialog. The only addition over the mock is per-field validation feedback (red border + a
+// localized red note under each invalid field) rendered ONLY after a failed submit, so the
+// default popup renders exactly as the mock did.
 
 import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'
@@ -42,8 +42,8 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   const e = props.fieldErrors
 
   // A field's input swaps to the error style (red border + ring) when flagged; a localized red
-  // note renders directly under it inside the same label column. When not flagged, the markup is
-  // byte-identical to the source.
+  // note renders directly under it inside the same label column. When not flagged, the markup
+  // matches the original mock.
   const field = (
     label: string,
     value: string,

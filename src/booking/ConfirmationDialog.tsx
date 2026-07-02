@@ -1,6 +1,6 @@
-// The booking "confirmation" modal — port of index.html lines 517-546, wrapped in the accessible
-// Dialog. Markup/styles verbatim. Calendar/map links come from the BookingPort result (passed in
-// as `links`); because the local adapter reproduces the source's link strings, output is identical.
+// The booking "confirmation" modal — ported from the original mock, wrapped in the accessible
+// Dialog. Calendar/map links come from the BookingPort result; the local adapter reproduces the
+// mock's link strings, so output is identical.
 
 import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'

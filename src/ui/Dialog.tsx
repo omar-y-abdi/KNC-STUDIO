@@ -1,6 +1,6 @@
 // Accessible modal wrapper shared by the booking details popup and the confirmation popup.
-// It adds behaviour + ARIA around the source's existing backdrop/card markup WITHOUT changing
-// the visual markup or styles: same backdrop element (class + style passed in), same card.
+// It adds behaviour + ARIA around the caller's backdrop/card markup WITHOUT changing the visual
+// markup or styles: same backdrop element (class + style passed in), same card.
 //
 // Behaviour added:
 //  - role="dialog", aria-modal, aria-labelledby (the title element id)
@@ -28,22 +28,22 @@ export interface DialogProps {
   readonly titleId: string
   /** Close handler — wired to Escape and (by the caller) to backdrop click. */
   readonly onClose: () => void
-  /** Backdrop click handler (source closes when the click target is the backdrop itself). */
+  /** Backdrop click handler (callers close when the click target is the backdrop itself). */
   readonly onBackdropClick: (e: JSX.TargetedMouseEvent<HTMLDivElement>) => void
-  /** Inline style string for the backdrop (kept verbatim from the source). */
+  /** Inline style string for the backdrop. */
   readonly backdropStyle: string
-  /** Class name for the backdrop (the source uses `knc-sheet-backdrop`). */
+  /** Class name for the backdrop (e.g. `knc-sheet-backdrop`). */
   readonly backdropClass: string
-  /** Inline style object for the card (kept verbatim from the source; includes `animation`). */
+  /** Inline style object for the card (includes the entry `animation`). */
   readonly cardStyle: JSX.CSSProperties
-  /** Class name for the card (the source uses `knc-sheet-card`). */
+  /** Class name for the card (e.g. `knc-sheet-card`). */
   readonly cardClass: string
   readonly children: ComponentChildren
 }
 
 /**
  * Renders backdrop + centered card with dialog semantics, focus management and a focus trap.
- * Visual output is identical to the source; only behaviour/ARIA is layered on.
+ * The caller fully controls the visual output; only behaviour/ARIA is layered on.
  */
 export function Dialog(props: DialogProps): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)

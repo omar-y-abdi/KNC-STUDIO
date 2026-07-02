@@ -1,6 +1,5 @@
 // Pure calendar helpers — month-grid builder, iso formatting, weekday/month labels.
-// Logic ported verbatim from the source `bfP2`, `bfCap`, `bfBuildWeeks`, `bfIso`
-// (index.html lines 159, 160, 174-183). No effects, no clock reads.
+// Logic ported from the original mock. No effects, no clock reads.
 
 import type { CalendarLabels, Lang } from '../i18n/index'
 import { calendarLabels } from '../i18n/index'

@@ -1,10 +1,9 @@
-// style-hover / style-focus replication: inject `.scpN:<pseudo>{css}` with NO !important,
-// exactly like the source's createPseudoSheet — so the inline-vs-pseudo cascade matches the
-// original. Ported verbatim from index.html lines 99-107.
+// style-hover / style-focus replication: inject `.scpN:<pseudo>{css}` with NO !important, so the
+// inline-vs-pseudo cascade behaves the usual way (inline styles win over the pseudo rule).
 //
-// Effect (DOM stylesheet mutation) is isolated to this module and runs once at import time,
-// mirroring the source's module-scope `_pcEl`. The injected rule text is built from
-// app-controlled CSS literals only (never user input).
+// Effect (DOM stylesheet mutation) is isolated to this module: the <style> element is created
+// once at import time. The injected rule text is built from app-controlled CSS literals only
+// (never user input).
 
 const styleEl: HTMLStyleElement = document.createElement('style')
 document.head.appendChild(styleEl)
@@ -29,7 +28,7 @@ export function pseudoClass(pseudo: string, css: string): string {
   return cls
 }
 
-/** Shared focus ring used by every text input in the booking form (source line 107). */
+/** Shared focus ring used by every text input in the booking form. */
 export const FOCUS_CLS: string = pseudoClass(
   'focus',
   'border-color:currentColor;box-shadow:0 0 0 3px rgba(128,128,128,.28);',
