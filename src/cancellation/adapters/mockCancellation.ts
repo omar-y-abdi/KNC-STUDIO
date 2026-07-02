@@ -1,11 +1,10 @@
-// The ONE real CancellationPort adapter: no network, NOTHING PERSISTED.
+// The offline (mock) CancellationPort adapter: no network, NOTHING PERSISTED.
 //
 //  - `lookup()` fabricates a plausible upcoming appointment via the pure `buildDemoBooking`, using
 //    an injected clock for "today" (the only effect, isolated at this edge). It always succeeds —
-//    a future backend would query by contact and may return a "not found" error (already
-//    representable in `CancelLookupResult`).
+//    unlike the Supabase adapter, which queries by contact and may return a "not found" error.
 //  - `cancel()` always resolves `ok`, echoing the booking. No state is mutated; a reload forgets
-//    everything. A future networked adapter would DELETE/PATCH the row and return the outcome.
+//    everything.
 //
 // The injectable clock mirrors `config.defaultClock`, so under VITE_CLOCK=fixed the demo appointment
 // is deterministic and the adapter is unit-testable without DOM or mocks.

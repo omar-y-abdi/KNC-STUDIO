@@ -1,6 +1,6 @@
 // About-content admin adapter (owner-only writes). Reads every (key,lang) cell and upserts edits
-// (PK key+lang). Anon can read; only the owner may write (about_*_owner RLS policies). The public
-// site does NOT consume this yet (that's §5) — this adapter only powers the admin "Om oss" editor.
+// (PK key+lang). Anon can read; only the owner may write (about_*_owner RLS policies). This adapter
+// powers the admin "Om oss" editor; the public site reads the same table via its own adapter.
 //
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
@@ -16,9 +16,7 @@ const WRITE_ERROR = 'Kunde inte spara texten. Försök igen.'
 /** Read every about-content cell (both languages, all keys). */
 export async function listAbout(): Promise<AdminResult<readonly AboutRow[]>> {
   try {
-    const { data, error } = await getAdminClient()
-      .from('about_content')
-      .select('key,lang,value')
+    const { data, error } = await getAdminClient().from('about_content').select('key,lang,value')
     if (error !== null || data === null) return err('network', READ_ERROR)
 
     const parsed = parseWith(aboutRows, data)

@@ -55,7 +55,9 @@ function safeExt(fileName: string): string {
 }
 
 /** List gallery rows for a kind, ordered by sort_order (with resolved public URLs). */
-export async function listGallery(kind: GalleryKind): Promise<AdminResult<readonly GalleryImage[]>> {
+export async function listGallery(
+  kind: GalleryKind,
+): Promise<AdminResult<readonly GalleryImage[]>> {
   try {
     const { data, error } = await getAdminClient()
       .from('gallery_images')

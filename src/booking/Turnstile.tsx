@@ -65,7 +65,9 @@ function loadTurnstileScript(): Promise<void> {
         resolve()
       } else {
         existing.addEventListener('load', () => resolve(), { once: true })
-        existing.addEventListener('error', () => reject(new Error('turnstile script failed')), { once: true })
+        existing.addEventListener('error', () => reject(new Error('turnstile script failed')), {
+          once: true,
+        })
       }
       return
     }
@@ -74,7 +76,9 @@ function loadTurnstileScript(): Promise<void> {
     script.async = true
     script.defer = true
     script.addEventListener('load', () => resolve(), { once: true })
-    script.addEventListener('error', () => reject(new Error('turnstile script failed')), { once: true })
+    script.addEventListener('error', () => reject(new Error('turnstile script failed')), {
+      once: true,
+    })
     document.head.appendChild(script)
   })
   return scriptPromise

@@ -2,9 +2,9 @@
 // details before producing a `Booking`. Branded types make a validated value impossible to
 // confuse with a raw string.
 //
-// NOTE (pixel parity): the source has NO format validation and NO error UI — its button is
-// gated purely on non-empty fields. This module is used *inside the submit seam* only; it does
-// not drive any visible disabled/error state, so it cannot move a pixel.
+// NOTE (pixel parity): the original mock had NO format validation and NO error UI — its button
+// was gated purely on non-empty fields. This module is used *inside the submit seam* only; it
+// does not drive any visible disabled/error state, so it cannot move a pixel.
 
 import { z } from 'zod'
 
@@ -18,8 +18,7 @@ export type Phone = Brand<string, 'Phone'>
 
 /** Result-shaped output (no exceptions for control flow). */
 export type ValidationResult<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: string }
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 
 // --- Schemas -------------------------------------------------------------------------------
 
@@ -49,7 +48,10 @@ const phoneSchema = z
 
 // --- Parsers (safeParse -> Result) ---------------------------------------------------------
 
-function toResult<T>(parsed: z.SafeParseReturnType<unknown, string>, asBrand: (v: string) => T): ValidationResult<T> {
+function toResult<T>(
+  parsed: z.SafeParseReturnType<unknown, string>,
+  asBrand: (v: string) => T,
+): ValidationResult<T> {
   if (parsed.success) return { ok: true, value: asBrand(parsed.data) }
   const first = parsed.error.issues[0]
   return { ok: false, error: first ? first.message : 'Invalid value' }

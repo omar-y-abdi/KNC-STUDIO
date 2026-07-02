@@ -3,15 +3,15 @@
 // the booking palette + 14px radii, so it reads native in both shells). All photos are tasteful
 // placeholders (PlaceholderPhoto); all bios/reviews copy is on-brand placeholder text from i18n.
 //
-// The review form goes through the injectable `ReviewsPort` (default `mockReviewsAdapter`). On a
-// valid submit the new review is PREPENDED to the local list, the form clears and a thank-you
-// shows. NOTHING IS PERSISTED — the list lives in this component's state for the session only.
+// The review form goes through the injectable `ReviewsPort` (default: env-selected — Supabase when
+// configured, the mock otherwise). On a valid submit the new review is PREPENDED to the local list,
+// the form clears and a thank-you shows. Under the mock nothing is persisted — the list lives in
+// this component's state for the session only.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { FOCUS_CLS } from '../ui/pseudo'
-import { fillToken } from '../ui/fillToken'
 import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
 import { useRoster } from '../booking/useRoster'
@@ -44,7 +44,7 @@ const CUT_IDS: readonly string[] = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c
 export interface AboutSectionProps {
   readonly mode: Mode
   readonly lang: Lang
-  /** Injected reviews seam — swap for a real backend adapter (default: local, nothing persisted). */
+  /** Injected reviews seam (default: env-selected; mock adapter when no backend is configured). */
   readonly port?: ReviewsPort
   /** Injected roster seam — the barbers shown in the stylist cards (default: env-selected). */
   readonly barbersPort?: BarbersPort
@@ -93,7 +93,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const salonPhotos = useGallery('salon', props.galleryPort)
   const cutPhotos = useGallery('cuts', props.galleryPort)
 
-  // Reviews list (seed from the port, then prepend new ones). Submitted reviews are NOT persisted.
+  // Reviews list (seed from the port, then prepend new ones). Not persisted under the mock.
   const [reviews, setReviews] = useState<readonly Review[]>([])
   useEffect(() => {
     let live = true
@@ -295,7 +295,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={SALON_IDS} photos={salonPhotos} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+          <GalleryMarquee
+            ids={SALON_IDS}
+            photos={salonPhotos}
+            glyph="camera"
+            alt={tx.galleryAlt}
+            c={c}
+            dark={dark}
+          />
         </div>
 
         {/* Stylists — driven by the roster (N barbers, not exactly 3). DB copy when present, i18n
@@ -307,13 +314,35 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             const copy = stylistCopyFor(entry, lang, i18nStylists)
             return (
               <div key={b.id} style={stylistCardStyle}>
-                <PlaceholderPhoto c={c} dark={dark} glyph="person" alt={tx.stylistAvatarAlt} ratio="1 / 1" />
+                <PlaceholderPhoto
+                  c={c}
+                  dark={dark}
+                  glyph="person"
+                  alt={tx.stylistAvatarAlt}
+                  ratio="1 / 1"
+                />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
                   <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
-                  {copy ? <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '.4px', opacity: 0.5, marginTop: '2px' }}>{copy.role}</span> : null}
+                  {copy ? (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        letterSpacing: '.4px',
+                        opacity: 0.5,
+                        marginTop: '2px',
+                      }}
+                    >
+                      {copy.role}
+                    </span>
+                  ) : null}
                 </div>
-                {copy ? <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>{copy.bio}</p> : null}
+                {copy ? (
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+                    {copy.bio}
+                  </p>
+                ) : null}
               </div>
             )
           })}
@@ -322,7 +351,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={CUT_IDS} photos={cutPhotos} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+          <GalleryMarquee
+            ids={CUT_IDS}
+            photos={cutPhotos}
+            glyph="scissors"
+            alt={tx.cutsAlt}
+            c={c}
+            dark={dark}
+          />
         </div>
 
         {/* Reviews */}
@@ -330,16 +366,29 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         <div style={reviewsWrapStyle}>
           {reviews.map((r) => (
             <div key={r.id} style={reviewCardStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
                 <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
-                <StarDisplay rating={r.rating} c={c} label={fillToken(tx.ratingValueLabel, '{n}', String(r.rating))} />
+                <StarDisplay
+                  rating={r.rating}
+                  c={c}
+                  label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
+                />
               </div>
-              <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>{r.text}</p>
+              <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
+                {r.text}
+              </p>
             </div>
           ))}
         </div>
 
-        {/* Leave a review (mock submit — not persisted) */}
+        {/* Leave a review */}
         <div style={formCardStyle}>
           <span style={{ fontFamily: "'SF Pro Display'", fontWeight: 600, fontSize: '16px' }}>
             {tx.reviewSubmit}
@@ -371,7 +420,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               onChange={setRating}
               c={c}
               groupLabel={tx.ratingGroupLabel}
-              starLabel={(n) => fillToken(tx.ratingStarLabel, '{n}', String(n))}
+              starLabel={(n) => tx.ratingStarLabel.replace('{n}', String(n))}
               invalid={errors.rating}
               errorColor={red}
             />
@@ -406,7 +455,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           ) : null}
 
           {thanks ? (
-            <p role="status" style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}>
+            <p
+              role="status"
+              style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}
+            >
               {tx.reviewThanks}
             </p>
           ) : null}
@@ -415,7 +467,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             type="button"
             onClick={submitting ? undefined : onSubmitClick}
             disabled={submitting}
-            style={{ ...s.bookBtnStyle, opacity: submitting ? 0.5 : 1, cursor: submitting ? 'default' : 'pointer' }}
+            style={{
+              ...s.bookBtnStyle,
+              opacity: submitting ? 0.5 : 1,
+              cursor: submitting ? 'default' : 'pointer',
+            }}
           >
             {tx.reviewSubmit}
           </button>

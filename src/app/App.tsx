@@ -1,4 +1,4 @@
-// Root component — port of the source `App` (index.html lines 569-639, 706, 726+).
+// Root component.
 // Owns state {mode, lang, view, cancelOpen}, the isMobile matchMedia switch, and the
 // theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
 // bodies live in their own modules; the shared chrome (toggles, palette) is built here and
@@ -10,16 +10,11 @@ import { BUSINESS } from '../config'
 import type { Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
+import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
-import {
-  MOBILE_MQ,
-  chromeIcon,
-  mobBtnBg,
-  mobMuted,
-  shellPalette,
-} from './shared'
+import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
 interface AppState {
   readonly mode: Mode
@@ -58,21 +53,13 @@ export function App(): JSX.Element {
   const mobMutedColor = mobMuted(dark)
   const mobBtnBgColor = mobBtnBg(dark)
 
-  // Two different surfaces meet the screen edges (see source comment, lines 595-605):
+  // Two different surfaces meet the screen edges:
   //  - topBar (theme-color): the top header/notch area. CONSTANT per mode.
   //  - pageBg (html/body, behind the bottom URL bar): follows the content BELOW the header.
   const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
   const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
   useEffect(() => {
-    document.documentElement.style.background = pageBg
-    document.body.style.background = pageBg
-    let meta = document.querySelector('meta[name="theme-color"]')
-    if (meta === null) {
-      meta = document.createElement('meta')
-      meta.setAttribute('name', 'theme-color')
-      document.head.appendChild(meta)
-    }
-    meta.setAttribute('content', topBar)
+    paintViewport(pageBg, topBar)
   }, [pageBg, topBar])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({
@@ -85,13 +72,7 @@ export function App(): JSX.Element {
     padding: '4px 9px',
     borderRadius: '999px',
     background: on ? (dark ? '#f5f5f7' : '#1c1c1e') : 'transparent',
-    color: on
-      ? dark
-        ? '#1c1c1e'
-        : '#fff'
-      : dark
-        ? 'rgba(255,255,255,.55)'
-        : 'rgba(0,0,0,.5)',
+    color: on ? (dark ? '#1c1c1e' : '#fff') : dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)',
   })
 
   const mapsHref = BUSINESS.mapsHref
@@ -99,8 +80,10 @@ export function App(): JSX.Element {
   const setEn = (): void => setState({ lang: 'en' })
   const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
   // Desktop: the hero stays; "Boka tid"/"Om oss" each toggle their own fold open/closed.
-  const toggleDeskBooking = (): void => setState((s) => ({ view: s.view === 'booking' ? 'home' : 'booking' }))
-  const toggleDeskAbout = (): void => setState((s) => ({ view: s.view === 'about' ? 'home' : 'about' }))
+  const toggleDeskBooking = (): void =>
+    setState((s) => ({ view: s.view === 'booking' ? 'home' : 'booking' }))
+  const toggleDeskAbout = (): void =>
+    setState((s) => ({ view: s.view === 'about' ? 'home' : 'about' }))
   // Mobile: the hero collapses to a compact header; open booking/about, the back chevron returns home.
   const openMobBooking = (): void => setState({ view: 'booking' })
   const openMobAbout = (): void => setState({ view: 'about' })
@@ -148,11 +131,27 @@ export function App(): JSX.Element {
     transition: 'left .32s ' + 'cubic-bezier(.32,.72,0,1)',
   }
   const themeKnobIconStyle: JSX.CSSProperties = { width: '14px', height: '14px', opacity: 0.92 }
-  // Source uses a computed key `[dark?'left':'right']:'9px'`; split into two full literals so the
-  // typing stays clean (runtime-identical — the same single side property is set either way).
+  // Split into two full literals (rather than a computed `[dark?'left':'right']` key) so the
+  // typing stays clean — the same single side property is set either way.
   const themeTrackIconStyle: JSX.CSSProperties = dark
-    ? { position: 'absolute', top: '8px', left: '9px', width: '14px', height: '14px', opacity: 0.5, filter: 'invert(1)' }
-    : { position: 'absolute', top: '8px', right: '9px', width: '14px', height: '14px', opacity: 0.5, filter: 'none' }
+    ? {
+        position: 'absolute',
+        top: '8px',
+        left: '9px',
+        width: '14px',
+        height: '14px',
+        opacity: 0.5,
+        filter: 'invert(1)',
+      }
+    : {
+        position: 'absolute',
+        top: '8px',
+        right: '9px',
+        width: '14px',
+        height: '14px',
+        opacity: 0.5,
+        filter: 'none',
+      }
   const themeKnobIconSrc = dark ? '/icons/moon.svg' : '/icons/sun.max.svg'
   const themeTrackIconSrc = dark ? '/icons/sun.max.svg' : '/icons/moon.svg'
   const langWrapStyle: JSX.CSSProperties = {
@@ -166,7 +165,12 @@ export function App(): JSX.Element {
   const enMiniStyle = langMini(lang === 'en')
 
   const themeToggle = (
-    <button onClick={toggleMode} style={themeTrackStyle} title={tx.ariaTheme} aria-label={tx.ariaTheme}>
+    <button
+      onClick={toggleMode}
+      style={themeTrackStyle}
+      title={tx.ariaTheme}
+      aria-label={tx.ariaTheme}
+    >
       <img src={themeTrackIconSrc} alt="" style={themeTrackIconStyle} />
       <span style={themeKnobStyle}>
         <img src={themeKnobIconSrc} alt="" style={themeKnobIconStyle} />

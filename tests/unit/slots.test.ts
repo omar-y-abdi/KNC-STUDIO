@@ -18,7 +18,7 @@ describe('SLOTS', () => {
 })
 
 describe('slotTaken (deterministic, pure)', () => {
-  it('matches the exact source formula across a wide grid', () => {
+  it('matches the exact reference formula across a wide grid', () => {
     const reference = (day: number, bi: number, i: number, dur: number): boolean =>
       (day * 31 + bi * 7 + i * 13 + dur) % 10 < durFactor(dur)
     for (const day of [1, 15, 20, 28, 31]) {

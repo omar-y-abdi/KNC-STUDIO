@@ -17,22 +17,22 @@ export interface StackEnv {
   readonly dbUrl: string
 }
 
+/** Read the named env vars; `null` if any is missing or empty (the suite self-skips). */
+export function readEnvVars<K extends string>(...keys: readonly K[]): Record<K, string> | null {
+  const out = {} as Record<K, string>
+  for (const key of keys) {
+    const value = process.env[key]
+    if (value === undefined || value === '') return null
+    out[key] = value
+  }
+  return out
+}
+
 /** Read + validate the stack env from process.env, or `null` when the stack is absent (suite skips). */
 export function readStackEnv(): StackEnv | null {
-  const url = process.env.SUPABASE_URL
-  const anonKey = process.env.SUPABASE_ANON_KEY
-  const dbUrl = process.env.SUPABASE_DB_URL
-  if (
-    url === undefined ||
-    anonKey === undefined ||
-    dbUrl === undefined ||
-    url === '' ||
-    anonKey === '' ||
-    dbUrl === ''
-  ) {
-    return null
-  }
-  return { url, anonKey, dbUrl }
+  const env = readEnvVars('SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_DB_URL')
+  if (env === null) return null
+  return { url: env.SUPABASE_URL, anonKey: env.SUPABASE_ANON_KEY, dbUrl: env.SUPABASE_DB_URL }
 }
 
 /** `true` iff the local stack env is present — gate the whole suite on this (else `describe.skip`). */
@@ -41,17 +41,27 @@ export function backendReady(): boolean {
 }
 
 /**
- * TRUNCATE `bookings` + `reviews` via a fresh superuser connection. Used in `beforeEach` for a clean
- * slate. Opens and closes its own connection so a failed test can't leave a socket open.
+ * Run `fn` on a fresh superuser connection, always closing it (even on throw) so a failed test
+ * can't leave a socket open.
  */
-export async function truncateAll(dbUrl: string): Promise<void> {
+export async function withClient<T>(dbUrl: string, fn: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ connectionString: dbUrl })
   await client.connect()
   try {
-    await client.query('truncate table public.bookings, public.reviews restart identity cascade')
+    return await fn(client)
   } finally {
     await client.end()
   }
+}
+
+/**
+ * TRUNCATE `bookings` + `reviews` via a fresh superuser connection. Used in `beforeEach` for a clean
+ * slate.
+ */
+export async function truncateAll(dbUrl: string): Promise<void> {
+  await withClient(dbUrl, (client) =>
+    client.query('truncate table public.bookings, public.reviews restart identity cascade'),
+  )
 }
 
 /** The PII columns the RPC NEVER echoes back — read directly to verify they actually persisted. */
@@ -63,7 +73,7 @@ export interface PersistedBookingPii {
 
 /**
  * Read the persisted (never-echoed) PII for the confirmed booking with `phone`, via the superuser
- * connection. This is the ONLY way to assert the `create_booking` 11th arg `p_customer_name` truly
+ * connection. This is the ONLY way to assert the `create_booking` 9th arg `p_customer_name` truly
  * landed in the NOT-NULL `customer_name` column (the RPC's ok payload omits it by design).
  * Parameterized query — no string interpolation.
  */
@@ -71,19 +81,19 @@ export async function fetchPersistedBookingByPhone(
   dbUrl: string,
   phone: string,
 ): Promise<PersistedBookingPii | null> {
-  const client = new Client({ connectionString: dbUrl })
-  await client.connect()
-  try {
-    const res = await client.query<{ customer_name: string; phone: string | null; email: string | null }>(
+  return withClient(dbUrl, async (client) => {
+    const res = await client.query<{
+      customer_name: string
+      phone: string | null
+      email: string | null
+    }>(
       "select customer_name, phone, email from public.bookings where phone = $1 and status = 'confirmed' limit 1",
       [phone],
     )
     const row = res.rows[0]
     if (row === undefined) return null
     return { customerName: row.customer_name, phone: row.phone, email: row.email }
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /**
@@ -96,9 +106,7 @@ export async function fetchPersistedStartAtByPhone(
   dbUrl: string,
   phone: string,
 ): Promise<string | null> {
-  const client = new Client({ connectionString: dbUrl })
-  await client.connect()
-  try {
+  return withClient(dbUrl, async (client) => {
     const res = await client.query<{ start_at: Date }>(
       "select start_at from public.bookings where phone = $1 and status = 'confirmed' limit 1",
       [phone],
@@ -107,9 +115,7 @@ export async function fetchPersistedStartAtByPhone(
     if (row === undefined) return null
     // node-postgres returns timestamptz as a JS Date (an absolute instant); normalize to UTC ISO.
     return new Date(row.start_at).toISOString()
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 // --- create_booking RPC contract (pg, bypassing the HTTP gateway) -------------------------------
@@ -144,9 +150,7 @@ export async function callCreateBooking(
   dbUrl: string,
   args: CreateBookingArgs,
 ): Promise<CreateBookingRpcResult> {
-  const client = new Client({ connectionString: dbUrl })
-  await client.connect()
-  try {
+  return withClient(dbUrl, async (client) => {
     await client.query('set role service_role')
     const res = await client.query<{ result: CreateBookingRpcResult }>(
       'select public.create_booking($1,$2,$3,$4,$5,$6::timestamptz,$7,$8,$9) as result',
@@ -165,9 +169,7 @@ export async function callCreateBooking(
     const row = res.rows[0]
     if (row === undefined) throw new Error('create_booking returned no row')
     return row.result
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /**
@@ -185,9 +187,7 @@ export async function seedFinishedBooking(
   input: { readonly phone: string; readonly customerName: string; readonly barberId?: string },
 ): Promise<string> {
   const offsetHours = nextSeq() + 1 // ≥ 2; monotonic so every call gets its own past window
-  const client = new Client({ connectionString: dbUrl })
-  await client.connect()
-  try {
+  return withClient(dbUrl, async (client) => {
     const res = await client.query<{ id: string }>(
       `insert into public.bookings
          (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
@@ -202,9 +202,7 @@ export async function seedFinishedBooking(
     const row = res.rows[0]
     if (row === undefined) throw new Error('seedFinishedBooking inserted no row')
     return row.id
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 // --- run-unique fixtures -------------------------------------------------------------------------

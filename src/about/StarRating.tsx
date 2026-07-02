@@ -32,12 +32,10 @@ export interface StarDisplayProps {
   readonly c: Palette
   /** Pre-formatted accessible label, e.g. "Rating: 4 of 5". */
   readonly label: string
-  readonly size?: number
 }
 
 /** Read-only star row for a published review. */
 export function StarDisplay(props: StarDisplayProps): JSX.Element {
-  const size = props.size ?? 15
   return (
     <span
       role="img"
@@ -45,7 +43,7 @@ export function StarDisplay(props: StarDisplayProps): JSX.Element {
       style={{ display: 'inline-flex', gap: '2px', color: props.c.text }}
     >
       {RATINGS.map((n) => (
-        <Star key={n} filled={n <= props.rating} size={size} />
+        <Star key={n} filled={n <= props.rating} size={15} />
       ))}
     </span>
   )
@@ -114,7 +112,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
           padding: '2px',
           margin: 0,
           cursor: 'pointer',
-          color: selected ? props.c.text : props.invalid && current === null ? props.errorColor : props.c.text,
+          color: baseColor,
           opacity: selected ? 1 : 0.32,
           lineHeight: 0,
           borderRadius: '6px',

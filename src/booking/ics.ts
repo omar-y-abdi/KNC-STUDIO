@@ -1,5 +1,5 @@
-// Pure, RFC5545-correct ICS builder WITH proper text escaping. The source concatenated
-// unescaped commas into LOCATION; this builder escapes per spec so it stays injection-safe
+// Pure, RFC5545-correct ICS builder WITH proper text escaping (the original mock concatenated
+// unescaped commas into LOCATION); this builder escapes per spec so it stays injection-safe
 // when real user data flows through. No effects: UID + DTSTAMP are injected by the caller
 // (the adapter at the edge), keeping this module referentially transparent.
 
@@ -12,7 +12,7 @@ export function escapeIcsText(value: string): string {
     .replace(/\r\n|\r|\n/g, '\\n')
 }
 
-/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp (matches source `fmt`). */
+/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp. */
 export function formatIcsLocal(dt: Date): string {
   const p = (n: number): string => String(n).padStart(2, '0')
   return (

@@ -17,7 +17,7 @@ export interface CancelBooking {
   readonly price: number
   /** Local appointment start. */
   readonly start: Date
-  /** Localised "Weekday D Month, HH:MM" line for the summary (built by the demo builder). */
+  /** Localised "Weekday D Month, HH:MM" line for the summary (built by the adapter). */
   readonly whenLabel: string
   /** Contact (phone) the lookup was performed with (echoed for the confirmation line). */
   readonly contact: string

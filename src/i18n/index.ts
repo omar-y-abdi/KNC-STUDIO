@@ -3,7 +3,7 @@
 
 export type Lang = 'sv' | 'en'
 
-/** Strings used by the booking flow (ported verbatim from the source `BF_STR`). */
+/** Strings used by the booking flow. */
 export interface BookingStrings {
   chooseBarber: string
   chooseDate: string
@@ -52,7 +52,7 @@ export interface BookingStrings {
   errChallenge: string
 }
 
-/** Strings used by the site shell (ported verbatim from the source `APP_T`, plus a11y labels). */
+/** Strings used by the site shell (incl. a11y labels). */
 export interface AppStrings {
   findUs: string
   book: string
@@ -117,7 +117,7 @@ export interface AboutStrings {
   ratingGroupLabel: string
 }
 
-/** Strings for the "Avbokning" / cancellation dialog flow (mock — nothing persists). */
+/** Strings for the "Avbokning" / cancellation dialog flow. */
 export interface CancelStrings {
   title: string
   /** Step 1 — enter the phone the booking was made with (email was removed; phone-only). */

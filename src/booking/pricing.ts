@@ -1,12 +1,12 @@
-// Pure pricing: weekday -> service groups. Numbers, ids and group composition copied
-// verbatim from the source `bfPricing` (index.html lines 162-173). No effects.
+// Pure pricing: weekday -> service groups. Numbers, ids and group composition mirror the
+// original mock's price list. No effects.
 
 import type { BookingStrings } from '../i18n/index'
 import type { ServiceGroup } from './domain'
 
 /**
  * Service groups available for the given date, in the given language.
- * Branching on `date.getDay()` is identical to the source:
+ * Branches on `date.getDay()`:
  *  - Wed–Sat (3..6): full men's menu (+ student discount on Wed, day 3)
  *  - Mon/Tue (1,2): reduced men's menu
  *  - kids group always appended

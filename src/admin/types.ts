@@ -114,13 +114,7 @@ export interface AdminBooking {
 
 /** One editable About-copy cell (a (key,lang) pair from `about_content`). */
 export type AboutKey =
-  | 'eyebrow'
-  | 'heading'
-  | 'intro'
-  | 'galleryTitle'
-  | 'cutsTitle'
-  | 'stylistsTitle'
-  | 'reviewsTitle'
+  'eyebrow' | 'heading' | 'intro' | 'galleryTitle' | 'cutsTitle' | 'stylistsTitle' | 'reviewsTitle'
 
 export interface AboutRow {
   readonly key: AboutKey
@@ -151,8 +145,7 @@ export interface AdminError {
 
 /** Result of any fallible admin operation. */
 export type AdminResult<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: AdminError }
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: AdminError }
 
 /** Build an ok result. */
 export function ok<T>(value: T): AdminResult<T> {

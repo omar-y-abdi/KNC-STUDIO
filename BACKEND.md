@@ -5,7 +5,7 @@ adapters (bookings/reviews/cancellation are simulated, nothing is persisted) and
 is unchanged. Setting the two public env vars flips the whole app to the real Supabase backend — no
 code change. This document is the ordered checklist to do that.
 
-Everything runs from the project root (`/Users/k/dev/barber/project`). The database layer
+Everything runs from the project root. The database layer
 (`supabase/`) is already written, migration-tested (pgTAP) and integration-tested against a local
 stack; you only need to create a cloud project, push the migrations, and set two Vercel env vars.
 
@@ -136,7 +136,7 @@ The frontend already targets `submit-booking` — no app change needed.
 
 > **⚠️ The gateway FAILS OPEN on Turnstile.** Until `TURNSTILE_SECRET` is set, the challenge is
 > **SKIPPED** — Turnstile bot protection is **INACTIVE**, and a deploy that forgets the secret has
-> **none**. The coarse backstops *always* apply regardless: **per-IP 10 / 10 min** and **per-phone
+> **none**. The coarse backstops _always_ apply regardless: **per-IP 10 / 10 min** and **per-phone
 > 5 / 24 h** (generous on purpose — tuned not to false-positive on shared salon Wi-Fi or a parent
 > booking self + 2 kids). Set the secret to actually turn bot protection on.
 
@@ -159,7 +159,7 @@ live URL).
 ### d. Contract changes (no extra setup)
 
 - **Email removed** — booking **and** cancellation are **phone-only** (`method='sms'`, every booking).
-- **Reviews are phone-gated** — a review can be left only by a phone with a *finished* booking, one per
+- **Reviews are phone-gated** — a review can be left only by a phone with a _finished_ booking, one per
   booking, and the shown name is derived server-side ("Anna A."). Nothing to configure.
 
 ## 8. Free-tier operational notes

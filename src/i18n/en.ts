@@ -1,7 +1,12 @@
-import type { AboutStrings, AppStrings, BookingStrings, CalendarLabels, CancelStrings } from './index'
+import type {
+  AboutStrings,
+  AppStrings,
+  BookingStrings,
+  CalendarLabels,
+  CancelStrings,
+} from './index'
 
-// English strings — copied verbatim from the source `BF_STR.en`, `APP_T.en`,
-// and the BF_WD/BF_MON/BF_HEAD `en` rows.
+// English strings.
 
 export const bookingEn: BookingStrings = {
   chooseBarber: 'Choose your barber',
@@ -92,7 +97,8 @@ export const aboutEn: AboutStrings = {
   reviewsTitle: 'Reviews',
   reviewPhone: 'Phone number',
   reviewPhonePh: '07X XXX XX XX',
-  reviewPhoneHint: 'Enter the number you booked with. Your name is taken from the booking and shown as first name + initial.',
+  reviewPhoneHint:
+    'Enter the number you booked with. Your name is taken from the booking and shown as first name + initial.',
   reviewRating: 'Rating',
   reviewText: 'Your review',
   reviewTextPh: 'Tell us about your visit …',
@@ -101,14 +107,13 @@ export const aboutEn: AboutStrings = {
   reviewErrPhone: 'Invalid phone number',
   reviewErrText: 'Please write something about your visit',
   reviewErrRating: 'Please choose a rating',
-  reviewErrNoBooking: 'We found no completed booking for that number. You can leave a review after your visit.',
+  reviewErrNoBooking:
+    'We found no completed booking for that number. You can leave a review after your visit.',
   ratingValueLabel: 'Rating: {n} of 5',
   ratingStarLabel: '{n} stars',
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
 }
 
-// NOTE: Cancellation flow is a MOCK — the looked-up booking is generated on the fly and nothing
-// is persisted. Copy here is real, the appointment behind it is demo data.
 export const cancelEn: CancelStrings = {
   title: 'Cancel booking',
   phone: 'Phone',

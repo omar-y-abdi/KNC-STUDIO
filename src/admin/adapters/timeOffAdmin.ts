@@ -30,7 +30,9 @@ function toTimeOff(r: {
 }
 
 /** List a barber's time-off, soonest first. */
-export async function listTimeOff(barberId: AdminBarberId): Promise<AdminResult<readonly TimeOff[]>> {
+export async function listTimeOff(
+  barberId: AdminBarberId,
+): Promise<AdminResult<readonly TimeOff[]>> {
   try {
     const { data, error } = await getAdminClient()
       .from('barber_time_off')
@@ -62,7 +64,8 @@ export async function addTimeOff(
       .single()
     if (error !== null || data === null) {
       if (error?.code === '42501') return err('forbidden', 'Du kan bara lägga till egen ledighet.')
-      if (error?.code === '23514') return err('validation', 'Slutdatum måste vara efter startdatum.')
+      if (error?.code === '23514')
+        return err('validation', 'Slutdatum måste vara efter startdatum.')
       return err('network', WRITE_ERROR)
     }
     const parsed = parseWith(timeOffRow, data)

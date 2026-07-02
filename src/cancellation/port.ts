@@ -1,7 +1,7 @@
-// The "backend-ready" seam for cancellation. A `CancellationPort` looks up a booking by contact +
-// method, then cancels a looked-up booking. The dialog depends on this interface only; today the
-// one concrete implementation is `mockCancellationAdapter` (no network — it fabricates a plausible
-// demo appointment). A future backend implements the same interface — intentionally not stubbed.
+// The cancellation seam. A `CancellationPort` looks up a booking by contact (phone), then cancels
+// a looked-up booking. The dialog depends on this interface only; the concrete implementations are
+// `mockCancellationAdapter` (no network — it fabricates a plausible demo appointment) and
+// `supabaseCancellationAdapter` (the real backend).
 
 import type { Lang } from '../i18n/index'
 import type { CancelBooking, CancelLookupResult, CancelResult } from './domain'

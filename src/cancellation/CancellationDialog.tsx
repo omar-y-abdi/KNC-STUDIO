@@ -6,8 +6,9 @@
 //   2. confirm — show the looked-up booking (barber · when · service · price) with Avboka / Avbryt.
 //   3. done    — "Din tid är avbokad" + the SMS confirmation line, with a close button.
 //
-// Effects (the lookup/cancel calls) go through the injectable CancellationPort (default: the mock
-// adapter, nothing persisted). The dialog is fully theme-aware via the booking palette.
+// Effects (the lookup/cancel calls) go through the injectable CancellationPort (default:
+// env-selected — Supabase when configured, the mock otherwise). The dialog is fully theme-aware
+// via the booking palette.
 
 import type { JSX, Ref } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -32,7 +33,7 @@ export interface CancellationDialogProps {
   readonly mode: Mode
   readonly lang: Lang
   readonly onClose: () => void
-  /** Injected seam — swap for a real backend adapter (default: local mock, nothing persisted). */
+  /** Injected seam (default: env-selected; mock adapter when no backend is configured). */
   readonly port?: CancellationPort
 }
 
@@ -154,9 +155,6 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     </label>
   )
 
-  // Confirmation sentence for the done step (same phrasing pattern as the booking confirmation).
-  const doneVia = t.doneVia
-
   return (
     <Dialog
       titleId="knc-cancel-title"
@@ -168,7 +166,10 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
-        <span id="knc-cancel-title" style="font-family:'SF Pro Display';font-weight:600;font-size:17px;">
+        <span
+          id="knc-cancel-title"
+          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+        >
           {t.title}
         </span>
         <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={t.ariaClose}>
@@ -206,7 +207,9 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
 
         {step === 'confirm' && booking !== null ? (
           <div>
-            <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0 0 12px;">{t.foundLead}</p>
+            <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0 0 12px;">
+              {t.foundLead}
+            </p>
             <div style={s.summaryBoxStyle}>
               <div style="display:flex;justify-content:space-between;font-size:14px;">
                 <span style="opacity:.55;">{t.fBarber}</span>
@@ -284,7 +287,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
               {t.doneTitle}
             </div>
             <div style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto 18px;">
-              {doneVia}
+              {t.doneVia}
             </div>
             <button onClick={props.onClose} style={s.resetBtnStyle}>
               {t.doneBtn}

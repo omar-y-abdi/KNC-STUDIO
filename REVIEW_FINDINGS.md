@@ -16,9 +16,10 @@ the client or the built bundle**; XSS is closed (escaped JSX + strict CSP + lint
 layer Zod-parses every wire response and race-guards every effect; i18n parity is compiler-enforced.
 
 The real gaps are **abuse-resistance and a read/write asymmetry**, not broken access control:
+
 1. The booking **write** path (`create_booking`) does NOT enforce the schedule/availability rules the
-   **read** path (`available_slots`) advertises — and it has no rate limiting. *(Found independently by
-   BOTH the security and database reviewers — the top finding.)*
+   **read** path (`available_slots`) advertises — and it has no rate limiting. _(Found independently by
+   BOTH the security and database reviewers — the top finding.)_
 2. Availability is computed in **Europe/Stockholm** but the booking instant is built in the **browser's
    local timezone** — wrong-instant bookings for non-Stockholm visitors.
 
@@ -32,6 +33,7 @@ makes).
 ## HIGH
 
 ### H1 — `create_booking` enforces no schedule / working-hours / time-off rules (server-side) · [DB H1] + [SEC M-1] (convergent)
+
 `supabase/migrations/20260623152741_functions.sql:40-78` (whole body — zero refs to `barber_schedules`/`barber_time_off`/`available_slots`).
 `create_booking` checks only `start_at > now()` + method/contact pairing, then inserts. All schedule
 intelligence lives in the advisory `available_slots` RPC (drives only the UI grey-out). The RPC is
@@ -41,7 +43,7 @@ minute offsets, with `price=0` and `duration_min=480`** — and a single 8-hour 
 day via the exclusion constraint. Compounded by no rate limiting (M2) → scripted day-blocking DoS
 across barbers/dates with attacker-supplied names (manual cleanup). The adapter comment
 "let the DB exclusion constraint be the backstop" (`src/booking/adapters/supabaseBooking.ts:13-17`) is
-incorrect: the constraint backstops *overlap only*, never schedule adherence; and on an availability
+incorrect: the constraint backstops _overlap only_, never schedule adherence; and on an availability
 read error `availability()` returns `[]` so the UI offers all 12 slots.
 **Fix:** Re-validate inside `create_booking` against `barber_schedules` + `barber_time_off` + the slot
 grid (reuse `available_slots`' logic on Stockholm instants), bound `duration_min` to real service
@@ -49,6 +51,7 @@ durations, reject mismatched price/duration, return a dedicated `outside_hours` 
 path should enforce what the read path advertises.
 
 ### H2 — Timezone mismatch: availability reasons in Europe/Stockholm, the INSERT uses the browser's local tz · [DB H2]
+
 Availability: `supabase/migrations/20260623205456_admin_functions.sql:129-132` (`AT TIME ZONE 'Europe/Stockholm'`).
 Insert: `src/booking/BookingFlow.tsx:456-462` builds `new Date(y,m,d,hh,mm)` (browser-local) → `src/booking/adapters/supabaseBooking.ts:45` sends `.toISOString()` → stored verbatim.
 The instant availability reasons about and the instant stored agree **only when the visitor's browser
@@ -68,6 +71,7 @@ read + write share one definition of "09:00". (H1's fix naturally subsumes this.
 ## MEDIUM
 
 ### M1 — `create_booking` no longer catches the bad-`barber_id` failure it documents (FK swap regression) · [DB M1]
+
 `supabase/migrations/20260623152741_functions.sql:69-78` vs `…210000_bookings_barber_fk.sql:29-31`.
 The exception block catches `exclusion_violation` + `check_violation` only. Migration 0009 replaced the
 hardcoded `barber_id IN (...)` CHECK with a FK → a bad id now raises `foreign_key_violation` (23503),
@@ -76,6 +80,7 @@ reachability (UI only sends roster ids) but a documented-intent regression on a 
 **Fix:** Add `when foreign_key_violation then return …'invalid'` to the handler.
 
 ### M2 — No application-layer rate limiting / CAPTCHA on any anon RPC · [SEC M-3]
+
 Absent across `src/`, `supabase/`, `vercel.json`. The `config.toml` `[auth.rate_limit]` governs only
 Supabase Auth flows, NOT `create_booking`/`create_review`/`lookup_booking`/`taken_slots`. Enables
 review spam (`create_review` inserts `published=true` immediately), the H1 booking-flood, and phone
@@ -84,6 +89,7 @@ enumeration (M4). Relies entirely on Supabase's coarse platform gateway.
 and/or a per-IP/per-contact server-side cooldown.
 
 ### M3 — `send-confirmation` is a latent open SMS/email relay · [SEC M-2]
+
 `supabase/functions/send-confirmation/index.ts:106-132` (recipient from POST body) + `:148-153`
 (shared-secret check is a commented TODO) + `supabase/config.toml:397` (`verify_jwt=false`). Benign
 today (no provider key → logs + `skipped`). **The instant `RESEND_API_KEY`/`ELKS_*` is set, the
@@ -94,6 +100,7 @@ re-fetch the recipient from the `bookings` row by `record.id` (service-role) —
 phone/email.
 
 ### M4 — Contact (phone/email) is the sole auth factor for read + cancel · [SEC M-4]
+
 `supabase/migrations/20260623152741_functions.sql:124-205`. Knowing a victim's (non-secret) phone/email
 lets anyone read their next appointment (time/barber/service/price + booking `id`) and silently cancel
 it. Tests assert the wrong-contact→not_found path but never challenge the "contact is secret" premise.
@@ -103,6 +110,7 @@ OR make an explicit, documented product decision to accept the model. If accepte
 the booking `id` from `lookup_booking` without a second factor.
 
 ### M5 — `as unknown as WeekSchedule` double-cast ×5 (type hole, invariant-safe) · [CODE M1]
+
 `src/admin/time.ts:87,98,108,115,127` (+ `src/admin/adapters/schedulesAdmin.ts:38`). `WeekSchedule` is a
 7-tuple; `Array.map` types as `DaySchedule[]`, forcing a cast-through-`unknown` (load-bearing — `as
 WeekSchedule` alone errors TS2352). Disables element-type checking; a future wrong-shape map wouldn't be
@@ -111,11 +119,13 @@ caught. Not a live bug (7-length invariant holds; consumers guard indexing).
 `asWeek()` helper.
 
 ### M6 — `mapsHref` literal hardcoded instead of `BUSINESS.mapsHref` · [CODE M2]
+
 `src/booking/BookingFlow.tsx:385` byte-duplicates `src/config.ts:12`. `config.ts` is the documented
 single source of truth for business facts; this fallback silently goes stale if the address changes.
 **Fix:** Import `BUSINESS`, use `BUSINESS.mapsHref`.
 
 ### M7 — Duplicated label/date logic (3-4× each) · [CODE M3, M4]
+
 (a) "Weekday D Month, HH:MM" formatter: `src/cancellation/adapters/supabaseCancellation.ts:34-45`,
 `src/admin/views/BookingsView.tsx:39-51`, `src/cancellation/demoBooking.ts:66-73`,
 `src/booking/BookingFlow.tsx:256` — `demoBooking` + `supabaseCancellation` must stay byte-identical (a
@@ -125,6 +135,7 @@ fallbacks (malformed ISO → wrong date, not a typed failure; benign today as IS
 **Fix:** `formatWhenLabel(lang,date)` + `parseDateIso(iso): Date|null` in `calendar.ts`; replace all sites.
 
 ### M8 — Per-render inline-style object construction in large renders · [CODE M5]
+
 `src/booking/BookingFlow.tsx:136-308`, `src/about/AboutSection.tsx:155-268` rebuild many
 `JSX.CSSProperties` + object arrays every render → defeats child memoization, GC churn on theme/lang/
 slot changes. Faithful port of the source model; not a correctness issue.
@@ -136,12 +147,12 @@ slot changes. Faithful port of the source model; not a correctness issue.
 
 - **L1 — Unauthenticated occupancy oracle** · [SEC L-1] `…152741_functions.sql:102-118` (`taken_slots`),
   `…205456_admin_functions.sql:85-135` (`available_slots`): anon can read any barber's exact busy ranges.
-  Inherent to a public calendar; lever is M2 (throttle). 
+  Inherent to a public calendar; lever is M2 (throttle).
 - **L2 — Dead `taken_slots` surface** · [DB I2] + [CODE L1] `src/backend/rpcSchemas.ts:60-62` exports +
   the anon-granted `taken_slots` RPC have zero callers (superseded by `available_slots`).
   **Fix:** delete the schemas; drop/admin-scope the RPC grant.
 - **L3 — `barber_id` FK added without an idempotency guard** · [DB L1] `…210000:29-31` (no `IF NOT
-  EXISTS`), unlike the guarded CHECK-drop above it. Clean push is fine (verified); only a manual
+EXISTS`), unlike the guarded CHECK-drop above it. Clean push is fine (verified); only a manual
   single-migration re-run would error. **Fix:** guard with a `pg_constraint` existence check.
 - **L4 — CSP `style-src 'unsafe-inline'`** · [SEC L-2] `vercel.json:14`. Not a script vector (no
   injection sink); defense-in-depth only. Acceptable given the inline-style architecture.
@@ -155,12 +166,13 @@ slot changes. Faithful port of the source model; not a correctness issue.
 - **L8 — Internal (never-displayed) error-message language inconsistency** · [CODE L5]
   `src/about/reviews/adapters/supabaseReviews.ts:15` English vs Swedish elsewhere. Nil impact.
 - **L9 — `.env` is tracked in git** · [SEC INFO] `.gitignore:13` ignores only `*.local`. Tracked content
-  + full history contain only public config (verified — no credential ever committed). Future footgun.
-  **Fix:** gitignore `.env`, keep only `.env.example` tracked.
+  - full history contain only public config (verified — no credential ever committed). Future footgun.
+    **Fix:** gitignore `.env`, keep only `.env.example` tracked.
 
 ---
 
 ## NITS (code hygiene — [CODE N1-N11])
+
 - N1 truthy null-checks (`main.tsx:7`, `App.tsx:70`) vs the codebase's `=== null` discipline.
 - N2 theme-color `<meta>` sync duplicated (`App.tsx:66-76` + `admin/useTheme.ts:31-42`), no unmount cleanup.
 - N3 redundant type annotation `admin/views/AboutView.tsx:100`.
@@ -177,6 +189,7 @@ slot changes. Faithful port of the source model; not a correctness issue.
 ---
 
 ## Confirmed STRONG (do not regress these)
+
 - **Double-booking impossible** [DB C1]: GiST exclusion correct (half-open `[)`, adjacency allowed,
   partial `WHERE status='confirmed'`, concurrency-safe); cancel frees the slot; availability overlap
   math agrees with the constraint; no orphan-row path.
@@ -198,11 +211,12 @@ slot changes. Faithful port of the source model; not a correctness issue.
 ---
 
 ## Prioritized fix list (recommended order)
-1. **H1** — Enforce schedule/time-off/hours inside `create_booking` (the public write path). *Top priority — found by 2 independent reviewers.*
+
+1. **H1** — Enforce schedule/time-off/hours inside `create_booking` (the public write path). _Top priority — found by 2 independent reviewers._
 2. **H2** — Unify the booking-instant timezone to Europe/Stockholm (read + write share one definition).
 3. **M3** — Gate `send-confirmation` with a fail-closed webhook secret + DB-sourced recipient **before** any provider key is set (launch blocker for that feature).
 4. **M2 + M4** — Add CAPTCHA/throttle to booking+review; decide + document the contact-as-auth model (or add an OTP).
 5. **M1** — Add the `foreign_key_violation` handler to `create_booking`.
 6. **Code hygiene quick wins** — M6 (mapsHref), M7 (extract `formatWhenLabel`/`parseDateIso`), M5 (WeekSchedule cast), L2 (delete dead `taken_slots`), L6 (BarbersView `lang`).
 
-*No CRITICAL. No HIGH live + exploitable today. Operate-as-is is sound; the list above is the path from "safe" to "beyond perfect".*
+_No CRITICAL. No HIGH live + exploitable today. Operate-as-is is sound; the list above is the path from "safe" to "beyond perfect"._

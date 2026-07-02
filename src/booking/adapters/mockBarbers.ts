@@ -6,10 +6,14 @@
 import { BARBERS } from '../barbers'
 import type { BarbersPort, RosterBarber } from '../barbersPort'
 
-const ROSTER: readonly RosterBarber[] = BARBERS.map((barber) => ({ barber, copy: null }))
+/** The constant roster as `RosterBarber[]` (copy=null) — the seed + the mock fallback. */
+export const CONSTANT_ROSTER: readonly RosterBarber[] = BARBERS.map((barber) => ({
+  barber,
+  copy: null,
+}))
 
 export const mockBarbersAdapter: BarbersPort = {
   listActive(): Promise<readonly RosterBarber[]> {
-    return Promise.resolve(ROSTER)
+    return Promise.resolve(CONSTANT_ROSTER)
   },
 }

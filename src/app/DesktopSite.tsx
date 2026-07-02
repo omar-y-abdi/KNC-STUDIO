@@ -1,5 +1,4 @@
 // Desktop (WEBB · Editorial) layout — nav + hero + collapsible booking fold + footer.
-// Ported verbatim from index.html lines 712-757. All styles/literals unchanged.
 
 import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'

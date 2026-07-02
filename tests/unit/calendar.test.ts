@@ -23,7 +23,10 @@ describe('buildWeeks (Monday-first month grid)', () => {
     for (const w of weeks) expect(w).toHaveLength(7)
   })
   it('contains all 30 June days in order, with null padding only', () => {
-    const days = weeks.flat().filter((c): c is Date => c !== null).map((d) => d.getDate())
+    const days = weeks
+      .flat()
+      .filter((c): c is Date => c !== null)
+      .map((d) => d.getDate())
     expect(days).toEqual(Array.from({ length: 30 }, (_, i) => i + 1))
   })
 })

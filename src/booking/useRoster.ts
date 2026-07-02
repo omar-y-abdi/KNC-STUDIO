@@ -13,12 +13,9 @@
 // swap it. It returns the roster plus a `loading` flag (false immediately under the mock).
 
 import { useEffect, useState } from 'preact/hooks'
-import { BARBERS } from './barbers'
 import type { BarbersPort, RosterBarber } from './barbersPort'
 import { barbersAreMock, defaultBarbersPort } from './adapters/barbersIndex'
-
-/** The constant roster as `RosterBarber[]` (copy=null) — the seed + the mock fallback. */
-const CONSTANT_ROSTER: readonly RosterBarber[] = BARBERS.map((barber) => ({ barber, copy: null }))
+import { CONSTANT_ROSTER } from './adapters/mockBarbers'
 
 export interface RosterState {
   /** The active roster to render (constant under the mock; DB rows under a backend once loaded). */

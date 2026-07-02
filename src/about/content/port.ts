@@ -13,13 +13,7 @@ import type { Lang } from '../../i18n/index'
 
 /** The DB-editable About keys (exactly the `about_content.key` set). */
 export type AboutContentKey =
-  | 'eyebrow'
-  | 'heading'
-  | 'intro'
-  | 'galleryTitle'
-  | 'cutsTitle'
-  | 'stylistsTitle'
-  | 'reviewsTitle'
+  'eyebrow' | 'heading' | 'intro' | 'galleryTitle' | 'cutsTitle' | 'stylistsTitle' | 'reviewsTitle'
 
 /**
  * A partial overlay of the 7 editable keys for one language. Every key is optional: a key the owner

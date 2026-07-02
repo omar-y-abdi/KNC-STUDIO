@@ -1,9 +1,10 @@
 // ============================================================================================
-// PLACEHOLDER PHOTO — the single swap point for real imagery.
+// PLACEHOLDER PHOTO — the stand-in surface wherever a real photo isn't available (stylist
+// avatars, gallery tiles with no DB photos).
 //
-// No real photos exist yet, so this renders a tasteful monochrome surface: a subtle theme-aware
-// gradient (Material-ish) + a centered inline-SVG glyph (camera / scissors / person). It is sized
-// like a real photo via `aspectRatio`, so dropping in a real image later causes NO layout shift.
+// It renders a tasteful monochrome surface: a subtle theme-aware gradient (Material-ish) + a
+// centered inline-SVG glyph (camera / scissors / person). It is sized like a real photo via
+// `aspectRatio`, so dropping in a real image later causes NO layout shift.
 //
 // CSP NOTE: `img-src 'self'` forbids `data:` URIs and external URLs — so placeholders are pure CSS
 // + inline SVG (allowed by `style-src 'unsafe-inline'`), never an <img> with a data/remote source.
@@ -28,8 +29,6 @@ export interface PlaceholderPhotoProps {
   readonly glyph: PlaceholderGlyph
   /** CSS `aspect-ratio` (e.g. '4 / 3', '1 / 1'). Defaults to a landscape photo. */
   readonly ratio?: string
-  /** Optional border radius override (defaults to the 14px booking-card radius). */
-  readonly radius?: string
 }
 
 /** Inline glyph paths — simple, monochrome, drawn with `currentColor` so they follow the theme. */
@@ -86,7 +85,7 @@ export function PlaceholderPhoto(props: PlaceholderPhotoProps): JSX.Element {
     position: 'relative',
     width: '100%',
     aspectRatio: props.ratio ?? '4 / 3',
-    borderRadius: props.radius ?? '14px',
+    borderRadius: '14px',
     overflow: 'hidden',
     background: gradient,
     border: '0.5px solid ' + c.line,

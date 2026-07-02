@@ -29,7 +29,7 @@ describe('buildIcs', () => {
     expect(ics).toContain('BEGIN:VEVENT')
     expect(ics.endsWith('END:VCALENDAR')).toBe(true)
   })
-  it('escapes commas in LOCATION (the original mock did not — the bug this fixes)', () => {
+  it('escapes commas in LOCATION (the original prototype did not — the bug this fixes)', () => {
     expect(ics).toContain('LOCATION:KNC Studio\\, Geijersgatan 10\\, 411 34 Göteborg')
   })
   it('formats DTSTAMP as UTC (Z) and DTSTART as local floating time', () => {

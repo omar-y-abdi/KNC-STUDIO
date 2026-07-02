@@ -7,18 +7,14 @@
 // used rather than a non-null assertion. `pricing()` always yields at least the kids group, and
 // SLOTS/BARBERS are non-empty constants, so the fallbacks are unreachable in practice.
 
-import { BARBERS } from '../booking/barbers'
+import { BARBERS, FALLBACK_BARBER } from '../booking/barbers'
 import { formatWhenLabel } from '../booking/calendar'
 import type { Barber } from '../booking/domain'
-import { asBarberId } from '../booking/domain'
 import { pricing } from '../booking/pricing'
 import { SLOTS } from '../booking/slots'
 import { bookingStrings } from '../i18n/index'
 import type { Lang } from '../i18n/index'
 import type { CancelBooking } from './domain'
-
-/** Fallback barber if the roster were ever empty (BARBERS is a non-empty constant). */
-const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
 /** First upcoming OPEN day at/after `today` (the salon is closed on Sundays, `getDay() === 0`). */
 function nextOpenDay(today: Date): Date {

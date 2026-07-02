@@ -16,6 +16,8 @@ import type { Lang } from '../../i18n/index'
 import { availableSlotsFor, readWeek, saveWeek } from '../adapters/schedulesAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
+  DEFAULT_END_MIN,
+  DEFAULT_START_MIN,
   END_OPTIONS,
   START_OPTIONS,
   defaultWeek,
@@ -26,13 +28,7 @@ import {
   weekIsValid,
 } from '../time'
 import { ConfirmDialog } from '../ConfirmDialog'
-import type {
-  AdminBarberId,
-  AdminStylesBundle,
-  TimeOff,
-  Weekday,
-  WeekSchedule,
-} from './viewTypes'
+import type { AdminBarberId, AdminStylesBundle, TimeOff, Weekday, WeekSchedule } from './viewTypes'
 
 export interface ScheduleViewProps {
   readonly dark: boolean
@@ -60,8 +56,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   // "Same time all days" bound inputs (default to the salon day 09:00–18:00).
-  const [bulkStart, setBulkStart] = useState(540)
-  const [bulkEnd, setBulkEnd] = useState(1080)
+  const [bulkStart, setBulkStart] = useState(DEFAULT_START_MIN)
+  const [bulkEnd, setBulkEnd] = useState(DEFAULT_END_MIN)
 
   // Time-off state.
   const [timeOff, setTimeOff] = useState<readonly TimeOff[]>([])
@@ -113,11 +109,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const onToggleDay = (weekday: Weekday): void => mutate(toggleWorking(week, weekday))
   const onDayStart = (weekday: Weekday, startMin: number): void => {
     const day = week[weekday]
-    mutate(setDayHours(week, weekday, startMin, day?.endMin ?? 1080))
+    mutate(setDayHours(week, weekday, startMin, day?.endMin ?? DEFAULT_END_MIN))
   }
   const onDayEnd = (weekday: Weekday, endMin: number): void => {
     const day = week[weekday]
-    mutate(setDayHours(week, weekday, day?.startMin ?? 540, endMin))
+    mutate(setDayHours(week, weekday, day?.startMin ?? DEFAULT_START_MIN, endMin))
   }
   const applyAllDays = (): void => mutate(sameTimeAllDays(week, bulkStart, bulkEnd))
 
@@ -199,8 +195,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           Schema · {props.barberName}
         </h2>
         <p style={s.sectionLead}>
-          Markera vilka dagar du jobbar och sätt tider. Använd “samma tid alla dagar” för att fylla i
-          snabbt, eller justera varje dag för sig.
+          Markera vilka dagar du jobbar och sätt tider. Använd “samma tid alla dagar” för att fylla
+          i snabbt, eller justera varje dag för sig.
         </p>
 
         {loadError !== null ? (
@@ -463,7 +459,9 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 {timeOff.map((t) => (
                   <tr key={t.id}>
                     <td style={s.td}>{rangeLabel(t)}</td>
-                    <td style={s.td}>{t.reason === '' ? <span style={s.mutedText}>—</span> : t.reason}</td>
+                    <td style={s.td}>
+                      {t.reason === '' ? <span style={s.mutedText}>—</span> : t.reason}
+                    </td>
                     <td style={{ ...s.td, textAlign: 'right' }}>
                       <button type="button" style={s.dangerBtn} onClick={() => setPendingOff(t)}>
                         Ta bort
@@ -486,7 +484,15 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           Visa de bokningsbara tiderna en viss dag (45 min) utifrån sparat schema och ledighet — så
           som kunderna ser dem. Spara schemat först för att se ändringar.
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', margin: '12px 0' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            gap: '12px',
+            margin: '12px 0',
+          }}
+        >
           <div>
             <label htmlFor="preview-date" style={s.label}>
               Datum
@@ -517,7 +523,9 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           ) : previewSlots === null ? (
             <span style={s.mutedText}>Välj ett datum och tryck på knappen.</span>
           ) : previewSlots.length === 0 ? (
-            <span style={s.mutedText}>Inga lediga tider den dagen (ledig, stängt eller fullbokat).</span>
+            <span style={s.mutedText}>
+              Inga lediga tider den dagen (ledig, stängt eller fullbokat).
+            </span>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {previewSlots.map((t) => (

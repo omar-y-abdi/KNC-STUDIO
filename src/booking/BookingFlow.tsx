@@ -1,7 +1,7 @@
-// Port of the source `BookingFlow` (index.html lines 185-549). The 4-step flow (barber → date →
-// service → time); the details + confirmation modals live in their own components. Every inline
-// style/literal is verbatim. Submit flows through the injectable `BookingPort` (default
-// `localCalendarAdapter`) so a future real adapter is a one-line swap.
+// The 4-step booking flow (barber → date → service → time), ported from the original mock; the
+// details + confirmation modals live in their own components. Inline styles/literals match the
+// mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
+// Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -9,7 +9,15 @@ import { BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
 import { bookingStrings } from '../i18n/index'
-import { cap, buildWeeks, iso, monthLabel, parseDateIso, weekdayLabel, headerLabels } from './calendar'
+import {
+  cap,
+  buildWeeks,
+  iso,
+  monthLabel,
+  parseDateIso,
+  weekdayLabel,
+  headerLabels,
+} from './calendar'
 import type { Barber, Booking, BookingDraft, BookingResult } from './domain'
 import { initialDraft } from './domain'
 import { pricing } from './pricing'
@@ -38,7 +46,7 @@ export interface BookingFlowProps {
   readonly showHeader?: boolean
   /** Injected clock — "today" comes from here, never `new Date()` (default: env-selected). */
   readonly clock?: Clock
-  /** Injected submit seam — swap this for a real backend adapter (default: local, no network). */
+  /** Injected submit seam (default: env-selected; local adapter when no backend is configured). */
   readonly port?: BookingPort
   /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
   readonly barbersPort?: BarbersPort
@@ -52,8 +60,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<string | null>(null)
   // Real availability: the TAKEN slot times for the chosen barber+date+service, loaded through the
-  // port (DB-backed when configured, the original `slotTaken` formula under the mock). The grid
-  // greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
+  // port (DB-backed when configured, the deterministic `slotTaken` formula under the mock). The
+  // grid greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
   const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
   // Turnstile token (proves the submitter is human; verified by the submit-booking gateway) + a
@@ -62,8 +70,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [turnstileToken, setTurnstileToken] = useState<string>('')
   const [turnstileNonce, setTurnstileNonce] = useState<number>(0)
 
-  const setState = (u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>)): void =>
-    setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
+  const setState = (
+    u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
+  ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   const reset = (): void => {
     setResult(null)
     setFieldErrors(NO_FIELD_ERRORS)
@@ -259,7 +268,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     const mm = parts?.month ?? 1
     const dd = parts?.day ?? 1
     selDate = new Date(yy, mm - 1, dd)
-    dateLabelLong = cap(weekdayLabel(lang, selDate.getDay())) + ' ' + dd + ' ' + monthLabel(lang, mm - 1)
+    dateLabelLong =
+      cap(weekdayLabel(lang, selDate.getDay())) + ' ' + dd + ' ' + monthLabel(lang, mm - 1)
   }
 
   interface ServiceRow {
@@ -323,7 +333,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     selDate !== null && S.service !== null
       ? SLOTS.map((time) => {
           // A slot is taken iff its time is in the loaded availability set (membership only — all
-          // overlap math lives in the adapter). Under the mock this equals the old `slotTaken` output.
+          // overlap math lives in the adapter). Under the mock this equals the `slotTaken` output.
           const taken = takenTimes.includes(time)
           const sel = S.time === time
           let bg = c.card
@@ -544,7 +554,11 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               <div style={s.panelStyle}>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                   <button
-                    onClick={canPrev ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 })) : undefined}
+                    onClick={
+                      canPrev
+                        ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 }))
+                        : undefined
+                    }
                     style={navBtn(canPrev)}
                   >
                     <img src="/icons/chevron.left.svg" alt="prev" style={s.navIconStyle} />
@@ -553,7 +567,11 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     {monthLabelText}
                   </span>
                   <button
-                    onClick={canNext ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 })) : undefined}
+                    onClick={
+                      canNext
+                        ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 }))
+                        : undefined
+                    }
                     style={navBtn(canNext)}
                   >
                     <img src="/icons/chevron.right.svg" alt="next" style={s.navIconStyle} />
@@ -640,7 +658,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   ))}
                 </div>
               ) : null}
-              {notServicesReady ? <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div> : null}
+              {notServicesReady ? (
+                <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div>
+              ) : null}
             </div>
 
             <div style="flex:1 1 220px;min-width:0;">
@@ -665,7 +685,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   </div>
                 </div>
               ) : null}
-              {notTimesReady ? <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div> : null}
+              {notTimesReady ? (
+                <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div>
+              ) : null}
             </div>
           </div>
         ) : null}

@@ -1,29 +1,76 @@
 /* Global baseline + animations. Values copied verbatim from the original mock to preserve pixels. */
-@keyframes kncFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes kncOverlay { from { opacity: 0; } to { opacity: 1; } }
-@keyframes kncPop { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes kncFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes kncOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes kncPop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
-html, body { margin: 0; }
+html,
+body {
+  margin: 0;
+}
 
 /* Barber-pole logo: the diagonal stripes scroll upward (the pole-spin illusion), clipped to the
    pole. Paused for visitors who prefer reduced motion. */
-.knc-stripes { animation: knc-spin 1.6s linear infinite; }
-@keyframes knc-spin { from { transform: translateY(0); } to { transform: translateY(-7px); } }
-@media (prefers-reduced-motion: reduce) { .knc-stripes { animation: none; } }
+.knc-stripes {
+  animation: knc-spin 1.6s linear infinite;
+}
+@keyframes knc-spin {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-7px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knc-stripes {
+    animation: none;
+  }
+}
 
 /* On phones the booking/confirm modal stays a FLOATING CENTERED card; zoom shrinks the whole
    card (box + text + padding + fields) ~1/4 and reflows so it no longer fills the screen.
    `zoom` is kept deliberately: it reflows the layout box (unlike transform:scale) and is supported
    across modern Chrome, Safari and Firefox. Position unchanged. */
 /* Booking-popup input font-size lives here (not inline) so the mobile override below wins.
-   Desktop: 15px (matches the source; no zoom, no iOS auto-zoom problem). */
-.knc-sheet-card input { font-size: 15px; }
+   Desktop: 15px (no zoom, so no iOS auto-zoom problem). */
+.knc-sheet-card input {
+  font-size: 15px;
+}
 
 @media (max-width: 768px) {
-  .knc-sheet-card { zoom: 0.85; }
+  .knc-sheet-card {
+    zoom: 0.85;
+  }
   /* The card is zoomed 0.85, so a 15px input renders ~12.75px and iOS Safari auto-zooms on focus
      (and stays zoomed after the keyboard closes). 19px → ~16px effective, which stops that zoom. */
-  .knc-sheet-card input { font-size: 19px; }
+  .knc-sheet-card input {
+    font-size: 19px;
+  }
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -32,14 +79,18 @@ html, body { margin: 0; }
    On phones the fixed left sidebar becomes a horizontal, scrollable tab bar at the top so a barber
    can use the panel one-handed.
    --------------------------------------------------------------------------------------------- */
-.knc-admin-signout-top { display: none; }
+.knc-admin-signout-top {
+  display: none;
+}
 
 /* NOTE: the shell/sidebar/navlist carry INLINE layout styles (display/width/flex-direction), which
    beat plain class selectors. The mobile overrides below therefore need `!important` to win — that is
    the only way a media-query class rule can override an inline style. Scoped to `.knc-admin-*`, so the
    public site is untouched. */
 @media (max-width: 760px) {
-  .knc-admin-shell { display: block !important; }
+  .knc-admin-shell {
+    display: block !important;
+  }
   .knc-admin-sidebar {
     width: 100% !important;
     height: auto !important;
@@ -54,7 +105,11 @@ html, body { margin: 0; }
     -webkit-overflow-scrolling: touch;
   }
   /* The brand label shrinks; the nav list scrolls horizontally as a tab strip. */
-  .knc-admin-sidebar > div:first-child { padding: 0 8px 0 2px !important; font-size: 15px !important; white-space: nowrap; }
+  .knc-admin-sidebar > div:first-child {
+    padding: 0 8px 0 2px !important;
+    font-size: 15px !important;
+    white-space: nowrap;
+  }
   .knc-admin-navlist {
     flex-direction: row !important;
     flex-wrap: nowrap !important;
@@ -63,6 +118,10 @@ html, body { margin: 0; }
     flex: 1 1 auto !important;
   }
   /* The bottom sign-out belongs in the top bar on mobile (it would scroll off the tab strip). */
-  .knc-admin-signout-bottom { display: none !important; }
-  .knc-admin-signout-top { display: inline-flex !important; }
+  .knc-admin-signout-bottom {
+    display: none !important;
+  }
+  .knc-admin-signout-top {
+    display: inline-flex !important;
+  }
 }

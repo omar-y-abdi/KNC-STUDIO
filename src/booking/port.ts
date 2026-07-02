@@ -1,7 +1,7 @@
-// The "backend-ready" seam. A `BookingPort` turns a validated `Booking` into a `BookingResult`
-// (links + echoed booking, or a domain error). The UI depends on this interface only; the one
-// concrete implementation today is `localCalendarAdapter` (no network). Future adapters
-// (Supabase, webhook) would implement the same interface — they are intentionally not stubbed.
+// The booking seam. A `BookingPort` turns a validated `Booking` into a `BookingResult`
+// (links + echoed booking, or a domain error). The UI depends on this interface only; the
+// concrete implementations are `localCalendarAdapter` (offline, no network) and
+// `supabaseBookingAdapter` (the real backend).
 
 import type { Booking, BookingResult, BarberId } from './domain'
 
