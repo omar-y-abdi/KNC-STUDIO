@@ -29,6 +29,18 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 const baseUrl = SUPABASE_URL.replace(/\/+$/, '') // tolerate a trailing slash
 
+// A future working day, computed at run time so the checks stay meaningful forever (a hardcoded
+// date silently rots: available_slots excludes past slots, so an elapsed date would return [] and
+// fail check 1). Next Monday at least 3 days out — Mondays are working under the seed schedule.
+function nextMondayIso() {
+  const d = new Date()
+  d.setDate(d.getDate() + 3)
+  while (d.getDay() !== 1) d.setDate(d.getDate() + 1)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+const SMOKE_DATE = nextMondayIso()
+
 // Anon-only headers. PostgREST and the Functions gateway both want the apikey; the
 // Bearer is the same public anon JWT (no user session involved).
 const headers = {
@@ -61,7 +73,7 @@ async function postJson(path, body) {
 async function checkAvailableSlots() {
   const { status, json } = await postJson('/rest/v1/rpc/available_slots', {
     p_barber_id: 'hassan',
-    p_date: '2026-06-29',
+    p_date: SMOKE_DATE,
     p_duration_min: 30,
   })
   const isArray = Array.isArray(json)
@@ -91,7 +103,9 @@ async function checkSubmitBookingTurnstileGate() {
       serviceName: 'Klippning',
       price: 350,
       durationMin: 30,
-      startAt: '2026-06-29T10:00:00+02:00',
+      // The Turnstile gate rejects before create_booking ever parses this, so a fixed +02:00
+      // offset is fine year-round — the gateway's shape check only needs a non-empty string.
+      startAt: `${SMOKE_DATE}T10:00:00+02:00`,
       phone: '0701234567',
       lang: 'sv',
       customerName: 'Smoke Test',
@@ -118,7 +132,7 @@ async function checkLookupBooking() {
 }
 
 const checks = [
-  ['available_slots (hassan, 2026-06-29, 30min)', checkAvailableSlots],
+  [`available_slots (hassan, ${SMOKE_DATE}, 30min)`, checkAvailableSlots],
   ['submit-booking invalid (empty body -> 400)', checkSubmitBookingInvalid],
   [
     'submit-booking turnstile gate (empty token -> failed_challenge)',

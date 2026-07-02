@@ -37,12 +37,9 @@ function seedArgs(phone: string): CreateBookingArgs {
   }
 }
 
-/** The wall-clock "HH:MM" the adapter renders for the seed instant, in the runner's local tz. */
-function expectedWhenTime(): string {
-  const start = new Date(SEED_START_UTC)
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${pad(start.getHours())}:${pad(start.getMinutes())}`
-}
+// The adapter labels the booking in SALON time (Europe/Stockholm), independent of the runner's tz:
+// the seed instant 12:30Z is 13:30 CET.
+const EXPECTED_WHEN_TIME = '13:30'
 
 describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', () => {
   beforeEach(async () => {
@@ -64,8 +61,8 @@ describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', ()
     expect(found.booking.barber.id).toBe(HASSAN.id)
     expect(found.booking.serviceName).toBe('Hårklippning')
     expect(found.booking.contact).toBe(phone)
-    // whenLabel mirrors buildDemoBooking's "Weekday D Month, HH:MM" (zero-padded local time).
-    expect(found.booking.whenLabel).toContain(expectedWhenTime())
+    // whenLabel mirrors buildDemoBooking's "Weekday D Month, HH:MM" — in Stockholm wall-clock.
+    expect(found.booking.whenLabel).toContain(EXPECTED_WHEN_TIME)
 
     const cancelled = await supabaseCancellationAdapter.cancel(found.booking)
     expect(cancelled.ok).toBe(true)

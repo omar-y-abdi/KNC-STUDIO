@@ -44,8 +44,10 @@ describe('buildLinks', () => {
 
   it('encodes the event into both the ICS payload and the Google Calendar template', () => {
     const links = buildLinks(booking(), NOW)
-    // The Google template carries the render action + the encoded barber/service title.
+    // The Google template carries the render action + the encoded barber/service title, and pins
+    // the floating wall-clock to the salon timezone (without ctz Google would use the user's).
     expect(links.gcalHref).toContain('action=TEMPLATE')
+    expect(links.gcalHref).toContain('ctz=Europe%2FStockholm')
     expect(decodeURIComponent(links.gcalHref)).toContain('Hårklippning')
     // The .ics payload is a real VCALENDAR with the event summary.
     const ics = decodeURIComponent(links.icsHref.replace('data:text/calendar;charset=utf-8,', ''))

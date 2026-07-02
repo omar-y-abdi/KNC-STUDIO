@@ -4,7 +4,11 @@
 // against Postgres `(timestamp 'YYYY-MM-DD 13:30' at time zone 'Europe/Stockholm') at time zone 'UTC'`.
 
 import { describe, expect, it } from 'vitest'
-import { localWallClockToStockholmIso, stockholmInstant } from '../../src/booking/stockholmTime'
+import {
+  localWallClockToStockholmIso,
+  stockholmInstant,
+  stockholmWallClockDate,
+} from '../../src/booking/stockholmTime'
 
 describe('stockholmInstant — DST-correct wall-clock → UTC', () => {
   it('CET (winter, UTC+1): 2040-03-14 13:30 Stockholm = 12:30:00Z', () => {
@@ -18,6 +22,26 @@ describe('stockholmInstant — DST-correct wall-clock → UTC', () => {
   it('the day AFTER the spring-forward switch is already CEST (2040-03-25 09:00 = 07:00Z)', () => {
     // Sweden switches on the last Sunday of March (2040-03-25); 09:00 that day is post-switch → +2h.
     expect(stockholmInstant(2040, 3, 25, 9, 0).toISOString()).toBe('2040-03-25T07:00:00.000Z')
+  })
+})
+
+describe('stockholmWallClockDate — instant → Stockholm wall-clock components (the inverse)', () => {
+  it('CET (winter): 12:30:00Z reads back as 13:30 local components', () => {
+    const wall = stockholmWallClockDate(new Date('2040-03-14T12:30:00.000Z'))
+    expect([wall.getHours(), wall.getMinutes(), wall.getDate()]).toEqual([13, 30, 14])
+  })
+
+  it('CEST (summer): 11:30:00Z reads back as 13:30 local components', () => {
+    const wall = stockholmWallClockDate(new Date('2040-07-15T11:30:00.000Z'))
+    expect([wall.getHours(), wall.getMinutes(), wall.getDate()]).toEqual([13, 30, 15])
+  })
+
+  it('round-trips with stockholmInstant for a grid slot', () => {
+    const instant = stockholmInstant(2040, 3, 25, 9, 0)
+    const wall = stockholmWallClockDate(instant)
+    expect([wall.getFullYear(), wall.getMonth() + 1, wall.getDate(), wall.getHours()]).toEqual([
+      2040, 3, 25, 9,
+    ])
   })
 })
 

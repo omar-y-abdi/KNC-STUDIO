@@ -3,23 +3,38 @@
 // enumeration of others); `cancel` calls `cancel_booking` (contact-guarded, idempotent).
 //
 // The looked-up booking carries only barber_id + service_name + price + start_at + contact
-// (no other PII). We map barber_id -> Barber on the client (barbers are a frontend constant) and
-// build the SAME "Weekday D Month, HH:MM" label `buildDemoBooking` produces, so the confirm step
-// renders identically to the mock. Boundary discipline: parse every response; map failure to a
-// localized error string rather than throwing.
+// (no other PII). We map barber_id -> Barber via the LIVE roster (an owner-added DB barber must show
+// its own name, never a constant's), and build the SAME "Weekday D Month, HH:MM" label
+// `buildDemoBooking` produces — rendered in Europe/Stockholm wall-clock, the timezone the customer
+// picked the slot in. Boundary discipline: parse every response; map failure to a localized error
+// string rather than throwing.
 
 import { getSupabase } from '../../backend/supabaseClient'
 import { bookingLookupResponse, parseWith } from '../../backend/rpcSchemas'
-import { BARBERS, FALLBACK_BARBER } from '../../booking/barbers'
+import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
+import { BARBERS } from '../../booking/barbers'
 import { formatWhenLabel } from '../../booking/calendar'
 import type { Barber } from '../../booking/domain'
+import { asBarberId } from '../../booking/domain'
+import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { cancelStrings } from '../../i18n/index'
 import type { CancelBooking, CancelLookupResult, CancelResult } from '../domain'
 import type { CancellationPort, CancelLookupParams } from '../port'
 
-/** Resolve a barber by its (wire-string) id without narrowing the input to `BarberId`. */
-function barberFromId(id: string): Barber {
-  return BARBERS.find((b) => b.id === id) ?? FALLBACK_BARBER
+/**
+ * Resolve the booked barber's display identity: the live roster first (covers owner-added DB
+ * barbers), then the offline constants, then a minimal stub echoing the raw id — NEVER a different
+ * barber's name (a wrong name on the cancel-confirm step could cancel the wrong appointment).
+ */
+async function barberFromId(id: string): Promise<Barber> {
+  try {
+    const roster = await defaultBarbersPort.listActive()
+    const hit = roster.find((r) => r.barber.id === id)
+    if (hit !== undefined) return hit.barber
+  } catch {
+    // roster unavailable — fall through to the offline constants
+  }
+  return BARBERS.find((b) => b.id === id) ?? { id: asBarberId(id), name: id, ig: '' }
 }
 
 export const supabaseCancellationAdapter: CancellationPort = {
@@ -38,11 +53,13 @@ export const supabaseCancellationAdapter: CancellationPort = {
       const start = new Date(b.start_at)
       const booking: CancelBooking = {
         id: b.id,
-        barber: barberFromId(b.barber_id),
+        barber: await barberFromId(b.barber_id),
         serviceName: b.service_name,
         price: b.price,
         start,
-        whenLabel: formatWhenLabel(params.lang, start),
+        // Label the stored instant in SALON time — the wall-clock the customer picked the slot in —
+        // not the browser's timezone (a traveller must see the same "13:30" they booked).
+        whenLabel: formatWhenLabel(params.lang, stockholmWallClockDate(start)),
         contact: b.contact,
       }
       return { ok: true, booking }
