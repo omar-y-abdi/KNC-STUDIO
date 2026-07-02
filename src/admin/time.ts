@@ -27,22 +27,6 @@ export function minutesToHHMM(min: number): string {
 }
 
 /**
- * Parse `HH:MM` to minutes-from-midnight, or `null` if it is not a valid 24h time. Total: bad input
- * yields `null` (no throw), so the caller decides what an unparseable value means.
- */
-export function hhmmToMinutes(hhmm: string): number | null {
-  const match = /^([0-9]{1,2}):([0-9]{2})$/.exec(hhmm.trim())
-  if (match === null) return null
-  const h = Number(match[1])
-  const m = Number(match[2])
-  if (!Number.isInteger(h) || !Number.isInteger(m)) return null
-  if (h < 0 || h > 24 || m < 0 || m > 59) return null
-  const total = h * 60 + m
-  if (total > 1440) return null
-  return total
-}
-
-/**
  * The selectable start times: the 12 fixed slot starts (09:00..17:15) PLUS the day-open boundary.
  * Steps of 45 min, 540..1035. Used to populate the "start" dropdown.
  */
@@ -71,7 +55,7 @@ export function isValidWindow(day: DaySchedule): boolean {
 }
 
 /** Every weekday in JS getDay() order (0=Sun..6=Sat). */
-export const WEEKDAYS: readonly Weekday[] = [0, 1, 2, 3, 4, 5, 6]
+const WEEKDAYS: readonly Weekday[] = [0, 1, 2, 3, 4, 5, 6]
 
 /**
  * The default week (mirrors the DB seed): working Mon–Sat (1..6) 09:00–18:00, Sunday(0) closed. Used

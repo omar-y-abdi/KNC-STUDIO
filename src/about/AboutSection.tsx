@@ -11,7 +11,6 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { FOCUS_CLS } from '../ui/pseudo'
-import { fillToken } from '../ui/fillToken'
 import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
 import { useRoster } from '../booking/useRoster'
@@ -332,7 +331,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             <div key={r.id} style={reviewCardStyle}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                 <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
-                <StarDisplay rating={r.rating} c={c} label={fillToken(tx.ratingValueLabel, '{n}', String(r.rating))} />
+                <StarDisplay rating={r.rating} c={c} label={tx.ratingValueLabel.replace('{n}', String(r.rating))} />
               </div>
               <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>{r.text}</p>
             </div>
@@ -371,7 +370,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               onChange={setRating}
               c={c}
               groupLabel={tx.ratingGroupLabel}
-              starLabel={(n) => fillToken(tx.ratingStarLabel, '{n}', String(n))}
+              starLabel={(n) => tx.ratingStarLabel.replace('{n}', String(n))}
               invalid={errors.rating}
               errorColor={red}
             />

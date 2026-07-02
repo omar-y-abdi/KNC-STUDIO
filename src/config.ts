@@ -20,8 +20,8 @@ export type Clock = () => Date
 
 const FIXED_DEMO_DAY = Object.freeze({ year: 2026, monthIndex: 5, day: 19 })
 
-export const realClock: Clock = () => new Date()
-export const fixedClock: Clock = () =>
+const realClock: Clock = () => new Date()
+const fixedClock: Clock = () =>
   new Date(FIXED_DEMO_DAY.year, FIXED_DEMO_DAY.monthIndex, FIXED_DEMO_DAY.day)
 
 /** Default clock selected by build-time env; `fixed` only for the baseline run. */

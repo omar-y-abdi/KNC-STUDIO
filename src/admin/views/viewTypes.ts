@@ -4,12 +4,9 @@
 export type { AdminStyles as AdminStylesBundle } from '../adminStyles'
 export type {
   AboutKey,
-  AboutRow,
   AdminBarber,
   AdminBarberId,
   AdminBooking,
-  AdminProfile,
-  AdminResult,
   GalleryImage,
   GalleryKind,
   TimeOff,

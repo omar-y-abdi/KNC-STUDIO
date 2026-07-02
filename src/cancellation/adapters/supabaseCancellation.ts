@@ -10,16 +10,12 @@
 
 import { getSupabase } from '../../backend/supabaseClient'
 import { bookingLookupResponse, parseWith } from '../../backend/rpcSchemas'
-import { BARBERS } from '../../booking/barbers'
+import { BARBERS, FALLBACK_BARBER } from '../../booking/barbers'
 import { formatWhenLabel } from '../../booking/calendar'
 import type { Barber } from '../../booking/domain'
-import { asBarberId } from '../../booking/domain'
 import { cancelStrings } from '../../i18n/index'
 import type { CancelBooking, CancelLookupResult, CancelResult } from '../domain'
 import type { CancellationPort, CancelLookupParams } from '../port'
-
-/** Safe default barber if the roster lookup ever misses (the DB only stores valid ids, so unreachable). */
-const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
 
 /** Resolve a barber by its (wire-string) id without narrowing the input to `BarberId`. */
 function barberFromId(id: string): Barber {

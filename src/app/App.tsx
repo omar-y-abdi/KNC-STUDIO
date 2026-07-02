@@ -10,6 +10,7 @@ import { BUSINESS } from '../config'
 import type { Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
+import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
@@ -64,15 +65,7 @@ export function App(): JSX.Element {
   const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
   const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
   useEffect(() => {
-    document.documentElement.style.background = pageBg
-    document.body.style.background = pageBg
-    let meta = document.querySelector('meta[name="theme-color"]')
-    if (meta === null) {
-      meta = document.createElement('meta')
-      meta.setAttribute('name', 'theme-color')
-      document.head.appendChild(meta)
-    }
-    meta.setAttribute('content', topBar)
+    paintViewport(pageBg, topBar)
   }, [pageBg, topBar])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({

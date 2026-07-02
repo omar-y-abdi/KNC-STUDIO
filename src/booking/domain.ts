@@ -14,7 +14,7 @@ export interface Barber {
 /**
  * A barber id. Originally a closed union (`'hassan' | 'victor' | 'salman'`); now an OPEN branded
  * string so an owner-added DB barber (any id matching `^[a-z0-9-]+$`) is a valid value, while the
- * `BARBERS` constant + `findBarber`/`barberIndex` keep working as the offline fallback (ADMIN_SPEC
+ * `BARBERS` constant + `barberIndex` keep working as the offline fallback (ADMIN_SPEC
  * §5). The brand is purely nominal — it erases to `string` at runtime and carries no cost — yet it
  * keeps a `barberId` from being confused with an arbitrary string: a raw string is narrowed to a
  * `BarberId` only at the boundaries (the seed constants, the DB-row mapper, the `BookingDraft`'s own

@@ -10,9 +10,9 @@
 //
 // Nothing here is used in production — it is local-stack-only test scaffolding.
 
-import { Client } from 'pg'
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { readEnvVars, withClient } from './_helpers'
 
 /** Full env the admin integration tests need (anon + service_role + db superuser). */
 export interface AdminStackEnv {
@@ -24,23 +24,19 @@ export interface AdminStackEnv {
 
 /** Read + validate the admin stack env, or `null` when incomplete (suite self-skips). */
 export function readAdminStackEnv(): AdminStackEnv | null {
-  const url = process.env.SUPABASE_URL
-  const anonKey = process.env.SUPABASE_ANON_KEY
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const dbUrl = process.env.SUPABASE_DB_URL
-  if (
-    url === undefined ||
-    anonKey === undefined ||
-    serviceRoleKey === undefined ||
-    dbUrl === undefined ||
-    url === '' ||
-    anonKey === '' ||
-    serviceRoleKey === '' ||
-    dbUrl === ''
-  ) {
-    return null
+  const env = readEnvVars(
+    'SUPABASE_URL',
+    'SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_DB_URL',
+  )
+  if (env === null) return null
+  return {
+    url: env.SUPABASE_URL,
+    anonKey: env.SUPABASE_ANON_KEY,
+    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+    dbUrl: env.SUPABASE_DB_URL,
   }
-  return { url, anonKey, serviceRoleKey, dbUrl }
 }
 
 /** `true` iff the full admin stack env is present (gate the whole admin suite on this). */
@@ -113,17 +109,13 @@ async function upsertProfile(
   role: 'owner' | 'barber',
   barberId: string | null,
 ): Promise<void> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
-    await client.query(
+  await withClient(env.dbUrl, (client) =>
+    client.query(
       `insert into public.profiles (id, role, barber_id) values ($1, $2, $3)
        on conflict (id) do update set role = excluded.role, barber_id = excluded.barber_id`,
       [userId, role, barberId],
-    )
-  } finally {
-    await client.end()
-  }
+    ),
+  )
 }
 
 export interface SeededIdentities {
@@ -176,9 +168,7 @@ export async function readScheduleRaw(
   env: AdminStackEnv,
   barberId: string,
 ): Promise<readonly { weekday: number; working: boolean; start_min: number; end_min: number }[]> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
+  return withClient(env.dbUrl, async (client) => {
     const res = await client.query<{
       weekday: number
       working: boolean
@@ -189,24 +179,18 @@ export async function readScheduleRaw(
       [barberId],
     )
     return res.rows
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /** Count a barber's time-off rows via the superuser (RLS-negative read-back). */
 export async function countTimeOffRaw(env: AdminStackEnv, barberId: string): Promise<number> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
+  return withClient(env.dbUrl, async (client) => {
     const res = await client.query<{ n: string }>(
       'select count(*)::text as n from public.barber_time_off where barber_id = $1',
       [barberId],
     )
     return Number(res.rows[0]?.n ?? '0')
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /** A booking's status via the superuser (to assert a cancel did/did not happen). */
@@ -214,17 +198,13 @@ export async function bookingStatusRaw(
   env: AdminStackEnv,
   bookingId: string,
 ): Promise<string | null> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
+  return withClient(env.dbUrl, async (client) => {
     const res = await client.query<{ status: string }>(
       'select status from public.bookings where id = $1',
       [bookingId],
     )
     return res.rows[0]?.status ?? null
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /** Insert a confirmed booking for a barber via the superuser; returns its id. Far-future to avoid clashes. */
@@ -234,9 +214,7 @@ export async function insertBookingRaw(
   startAt: Date,
   durationMin: number,
 ): Promise<string> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
+  return withClient(env.dbUrl, async (client) => {
     const end = new Date(startAt.getTime() + durationMin * 60000)
     const res = await client.query<{ id: string }>(
       `insert into public.bookings
@@ -248,9 +226,7 @@ export async function insertBookingRaw(
     const id = res.rows[0]?.id
     if (id === undefined) throw new Error('insertBookingRaw: no id returned')
     return id
-  } finally {
-    await client.end()
-  }
+  })
 }
 
 /**
@@ -262,9 +238,7 @@ export async function insertBookingRaw(
  * Storage objects from the gallery test are cleaned up by that test itself (it tracks its paths).
  */
 export async function restoreSeedState(env: AdminStackEnv): Promise<void> {
-  const client = new Client({ connectionString: env.dbUrl })
-  await client.connect()
-  try {
+  await withClient(env.dbUrl, async (client) => {
     await client.query('delete from public.barber_time_off')
     await client.query('delete from public.gallery_images')
     await client.query('truncate table public.bookings restart identity cascade')
@@ -277,7 +251,5 @@ export async function restoreSeedState(env: AdminStackEnv): Promise<void> {
       on conflict (barber_id, weekday)
       do update set working = excluded.working, start_min = excluded.start_min, end_min = excluded.end_min
     `)
-  } finally {
-    await client.end()
-  }
+  })
 }

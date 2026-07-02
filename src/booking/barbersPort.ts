@@ -8,7 +8,7 @@
 // both the booking grid (id/name/ig) and the About cards (role/bio). The mock leaves them blank
 // here — the About section's own i18n constants are the fallback copy (see `aboutContentPort`).
 
-import type { Barber, BarberId } from './domain'
+import type { Barber } from './domain'
 
 /**
  * Per-language stylist copy for one barber (the About card's role + bio). Optional because the mock
@@ -35,9 +35,4 @@ export interface BarbersPort {
    * (active, by `sort_order`) under Supabase.
    */
   listActive(): Promise<readonly RosterBarber[]>
-}
-
-/** The id of a roster entry (handy for keying/looking up). */
-export function rosterId(entry: RosterBarber): BarberId {
-  return entry.barber.id
 }

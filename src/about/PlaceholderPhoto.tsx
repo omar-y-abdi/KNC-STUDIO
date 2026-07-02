@@ -28,8 +28,6 @@ export interface PlaceholderPhotoProps {
   readonly glyph: PlaceholderGlyph
   /** CSS `aspect-ratio` (e.g. '4 / 3', '1 / 1'). Defaults to a landscape photo. */
   readonly ratio?: string
-  /** Optional border radius override (defaults to the 14px booking-card radius). */
-  readonly radius?: string
 }
 
 /** Inline glyph paths — simple, monochrome, drawn with `currentColor` so they follow the theme. */
@@ -86,7 +84,7 @@ export function PlaceholderPhoto(props: PlaceholderPhotoProps): JSX.Element {
     position: 'relative',
     width: '100%',
     aspectRatio: props.ratio ?? '4 / 3',
-    borderRadius: props.radius ?? '14px',
+    borderRadius: '14px',
     overflow: 'hidden',
     background: gradient,
     border: '0.5px solid ' + c.line,

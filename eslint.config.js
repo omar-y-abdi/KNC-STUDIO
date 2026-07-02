@@ -7,11 +7,9 @@ import nounsan from 'eslint-plugin-no-unsanitized'
 // and DOM-sink XSS (no-unsanitized). Type-aware rules are intentionally omitted to keep
 // linting fast + stable on the bleeding-edge TS toolchain.
 export default tseslint.config(
-  // `reference/` is the read-only original mock (legacy HTML + its bundled support.js) — not part
-  // of the app source, so it is excluded from linting alongside build output. `supabase/` is a
-  // separate Deno project (edge functions) + SQL/pgTAP; it has its own runtime + globals (Deno,
-  // server-side `console`) and is not in the app tsconfig, so it is excluded here too.
-  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'reference/**', 'supabase/**'] },
+  // `supabase/` is a separate Deno project (edge functions) + SQL/pgTAP; it has its own runtime +
+  // globals (Deno, server-side `console`) and is not in the app tsconfig, so it is excluded here.
+  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'supabase/**'] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,
@@ -34,7 +32,13 @@ export default tseslint.config(
   {
     files: ['tools/**', 'tests/**', '**/*.config.{js,ts}'],
     languageOptions: {
-      globals: { process: 'readonly', console: 'readonly', URL: 'readonly', Buffer: 'readonly' },
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        Buffer: 'readonly',
+        fetch: 'readonly',
+      },
     },
     rules: { 'no-console': 'off' },
   },

@@ -1,5 +1,5 @@
-// Unit tests for the pure schedule/time helpers (no mocks, no I/O). These cover the minutes<->HH:MM
-// conversions, the "samma tid alla dagar" reducer, per-day edits, validation, and the week
+// Unit tests for the pure schedule/time helpers (no mocks, no I/O). These cover the minutes->HH:MM
+// formatting, the "samma tid alla dagar" reducer, per-day edits, validation, and the week
 // normalization — the logic the schedule editor relies on.
 
 import { describe, expect, it } from 'vitest'
@@ -9,7 +9,6 @@ import {
   END_OPTIONS,
   START_OPTIONS,
   defaultWeek,
-  hhmmToMinutes,
   isValidWindow,
   minutesToHHMM,
   sameTimeAllDays,
@@ -32,30 +31,6 @@ describe('minutesToHHMM', () => {
 
   it('is total: clamps negatives to 00:00', () => {
     expect(minutesToHHMM(-30)).toBe('00:00')
-  })
-})
-
-describe('hhmmToMinutes', () => {
-  it('parses valid times', () => {
-    expect(hhmmToMinutes('09:00')).toBe(540)
-    expect(hhmmToMinutes('9:00')).toBe(540)
-    expect(hhmmToMinutes('18:00')).toBe(1080)
-    expect(hhmmToMinutes('00:00')).toBe(0)
-    expect(hhmmToMinutes(' 09:45 ')).toBe(585)
-  })
-
-  it('returns null for invalid input (total, no throw)', () => {
-    expect(hhmmToMinutes('banana')).toBeNull()
-    expect(hhmmToMinutes('25:00')).toBeNull()
-    expect(hhmmToMinutes('09:60')).toBeNull()
-    expect(hhmmToMinutes('09')).toBeNull()
-    expect(hhmmToMinutes('')).toBeNull()
-  })
-
-  it('round-trips with minutesToHHMM on the grid', () => {
-    for (const o of [...START_OPTIONS, ...END_OPTIONS]) {
-      expect(hhmmToMinutes(minutesToHHMM(o.min))).toBe(o.min)
-    }
   })
 })
 

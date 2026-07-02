@@ -41,12 +41,12 @@ export interface AdminStyles {
 }
 
 /** Apple-system red (light/dark), reused for destructive actions + errors. */
-export function adminRed(dark: boolean): string {
+function adminRed(dark: boolean): string {
   return dark ? '#ff453a' : '#ff3b30'
 }
 
 /** Apple-system green (light/dark) for "saved" confirmations. */
-export function adminGreen(dark: boolean): string {
+function adminGreen(dark: boolean): string {
   return dark ? '#30d158' : '#34c759'
 }
 

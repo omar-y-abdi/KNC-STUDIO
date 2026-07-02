@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
+import { paintViewport } from '../ui/paintViewport'
 
 export interface ThemeState {
   readonly dark: boolean
@@ -30,15 +31,7 @@ export function useTheme(): ThemeState {
   // (matches the public site's edge-effect discipline). Light/dark only — no per-section nuance.
   useEffect(() => {
     const bg = dark ? '#1c1c1e' : '#ffffff'
-    document.documentElement.style.background = bg
-    document.body.style.background = bg
-    let meta = document.querySelector('meta[name="theme-color"]')
-    if (meta === null) {
-      meta = document.createElement('meta')
-      meta.setAttribute('name', 'theme-color')
-      document.head.appendChild(meta)
-    }
-    meta.setAttribute('content', bg)
+    paintViewport(bg, bg)
   }, [dark])
 
   return {
