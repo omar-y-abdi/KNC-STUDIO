@@ -21,14 +21,14 @@ npm run preview    # serve the built dist/ locally
 
 ### Scripts
 
-| Script | What it does |
-|--------|--------------|
-| `dev` | Vite dev server with HMR |
-| `build` | `tsc -b` (strict type-check) then `vite build` → `dist/` |
-| `preview` | Serve the production build locally |
-| `typecheck` | `tsc -b` only |
-| `lint` | ESLint (strict + security + no-unsanitized) |
-| `format` | Prettier write |
+| Script        | What it does                                               |
+| ------------- | ---------------------------------------------------------- |
+| `dev`         | Vite dev server with HMR                                   |
+| `build`       | `tsc -b` (strict type-check) then `vite build` → `dist/`   |
+| `preview`     | Serve the production build locally                         |
+| `typecheck`   | `tsc -b` only                                              |
+| `lint`        | ESLint (strict + security + no-unsanitized)                |
+| `format`      | Prettier write                                             |
 | `visual:gate` | Pixel-regression: build, screenshot, diff vs the baselines |
 
 ---
@@ -72,7 +72,7 @@ The booking calendar's "today" comes from a `Clock` (`config.ts`), never a bare 
 This is a static frontend. **Client code is always inspectable** — minification + no shipped
 sourcemaps raises the bar to read it, but nothing in a browser is truly "unbreakable." Real
 enforcement (a booking that cannot be abused) requires a backend; this repo is structured to add one
-without a rewrite (see below). What *is* hardened here:
+without a rewrite (see below). What _is_ hardened here:
 
 - **Strict CSP** (via `vercel.json`): `default-src 'self'`, `script-src 'self'` (no inline/remote
   scripts), `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'`

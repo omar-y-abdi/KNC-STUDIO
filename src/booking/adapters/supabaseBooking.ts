@@ -18,11 +18,7 @@
 
 import { bookingStrings } from '../../i18n/index'
 import { getSupabase } from '../../backend/supabaseClient'
-import {
-  availableSlotsResponse,
-  createBookingResponse,
-  parseWith,
-} from '../../backend/rpcSchemas'
+import { availableSlotsResponse, createBookingResponse, parseWith } from '../../backend/rpcSchemas'
 import type { Booking, BookingError, BookingResult } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { SLOTS } from '../slots'
@@ -79,7 +75,8 @@ export const supabaseBookingAdapter: BookingPort = {
 
       const parsed = parseWith(createBookingResponse, data)
       if (!parsed.ok) return { ok: false, error: submitError(booking) }
-      if (!parsed.value.ok) return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
+      if (!parsed.value.ok)
+        return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
 
       // Success — build the calendar/map links from the SAME builder the mock uses.
       const links = buildLinks(booking)

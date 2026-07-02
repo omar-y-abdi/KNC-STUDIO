@@ -9,11 +9,7 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import {
-  availableSlotsResponse,
-  parseWith,
-  scheduleRows,
-} from '../adminSchemas'
+import { availableSlotsResponse, parseWith, scheduleRows } from '../adminSchemas'
 import { toWeekSchedule } from '../time'
 import type { AdminBarberId, AdminResult, WeekSchedule } from '../types'
 import { err, ok } from '../types'

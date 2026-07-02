@@ -150,11 +150,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                     {cancelled ? (
                       <span style={s.mutedText}>—</span>
                     ) : (
-                      <button
-                        type="button"
-                        style={s.dangerBtn}
-                        onClick={() => setPendingCancel(b)}
-                      >
+                      <button type="button" style={s.dangerBtn} onClick={() => setPendingCancel(b)}>
                         Avboka
                       </button>
                     )}

@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import {
-  parsePhone,
-  parseName,
-  parseContact,
-  normalizePhone,
-} from '../../src/booking/validation'
+import { parsePhone, parseName, parseContact, normalizePhone } from '../../src/booking/validation'
 
 describe('parsePhone (Swedish mobile)', () => {
   it('accepts valid mobile forms (incl. +46 / spacing / dashes)', () => {
-    for (const p of ['0701234567', '+46701234567', '0046701234567', '070 123 45 67', '070-123 45 67']) {
+    for (const p of [
+      '0701234567',
+      '+46701234567',
+      '0046701234567',
+      '070 123 45 67',
+      '070-123 45 67',
+    ]) {
       expect(parsePhone(p).ok, p).toBe(true)
     }
   })

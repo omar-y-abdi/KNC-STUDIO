@@ -163,12 +163,14 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     }
   }
 
-  const onTileKey = (key: string) => (e: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      props.onSelect(key)
+  const onTileKey =
+    (key: string) =>
+    (e: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        props.onSelect(key)
+      }
     }
-  }
 
   const rowStyle: JSX.CSSProperties = {
     overflow: 'hidden',
@@ -178,7 +180,11 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     userSelect: 'none',
     WebkitUserSelect: 'none',
   }
-  const trackStyle: JSX.CSSProperties = { display: 'flex', width: 'max-content', willChange: 'transform' }
+  const trackStyle: JSX.CSSProperties = {
+    display: 'flex',
+    width: 'max-content',
+    willChange: 'transform',
+  }
 
   return (
     <div
@@ -189,7 +195,12 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
     >
-      <div ref={trackRef} style={trackStyle} data-testid="marquee-track" data-dir={String(props.initialDir)}>
+      <div
+        ref={trackRef}
+        style={trackStyle}
+        data-testid="marquee-track"
+        data-dir={String(props.initialDir)}
+      >
         {tiles.map((j) => {
           const key = String(j)
           const selected = props.selectedKey === key
@@ -224,10 +235,22 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
                 // Same wrapper geometry as PlaceholderPhoto (4/3, 14px radius, hairline border) so
                 // swapping a real image in causes NO layout shift; the image covers the tile.
                 <div style={photoWrapStyle(props.c)}>
-                  <img src={photo.url} alt={photo.alt} style={IMG_STYLE} loading="lazy" decoding="async" />
+                  <img
+                    src={photo.url}
+                    alt={photo.alt}
+                    style={IMG_STYLE}
+                    loading="lazy"
+                    decoding="async"
+                  />
                 </div>
               ) : (
-                <PlaceholderPhoto c={props.c} dark={props.dark} glyph={props.glyph} alt={props.alt} ratio="4 / 3" />
+                <PlaceholderPhoto
+                  c={props.c}
+                  dark={props.dark}
+                  glyph={props.glyph}
+                  alt={props.alt}
+                  ratio="4 / 3"
+                />
               )}
             </div>
           )
@@ -251,8 +274,10 @@ export interface GalleryMarqueeProps {
 /** Two counter-scrolling rows of the same photos (row 2 reversed so they don't move in lock-step). */
 export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element {
   const [selected, setSelected] = useState<{ row: 0 | 1; key: string } | null>(null)
-  const select = (row: 0 | 1) => (key: string): void =>
-    setSelected((cur) => (cur && cur.row === row && cur.key === key ? null : { row, key }))
+  const select =
+    (row: 0 | 1) =>
+    (key: string): void =>
+      setSelected((cur) => (cur && cur.row === row && cur.key === key ? null : { row, key }))
 
   const photos = props.photos ?? []
   const rowB = [...props.ids].reverse()

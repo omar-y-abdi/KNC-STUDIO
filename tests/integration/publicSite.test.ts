@@ -45,7 +45,11 @@ async function runSql(env: AdminStackEnv, sql: string, params: readonly unknown[
 }
 
 /** Read one about_content cell via the superuser (to restore it after an edit). */
-async function readAboutValue(env: AdminStackEnv, key: string, lang: string): Promise<string | null> {
+async function readAboutValue(
+  env: AdminStackEnv,
+  key: string,
+  lang: string,
+): Promise<string | null> {
   const client = new Client({ connectionString: env.dbUrl })
   await client.connect()
   try {

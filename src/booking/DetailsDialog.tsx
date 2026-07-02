@@ -83,7 +83,10 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
-        <span id="knc-details-title" style="font-family:'SF Pro Display';font-weight:600;font-size:17px;">
+        <span
+          id="knc-details-title"
+          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+        >
           {t.yourDetails}
         </span>
         <button onClick={props.onClose} style={s.closeBtnStyle}>
@@ -116,7 +119,15 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
 
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
-          {field(t.phone, props.phoneValue, props.onPhone, '07X XXX XX XX', 'tel', e.phone, t.errPhone)}
+          {field(
+            t.phone,
+            props.phoneValue,
+            props.onPhone,
+            '07X XXX XX XX',
+            'tel',
+            e.phone,
+            t.errPhone,
+          )}
         </div>
 
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>

@@ -16,9 +16,7 @@ const WRITE_ERROR = 'Kunde inte spara texten. Försök igen.'
 /** Read every about-content cell (both languages, all keys). */
 export async function listAbout(): Promise<AdminResult<readonly AboutRow[]>> {
   try {
-    const { data, error } = await getAdminClient()
-      .from('about_content')
-      .select('key,lang,value')
+    const { data, error } = await getAdminClient().from('about_content').select('key,lang,value')
     if (error !== null || data === null) return err('network', READ_ERROR)
 
     const parsed = parseWith(aboutRows, data)

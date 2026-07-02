@@ -240,7 +240,12 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             >
               {props.dark ? '☀' : '☾'}
             </button>
-            <button type="button" style={s.ghostBtn} class="knc-admin-signout-top" onClick={props.onSignOut}>
+            <button
+              type="button"
+              style={s.ghostBtn}
+              class="knc-admin-signout-top"
+              onClick={props.onSignOut}
+            >
               Logga ut
             </button>
           </div>
@@ -250,9 +255,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           <span style={s.pill}>{isOwner ? 'Ägare' : 'Barberare'}</span>
           <span>
             Inloggad som <strong>{profile.email}</strong>
-            {tab === 'schedule' || tab === 'bookings'
-              ? ` · visar ${effectiveBarberName}`
-              : ''}
+            {tab === 'schedule' || tab === 'bookings' ? ` · visar ${effectiveBarberName}` : ''}
           </span>
         </div>
 

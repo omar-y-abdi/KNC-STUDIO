@@ -9,7 +9,11 @@ import { asBarberId } from '../../src/booking/domain'
 // links are identical regardless of backend. The links don't ride on the create_booking RPC, so
 // they're verified here at the unit level (the integration suite covers the RPC contract instead).
 
-const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
+const HASSAN: Barber = BARBERS[0] ?? {
+  id: asBarberId('hassan'),
+  name: 'Hassan',
+  ig: 'freebandzcuts',
+}
 const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
 
 function booking(): Booking {

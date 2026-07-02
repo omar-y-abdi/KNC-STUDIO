@@ -111,7 +111,9 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
       <h2 id="about-heading" style={s.sectionTitle}>
         Om oss · text
       </h2>
-      <p style={s.sectionLead}>Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.</p>
+      <p style={s.sectionLead}>
+        Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.
+      </p>
 
       {loadError !== null ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
@@ -259,7 +261,9 @@ function GalleryManager(props: {
       <h2 id={`gallery-${kind}`} style={s.sectionTitle}>
         {props.title}
       </h2>
-      <p style={s.sectionLead}>Ladda upp bilder till galleriet och ta bort dem du inte vill visa.</p>
+      <p style={s.sectionLead}>
+        Ladda upp bilder till galleriet och ta bort dem du inte vill visa.
+      </p>
 
       <div
         style={{
@@ -331,10 +335,22 @@ function GalleryManager(props: {
               <img
                 src={img.url}
                 alt={img.alt}
-                style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', display: 'block' }}
+                style={{
+                  width: '100%',
+                  aspectRatio: '1 / 1',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
                 loading="lazy"
               />
-              <figcaption style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <figcaption
+                style={{
+                  padding: '8px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
                 <span style={{ fontSize: '12px', opacity: 0.7, wordBreak: 'break-word' }}>
                   {img.alt === '' ? '—' : img.alt}
                 </span>

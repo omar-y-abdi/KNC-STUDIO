@@ -3,7 +3,9 @@ import { aboutStrings, appStrings, bookingStrings, cancelStrings } from '../../s
 
 describe('i18n sv/en parity', () => {
   it('booking strings have identical key sets', () => {
-    expect(Object.keys(bookingStrings('sv')).sort()).toEqual(Object.keys(bookingStrings('en')).sort())
+    expect(Object.keys(bookingStrings('sv')).sort()).toEqual(
+      Object.keys(bookingStrings('en')).sort(),
+    )
   })
   it('app strings have identical key sets', () => {
     expect(Object.keys(appStrings('sv')).sort()).toEqual(Object.keys(appStrings('en')).sort())
@@ -18,7 +20,12 @@ describe('i18n sv/en parity', () => {
     expect(Object.keys(cancelStrings('sv')).sort()).toEqual(Object.keys(cancelStrings('en')).sort())
   })
   it('no empty string values', () => {
-    for (const table of [bookingStrings('sv'), bookingStrings('en'), appStrings('sv'), appStrings('en')]) {
+    for (const table of [
+      bookingStrings('sv'),
+      bookingStrings('en'),
+      appStrings('sv'),
+      appStrings('en'),
+    ]) {
       for (const [k, v] of Object.entries(table)) {
         expect(v.length, k).toBeGreaterThan(0)
       }

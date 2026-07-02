@@ -23,7 +23,11 @@ import {
   uniquePhone,
 } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
+const HASSAN: Barber = BARBERS[0] ?? {
+  id: asBarberId('hassan'),
+  name: 'Hassan',
+  ig: 'freebandzcuts',
+}
 const VICTOR: Barber = BARBERS[1] ?? HASSAN
 
 // 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST → CET +01) = 12:30:00Z. Passing the
@@ -96,7 +100,10 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
   it('unknown barber → invalid', async () => {
     const env = readStackEnv()
     if (!env) return
-    const result = await callCreateBooking(env.dbUrl, { ...validArgs(uniquePhone()), barberId: 'nope' })
+    const result = await callCreateBooking(env.dbUrl, {
+      ...validArgs(uniquePhone()),
+      barberId: 'nope',
+    })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe('invalid')
   })
@@ -116,7 +123,10 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const env = readStackEnv()
     if (!env) return
     const phone = uniquePhone()
-    const result = await callCreateBooking(env.dbUrl, { ...validArgs(phone), startAt: EARLY_START_UTC })
+    const result = await callCreateBooking(env.dbUrl, {
+      ...validArgs(phone),
+      startAt: EARLY_START_UTC,
+    })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe('outside_hours')
 

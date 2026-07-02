@@ -168,7 +168,10 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       cardStyle={s.overlayCardStyle}
     >
       <div style={s.overlayHeaderStyle}>
-        <span id="knc-cancel-title" style="font-family:'SF Pro Display';font-weight:600;font-size:17px;">
+        <span
+          id="knc-cancel-title"
+          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+        >
           {t.title}
         </span>
         <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={t.ariaClose}>
@@ -206,7 +209,9 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
 
         {step === 'confirm' && booking !== null ? (
           <div>
-            <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0 0 12px;">{t.foundLead}</p>
+            <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0 0 12px;">
+              {t.foundLead}
+            </p>
             <div style={s.summaryBoxStyle}>
               <div style="display:flex;justify-content:space-between;font-size:14px;">
                 <span style="opacity:.55;">{t.fBarber}</span>

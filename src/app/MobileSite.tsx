@@ -229,7 +229,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             <div style="display:flex;align-items:center;gap:6px;flex:none;">
               {props.langToggle}
               {props.themeToggle}
-              <button onClick={props.closeMobBooking} style={expandChevStyle} title={tx.ariaBackHome}>
+              <button
+                onClick={props.closeMobBooking}
+                style={expandChevStyle}
+                title={tx.ariaBackHome}
+              >
                 <img
                   src="/icons/chevron.down.svg"
                   alt={tx.ariaBackHome}
@@ -296,7 +300,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             marginTop="16px"
           />
           <div style={infoBlockStyle}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}
+            >
               <span
                 style={{
                   display: 'flex',

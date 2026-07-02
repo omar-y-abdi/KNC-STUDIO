@@ -78,8 +78,16 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     await seedFinishedBooking(env.dbUrl, { phone: olderPhone, customerName: 'Olle Olsson' })
     await seedFinishedBooking(env.dbUrl, { phone: newerPhone, customerName: 'Nina Nilsson' })
 
-    const first = await supabaseReviewsAdapter.submit({ phone: olderPhone as Phone, rating: 4, text: 'old' })
-    const second = await supabaseReviewsAdapter.submit({ phone: newerPhone as Phone, rating: 5, text: 'new' })
+    const first = await supabaseReviewsAdapter.submit({
+      phone: olderPhone as Phone,
+      rating: 4,
+      text: 'old',
+    })
+    const second = await supabaseReviewsAdapter.submit({
+      phone: newerPhone as Phone,
+      rating: 5,
+      text: 'new',
+    })
     expect(first.ok && second.ok).toBe(true)
 
     const list = await supabaseReviewsAdapter.list()

@@ -1,4 +1,10 @@
-import type { AboutStrings, AppStrings, BookingStrings, CalendarLabels, CancelStrings } from './index'
+import type {
+  AboutStrings,
+  AppStrings,
+  BookingStrings,
+  CalendarLabels,
+  CancelStrings,
+} from './index'
 
 // Swedish strings — copied verbatim from the source `BF_STR.sv`, `APP_T.sv`,
 // and the BF_WD/BF_MON/BF_HEAD `sv` rows.
@@ -92,7 +98,8 @@ export const aboutSv: AboutStrings = {
   reviewsTitle: 'Omdömen',
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
-  reviewPhoneHint: 'Ange numret du bokade med. Ditt namn hämtas från bokningen och visas som förnamn + initial.',
+  reviewPhoneHint:
+    'Ange numret du bokade med. Ditt namn hämtas från bokningen och visas som förnamn + initial.',
   reviewRating: 'Betyg',
   reviewText: 'Ditt omdöme',
   reviewTextPh: 'Berätta om ditt besök …',
@@ -101,7 +108,8 @@ export const aboutSv: AboutStrings = {
   reviewErrPhone: 'Ogiltigt telefonnummer',
   reviewErrText: 'Skriv något om ditt besök',
   reviewErrRating: 'Välj ett betyg',
-  reviewErrNoBooking: 'Vi hittade ingen genomförd bokning på det numret. Du kan lämna ett omdöme efter ditt besök.',
+  reviewErrNoBooking:
+    'Vi hittade ingen genomförd bokning på det numret. Du kan lämna ett omdöme efter ditt besök.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',

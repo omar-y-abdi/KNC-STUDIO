@@ -24,7 +24,8 @@ if (stack.API_URL !== undefined && stack.ANON_KEY !== undefined) {
   // The test files read these (un-prefixed) from process.env.
   testEnv.SUPABASE_URL = stack.API_URL
   testEnv.SUPABASE_ANON_KEY = stack.ANON_KEY
-  if (stack.SERVICE_ROLE_KEY !== undefined) testEnv.SUPABASE_SERVICE_ROLE_KEY = stack.SERVICE_ROLE_KEY
+  if (stack.SERVICE_ROLE_KEY !== undefined)
+    testEnv.SUPABASE_SERVICE_ROLE_KEY = stack.SERVICE_ROLE_KEY
   if (stack.DB_URL !== undefined) testEnv.SUPABASE_DB_URL = stack.DB_URL
 }
 

@@ -18,8 +18,18 @@ import { execFileSync } from 'node:child_process'
 import { createClient } from '@supabase/supabase-js'
 import { Client } from 'pg'
 
-const OWNER = { email: 'owner.it@knc.test', password: 'owner-it-pw-12345', role: 'owner', barberId: null }
-const BARBER = { email: 'barber.it@knc.test', password: 'barber-it-pw-12345', role: 'barber', barberId: 'hassan' }
+const OWNER = {
+  email: 'owner.it@knc.test',
+  password: 'owner-it-pw-12345',
+  role: 'owner',
+  barberId: null,
+}
+const BARBER = {
+  email: 'barber.it@knc.test',
+  password: 'barber-it-pw-12345',
+  role: 'barber',
+  barberId: 'hassan',
+}
 
 function loadStackEnv() {
   try {

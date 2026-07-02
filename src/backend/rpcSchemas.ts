@@ -18,13 +18,7 @@ const isoTimestamp = z.string().datetime({ offset: true })
  * structurally identical to the domain `Rating` — a parsed value drops straight into a `Review`
  * with no cast and no widening to `number`.
  */
-const ratingInt = z.union([
-  z.literal(1),
-  z.literal(2),
-  z.literal(3),
-  z.literal(4),
-  z.literal(5),
-])
+const ratingInt = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
 
 // --- create_booking ------------------------------------------------------------------------------
 // ok echoes NO phone/email/customer_name (PII never leaves the DB on create).
@@ -176,8 +170,7 @@ export type AvailableSlotsResponse = z.infer<typeof availableSlotsResponse>
 
 /** Result-shaped parse (no throw): `{ ok:true, value }` or `{ ok:false, error }` with a message. */
 export type Parsed<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: string }
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 
 /** Validate `data` against `schema`, returning a Result instead of throwing. */
 export function parseWith<T>(schema: z.ZodType<T>, data: unknown): Parsed<T> {

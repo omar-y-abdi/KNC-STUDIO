@@ -175,11 +175,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           onInput={(e) => onChange(e.currentTarget.value)}
         />
       ) : (
-        <input
-          style={s.input}
-          value={value}
-          onInput={(e) => onChange(e.currentTarget.value)}
-        />
+        <input style={s.input} value={value} onInput={(e) => onChange(e.currentTarget.value)} />
       )}
     </div>
   )
@@ -226,17 +222,44 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       </div>
 
       {adding ? (
-        <div style={{ border: s.card.border, borderRadius: '12px', padding: '16px', margin: '8px 0 18px' }}>
+        <div
+          style={{
+            border: s.card.border,
+            borderRadius: '12px',
+            padding: '16px',
+            margin: '8px 0 18px',
+          }}
+        >
           <h3 style={{ ...s.label, fontSize: '13px' }}>Ny barberare</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0 16px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
+              gap: '0 16px',
+            }}
+          >
             {editField('Id (a–z, 0–9, -)', newDraft.id, (v) => setNewDraft({ ...newDraft, id: v }))}
             {editField('Namn', newDraft.name, (v) => setNewDraft({ ...newDraft, name: v }))}
             {editField('Instagram', newDraft.ig, (v) => setNewDraft({ ...newDraft, ig: v }))}
-            {editField('Roll (SV)', newDraft.roleSv, (v) => setNewDraft({ ...newDraft, roleSv: v }))}
-            {editField('Roll (EN)', newDraft.roleEn, (v) => setNewDraft({ ...newDraft, roleEn: v }))}
+            {editField('Roll (SV)', newDraft.roleSv, (v) =>
+              setNewDraft({ ...newDraft, roleSv: v }),
+            )}
+            {editField('Roll (EN)', newDraft.roleEn, (v) =>
+              setNewDraft({ ...newDraft, roleEn: v }),
+            )}
           </div>
-          {editField('Bio (SV)', newDraft.bioSv, (v) => setNewDraft({ ...newDraft, bioSv: v }), true)}
-          {editField('Bio (EN)', newDraft.bioEn, (v) => setNewDraft({ ...newDraft, bioEn: v }), true)}
+          {editField(
+            'Bio (SV)',
+            newDraft.bioSv,
+            (v) => setNewDraft({ ...newDraft, bioSv: v }),
+            true,
+          )}
+          {editField(
+            'Bio (EN)',
+            newDraft.bioEn,
+            (v) => setNewDraft({ ...newDraft, bioEn: v }),
+            true,
+          )}
           <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
             <button
               type="button"
@@ -288,7 +311,9 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                       <td style={s.td}>
                         <code style={{ fontSize: '12.5px', opacity: 0.8 }}>{b.id}</code>
                       </td>
-                      <td style={s.td}>{b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}</td>
+                      <td style={s.td}>
+                        {b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}
+                      </td>
                       <td style={s.td}>
                         <span style={s.pill}>
                           {linked.has(b.id) ? 'Inloggning kopplad' : 'Ej kopplad'}
@@ -384,8 +409,8 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
         </div>
       )}
       <p style={{ ...s.mutedText, marginTop: '14px' }} lang="sv">
-        Tips: för att ge en barberare inloggning, skapa kontot under Auth → Users i Supabase och lägg
-        till en rad i <code>profiles</code> med deras barber-id.
+        Tips: för att ge en barberare inloggning, skapa kontot under Auth → Users i Supabase och
+        lägg till en rad i <code>profiles</code> med deras barber-id.
       </p>
     </section>
   )

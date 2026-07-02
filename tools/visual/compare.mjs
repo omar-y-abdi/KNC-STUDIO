@@ -40,7 +40,9 @@ for (const file of files) {
     writeFileSync(`${DIFF}/${file}`, PNG.sync.write(diff))
     failed++
   }
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${file}  mismatch=${mismatch} (${(ratio * 100).toFixed(3)}%)`)
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'} ${file}  mismatch=${mismatch} (${(ratio * 100).toFixed(3)}%)`,
+  )
 }
 
 if (failed > 0) {

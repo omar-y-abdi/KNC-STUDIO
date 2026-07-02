@@ -12,7 +12,11 @@ import { asBarberId } from '../../src/booking/domain'
 import type { CreateBookingArgs } from './_helpers'
 import { backendReady, callCreateBooking, readStackEnv, truncateAll, uniquePhone } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
+const HASSAN: Barber = BARBERS[0] ?? {
+  id: asBarberId('hassan'),
+  name: 'Hassan',
+  ig: 'freebandzcuts',
+}
 
 // 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST CET) = 12:30:00Z — a valid future
 // working-hours slot the create_booking schedule gate accepts.

@@ -175,7 +175,12 @@ export function buildBookingStyles(
       boxSizing: 'border-box',
       WebkitFontSmoothing: 'antialiased',
     },
-    checkIconStyle: { ...ic(17), marginLeft: '6px', flexShrink: 0, filter: dark ? 'invert(1)' : 'none' },
+    checkIconStyle: {
+      ...ic(17),
+      marginLeft: '6px',
+      flexShrink: 0,
+      filter: dark ? 'invert(1)' : 'none',
+    },
     tabWrapStyle: { display: 'flex', background: c.tabBg, borderRadius: '999px', padding: '2px' },
     panelStyle: {
       border: '0.5px solid ' + c.line,

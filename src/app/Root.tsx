@@ -1,4 +1,4 @@
-// The application router — the new single entry rendered by `main.tsx`. It keeps the marketing site
+// The application router — the single entry rendered by `main.tsx`. It keeps the marketing site
 // EXACTLY as before at `/` (the `App` component is statically imported and rendered with NO wrapper
 // DOM, so the public markup is byte-identical) and LAZY-loads the entire admin surface for `/login`
 // and `/admin/*` so none of the admin/auth/supabase-auth code ships on the public critical path.

@@ -7,7 +7,11 @@ import type { Barber, BarberId } from './domain'
 import { asBarberId } from './domain'
 
 /** Safe default when a roster lookup misses (`BARBERS` is a non-empty constant). */
-export const FALLBACK_BARBER: Barber = { id: asBarberId('hassan'), name: 'Hassan', ig: 'freebandzcuts' }
+export const FALLBACK_BARBER: Barber = {
+  id: asBarberId('hassan'),
+  name: 'Hassan',
+  ig: 'freebandzcuts',
+}
 
 export const BARBERS: readonly Barber[] = [
   FALLBACK_BARBER,

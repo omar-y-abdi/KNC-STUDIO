@@ -169,7 +169,8 @@ export async function linkedBarberIds(): Promise<AdminResult<ReadonlySet<AdminBa
 function mapWriteError(error: { code?: string; message?: string } | null): AdminResult<never> {
   if (error !== null) {
     // 23505 = unique_violation (duplicate id); 42501 = RLS/insufficient privilege.
-    if (error.code === '23505') return err('validation', 'Det finns redan en barberare med det id:t.')
+    if (error.code === '23505')
+      return err('validation', 'Det finns redan en barberare med det id:t.')
     if (error.code === '42501') return err('forbidden', 'Du har inte behörighet för detta.')
   }
   return err('network', WRITE_ERROR)

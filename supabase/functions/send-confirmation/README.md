@@ -20,13 +20,13 @@ bare booking object (for manual `curl` tests). **Only `id` is required from the 
 and every field used to build the message are re-read from the DB by `id`:
 
 ```jsonc
-{ "id": "uuid" }            // envelope: { "record": { "id": "uuid", ... } }
+{ "id": "uuid" } // envelope: { "record": { "id": "uuid", ... } }
 ```
 
 Invalid shapes → `400 { ok: false, error: "invalid_payload", detail: "<why>" }`.
 
 > **Recipient + content are DB-authoritative (M3).** The function re-reads `phone, customer_name,
-> start_at, service_name, barber_id, lang` from the `bookings` row (service-role) and the barber's
+start_at, service_name, barber_id, lang` from the `bookings` row (service-role) and the barber's
 > display name from `barbers`. The posted body is **never** used as the send target or message source,
 > so a forged webhook payload can neither redirect the SMS nor rewrite it.
 
@@ -64,7 +64,7 @@ bookings INSERT
 
 Set up:
 
-1. Install **Pushcut** on the iPhone. Create a **Webhook** (Pushcut → *Account → Webhooks*) — copy its
+1. Install **Pushcut** on the iPhone. Create a **Webhook** (Pushcut → _Account → Webhooks_) — copy its
    URL. It receives the JSON this function POSTs: `{ phone, message, title, text }`.
 2. Make the webhook trigger a **Notification** whose action runs a **Shortcut**. The Shortcut takes the
    webhook's `phone` + `message` and runs **Send Message** (Messages) to that recipient with that body.
@@ -74,8 +74,8 @@ Set up:
 
 ### Honest iOS caveat
 
-iOS does **not** allow a Shortcut to send an SMS **fully unattended** in the background — the *Send
-Message* step generally needs a **tap to confirm** on the device, and reliable hands-off triggering
+iOS does **not** allow a Shortcut to send an SMS **fully unattended** in the background — the _Send
+Message_ step generally needs a **tap to confirm** on the device, and reliable hands-off triggering
 usually requires Pushcut's **Automation Server** (or an always-on iPad/Mac). So this bridge **delivers
 the ready-to-send message to the phone**; the final send is **semi-automatic** (one tap) unless you run
 the Automation Server. It is a low-cost personal bridge, not a carrier-grade SMS gateway — swap
@@ -105,9 +105,9 @@ Every new `bookings` INSERT now fires this function, which builds the SMS and pu
 
 ## 5. Environment variables
 
-| Var | Source | Purpose |
-|-----|--------|---------|
-| `SUPABASE_URL` | auto-injected | service-role client target |
-| `SUPABASE_SERVICE_ROLE_KEY` | auto-injected | re-reads the booking row + barber name |
-| `WEBHOOK_SECRET` | `supabase secrets set` | **fail-closed** shared secret (`x-webhook-secret` header) |
-| `PUSHCUT_WEBHOOK_URL` | `supabase secrets set` | Pushcut webhook to POST `{ phone, message }`. **Unset → skip.** |
+| Var                         | Source                 | Purpose                                                         |
+| --------------------------- | ---------------------- | --------------------------------------------------------------- |
+| `SUPABASE_URL`              | auto-injected          | service-role client target                                      |
+| `SUPABASE_SERVICE_ROLE_KEY` | auto-injected          | re-reads the booking row + barber name                          |
+| `WEBHOOK_SECRET`            | `supabase secrets set` | **fail-closed** shared secret (`x-webhook-secret` header)       |
+| `PUSHCUT_WEBHOOK_URL`       | `supabase secrets set` | Pushcut webhook to POST `{ phone, message }`. **Unset → skip.** |

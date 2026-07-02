@@ -77,7 +77,10 @@ export const mockReviewsAdapter: ReviewsPort = {
   submit(review: ValidReview): Promise<ReviewResult> {
     const customerName = FINISHED_BOOKINGS[review.phone]
     if (customerName === undefined) {
-      return Promise.resolve({ ok: false, error: { kind: 'no_booking', message: NO_BOOKING_MESSAGE } })
+      return Promise.resolve({
+        ok: false,
+        error: { kind: 'no_booking', message: NO_BOOKING_MESSAGE },
+      })
     }
     const stored: Review = {
       id: makeReviewId(),

@@ -294,7 +294,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={SALON_IDS} photos={salonPhotos} glyph="camera" alt={tx.galleryAlt} c={c} dark={dark} />
+          <GalleryMarquee
+            ids={SALON_IDS}
+            photos={salonPhotos}
+            glyph="camera"
+            alt={tx.galleryAlt}
+            c={c}
+            dark={dark}
+          />
         </div>
 
         {/* Stylists — driven by the roster (N barbers, not exactly 3). DB copy when present, i18n
@@ -306,13 +313,35 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             const copy = stylistCopyFor(entry, lang, i18nStylists)
             return (
               <div key={b.id} style={stylistCardStyle}>
-                <PlaceholderPhoto c={c} dark={dark} glyph="person" alt={tx.stylistAvatarAlt} ratio="1 / 1" />
+                <PlaceholderPhoto
+                  c={c}
+                  dark={dark}
+                  glyph="person"
+                  alt={tx.stylistAvatarAlt}
+                  ratio="1 / 1"
+                />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
                   <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
-                  {copy ? <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '.4px', opacity: 0.5, marginTop: '2px' }}>{copy.role}</span> : null}
+                  {copy ? (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        letterSpacing: '.4px',
+                        opacity: 0.5,
+                        marginTop: '2px',
+                      }}
+                    >
+                      {copy.role}
+                    </span>
+                  ) : null}
                 </div>
-                {copy ? <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>{copy.bio}</p> : null}
+                {copy ? (
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+                    {copy.bio}
+                  </p>
+                ) : null}
               </div>
             )
           })}
@@ -321,7 +350,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
         <div style={fullBleedStyle}>
-          <GalleryMarquee ids={CUT_IDS} photos={cutPhotos} glyph="scissors" alt={tx.cutsAlt} c={c} dark={dark} />
+          <GalleryMarquee
+            ids={CUT_IDS}
+            photos={cutPhotos}
+            glyph="scissors"
+            alt={tx.cutsAlt}
+            c={c}
+            dark={dark}
+          />
         </div>
 
         {/* Reviews */}
@@ -329,11 +365,24 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         <div style={reviewsWrapStyle}>
           {reviews.map((r) => (
             <div key={r.id} style={reviewCardStyle}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
                 <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
-                <StarDisplay rating={r.rating} c={c} label={tx.ratingValueLabel.replace('{n}', String(r.rating))} />
+                <StarDisplay
+                  rating={r.rating}
+                  c={c}
+                  label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
+                />
               </div>
-              <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>{r.text}</p>
+              <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
+                {r.text}
+              </p>
             </div>
           ))}
         </div>
@@ -405,7 +454,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           ) : null}
 
           {thanks ? (
-            <p role="status" style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}>
+            <p
+              role="status"
+              style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}
+            >
               {tx.reviewThanks}
             </p>
           ) : null}
@@ -414,7 +466,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             type="button"
             onClick={submitting ? undefined : onSubmitClick}
             disabled={submitting}
-            style={{ ...s.bookBtnStyle, opacity: submitting ? 0.5 : 1, cursor: submitting ? 'default' : 'pointer' }}
+            style={{
+              ...s.bookBtnStyle,
+              opacity: submitting ? 0.5 : 1,
+              cursor: submitting ? 'default' : 'pointer',
+            }}
           >
             {tx.reviewSubmit}
           </button>

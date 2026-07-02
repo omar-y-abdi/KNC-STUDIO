@@ -1,6 +1,5 @@
-// Shared site-shell palette + derived chrome values. Centralises the source `App`'s `c`/`mob*`
-// computations so DesktopSite and MobileSite read identical values (no per-file drift). Every
-// literal is copied verbatim from index.html lines 585-636.
+// Shared site-shell palette + derived chrome values. Centralises the `c`/`mob*` computations so
+// DesktopSite and MobileSite read identical values (no per-file drift).
 
 import type { JSX } from 'preact'
 import type { Lang } from '../i18n/index'
@@ -14,7 +13,7 @@ export type Mode = 'light' | 'dark'
  */
 export type View = 'home' | 'booking' | 'about'
 
-/** Site-shell palette for a given mode (source `c = dark ? {...} : {...}`). */
+/** Site-shell palette for a given mode. */
 export interface ShellPalette {
   bg: string
   text: string
@@ -60,13 +59,13 @@ export function mobBtnBg(dark: boolean): string {
   return dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.06)'
 }
 
-/** EASE timing token (source `EASE`). */
+/** Shared easing token for the shell animations. */
 export const EASE = 'cubic-bezier(.32,.72,0,1)'
 export const MOBILE_MQ = '(max-width: 768px)'
 export const PANEL_FULL = '100dvh'
 export const PANEL_COMPACT = '112px'
 
-/** Shared chrome icon style (source `chromeIcon`). */
+/** Shared chrome icon style. */
 export function chromeIcon(dark: boolean): JSX.CSSProperties {
   return { width: '15px', height: '15px', filter: shellPalette(dark).iconF, opacity: 0.7 }
 }

@@ -47,7 +47,10 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         <div style={s.successCircleStyle}>
           <img src="/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
         </div>
-        <div id="knc-booked-title" style="font-family:'SF Pro Display';font-weight:600;font-size:20px;margin-bottom:6px;">
+        <div
+          id="knc-booked-title"
+          style="font-family:'SF Pro Display';font-weight:600;font-size:20px;margin-bottom:6px;"
+        >
           {t.bookedTitle}
         </div>
         <div style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto;">
@@ -71,7 +74,9 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         </div>
       </div>
       <div style="padding:16px 18px 8px;">
-        <div style="font-size:12px;font-weight:600;opacity:.55;margin-bottom:9px;">{t.addToCal}</div>
+        <div style="font-size:12px;font-weight:600;opacity:.55;margin-bottom:9px;">
+          {t.addToCal}
+        </div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <a
             href={props.icsHref}

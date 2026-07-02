@@ -14,17 +14,17 @@ Browser-invoked, cross-origin → CORS-enabled and `verify_jwt = false` (`supaba
 ```jsonc
 {
   "booking": {
-    "barberId": "hassan",            // 'hassan' | 'victor' | 'salman'
+    "barberId": "hassan", // 'hassan' | 'victor' | 'salman'
     "serviceId": "h",
     "serviceName": "Hår & Skägg",
-    "price": 350,                    // integer SEK
+    "price": 350, // integer SEK
     "durationMin": 45,
-    "startAt": "2040-03-14T12:30:00.000Z",  // ISO string, ALREADY Stockholm-correct (PLAN §3 H2)
-    "phone": "0701234567",          // ^07[0-9]{8}$
-    "lang": "sv",                   // 'sv' | 'en'
-    "customerName": "Test Kund"
+    "startAt": "2040-03-14T12:30:00.000Z", // ISO string, ALREADY Stockholm-correct (PLAN §3 H2)
+    "phone": "0701234567", // ^07[0-9]{8}$
+    "lang": "sv", // 'sv' | 'en'
+    "customerName": "Test Kund",
   },
-  "turnstileToken": "..."           // optional; "" when the widget is offline/unconfigured
+  "turnstileToken": "...", // optional; "" when the widget is offline/unconfigured
 }
 ```
 
@@ -40,15 +40,15 @@ Browser-invoked, cross-origin → CORS-enabled and `verify_jwt = false` (`supaba
 `functions.invoke` turns any non-2xx into a `FunctionsHttpError` (`data:null`), so **every expected
 outcome is HTTP 200** with a Result body the adapter parses:
 
-| HTTP | Body | When |
-|------|------|------|
-| 200 | `{ "ok": true, "booking": { … } }` | booked |
-| 200 | `{ "ok": false, "error": "failed_challenge" }` | Turnstile rejected the token |
-| 200 | `{ "ok": false, "error": "rate_limited" }` | per-IP or per-phone backstop tripped |
-| 200 | `{ "ok": false, "error": "slot_taken" \| "outside_hours" \| "invalid" \| "invalid_time" \| "invalid_contact" }` | passed through from `create_booking` |
-| 400 | `{ "ok": false, "error": "invalid_json" \| "invalid_payload", "detail": "…" }` | bad/garbage body |
-| 405 | `{ "ok": false, "error": "method_not_allowed" }` | not POST/OPTIONS |
-| 500 | `{ "ok": false, "error": "server_error" \| "not_configured" }` | unhandled fault / missing service env |
+| HTTP | Body                                                                                                            | When                                  |
+| ---- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| 200  | `{ "ok": true, "booking": { … } }`                                                                              | booked                                |
+| 200  | `{ "ok": false, "error": "failed_challenge" }`                                                                  | Turnstile rejected the token          |
+| 200  | `{ "ok": false, "error": "rate_limited" }`                                                                      | per-IP or per-phone backstop tripped  |
+| 200  | `{ "ok": false, "error": "slot_taken" \| "outside_hours" \| "invalid" \| "invalid_time" \| "invalid_contact" }` | passed through from `create_booking`  |
+| 400  | `{ "ok": false, "error": "invalid_json" \| "invalid_payload", "detail": "…" }`                                  | bad/garbage body                      |
+| 405  | `{ "ok": false, "error": "method_not_allowed" }`                                                                | not POST/OPTIONS                      |
+| 500  | `{ "ok": false, "error": "server_error" \| "not_configured" }`                                                  | unhandled fault / missing service env |
 
 `OPTIONS` preflight → `200 "ok"` with the CORS headers.
 
@@ -71,12 +71,12 @@ network error talking to Cloudflare fails **closed** (also `failed_challenge`).
 
 ## 4. Environment variables
 
-| Var | Source | Purpose |
-|-----|--------|---------|
-| `SUPABASE_URL` | auto-injected | service-role client target |
-| `SUPABASE_SERVICE_ROLE_KEY` | auto-injected | calls `create_booking` + reads `booking_attempts`/`bookings` |
-| `TURNSTILE_SECRET` | `supabase secrets set` | Turnstile siteverify secret. **Unset → fail-open skip.** |
-| `IP_SALT` | `supabase secrets set` | salt mixed into the SHA-256 IP hash stored in `booking_attempts` |
+| Var                         | Source                 | Purpose                                                          |
+| --------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| `SUPABASE_URL`              | auto-injected          | service-role client target                                       |
+| `SUPABASE_SERVICE_ROLE_KEY` | auto-injected          | calls `create_booking` + reads `booking_attempts`/`bookings`     |
+| `TURNSTILE_SECRET`          | `supabase secrets set` | Turnstile siteverify secret. **Unset → fail-open skip.**         |
+| `IP_SALT`                   | `supabase secrets set` | salt mixed into the SHA-256 IP hash stored in `booking_attempts` |
 
 Tunable backstops (constants in `index.ts`): `MAX_PER_IP=10` / 10 min, `MAX_PER_PHONE=5` / 24 h.
 They are GENEROUS on purpose — Turnstile is the real gate; these must not false-positive on shared

@@ -86,7 +86,11 @@ export function toWeekSchedule(rows: readonly DaySchedule[]): WeekSchedule {
  * "Samma tid alla dagar" — apply ONE start/end to EVERY currently-working day, leaving each day's
  * `working` flag and the non-working days untouched. Returns a NEW week (no mutation).
  */
-export function sameTimeAllDays(week: WeekSchedule, startMin: number, endMin: number): WeekSchedule {
+export function sameTimeAllDays(
+  week: WeekSchedule,
+  startMin: number,
+  endMin: number,
+): WeekSchedule {
   return week.map((d) => (d.working ? { ...d, startMin, endMin } : d))
 }
 
