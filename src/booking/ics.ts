@@ -1,5 +1,5 @@
-// Pure, RFC5545-correct ICS builder WITH proper text escaping. The source concatenated
-// unescaped commas into LOCATION; this builder escapes per spec so it stays injection-safe
+// Pure, RFC5545-correct ICS builder WITH proper text escaping (the original mock concatenated
+// unescaped commas into LOCATION); this builder escapes per spec so it stays injection-safe
 // when real user data flows through. No effects: UID + DTSTAMP are injected by the caller
 // (the adapter at the edge), keeping this module referentially transparent.
 

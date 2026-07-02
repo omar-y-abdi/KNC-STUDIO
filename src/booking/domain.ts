@@ -1,10 +1,10 @@
-// Domain ADTs for the booking flow. These describe exactly the states the source already
-// produces (no new invariants that would alter its setState-merge / reset state machine).
-// Branded primitives + closed unions keep invalid states unrepresentable at the boundaries.
+// Domain ADTs for the booking flow. These describe exactly the states the flow produces (no new
+// invariants that would alter its setState-merge / reset state machine). Branded primitives +
+// closed unions keep invalid states unrepresentable at the boundaries.
 
 import type { Lang } from '../i18n/index'
 
-/** A barber, with their Instagram handle (source `BF_BARBERS`). */
+/** A barber, with their Instagram handle. */
 export interface Barber {
   readonly id: BarberId
   readonly name: string
@@ -27,7 +27,7 @@ export function asBarberId(raw: string): BarberId {
   return raw as BarberId
 }
 
-/** A single bookable service line (source pricing item). */
+/** A single bookable service line. */
 export interface ServiceItem {
   readonly id: string
   readonly name: string
@@ -35,7 +35,7 @@ export interface ServiceItem {
   readonly dur: number
 }
 
-/** A titled group of services with an optional note (source pricing group). */
+/** A titled group of services with an optional note. */
 export interface ServiceGroup {
   readonly title: string
   readonly note: string
@@ -49,12 +49,12 @@ export interface ContactForm {
   readonly phone: string
 }
 
-/** Empty contact form (source initial `form`). */
+/** Empty contact form. */
 export const emptyContactForm: ContactForm = { name: '', phone: '' }
 
 /**
- * The full mutable-by-replacement booking draft — a 1:1 model of the source `BookingFlow`
- * `state` object. `null` means "not yet chosen", exactly as in the source.
+ * The full mutable-by-replacement booking draft — the `BookingFlow` `state` object.
+ * `null` means "not yet chosen".
  */
 export interface BookingDraft {
   readonly lang: Lang | null
@@ -68,7 +68,7 @@ export interface BookingDraft {
   readonly form: ContactForm
 }
 
-/** The pristine draft (source initial `useState`). */
+/** The pristine draft (initial `useState` value). */
 export const initialDraft: BookingDraft = {
   lang: null,
   monthOffset: 0,
