@@ -1,9 +1,10 @@
 // ============================================================================================
-// PLACEHOLDER PHOTO — the single swap point for real imagery.
+// PLACEHOLDER PHOTO — the stand-in surface wherever a real photo isn't available (stylist
+// avatars, gallery tiles with no DB photos).
 //
-// No real photos exist yet, so this renders a tasteful monochrome surface: a subtle theme-aware
-// gradient (Material-ish) + a centered inline-SVG glyph (camera / scissors / person). It is sized
-// like a real photo via `aspectRatio`, so dropping in a real image later causes NO layout shift.
+// It renders a tasteful monochrome surface: a subtle theme-aware gradient (Material-ish) + a
+// centered inline-SVG glyph (camera / scissors / person). It is sized like a real photo via
+// `aspectRatio`, so dropping in a real image later causes NO layout shift.
 //
 // CSP NOTE: `img-src 'self'` forbids `data:` URIs and external URLs — so placeholders are pure CSS
 // + inline SVG (allowed by `style-src 'unsafe-inline'`), never an <img> with a data/remote source.

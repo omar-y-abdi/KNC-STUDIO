@@ -133,12 +133,6 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
   // --- AboutContentPort --------------------------------------------------------------------------
 
   describe('AboutContentPort.overlay', () => {
-    afterEach(async () => {
-      // Restore any edited cell. Each test records + restores its own key, but reset intro/sv as a
-      // belt-and-braces default (it is the cell the edit test touches).
-      // (No-op if the value already matches.)
-    })
-
     it('returns the seeded about_content for a language (the 7 editable keys)', async () => {
       const overlay = await supabaseAboutContentAdapter.overlay('sv')
       // The seed populates every key; the overlay should carry them all.

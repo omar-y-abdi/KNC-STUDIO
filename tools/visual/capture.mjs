@@ -1,6 +1,6 @@
 // Visual-regression capture. Screenshots a running site at every
 // device × colour-scheme × language combination into OUT.
-//   BASE = url to capture (original mock or new build)
+//   BASE = url to capture (a served dev or preview build)
 //   OUT  = output dir
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'

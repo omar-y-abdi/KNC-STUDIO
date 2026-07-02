@@ -112,11 +112,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
           padding: '2px',
           margin: 0,
           cursor: 'pointer',
-          color: selected
-            ? props.c.text
-            : props.invalid && current === null
-              ? props.errorColor
-              : props.c.text,
+          color: baseColor,
           opacity: selected ? 1 : 0.32,
           lineHeight: 0,
           borderRadius: '6px',
