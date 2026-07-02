@@ -5,7 +5,7 @@ adapters (bookings/reviews/cancellation are simulated, nothing is persisted) and
 is unchanged. Setting the two public env vars flips the whole app to the real Supabase backend — no
 code change. This document is the ordered checklist to do that.
 
-Everything runs from the project root (`/Users/k/dev/barber/project`). The database layer
+Everything runs from the project root. The database layer
 (`supabase/`) is already written, migration-tested (pgTAP) and integration-tested against a local
 stack; you only need to create a cloud project, push the migrations, and set two Vercel env vars.
 
