@@ -6,8 +6,7 @@ import type {
   CancelStrings,
 } from './index'
 
-// Swedish strings — copied verbatim from the source `BF_STR.sv`, `APP_T.sv`,
-// and the BF_WD/BF_MON/BF_HEAD `sv` rows.
+// Swedish strings.
 
 export const bookingSv: BookingStrings = {
   chooseBarber: 'Välj din barberare',
@@ -115,8 +114,6 @@ export const aboutSv: AboutStrings = {
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',
 }
 
-// NOTE: Cancellation flow is a MOCK — the looked-up booking is generated on the fly and nothing
-// is persisted. Copy here is real, the appointment behind it is demo data.
 export const cancelSv: CancelStrings = {
   title: 'Avbokning',
   phone: 'Telefon',

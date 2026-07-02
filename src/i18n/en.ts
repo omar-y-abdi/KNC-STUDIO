@@ -6,8 +6,7 @@ import type {
   CancelStrings,
 } from './index'
 
-// English strings — copied verbatim from the source `BF_STR.en`, `APP_T.en`,
-// and the BF_WD/BF_MON/BF_HEAD `en` rows.
+// English strings.
 
 export const bookingEn: BookingStrings = {
   chooseBarber: 'Choose your barber',
@@ -115,8 +114,6 @@ export const aboutEn: AboutStrings = {
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
 }
 
-// NOTE: Cancellation flow is a MOCK — the looked-up booking is generated on the fly and nothing
-// is persisted. Copy here is real, the appointment behind it is demo data.
 export const cancelEn: CancelStrings = {
   title: 'Cancel booking',
   phone: 'Phone',

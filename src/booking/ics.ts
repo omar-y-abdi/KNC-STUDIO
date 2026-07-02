@@ -12,7 +12,7 @@ export function escapeIcsText(value: string): string {
     .replace(/\r\n|\r|\n/g, '\\n')
 }
 
-/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp (matches source `fmt`). */
+/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp. */
 export function formatIcsLocal(dt: Date): string {
   const p = (n: number): string => String(n).padStart(2, '0')
   return (

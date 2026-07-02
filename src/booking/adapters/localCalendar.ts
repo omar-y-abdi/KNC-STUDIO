@@ -1,4 +1,4 @@
-// The ONE real BookingPort adapter: no network. It reproduces the source's current behavior —
+// The offline BookingPort adapter: no network. It reproduces the original mock's behavior —
 // an .ics data URL, a Google Calendar template URL, and an Apple Maps directions URL — but with
 // hardened, injection-safe construction (escaped ICS, fully `encodeURIComponent`-ed URLs).
 //
@@ -13,7 +13,7 @@ import { buildIcs, formatIcsLocal } from '../ics'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { SLOTS, slotTaken } from '../slots'
 
-/** Apple Maps directions URL for the studio (matches the source `mapsHref` constant byte-for-byte). */
+/** Apple Maps directions URL for the studio. */
 const MAPS_HREF = BUSINESS.mapsHref
 
 /** Human-readable location line for calendar entries. */
