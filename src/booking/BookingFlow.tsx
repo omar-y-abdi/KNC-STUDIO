@@ -46,7 +46,7 @@ export interface BookingFlowProps {
   readonly showHeader?: boolean
   /** Injected clock — "today" comes from here, never `new Date()` (default: env-selected). */
   readonly clock?: Clock
-  /** Injected submit seam — swap this for a real backend adapter (default: local, no network). */
+  /** Injected submit seam (default: env-selected; local adapter when no backend is configured). */
   readonly port?: BookingPort
   /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
   readonly barbersPort?: BarbersPort

@@ -16,6 +16,8 @@ import type { Lang } from '../../i18n/index'
 import { availableSlotsFor, readWeek, saveWeek } from '../adapters/schedulesAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
+  DEFAULT_END_MIN,
+  DEFAULT_START_MIN,
   END_OPTIONS,
   START_OPTIONS,
   defaultWeek,
@@ -54,8 +56,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   // "Same time all days" bound inputs (default to the salon day 09:00–18:00).
-  const [bulkStart, setBulkStart] = useState(540)
-  const [bulkEnd, setBulkEnd] = useState(1080)
+  const [bulkStart, setBulkStart] = useState(DEFAULT_START_MIN)
+  const [bulkEnd, setBulkEnd] = useState(DEFAULT_END_MIN)
 
   // Time-off state.
   const [timeOff, setTimeOff] = useState<readonly TimeOff[]>([])
@@ -107,11 +109,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const onToggleDay = (weekday: Weekday): void => mutate(toggleWorking(week, weekday))
   const onDayStart = (weekday: Weekday, startMin: number): void => {
     const day = week[weekday]
-    mutate(setDayHours(week, weekday, startMin, day?.endMin ?? 1080))
+    mutate(setDayHours(week, weekday, startMin, day?.endMin ?? DEFAULT_END_MIN))
   }
   const onDayEnd = (weekday: Weekday, endMin: number): void => {
     const day = week[weekday]
-    mutate(setDayHours(week, weekday, day?.startMin ?? 540, endMin))
+    mutate(setDayHours(week, weekday, day?.startMin ?? DEFAULT_START_MIN, endMin))
   }
   const applyAllDays = (): void => mutate(sameTimeAllDays(week, bulkStart, bulkEnd))
 
