@@ -21,23 +21,12 @@ const isoTimestamp = z.string().datetime({ offset: true })
 const ratingInt = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
 
 // --- create_booking ------------------------------------------------------------------------------
-// ok echoes NO phone/email/customer_name (PII never leaves the DB on create).
+// The adapter only branches on `ok` — the confirmation links are built from the LOCAL booking, and
+// the echoed row is never read. Validating only the discriminant means a drift in the echoed fields
+// can never fail the parse AFTER the row was inserted (which would show an error for a booking that
+// actually succeeded — the worst possible false negative).
 
-const createBookingOk = z.object({
-  ok: z.literal(true),
-  booking: z.object({
-    id: z.string(),
-    barber_id: z.string(),
-    service_id: z.string(),
-    service_name: z.string(),
-    price: z.number(),
-    duration_min: z.number(),
-    start_at: isoTimestamp,
-    end_at: isoTimestamp,
-    method: z.string(),
-    lang: z.string(),
-  }),
-})
+const createBookingOk = z.object({ ok: z.literal(true) })
 
 /** Booking error codes. The create_booking RPC produces `invalid_time` / `invalid_contact` /
  * `outside_hours` (off day, time-off, or outside working hours) / `slot_taken` / `invalid`; the

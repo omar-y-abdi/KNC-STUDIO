@@ -38,7 +38,9 @@ function googleCalHref(booking: Booking): string {
   const dates = `${formatIcsLocal(booking.start)}/${formatIcsLocal(booking.end)}`
   const location = encodeURIComponent(locationLine())
   const details = encodeURIComponent(eventDescription(booking))
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${dates}&location=${location}&details=${details}`
+  // `dates` is a FLOATING wall-clock string; without `ctz` Google pins it in the USER's calendar
+  // timezone, shifting the event for a non-Stockholm visitor. The slot wall-clock is salon time.
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${dates}&ctz=Europe%2FStockholm&location=${location}&details=${details}`
 }
 
 /** Build the `data:text/calendar` href from an escaped ICS payload. */

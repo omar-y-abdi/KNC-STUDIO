@@ -10,6 +10,7 @@
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { formatWhenLabel } from '../../booking/calendar'
+import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import type { Lang } from '../../i18n/index'
 import { cancelBooking, listBookings } from '../adapters/bookingsAdmin'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -128,7 +129,8 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
               const cancelled = b.status === 'cancelled'
               return (
                 <tr key={b.id}>
-                  <td style={s.td}>{formatWhenLabel(lang, b.startAt)}</td>
+                  {/* Salon wall-clock, not the browser's tz — an admin abroad must see salon times. */}
+                  <td style={s.td}>{formatWhenLabel(lang, stockholmWallClockDate(b.startAt))}</td>
                   {props.allBarbers ? <td style={s.td}>{barberName(b.barberId)}</td> : null}
                   <td style={s.td}>{b.customerName}</td>
                   <td style={s.td}>
@@ -196,7 +198,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         <ConfirmDialog
           dark={props.dark}
           title="Avboka bokningen?"
-          body={`${pendingCancel.customerName} · ${formatWhenLabel(lang, pendingCancel.startAt)}. Detta går inte att ångra.`}
+          body={`${pendingCancel.customerName} · ${formatWhenLabel(lang, stockholmWallClockDate(pendingCancel.startAt))}. Detta går inte att ångra.`}
           confirmLabel="Avboka"
           cancelLabel="Behåll"
           danger

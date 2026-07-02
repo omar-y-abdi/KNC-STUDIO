@@ -68,6 +68,25 @@ export function stockholmInstant(
 }
 
 /**
+ * The INVERSE of `stockholmInstant`: given a real instant, return a `Date` whose LOCAL components
+ * read the Europe/Stockholm wall-clock of that instant — the shape `formatWhenLabel` (and any other
+ * local-component formatter) expects. Display paths use this so a stored booking instant is always
+ * labeled in salon time, not the browser's timezone.
+ */
+export function stockholmWallClockDate(instant: Date): Date {
+  // Shift the instant forward by the Stockholm offset; its UTC components then read Stockholm
+  // wall-clock, which we re-materialize as local components.
+  const shifted = new Date(instant.getTime() + stockholmOffsetMs(instant.getTime()))
+  return new Date(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+    shifted.getUTCHours(),
+    shifted.getUTCMinutes(),
+  )
+}
+
+/**
  * Reinterpret a `Date`'s LOCAL wall-clock components as a Europe/Stockholm wall-clock, returning the
  * corresponding UTC instant as an ISO-8601 string. This is the adapter's wire transform: `BookingFlow`
  * builds `start = new Date(y, m, d, hh, mm)` from the SELECTED slot in the browser's local tz, so its
