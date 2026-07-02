@@ -2,7 +2,7 @@
 
 > Barbershop in Göteborg, Sweden. Book a haircut online with barbers Hassan, Victor or Salman. Located at Geijersgatan 10, 411 34 Göteborg. Open Mon–Sat 09:00–18:00, closed Sundays.
 
-KNC Studio is a single-page barbershop website. A visitor picks a barber, chooses a day and time, selects a service, and books an appointment online. The site is bilingual (Swedish by default, English available) and adapts between an editorial desktop layout and a Material-style mobile layout. There is one page; there are no separate route URLs.
+KNC Studio is a single-page barbershop website. A visitor picks a barber, chooses a day and time, selects a service, and books an appointment online. The site is bilingual (Swedish by default, English available) and adapts between an editorial desktop layout and a Material-style mobile layout. The public site is a single page; the only other routes are the staff login and admin panel.
 
 ## Services & pricing
 - Herr (men's haircut) — Wednesday–Saturday and Monday–Tuesday tiers
@@ -17,4 +17,4 @@ KNC Studio is a single-page barbershop website. A visitor picks a barber, choose
 - Barbers: Hassan, Victor, Salman
 
 ## Pages
-- [KNC Studio](https://ultra-treasure-guide-our.trycloudflare.com/): Home and online booking
+- [KNC Studio](https://knc-studio.vercel.app/): Home and online booking

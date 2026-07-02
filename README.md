@@ -21,15 +21,15 @@ npm run preview    # serve the built dist/ locally
 
 ### Scripts
 
-| Script             | What it does                                                             |
-| ------------------ | ------------------------------------------------------------------------ |
-| `dev`              | Vite dev server with HMR                                                 |
-| `build`            | `tsc -b` (strict type-check) then `vite build` → `dist/`                 |
-| `preview`          | Serve the production build locally                                       |
-| `typecheck`        | `tsc -b` only                                                            |
-| `lint`             | ESLint (strict + security + no-unsanitized)                              |
-| `format`           | Prettier write                                                           |
-| `test`             | Vitest unit suite (pure domain modules)                                  |
+| Script             | What it does                                                              |
+| ------------------ | ------------------------------------------------------------------------- |
+| `dev`              | Vite dev server with HMR                                                  |
+| `build`            | `tsc -b` (strict type-check) then `vite build` → `dist/`                  |
+| `preview`          | Serve the production build locally                                        |
+| `typecheck`        | `tsc -b` only                                                             |
+| `lint`             | ESLint (strict + security + no-unsanitized)                               |
+| `format`           | Prettier write                                                            |
+| `test`             | Vitest unit suite (pure domain modules)                                   |
 | `test:integration` | Real adapters against a running local Supabase stack (skips if it's down) |
 
 ---

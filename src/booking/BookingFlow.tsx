@@ -60,8 +60,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<string | null>(null)
   // Real availability: the TAKEN slot times for the chosen barber+date+service, loaded through the
-  // port (DB-backed when configured, the deterministic `slotTaken` formula under the mock). The grid
-  // greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
+  // port (DB-backed when configured, the deterministic `slotTaken` formula under the mock). The
+  // grid greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
   const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
   // Turnstile token (proves the submitter is human; verified by the submit-booking gateway) + a
