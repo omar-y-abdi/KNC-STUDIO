@@ -118,7 +118,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           />
         )
       case 'barbers':
-        return <BarbersView lang={props.lang} s={s} onRosterChanged={() => void reloadBarbers()} />
+        return <BarbersView s={s} onRosterChanged={() => void reloadBarbers()} />
       case 'about':
         return <AboutView dark={props.dark} s={s} />
     }

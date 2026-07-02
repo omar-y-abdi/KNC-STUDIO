@@ -3,9 +3,10 @@
 // the booking palette + 14px radii, so it reads native in both shells). All photos are tasteful
 // placeholders (PlaceholderPhoto); all bios/reviews copy is on-brand placeholder text from i18n.
 //
-// The review form goes through the injectable `ReviewsPort` (default `mockReviewsAdapter`). On a
-// valid submit the new review is PREPENDED to the local list, the form clears and a thank-you
-// shows. NOTHING IS PERSISTED — the list lives in this component's state for the session only.
+// The review form goes through the injectable `ReviewsPort` (default: env-selected — Supabase when
+// configured, the mock otherwise). On a valid submit the new review is PREPENDED to the local list,
+// the form clears and a thank-you shows. Under the mock nothing is persisted — the list lives in
+// this component's state for the session only.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -43,7 +44,7 @@ const CUT_IDS: readonly string[] = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c
 export interface AboutSectionProps {
   readonly mode: Mode
   readonly lang: Lang
-  /** Injected reviews seam — swap for a real backend adapter (default: local, nothing persisted). */
+  /** Injected reviews seam (default: env-selected; mock adapter when no backend is configured). */
   readonly port?: ReviewsPort
   /** Injected roster seam — the barbers shown in the stylist cards (default: env-selected). */
   readonly barbersPort?: BarbersPort

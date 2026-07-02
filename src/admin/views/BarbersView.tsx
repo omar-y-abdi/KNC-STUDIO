@@ -9,7 +9,6 @@
 import type { JSX } from 'preact'
 import { Fragment } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import type { Lang } from '../../i18n/index'
 import {
   createBarber,
   linkedBarberIds,
@@ -20,7 +19,6 @@ import {
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
-  readonly lang: Lang
   readonly s: AdminStylesBundle
   /** Bubble a roster change up so the shell's barber selector + other views stay in sync. */
   readonly onRosterChanged: () => void
@@ -365,13 +363,13 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                               )}
                             </div>
                             {editField(
-                              `Bio (SV)`,
+                              'Bio (SV)',
                               editDraft.bioSv,
                               (v) => setEditDraft({ ...editDraft, bioSv: v }),
                               true,
                             )}
                             {editField(
-                              `Bio (EN)`,
+                              'Bio (EN)',
                               editDraft.bioEn,
                               (v) => setEditDraft({ ...editDraft, bioEn: v }),
                               true,

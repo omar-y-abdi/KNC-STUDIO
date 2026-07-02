@@ -1,8 +1,8 @@
-// The ONE real ReviewsPort adapter: no network, NOTHING PERSISTED.
+// The offline (mock) ReviewsPort adapter: no network, NOTHING PERSISTED.
 //
 //  - `list()` returns a small set of ON-BRAND PLACEHOLDER reviews (a customer's words aren't
-//    translated, so these are plain data, not i18n strings — swap them for real reviews, or have a
-//    future backend adapter fetch them).
+//    translated, so these are plain data, not i18n strings — the Supabase adapter fetches real
+//    ones).
 //  - `submit()` SIMULATES the server-side review gate: only a phone with a finished booking can
 //    review, and the displayed name is DERIVED from that booking ("Förnamn E."). A tiny phone→name
 //    map stands in for the DB; an unknown phone resolves to a `no_booking` domain error, exactly
@@ -68,7 +68,7 @@ const NO_BOOKING_MESSAGE = 'Vi hittade ingen avslutad bokning för det numret.'
 /**
  * Local-only ReviewsPort: lists the placeholder seeds and simulates the phone-gated submission,
  * echoing the stored review (with a server-derived name) on a match, or a `no_booking` error on a
- * miss. Resolves through Promises so a future async backend is a drop-in swap with no caller changes.
+ * miss. Resolves through Promises so the async Supabase adapter is a drop-in swap for callers.
  */
 export const mockReviewsAdapter: ReviewsPort = {
   list(): Promise<readonly Review[]> {
