@@ -5,9 +5,8 @@
 //      one (row + object). Thumbnails use the public Storage URL.
 // All writes are owner-only at the RLS / Storage-policy layer.
 //
-// Data effects isolated here; the forms/tables are otherwise pure. The public site still renders the
-// i18n constants (wiring the DB into the public About is §5, out of scope) — this edits the source of
-// truth for that future migration.
+// Data effects isolated here; the forms/tables are otherwise pure. The public About section overlays
+// these DB values onto its i18n defaults, so edits here show up on the public site.
 
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'

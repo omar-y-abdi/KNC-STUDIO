@@ -3,11 +3,11 @@ import { pricing } from '../../src/booking/pricing'
 import { bookingStrings } from '../../src/i18n/index'
 
 const t = bookingStrings('sv')
-// June 2026: 17=Wed, 20=Sat, 15=Mon, 21=Sun (19 = the mock's "today", a Friday).
+// June 2026: 17=Wed, 20=Sat, 15=Mon, 21=Sun (19 = the fixed demo clock's "today", a Friday).
 const pricesOn = (day: number): number[] =>
   pricing(new Date(2026, 5, day), t).flatMap((g) => g.items.map((i) => i.price))
 
-describe('pricing by weekday (verbatim numbers from the source)', () => {
+describe('pricing by weekday (verbatim numbers from the salon price list)', () => {
   it('Wednesday: full menu + student discount + kids', () => {
     expect(pricesOn(17)).toEqual(expect.arrayContaining([450, 350, 200, 300, 289]))
   })

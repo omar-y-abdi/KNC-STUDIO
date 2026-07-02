@@ -93,7 +93,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const salonPhotos = useGallery('salon', props.galleryPort)
   const cutPhotos = useGallery('cuts', props.galleryPort)
 
-  // Reviews list (seed from the port, then prepend new ones). Submitted reviews are NOT persisted.
+  // Reviews list (seed from the port, then prepend new ones). Not persisted under the mock.
   const [reviews, setReviews] = useState<readonly Review[]>([])
   useEffect(() => {
     let live = true
@@ -388,7 +388,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           ))}
         </div>
 
-        {/* Leave a review (mock submit — not persisted) */}
+        {/* Leave a review */}
         <div style={formCardStyle}>
           <span style={{ fontFamily: "'SF Pro Display'", fontWeight: 600, fontSize: '16px' }}>
             {tx.reviewSubmit}

@@ -73,7 +73,7 @@ export interface PersistedBookingPii {
 
 /**
  * Read the persisted (never-echoed) PII for the confirmed booking with `phone`, via the superuser
- * connection. This is the ONLY way to assert the `create_booking` 11th arg `p_customer_name` truly
+ * connection. This is the ONLY way to assert the `create_booking` 9th arg `p_customer_name` truly
  * landed in the NOT-NULL `customer_name` column (the RPC's ok payload omits it by design).
  * Parameterized query — no string interpolation.
  */
