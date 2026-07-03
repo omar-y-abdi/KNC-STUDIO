@@ -173,7 +173,10 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Accounts are owner-provisioned (admin-create-barber edge fn, service_role) — public self-signup is
+# never used, so it is disabled. NOTE: [auth] settings are largely dashboard-authoritative and may not
+# deploy via the GitHub integration; this declares intent — confirm "Disable Sign Up" in the dashboard.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
@@ -204,7 +207,8 @@ anonymous_users = 30
 # Number of sessions that can be refreshed in a 5 minute interval per IP address.
 token_refresh = 150
 # Number of sign up and sign-in requests that can be made in a 5 minute interval per IP address (excludes anonymous users).
-sign_in_sign_ups = 30
+# Tightened 30 -> 10 to slow password-guessing against the admin login. Dashboard-authoritative — confirm in Auth → Rate Limits.
+sign_in_sign_ups = 10
 # Number of OTP / Magic link verifications that can be made in a 5 minute interval per IP address.
 token_verifications = 30
 # Number of Web3 logins that can be made in a 5 minute interval per IP address.
@@ -217,8 +221,8 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Allow/disallow new user signups via email to your project.
-enable_signup = true
+# Allow/disallow new user signups via email to your project. Disabled — see the [auth] note above.
+enable_signup = false
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
