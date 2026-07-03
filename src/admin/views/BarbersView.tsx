@@ -1,7 +1,8 @@
 // Barbers view (OWNER only). Lists the roster (incl. inactive), with: toggle active, edit
-// name/ig/bios/role/sort, and add a new barber. The barber's LINKED login state is shown read-only
-// ("Inloggning kopplad" / "Ej kopplad") — per v1, accounts are created + linked in the Supabase
-// dashboard (a note explains this). Every write is owner-only at the RLS layer.
+// name/ig/bios/role/sort, add a new barber, and provision a login account for an unlinked barber.
+// The "Skapa inloggning" inline form calls the `admin-create-barber` edge function; on success the
+// barber is optimistically marked as linked and sees the forced-change gate on first login. Every
+// write is owner-only at the RLS layer.
 //
 // On narrow screens the list renders as stacked cards (no table); on wide screens as a compact
 // 5-column table — Name (with muted id inline, since id is just a slug of the name), Instagram,
@@ -13,6 +14,7 @@
 import type { JSX } from 'preact'
 import { Fragment } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
+import { createBarberAccount } from '../adapters/barberAccountAdmin'
 import {
   createBarber,
   linkedBarberIds,
@@ -72,6 +74,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const [newDraft, setNewDraft] = useState<NewDraft>(EMPTY_NEW)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  // "Skapa inloggning" inline form — tracks which barber's form is open + the typed email.
+  const [accountFormId, setAccountFormId] = useState<AdminBarberId | null>(null)
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountBusy, setAccountBusy] = useState(false)
 
   const reload = async (): Promise<void> => {
     const [rosterRes, linkedRes] = await Promise.all([listBarbers(), linkedBarberIds()])
@@ -163,6 +169,40 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     props.onRosterChanged()
   }
 
+  const toggleAccountForm = (barberId: AdminBarberId): void => {
+    if (accountFormId === barberId) {
+      setAccountFormId(null)
+      setAccountEmail('')
+    } else {
+      setAccountFormId(barberId)
+      setAccountEmail('')
+      setNotice(null)
+    }
+  }
+
+  const submitCreateAccount = async (barberId: AdminBarberId): Promise<void> => {
+    const email = accountEmail.trim()
+    if (!email.includes('@') || email.length < 3) {
+      setNotice({ kind: 'err', text: 'Ange en giltig e-postadress.' })
+      return
+    }
+    setAccountBusy(true)
+    const result = await createBarberAccount(email, barberId)
+    setAccountBusy(false)
+    if (!result.ok) {
+      setNotice({ kind: 'err', text: result.error.message })
+      return
+    }
+    // Optimistic: mark this barber as linked for the rest of the session.
+    setLinked(new Set([...linked, barberId]))
+    setAccountFormId(null)
+    setAccountEmail('')
+    setNotice({
+      kind: 'ok',
+      text: 'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+    })
+  }
+
   const editField = (
     label: string,
     value: string,
@@ -250,6 +290,52 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     </div>
   )
 
+  /** Inline "Skapa inloggning" form — email input + submit/cancel. Same border style as edit form. */
+  const renderAccountForm = (barberId: AdminBarberId): JSX.Element => (
+    <div
+      style={{
+        border: s.card.border,
+        borderRadius: '12px',
+        padding: '14px 16px',
+        marginTop: '8px',
+      }}
+    >
+      <div style={s.fieldRow}>
+        <label style={s.label}>E-post</label>
+        <input
+          type="email"
+          autoComplete="email"
+          placeholder="barberare@exempel.se"
+          style={s.input}
+          value={accountEmail}
+          onInput={(e) => setAccountEmail(e.currentTarget.value)}
+          disabled={accountBusy}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+        <button
+          type="button"
+          style={{ ...s.primaryBtn, opacity: accountBusy ? 0.6 : 1 }}
+          onClick={() => void submitCreateAccount(barberId)}
+          disabled={accountBusy}
+        >
+          {accountBusy ? 'Skapar …' : 'Skapa'}
+        </button>
+        <button
+          type="button"
+          style={s.ghostBtn}
+          onClick={() => {
+            setAccountFormId(null)
+            setAccountEmail('')
+          }}
+          disabled={accountBusy}
+        >
+          Avbryt
+        </button>
+      </div>
+    </div>
+  )
+
   // Mobile: stacked cards — name first, muted id below, then login + status pills, Instagram,
   // and action buttons. No side-scrolling table on a phone.
   const renderBarberCards = (barbers: readonly AdminBarber[]): JSX.Element => {
@@ -288,7 +374,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                   <div style={{ ...s.mutedText, fontSize: '13px' }}>@{b.ig}</div>
                 ) : null}
                 {/* Actions */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '2px', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     style={s.ghostBtn}
@@ -304,9 +390,19 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                   >
                     {b.active ? 'Dölj' : 'Aktivera'}
                   </button>
+                  {!linked.has(b.id) ? (
+                    <button
+                      type="button"
+                      style={s.ghostBtn}
+                      onClick={() => toggleAccountForm(b.id)}
+                    >
+                      {accountFormId === b.id ? 'Stäng' : 'Skapa inloggning'}
+                    </button>
+                  ) : null}
                 </div>
               </div>
               {isEditing ? renderEditForm(b.id) : null}
+              {accountFormId === b.id ? renderAccountForm(b.id) : null}
             </Fragment>
           )
         })}
@@ -330,8 +426,8 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
             Barberare
           </h2>
           <p style={s.sectionLead}>
-            Lägg till, redigera och dölj barberare. Inloggningskonton skapas och kopplas i Supabase
-            (Auth) för v1 — kopplingsstatus visas nedan.
+            Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad
+            barberare för att ge dem ett inloggningskonto.
           </p>
         </div>
         {!adding ? (
@@ -453,9 +549,20 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                         {b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}
                       </td>
                       <td style={s.td}>
-                        <span style={s.pill}>
-                          {linked.has(b.id) ? 'Inloggning kopplad' : 'Ej kopplad'}
-                        </span>
+                        {linked.has(b.id) ? (
+                          <span style={s.pill}>Inloggning kopplad</span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={s.pill}>Ej kopplad</span>
+                            <button
+                              type="button"
+                              style={s.ghostBtn}
+                              onClick={() => toggleAccountForm(b.id)}
+                            >
+                              {accountFormId === b.id ? 'Stäng' : 'Skapa inloggning'}
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td style={s.td}>
                         <span style={s.pill}>{b.active ? 'Aktiv' : 'Dold'}</span>
@@ -485,6 +592,13 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                         </td>
                       </tr>
                     ) : null}
+                    {accountFormId === b.id ? (
+                      <tr key={b.id + '-account'}>
+                        <td style={{ ...s.td, padding: '0' }} colSpan={5}>
+                          <div style={{ padding: '16px 10px 20px' }}>{renderAccountForm(b.id)}</div>
+                        </td>
+                      </tr>
+                    ) : null}
                   </Fragment>
                 )
               })}
@@ -492,10 +606,6 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           </table>
         </div>
       )}
-      <p style={{ ...s.mutedText, marginTop: '14px' }} lang="sv">
-        Tips: för att ge en barberare inloggning, skapa kontot under Auth → Users i Supabase och
-        lägg till en rad i <code>profiles</code> med deras barber-id.
-      </p>
     </section>
   )
 }
