@@ -24,6 +24,7 @@ import {
 } from '../adapters/barbersAdmin'
 import { useNarrow } from '../chrome'
 import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
@@ -66,7 +67,8 @@ type Load =
   | { readonly kind: 'ready'; readonly barbers: readonly AdminBarber[] }
 
 export function BarbersView(props: BarbersViewProps): JSX.Element {
-  const { s } = props
+  const { s, lang } = props
+  const t = adminText(lang)
   const narrow = useNarrow()
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [linked, setLinked] = useState<ReadonlySet<AdminBarberId>>(new Set())
@@ -120,7 +122,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     }
     setEditingId(null)
     setEditDraft(null)
-    setNotice({ kind: 'ok', text: 'Barberaren uppdaterad.' })
+    setNotice({ kind: 'ok', text: t.barbersUpdatedOk })
     await reload()
     props.onRosterChanged()
   }
@@ -133,7 +135,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: b.active ? 'Barberaren dold.' : 'Barberaren aktiv.' })
+    setNotice({ kind: 'ok', text: b.active ? t.barbersHiddenOk : t.barbersActivatedOk })
     await reload()
     props.onRosterChanged()
   }
@@ -141,11 +143,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const submitNew = async (): Promise<void> => {
     const id = newDraft.id.trim().toLowerCase()
     if (!/^[a-z0-9-]{1,32}$/.test(id)) {
-      setNotice({ kind: 'err', text: 'Id får bara innehålla a–z, 0–9 och bindestreck (max 32).' })
+      setNotice({ kind: 'err', text: t.barbersIdError })
       return
     }
     if (newDraft.name.trim() === '') {
-      setNotice({ kind: 'err', text: 'Namn krävs.' })
+      setNotice({ kind: 'err', text: t.barbersNameRequired })
       return
     }
     setBusy(true)
@@ -166,7 +168,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     }
     setAdding(false)
     setNewDraft(EMPTY_NEW)
-    setNotice({ kind: 'ok', text: 'Barberare tillagd.' })
+    setNotice({ kind: 'ok', text: t.barbersAddedOk })
     await reload()
     props.onRosterChanged()
   }
@@ -185,7 +187,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const submitCreateAccount = async (barberId: AdminBarberId): Promise<void> => {
     const email = accountEmail.trim()
     if (!email.includes('@') || email.length < 3) {
-      setNotice({ kind: 'err', text: 'Ange en giltig e-postadress.' })
+      setNotice({ kind: 'err', text: t.barbersEmailError })
       return
     }
     setAccountBusy(true)
@@ -201,7 +203,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     setAccountEmail('')
     setNotice({
       kind: 'ok',
-      text: 'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+      text: t.barbersDefaultPasswordNote,
     })
   }
 
@@ -243,27 +245,27 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           gap: '0 16px',
         }}
       >
-        {editField('Namn', editDraft?.name ?? '', (v) =>
+        {editField(t.barbersFieldName, editDraft?.name ?? '', (v) =>
           setEditDraft(editDraft !== null ? { ...editDraft, name: v } : null),
         )}
-        {editField('Instagram', editDraft?.ig ?? '', (v) =>
+        {editField(t.barbersFieldInstagram, editDraft?.ig ?? '', (v) =>
           setEditDraft(editDraft !== null ? { ...editDraft, ig: v } : null),
         )}
-        {editField('Roll (SV)', editDraft?.roleSv ?? '', (v) =>
+        {editField(t.barbersFieldRoleSv, editDraft?.roleSv ?? '', (v) =>
           setEditDraft(editDraft !== null ? { ...editDraft, roleSv: v } : null),
         )}
-        {editField('Roll (EN)', editDraft?.roleEn ?? '', (v) =>
+        {editField(t.barbersFieldRoleEn, editDraft?.roleEn ?? '', (v) =>
           setEditDraft(editDraft !== null ? { ...editDraft, roleEn: v } : null),
         )}
       </div>
       {editField(
-        'Bio (SV)',
+        t.barbersFieldBioSv,
         editDraft?.bioSv ?? '',
         (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioSv: v } : null),
         true,
       )}
       {editField(
-        'Bio (EN)',
+        t.barbersFieldBioEn,
         editDraft?.bioEn ?? '',
         (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioEn: v } : null),
         true,
@@ -275,7 +277,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           onClick={() => void saveEdit(id)}
           disabled={busy}
         >
-          {busy ? 'Sparar …' : 'Spara'}
+          {busy ? t.barbersSaving : t.barbersSave}
         </button>
         <button
           type="button"
@@ -286,7 +288,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           }}
           disabled={busy}
         >
-          Avbryt
+          {t.barbersCancel}
         </button>
       </div>
     </div>
@@ -303,11 +305,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       }}
     >
       <div style={s.fieldRow}>
-        <label style={s.label}>E-post</label>
+        <label style={s.label}>{t.barbersFieldEmail}</label>
         <input
           type="email"
           autoComplete="email"
-          placeholder="barberare@exempel.se"
+          placeholder={t.barbersEmailPlaceholder}
           style={s.input}
           value={accountEmail}
           onInput={(e) => setAccountEmail(e.currentTarget.value)}
@@ -321,7 +323,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           onClick={() => void submitCreateAccount(barberId)}
           disabled={accountBusy}
         >
-          {accountBusy ? 'Skapar …' : 'Skapa'}
+          {accountBusy ? t.barbersCreating : t.barbersCreate}
         </button>
         <button
           type="button"
@@ -332,7 +334,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           }}
           disabled={accountBusy}
         >
-          Avbryt
+          {t.barbersCancel}
         </button>
       </div>
     </div>
@@ -341,7 +343,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   // Mobile: stacked cards — name first, muted id below, then login + status pills, Instagram,
   // and action buttons. No side-scrolling table on a phone.
   const renderBarberCards = (barbers: readonly AdminBarber[]): JSX.Element => {
-    if (barbers.length === 0) return <div style={s.emptyState}>Inga barberare.</div>
+    if (barbers.length === 0) return <div style={s.emptyState}>{t.barbersEmpty}</div>
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
         {barbers.map((b) => {
@@ -367,9 +369,9 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                 {/* Status pills */}
                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                   <span style={s.pill}>
-                    {linked.has(b.id) ? 'Inloggning kopplad' : 'Ej kopplad'}
+                    {linked.has(b.id) ? t.barbersStatusLinked : t.barbersStatusUnlinked}
                   </span>
-                  <span style={s.pill}>{b.active ? 'Aktiv' : 'Dold'}</span>
+                  <span style={s.pill}>{b.active ? t.barbersStatusActive : t.barbersStatusHidden}</span>
                 </div>
                 {/* Instagram */}
                 {b.ig !== '' ? (
@@ -382,7 +384,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                     style={s.ghostBtn}
                     onClick={() => (isEditing ? setEditingId(null) : startEdit(b))}
                   >
-                    {isEditing ? 'Stäng' : 'Redigera'}
+                    {isEditing ? t.barbersClose : t.barbersEdit}
                   </button>
                   <button
                     type="button"
@@ -390,7 +392,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                     onClick={() => void toggleActive(b)}
                     disabled={busy}
                   >
-                    {b.active ? 'Dölj' : 'Aktivera'}
+                    {b.active ? t.barbersHide : t.barbersActivate}
                   </button>
                   {!linked.has(b.id) ? (
                     <button
@@ -398,7 +400,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                       style={s.ghostBtn}
                       onClick={() => toggleAccountForm(b.id)}
                     >
-                      {accountFormId === b.id ? 'Stäng' : 'Skapa inloggning'}
+                      {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
                     </button>
                   ) : null}
                 </div>
@@ -425,12 +427,9 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       >
         <div>
           <h2 id="barbers-heading" style={s.sectionTitle}>
-            Barberare
+            {t.barbersTitle}
           </h2>
-          <p style={s.sectionLead}>
-            Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad
-            barberare för att ge dem ett inloggningskonto.
-          </p>
+          <p style={s.sectionLead}>{t.barbersLead}</p>
         </div>
         {!adding ? (
           <button
@@ -442,7 +441,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               setNotice(null)
             }}
           >
-            + Ny barberare
+            {t.barbersAddNew}
           </button>
         ) : null}
       </div>
@@ -462,7 +461,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
             margin: '8px 0 18px',
           }}
         >
-          <h3 style={{ ...s.label, fontSize: '13px' }}>Ny barberare</h3>
+          <h3 style={{ ...s.label, fontSize: '13px' }}>{t.barbersNewHeading}</h3>
           <div
             style={{
               display: 'grid',
@@ -470,24 +469,24 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               gap: '0 16px',
             }}
           >
-            {editField('Id (a–z, 0–9, -)', newDraft.id, (v) => setNewDraft({ ...newDraft, id: v }))}
-            {editField('Namn', newDraft.name, (v) => setNewDraft({ ...newDraft, name: v }))}
-            {editField('Instagram', newDraft.ig, (v) => setNewDraft({ ...newDraft, ig: v }))}
-            {editField('Roll (SV)', newDraft.roleSv, (v) =>
+            {editField(t.barbersFieldId, newDraft.id, (v) => setNewDraft({ ...newDraft, id: v }))}
+            {editField(t.barbersFieldName, newDraft.name, (v) => setNewDraft({ ...newDraft, name: v }))}
+            {editField(t.barbersFieldInstagram, newDraft.ig, (v) => setNewDraft({ ...newDraft, ig: v }))}
+            {editField(t.barbersFieldRoleSv, newDraft.roleSv, (v) =>
               setNewDraft({ ...newDraft, roleSv: v }),
             )}
-            {editField('Roll (EN)', newDraft.roleEn, (v) =>
+            {editField(t.barbersFieldRoleEn, newDraft.roleEn, (v) =>
               setNewDraft({ ...newDraft, roleEn: v }),
             )}
           </div>
           {editField(
-            'Bio (SV)',
+            t.barbersFieldBioSv,
             newDraft.bioSv,
             (v) => setNewDraft({ ...newDraft, bioSv: v }),
             true,
           )}
           {editField(
-            'Bio (EN)',
+            t.barbersFieldBioEn,
             newDraft.bioEn,
             (v) => setNewDraft({ ...newDraft, bioEn: v }),
             true,
@@ -499,7 +498,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               onClick={() => void submitNew()}
               disabled={busy}
             >
-              {busy ? 'Sparar …' : 'Skapa'}
+              {busy ? t.barbersSaving : t.barbersCreate}
             </button>
             <button
               type="button"
@@ -510,14 +509,14 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               }}
               disabled={busy}
             >
-              Avbryt
+              {t.barbersCancel}
             </button>
           </div>
         </div>
       ) : null}
 
       {load.kind === 'loading' ? (
-        <div style={s.emptyState}>Laddar barberare …</div>
+        <div style={s.emptyState}>{t.barbersLoading}</div>
       ) : load.kind === 'error' ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
       ) : narrow ? (
@@ -529,11 +528,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={s.th}>Namn</th>
-                <th style={s.th}>Instagram</th>
-                <th style={s.th}>Inloggning</th>
-                <th style={s.th}>Status</th>
-                <th style={{ ...s.th, textAlign: 'right' }}>Åtgärd</th>
+                <th style={s.th}>{t.barbersColName}</th>
+                <th style={s.th}>{t.barbersColInstagram}</th>
+                <th style={s.th}>{t.barbersColLogin}</th>
+                <th style={s.th}>{t.barbersColStatus}</th>
+                <th style={{ ...s.th, textAlign: 'right' }}>{t.barbersColAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -552,22 +551,22 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                       </td>
                       <td style={s.td}>
                         {linked.has(b.id) ? (
-                          <span style={s.pill}>Inloggning kopplad</span>
+                          <span style={s.pill}>{t.barbersStatusLinked}</span>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={s.pill}>Ej kopplad</span>
+                            <span style={s.pill}>{t.barbersStatusUnlinked}</span>
                             <button
                               type="button"
                               style={s.ghostBtn}
                               onClick={() => toggleAccountForm(b.id)}
                             >
-                              {accountFormId === b.id ? 'Stäng' : 'Skapa inloggning'}
+                              {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
                             </button>
                           </div>
                         )}
                       </td>
                       <td style={s.td}>
-                        <span style={s.pill}>{b.active ? 'Aktiv' : 'Dold'}</span>
+                        <span style={s.pill}>{b.active ? t.barbersStatusActive : t.barbersStatusHidden}</span>
                       </td>
                       <td style={{ ...s.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button
@@ -575,7 +574,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                           style={{ ...s.ghostBtn, marginRight: '8px' }}
                           onClick={() => (isEditing ? setEditingId(null) : startEdit(b))}
                         >
-                          {isEditing ? 'Stäng' : 'Redigera'}
+                          {isEditing ? t.barbersClose : t.barbersEdit}
                         </button>
                         <button
                           type="button"
@@ -583,7 +582,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                           onClick={() => void toggleActive(b)}
                           disabled={busy}
                         >
-                          {b.active ? 'Dölj' : 'Aktivera'}
+                          {b.active ? t.barbersHide : t.barbersActivate}
                         </button>
                       </td>
                     </tr>

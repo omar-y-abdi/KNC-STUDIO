@@ -11,6 +11,7 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
 import { listAbout, saveAbout } from '../adapters/aboutAdmin'
 import { deleteImage, listGallery, uploadImage } from '../adapters/galleryAdmin'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -22,15 +23,15 @@ export interface AboutViewProps {
   readonly s: AdminStylesBundle
 }
 
-/** The 7 editable keys, in display order, with a human label. */
-const ABOUT_FIELDS: readonly { key: AboutKey; label: string; multiline: boolean }[] = [
-  { key: 'eyebrow', label: 'Etikett (eyebrow)', multiline: false },
-  { key: 'heading', label: 'Rubrik', multiline: false },
-  { key: 'intro', label: 'Intro', multiline: true },
-  { key: 'galleryTitle', label: 'Galleri-titel (salong)', multiline: false },
-  { key: 'cutsTitle', label: 'Galleri-titel (klippningar)', multiline: false },
-  { key: 'stylistsTitle', label: 'Barberar-titel', multiline: false },
-  { key: 'reviewsTitle', label: 'Omdömen-titel', multiline: false },
+/** The 7 editable keys, in display order. Labels are resolved per-language from the dictionary. */
+const ABOUT_FIELDS: readonly { key: AboutKey; multiline: boolean }[] = [
+  { key: 'eyebrow', multiline: false },
+  { key: 'heading', multiline: false },
+  { key: 'intro', multiline: true },
+  { key: 'galleryTitle', multiline: false },
+  { key: 'cutsTitle', multiline: false },
+  { key: 'stylistsTitle', multiline: false },
+  { key: 'reviewsTitle', multiline: false },
 ]
 
 const LANGS: readonly Lang[] = ['sv', 'en']
@@ -40,20 +41,37 @@ type CellMap = Map<string, string>
 const cellKey = (key: AboutKey, lang: Lang): string => `${key}:${lang}`
 
 export function AboutView(props: AboutViewProps): JSX.Element {
-  const { s } = props
+  const { s, lang } = props
+  const t = adminText(lang)
   return (
     <>
-      <AboutTextEditor s={s} />
-      <GalleryManager dark={props.dark} s={s} kind="salon" title="Galleri · I salongen" />
-      <GalleryManager dark={props.dark} s={s} kind="cuts" title="Galleri · Jobb vi gjort" />
+      <AboutTextEditor s={s} lang={lang} />
+      <GalleryManager
+        dark={props.dark}
+        s={s}
+        lang={lang}
+        kind="salon"
+        title={t.aboutGallerySalonTitle}
+      />
+      <GalleryManager
+        dark={props.dark}
+        s={s}
+        lang={lang}
+        kind="cuts"
+        title={t.aboutGalleryCutsTitle}
+      />
     </>
   )
 }
 
 // --- About text -----------------------------------------------------------------------------------
 
-function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element {
-  const { s } = props
+function AboutTextEditor(props: {
+  readonly s: AdminStylesBundle
+  readonly lang: Lang
+}): JSX.Element {
+  const { s, lang } = props
+  const t = adminText(lang)
   const [cells, setCells] = useState<CellMap>(new Map())
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -106,24 +124,32 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
     setSavedKey(ck)
   }
 
+  const fieldLabels: Record<AboutKey, string> = {
+    eyebrow: t.aboutFieldEyebrow,
+    heading: t.aboutFieldHeading,
+    intro: t.aboutFieldIntro,
+    galleryTitle: t.aboutFieldGalleryTitle,
+    cutsTitle: t.aboutFieldCutsTitle,
+    stylistsTitle: t.aboutFieldStylistsTitle,
+    reviewsTitle: t.aboutFieldReviewsTitle,
+  }
+
   return (
     <section style={s.card} aria-labelledby="about-heading">
       <h2 id="about-heading" style={s.sectionTitle}>
-        Om oss · text
+        {t.aboutTextTitle}
       </h2>
-      <p style={s.sectionLead}>
-        Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.
-      </p>
+      <p style={s.sectionLead}>{t.aboutTextLead}</p>
 
       {loadError !== null ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
       ) : !loaded ? (
-        <div style={s.emptyState}>Laddar innehåll …</div>
+        <div style={s.emptyState}>{t.aboutLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
           {ABOUT_FIELDS.map((field) => (
             <div key={field.key}>
-              <h3 style={{ ...s.label, fontSize: '13px' }}>{field.label}</h3>
+              <h3 style={{ ...s.label, fontSize: '13px' }}>{fieldLabels[field.key]}</h3>
               <div
                 style={{
                   display: 'grid',
@@ -131,28 +157,28 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
                   gap: '12px',
                 }}
               >
-                {LANGS.map((lang) => {
-                  const ck = cellKey(field.key, lang)
+                {LANGS.map((cellLang) => {
+                  const ck = cellKey(field.key, cellLang)
                   return (
                     <div key={ck}>
                       <label style={s.label} htmlFor={`about-${ck}`}>
-                        {lang === 'sv' ? 'Svenska' : 'Engelska'}
+                        {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
                       </label>
                       {field.multiline ? (
                         <textarea
                           id={`about-${ck}`}
                           style={s.textarea}
                           maxLength={2000}
-                          value={valueFor(field.key, lang)}
-                          onInput={(e) => setValue(field.key, lang, e.currentTarget.value)}
+                          value={valueFor(field.key, cellLang)}
+                          onInput={(e) => setValue(field.key, cellLang, e.currentTarget.value)}
                         />
                       ) : (
                         <input
                           id={`about-${ck}`}
                           style={s.input}
                           maxLength={2000}
-                          value={valueFor(field.key, lang)}
-                          onInput={(e) => setValue(field.key, lang, e.currentTarget.value)}
+                          value={valueFor(field.key, cellLang)}
+                          onInput={(e) => setValue(field.key, cellLang, e.currentTarget.value)}
                         />
                       )}
                       <div
@@ -166,13 +192,13 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
                         <button
                           type="button"
                           style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
-                          onClick={() => void save(field.key, lang)}
+                          onClick={() => void save(field.key, cellLang)}
                           disabled={savingKey === ck}
                         >
-                          {savingKey === ck ? 'Sparar …' : 'Spara'}
+                          {savingKey === ck ? t.aboutSaving : t.aboutSave}
                         </button>
                         <span aria-live="polite">
-                          {savedKey === ck ? <span style={s.successText}>Sparat</span> : null}
+                          {savedKey === ck ? <span style={s.successText}>{t.aboutSaved}</span> : null}
                           {errorFor?.key === ck ? (
                             <span style={s.errorText}>{errorFor.message}</span>
                           ) : null}
@@ -195,10 +221,12 @@ function AboutTextEditor(props: { readonly s: AdminStylesBundle }): JSX.Element 
 function GalleryManager(props: {
   readonly dark: boolean
   readonly s: AdminStylesBundle
+  readonly lang: Lang
   readonly kind: GalleryKind
   readonly title: string
 }): JSX.Element {
-  const { s, kind } = props
+  const { s, kind, lang } = props
+  const t = adminText(lang)
   const [images, setImages] = useState<readonly GalleryImage[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -237,7 +265,7 @@ function GalleryManager(props: {
       return
     }
     setAlt('')
-    setNotice({ kind: 'ok', text: 'Bild uppladdad.' })
+    setNotice({ kind: 'ok', text: t.aboutGalleryUploadedOk })
     setImages((prev) => [...prev, result.value])
   }
 
@@ -252,7 +280,7 @@ function GalleryManager(props: {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: 'Bild borttagen.' })
+    setNotice({ kind: 'ok', text: t.aboutGalleryDeletedOk })
     setImages((prev) => prev.filter((i) => i.id !== target.id))
   }
 
@@ -261,9 +289,7 @@ function GalleryManager(props: {
       <h2 id={`gallery-${kind}`} style={s.sectionTitle}>
         {props.title}
       </h2>
-      <p style={s.sectionLead}>
-        Ladda upp bilder till galleriet och ta bort dem du inte vill visa.
-      </p>
+      <p style={s.sectionLead}>{t.aboutGalleryLead}</p>
 
       <div
         style={{
@@ -276,7 +302,7 @@ function GalleryManager(props: {
       >
         <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
           <label htmlFor={`alt-${kind}`} style={s.label}>
-            Alt-text (beskrivning)
+            {t.aboutGalleryAltLabel}
           </label>
           <input
             id={`alt-${kind}`}
@@ -288,7 +314,7 @@ function GalleryManager(props: {
         </div>
         <div>
           <label htmlFor={`file-${kind}`} style={s.label}>
-            Bildfil
+            {t.aboutGalleryFileLabel}
           </label>
           <input
             ref={fileRef}
@@ -306,7 +332,7 @@ function GalleryManager(props: {
       </div>
 
       <div aria-live="polite" style={{ minHeight: '18px', marginBottom: '8px' }}>
-        {busy ? <span style={s.mutedText}>Laddar upp …</span> : null}
+        {busy ? <span style={s.mutedText}>{t.aboutGalleryUploading}</span> : null}
         {notice !== null ? (
           <span style={notice.kind === 'ok' ? s.successText : s.errorText}>{notice.text}</span>
         ) : null}
@@ -315,9 +341,9 @@ function GalleryManager(props: {
       {loadError !== null ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
       ) : !loaded ? (
-        <div style={s.emptyState}>Laddar galleri …</div>
+        <div style={s.emptyState}>{t.aboutGalleryLoading}</div>
       ) : images.length === 0 ? (
-        <div style={s.emptyState}>Inga bilder ännu.</div>
+        <div style={s.emptyState}>{t.aboutGalleryEmpty}</div>
       ) : (
         <div
           style={{
@@ -355,7 +381,7 @@ function GalleryManager(props: {
                   {img.alt === '' ? '—' : img.alt}
                 </span>
                 <button type="button" style={s.dangerBtn} onClick={() => setPendingDelete(img)}>
-                  Ta bort
+                  {t.aboutGalleryRemove}
                 </button>
               </figcaption>
             </figure>
@@ -366,10 +392,10 @@ function GalleryManager(props: {
       {pendingDelete !== null ? (
         <ConfirmDialog
           dark={props.dark}
-          title="Ta bort bilden?"
-          body="Bilden tas bort från galleriet och lagringen. Detta går inte att ångra."
-          confirmLabel="Ta bort"
-          cancelLabel="Avbryt"
+          title={t.aboutGalleryDeleteTitle}
+          body={t.aboutGalleryDeleteBody}
+          confirmLabel={t.aboutGalleryRemove}
+          cancelLabel={t.aboutGalleryDeleteCancel}
           danger
           busy={deleteBusy}
           onConfirm={() => void onDelete()}
