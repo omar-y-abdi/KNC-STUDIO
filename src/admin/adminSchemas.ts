@@ -25,6 +25,7 @@ const lang = z.enum(['sv', 'en'])
 export const profileRow = z.object({
   role: z.enum(['owner', 'barber']),
   barber_id: z.string().nullable(),
+  must_change_password: z.boolean(),
 })
 export type ProfileRow = z.infer<typeof profileRow>
 

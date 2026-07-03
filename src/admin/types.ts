@@ -23,6 +23,9 @@ export interface AdminProfile {
   readonly role: AdminRole
   /** The barber this account acts as (null for an owner). */
   readonly barberId: AdminBarberId | null
+  /** True when the owner just provisioned this account — the barber must pick a new password
+   *  before reaching the panel. Cleared by `set_own_password_changed()` after the change. */
+  readonly mustChangePassword: boolean
 }
 
 /** A barber row as the admin manages it (the full roster row, incl. inactive for the owner). */

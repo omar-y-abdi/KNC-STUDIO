@@ -61,7 +61,7 @@ async function resolveProfile(userId: string, email: string): Promise<AdminResul
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('role, barber_id')
+      .select('role, barber_id, must_change_password')
       .eq('id', userId)
       .maybeSingle()
     if (error !== null) return err('network', NETWORK_ERROR)
@@ -75,6 +75,7 @@ async function resolveProfile(userId: string, email: string): Promise<AdminResul
       email,
       role: parsed.value.role,
       barberId: parsed.value.barber_id,
+      mustChangePassword: parsed.value.must_change_password,
     })
   } catch {
     return err('network', NETWORK_ERROR)
@@ -191,6 +192,39 @@ export async function setNewPassword(newPassword: string): Promise<AdminResult<v
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error !== null) return err('validation', PASSWORD_UPDATE_FAILED)
     await supabase.auth.signOut()
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+// --- Forced first-login password change (provisioned barber accounts) ---------------------------
+
+/**
+ * Update the signed-in barber's password WITHOUT signing out. Used ONLY in the forced-change gate
+ * (`ForcedPasswordChange`) so the barber proceeds into the panel immediately after picking a new
+ * password. The voluntary change flow (`changePassword`) is different — it signs out by design.
+ * `validateNewPassword` (with '123456' as current) should gate the input before calling this.
+ */
+export async function setOwnPasswordKeepSession(newPassword: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.updateUser({ password: newPassword })
+    if (error !== null) return err('validation', PASSWORD_UPDATE_FAILED)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+/**
+ * Clear the `must_change_password` flag on the caller's own profiles row via the
+ * `set_own_password_changed()` SECURITY DEFINER RPC. Called after `setOwnPasswordKeepSession`
+ * succeeds — the RPC restricts the UPDATE to `auth.uid()` so no other row can be touched.
+ */
+export async function clearMustChangePassword(): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().rpc('set_own_password_changed')
+    if (error !== null) return err('network', NETWORK_ERROR)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)
