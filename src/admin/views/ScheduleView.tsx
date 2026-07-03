@@ -467,9 +467,10 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         <div
           style={{
             display: narrow ? 'grid' : 'flex',
-            // minmax(0,1fr): date inputs have an intrinsic min width and would otherwise push the
-            // grid WIDER than the card, colliding with its border on phones.
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            // On narrow screens a single column stacks Från/Till vertically so the date inputs
+            // (which have a browser-enforced minimum width) never push outside the card border.
+            // On wider screens the flex + wrap handles layout; gridTemplateColumns has no effect.
+            gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)',
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: '12px',
