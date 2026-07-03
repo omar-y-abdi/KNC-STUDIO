@@ -198,7 +198,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       </nav>
 
       <main style={s.content}>
-        <header style={s.topbar}>
+        <header style={s.topbar} class="knc-admin-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             {isOwner ? (
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -220,7 +220,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             ) : null}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div
               style={{
                 display: 'flex',

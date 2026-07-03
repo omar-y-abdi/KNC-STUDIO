@@ -3,7 +3,7 @@
 // SLOTS the booking backend uses); the schedule editor offers those as the selectable start/end
 // bounds so a barber can only pick sane, on-grid hours.
 
-import type { DaySchedule, WeekSchedule, Weekday } from './types'
+import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule, Weekday } from './types'
 
 /** Minutes from midnight for the default working day (09:00 / 18:00). */
 export const DEFAULT_START_MIN = 540
@@ -120,4 +120,106 @@ export function toDateIso(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// --- Day grid (the one-tap walk-in block view) ----------------------------------------------------
+
+/** The salon's fixed 45-min slot length (the same grid the booking backend uses). */
+export const SLOT_LEN_MIN = 45
+
+/**
+ * What one slot chip on the day grid IS, in priority order:
+ *   `booked`  — overlaps a confirmed booking (shows the customer; never tappable)
+ *   `blocked` — overlaps a walk-in block row (tap = unblock)
+ *   `closed`  — outside working hours, a non-working weekday, or a time-off day
+ *   `past`    — already started (only on today/past dates)
+ *   `open`    — bookable online right now (tap = block)
+ */
+export type SlotState = 'open' | 'blocked' | 'booked' | 'closed' | 'past'
+
+/** A confirmed booking mapped onto the day's minute line (salon-local). */
+export interface DayBooking {
+  readonly startMin: number
+  readonly endMin: number
+  /** Short label for the chip (customer first name). */
+  readonly label: string
+}
+
+/** One rendered slot on the day grid. */
+export interface DaySlot {
+  readonly startMin: number
+  /** `HH:MM` start label. */
+  readonly label: string
+  readonly state: SlotState
+  /** The covering block row's id when `state === 'blocked'` (the delete target). */
+  readonly blockId: string | null
+  /** The covering booking's label when `state === 'booked'`. */
+  readonly bookingLabel: string | null
+}
+
+/** Does window [aStart, aEnd) overlap [bStart, bEnd)? (Half-open, mirrors the DB overlap math.) */
+function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && aEnd > bStart
+}
+
+/**
+ * Compute the full 12-slot day grid for one date. Pure — every input is data:
+ *   `day`           the weekday's schedule row (undefined = no row = off)
+ *   `dayOff`        a time-off range covers the date
+ *   `blocks`        the date's walk-in block rows
+ *   `bookings`      the date's CONFIRMED bookings on the salon-local minute line
+ *   `pastCutoffMin` slots starting before this are `past` — pass the current salon-local minute
+ *                   for today, `0` for a future date, `1440` for a past date.
+ */
+export function daySlots(args: {
+  readonly day: DaySchedule | undefined
+  readonly dayOff: boolean
+  readonly blocks: readonly SlotBlock[]
+  readonly bookings: readonly DayBooking[]
+  readonly pastCutoffMin: number
+}): readonly DaySlot[] {
+  return START_OPTIONS.map(({ label, min }) => {
+    const end = min + SLOT_LEN_MIN
+    const booking = args.bookings.find((b) => overlaps(min, end, b.startMin, b.endMin))
+    const block = args.blocks.find((b) => overlaps(min, end, b.startMin, b.endMin))
+    const closed =
+      args.dayOff ||
+      args.day === undefined ||
+      !args.day.working ||
+      min < args.day.startMin ||
+      end > args.day.endMin
+
+    const state: SlotState =
+      booking !== undefined
+        ? 'booked'
+        : block !== undefined
+          ? 'blocked'
+          : closed
+            ? 'closed'
+            : min < args.pastCutoffMin
+              ? 'past'
+              : 'open'
+
+    return {
+      startMin: min,
+      label,
+      state,
+      blockId: state === 'blocked' && block !== undefined ? block.id : null,
+      bookingLabel: state === 'booked' && booking !== undefined ? booking.label : null,
+    }
+  })
+}
+
+/** The time-off entry covering an ISO date, if any (inclusive range; ISO strings compare safely). */
+export function timeOffCovering(timeOff: readonly TimeOff[], dateIso: string): TimeOff | undefined {
+  return timeOff.find((t) => t.startDate <= dateIso && dateIso <= t.endDate)
+}
+
+/** The next `count` days starting at `from` (local midnights), for the day-picker strip. */
+export function upcomingDates(from: Date, count: number): readonly Date[] {
+  const out: Date[] = []
+  for (let i = 0; i < count; i++) {
+    out.push(new Date(from.getFullYear(), from.getMonth(), from.getDate() + i))
+  }
+  return out
 }

@@ -1,19 +1,23 @@
-// Schedule view — the LAYERED weekly editor (ADMIN_SPEC §6, the user's exact words):
-//   1. Check which weekdays you work (a per-day working toggle).
-//   2. "Samma tid alla dagar" — apply one start/end to ALL working days at once.
-//   3. Tap a day to set ITS OWN start/end (per-day dropdowns, on the salon's 45-min grid).
-//   4. A time-off list to block a single day or a date range (add / remove).
-// Save state is explicit: a dirty indicator, a Save button, and an aria-live "Sparat" confirmation.
+// Schedule view — rebuilt around how barbers actually work (they come and go, and clients also
+// book over text). Three cards, least friction first:
+//   1. Dagsöversikt (ScheduleDayGrid): tap a slot to block/unblock it — saved instantly.
+//   2. Veckoschema: which weekdays + hours. AUTO-SAVES (debounced) — no Save button, no dirty
+//      state to remember; an aria-live line reports "Sparar …/Sparat". Invalid windows (end
+//      before start) are flagged inline and simply not saved until fixed.
+//   3. Ledighet: block a date range (vacation) with add/remove; the day grid's "Blockera hela
+//      dagen" writes a single-day row through the same handlers.
 //
-// All schedule mutations are pure reducers from `time.ts` (no in-place edits); the data effects
-// (read/save/time-off) are isolated here. RLS guarantees a barber can only ever save their OWN
-// schedule — the owner edits whoever the shell's selector targets.
+// All schedule mutations are pure reducers from `time.ts`; data effects are isolated here.
+// RLS guarantees a barber can only ever save their OWN schedule — the owner edits whoever the
+// shell's selector targets.
 
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { cap, monthLabel, parseDateIso, weekdayLabel } from '../../booking/calendar'
+import { palette } from '../../booking/bookingStyles'
+import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
-import { availableSlotsFor, readWeek, saveWeek } from '../adapters/schedulesAdmin'
+import { readWeek, saveWeek } from '../adapters/schedulesAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
   DEFAULT_END_MIN,
@@ -28,6 +32,7 @@ import {
   weekIsValid,
 } from '../time'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { ScheduleDayGrid } from './ScheduleDayGrid'
 import type { AdminBarberId, AdminStylesBundle, TimeOff, Weekday, WeekSchedule } from './viewTypes'
 
 export interface ScheduleViewProps {
@@ -40,50 +45,85 @@ export interface ScheduleViewProps {
   readonly barberName: string
 }
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+/** Auto-save status of the week editor (one aria-live line renders it). */
+type WeekSave =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'saving' }
+  | { readonly kind: 'saved' }
+  | { readonly kind: 'invalid' }
+  | { readonly kind: 'error'; readonly message: string }
+
+/** Debounce for week auto-save: long enough to batch a burst of edits, short enough to feel live. */
+const SAVE_DEBOUNCE_MS = 600
 
 /** Weekday order for display: Monday-first (1..6, then 0=Sunday) reads naturally for a work week. */
 const DISPLAY_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0]
 
 export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const { s, lang } = props
+  const c = palette(props.dark)
 
   const [week, setWeek] = useState<WeekSchedule>(defaultWeek)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [dirty, setDirty] = useState(false)
-  const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [weekSave, setWeekSave] = useState<WeekSave>({ kind: 'idle' })
 
   // "Same time all days" bound inputs (default to the salon day 09:00–18:00).
   const [bulkStart, setBulkStart] = useState(DEFAULT_START_MIN)
   const [bulkEnd, setBulkEnd] = useState(DEFAULT_END_MIN)
 
-  // Time-off state.
+  // Time-off state (shared with the day grid's whole-day toggle through addOff/removeOff).
   const [timeOff, setTimeOff] = useState<readonly TimeOff[]>([])
-  const [offStart, setOffStart] = useState(() => toDateIso(new Date()))
-  const [offEnd, setOffEnd] = useState(() => toDateIso(new Date()))
+  const [offStart, setOffStart] = useState(() => toDateIso(defaultClock()))
+  const [offEnd, setOffEnd] = useState(() => toDateIso(defaultClock()))
   const [offReason, setOffReason] = useState('')
   const [offBusy, setOffBusy] = useState(false)
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [pendingOff, setPendingOff] = useState<TimeOff | null>(null)
   const [offDeleteBusy, setOffDeleteBusy] = useState(false)
 
-  // Live "what customers see" preview: the bookable slots a SAVED schedule produces for a chosen
-  // date (45-min haircut by default). Calls the same anon `available_slots` RPC the booking flow uses.
-  const [previewDate, setPreviewDate] = useState(() => toDateIso(new Date()))
-  const [previewSlots, setPreviewSlots] = useState<readonly string[] | null>(null)
-  const [previewBusy, setPreviewBusy] = useState(false)
-  const [previewError, setPreviewError] = useState<string | null>(null)
+  // Auto-save plumbing: a debounce timer + a generation counter so a stale response (or a save for
+  // a previously-selected barber) can never clobber newer state.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveGen = useRef(0)
+  const pendingSave = useRef<WeekSchedule | null>(null)
 
-  // Load the week + time-off whenever the target barber changes.
+  const doSave = async (barberId: AdminBarberId, next: WeekSchedule): Promise<void> => {
+    const gen = ++saveGen.current
+    pendingSave.current = null
+    setWeekSave({ kind: 'saving' })
+    const result = await saveWeek(barberId, next)
+    if (gen !== saveGen.current) return // superseded by a newer edit/save
+    if (result.ok) setWeekSave({ kind: 'saved' })
+    else setWeekSave({ kind: 'error', message: result.error.message })
+  }
+
+  const mutate = (next: WeekSchedule): void => {
+    setWeek(next)
+    if (saveTimer.current !== null) clearTimeout(saveTimer.current)
+    saveGen.current++ // invalidate any in-flight save; this edit supersedes it
+    if (!weekIsValid(next)) {
+      pendingSave.current = null
+      setWeekSave({ kind: 'invalid' })
+      return
+    }
+    setWeekSave({ kind: 'saving' })
+    pendingSave.current = next
+    const barberId = props.barberId
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null
+      void doSave(barberId, next)
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  // Load the week + time-off whenever the target barber changes; flush any pending save for the
+  // PREVIOUS barber first so a quick barber-switch never drops an edit.
   useEffect(() => {
     let active = true
     setLoaded(false)
     setLoadError(null)
-    setDirty(false)
-    setSaveState('idle')
-    setSaveMsg(null)
+    setWeekSave({ kind: 'idle' })
+    setOffMsg(null)
     void (async () => {
       const [wk, off] = await Promise.all([readWeek(props.barberId), listTimeOff(props.barberId)])
       if (!active) return
@@ -97,14 +137,21 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
   }, [props.barberId])
 
-  const valid = useMemo(() => weekIsValid(week), [week])
-
-  const mutate = (next: WeekSchedule): void => {
-    setWeek(next)
-    setDirty(true)
-    setSaveState('idle')
-    setSaveMsg(null)
-  }
+  // Flush a pending (debounced) save on unmount/barber-switch instead of dropping it.
+  useEffect(() => {
+    const barberId = props.barberId
+    return () => {
+      if (saveTimer.current !== null) {
+        clearTimeout(saveTimer.current)
+        saveTimer.current = null
+      }
+      const pending = pendingSave.current
+      if (pending !== null) {
+        pendingSave.current = null
+        void saveWeek(barberId, pending)
+      }
+    }
+  }, [props.barberId])
 
   const onToggleDay = (weekday: Weekday): void => mutate(toggleWorking(week, weekday))
   const onDayStart = (weekday: Weekday, startMin: number): void => {
@@ -117,19 +164,26 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   }
   const applyAllDays = (): void => mutate(sameTimeAllDays(week, bulkStart, bulkEnd))
 
-  const onSave = async (): Promise<void> => {
-    if (!valid) return
-    setSaveState('saving')
-    setSaveMsg(null)
-    const result = await saveWeek(props.barberId, week)
-    if (result.ok) {
-      setSaveState('saved')
-      setSaveMsg('Schemat sparat.')
-      setDirty(false)
-    } else {
-      setSaveState('error')
-      setSaveMsg(result.error.message)
+  // Shared time-off writers (the Ledighet form AND the day grid's whole-day toggle land here).
+  const addOff = async (startDate: string, endDate: string, reason: string): Promise<boolean> => {
+    const result = await addTimeOff(props.barberId, startDate, endDate, reason)
+    if (!result.ok) {
+      setOffMsg({ kind: 'err', text: result.error.message })
+      return false
     }
+    setTimeOff((prev) =>
+      [...prev, result.value].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    )
+    return true
+  }
+  const removeOff = async (id: string): Promise<boolean> => {
+    const result = await deleteTimeOff(id)
+    if (!result.ok) {
+      setOffMsg({ kind: 'err', text: result.error.message })
+      return false
+    }
+    setTimeOff((prev) => prev.filter((t) => t.id !== id))
+    return true
   }
 
   const onAddTimeOff = async (): Promise<void> => {
@@ -139,32 +193,23 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
     setOffBusy(true)
     setOffMsg(null)
-    const result = await addTimeOff(props.barberId, offStart, offEnd, offReason.trim())
+    const ok = await addOff(offStart, offEnd, offReason.trim())
     setOffBusy(false)
-    if (!result.ok) {
-      setOffMsg({ kind: 'err', text: result.error.message })
-      return
+    if (ok) {
+      setOffReason('')
+      setOffMsg({ kind: 'ok', text: 'Ledighet tillagd.' })
     }
-    setTimeOff((prev) =>
-      [...prev, result.value].sort((a, b) => a.startDate.localeCompare(b.startDate)),
-    )
-    setOffReason('')
-    setOffMsg({ kind: 'ok', text: 'Ledighet tillagd.' })
   }
 
   const onDeleteTimeOff = async (): Promise<void> => {
     const target = pendingOff
     if (target === null) return
     setOffDeleteBusy(true)
-    const result = await deleteTimeOff(target.id)
+    setOffMsg(null)
+    const ok = await removeOff(target.id)
     setOffDeleteBusy(false)
     setPendingOff(null)
-    if (!result.ok) {
-      setOffMsg({ kind: 'err', text: result.error.message })
-      return
-    }
-    setTimeOff((prev) => prev.filter((t) => t.id !== target.id))
-    setOffMsg({ kind: 'ok', text: 'Ledighet borttagen.' })
+    if (ok) setOffMsg({ kind: 'ok', text: 'Ledighet borttagen.' })
   }
 
   const rangeLabel = (t: TimeOff): string => {
@@ -173,205 +218,218 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     return `${start} – ${isoToLabel(lang, t.endDate)}`
   }
 
-  // Default haircut duration for the preview (the salon's 45-min slot grid).
-  const PREVIEW_DURATION = 45
-  const runPreview = async (): Promise<void> => {
-    setPreviewBusy(true)
-    setPreviewError(null)
-    const result = await availableSlotsFor(props.barberId, previewDate, PREVIEW_DURATION)
-    setPreviewBusy(false)
-    if (result.ok) setPreviewSlots(result.value)
-    else {
-      setPreviewSlots(null)
-      setPreviewError(result.error.message)
+  const saveLine = (): JSX.Element | null => {
+    switch (weekSave.kind) {
+      case 'idle':
+        return null
+      case 'saving':
+        return <span style={s.mutedText}>Sparar …</span>
+      case 'saved':
+        return <span style={s.successText}>Sparat ✓</span>
+      case 'invalid':
+        return <span style={s.errorText}>Sluttid måste vara efter starttid.</span>
+      case 'error':
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+            <span style={s.errorText}>{weekSave.message}</span>
+            <button
+              type="button"
+              style={{ ...s.ghostBtn, padding: '4px 10px', fontSize: '12px' }}
+              onClick={() => void doSave(props.barberId, week)}
+            >
+              Försök igen
+            </button>
+          </span>
+        )
     }
+  }
+
+  if (loadError !== null) {
+    return (
+      <section style={s.card}>
+        <h2 style={s.sectionTitle}>Schema · {props.barberName}</h2>
+        <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+      </section>
+    )
+  }
+  if (!loaded) {
+    return (
+      <section style={s.card}>
+        <h2 style={s.sectionTitle}>Schema · {props.barberName}</h2>
+        <div style={s.emptyState}>Laddar schema …</div>
+      </section>
+    )
   }
 
   return (
     <>
-      {/* Weekly working hours */}
+      {/* 1. Day grid — tap to block/unblock a slot, saved instantly */}
+      <ScheduleDayGrid
+        c={c}
+        lang={lang}
+        s={s}
+        barberId={props.barberId}
+        week={week}
+        timeOff={timeOff}
+        onBlockDay={(dateIso) => addOff(dateIso, dateIso, '')}
+        onOpenDay={(id) => removeOff(id)}
+      />
+
+      {/* 2. Weekly working hours — auto-saved */}
       <section style={s.card} aria-labelledby="schedule-heading">
-        <h2 id="schedule-heading" style={s.sectionTitle}>
-          Schema · {props.barberName}
-        </h2>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <h2 id="schedule-heading" style={s.sectionTitle}>
+            Veckoschema · {props.barberName}
+          </h2>
+          <span aria-live="polite">{saveLine()}</span>
+        </div>
         <p style={s.sectionLead}>
-          Markera vilka dagar du jobbar och sätt tider. Använd “samma tid alla dagar” för att fylla
-          i snabbt, eller justera varje dag för sig.
+          Markera vilka dagar du jobbar och sätt tider — ändringar sparas automatiskt.
         </p>
 
-        {loadError !== null ? (
-          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
-        ) : !loaded ? (
-          <div style={s.emptyState}>Laddar schema …</div>
-        ) : (
-          <>
-            {/* Same-time-all-days shortcut */}
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'flex-end',
-                gap: '12px',
-                padding: '14px',
-                border: s.card.border,
-                borderRadius: '12px',
-                margin: '12px 0 18px',
-              }}
+        {/* Same-time-all-days shortcut */}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            gap: '12px',
+            padding: '14px',
+            border: s.card.border,
+            borderRadius: '12px',
+            margin: '12px 0 18px',
+          }}
+        >
+          <div>
+            <label htmlFor="bulk-start" style={s.label}>
+              Från
+            </label>
+            <select
+              id="bulk-start"
+              style={s.select}
+              value={bulkStart}
+              onChange={(e) => setBulkStart(Number(e.currentTarget.value))}
             >
-              <div>
-                <label htmlFor="bulk-start" style={s.label}>
-                  Från
-                </label>
-                <select
-                  id="bulk-start"
-                  style={s.select}
-                  value={bulkStart}
-                  onChange={(e) => setBulkStart(Number(e.currentTarget.value))}
-                >
-                  {START_OPTIONS.map((o) => (
-                    <option key={o.min} value={o.min}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="bulk-end" style={s.label}>
-                  Till
-                </label>
-                <select
-                  id="bulk-end"
-                  style={s.select}
-                  value={bulkEnd}
-                  onChange={(e) => setBulkEnd(Number(e.currentTarget.value))}
-                >
-                  {END_OPTIONS.map((o) => (
-                    <option key={o.min} value={o.min}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button type="button" style={s.ghostBtn} onClick={applyAllDays}>
-                Samma tid alla dagar
-              </button>
-            </div>
-
-            {/* Per-day rows */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {DISPLAY_ORDER.map((wd) => {
-                const day = week[wd]
-                if (day === undefined) return null
-                const invalid = day.working && day.endMin <= day.startMin
-                return (
-                  <div
-                    key={wd}
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '10px 12px',
-                      border: s.card.border,
-                      borderRadius: '11px',
-                      opacity: day.working ? 1 : 0.62,
-                    }}
-                  >
-                    <label
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '9px',
-                        minWidth: '128px',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                        fontSize: '14px',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={day.working}
-                        onChange={() => onToggleDay(wd)}
-                        aria-label={`Jobbar ${cap(weekdayLabel(lang, wd))}`}
-                      />
-                      {cap(weekdayLabel(lang, wd))}
-                    </label>
-
-                    {day.working ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <select
-                          aria-label={`Starttid ${cap(weekdayLabel(lang, wd))}`}
-                          style={s.select}
-                          value={day.startMin}
-                          onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
-                        >
-                          {START_OPTIONS.map((o) => (
-                            <option key={o.min} value={o.min}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        <span style={s.mutedText}>–</span>
-                        <select
-                          aria-label={`Sluttid ${cap(weekdayLabel(lang, wd))}`}
-                          style={s.select}
-                          value={day.endMin}
-                          onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
-                        >
-                          {END_OPTIONS.map((o) => (
-                            <option key={o.min} value={o.min}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {invalid ? (
-                          <span style={s.errorText}>Sluttid måste vara efter starttid</span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span style={s.mutedText}>Ledig</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Save row */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                marginTop: '18px',
-                flexWrap: 'wrap',
-              }}
+              {START_OPTIONS.map((o) => (
+                <option key={o.min} value={o.min}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="bulk-end" style={s.label}>
+              Till
+            </label>
+            <select
+              id="bulk-end"
+              style={s.select}
+              value={bulkEnd}
+              onChange={(e) => setBulkEnd(Number(e.currentTarget.value))}
             >
-              <button
-                type="button"
+              {END_OPTIONS.map((o) => (
+                <option key={o.min} value={o.min}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="button" style={s.ghostBtn} onClick={applyAllDays}>
+            Samma tid alla dagar
+          </button>
+        </div>
+
+        {/* Per-day rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {DISPLAY_ORDER.map((wd) => {
+            const day = week[wd]
+            if (day === undefined) return null
+            const invalid = day.working && day.endMin <= day.startMin
+            return (
+              <div
+                key={wd}
                 style={{
-                  ...s.primaryBtn,
-                  opacity: !valid || saveState === 'saving' ? 0.55 : 1,
-                  cursor: !valid || saveState === 'saving' ? 'default' : 'pointer',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '10px 12px',
+                  border: invalid ? '0.5px solid ' + String(s.errorText.color) : s.card.border,
+                  borderRadius: '11px',
+                  opacity: day.working ? 1 : 0.62,
                 }}
-                onClick={() => void onSave()}
-                disabled={!valid || saveState === 'saving'}
               >
-                {saveState === 'saving' ? 'Sparar …' : 'Spara schema'}
-              </button>
-              {dirty && saveState === 'idle' ? (
-                <span style={s.mutedText}>Osparade ändringar</span>
-              ) : null}
-              <span aria-live="polite">
-                {saveMsg !== null ? (
-                  <span style={saveState === 'error' ? s.errorText : s.successText}>{saveMsg}</span>
-                ) : null}
-              </span>
-            </div>
-          </>
-        )}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '9px',
+                    minWidth: '128px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '14px',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={day.working}
+                    onChange={() => onToggleDay(wd)}
+                    aria-label={`Jobbar ${cap(weekdayLabel(lang, wd))}`}
+                  />
+                  {cap(weekdayLabel(lang, wd))}
+                </label>
+
+                {day.working ? (
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+                  >
+                    <select
+                      aria-label={`Starttid ${cap(weekdayLabel(lang, wd))}`}
+                      style={s.select}
+                      value={day.startMin}
+                      onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
+                    >
+                      {START_OPTIONS.map((o) => (
+                        <option key={o.min} value={o.min}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span style={s.mutedText}>–</span>
+                    <select
+                      aria-label={`Sluttid ${cap(weekdayLabel(lang, wd))}`}
+                      style={s.select}
+                      value={day.endMin}
+                      onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
+                    >
+                      {END_OPTIONS.map((o) => (
+                        <option key={o.min} value={o.min}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    {invalid ? (
+                      <span style={s.errorText}>Sluttid måste vara efter starttid</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span style={s.mutedText}>Ledig</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </section>
 
-      {/* Time off */}
+      {/* 3. Time off */}
       <section style={s.card} aria-labelledby="timeoff-heading">
         <h2 id="timeoff-heading" style={s.sectionTitle}>
           Ledighet
@@ -473,69 +531,6 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             </table>
           </div>
         )}
-      </section>
-
-      {/* Live availability preview (what customers will see for a given day) */}
-      <section style={s.card} aria-labelledby="preview-heading">
-        <h2 id="preview-heading" style={s.sectionTitle}>
-          Förhandsgranska lediga tider
-        </h2>
-        <p style={s.sectionLead}>
-          Visa de bokningsbara tiderna en viss dag (45 min) utifrån sparat schema och ledighet — så
-          som kunderna ser dem. Spara schemat först för att se ändringar.
-        </p>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
-            gap: '12px',
-            margin: '12px 0',
-          }}
-        >
-          <div>
-            <label htmlFor="preview-date" style={s.label}>
-              Datum
-            </label>
-            <input
-              id="preview-date"
-              type="date"
-              style={s.input}
-              value={previewDate}
-              onInput={(e) => {
-                setPreviewDate(e.currentTarget.value)
-                setPreviewSlots(null)
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            style={{ ...s.ghostBtn, opacity: previewBusy ? 0.6 : 1 }}
-            onClick={() => void runPreview()}
-            disabled={previewBusy}
-          >
-            {previewBusy ? 'Hämtar …' : 'Visa lediga tider'}
-          </button>
-        </div>
-        <div aria-live="polite">
-          {previewError !== null ? (
-            <span style={s.errorText}>{previewError}</span>
-          ) : previewSlots === null ? (
-            <span style={s.mutedText}>Välj ett datum och tryck på knappen.</span>
-          ) : previewSlots.length === 0 ? (
-            <span style={s.mutedText}>
-              Inga lediga tider den dagen (ledig, stängt eller fullbokat).
-            </span>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {previewSlots.map((t) => (
-                <span key={t} style={s.pill}>
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
       </section>
 
       {pendingOff !== null ? (

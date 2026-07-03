@@ -93,6 +93,21 @@ export interface TimeOff {
   readonly reason: string
 }
 
+/**
+ * A walk-in block (minute-granular unavailability on one salon-local date), matching
+ * `barber_slot_blocks`. The panel writes one row per 45-min slot; the schema allows ranges.
+ */
+export interface SlotBlock {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  /** `YYYY-MM-DD`, salon-local. */
+  readonly date: string
+  /** Minutes from 00:00 (inclusive start of the blocked window). */
+  readonly startMin: number
+  /** Minutes from 00:00 (exclusive end of the blocked window). */
+  readonly endMin: number
+}
+
 /** A booking as the admin panel shows it (the full RLS-readable row; owner=all, barber=own). */
 export interface AdminBooking {
   readonly id: string

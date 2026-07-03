@@ -104,6 +104,12 @@ full access) and one **barber** per barber who should manage their own schedule 
 3. Sign in at `https://<your-site>/login`. The owner sees + manages everything (all barbers,
    bookings, Om oss text, gallery); a barber sees ONLY their own bookings + schedule.
 
+The schedule tab's day grid also covers **walk-in/text bookings**: tapping a slot writes a
+`barber_slot_blocks` row (minute-granular, per date) that both `available_slots` (read) and
+`create_booking` (write) honor, so a time promised over SMS can't be double-booked online.
+Whole days off remain `barber_time_off`; weekly hours remain `barber_schedules` — all auto-saved
+from the panel.
+
 Security is enforced by **RLS**, not the UI: a barber cannot read or change another barber's data
 even if they tamper with the client. The `service_role` key is **never** used in the browser or set
 in Vercel — the admin uses the signed-in user's Auth session + the public anon key.

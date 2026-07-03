@@ -124,4 +124,9 @@ body {
   .knc-admin-signout-top {
     display: inline-flex !important;
   }
+  /* The tab strip above is ALSO sticky at top:0 (higher z-index), so a sticky topbar would wedge
+     underneath it and cover the first content rows. On phones the topbar scrolls away normally. */
+  .knc-admin-topbar {
+    position: static !important;
+  }
 }
