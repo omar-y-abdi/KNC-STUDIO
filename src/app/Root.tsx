@@ -6,6 +6,7 @@
 // Routing rules (ADMIN_SPEC §4):
 //   `/`            -> the existing site (unchanged)
 //   `/login`       -> admin login (lazy)
+//   `/reset`       -> password-recovery landing (lazy)
 //   `/admin` + sub -> the panel (lazy, gated)
 //   anything else  -> redirect to `/`
 //
@@ -50,8 +51,14 @@ export function Root(): JSX.Element {
         {/* Public marketing site — unchanged, rendered with no wrapper so DOM stays byte-identical. */}
         <Route path="/" component={App} />
 
-        {/* Admin surface — lazy-loaded. Both /login and /admin/* resolve inside the admin entry. */}
+        {/* Admin surface — lazy-loaded. /login, /reset and /admin/* all resolve inside the admin entry. */}
         <Route path="/login">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* Password-recovery landing (the email link target). Lazy, same chunk as login. */}
+        <Route path="/reset">
           <Suspense fallback={<AdminFallback />}>
             <AdminEntry />
           </Suspense>

@@ -10,6 +10,7 @@
 import type { JSX } from 'preact'
 import { Route, Switch } from 'wouter-preact'
 import { LoginRoute } from './LoginRoute'
+import { ResetPasswordRoute } from './ResetPasswordRoute'
 import { AdminApp } from './AdminApp'
 
 /** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
@@ -17,6 +18,7 @@ export default function AdminEntry(): JSX.Element {
   return (
     <Switch>
       <Route path="/login" component={LoginRoute} />
+      <Route path="/reset" component={ResetPasswordRoute} />
       <Route path="/admin/:rest*" component={AdminApp} />
       <Route path="/admin" component={AdminApp} />
     </Switch>
