@@ -17,6 +17,7 @@
 import type { JSX } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
 import { PoleLogo } from '../ui/PoleLogo'
 import { buildAdminStyles } from './adminStyles'
@@ -46,21 +47,22 @@ interface TabDef {
   readonly ownerOnly: boolean
 }
 
-const TABS: readonly TabDef[] = [
-  { id: 'schedule', label: 'Mitt schema', ownerOnly: false },
-  { id: 'bookings', label: 'Mina bokningar', ownerOnly: false },
-  { id: 'allBookings', label: 'Alla bokningar', ownerOnly: true },
-  { id: 'barbers', label: 'Barberare', ownerOnly: true },
-  { id: 'about', label: 'Om oss', ownerOnly: true },
-]
-
 export function AdminShell(props: AdminShellProps): JSX.Element {
   const { profile } = props
   const isOwner = profile.role === 'owner'
   const c = palette(props.dark)
   const s = buildAdminStyles(c, props.dark)
+  const t = adminText(props.lang)
 
-  const visibleTabs = TABS.filter((t) => isOwner || !t.ownerOnly)
+  const TABS: readonly TabDef[] = [
+    { id: 'schedule', label: t.tabSchedule, ownerOnly: false },
+    { id: 'bookings', label: t.tabBookings, ownerOnly: false },
+    { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
+    { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
+    { id: 'about', label: t.tabAbout, ownerOnly: true },
+  ]
+
+  const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
   // Schedule first: managing today's availability is the barber's most frequent task.
   const [tab, setTab] = useState<Tab>('schedule')
 
@@ -95,18 +97,18 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             barberId={effectiveBarberId}
             allBarbers={false}
             barbers={barbers}
-            heading={isOwner ? `Bokningar · ${effectiveBarberName}` : 'Mina bokningar'}
-            lead={
+            heading={
               isOwner
-                ? 'Bokningar för vald barberare. Byt barberare uppe till vänster.'
-                : 'Dina kommande och tidigare bokningar. Avboka vid behov.'
+                ? `${t.bookingsOwnerHeadingPrefix} · ${effectiveBarberName}`
+                : t.bookingsBarberHeading
             }
+            lead={isOwner ? t.bookingsOwnerLead : t.bookingsBarberLead}
           />
         )
       case 'schedule':
         return effectiveBarberId === null ? (
           <section style={s.card}>
-            <p style={s.emptyState}>Ingen barberare vald.</p>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
           </section>
         ) : (
           <ScheduleView
@@ -126,14 +128,14 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             barberId={null}
             allBarbers
             barbers={barbers}
-            heading="Alla bokningar"
-            lead="Samtliga barberares bokningar. Avboka vid behov."
+            heading={t.tabAllBookings}
+            lead={t.bookingsOwnerLead}
           />
         )
       case 'barbers':
-        return <BarbersView s={s} onRosterChanged={() => void reloadBarbers()} />
+        return <BarbersView lang={props.lang} s={s} onRosterChanged={() => void reloadBarbers()} />
       case 'about':
-        return <AboutView dark={props.dark} s={s} />
+        return <AboutView dark={props.dark} lang={props.lang} s={s} />
     }
   }
 
@@ -194,7 +196,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   return (
     <div style={s.appShell} class="knc-admin-shell">
-      <nav style={s.sidebar} class="knc-admin-sidebar" aria-label="Adminmeny">
+      <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
         <div style={s.brand}>
           <PoleLogo uid="admin" style={{ width: '24px', height: '24px', flex: 'none' }} />
           <span style={{ letterSpacing: '1.5px', whiteSpace: 'nowrap' }}>KNC STUDIO</span>
@@ -208,7 +210,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           class="knc-admin-signout-bottom"
           onClick={props.onSignOut}
         >
-          Logga ut
+          {t.signOut}
         </button>
       </nav>
 
@@ -217,7 +219,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           {/* Barbers see their first name on the left; the owner's context lives in the selector. */}
           {!isOwner && (
             <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px' }}>
-              Hej {firstName}
+              {t.greeting} {firstName}
             </span>
           )}
 
@@ -229,7 +231,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 style={s.select}
                 value={effectiveBarberId ?? ''}
                 onChange={(e) => setActingBarberId(e.currentTarget.value)}
-                aria-label="Välj barberare att hantera"
+                aria-label={t.ariaSelectBarber}
               >
                 {barbers.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -253,7 +255,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             <ThemeSwitch
               dark={props.dark}
               onToggle={props.toggleMode}
-              label={props.dark ? 'Byt till ljust läge' : 'Byt till mörkt läge'}
+              label={props.dark ? t.themeLight : t.themeDark}
             />
             <button
               type="button"
@@ -261,7 +263,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
               class="knc-admin-signout-top"
               onClick={props.onSignOut}
             >
-              Logga ut
+              {t.signOut}
             </button>
           </div>
         </header>

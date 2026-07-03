@@ -23,9 +23,11 @@ import {
   updateBarber,
 } from '../adapters/barbersAdmin'
 import { useNarrow } from '../chrome'
+import type { Lang } from '../../i18n/index'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
+  readonly lang: Lang
   readonly s: AdminStylesBundle
   /** Bubble a roster change up so the shell's barber selector + other views stay in sync. */
   readonly onRosterChanged: () => void

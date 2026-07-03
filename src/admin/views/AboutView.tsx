@@ -18,6 +18,7 @@ import type { AboutKey, AdminStylesBundle, GalleryImage, GalleryKind } from './v
 
 export interface AboutViewProps {
   readonly dark: boolean
+  readonly lang: Lang
   readonly s: AdminStylesBundle
 }
 
