@@ -3,8 +3,8 @@
 // Om oss} and a barber selector to act on any barber.
 //
 // Identity is kept human: a barber sees just their first name in the top bar ("Hej Victor") — they
-// know their own email and job title. The owner instead sees the selector ("Visar · <name>"), which
-// is the only context that actually matters when acting for someone else.
+// know their own email and job title. The owner instead sees the barber selector (in the controls
+// row, leftmost), which is the only context that actually matters when acting for someone else.
 //
 // Chrome matches the public site: the brand is the pole logo + tracked wordmark, the theme control
 // is the site's original track/knob switch (ThemeSwitch), and the language toggle is the same mini
@@ -214,9 +214,17 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
       <main style={s.content}>
         <header style={s.topbar} class="knc-admin-topbar">
-          {isOwner ? (
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ ...s.label, margin: 0 }}>Visar</span>
+          {/* Barbers see their first name on the left; the owner's context lives in the selector. */}
+          {!isOwner && (
+            <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px' }}>
+              Hej {firstName}
+            </span>
+          )}
+
+          {/* Controls row: barber selector (owner only, leftmost) then lang · theme · sign-out.
+              All in one flex group so the selector never wraps onto a separate line above them. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {isOwner && (
               <select
                 style={s.select}
                 value={effectiveBarberId ?? ''}
@@ -230,14 +238,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                   </option>
                 ))}
               </select>
-            </label>
-          ) : (
-            <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px' }}>
-              Hej {firstName}
-            </span>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            )}
             <div
               style={{
                 display: 'flex',
