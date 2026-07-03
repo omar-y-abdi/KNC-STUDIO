@@ -3,8 +3,12 @@
 // ("Inloggning kopplad" / "Ej kopplad") — per v1, accounts are created + linked in the Supabase
 // dashboard (a note explains this). Every write is owner-only at the RLS layer.
 //
-// The edit form opens inline per row (a single "editing" id at a time) to keep the surface simple.
-// Data effects (load/create/update/toggle) isolated here; the table + form are otherwise pure.
+// On narrow screens the list renders as stacked cards (no table); on wide screens as a compact
+// 5-column table — Name (with muted id inline, since id is just a slug of the name), Instagram,
+// login status, active status, and actions. The id column is dropped as a visible column.
+//
+// The edit form opens inline per row/card (a single "editing" id at a time) to keep the surface
+// simple. Data effects (load/create/update/toggle) isolated here; the list + form are pure.
 
 import type { JSX } from 'preact'
 import { Fragment } from 'preact'
@@ -16,6 +20,7 @@ import {
   setBarberActive,
   updateBarber,
 } from '../adapters/barbersAdmin'
+import { useNarrow } from '../chrome'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
@@ -58,6 +63,7 @@ type Load =
 
 export function BarbersView(props: BarbersViewProps): JSX.Element {
   const { s } = props
+  const narrow = useNarrow()
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [linked, setLinked] = useState<ReadonlySet<AdminBarberId>>(new Set())
   const [editingId, setEditingId] = useState<AdminBarberId | null>(null)
@@ -178,6 +184,136 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     </div>
   )
 
+  /** Shared inline edit form — used in both the card and the table expand row. */
+  const renderEditForm = (id: AdminBarberId): JSX.Element => (
+    <div
+      style={{
+        border: s.card.border,
+        borderRadius: '12px',
+        padding: '16px',
+        marginTop: '8px',
+      }}
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
+          gap: '0 16px',
+        }}
+      >
+        {editField('Namn', editDraft?.name ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, name: v } : null),
+        )}
+        {editField('Instagram', editDraft?.ig ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, ig: v } : null),
+        )}
+        {editField('Roll (SV)', editDraft?.roleSv ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, roleSv: v } : null),
+        )}
+        {editField('Roll (EN)', editDraft?.roleEn ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, roleEn: v } : null),
+        )}
+      </div>
+      {editField(
+        'Bio (SV)',
+        editDraft?.bioSv ?? '',
+        (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioSv: v } : null),
+        true,
+      )}
+      {editField(
+        'Bio (EN)',
+        editDraft?.bioEn ?? '',
+        (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioEn: v } : null),
+        true,
+      )}
+      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+        <button
+          type="button"
+          style={{ ...s.primaryBtn, opacity: busy ? 0.6 : 1 }}
+          onClick={() => void saveEdit(id)}
+          disabled={busy}
+        >
+          {busy ? 'Sparar …' : 'Spara'}
+        </button>
+        <button
+          type="button"
+          style={s.ghostBtn}
+          onClick={() => {
+            setEditingId(null)
+            setEditDraft(null)
+          }}
+          disabled={busy}
+        >
+          Avbryt
+        </button>
+      </div>
+    </div>
+  )
+
+  // Mobile: stacked cards — name first, muted id below, then login + status pills, Instagram,
+  // and action buttons. No side-scrolling table on a phone.
+  const renderBarberCards = (barbers: readonly AdminBarber[]): JSX.Element => {
+    if (barbers.length === 0) return <div style={s.emptyState}>Inga barberare.</div>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+        {barbers.map((b) => {
+          const isEditing = editingId === b.id && editDraft !== null
+          return (
+            <Fragment key={b.id}>
+              <div
+                style={{
+                  border: s.card.border,
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  opacity: b.active ? 1 : 0.65,
+                }}
+              >
+                {/* Name + id */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '15px' }}>{b.name}</div>
+                  <code style={{ fontSize: '11px', opacity: 0.55 }}>{b.id}</code>
+                </div>
+                {/* Status pills */}
+                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                  <span style={s.pill}>
+                    {linked.has(b.id) ? 'Inloggning kopplad' : 'Ej kopplad'}
+                  </span>
+                  <span style={s.pill}>{b.active ? 'Aktiv' : 'Dold'}</span>
+                </div>
+                {/* Instagram */}
+                {b.ig !== '' ? (
+                  <div style={{ ...s.mutedText, fontSize: '13px' }}>@{b.ig}</div>
+                ) : null}
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                  <button
+                    type="button"
+                    style={s.ghostBtn}
+                    onClick={() => (isEditing ? setEditingId(null) : startEdit(b))}
+                  >
+                    {isEditing ? 'Stäng' : 'Redigera'}
+                  </button>
+                  <button
+                    type="button"
+                    style={s.ghostBtn}
+                    onClick={() => void toggleActive(b)}
+                    disabled={busy}
+                  >
+                    {b.active ? 'Dölj' : 'Aktivera'}
+                  </button>
+                </div>
+              </div>
+              {isEditing ? renderEditForm(b.id) : null}
+            </Fragment>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <section style={s.card} aria-labelledby="barbers-heading">
       <div
@@ -286,13 +422,16 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
         <div style={s.emptyState}>Laddar barberare …</div>
       ) : load.kind === 'error' ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
+      ) : narrow ? (
+        renderBarberCards(load.barbers)
       ) : (
+        // Wide screen: compact 5-column table. Id is shown subtly inside the Namn cell so the
+        // separate Id column (which was just a slug of the name) is no longer needed.
         <div style={{ overflowX: 'auto' }}>
           <table style={s.table}>
             <thead>
               <tr>
                 <th style={s.th}>Namn</th>
-                <th style={s.th}>Id</th>
                 <th style={s.th}>Instagram</th>
                 <th style={s.th}>Inloggning</th>
                 <th style={s.th}>Status</th>
@@ -305,9 +444,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                 return (
                   <Fragment key={b.id}>
                     <tr>
-                      <td style={s.td}>{b.name}</td>
                       <td style={s.td}>
-                        <code style={{ fontSize: '12.5px', opacity: 0.8 }}>{b.id}</code>
+                        <span style={{ fontWeight: 600 }}>{b.name}</span>
+                        <br />
+                        <code style={{ fontSize: '11.5px', opacity: 0.55 }}>{b.id}</code>
                       </td>
                       <td style={s.td}>
                         {b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}
@@ -338,64 +478,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                         </button>
                       </td>
                     </tr>
-                    {isEditing && editDraft !== null ? (
+                    {isEditing ? (
                       <tr key={b.id + '-edit'}>
-                        <td style={{ ...s.td, padding: '0' }} colSpan={6}>
-                          <div style={{ padding: '16px 10px 20px' }}>
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
-                                gap: '0 16px',
-                              }}
-                            >
-                              {editField('Namn', editDraft.name, (v) =>
-                                setEditDraft({ ...editDraft, name: v }),
-                              )}
-                              {editField('Instagram', editDraft.ig, (v) =>
-                                setEditDraft({ ...editDraft, ig: v }),
-                              )}
-                              {editField('Roll (SV)', editDraft.roleSv, (v) =>
-                                setEditDraft({ ...editDraft, roleSv: v }),
-                              )}
-                              {editField('Roll (EN)', editDraft.roleEn, (v) =>
-                                setEditDraft({ ...editDraft, roleEn: v }),
-                              )}
-                            </div>
-                            {editField(
-                              'Bio (SV)',
-                              editDraft.bioSv,
-                              (v) => setEditDraft({ ...editDraft, bioSv: v }),
-                              true,
-                            )}
-                            {editField(
-                              'Bio (EN)',
-                              editDraft.bioEn,
-                              (v) => setEditDraft({ ...editDraft, bioEn: v }),
-                              true,
-                            )}
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                              <button
-                                type="button"
-                                style={{ ...s.primaryBtn, opacity: busy ? 0.6 : 1 }}
-                                onClick={() => void saveEdit(b.id)}
-                                disabled={busy}
-                              >
-                                {busy ? 'Sparar …' : 'Spara'}
-                              </button>
-                              <button
-                                type="button"
-                                style={s.ghostBtn}
-                                onClick={() => {
-                                  setEditingId(null)
-                                  setEditDraft(null)
-                                }}
-                                disabled={busy}
-                              >
-                                Avbryt
-                              </button>
-                            </div>
-                          </div>
+                        <td style={{ ...s.td, padding: '0' }} colSpan={5}>
+                          <div style={{ padding: '16px 10px 20px' }}>{renderEditForm(b.id)}</div>
                         </td>
                       </tr>
                     ) : null}
