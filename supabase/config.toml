@@ -404,6 +404,14 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# admin-create-barber: called BY the authenticated owner FROM the admin panel (browser -> Supabase).
+# The caller always holds a valid Supabase auth JWT -> verify_jwt = true lets the gateway reject
+# invalid/expired tokens before this function runs. The function ALSO calls auth.getUser(jwt)
+# internally (defense-in-depth) and checks profiles.role = 'owner' before doing any work.
+[functions.admin-create-barber]
+enabled = true
+verify_jwt = true
+
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local
 # Postgres container to be OOM-killed (exit 137) during `db reset` on this 8 GiB Docker host. It is
