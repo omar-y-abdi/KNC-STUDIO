@@ -1,0 +1,22 @@
+-- Migration 0019 — harden set_own_password_changed(): revoke EXECUTE from anon.
+--
+-- WHY: migration 0018 (barber_login_accounts) documented least-privilege intent ("grant only to
+-- authenticated") but did not fully achieve it. Supabase configures `ALTER DEFAULT PRIVILEGES ...
+-- GRANT EXECUTE ON FUNCTIONS ... TO anon, authenticated, service_role` on the `public` schema, so a
+-- newly CREATEd function is auto-granted to anon/authenticated/service_role. The 0018
+-- `revoke ... from public` removed only the PUBLIC pseudo-role grant, leaving anon's OWN explicit
+-- default-privilege grant in place. The ACL therefore ended up [postgres, anon, authenticated,
+-- service_role], contradicting the comment and tripping the security advisor
+-- `anon_security_definer_function_executable` (0028).
+--
+-- IMPACT of the pre-fix state: harmless. The function body is
+--   update public.profiles set must_change_password = false where id = (select auth.uid())
+-- For an anon caller `auth.uid()` is NULL, so `where id = NULL` matches zero rows — a no-op. No read,
+-- no write, no data exposure. This migration is hygiene, not an incident fix: it makes the ACL match
+-- the documented intent so only `authenticated` (the signed-in barber clearing their own flag) and the
+-- trusted server-side `service_role`/owner path retain EXECUTE.
+--
+-- NOTE: `revoke` on a role that lacks the grant is itself a harmless no-op, so this migration is safe
+-- to run regardless of the exact starting ACL.
+
+revoke execute on function public.set_own_password_changed() from anon;
