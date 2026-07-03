@@ -14,6 +14,7 @@ import { palette } from '../../booking/bookingStyles'
 import { defaultClock } from '../../config'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
 import { cancelBooking, listBookings } from '../adapters/bookingsAdmin'
 import { useNarrow } from '../chrome'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -41,6 +42,7 @@ type Load =
 
 export function BookingsView(props: BookingsViewProps): JSX.Element {
   const { s, lang } = props
+  const t = adminText(lang)
   const narrow = useNarrow()
   const c = palette(props.dark)
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
@@ -99,7 +101,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: 'Bokningen avbokad.' })
+    setNotice({ kind: 'ok', text: t.bookingsCancelledOk })
     // Reflect the cancellation locally (status -> cancelled) without a full refetch.
     setLoad((prev) =>
       prev.kind === 'ready'
@@ -158,13 +160,13 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                     color: cancelled ? s.errorText.color : undefined,
                   }}
                 >
-                  {cancelled ? 'Avbokad' : 'Bekräftad'}
+                  {cancelled ? t.bookingsStatusCancelled : t.bookingsStatusConfirmed}
                 </span>
               </div>
               <div style={{ fontSize: '15px', fontWeight: 600 }}>
                 {b.customerName}
                 {props.allBarbers ? (
-                  <span style={s.mutedText}> · hos {barberName(b.barberId)}</span>
+                  <span style={s.mutedText}> · {t.bookingsAtBarber} {barberName(b.barberId)}</span>
                 ) : null}
               </div>
               <div style={{ ...s.mutedText, fontSize: '13px' }}>
@@ -213,7 +215,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                     style={{ ...s.dangerBtn, padding: '7px 13px', fontSize: '13px' }}
                     onClick={() => setPendingCancel(b)}
                   >
-                    Avboka
+                    {t.bookingsCancelAction}
                   </button>
                 )}
               </div>
@@ -236,13 +238,13 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         <table style={s.table}>
           <thead>
             <tr>
-              <th style={s.th}>Tid</th>
-              {props.allBarbers ? <th style={s.th}>Barberare</th> : null}
-              <th style={s.th}>Kund</th>
-              <th style={s.th}>Behandling</th>
-              <th style={s.th}>Kontakt</th>
-              <th style={s.th}>Status</th>
-              <th style={{ ...s.th, textAlign: 'right' }}>Åtgärd</th>
+              <th style={s.th}>{t.bookingsColTime}</th>
+              {props.allBarbers ? <th style={s.th}>{t.bookingsColBarber}</th> : null}
+              <th style={s.th}>{t.bookingsColCustomer}</th>
+              <th style={s.th}>{t.bookingsColService}</th>
+              <th style={s.th}>{t.bookingsColContact}</th>
+              <th style={s.th}>{t.bookingsColStatus}</th>
+              <th style={{ ...s.th, textAlign: 'right' }}>{t.bookingsColAction}</th>
             </tr>
           </thead>
           <tbody>
@@ -267,7 +269,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                         color: cancelled ? s.errorText.color : undefined,
                       }}
                     >
-                      {cancelled ? 'Avbokad' : 'Bekräftad'}
+                      {cancelled ? t.bookingsStatusCancelled : t.bookingsStatusConfirmed}
                     </span>
                   </td>
                   <td style={{ ...s.td, textAlign: 'right' }}>
@@ -275,7 +277,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                       <span style={s.mutedText}>—</span>
                     ) : (
                       <button type="button" style={s.dangerBtn} onClick={() => setPendingCancel(b)}>
-                        Avboka
+                        {t.bookingsCancelAction}
                       </button>
                     )}
                   </td>
@@ -303,15 +305,15 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         </div>
 
         {load.kind === 'loading' ? (
-          <div style={s.emptyState}>Laddar bokningar …</div>
+          <div style={s.emptyState}>{t.bookingsLoading}</div>
         ) : load.kind === 'error' ? (
           <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
         ) : (
           <>
-            <h3 style={{ ...s.label, marginTop: '14px', fontSize: '13px' }}>Kommande</h3>
-            {renderTable(upcoming, 'Inga kommande bokningar.', true)}
-            <h3 style={{ ...s.label, marginTop: '22px', fontSize: '13px' }}>Tidigare</h3>
-            {renderTable(past, 'Inga tidigare bokningar.', false)}
+            <h3 style={{ ...s.label, marginTop: '14px', fontSize: '13px' }}>{t.bookingsUpcoming}</h3>
+            {renderTable(upcoming, t.bookingsEmptyUpcoming, true)}
+            <h3 style={{ ...s.label, marginTop: '22px', fontSize: '13px' }}>{t.bookingsPast}</h3>
+            {renderTable(past, t.bookingsEmptyPast, false)}
           </>
         )}
       </section>
@@ -319,10 +321,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
       {pendingCancel !== null ? (
         <ConfirmDialog
           dark={props.dark}
-          title="Avboka bokningen?"
-          body={`${pendingCancel.customerName} · ${formatWhenLabel(lang, stockholmWallClockDate(pendingCancel.startAt))}. Detta går inte att ångra.`}
-          confirmLabel="Avboka"
-          cancelLabel="Behåll"
+          title={t.bookingsCancelDialogTitle}
+          body={`${pendingCancel.customerName} · ${formatWhenLabel(lang, stockholmWallClockDate(pendingCancel.startAt))}${t.bookingsCancelDialogBodySuffix}`}
+          confirmLabel={t.bookingsCancelDialogConfirm}
+          cancelLabel={t.bookingsCancelDialogKeep}
           danger
           busy={busy}
           onConfirm={() => void doCancel()}
