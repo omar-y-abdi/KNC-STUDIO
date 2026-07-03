@@ -8,7 +8,7 @@
 -- whole transaction rolls back on finish, leaving no test data behind.
 
 begin;
-select plan(4);
+select plan(5);
 
 -- ---- fixtures -----------------------------------------------------------------------
 set local session_replication_role = 'replica';
@@ -63,6 +63,16 @@ select is(
    where id = '00000000-0000-0000-0a00-000000000002'::uuid),
   true,
   'set_own_password_changed() does not touch any other user''s row'
+);
+
+-- =============================================================================================
+-- ACL (migration 0019): anon must NOT be able to execute the RPC. Supabase's default privileges
+-- auto-grant EXECUTE on new public functions to anon; 0019 revokes it so the ACL matches the
+-- documented least-privilege intent (authenticated + trusted server roles only).
+-- =============================================================================================
+select ok(
+  not has_function_privilege('anon', 'public.set_own_password_changed()', 'EXECUTE'),
+  'anon cannot execute set_own_password_changed() (revoked in 0019)'
 );
 
 select * from finish();
