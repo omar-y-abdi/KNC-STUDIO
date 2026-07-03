@@ -31,6 +31,7 @@ import {
   toggleWorking,
   weekIsValid,
 } from '../time'
+import { WorkSwitch, useNarrow } from '../chrome'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ScheduleDayGrid } from './ScheduleDayGrid'
 import type { AdminBarberId, AdminStylesBundle, TimeOff, Weekday, WeekSchedule } from './viewTypes'
@@ -62,6 +63,7 @@ const DISPLAY_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0]
 export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const { s, lang } = props
   const c = palette(props.dark)
+  const narrow = useNarrow()
 
   const [week, setWeek] = useState<WeekSchedule>(defaultWeek)
   const [loaded, setLoaded] = useState(false)
@@ -295,12 +297,13 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           Markera vilka dagar du jobbar och sätt tider — ändringar sparas automatiskt.
         </p>
 
-        {/* Same-time-all-days shortcut */}
+        {/* Same-time-all-days shortcut. On phones the selects share one full-width line and the
+            button gets its own — nothing cramped, nothing wrapping mid-control. */}
         <div
           style={{
             display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-end',
+            flexDirection: narrow ? 'column' : 'row',
+            alignItems: narrow ? 'stretch' : 'flex-end',
             gap: '12px',
             padding: '14px',
             border: s.card.border,
@@ -308,121 +311,138 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             margin: '12px 0 18px',
           }}
         >
-          <div>
-            <label htmlFor="bulk-start" style={s.label}>
-              Från
-            </label>
-            <select
-              id="bulk-start"
-              style={s.select}
-              value={bulkStart}
-              onChange={(e) => setBulkStart(Number(e.currentTarget.value))}
-            >
-              {START_OPTIONS.map((o) => (
-                <option key={o.min} value={o.min}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="bulk-end" style={s.label}>
-              Till
-            </label>
-            <select
-              id="bulk-end"
-              style={s.select}
-              value={bulkEnd}
-              onChange={(e) => setBulkEnd(Number(e.currentTarget.value))}
-            >
-              {END_OPTIONS.map((o) => (
-                <option key={o.min} value={o.min}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto 1fr',
+              alignItems: 'end',
+              gap: '8px',
+              flex: narrow ? undefined : 'none',
+            }}
+          >
+            <div>
+              <label htmlFor="bulk-start" style={s.label}>
+                Från
+              </label>
+              <select
+                id="bulk-start"
+                style={{ ...s.select, width: '100%' }}
+                value={bulkStart}
+                onChange={(e) => setBulkStart(Number(e.currentTarget.value))}
+              >
+                {START_OPTIONS.map((o) => (
+                  <option key={o.min} value={o.min}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span style={{ ...s.mutedText, paddingBottom: '9px' }}>–</span>
+            <div>
+              <label htmlFor="bulk-end" style={s.label}>
+                Till
+              </label>
+              <select
+                id="bulk-end"
+                style={{ ...s.select, width: '100%' }}
+                value={bulkEnd}
+                onChange={(e) => setBulkEnd(Number(e.currentTarget.value))}
+              >
+                {END_OPTIONS.map((o) => (
+                  <option key={o.min} value={o.min}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <button type="button" style={s.ghostBtn} onClick={applyAllDays}>
             Samma tid alla dagar
           </button>
         </div>
 
-        {/* Per-day rows */}
+        {/* Per-day rows: name + switch, then the time range. On phones the row stacks: the day
+            name and switch share the top line, the two selects share the line below (full width,
+            big tap targets). */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {DISPLAY_ORDER.map((wd) => {
             const day = week[wd]
             if (day === undefined) return null
             const invalid = day.working && day.endMin <= day.startMin
+            const dayName = cap(weekdayLabel(lang, wd))
+            const timeControls = day.working ? (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: narrow ? '1fr auto 1fr' : 'auto auto auto',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <select
+                  aria-label={`Starttid ${dayName}`}
+                  style={{ ...s.select, width: narrow ? '100%' : undefined }}
+                  value={day.startMin}
+                  onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
+                >
+                  {START_OPTIONS.map((o) => (
+                    <option key={o.min} value={o.min}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <span style={s.mutedText}>–</span>
+                <select
+                  aria-label={`Sluttid ${dayName}`}
+                  style={{ ...s.select, width: narrow ? '100%' : undefined }}
+                  value={day.endMin}
+                  onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
+                >
+                  {END_OPTIONS.map((o) => (
+                    <option key={o.min} value={o.min}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <span style={s.mutedText}>Ledig</span>
+            )
             return (
               <div
                 key={wd}
                 style={{
                   display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '10px 12px',
+                  flexDirection: narrow ? 'column' : 'row',
+                  alignItems: narrow ? 'stretch' : 'center',
+                  gap: narrow ? '10px' : '14px',
+                  padding: '11px 13px',
                   border: invalid ? '0.5px solid ' + String(s.errorText.color) : s.card.border,
-                  borderRadius: '11px',
+                  borderRadius: '12px',
                   opacity: day.working ? 1 : 0.62,
                 }}
               >
-                <label
+                <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '9px',
-                    minWidth: '128px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '14px',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    minWidth: narrow ? undefined : '176px',
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={day.working}
-                    onChange={() => onToggleDay(wd)}
-                    aria-label={`Jobbar ${cap(weekdayLabel(lang, wd))}`}
+                  <span style={{ fontWeight: 600, fontSize: '14px' }}>{dayName}</span>
+                  <WorkSwitch
+                    on={day.working}
+                    onToggle={() => onToggleDay(wd)}
+                    label={`Jobbar ${dayName}`}
+                    dark={props.dark}
                   />
-                  {cap(weekdayLabel(lang, wd))}
-                </label>
-
-                {day.working ? (
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
-                  >
-                    <select
-                      aria-label={`Starttid ${cap(weekdayLabel(lang, wd))}`}
-                      style={s.select}
-                      value={day.startMin}
-                      onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
-                    >
-                      {START_OPTIONS.map((o) => (
-                        <option key={o.min} value={o.min}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                    <span style={s.mutedText}>–</span>
-                    <select
-                      aria-label={`Sluttid ${cap(weekdayLabel(lang, wd))}`}
-                      style={s.select}
-                      value={day.endMin}
-                      onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
-                    >
-                      {END_OPTIONS.map((o) => (
-                        <option key={o.min} value={o.min}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                    {invalid ? (
-                      <span style={s.errorText}>Sluttid måste vara efter starttid</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <span style={s.mutedText}>Ledig</span>
-                )}
+                </div>
+                {timeControls}
+                {invalid ? (
+                  <span style={s.errorText}>Sluttid måste vara efter starttid</span>
+                ) : null}
               </div>
             )
           })}
@@ -441,7 +461,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
 
         <div
           style={{
-            display: 'flex',
+            display: narrow ? 'grid' : 'flex',
+            gridTemplateColumns: '1fr 1fr',
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: '12px',
@@ -455,7 +476,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             <input
               id="off-start"
               type="date"
-              style={s.input}
+              style={{ ...s.input, width: narrow ? '100%' : undefined }}
               value={offStart}
               onInput={(e) => setOffStart(e.currentTarget.value)}
             />
@@ -467,12 +488,12 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             <input
               id="off-end"
               type="date"
-              style={s.input}
+              style={{ ...s.input, width: narrow ? '100%' : undefined }}
               value={offEnd}
               onInput={(e) => setOffEnd(e.currentTarget.value)}
             />
           </div>
-          <div style={{ flex: '1 1 180px', minWidth: '160px' }}>
+          <div style={narrow ? { gridColumn: '1 / -1' } : { flex: '1 1 180px', minWidth: '160px' }}>
             <label htmlFor="off-reason" style={s.label}>
               Anledning (valfritt)
             </label>
@@ -487,7 +508,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           </div>
           <button
             type="button"
-            style={{ ...s.primaryBtn, opacity: offBusy ? 0.6 : 1 }}
+            style={{
+              ...s.primaryBtn,
+              opacity: offBusy ? 0.6 : 1,
+              gridColumn: narrow ? '1 / -1' : undefined,
+            }}
             onClick={() => void onAddTimeOff()}
             disabled={offBusy}
           >
@@ -503,6 +528,39 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
 
         {timeOff.length === 0 ? (
           <div style={s.emptyState}>Ingen ledighet inlagd.</div>
+        ) : narrow ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {timeOff.map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  border: s.card.border,
+                  borderRadius: '12px',
+                  padding: '11px 13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700 }}>{rangeLabel(t)}</div>
+                  {t.reason !== '' ? (
+                    <div style={{ ...s.mutedText, fontSize: '12.5px', marginTop: '2px' }}>
+                      {t.reason}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  style={{ ...s.dangerBtn, padding: '7px 13px', fontSize: '13px', flex: 'none' }}
+                  onClick={() => setPendingOff(t)}
+                >
+                  Ta bort
+                </button>
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={s.table}>

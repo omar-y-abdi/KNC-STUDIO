@@ -7,9 +7,9 @@ import {
   DEFAULT_END_MIN,
   DEFAULT_START_MIN,
   END_OPTIONS,
-  SLOT_LEN_MIN,
+  QUARTER_LEN_MIN,
   START_OPTIONS,
-  daySlots,
+  dayHours,
   defaultWeek,
   isValidWindow,
   minutesToHHMM,
@@ -155,7 +155,7 @@ describe('toDateIso', () => {
   })
 })
 
-// --- Day grid helpers (migration 0017 / the one-tap block view) -----------------------------------
+// --- Day grid helpers (migration 0017 / the quarter-grid block view) -----------------------------------
 
 const workDay: DaySchedule = { weekday: 1, working: true, startMin: 540, endMin: 1080 }
 
@@ -163,18 +163,29 @@ function block(startMin: number, endMin: number, id = 'b1'): SlotBlock {
   return { id, barberId: 'hassan', date: '2099-01-05', startMin, endMin }
 }
 
-describe('daySlots', () => {
-  it('a full working day with nothing else is 12 open slots', () => {
-    const slots = daySlots({
+/** Flatten the hour groups into the 36 quarters for easy assertions. */
+function quarters(args: Parameters<typeof dayHours>[0]) {
+  return dayHours(args).flatMap((h) => h.quarters)
+}
+
+describe('dayHours', () => {
+  it('covers 09:00-18:00 as 9 hour groups of four 15-min quarters', () => {
+    const hours = dayHours({
       day: workDay,
       dayOff: false,
       blocks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
-    expect(slots).toHaveLength(12)
-    expect(slots.every((s) => s.state === 'open')).toBe(true)
-    expect(slots[0]).toMatchObject({ startMin: 540, label: '09:00' })
+    expect(hours).toHaveLength(9)
+    expect(hours[0]).toMatchObject({ startMin: 540, label: '09:00' })
+    expect(hours[8]).toMatchObject({ startMin: 1020, label: '17:00' })
+    expect(hours.every((h) => h.quarters.length === 4)).toBe(true)
+    const all = hours.flatMap((h) => h.quarters)
+    expect(all).toHaveLength(36)
+    expect(all[0]).toMatchObject({ startMin: 540, label: '09:00' })
+    expect(all[35]).toMatchObject({ startMin: 1065, label: '17:45' })
+    expect(all.every((q) => q.state === 'open')).toBe(true)
   })
 
   it('a non-working day (or missing row, or time off) is fully closed', () => {
@@ -184,84 +195,76 @@ describe('daySlots', () => {
       { day: undefined, dayOff: false },
       { day: workDay, dayOff: true },
     ]) {
-      const slots = daySlots({ ...args, blocks: [], bookings: [], pastCutoffMin: 0 })
-      expect(slots.every((s) => s.state === 'closed')).toBe(true)
+      const all = quarters({ ...args, blocks: [], bookings: [], pastCutoffMin: 0 })
+      expect(all.every((q) => q.state === 'closed')).toBe(true)
     }
   })
 
-  it('slots outside the working window are closed (start AND end must fit)', () => {
-    const lateStart = { ...workDay, startMin: 630, endMin: 900 } // 10:30–15:00
-    const states = daySlots({
+  it('quarters outside the working window are closed (start AND end must fit)', () => {
+    const lateStart = { ...workDay, startMin: 630, endMin: 900 } // 10:30-15:00
+    const all = quarters({
       day: lateStart,
       dayOff: false,
       blocks: [],
       bookings: [],
       pastCutoffMin: 0,
-    }).map((s) => s.state)
-    // 09:00, 09:45 closed; 10:30..14:15(+45=900) open; 15:00 onwards closed.
-    expect(states).toEqual([
-      'closed',
-      'closed',
-      'open',
-      'open',
-      'open',
-      'open',
-      'open',
-      'open',
-      'closed',
-      'closed',
-      'closed',
-      'closed',
-    ])
+    })
+    expect(all.filter((q) => q.state === 'open').map((q) => q.startMin)).toEqual(
+      // 10:30..14:45 inclusive - the last quarter ending exactly at 15:00 still fits.
+      Array.from({ length: 18 }, (_, i) => 630 + i * 15),
+    )
   })
 
-  it('a block row marks exactly the slots it overlaps and carries its id', () => {
-    const slots = daySlots({
+  it('a 15-min block row marks exactly one quarter and carries its id', () => {
+    const all = quarters({
       day: workDay,
       dayOff: false,
-      blocks: [block(630, 675)],
+      blocks: [block(630, 645)],
       bookings: [],
       pastCutoffMin: 0,
     })
-    expect(slots.find((s) => s.startMin === 630)).toMatchObject({ state: 'blocked', blockId: 'b1' })
-    // Half-open: the 11:15 neighbour is untouched.
-    expect(slots.find((s) => s.startMin === 675)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 630)).toMatchObject({ state: 'blocked', blockId: 'b1' })
+    // Half-open: the neighbours are untouched.
+    expect(all.find((q) => q.startMin === 615)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 645)?.state).toBe('open')
   })
 
-  it('a range block covers every slot in its window', () => {
-    const slots = daySlots({
+  it('a range block covers every quarter in its window', () => {
+    const all = quarters({
       day: workDay,
       dayOff: false,
-      blocks: [block(720, 900)],
+      blocks: [block(720, 780)],
       bookings: [],
       pastCutoffMin: 0,
     })
-    expect(slots.filter((s) => s.state === 'blocked').map((s) => s.startMin)).toEqual([
-      720, 765, 810, 855,
+    expect(all.filter((q) => q.state === 'blocked').map((q) => q.startMin)).toEqual([
+      720, 735, 750, 765,
     ])
   })
 
-  it('a booking beats a block and carries its label; past only dims otherwise-open slots', () => {
-    const slots = daySlots({
+  it('a booking beats a block, spans its true quarters, and carries its label', () => {
+    const all = quarters({
       day: workDay,
       dayOff: false,
-      blocks: [block(630, 675)],
+      blocks: [block(630, 645)],
+      // 45-min booking 10:30-11:15 -> quarters 10:30, 10:45, 11:00 (11:15 starts AT its end).
       bookings: [{ startMin: 630, endMin: 675, label: 'Anna' }],
-      pastCutoffMin: 600, // "now" is 10:00 -> 09:00 + 09:45 are past
+      pastCutoffMin: 600, // "now" is 10:00 -> 09:00..09:45 quarters are past
     })
-    expect(slots.find((s) => s.startMin === 630)).toMatchObject({
+    expect(all.find((q) => q.startMin === 630)).toMatchObject({
       state: 'booked',
       bookingLabel: 'Anna',
       blockId: null,
     })
-    expect(slots[0]?.state).toBe('past')
-    expect(slots[1]?.state).toBe('past')
-    expect(slots.find((s) => s.startMin === 675)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 660)?.state).toBe('booked')
+    expect(all.find((q) => q.startMin === 675)?.state).toBe('open')
+    expect(all.filter((q) => q.state === 'past').map((q) => q.startMin)).toEqual([
+      540, 555, 570, 585,
+    ])
   })
 
-  it('SLOT_LEN_MIN matches the 45-min option grid', () => {
-    expect(SLOT_LEN_MIN).toBe(45)
-    expect((START_OPTIONS[1]?.min ?? 0) - (START_OPTIONS[0]?.min ?? 0)).toBe(SLOT_LEN_MIN)
+  it('QUARTER_LEN_MIN is the 15-min write unit', () => {
+    expect(QUARTER_LEN_MIN).toBe(15)
   })
 })
 

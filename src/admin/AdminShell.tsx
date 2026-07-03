@@ -1,17 +1,26 @@
-// The admin shell: left nav (tabs) + a content area, a top bar (theme/lang/sign-out), and a "whose
-// data" banner so a barber (or the owner acting for a barber) always sees WHOSE schedule/bookings are
-// shown. Role drives the nav: a barber sees {Mina bokningar, Mitt schema}; the owner sees those PLUS
-// {Alla bokningar, Barberare, Om oss} and a BARBER SELECTOR to act on any barber.
+// The admin shell: left nav (tabs) + a content area and one clean top bar. Role drives the nav: a
+// barber sees {Mina bokningar, Mitt schema}; the owner sees those PLUS {Alla bokningar, Barberare,
+// Om oss} and a barber selector to act on any barber.
 //
-// Fully responsive: on narrow screens the sidebar collapses into a horizontal scrolling tab bar
-// (a CSS class handles the breakpoint; see global.css `.knc-admin-*`). All controls are buttons
-// (keyboard-operable); the active tab is `aria-current`.
+// Identity is kept human: a barber sees just their first name in the top bar ("Hej Victor") — they
+// know their own email and job title. The owner instead sees the selector ("Visar · <name>"), which
+// is the only context that actually matters when acting for someone else.
+//
+// Chrome matches the public site: the brand is the pole logo + tracked wordmark, the theme control
+// is the site's original track/knob switch (ThemeSwitch), and the language toggle is the same mini
+// pill pair the site nav uses.
+//
+// Fully responsive: on narrow screens the sidebar collapses into a horizontal, safe-area-aware tab
+// strip (see global.css `.knc-admin-*`), and the top bar scrolls with the page instead of stacking
+// under the strip. All controls are buttons (keyboard-operable); the active tab is `aria-current`.
 
 import type { JSX } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { palette } from '../booking/bookingStyles'
+import { PoleLogo } from '../ui/PoleLogo'
 import { buildAdminStyles } from './adminStyles'
+import { ThemeSwitch } from './chrome'
 import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
 import { BarbersView } from './views/BarbersView'
@@ -38,8 +47,8 @@ interface TabDef {
 }
 
 const TABS: readonly TabDef[] = [
-  { id: 'bookings', label: 'Mina bokningar', ownerOnly: false },
   { id: 'schedule', label: 'Mitt schema', ownerOnly: false },
+  { id: 'bookings', label: 'Mina bokningar', ownerOnly: false },
   { id: 'allBookings', label: 'Alla bokningar', ownerOnly: true },
   { id: 'barbers', label: 'Barberare', ownerOnly: true },
   { id: 'about', label: 'Om oss', ownerOnly: true },
@@ -52,7 +61,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   const s = buildAdminStyles(c, props.dark)
 
   const visibleTabs = TABS.filter((t) => isOwner || !t.ownerOnly)
-  const [tab, setTab] = useState<Tab>('bookings')
+  // Schedule first: managing today's availability is the barber's most frequent task.
+  const [tab, setTab] = useState<Tab>('schedule')
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
@@ -71,6 +81,9 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     return effectiveBarberId ?? '—'
   }, [barbers, effectiveBarberId])
 
+  /** The signed-in barber's first name (identity in the top bar — nothing more is needed). */
+  const firstName = effectiveBarberName.trim().split(/\s+/)[0] ?? effectiveBarberName
+
   const renderView = (): JSX.Element => {
     switch (tab) {
       case 'bookings':
@@ -85,7 +98,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             heading={isOwner ? `Bokningar · ${effectiveBarberName}` : 'Mina bokningar'}
             lead={
               isOwner
-                ? 'Bokningar för vald barberare. Byt barberare uppe till höger.'
+                ? 'Bokningar för vald barberare. Byt barberare uppe till vänster.'
                 : 'Dina kommande och tidigare bokningar. Avboka vid behov.'
             }
           />
@@ -152,6 +165,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     )
   }
 
+  // The public nav's mini language pill (SV/EN), verbatim look.
   const langButton = (target: Lang): JSX.Element => {
     const on = props.lang === target
     return (
@@ -166,7 +180,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           fontSize: '11px',
           fontWeight: 700,
           letterSpacing: '.3px',
-          padding: '4px 9px',
+          padding: '5px 10px',
           borderRadius: '999px',
           background: on ? c.accent : 'transparent',
           color: on ? c.accentText : c.text,
@@ -182,7 +196,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     <div style={s.appShell} class="knc-admin-shell">
       <nav style={s.sidebar} class="knc-admin-sidebar" aria-label="Adminmeny">
         <div style={s.brand}>
-          <span aria-hidden="true">✂</span> KNC Studio
+          <PoleLogo uid="admin" style={{ width: '24px', height: '24px', flex: 'none' }} />
+          <span style={{ letterSpacing: '1.5px', whiteSpace: 'nowrap' }}>KNC STUDIO</span>
         </div>
         <div style={s.navList} class="knc-admin-navlist">
           {visibleTabs.map(navButton)}
@@ -199,26 +214,28 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
       <main style={s.content}>
         <header style={s.topbar} class="knc-admin-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            {isOwner ? (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ ...s.label, margin: 0 }}>Barberare</span>
-                <select
-                  style={s.select}
-                  value={effectiveBarberId ?? ''}
-                  onChange={(e) => setActingBarberId(e.currentTarget.value)}
-                  aria-label="Välj barberare att hantera"
-                >
-                  {barbers.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                      {b.active ? '' : ' (dold)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
+          {isOwner ? (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ ...s.label, margin: 0 }}>Visar</span>
+              <select
+                style={s.select}
+                value={effectiveBarberId ?? ''}
+                onChange={(e) => setActingBarberId(e.currentTarget.value)}
+                aria-label="Välj barberare att hantera"
+              >
+                {barbers.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                    {b.active ? '' : ' (dold)'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px' }}>
+              Hej {firstName}
+            </span>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div
@@ -232,14 +249,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
               {langButton('sv')}
               {langButton('en')}
             </div>
-            <button
-              type="button"
-              style={s.ghostBtn}
-              onClick={props.toggleMode}
-              aria-label={props.dark ? 'Byt till ljust läge' : 'Byt till mörkt läge'}
-            >
-              {props.dark ? '☀' : '☾'}
-            </button>
+            <ThemeSwitch
+              dark={props.dark}
+              onToggle={props.toggleMode}
+              label={props.dark ? 'Byt till ljust läge' : 'Byt till mörkt läge'}
+            />
             <button
               type="button"
               style={s.ghostBtn}
@@ -250,14 +264,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             </button>
           </div>
         </header>
-
-        <div style={s.whoBanner} aria-live="polite">
-          <span style={s.pill}>{isOwner ? 'Ägare' : 'Barberare'}</span>
-          <span>
-            Inloggad som <strong>{profile.email}</strong>
-            {tab === 'schedule' || tab === 'bookings' ? ` · visar ${effectiveBarberName}` : ''}
-          </span>
-        </div>
 
         {renderView()}
       </main>

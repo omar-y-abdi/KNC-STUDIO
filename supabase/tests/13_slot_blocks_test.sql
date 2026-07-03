@@ -10,7 +10,7 @@
 -- (2099-01-05, dow=1) 09:00–18:00, all inside a rolled-back tx.
 
 begin;
-select plan(14);
+select plan(16);
 
 select is(pg_catalog.date_part('dow', date '2099-01-05')::int, 1, 'fixture: 2099-01-05 is a Monday (dow=1)');
 
@@ -69,6 +69,20 @@ select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45)),
   12, 'deleting the block restores the full 12-slot set'
 );
+
+-- A 15-MIN QUARTER block (the panel's write unit): 10:30–10:45 kills the 45-min 10:30 slot it
+-- overlaps but NOT the neighbouring 09:45 slot (which ends exactly 10:30 — half-open).
+insert into public.barber_slot_blocks (barber_id, block_date, start_min, end_min)
+values ('hassan','2099-01-05',630,645);
+select is(
+  (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45) s where s = '10:30'),
+  0, 'a 15-min quarter block removes the 45-min slot it overlaps'
+);
+select is(
+  (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45) s where s = '09:45'),
+  1, 'the 09:45 slot ending exactly at the quarter block start stays available'
+);
+delete from public.barber_slot_blocks where barber_id='hassan' and block_date='2099-01-05';
 
 -- A RANGE block (12:00–15:00) removes every slot whose window it overlaps:
 -- 12:00, 12:45, 13:30, 14:15 all start inside it -> 8 left.

@@ -3,8 +3,8 @@
 -- WHY: barbers also take bookings over text/phone. Until now the only way to keep an online
 -- customer out of a slot promised over SMS was to block the WHOLE day (barber_time_off is
 -- date-only). This adds a minute-granular block: a row says "this barber is unavailable on this
--- date between start_min and end_min". The admin panel writes one row per 45-min slot (a tap on
--- the day grid); the schema allows ranges so a single row can also cover a longer stretch.
+-- date between start_min and end_min". The admin panel writes one row per 15-MIN QUARTER (a tap
+-- on the day grid); the schema allows arbitrary windows so a single row can cover any stretch.
 --
 -- Kept deliberately minimal (no reason column, no status): a block either exists or it doesn't,
 -- and deleting the row reopens the slot. Vacations/whole days remain barber_time_off's job.

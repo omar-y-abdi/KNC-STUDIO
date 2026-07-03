@@ -1,14 +1,16 @@
-// The day grid — the schedule tab's primary surface. One horizontal strip of upcoming days, then
-// the salon's 12 fixed slots for the chosen day as tappable chips:
-//   tap an OPEN slot    -> block it (walk-in/text booking), saved instantly, no extra steps
-//   tap a BLOCKED slot  -> reopen it
-//   BOOKED slots show the customer's first name (cancel lives in the bookings tab)
-//   CLOSED/PAST slots are inert (off-day, outside hours, time off, or already started)
-// One button covers the whole-day case ("Blockera hela dagen" <-> "Öppna dagen"), backed by a
-// single-day time-off row so the public availability RPC needs no special case.
+// The day grid — the schedule tab's primary surface, built for walk-in/text bookings:
+//   a strip of upcoming days, then the working day as HOUR buttons (09:00–17:00). Each hour chip
+//   shows a four-segment mini bar (its quarters' states) + a one-word summary; pressing it expands
+//   the hour into four 15-MIN QUARTER chips:
+//     tap an OPEN quarter    -> block it (saved instantly, optimistic)
+//     tap a BLOCKED quarter  -> reopen it
+//     BOOKED quarters show the customer's first name (cancel lives in the bookings tab)
+//     CLOSED/PAST quarters are inert
+//   "Blockera hela timmen" writes four independent 15-min rows so each quarter stays individually
+//   reopenable; "Blockera hela dagen" writes a single-day time-off row (and flips to "Öppna dagen").
 //
-// Writes are optimistic: the chip flips immediately, reverts (with an aria-live error) on failure.
-// The slot-state math is pure (`daySlots` in ../time.ts); this file owns only fetch + tap effects.
+// The quarter-state math is pure (`dayHours` in ../time.ts); this file owns only fetch + tap
+// effects. Writes are optimistic and revert with an aria-live error on failure.
 
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
@@ -19,8 +21,8 @@ import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { listBookings } from '../adapters/bookingsAdmin'
 import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
-import { SLOT_LEN_MIN, daySlots, timeOffCovering, toDateIso, upcomingDates } from '../time'
-import type { DayBooking, DaySlot, SlotState } from '../time'
+import { QUARTER_LEN_MIN, dayHours, timeOffCovering, toDateIso, upcomingDates } from '../time'
+import type { DayBooking, DaySlot, HourGroup, SlotState } from '../time'
 import type {
   AdminBarberId,
   AdminBooking,
@@ -53,9 +55,10 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const todayIso = toDateIso(today)
 
   const [dateIso, setDateIso] = useState(todayIso)
+  const [expanded, setExpanded] = useState<number | null>(null)
   const [blocks, setBlocks] = useState<readonly SlotBlock[] | null>(null)
   const [bookings, setBookings] = useState<readonly AdminBooking[]>([])
-  const [busySlots, setBusySlots] = useState<readonly number[]>([])
+  const [busyQuarters, setBusyQuarters] = useState<readonly number[]>([])
   const [dayBusy, setDayBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -89,11 +92,11 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   }, [props.barberId])
 
   const off = timeOffCovering(props.timeOff, dateIso)
-  const slots = useMemo((): readonly DaySlot[] => {
+  const hours = useMemo((): readonly HourGroup[] => {
     const selected = parseIsoLocal(dateIso)
     const now = defaultClock()
     const pastCutoffMin = dateIso === toDateIso(now) ? now.getHours() * 60 + now.getMinutes() : 0
-    return daySlots({
+    return dayHours({
       day: props.week[selected.getDay()],
       dayOff: off !== undefined,
       blocks: blocks ?? [],
@@ -102,27 +105,58 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     })
   }, [props.week, off, blocks, bookings, dateIso])
 
-  const toggleSlot = async (slot: DaySlot): Promise<void> => {
-    if (busySlots.includes(slot.startMin)) return
-    setBusySlots((prev) => [...prev, slot.startMin])
+  // The whole day is off (time off / non-working weekday): show a calm state card, not 9 dead chips.
+  const dayIsOff = hours.every((h) => h.quarters.every((q) => q.state === 'closed'))
+
+  const selectDate = (iso: string): void => {
+    setDateIso(iso)
+    setExpanded(null)
     setError(null)
-    const result =
-      slot.state === 'blocked' && slot.blockId !== null
-        ? await deleteSlotBlock(slot.blockId).then((r) => {
-            if (r.ok) setBlocks((prev) => (prev ?? []).filter((b) => b.id !== slot.blockId))
-            return r
-          })
-        : await addSlotBlock(
-            props.barberId,
-            dateIso,
-            slot.startMin,
-            slot.startMin + SLOT_LEN_MIN,
-          ).then((r) => {
-            if (r.ok) setBlocks((prev) => [...(prev ?? []), r.value])
-            return r
-          })
-    setBusySlots((prev) => prev.filter((m) => m !== slot.startMin))
-    if (!result.ok) setError(result.error.message)
+  }
+
+  const blockQuarter = async (startMin: number): Promise<boolean> => {
+    const r = await addSlotBlock(props.barberId, dateIso, startMin, startMin + QUARTER_LEN_MIN)
+    if (r.ok) {
+      const created = r.value
+      setBlocks((prev) => [...(prev ?? []), created])
+      return true
+    }
+    setError(r.error.message)
+    return false
+  }
+  const unblockQuarter = async (blockId: string): Promise<boolean> => {
+    const r = await deleteSlotBlock(blockId)
+    if (r.ok) {
+      setBlocks((prev) => (prev ?? []).filter((b) => b.id !== blockId))
+      return true
+    }
+    setError(r.error.message)
+    return false
+  }
+
+  const toggleQuarter = async (q: DaySlot): Promise<void> => {
+    if (busyQuarters.includes(q.startMin)) return
+    setBusyQuarters((prev) => [...prev, q.startMin])
+    setError(null)
+    if (q.state === 'blocked' && q.blockId !== null) await unblockQuarter(q.blockId)
+    else await blockQuarter(q.startMin)
+    setBusyQuarters((prev) => prev.filter((m) => m !== q.startMin))
+  }
+
+  /** Block every open quarter of an hour (4 independent 15-min rows) or reopen its blocked ones. */
+  const toggleHourBulk = async (hour: HourGroup, block: boolean): Promise<void> => {
+    const targets = hour.quarters.filter((q) =>
+      block ? q.state === 'open' : q.state === 'blocked',
+    )
+    if (targets.length === 0) return
+    setBusyQuarters((prev) => [...prev, ...targets.map((q) => q.startMin)])
+    setError(null)
+    await Promise.all(
+      targets.map((q) =>
+        block ? blockQuarter(q.startMin) : q.blockId !== null ? unblockQuarter(q.blockId) : null,
+      ),
+    )
+    setBusyQuarters((prev) => prev.filter((m) => !targets.some((q) => q.startMin === m)))
   }
 
   const toggleDay = async (): Promise<void> => {
@@ -146,7 +180,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
       <button
         key={iso}
         type="button"
-        onClick={() => setDateIso(iso)}
+        onClick={() => selectDate(iso)}
         aria-pressed={on}
         style={{
           flex: 'none',
@@ -174,32 +208,93 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     )
   }
 
-  const slotChip = (slot: DaySlot): JSX.Element => {
-    const busy = busySlots.includes(slot.startMin)
-    const tappable = slot.state === 'open' || slot.state === 'blocked'
+  /** Mini four-segment bar showing the hour's quarter states at a glance. */
+  const segmentBar = (hour: HourGroup): JSX.Element => (
+    <span style={{ display: 'flex', gap: '3px' }} aria-hidden="true">
+      {hour.quarters.map((q) => (
+        <span
+          key={q.startMin}
+          style={{
+            width: '13px',
+            height: '5px',
+            borderRadius: '3px',
+            ...segmentColor(c, q.state),
+          }}
+        />
+      ))}
+    </span>
+  )
+
+  const hourChip = (hour: HourGroup): JSX.Element => {
+    const open = hour.quarters.filter((q) => q.state === 'open').length
+    const inert = hour.quarters.every((q) => q.state === 'closed' || q.state === 'past')
+    const isExpanded = expanded === hour.startMin
+    return (
+      <button
+        key={hour.startMin}
+        type="button"
+        disabled={inert}
+        aria-expanded={isExpanded}
+        onClick={() => setExpanded(isExpanded ? null : hour.startMin)}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '11px 6px 10px',
+          borderRadius: '12px',
+          fontFamily: 'inherit',
+          cursor: inert ? 'default' : 'pointer',
+          minWidth: 0,
+          border: isExpanded ? '1.5px solid ' + c.accent : '0.5px solid ' + c.line,
+          background: c.card,
+          color: c.text,
+          opacity: inert ? 0.38 : 1,
+        }}
+      >
+        <span style={{ fontSize: '15px', fontWeight: 700 }}>{hour.label.slice(0, 2)}</span>
+        {segmentBar(hour)}
+        <span
+          style={{
+            fontSize: '10.5px',
+            fontWeight: 600,
+            opacity: 0.65,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {hourSummary(hour, open)}
+        </span>
+      </button>
+    )
+  }
+
+  const quarterChip = (q: DaySlot): JSX.Element => {
+    const busy = busyQuarters.includes(q.startMin)
+    const tappable = q.state === 'open' || q.state === 'blocked'
     const sub =
-      slot.state === 'open'
+      q.state === 'open'
         ? 'Ledig'
-        : slot.state === 'blocked'
+        : q.state === 'blocked'
           ? 'Blockerad'
-          : slot.state === 'booked'
-            ? (slot.bookingLabel ?? 'Bokad')
-            : slot.state === 'past'
+          : q.state === 'booked'
+            ? (q.bookingLabel ?? 'Bokad')
+            : q.state === 'past'
               ? 'Passerad'
               : 'Stängt'
     return (
       <button
-        key={slot.startMin}
+        key={q.startMin}
         type="button"
         disabled={!tappable || busy}
-        onClick={() => void toggleSlot(slot)}
-        aria-pressed={slot.state === 'blocked'}
-        aria-label={
-          slot.state === 'blocked' ? `Öppna ${slot.label}` : `Blockera ${slot.label} (${sub})`
-        }
-        style={slotChipStyle(c, slot.state, tappable, busy)}
+        onClick={() => void toggleQuarter(q)}
+        aria-pressed={q.state === 'blocked'}
+        aria-label={q.state === 'blocked' ? `Öppna ${q.label}` : `Blockera ${q.label} (${sub})`}
+        style={quarterChipStyle(c, q.state, tappable, busy)}
       >
-        <span style={{ fontSize: '14px', fontWeight: 700 }}>{slot.label}</span>
+        <span style={{ fontSize: '14px', fontWeight: 700 }}>{q.label}</span>
         <span
           style={{
             fontSize: '10.5px',
@@ -217,14 +312,68 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     )
   }
 
+  /** The expanded hour's quarter row + bulk actions, injected full-width under the hour grid. */
+  const expandedPanel = (hour: HourGroup): JSX.Element => {
+    const anyOpen = hour.quarters.some((q) => q.state === 'open')
+    const anyBlocked = hour.quarters.some((q) => q.state === 'blocked')
+    const endLabel = String(Number(hour.label.slice(0, 2)) + 1).padStart(2, '0')
+    return (
+      <div
+        key={`x${hour.startMin}`}
+        style={{
+          gridColumn: '1 / -1',
+          border: '0.5px solid ' + c.line,
+          borderRadius: '12px',
+          background: c.subtle,
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+        }}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))',
+            gap: '8px',
+          }}
+        >
+          {hour.quarters.map(quarterChip)}
+        </div>
+        {anyOpen || anyBlocked ? (
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {anyOpen ? (
+              <button
+                type="button"
+                style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
+                onClick={() => void toggleHourBulk(hour, true)}
+              >
+                Blockera {hour.label.slice(0, 2)}–{endLabel}
+              </button>
+            ) : null}
+            {anyBlocked ? (
+              <button
+                type="button"
+                style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
+                onClick={() => void toggleHourBulk(hour, false)}
+              >
+                Öppna {hour.label.slice(0, 2)}–{endLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <section style={s.card} aria-labelledby="daygrid-heading">
       <h2 id="daygrid-heading" style={s.sectionTitle}>
         Dagsöversikt
       </h2>
       <p style={s.sectionLead}>
-        Tryck på en ledig tid för att blockera den (t.ex. bokad via sms) — sparas direkt. Tryck igen
-        för att öppna den.
+        Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) —
+        sparas direkt. Tryck igen för att öppna.
       </p>
 
       {/* Day strip */}
@@ -242,19 +391,42 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         {days.map(dayChip)}
       </div>
 
-      {/* Slot grid */}
+      {/* Hour grid / day-off state */}
       {blocks === null && error === null ? (
         <div style={s.emptyState}>Laddar …</div>
+      ) : dayIsOff ? (
+        <div
+          style={{
+            border: '0.5px dashed ' + c.inputLine,
+            borderRadius: '12px',
+            padding: '22px 18px',
+            margin: '6px 0 12px',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
+            {off !== undefined ? 'Ledig dag' : 'Ingen arbetsdag'}
+          </div>
+          <div style={{ ...s.mutedText, fontSize: '13px' }}>
+            {off !== undefined
+              ? off.reason !== ''
+                ? off.reason
+                : 'Dagen är blockerad — inga tider kan bokas.'
+              : 'Dagen är avmarkerad i veckoschemat.'}
+          </div>
+        </div>
       ) : (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))',
             gap: '8px',
             margin: '6px 0 12px',
           }}
         >
-          {slots.map(slotChip)}
+          {hours.flatMap((h) =>
+            expanded === h.startMin ? [hourChip(h), expandedPanel(h)] : [hourChip(h)],
+          )}
         </div>
       )}
 
@@ -296,8 +468,38 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   )
 }
 
-/** Chip style per slot state — filled accent = blocked, outlined = open, muted = inert. */
-function slotChipStyle(
+/** One-word summary under the hour label. */
+function hourSummary(hour: HourGroup, open: number): string {
+  const qs = hour.quarters
+  if (qs.every((q) => q.state === 'closed')) return 'Stängt'
+  const bookedLabel = qs.find((q) => q.bookingLabel !== null)?.bookingLabel
+  if (bookedLabel !== undefined && bookedLabel !== null) return bookedLabel
+  if (open > 0) return `${open}/4 lediga`
+  if (qs.some((q) => q.state === 'blocked')) return 'Blockerad'
+  return 'Passerad'
+}
+
+/** Mini-bar segment colors per state (fills match the quarter chips). */
+function segmentColor(c: Palette, state: SlotState): JSX.CSSProperties {
+  switch (state) {
+    case 'open':
+      return {
+        background: 'transparent',
+        border: '1px solid ' + c.inputLine,
+        boxSizing: 'border-box',
+      }
+    case 'blocked':
+      return { background: c.accent }
+    case 'booked':
+      return { background: c.dot }
+    case 'past':
+    case 'closed':
+      return { background: c.line }
+  }
+}
+
+/** Chip style per quarter state — filled accent = blocked, outlined = open, muted = inert. */
+function quarterChipStyle(
   c: Palette,
   state: SlotState,
   tappable: boolean,
@@ -326,7 +528,7 @@ function slotChipStyle(
         color: c.accentText,
       }
     case 'booked':
-      return { ...base, border: '0.5px solid ' + c.line, background: c.subtle, color: c.text }
+      return { ...base, border: '0.5px solid ' + c.line, background: c.bg, color: c.text }
     case 'past':
       return {
         ...base,
@@ -349,13 +551,7 @@ function slotChipStyle(
 /** One legend entry (a state-coloured dot + label). */
 function legendDot(c: Palette, state: SlotState, label: string): JSX.Element {
   const bg =
-    state === 'open'
-      ? c.card
-      : state === 'blocked'
-        ? c.accent
-        : state === 'booked'
-          ? c.subtle
-          : c.dot
+    state === 'open' ? c.card : state === 'blocked' ? c.accent : state === 'booked' ? c.dot : c.line
   const border = state === 'open' ? '0.5px solid ' + c.inputLine : '0.5px solid ' + c.line
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px' }}>
