@@ -1,14 +1,20 @@
 // Barbers view (OWNER only). Lists the roster (incl. inactive), with: toggle active, edit
-// name/ig/bios/role/sort, and add a new barber. The barber's LINKED login state is shown read-only
-// ("Inloggning kopplad" / "Ej kopplad") — per v1, accounts are created + linked in the Supabase
-// dashboard (a note explains this). Every write is owner-only at the RLS layer.
+// name/ig/bios/role/sort, add a new barber, and provision a login account for an unlinked barber.
+// The "Skapa inloggning" inline form calls the `admin-create-barber` edge function; on success the
+// barber is optimistically marked as linked and sees the forced-change gate on first login. Every
+// write is owner-only at the RLS layer.
 //
-// The edit form opens inline per row (a single "editing" id at a time) to keep the surface simple.
-// Data effects (load/create/update/toggle) isolated here; the table + form are otherwise pure.
+// On narrow screens the list renders as stacked cards (no table); on wide screens as a compact
+// 5-column table — Name (with muted id inline, since id is just a slug of the name), Instagram,
+// login status, active status, and actions. The id column is dropped as a visible column.
+//
+// The edit form opens inline per row/card (a single "editing" id at a time) to keep the surface
+// simple. Data effects (load/create/update/toggle) isolated here; the list + form are pure.
 
 import type { JSX } from 'preact'
 import { Fragment } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
+import { createBarberAccount } from '../adapters/barberAccountAdmin'
 import {
   createBarber,
   linkedBarberIds,
@@ -16,9 +22,13 @@ import {
   setBarberActive,
   updateBarber,
 } from '../adapters/barbersAdmin'
+import { useNarrow } from '../chrome'
+import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
+  readonly lang: Lang
   readonly s: AdminStylesBundle
   /** Bubble a roster change up so the shell's barber selector + other views stay in sync. */
   readonly onRosterChanged: () => void
@@ -57,7 +67,9 @@ type Load =
   | { readonly kind: 'ready'; readonly barbers: readonly AdminBarber[] }
 
 export function BarbersView(props: BarbersViewProps): JSX.Element {
-  const { s } = props
+  const { s, lang } = props
+  const t = adminText(lang)
+  const narrow = useNarrow()
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [linked, setLinked] = useState<ReadonlySet<AdminBarberId>>(new Set())
   const [editingId, setEditingId] = useState<AdminBarberId | null>(null)
@@ -66,6 +78,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const [newDraft, setNewDraft] = useState<NewDraft>(EMPTY_NEW)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  // "Skapa inloggning" inline form — tracks which barber's form is open + the typed email.
+  const [accountFormId, setAccountFormId] = useState<AdminBarberId | null>(null)
+  const [accountEmail, setAccountEmail] = useState('')
+  const [accountBusy, setAccountBusy] = useState(false)
 
   const reload = async (): Promise<void> => {
     const [rosterRes, linkedRes] = await Promise.all([listBarbers(), linkedBarberIds()])
@@ -106,7 +122,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     }
     setEditingId(null)
     setEditDraft(null)
-    setNotice({ kind: 'ok', text: 'Barberaren uppdaterad.' })
+    setNotice({ kind: 'ok', text: t.barbersUpdatedOk })
     await reload()
     props.onRosterChanged()
   }
@@ -119,7 +135,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: b.active ? 'Barberaren dold.' : 'Barberaren aktiv.' })
+    setNotice({ kind: 'ok', text: b.active ? t.barbersHiddenOk : t.barbersActivatedOk })
     await reload()
     props.onRosterChanged()
   }
@@ -127,11 +143,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const submitNew = async (): Promise<void> => {
     const id = newDraft.id.trim().toLowerCase()
     if (!/^[a-z0-9-]{1,32}$/.test(id)) {
-      setNotice({ kind: 'err', text: 'Id får bara innehålla a–z, 0–9 och bindestreck (max 32).' })
+      setNotice({ kind: 'err', text: t.barbersIdError })
       return
     }
     if (newDraft.name.trim() === '') {
-      setNotice({ kind: 'err', text: 'Namn krävs.' })
+      setNotice({ kind: 'err', text: t.barbersNameRequired })
       return
     }
     setBusy(true)
@@ -152,9 +168,43 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     }
     setAdding(false)
     setNewDraft(EMPTY_NEW)
-    setNotice({ kind: 'ok', text: 'Barberare tillagd.' })
+    setNotice({ kind: 'ok', text: t.barbersAddedOk })
     await reload()
     props.onRosterChanged()
+  }
+
+  const toggleAccountForm = (barberId: AdminBarberId): void => {
+    if (accountFormId === barberId) {
+      setAccountFormId(null)
+      setAccountEmail('')
+    } else {
+      setAccountFormId(barberId)
+      setAccountEmail('')
+      setNotice(null)
+    }
+  }
+
+  const submitCreateAccount = async (barberId: AdminBarberId): Promise<void> => {
+    const email = accountEmail.trim()
+    if (!email.includes('@') || email.length < 3) {
+      setNotice({ kind: 'err', text: t.barbersEmailError })
+      return
+    }
+    setAccountBusy(true)
+    const result = await createBarberAccount(email, barberId)
+    setAccountBusy(false)
+    if (!result.ok) {
+      setNotice({ kind: 'err', text: result.error.message })
+      return
+    }
+    // Optimistic: mark this barber as linked for the rest of the session.
+    setLinked(new Set([...linked, barberId]))
+    setAccountFormId(null)
+    setAccountEmail('')
+    setNotice({
+      kind: 'ok',
+      text: t.barbersDefaultPasswordNote,
+    })
   }
 
   const editField = (
@@ -178,6 +228,192 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     </div>
   )
 
+  /** Shared inline edit form — used in both the card and the table expand row. */
+  const renderEditForm = (id: AdminBarberId): JSX.Element => (
+    <div
+      style={{
+        border: s.card.border,
+        borderRadius: '12px',
+        padding: '16px',
+        marginTop: '8px',
+      }}
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
+          gap: '0 16px',
+        }}
+      >
+        {editField(t.barbersFieldName, editDraft?.name ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, name: v } : null),
+        )}
+        {editField(t.barbersFieldInstagram, editDraft?.ig ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, ig: v } : null),
+        )}
+        {editField(t.barbersFieldRoleSv, editDraft?.roleSv ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, roleSv: v } : null),
+        )}
+        {editField(t.barbersFieldRoleEn, editDraft?.roleEn ?? '', (v) =>
+          setEditDraft(editDraft !== null ? { ...editDraft, roleEn: v } : null),
+        )}
+      </div>
+      {editField(
+        t.barbersFieldBioSv,
+        editDraft?.bioSv ?? '',
+        (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioSv: v } : null),
+        true,
+      )}
+      {editField(
+        t.barbersFieldBioEn,
+        editDraft?.bioEn ?? '',
+        (v) => setEditDraft(editDraft !== null ? { ...editDraft, bioEn: v } : null),
+        true,
+      )}
+      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+        <button
+          type="button"
+          style={{ ...s.primaryBtn, opacity: busy ? 0.6 : 1 }}
+          onClick={() => void saveEdit(id)}
+          disabled={busy}
+        >
+          {busy ? t.barbersSaving : t.barbersSave}
+        </button>
+        <button
+          type="button"
+          style={s.ghostBtn}
+          onClick={() => {
+            setEditingId(null)
+            setEditDraft(null)
+          }}
+          disabled={busy}
+        >
+          {t.barbersCancel}
+        </button>
+      </div>
+    </div>
+  )
+
+  /** Inline "Skapa inloggning" form — email input + submit/cancel. Same border style as edit form. */
+  const renderAccountForm = (barberId: AdminBarberId): JSX.Element => (
+    <div
+      style={{
+        border: s.card.border,
+        borderRadius: '12px',
+        padding: '14px 16px',
+        marginTop: '8px',
+      }}
+    >
+      <div style={s.fieldRow}>
+        <label style={s.label}>{t.barbersFieldEmail}</label>
+        <input
+          type="email"
+          autoComplete="email"
+          placeholder={t.barbersEmailPlaceholder}
+          style={s.input}
+          value={accountEmail}
+          onInput={(e) => setAccountEmail(e.currentTarget.value)}
+          disabled={accountBusy}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+        <button
+          type="button"
+          style={{ ...s.primaryBtn, opacity: accountBusy ? 0.6 : 1 }}
+          onClick={() => void submitCreateAccount(barberId)}
+          disabled={accountBusy}
+        >
+          {accountBusy ? t.barbersCreating : t.barbersCreate}
+        </button>
+        <button
+          type="button"
+          style={s.ghostBtn}
+          onClick={() => {
+            setAccountFormId(null)
+            setAccountEmail('')
+          }}
+          disabled={accountBusy}
+        >
+          {t.barbersCancel}
+        </button>
+      </div>
+    </div>
+  )
+
+  // Mobile: stacked cards — name first, muted id below, then login + status pills, Instagram,
+  // and action buttons. No side-scrolling table on a phone.
+  const renderBarberCards = (barbers: readonly AdminBarber[]): JSX.Element => {
+    if (barbers.length === 0) return <div style={s.emptyState}>{t.barbersEmpty}</div>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+        {barbers.map((b) => {
+          const isEditing = editingId === b.id && editDraft !== null
+          return (
+            <Fragment key={b.id}>
+              <div
+                style={{
+                  border: s.card.border,
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  opacity: b.active ? 1 : 0.65,
+                }}
+              >
+                {/* Name + id */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '15px' }}>{b.name}</div>
+                  <code style={{ fontSize: '11px', opacity: 0.55 }}>{b.id}</code>
+                </div>
+                {/* Status pills */}
+                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                  <span style={s.pill}>
+                    {linked.has(b.id) ? t.barbersStatusLinked : t.barbersStatusUnlinked}
+                  </span>
+                  <span style={s.pill}>{b.active ? t.barbersStatusActive : t.barbersStatusHidden}</span>
+                </div>
+                {/* Instagram */}
+                {b.ig !== '' ? (
+                  <div style={{ ...s.mutedText, fontSize: '13px' }}>@{b.ig}</div>
+                ) : null}
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '2px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    style={s.ghostBtn}
+                    onClick={() => (isEditing ? setEditingId(null) : startEdit(b))}
+                  >
+                    {isEditing ? t.barbersClose : t.barbersEdit}
+                  </button>
+                  <button
+                    type="button"
+                    style={s.ghostBtn}
+                    onClick={() => void toggleActive(b)}
+                    disabled={busy}
+                  >
+                    {b.active ? t.barbersHide : t.barbersActivate}
+                  </button>
+                  {!linked.has(b.id) ? (
+                    <button
+                      type="button"
+                      style={s.ghostBtn}
+                      onClick={() => toggleAccountForm(b.id)}
+                    >
+                      {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              {isEditing ? renderEditForm(b.id) : null}
+              {accountFormId === b.id ? renderAccountForm(b.id) : null}
+            </Fragment>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <section style={s.card} aria-labelledby="barbers-heading">
       <div
@@ -191,12 +427,9 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       >
         <div>
           <h2 id="barbers-heading" style={s.sectionTitle}>
-            Barberare
+            {t.barbersTitle}
           </h2>
-          <p style={s.sectionLead}>
-            Lägg till, redigera och dölj barberare. Inloggningskonton skapas och kopplas i Supabase
-            (Auth) för v1 — kopplingsstatus visas nedan.
-          </p>
+          <p style={s.sectionLead}>{t.barbersLead}</p>
         </div>
         {!adding ? (
           <button
@@ -208,7 +441,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               setNotice(null)
             }}
           >
-            + Ny barberare
+            {t.barbersAddNew}
           </button>
         ) : null}
       </div>
@@ -228,7 +461,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
             margin: '8px 0 18px',
           }}
         >
-          <h3 style={{ ...s.label, fontSize: '13px' }}>Ny barberare</h3>
+          <h3 style={{ ...s.label, fontSize: '13px' }}>{t.barbersNewHeading}</h3>
           <div
             style={{
               display: 'grid',
@@ -236,24 +469,24 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               gap: '0 16px',
             }}
           >
-            {editField('Id (a–z, 0–9, -)', newDraft.id, (v) => setNewDraft({ ...newDraft, id: v }))}
-            {editField('Namn', newDraft.name, (v) => setNewDraft({ ...newDraft, name: v }))}
-            {editField('Instagram', newDraft.ig, (v) => setNewDraft({ ...newDraft, ig: v }))}
-            {editField('Roll (SV)', newDraft.roleSv, (v) =>
+            {editField(t.barbersFieldId, newDraft.id, (v) => setNewDraft({ ...newDraft, id: v }))}
+            {editField(t.barbersFieldName, newDraft.name, (v) => setNewDraft({ ...newDraft, name: v }))}
+            {editField(t.barbersFieldInstagram, newDraft.ig, (v) => setNewDraft({ ...newDraft, ig: v }))}
+            {editField(t.barbersFieldRoleSv, newDraft.roleSv, (v) =>
               setNewDraft({ ...newDraft, roleSv: v }),
             )}
-            {editField('Roll (EN)', newDraft.roleEn, (v) =>
+            {editField(t.barbersFieldRoleEn, newDraft.roleEn, (v) =>
               setNewDraft({ ...newDraft, roleEn: v }),
             )}
           </div>
           {editField(
-            'Bio (SV)',
+            t.barbersFieldBioSv,
             newDraft.bioSv,
             (v) => setNewDraft({ ...newDraft, bioSv: v }),
             true,
           )}
           {editField(
-            'Bio (EN)',
+            t.barbersFieldBioEn,
             newDraft.bioEn,
             (v) => setNewDraft({ ...newDraft, bioEn: v }),
             true,
@@ -265,7 +498,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               onClick={() => void submitNew()}
               disabled={busy}
             >
-              {busy ? 'Sparar …' : 'Skapa'}
+              {busy ? t.barbersSaving : t.barbersCreate}
             </button>
             <button
               type="button"
@@ -276,27 +509,30 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
               }}
               disabled={busy}
             >
-              Avbryt
+              {t.barbersCancel}
             </button>
           </div>
         </div>
       ) : null}
 
       {load.kind === 'loading' ? (
-        <div style={s.emptyState}>Laddar barberare …</div>
+        <div style={s.emptyState}>{t.barbersLoading}</div>
       ) : load.kind === 'error' ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
+      ) : narrow ? (
+        renderBarberCards(load.barbers)
       ) : (
+        // Wide screen: compact 5-column table. Id is shown subtly inside the Namn cell so the
+        // separate Id column (which was just a slug of the name) is no longer needed.
         <div style={{ overflowX: 'auto' }}>
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={s.th}>Namn</th>
-                <th style={s.th}>Id</th>
-                <th style={s.th}>Instagram</th>
-                <th style={s.th}>Inloggning</th>
-                <th style={s.th}>Status</th>
-                <th style={{ ...s.th, textAlign: 'right' }}>Åtgärd</th>
+                <th style={s.th}>{t.barbersColName}</th>
+                <th style={s.th}>{t.barbersColInstagram}</th>
+                <th style={s.th}>{t.barbersColLogin}</th>
+                <th style={s.th}>{t.barbersColStatus}</th>
+                <th style={{ ...s.th, textAlign: 'right' }}>{t.barbersColAction}</th>
               </tr>
             </thead>
             <tbody>
@@ -305,20 +541,32 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                 return (
                   <Fragment key={b.id}>
                     <tr>
-                      <td style={s.td}>{b.name}</td>
                       <td style={s.td}>
-                        <code style={{ fontSize: '12.5px', opacity: 0.8 }}>{b.id}</code>
+                        <span style={{ fontWeight: 600 }}>{b.name}</span>
+                        <br />
+                        <code style={{ fontSize: '11.5px', opacity: 0.55 }}>{b.id}</code>
                       </td>
                       <td style={s.td}>
                         {b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}
                       </td>
                       <td style={s.td}>
-                        <span style={s.pill}>
-                          {linked.has(b.id) ? 'Inloggning kopplad' : 'Ej kopplad'}
-                        </span>
+                        {linked.has(b.id) ? (
+                          <span style={s.pill}>{t.barbersStatusLinked}</span>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={s.pill}>{t.barbersStatusUnlinked}</span>
+                            <button
+                              type="button"
+                              style={s.ghostBtn}
+                              onClick={() => toggleAccountForm(b.id)}
+                            >
+                              {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td style={s.td}>
-                        <span style={s.pill}>{b.active ? 'Aktiv' : 'Dold'}</span>
+                        <span style={s.pill}>{b.active ? t.barbersStatusActive : t.barbersStatusHidden}</span>
                       </td>
                       <td style={{ ...s.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button
@@ -326,7 +574,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                           style={{ ...s.ghostBtn, marginRight: '8px' }}
                           onClick={() => (isEditing ? setEditingId(null) : startEdit(b))}
                         >
-                          {isEditing ? 'Stäng' : 'Redigera'}
+                          {isEditing ? t.barbersClose : t.barbersEdit}
                         </button>
                         <button
                           type="button"
@@ -334,68 +582,21 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                           onClick={() => void toggleActive(b)}
                           disabled={busy}
                         >
-                          {b.active ? 'Dölj' : 'Aktivera'}
+                          {b.active ? t.barbersHide : t.barbersActivate}
                         </button>
                       </td>
                     </tr>
-                    {isEditing && editDraft !== null ? (
+                    {isEditing ? (
                       <tr key={b.id + '-edit'}>
-                        <td style={{ ...s.td, padding: '0' }} colSpan={6}>
-                          <div style={{ padding: '16px 10px 20px' }}>
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))',
-                                gap: '0 16px',
-                              }}
-                            >
-                              {editField('Namn', editDraft.name, (v) =>
-                                setEditDraft({ ...editDraft, name: v }),
-                              )}
-                              {editField('Instagram', editDraft.ig, (v) =>
-                                setEditDraft({ ...editDraft, ig: v }),
-                              )}
-                              {editField('Roll (SV)', editDraft.roleSv, (v) =>
-                                setEditDraft({ ...editDraft, roleSv: v }),
-                              )}
-                              {editField('Roll (EN)', editDraft.roleEn, (v) =>
-                                setEditDraft({ ...editDraft, roleEn: v }),
-                              )}
-                            </div>
-                            {editField(
-                              'Bio (SV)',
-                              editDraft.bioSv,
-                              (v) => setEditDraft({ ...editDraft, bioSv: v }),
-                              true,
-                            )}
-                            {editField(
-                              'Bio (EN)',
-                              editDraft.bioEn,
-                              (v) => setEditDraft({ ...editDraft, bioEn: v }),
-                              true,
-                            )}
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                              <button
-                                type="button"
-                                style={{ ...s.primaryBtn, opacity: busy ? 0.6 : 1 }}
-                                onClick={() => void saveEdit(b.id)}
-                                disabled={busy}
-                              >
-                                {busy ? 'Sparar …' : 'Spara'}
-                              </button>
-                              <button
-                                type="button"
-                                style={s.ghostBtn}
-                                onClick={() => {
-                                  setEditingId(null)
-                                  setEditDraft(null)
-                                }}
-                                disabled={busy}
-                              >
-                                Avbryt
-                              </button>
-                            </div>
-                          </div>
+                        <td style={{ ...s.td, padding: '0' }} colSpan={5}>
+                          <div style={{ padding: '16px 10px 20px' }}>{renderEditForm(b.id)}</div>
+                        </td>
+                      </tr>
+                    ) : null}
+                    {accountFormId === b.id ? (
+                      <tr key={b.id + '-account'}>
+                        <td style={{ ...s.td, padding: '0' }} colSpan={5}>
+                          <div style={{ padding: '16px 10px 20px' }}>{renderAccountForm(b.id)}</div>
                         </td>
                       </tr>
                     ) : null}
@@ -406,10 +607,6 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           </table>
         </div>
       )}
-      <p style={{ ...s.mutedText, marginTop: '14px' }} lang="sv">
-        Tips: för att ge en barberare inloggning, skapa kontot under Auth → Users i Supabase och
-        lägg till en rad i <code>profiles</code> med deras barber-id.
-      </p>
     </section>
   )
 }

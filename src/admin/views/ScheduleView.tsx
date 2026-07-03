@@ -17,6 +17,7 @@ import { cap, monthLabel, parseDateIso, weekdayLabel } from '../../booking/calen
 import { palette } from '../../booking/bookingStyles'
 import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
 import { readWeek, saveWeek } from '../adapters/schedulesAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
@@ -62,6 +63,7 @@ const DISPLAY_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0]
 
 export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const { s, lang } = props
+  const t = adminText(lang)
   const c = palette(props.dark)
   const narrow = useNarrow()
 
@@ -190,7 +192,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
 
   const onAddTimeOff = async (): Promise<void> => {
     if (offEnd < offStart) {
-      setOffMsg({ kind: 'err', text: 'Slutdatum måste vara samma eller efter startdatum.' })
+      setOffMsg({ kind: 'err', text: t.scheduleTimeOffDateError })
       return
     }
     setOffBusy(true)
@@ -199,7 +201,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     setOffBusy(false)
     if (ok) {
       setOffReason('')
-      setOffMsg({ kind: 'ok', text: 'Ledighet tillagd.' })
+      setOffMsg({ kind: 'ok', text: t.scheduleTimeOffAdded })
     }
   }
 
@@ -211,7 +213,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     const ok = await removeOff(target.id)
     setOffDeleteBusy(false)
     setPendingOff(null)
-    if (ok) setOffMsg({ kind: 'ok', text: 'Ledighet borttagen.' })
+    if (ok) setOffMsg({ kind: 'ok', text: t.scheduleTimeOffRemoved })
   }
 
   const rangeLabel = (t: TimeOff): string => {
@@ -225,11 +227,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       case 'idle':
         return null
       case 'saving':
-        return <span style={s.mutedText}>Sparar …</span>
+        return <span style={s.mutedText}>{t.scheduleSaving}</span>
       case 'saved':
-        return <span style={s.successText}>Sparat ✓</span>
+        return <span style={s.successText}>{t.scheduleSaved}</span>
       case 'invalid':
-        return <span style={s.errorText}>Sluttid måste vara efter starttid.</span>
+        return <span style={s.errorText}>{t.scheduleInvalidHours}</span>
       case 'error':
         return (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
@@ -239,7 +241,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
               style={{ ...s.ghostBtn, padding: '4px 10px', fontSize: '12px' }}
               onClick={() => void doSave(props.barberId, week)}
             >
-              Försök igen
+              {t.scheduleRetry}
             </button>
           </span>
         )
@@ -249,7 +251,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   if (loadError !== null) {
     return (
       <section style={s.card}>
-        <h2 style={s.sectionTitle}>Schema · {props.barberName}</h2>
+        <h2 style={s.sectionTitle}>{t.scheduleHeadingPrefix} · {props.barberName}</h2>
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
       </section>
     )
@@ -257,8 +259,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   if (!loaded) {
     return (
       <section style={s.card}>
-        <h2 style={s.sectionTitle}>Schema · {props.barberName}</h2>
-        <div style={s.emptyState}>Laddar schema …</div>
+        <h2 style={s.sectionTitle}>{t.scheduleHeadingPrefix} · {props.barberName}</h2>
+        <div style={s.emptyState}>{t.scheduleLoading}</div>
       </section>
     )
   }
@@ -289,13 +291,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           }}
         >
           <h2 id="schedule-heading" style={s.sectionTitle}>
-            Veckoschema · {props.barberName}
+            {t.scheduleWeekHeadingPrefix} · {props.barberName}
           </h2>
           <span aria-live="polite">{saveLine()}</span>
         </div>
-        <p style={s.sectionLead}>
-          Markera vilka dagar du jobbar och sätt tider — ändringar sparas automatiskt.
-        </p>
+        <p style={s.sectionLead}>{t.scheduleWeekLead}</p>
 
         {/* Same-time-all-days shortcut. On phones the selects share one full-width line and the
             button gets its own — nothing cramped, nothing wrapping mid-control. */}
@@ -324,7 +324,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           >
             <div style={{ minWidth: 0 }}>
               <label htmlFor="bulk-start" style={s.label}>
-                Från
+                {t.scheduleFrom}
               </label>
               <select
                 id="bulk-start"
@@ -342,7 +342,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             <span style={{ ...s.mutedText, paddingBottom: '9px' }}>–</span>
             <div style={{ minWidth: 0 }}>
               <label htmlFor="bulk-end" style={s.label}>
-                Till
+                {t.scheduleTo}
               </label>
               <select
                 id="bulk-end"
@@ -359,7 +359,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             </div>
           </div>
           <button type="button" style={s.ghostBtn} onClick={applyAllDays}>
-            Samma tid alla dagar
+            {t.scheduleSameTimeAllDays}
           </button>
         </div>
 
@@ -385,7 +385,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 }}
               >
                 <select
-                  aria-label={`Starttid ${dayName}`}
+                  aria-label={`${t.scheduleStartTimeAria} ${dayName}`}
                   style={{ ...s.select, width: narrow ? '100%' : undefined, minWidth: 0 }}
                   value={day.startMin}
                   onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
@@ -398,7 +398,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 </select>
                 <span style={s.mutedText}>–</span>
                 <select
-                  aria-label={`Sluttid ${dayName}`}
+                  aria-label={`${t.scheduleEndTimeAria} ${dayName}`}
                   style={{ ...s.select, width: narrow ? '100%' : undefined, minWidth: 0 }}
                   value={day.endMin}
                   onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
@@ -411,7 +411,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 </select>
               </div>
             ) : (
-              <span style={s.mutedText}>Ledig</span>
+              <span style={s.mutedText}>{t.scheduleDayOffLabel}</span>
             )
             return (
               <div
@@ -440,13 +440,13 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                   <WorkSwitch
                     on={day.working}
                     onToggle={() => onToggleDay(wd)}
-                    label={`Jobbar ${dayName}`}
+                    label={`${t.scheduleWorkingAria} ${dayName}`}
                     dark={props.dark}
                   />
                 </div>
                 {timeControls}
                 {invalid ? (
-                  <span style={s.errorText}>Sluttid måste vara efter starttid</span>
+                  <span style={s.errorText}>{t.scheduleInvalidHours}</span>
                 ) : null}
               </div>
             )
@@ -457,19 +457,17 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       {/* 3. Time off */}
       <section style={s.card} aria-labelledby="timeoff-heading">
         <h2 id="timeoff-heading" style={s.sectionTitle}>
-          Ledighet
+          {t.scheduleTimeOffHeading}
         </h2>
-        <p style={s.sectionLead}>
-          Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som
-          bokningsbara.
-        </p>
+        <p style={s.sectionLead}>{t.scheduleTimeOffLead}</p>
 
         <div
           style={{
             display: narrow ? 'grid' : 'flex',
-            // minmax(0,1fr): date inputs have an intrinsic min width and would otherwise push the
-            // grid WIDER than the card, colliding with its border on phones.
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            // On narrow screens a single column stacks Från/Till vertically so the date inputs
+            // (which have a browser-enforced minimum width) never push outside the card border.
+            // On wider screens the flex + wrap handles layout; gridTemplateColumns has no effect.
+            gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)',
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: '12px',
@@ -478,7 +476,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         >
           <div style={{ minWidth: 0 }}>
             <label htmlFor="off-start" style={s.label}>
-              Från
+              {t.scheduleFrom}
             </label>
             <input
               id="off-start"
@@ -490,7 +488,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           </div>
           <div style={{ minWidth: 0 }}>
             <label htmlFor="off-end" style={s.label}>
-              Till
+              {t.scheduleTo}
             </label>
             <input
               id="off-end"
@@ -502,7 +500,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           </div>
           <div style={narrow ? { gridColumn: '1 / -1' } : { flex: '1 1 180px', minWidth: '160px' }}>
             <label htmlFor="off-reason" style={s.label}>
-              Anledning (valfritt)
+              {t.scheduleTimeOffReason}
             </label>
             <input
               id="off-reason"
@@ -523,7 +521,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             onClick={() => void onAddTimeOff()}
             disabled={offBusy}
           >
-            {offBusy ? 'Lägger till …' : 'Lägg till'}
+            {offBusy ? t.scheduleTimeOffAdding : t.scheduleTimeOffAdd}
           </button>
         </div>
 
@@ -534,12 +532,12 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         </div>
 
         {timeOff.length === 0 ? (
-          <div style={s.emptyState}>Ingen ledighet inlagd.</div>
+          <div style={s.emptyState}>{t.scheduleTimeOffEmpty}</div>
         ) : narrow ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {timeOff.map((t) => (
+            {timeOff.map((off) => (
               <div
-                key={t.id}
+                key={off.id}
                 style={{
                   border: s.card.border,
                   borderRadius: '12px',
@@ -551,19 +549,19 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 700 }}>{rangeLabel(t)}</div>
-                  {t.reason !== '' ? (
+                  <div style={{ fontSize: '14px', fontWeight: 700 }}>{rangeLabel(off)}</div>
+                  {off.reason !== '' ? (
                     <div style={{ ...s.mutedText, fontSize: '12.5px', marginTop: '2px' }}>
-                      {t.reason}
+                      {off.reason}
                     </div>
                   ) : null}
                 </div>
                 <button
                   type="button"
                   style={{ ...s.dangerBtn, padding: '7px 13px', fontSize: '13px', flex: 'none' }}
-                  onClick={() => setPendingOff(t)}
+                  onClick={() => setPendingOff(off)}
                 >
-                  Ta bort
+                  {t.scheduleTimeOffRemove}
                 </button>
               </div>
             ))}
@@ -573,21 +571,21 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             <table style={s.table}>
               <thead>
                 <tr>
-                  <th style={s.th}>Period</th>
-                  <th style={s.th}>Anledning</th>
-                  <th style={{ ...s.th, textAlign: 'right' }}>Åtgärd</th>
+                  <th style={s.th}>{t.scheduleTimeOffColPeriod}</th>
+                  <th style={s.th}>{t.scheduleTimeOffColReason}</th>
+                  <th style={{ ...s.th, textAlign: 'right' }}>{t.scheduleTimeOffColAction}</th>
                 </tr>
               </thead>
               <tbody>
-                {timeOff.map((t) => (
-                  <tr key={t.id}>
-                    <td style={s.td}>{rangeLabel(t)}</td>
+                {timeOff.map((off) => (
+                  <tr key={off.id}>
+                    <td style={s.td}>{rangeLabel(off)}</td>
                     <td style={s.td}>
-                      {t.reason === '' ? <span style={s.mutedText}>—</span> : t.reason}
+                      {off.reason === '' ? <span style={s.mutedText}>—</span> : off.reason}
                     </td>
                     <td style={{ ...s.td, textAlign: 'right' }}>
-                      <button type="button" style={s.dangerBtn} onClick={() => setPendingOff(t)}>
-                        Ta bort
+                      <button type="button" style={s.dangerBtn} onClick={() => setPendingOff(off)}>
+                        {t.scheduleTimeOffRemove}
                       </button>
                     </td>
                   </tr>
@@ -601,10 +599,10 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       {pendingOff !== null ? (
         <ConfirmDialog
           dark={props.dark}
-          title="Ta bort ledigheten?"
+          title={t.scheduleTimeOffDeleteTitle}
           body={`${rangeLabel(pendingOff)}${pendingOff.reason === '' ? '' : ` · ${pendingOff.reason}`}`}
-          confirmLabel="Ta bort"
-          cancelLabel="Avbryt"
+          confirmLabel={t.scheduleTimeOffRemove}
+          cancelLabel={t.scheduleTimeOffDeleteCancel}
           danger
           busy={offDeleteBusy}
           onConfirm={() => void onDeleteTimeOff()}

@@ -14,11 +14,13 @@ import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
 import { getActiveProfile, signOut } from './auth'
 import { AdminShell } from './AdminShell'
+import { ForcedPasswordChange } from './ForcedPasswordChange'
 import { useTheme } from './useTheme'
 import type { AdminProfile } from './types'
 
 type Gate =
   | { readonly kind: 'checking' }
+  | { readonly kind: 'forced_change'; readonly profile: AdminProfile }
   | { readonly kind: 'authed'; readonly profile: AdminProfile }
   | { readonly kind: 'redirecting' }
 
@@ -38,7 +40,11 @@ export function AdminApp(): JSX.Element {
       const result = await getActiveProfile()
       if (!active) return
       if (result.ok) {
-        setGate({ kind: 'authed', profile: result.value })
+        if (result.value.mustChangePassword) {
+          setGate({ kind: 'forced_change', profile: result.value })
+        } else {
+          setGate({ kind: 'authed', profile: result.value })
+        }
       } else {
         setGate({ kind: 'redirecting' })
         navigate('/login', { replace: true })
@@ -56,6 +62,19 @@ export function AdminApp(): JSX.Element {
   }
 
   const c = palette(theme.dark)
+
+  // Forced first-login gate — blocks the panel until the barber picks a real password.
+  if (gate.kind === 'forced_change') {
+    return (
+      <ForcedPasswordChange
+        lang={theme.lang}
+        onDone={() =>
+          setGate({ kind: 'authed', profile: { ...gate.profile, mustChangePassword: false } })
+        }
+        onSignOut={() => void onSignOut()}
+      />
+    )
+  }
 
   if (gate.kind !== 'authed') {
     // A minimal, on-brand placeholder while resolving / redirecting (never a flash of admin UI).

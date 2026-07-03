@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { cap, monthLabel, weekdayLabel } from '../../booking/calendar'
 import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
+import { adminText, type AdminStrings } from '../../i18n/adminStrings'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { listBookings } from '../adapters/bookingsAdmin'
 import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
@@ -50,6 +51,7 @@ export interface ScheduleDayGridProps {
 
 export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const { c, s, lang } = props
+  const t = adminText(lang)
   const today = defaultClock()
   const days = useMemo(() => upcomingDates(today, STRIP_DAYS), [toDateIso(today)])
   const todayIso = toDateIso(today)
@@ -167,7 +169,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         ? await props.onOpenDay(off.id)
         : await props.onBlockDay(dateIso)
     setDayBusy(false)
-    if (!ok) setError('Kunde inte spara. Försök igen.')
+    if (!ok) setError(t.scheduleGridSaveError)
   }
 
   // Whole-day control: single-day off -> reopen; range off -> managed under Ledighet; else block.
@@ -199,7 +201,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         }}
       >
         <span style={{ fontSize: '11px', fontWeight: 600, opacity: on ? 0.85 : 0.55 }}>
-          {iso === todayIso ? 'Idag' : cap(weekdayLabel(lang, d.getDay()).slice(0, 3))}
+          {iso === todayIso ? t.scheduleGridToday : cap(weekdayLabel(lang, d.getDay()).slice(0, 3))}
         </span>
         <span style={{ fontSize: '14px', fontWeight: 700 }}>
           {d.getDate()} {cap(monthLabel(lang, d.getMonth()).slice(0, 3))}
@@ -265,7 +267,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
             whiteSpace: 'nowrap',
           }}
         >
-          {hourSummary(hour, open)}
+          {hourSummary(hour, open, t)}
         </span>
       </button>
     )
@@ -276,14 +278,14 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     const tappable = q.state === 'open' || q.state === 'blocked'
     const sub =
       q.state === 'open'
-        ? 'Ledig'
+        ? t.scheduleGridSlotFree
         : q.state === 'blocked'
-          ? 'Blockerad'
+          ? t.scheduleGridSlotBlocked
           : q.state === 'booked'
-            ? (q.bookingLabel ?? 'Bokad')
+            ? (q.bookingLabel ?? t.scheduleGridSlotBooked)
             : q.state === 'past'
-              ? 'Passerad'
-              : 'Stängt'
+              ? t.scheduleGridSlotPast
+              : t.scheduleGridSlotClosed
     return (
       <button
         key={q.startMin}
@@ -291,7 +293,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         disabled={!tappable || busy}
         onClick={() => void toggleQuarter(q)}
         aria-pressed={q.state === 'blocked'}
-        aria-label={q.state === 'blocked' ? `Öppna ${q.label}` : `Blockera ${q.label} (${sub})`}
+        aria-label={q.state === 'blocked' ? `${t.scheduleGridOpenHour} ${q.label}` : `${t.scheduleGridBlockHour} ${q.label} (${sub})`}
         style={quarterChipStyle(c, q.state, tappable, busy)}
       >
         <span style={{ fontSize: '14px', fontWeight: 700 }}>{q.label}</span>
@@ -348,7 +350,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
                 style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
                 onClick={() => void toggleHourBulk(hour, true)}
               >
-                Blockera {hour.label.slice(0, 2)}–{endLabel}
+                {`${t.scheduleGridBlockHour} ${hour.label.slice(0, 2)}–${endLabel}`}
               </button>
             ) : null}
             {anyBlocked ? (
@@ -357,7 +359,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
                 style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
                 onClick={() => void toggleHourBulk(hour, false)}
               >
-                Öppna {hour.label.slice(0, 2)}–{endLabel}
+                {`${t.scheduleGridOpenHour} ${hour.label.slice(0, 2)}–${endLabel}`}
               </button>
             ) : null}
           </div>
@@ -369,12 +371,9 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   return (
     <section style={s.card} aria-labelledby="daygrid-heading">
       <h2 id="daygrid-heading" style={s.sectionTitle}>
-        Dagsöversikt
+        {t.scheduleGridHeading}
       </h2>
-      <p style={s.sectionLead}>
-        Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) —
-        sparas direkt. Tryck igen för att öppna.
-      </p>
+      <p style={s.sectionLead}>{t.scheduleGridLead}</p>
 
       {/* Day strip */}
       <div
@@ -386,14 +385,14 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           WebkitOverflowScrolling: 'touch',
         }}
         role="group"
-        aria-label="Välj dag"
+        aria-label={t.scheduleGridAriaDayPicker}
       >
         {days.map(dayChip)}
       </div>
 
       {/* Hour grid / day-off state */}
       {blocks === null && error === null ? (
-        <div style={s.emptyState}>Laddar …</div>
+        <div style={s.emptyState}>{t.scheduleGridLoading}</div>
       ) : dayIsOff ? (
         <div
           style={{
@@ -405,14 +404,14 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           }}
         >
           <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '4px' }}>
-            {off !== undefined ? 'Ledig dag' : 'Ingen arbetsdag'}
+            {off !== undefined ? t.scheduleGridDayOff : t.scheduleGridNonWorkingDay}
           </div>
           <div style={{ ...s.mutedText, fontSize: '13px' }}>
             {off !== undefined
               ? off.reason !== ''
                 ? off.reason
-                : 'Dagen är blockerad — inga tider kan bokas.'
-              : 'Dagen är avmarkerad i veckoschemat.'}
+                : t.scheduleGridDayBlockedMsg
+              : t.scheduleGridDayNotInWeekMsg}
           </div>
         </div>
       ) : (
@@ -441,9 +440,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         }}
       >
         {inRangeOff ? (
-          <span style={s.mutedText}>
-            Dagen ingår i en ledighetsperiod — hantera den under Ledighet.
-          </span>
+          <span style={s.mutedText}>{t.scheduleGridRangeOffMsg}</span>
         ) : (
           <button
             type="button"
@@ -451,14 +448,14 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
             disabled={dayBusy}
             onClick={() => void toggleDay()}
           >
-            {off !== undefined ? 'Öppna dagen' : 'Blockera hela dagen'}
+            {off !== undefined ? t.scheduleGridOpenDay : t.scheduleGridBlockDay}
           </button>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          {legendDot(c, 'open', 'Ledig')}
-          {legendDot(c, 'blocked', 'Blockerad')}
-          {legendDot(c, 'booked', 'Bokad')}
-          {legendDot(c, 'closed', 'Stängt')}
+          {legendDot(c, 'open', t.scheduleGridLegendFree)}
+          {legendDot(c, 'blocked', t.scheduleGridLegendBlocked)}
+          {legendDot(c, 'booked', t.scheduleGridLegendBooked)}
+          {legendDot(c, 'closed', t.scheduleGridLegendClosed)}
         </div>
       </div>
       <div aria-live="assertive" style={{ minHeight: '18px', marginTop: '8px' }}>
@@ -469,14 +466,14 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
 }
 
 /** One-word summary under the hour label. */
-function hourSummary(hour: HourGroup, open: number): string {
+function hourSummary(hour: HourGroup, open: number, strings: AdminStrings): string {
   const qs = hour.quarters
-  if (qs.every((q) => q.state === 'closed')) return 'Stängt'
+  if (qs.every((q) => q.state === 'closed')) return strings.scheduleGridSlotClosed
   const bookedLabel = qs.find((q) => q.bookingLabel !== null)?.bookingLabel
   if (bookedLabel !== undefined && bookedLabel !== null) return bookedLabel
-  if (open > 0) return `${open}/4 lediga`
-  if (qs.some((q) => q.state === 'blocked')) return 'Blockerad'
-  return 'Passerad'
+  if (open > 0) return `${open}/4 ${strings.scheduleGridFreeCountSuffix}`
+  if (qs.some((q) => q.state === 'blocked')) return strings.scheduleGridSlotBlocked
+  return strings.scheduleGridSlotPast
 }
 
 /** Mini-bar segment colors per state (fills match the quarter chips). */

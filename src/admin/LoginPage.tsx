@@ -27,9 +27,13 @@ import { shellPalette } from '../app/shared'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
 import { appStrings } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
 import { PoleLogo } from '../ui/PoleLogo'
+import { authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
-import { ThemeSwitch, useNarrow } from './chrome'
+import { ChangePasswordForm } from './ChangePasswordForm'
+import { ForgotPasswordForm } from './ForgotPasswordForm'
+import { LangSwitch, ThemeSwitch, useNarrow } from './chrome'
 import { getActiveProfile, signIn } from './auth'
 import type { AdminProfile } from './types'
 import { useTheme } from './useTheme'
@@ -44,20 +48,25 @@ type Status =
   | { readonly kind: 'submitting' }
   | { readonly kind: 'error'; readonly message: string }
 
+/** Which auth screen the `/login` route shows. Change/forgot render their own full-screen cards. */
+type LoginView = 'signin' | 'change' | 'forgot'
+
 const FONT_DISPLAY = "'SF Pro Display',-apple-system,system-ui,sans-serif"
 
 export function LoginPage(props: LoginPageProps): JSX.Element {
-  const { dark, toggleMode } = useTheme()
+  const { dark, lang, toggleMode, setLang } = useTheme()
   const narrow = useNarrow()
   const c = palette(dark)
   const shell = shellPalette(dark)
   const s = buildAdminStyles(c, dark)
-  const tx = appStrings('sv') // the admin surface is Swedish-first (matches the panel)
+  const tx = appStrings(lang) // ThemeSwitch aria label, in the chosen language
+  const t = adminText(lang) // the admin surface is Swedish-first (matches the panel)
   const configured = isBackendConfigured()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [view, setView] = useState<LoginView>('signin')
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -82,7 +91,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
     if (status.kind === 'submitting') return
     const trimmedEmail = email.trim()
     if (trimmedEmail === '' || password === '') {
-      setStatus({ kind: 'error', message: 'Fyll i både e‑post och lösenord.' })
+      setStatus({ kind: 'error', message: t.loginErrorEmptyFields })
       return
     }
     setStatus({ kind: 'submitting' })
@@ -92,6 +101,14 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
       return
     }
     setStatus({ kind: 'error', message: result.error.message })
+  }
+
+  // Self-service password flows share the `/login` route; each renders its own full-screen AuthCard.
+  if (view === 'change') {
+    return <ChangePasswordForm lang={lang} onBackToSignIn={() => setView('signin')} />
+  }
+  if (view === 'forgot') {
+    return <ForgotPasswordForm lang={lang} onBackToSignIn={() => setView('signin')} />
   }
 
   const panelStyle: JSX.CSSProperties = {
@@ -109,16 +126,16 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
   const formBody = !configured ? (
     <div role="alert" style={{ ...panelStyle, background: c.subtle }}>
       <p style={{ margin: 0, fontSize: '13.5px', lineHeight: 1.5 }}>
-        Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt
-        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_URL</code> och
-        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_ANON_KEY</code> för att aktivera inloggning.
+        {t.loginNotConfiguredPre}
+        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_URL</code> {t.loginNotConfiguredMid}
+        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_ANON_KEY</code> {t.loginNotConfiguredPost}
       </p>
     </div>
   ) : (
     <form onSubmit={onSubmit} noValidate style={panelStyle}>
       <div style={s.fieldRow}>
         <label htmlFor="admin-email" style={s.label}>
-          E‑post
+          {t.loginEmailLabel}
         </label>
         <input
           ref={emailRef}
@@ -134,7 +151,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
 
       <div style={s.fieldRow}>
         <label htmlFor="admin-password" style={s.label}>
-          Lösenord
+          {t.loginPasswordLabel}
         </label>
         <input
           id="admin-password"
@@ -169,8 +186,17 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
           transition: 'opacity .15s',
         }}
       >
-        {status.kind === 'submitting' ? 'Loggar in …' : 'Logga in'}
+        {status.kind === 'submitting' ? t.loginSubmitting : t.loginSubmit}
       </button>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '16px' }}>
+        <button type="button" style={authLinkStyle(c.accent)} onClick={() => setView('change')}>
+          {t.loginChangePasswordLink}
+        </button>
+        <button type="button" style={authLinkStyle(c.accent)} onClick={() => setView('forgot')}>
+          {t.loginForgotPasswordLink}
+        </button>
+      </div>
     </form>
   )
 
@@ -184,7 +210,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
         marginBottom: '14px',
       }}
     >
-      ADMINPANEL
+      {t.loginKicker}
     </div>
   )
 
@@ -224,9 +250,12 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
                 opacity: 0.6,
               }}
             >
-              ‹ Till webbplatsen
+              {t.loginBackToSite}
             </a>
-            <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <LangSwitch lang={lang} setLang={setLang} dark={dark} />
+              <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+            </div>
           </div>
         </div>
 
@@ -296,7 +325,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
             textDecoration: 'none',
             color: 'inherit',
           }}
-          aria-label="KNC Studio — till webbplatsen"
+          aria-label={t.loginBackToSiteAria}
         >
           <PoleLogo uid="login" style={{ width: '26px', height: '26px', flex: 'none' }} />
           <span
@@ -311,7 +340,10 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
             KNC STUDIO
           </span>
         </a>
-        <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <LangSwitch lang={lang} setLang={setLang} dark={dark} />
+          <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+        </div>
       </div>
 
       <main
@@ -336,7 +368,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
             margin: '0 0 10px',
           }}
         >
-          Logga in
+          {t.loginHeading}
         </h1>
         <p
           style={{
@@ -347,7 +379,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
             margin: '0 auto 28px',
           }}
         >
-          Hantera ditt schema och dina bokningar.
+          {t.loginLead}
         </p>
         {formBody}
       </main>

@@ -15,6 +15,8 @@ export default defineConfig({
         'src/booking/slots.ts',
         'src/booking/calendar.ts',
         'src/admin/time.ts',
+        'src/admin/passwordPolicy.ts',
+        'src/admin/recoveryLink.ts',
         'src/about/content/merge.ts',
         'src/cancellation/demoBooking.ts',
         'src/about/reviewValidation.ts',
