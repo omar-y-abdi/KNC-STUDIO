@@ -314,19 +314,21 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr auto 1fr',
+              // minmax(0,1fr): a select/input has an intrinsic min width and would otherwise
+              // force the grid WIDER than the card, colliding with its border on phones.
+              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
               alignItems: 'end',
               gap: '8px',
               flex: narrow ? undefined : 'none',
             }}
           >
-            <div>
+            <div style={{ minWidth: 0 }}>
               <label htmlFor="bulk-start" style={s.label}>
                 Från
               </label>
               <select
                 id="bulk-start"
-                style={{ ...s.select, width: '100%' }}
+                style={{ ...s.select, width: '100%', minWidth: 0 }}
                 value={bulkStart}
                 onChange={(e) => setBulkStart(Number(e.currentTarget.value))}
               >
@@ -338,13 +340,13 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
               </select>
             </div>
             <span style={{ ...s.mutedText, paddingBottom: '9px' }}>–</span>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <label htmlFor="bulk-end" style={s.label}>
                 Till
               </label>
               <select
                 id="bulk-end"
-                style={{ ...s.select, width: '100%' }}
+                style={{ ...s.select, width: '100%', minWidth: 0 }}
                 value={bulkEnd}
                 onChange={(e) => setBulkEnd(Number(e.currentTarget.value))}
               >
@@ -374,14 +376,17 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: narrow ? '1fr auto 1fr' : 'auto auto auto',
+                  // minmax(0,1fr) lets the selects shrink instead of pushing past the row border.
+                  gridTemplateColumns: narrow
+                    ? 'minmax(0, 1fr) auto minmax(0, 1fr)'
+                    : 'auto auto auto',
                   alignItems: 'center',
                   gap: '8px',
                 }}
               >
                 <select
                   aria-label={`Starttid ${dayName}`}
-                  style={{ ...s.select, width: narrow ? '100%' : undefined }}
+                  style={{ ...s.select, width: narrow ? '100%' : undefined, minWidth: 0 }}
                   value={day.startMin}
                   onChange={(e) => onDayStart(wd, Number(e.currentTarget.value))}
                 >
@@ -394,7 +399,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                 <span style={s.mutedText}>–</span>
                 <select
                   aria-label={`Sluttid ${dayName}`}
-                  style={{ ...s.select, width: narrow ? '100%' : undefined }}
+                  style={{ ...s.select, width: narrow ? '100%' : undefined, minWidth: 0 }}
                   value={day.endMin}
                   onChange={(e) => onDayEnd(wd, Number(e.currentTarget.value))}
                 >
@@ -462,33 +467,35 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         <div
           style={{
             display: narrow ? 'grid' : 'flex',
-            gridTemplateColumns: '1fr 1fr',
+            // minmax(0,1fr): date inputs have an intrinsic min width and would otherwise push the
+            // grid WIDER than the card, colliding with its border on phones.
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             flexWrap: 'wrap',
             alignItems: 'flex-end',
             gap: '12px',
             margin: '14px 0 6px',
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label htmlFor="off-start" style={s.label}>
               Från
             </label>
             <input
               id="off-start"
               type="date"
-              style={{ ...s.input, width: narrow ? '100%' : undefined }}
+              style={{ ...s.input, width: narrow ? '100%' : undefined, minWidth: 0 }}
               value={offStart}
               onInput={(e) => setOffStart(e.currentTarget.value)}
             />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <label htmlFor="off-end" style={s.label}>
               Till
             </label>
             <input
               id="off-end"
               type="date"
-              style={{ ...s.input, width: narrow ? '100%' : undefined }}
+              style={{ ...s.input, width: narrow ? '100%' : undefined, minWidth: 0 }}
               value={offEnd}
               onInput={(e) => setOffEnd(e.currentTarget.value)}
             />
