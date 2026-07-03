@@ -21,7 +21,7 @@ import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
 import { PoleLogo } from '../ui/PoleLogo'
 import { buildAdminStyles } from './adminStyles'
-import { ThemeSwitch } from './chrome'
+import { LangSwitch, ThemeSwitch } from './chrome'
 import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
 import { BarbersView } from './views/BarbersView'
@@ -167,33 +167,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     )
   }
 
-  // The public nav's mini language pill (SV/EN), verbatim look.
-  const langButton = (target: Lang): JSX.Element => {
-    const on = props.lang === target
-    return (
-      <button
-        type="button"
-        onClick={() => props.setLang(target)}
-        aria-pressed={on}
-        style={{
-          border: 'none',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          fontSize: '11px',
-          fontWeight: 700,
-          letterSpacing: '.3px',
-          padding: '5px 10px',
-          borderRadius: '999px',
-          background: on ? c.accent : 'transparent',
-          color: on ? c.accentText : c.text,
-          opacity: on ? 1 : 0.6,
-        }}
-      >
-        {target.toUpperCase()}
-      </button>
-    )
-  }
-
   return (
     <div style={s.appShell} class="knc-admin-shell">
       <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
@@ -241,17 +214,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 ))}
               </select>
             )}
-            <div
-              style={{
-                display: 'flex',
-                background: props.dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)',
-                borderRadius: '999px',
-                padding: '2px',
-              }}
-            >
-              {langButton('sv')}
-              {langButton('en')}
-            </div>
+            <LangSwitch lang={props.lang} setLang={props.setLang} dark={props.dark} />
             <ThemeSwitch
               dark={props.dark}
               onToggle={props.toggleMode}

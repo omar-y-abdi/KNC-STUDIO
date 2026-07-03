@@ -12,6 +12,8 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
 import { AuthCard, authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
@@ -20,6 +22,8 @@ import { validateNewPassword } from './passwordPolicy'
 import { useTheme } from './useTheme'
 
 export interface ForcedPasswordChangeProps {
+  /** The active UI language (threaded from AdminApp — `useTheme` is per-instance). */
+  readonly lang: Lang
   /** Called after the password is changed and the flag is cleared — parent enters the panel. */
   readonly onDone: () => void
   /** Called if the barber chooses to sign out instead of completing the change. */
@@ -35,6 +39,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
   const { dark } = useTheme()
   const c = palette(dark)
   const s = buildAdminStyles(c, dark)
+  const t = adminText(props.lang)
 
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -70,7 +75,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
     if (!clearResult.ok) {
       // The password was changed but the flag is still set — the gate will show again on next
       // login, but the barber can now use their new password. Surface a soft message.
-      setStatus({ kind: 'error', message: 'Lösenordet är ändrat, men ett nätverksfel inträffade. Kontakta ägaren.' })
+      setStatus({ kind: 'error', message: t.forcedPwClearError })
       return
     }
 
@@ -81,7 +86,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
   const busy = status.kind === 'submitting'
 
   return (
-    <AuthCard subtitle="Byt ditt lösenord">
+    <AuthCard subtitle={t.forcedPwSubtitle}>
       <p
         style={{
           fontSize: '13.5px',
@@ -90,13 +95,13 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
           margin: '0 0 20px',
         }}
       >
-        Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.
+        {t.forcedPwIntro}
       </p>
 
       <form onSubmit={onSubmit} noValidate>
         <div style={s.fieldRow}>
           <label htmlFor="fp-next" style={s.label}>
-            Nytt lösenord
+            {t.forcedPwNewPassword}
           </label>
           <input
             ref={nextRef}
@@ -112,7 +117,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
 
         <div style={s.fieldRow}>
           <label htmlFor="fp-confirm" style={s.label}>
-            Bekräfta nytt lösenord
+            {t.forcedPwConfirmPassword}
           </label>
           <input
             id="fp-confirm"
@@ -139,13 +144,13 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
             cursor: busy ? 'default' : 'pointer',
           }}
         >
-          {busy ? 'Sparar …' : 'Byt lösenord'}
+          {busy ? t.forcedPwSaving : t.forcedPwSubmit}
         </button>
       </form>
 
       <div style={{ marginTop: '16px', textAlign: 'center' }}>
         <button type="button" style={authLinkStyle(c.accent)} onClick={props.onSignOut}>
-          Logga ut
+          {t.signOut}
         </button>
       </div>
     </AuthCard>

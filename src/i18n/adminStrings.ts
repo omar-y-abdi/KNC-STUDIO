@@ -203,6 +203,60 @@ export interface AdminStrings {
   readonly aboutGalleryDeleteTitle: string
   readonly aboutGalleryDeleteBody: string
   readonly aboutGalleryDeleteCancel: string
+  // --- Auth area: /login + password screens ------------------------------------------------------
+  // LoginPage (`/login`)
+  readonly loginErrorEmptyFields: string
+  /** The "backend not configured" notice, split so the `<code>VITE_SUPABASE_*</code>` literals stay verbatim. */
+  readonly loginNotConfiguredPre: string
+  readonly loginNotConfiguredMid: string
+  readonly loginNotConfiguredPost: string
+  readonly loginEmailLabel: string
+  readonly loginPasswordLabel: string
+  readonly loginSubmitting: string
+  readonly loginSubmit: string
+  readonly loginKicker: string
+  readonly loginBackToSite: string
+  readonly loginBackToSiteAria: string
+  readonly loginHeading: string
+  readonly loginLead: string
+  readonly loginChangePasswordLink: string
+  readonly loginForgotPasswordLink: string
+  // Shared auth links (identical across the password screens)
+  readonly authToSignIn: string
+  readonly authBackToSignIn: string
+  // ChangePasswordForm ("Byt lösenord" — flow A)
+  readonly changePwSubtitle: string
+  readonly changePwSuccess: string
+  readonly changePwEmailLabel: string
+  readonly changePwCurrentPassword: string
+  readonly changePwNewPassword: string
+  readonly changePwConfirmPassword: string
+  readonly changePwSaving: string
+  readonly changePwSubmit: string
+  // ForgotPasswordForm ("Glömt lösenord" — flow B)
+  readonly forgotPwSubtitle: string
+  readonly forgotPwSuccess: string
+  readonly forgotPwEmailLabel: string
+  readonly forgotPwSending: string
+  readonly forgotPwSubmit: string
+  // ForcedPasswordChange (forced first-login change)
+  readonly forcedPwSubtitle: string
+  readonly forcedPwIntro: string
+  readonly forcedPwNewPassword: string
+  readonly forcedPwConfirmPassword: string
+  /** Soft failure: the password changed but the flag-clear RPC failed. */
+  readonly forcedPwClearError: string
+  readonly forcedPwSaving: string
+  readonly forcedPwSubmit: string
+  // ResetPasswordPage (`/reset` recovery landing)
+  readonly resetPwSubtitle: string
+  readonly resetPwInvalidLink: string
+  readonly resetPwChecking: string
+  readonly resetPwSuccess: string
+  readonly resetPwNewPassword: string
+  readonly resetPwConfirmPassword: string
+  readonly resetPwSaving: string
+  readonly resetPwSubmit: string
 }
 
 // --- Swedish (default) ---------------------------------------------------------------------------
@@ -371,6 +425,51 @@ const SV: AdminStrings = {
   aboutGalleryDeleteTitle: 'Ta bort bilden?',
   aboutGalleryDeleteBody: 'Bilden tas bort från galleriet och lagringen. Detta går inte att ångra.',
   aboutGalleryDeleteCancel: 'Avbryt',
+  loginErrorEmptyFields: 'Fyll i både e‑post och lösenord.',
+  loginNotConfiguredPre: 'Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt',
+  loginNotConfiguredMid: 'och',
+  loginNotConfiguredPost: 'för att aktivera inloggning.',
+  loginEmailLabel: 'E‑post',
+  loginPasswordLabel: 'Lösenord',
+  loginSubmitting: 'Loggar in …',
+  loginSubmit: 'Logga in',
+  loginKicker: 'ADMINPANEL',
+  loginBackToSite: '‹ Till webbplatsen',
+  loginBackToSiteAria: 'KNC Studio — till webbplatsen',
+  loginHeading: 'Logga in',
+  loginLead: 'Hantera ditt schema och dina bokningar.',
+  loginChangePasswordLink: 'Byt lösenord',
+  loginForgotPasswordLink: 'Glömt lösenord?',
+  authToSignIn: 'Till inloggning',
+  authBackToSignIn: 'Tillbaka till inloggning',
+  changePwSubtitle: 'Byt lösenord',
+  changePwSuccess: 'Lösenordet är ändrat. Logga in med ditt nya lösenord.',
+  changePwEmailLabel: 'E‑post',
+  changePwCurrentPassword: 'Nuvarande lösenord',
+  changePwNewPassword: 'Nytt lösenord',
+  changePwConfirmPassword: 'Bekräfta nytt lösenord',
+  changePwSaving: 'Sparar …',
+  changePwSubmit: 'Byt lösenord',
+  forgotPwSubtitle: 'Glömt lösenord',
+  forgotPwSuccess: 'Om ett konto med den adressen finns har vi skickat en återställningslänk. Kolla din inkorg (och skräpposten).',
+  forgotPwEmailLabel: 'E‑post',
+  forgotPwSending: 'Skickar …',
+  forgotPwSubmit: 'Skicka återställningslänk',
+  forcedPwSubtitle: 'Byt ditt lösenord',
+  forcedPwIntro: 'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
+  forcedPwNewPassword: 'Nytt lösenord',
+  forcedPwConfirmPassword: 'Bekräfta nytt lösenord',
+  forcedPwClearError: 'Lösenordet är ändrat, men ett nätverksfel inträffade. Kontakta ägaren.',
+  forcedPwSaving: 'Sparar …',
+  forcedPwSubmit: 'Byt lösenord',
+  resetPwSubtitle: 'Återställ lösenord',
+  resetPwInvalidLink: 'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.',
+  resetPwChecking: 'Kontrollerar länken …',
+  resetPwSuccess: 'Ditt lösenord är uppdaterat. Logga in med ditt nya lösenord.',
+  resetPwNewPassword: 'Nytt lösenord',
+  resetPwConfirmPassword: 'Bekräfta nytt lösenord',
+  resetPwSaving: 'Sparar …',
+  resetPwSubmit: 'Spara nytt lösenord',
 }
 
 // --- English -------------------------------------------------------------------------------------
@@ -539,6 +638,51 @@ const EN: AdminStrings = {
   aboutGalleryDeleteTitle: 'Remove image?',
   aboutGalleryDeleteBody: 'The image will be removed from the gallery and storage. This cannot be undone.',
   aboutGalleryDeleteCancel: 'Cancel',
+  loginErrorEmptyFields: 'Fill in both email and password.',
+  loginNotConfiguredPre: 'The admin panel requires the live backend, which is not configured in this environment. Set',
+  loginNotConfiguredMid: 'and',
+  loginNotConfiguredPost: 'to enable sign-in.',
+  loginEmailLabel: 'Email',
+  loginPasswordLabel: 'Password',
+  loginSubmitting: 'Signing in …',
+  loginSubmit: 'Log in',
+  loginKicker: 'ADMIN PANEL',
+  loginBackToSite: '‹ To the website',
+  loginBackToSiteAria: 'KNC Studio — to the website',
+  loginHeading: 'Log in',
+  loginLead: 'Manage your schedule and bookings.',
+  loginChangePasswordLink: 'Change password',
+  loginForgotPasswordLink: 'Forgot password?',
+  authToSignIn: 'To sign-in',
+  authBackToSignIn: 'Back to sign-in',
+  changePwSubtitle: 'Change password',
+  changePwSuccess: 'Your password has been changed. Sign in with your new password.',
+  changePwEmailLabel: 'Email',
+  changePwCurrentPassword: 'Current password',
+  changePwNewPassword: 'New password',
+  changePwConfirmPassword: 'Confirm new password',
+  changePwSaving: 'Saving …',
+  changePwSubmit: 'Change password',
+  forgotPwSubtitle: 'Forgot password',
+  forgotPwSuccess: 'If an account with that address exists, we have sent a reset link. Check your inbox (and your spam folder).',
+  forgotPwEmailLabel: 'Email',
+  forgotPwSending: 'Sending …',
+  forgotPwSubmit: 'Send reset link',
+  forcedPwSubtitle: 'Change your password',
+  forcedPwIntro: 'Your account has a temporary password. You must choose a new one to access the panel.',
+  forcedPwNewPassword: 'New password',
+  forcedPwConfirmPassword: 'Confirm new password',
+  forcedPwClearError: 'Your password was changed, but a network error occurred. Contact the owner.',
+  forcedPwSaving: 'Saving …',
+  forcedPwSubmit: 'Change password',
+  resetPwSubtitle: 'Reset password',
+  resetPwInvalidLink: 'The reset link is invalid or has expired. Request a new one on the sign-in page.',
+  resetPwChecking: 'Checking the link …',
+  resetPwSuccess: 'Your password has been updated. Sign in with your new password.',
+  resetPwNewPassword: 'New password',
+  resetPwConfirmPassword: 'Confirm new password',
+  resetPwSaving: 'Saving …',
+  resetPwSubmit: 'Save new password',
 }
 
 // --- Accessor (same pattern as bookingStrings / appStrings in index.ts) -------------------------

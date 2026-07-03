@@ -8,6 +8,8 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
 import { AuthCard, authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
@@ -16,6 +18,8 @@ import { validateNewPassword } from './passwordPolicy'
 import { useTheme } from './useTheme'
 
 export interface ChangePasswordFormProps {
+  /** The active UI language (threaded from LoginPage — `useTheme` is per-instance). */
+  readonly lang: Lang
   /** Return to the sign-in view (cancel, or after a successful change). */
   readonly onBackToSignIn: () => void
 }
@@ -30,6 +34,7 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
   const { dark } = useTheme()
   const c = palette(dark)
   const s = buildAdminStyles(c, dark)
+  const t = adminText(props.lang)
 
   const [email, setEmail] = useState('')
   const [current, setCurrent] = useState('')
@@ -61,12 +66,12 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
 
   if (status.kind === 'done') {
     return (
-      <AuthCard subtitle="Byt lösenord">
+      <AuthCard subtitle={t.changePwSubtitle}>
         <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
-          Lösenordet är ändrat. Logga in med ditt nya lösenord.
+          {t.changePwSuccess}
         </p>
         <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onBackToSignIn}>
-          Till inloggning
+          {t.authToSignIn}
         </button>
       </AuthCard>
     )
@@ -75,11 +80,11 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
   const busy = status.kind === 'submitting'
 
   return (
-    <AuthCard subtitle="Byt lösenord">
+    <AuthCard subtitle={t.changePwSubtitle}>
       <form onSubmit={onSubmit} noValidate>
         <div style={s.fieldRow}>
           <label htmlFor="cp-email" style={s.label}>
-            E‑post
+            {t.changePwEmailLabel}
           </label>
           <input
             ref={emailRef}
@@ -95,7 +100,7 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
 
         <div style={s.fieldRow}>
           <label htmlFor="cp-current" style={s.label}>
-            Nuvarande lösenord
+            {t.changePwCurrentPassword}
           </label>
           <input
             id="cp-current"
@@ -110,7 +115,7 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
 
         <div style={s.fieldRow}>
           <label htmlFor="cp-next" style={s.label}>
-            Nytt lösenord
+            {t.changePwNewPassword}
           </label>
           <input
             id="cp-next"
@@ -125,7 +130,7 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
 
         <div style={s.fieldRow}>
           <label htmlFor="cp-confirm" style={s.label}>
-            Bekräfta nytt lösenord
+            {t.changePwConfirmPassword}
           </label>
           <input
             id="cp-confirm"
@@ -152,13 +157,13 @@ export function ChangePasswordForm(props: ChangePasswordFormProps): JSX.Element 
             cursor: busy ? 'default' : 'pointer',
           }}
         >
-          {busy ? 'Sparar …' : 'Byt lösenord'}
+          {busy ? t.changePwSaving : t.changePwSubmit}
         </button>
       </form>
 
       <div style={{ marginTop: '16px', textAlign: 'center' }}>
         <button type="button" style={authLinkStyle(c.accent)} onClick={props.onBackToSignIn}>
-          Tillbaka till inloggning
+          {t.authBackToSignIn}
         </button>
       </div>
     </AuthCard>

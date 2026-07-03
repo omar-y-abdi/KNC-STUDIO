@@ -2,6 +2,8 @@
 // rather than a generic dashboard:
 //   ThemeSwitch — the site's original light/dark track+knob toggle (byte-for-byte the same styles
 //                 App.tsx builds), so the admin never grows a second, off-brand switch.
+//   LangSwitch  — the public nav's mini SV/EN pill pair (pill-track container + two buttons),
+//                 extracted so `/login`, `/reset` and the panel share one identical control.
 //   WorkSwitch  — the same pill-track control reused as an on/off switch (week editor's
 //                 working-day toggle): larger tap target + clearer state than a bare checkbox.
 //   useNarrow   — one matchMedia hook for the admin's 760px breakpoint (the same breakpoint the
@@ -11,6 +13,8 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { palette } from '../booking/bookingStyles'
 
 /** The admin surface's single mobile breakpoint (matches the `.knc-admin-*` CSS media query). */
 export const ADMIN_NARROW_MQ = '(max-width: 760px)'
@@ -100,6 +104,59 @@ export function ThemeSwitch(props: ThemeSwitchProps): JSX.Element {
         />
       </span>
     </button>
+  )
+}
+
+export interface LangSwitchProps {
+  readonly lang: Lang
+  readonly setLang: (lang: Lang) => void
+  readonly dark: boolean
+}
+
+/**
+ * The public nav's mini SV/EN language pill, extracted verbatim from AdminShell so every admin
+ * surface (`/login`, `/reset`, and the panel) renders the identical control: a pill-track container
+ * holding two buttons — the active language gets the accent fill, the other a muted, transparent one.
+ */
+export function LangSwitch(props: LangSwitchProps): JSX.Element {
+  const c = palette(props.dark)
+  const pill = (target: Lang): JSX.Element => {
+    const on = props.lang === target
+    return (
+      <button
+        type="button"
+        onClick={() => props.setLang(target)}
+        aria-pressed={on}
+        style={{
+          border: 'none',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '.3px',
+          padding: '5px 10px',
+          borderRadius: '999px',
+          background: on ? c.accent : 'transparent',
+          color: on ? c.accentText : c.text,
+          opacity: on ? 1 : 0.6,
+        }}
+      >
+        {target.toUpperCase()}
+      </button>
+    )
+  }
+  return (
+    <div
+      style={{
+        display: 'flex',
+        background: props.dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)',
+        borderRadius: '999px',
+        padding: '2px',
+      }}
+    >
+      {pill('sv')}
+      {pill('en')}
+    </div>
   )
 }
 

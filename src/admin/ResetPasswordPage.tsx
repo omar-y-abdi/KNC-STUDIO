@@ -11,8 +11,10 @@ import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
+import { adminText } from '../i18n/adminStrings'
 import { AuthCard } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
+import { LangSwitch } from './chrome'
 import { establishRecoverySession, exchangeRecoveryCode, setNewPassword } from './auth'
 import { parseRecoveryLink } from './recoveryLink'
 import { validateNewPassword } from './passwordPolicy'
@@ -34,12 +36,11 @@ type FormStatus =
   | { readonly kind: 'submitting' }
   | { readonly kind: 'error'; readonly message: string }
 
-const INVALID_LINK = 'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.'
-
 export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
-  const { dark } = useTheme()
+  const { dark, lang, setLang } = useTheme()
   const c = palette(dark)
   const s = buildAdminStyles(c, dark)
+  const t = adminText(lang)
 
   const [phase, setPhase] = useState<Phase>({ kind: 'checking' })
   const [next, setNext] = useState('')
@@ -55,7 +56,7 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
     let active = true
     void (async () => {
       if (!isBackendConfigured()) {
-        if (active) setPhase({ kind: 'invalid', message: INVALID_LINK })
+        if (active) setPhase({ kind: 'invalid', message: t.resetPwInvalidLink })
         return
       }
       const link = parseRecoveryLink(window.location.hash, window.location.search)
@@ -67,7 +68,7 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
             : null
       if (!active) return
       if (result !== null && result.ok) setPhase({ kind: 'ready' })
-      else setPhase({ kind: 'invalid', message: INVALID_LINK })
+      else setPhase({ kind: 'invalid', message: t.resetPwInvalidLink })
     })()
     return () => {
       active = false
@@ -95,93 +96,118 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
     setForm({ kind: 'error', message: result.error.message })
   }
 
+  const overlay = (
+    <div
+      style={{
+        position: 'fixed',
+        top: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+        right: '16px',
+        zIndex: 10,
+      }}
+    >
+      <LangSwitch lang={lang} setLang={setLang} dark={dark} />
+    </div>
+  )
+
   if (phase.kind === 'checking') {
     return (
-      <AuthCard subtitle="Återställ lösenord">
-        <p style={{ ...s.mutedText, margin: 0 }}>Kontrollerar länken …</p>
-      </AuthCard>
+      <>
+        {overlay}
+        <AuthCard subtitle={t.resetPwSubtitle}>
+          <p style={{ ...s.mutedText, margin: 0 }}>{t.resetPwChecking}</p>
+        </AuthCard>
+      </>
     )
   }
 
   if (phase.kind === 'invalid') {
     return (
-      <AuthCard subtitle="Återställ lösenord">
-        <p role="alert" style={{ ...s.errorText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
-          {phase.message}
-        </p>
-        <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
-          Till inloggning
-        </button>
-      </AuthCard>
+      <>
+        {overlay}
+        <AuthCard subtitle={t.resetPwSubtitle}>
+          <p role="alert" style={{ ...s.errorText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
+            {phase.message}
+          </p>
+          <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
+            {t.authToSignIn}
+          </button>
+        </AuthCard>
+      </>
     )
   }
 
   if (phase.kind === 'done') {
     return (
-      <AuthCard subtitle="Återställ lösenord">
-        <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
-          Ditt lösenord är uppdaterat. Logga in med ditt nya lösenord.
-        </p>
-        <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
-          Till inloggning
-        </button>
-      </AuthCard>
+      <>
+        {overlay}
+        <AuthCard subtitle={t.resetPwSubtitle}>
+          <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
+            {t.resetPwSuccess}
+          </p>
+          <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
+            {t.authToSignIn}
+          </button>
+        </AuthCard>
+      </>
     )
   }
 
   const busy = form.kind === 'submitting'
 
   return (
-    <AuthCard subtitle="Återställ lösenord">
-      <form onSubmit={onSubmit} noValidate>
-        <div style={s.fieldRow}>
-          <label htmlFor="rp-next" style={s.label}>
-            Nytt lösenord
-          </label>
-          <input
-            ref={nextRef}
-            id="rp-next"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={next}
-            onInput={(e) => setNext(e.currentTarget.value)}
-            style={s.input}
-          />
-        </div>
+    <>
+      {overlay}
+      <AuthCard subtitle={t.resetPwSubtitle}>
+        <form onSubmit={onSubmit} noValidate>
+          <div style={s.fieldRow}>
+            <label htmlFor="rp-next" style={s.label}>
+              {t.resetPwNewPassword}
+            </label>
+            <input
+              ref={nextRef}
+              id="rp-next"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={next}
+              onInput={(e) => setNext(e.currentTarget.value)}
+              style={s.input}
+            />
+          </div>
 
-        <div style={s.fieldRow}>
-          <label htmlFor="rp-confirm" style={s.label}>
-            Bekräfta nytt lösenord
-          </label>
-          <input
-            id="rp-confirm"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={confirm}
-            onInput={(e) => setConfirm(e.currentTarget.value)}
-            style={s.input}
-          />
-        </div>
+          <div style={s.fieldRow}>
+            <label htmlFor="rp-confirm" style={s.label}>
+              {t.resetPwConfirmPassword}
+            </label>
+            <input
+              id="rp-confirm"
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onInput={(e) => setConfirm(e.currentTarget.value)}
+              style={s.input}
+            />
+          </div>
 
-        <div aria-live="assertive" role="alert" style={{ minHeight: '18px', marginBottom: '12px' }}>
-          {form.kind === 'error' ? <span style={s.errorText}>{form.message}</span> : null}
-        </div>
+          <div aria-live="assertive" role="alert" style={{ minHeight: '18px', marginBottom: '12px' }}>
+            {form.kind === 'error' ? <span style={s.errorText}>{form.message}</span> : null}
+          </div>
 
-        <button
-          type="submit"
-          disabled={busy}
-          style={{
-            ...s.primaryBtn,
-            width: '100%',
-            opacity: busy ? 0.6 : 1,
-            cursor: busy ? 'default' : 'pointer',
-          }}
-        >
-          {busy ? 'Sparar …' : 'Spara nytt lösenord'}
-        </button>
-      </form>
-    </AuthCard>
+          <button
+            type="submit"
+            disabled={busy}
+            style={{
+              ...s.primaryBtn,
+              width: '100%',
+              opacity: busy ? 0.6 : 1,
+              cursor: busy ? 'default' : 'pointer',
+            }}
+          >
+            {busy ? t.resetPwSaving : t.resetPwSubmit}
+          </button>
+        </form>
+      </AuthCard>
+    </>
   )
 }

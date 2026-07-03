@@ -67,6 +67,7 @@ export function AdminApp(): JSX.Element {
   if (gate.kind === 'forced_change') {
     return (
       <ForcedPasswordChange
+        lang={theme.lang}
         onDone={() =>
           setGate({ kind: 'authed', profile: { ...gate.profile, mustChangePassword: false } })
         }

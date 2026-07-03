@@ -8,6 +8,8 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
 import { AuthCard, authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
@@ -15,6 +17,8 @@ import { requestPasswordReset } from './auth'
 import { useTheme } from './useTheme'
 
 export interface ForgotPasswordFormProps {
+  /** The active UI language (threaded from LoginPage — `useTheme` is per-instance). */
+  readonly lang: Lang
   /** Return to the sign-in view. */
   readonly onBackToSignIn: () => void
 }
@@ -34,6 +38,7 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
   const { dark } = useTheme()
   const c = palette(dark)
   const s = buildAdminStyles(c, dark)
+  const t = adminText(props.lang)
 
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
@@ -57,13 +62,12 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
 
   if (status.kind === 'done') {
     return (
-      <AuthCard subtitle="Glömt lösenord">
+      <AuthCard subtitle={t.forgotPwSubtitle}>
         <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
-          Om ett konto med den adressen finns har vi skickat en återställningslänk. Kolla din inkorg
-          (och skräpposten).
+          {t.forgotPwSuccess}
         </p>
         <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onBackToSignIn}>
-          Till inloggning
+          {t.authToSignIn}
         </button>
       </AuthCard>
     )
@@ -72,11 +76,11 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
   const busy = status.kind === 'submitting'
 
   return (
-    <AuthCard subtitle="Glömt lösenord">
+    <AuthCard subtitle={t.forgotPwSubtitle}>
       <form onSubmit={onSubmit} noValidate>
         <div style={s.fieldRow}>
           <label htmlFor="fp-email" style={s.label}>
-            E‑post
+            {t.forgotPwEmailLabel}
           </label>
           <input
             ref={emailRef}
@@ -104,13 +108,13 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
             cursor: busy ? 'default' : 'pointer',
           }}
         >
-          {busy ? 'Skickar …' : 'Skicka återställningslänk'}
+          {busy ? t.forgotPwSending : t.forgotPwSubmit}
         </button>
       </form>
 
       <div style={{ marginTop: '16px', textAlign: 'center' }}>
         <button type="button" style={authLinkStyle(c.accent)} onClick={props.onBackToSignIn}>
-          Tillbaka till inloggning
+          {t.authBackToSignIn}
         </button>
       </div>
     </AuthCard>
