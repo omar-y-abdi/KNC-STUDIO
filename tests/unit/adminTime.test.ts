@@ -7,18 +7,22 @@ import {
   DEFAULT_END_MIN,
   DEFAULT_START_MIN,
   END_OPTIONS,
+  QUARTER_LEN_MIN,
   START_OPTIONS,
+  dayHours,
   defaultWeek,
   isValidWindow,
   minutesToHHMM,
   sameTimeAllDays,
   setDayHours,
+  timeOffCovering,
   toDateIso,
   toWeekSchedule,
   toggleWorking,
+  upcomingDates,
   weekIsValid,
 } from '../../src/admin/time'
-import type { DaySchedule, WeekSchedule } from '../../src/admin/types'
+import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule } from '../../src/admin/types'
 
 describe('minutesToHHMM', () => {
   it('formats whole and partial hours zero-padded', () => {
@@ -148,5 +152,146 @@ describe('toDateIso', () => {
   it('formats a local date as YYYY-MM-DD zero-padded', () => {
     expect(toDateIso(new Date(2026, 0, 5))).toBe('2026-01-05')
     expect(toDateIso(new Date(2026, 11, 31))).toBe('2026-12-31')
+  })
+})
+
+// --- Day grid helpers (migration 0017 / the quarter-grid block view) -----------------------------------
+
+const workDay: DaySchedule = { weekday: 1, working: true, startMin: 540, endMin: 1080 }
+
+function block(startMin: number, endMin: number, id = 'b1'): SlotBlock {
+  return { id, barberId: 'hassan', date: '2099-01-05', startMin, endMin }
+}
+
+/** Flatten the hour groups into the 36 quarters for easy assertions. */
+function quarters(args: Parameters<typeof dayHours>[0]) {
+  return dayHours(args).flatMap((h) => h.quarters)
+}
+
+describe('dayHours', () => {
+  it('covers 09:00-18:00 as 9 hour groups of four 15-min quarters', () => {
+    const hours = dayHours({
+      day: workDay,
+      dayOff: false,
+      blocks: [],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+    expect(hours).toHaveLength(9)
+    expect(hours[0]).toMatchObject({ startMin: 540, label: '09:00' })
+    expect(hours[8]).toMatchObject({ startMin: 1020, label: '17:00' })
+    expect(hours.every((h) => h.quarters.length === 4)).toBe(true)
+    const all = hours.flatMap((h) => h.quarters)
+    expect(all).toHaveLength(36)
+    expect(all[0]).toMatchObject({ startMin: 540, label: '09:00' })
+    expect(all[35]).toMatchObject({ startMin: 1065, label: '17:45' })
+    expect(all.every((q) => q.state === 'open')).toBe(true)
+  })
+
+  it('a non-working day (or missing row, or time off) is fully closed', () => {
+    const offDay = { ...workDay, working: false }
+    for (const args of [
+      { day: offDay, dayOff: false },
+      { day: undefined, dayOff: false },
+      { day: workDay, dayOff: true },
+    ]) {
+      const all = quarters({ ...args, blocks: [], bookings: [], pastCutoffMin: 0 })
+      expect(all.every((q) => q.state === 'closed')).toBe(true)
+    }
+  })
+
+  it('quarters outside the working window are closed (start AND end must fit)', () => {
+    const lateStart = { ...workDay, startMin: 630, endMin: 900 } // 10:30-15:00
+    const all = quarters({
+      day: lateStart,
+      dayOff: false,
+      blocks: [],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+    expect(all.filter((q) => q.state === 'open').map((q) => q.startMin)).toEqual(
+      // 10:30..14:45 inclusive - the last quarter ending exactly at 15:00 still fits.
+      Array.from({ length: 18 }, (_, i) => 630 + i * 15),
+    )
+  })
+
+  it('a 15-min block row marks exactly one quarter and carries its id', () => {
+    const all = quarters({
+      day: workDay,
+      dayOff: false,
+      blocks: [block(630, 645)],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+    expect(all.find((q) => q.startMin === 630)).toMatchObject({ state: 'blocked', blockId: 'b1' })
+    // Half-open: the neighbours are untouched.
+    expect(all.find((q) => q.startMin === 615)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 645)?.state).toBe('open')
+  })
+
+  it('a range block covers every quarter in its window', () => {
+    const all = quarters({
+      day: workDay,
+      dayOff: false,
+      blocks: [block(720, 780)],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+    expect(all.filter((q) => q.state === 'blocked').map((q) => q.startMin)).toEqual([
+      720, 735, 750, 765,
+    ])
+  })
+
+  it('a booking beats a block, spans its true quarters, and carries its label', () => {
+    const all = quarters({
+      day: workDay,
+      dayOff: false,
+      blocks: [block(630, 645)],
+      // 45-min booking 10:30-11:15 -> quarters 10:30, 10:45, 11:00 (11:15 starts AT its end).
+      bookings: [{ startMin: 630, endMin: 675, label: 'Anna' }],
+      pastCutoffMin: 600, // "now" is 10:00 -> 09:00..09:45 quarters are past
+    })
+    expect(all.find((q) => q.startMin === 630)).toMatchObject({
+      state: 'booked',
+      bookingLabel: 'Anna',
+      blockId: null,
+    })
+    expect(all.find((q) => q.startMin === 660)?.state).toBe('booked')
+    expect(all.find((q) => q.startMin === 675)?.state).toBe('open')
+    expect(all.filter((q) => q.state === 'past').map((q) => q.startMin)).toEqual([
+      540, 555, 570, 585,
+    ])
+  })
+
+  it('QUARTER_LEN_MIN is the 15-min write unit', () => {
+    expect(QUARTER_LEN_MIN).toBe(15)
+  })
+})
+
+describe('timeOffCovering', () => {
+  const off: TimeOff = {
+    id: 't1',
+    barberId: 'hassan',
+    startDate: '2099-01-04',
+    endDate: '2099-01-06',
+    reason: '',
+  }
+  it('finds the covering range inclusively on both ends', () => {
+    expect(timeOffCovering([off], '2099-01-04')?.id).toBe('t1')
+    expect(timeOffCovering([off], '2099-01-05')?.id).toBe('t1')
+    expect(timeOffCovering([off], '2099-01-06')?.id).toBe('t1')
+  })
+  it('returns undefined outside the range', () => {
+    expect(timeOffCovering([off], '2099-01-03')).toBeUndefined()
+    expect(timeOffCovering([off], '2099-01-07')).toBeUndefined()
+  })
+})
+
+describe('upcomingDates', () => {
+  it('returns count consecutive local days starting at from', () => {
+    const days = upcomingDates(new Date(2026, 5, 28), 5) // Jun 28 -> crosses into July
+    expect(days).toHaveLength(5)
+    expect(toDateIso(days[0] ?? new Date(0))).toBe('2026-06-28')
+    expect(toDateIso(days[4] ?? new Date(0))).toBe('2026-07-02')
   })
 })

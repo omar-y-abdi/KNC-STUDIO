@@ -78,6 +78,18 @@ export const timeOffRow = z.object({
 export type TimeOffRow = z.infer<typeof timeOffRow>
 export const timeOffRows = z.array(timeOffRow)
 
+// --- barber_slot_blocks --------------------------------------------------------------------------
+
+export const slotBlockRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  block_date: isoDate,
+  start_min: z.number().int().min(0).max(1440),
+  end_min: z.number().int().min(0).max(1440),
+})
+export type SlotBlockRow = z.infer<typeof slotBlockRow>
+export const slotBlockRows = z.array(slotBlockRow)
+
 // --- about_content -------------------------------------------------------------------------------
 
 export const aboutRow = z.object({

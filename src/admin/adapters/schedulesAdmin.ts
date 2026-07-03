@@ -3,8 +3,8 @@
 // any barber's. The adapter writes the WHOLE week in one upsert so "samma tid alla dagar" and
 // per-day edits both persist atomically (PostgREST batches the array).
 //
-// availableSlotsFor previews the bookable slots a saved schedule produces (the same anon-callable
-// `available_slots` RPC the public booking flow uses) — so the editor can show "what customers see".
+// availableSlotsFor exposes the same anon-callable `available_slots` RPC the public booking flow
+// uses ("what customers see"); the integration tests assert schedule edits through it.
 //
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 

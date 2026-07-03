@@ -101,7 +101,8 @@ body {
     align-items: center !important;
     gap: 8px !important;
     overflow-x: auto;
-    padding: 10px 12px !important;
+    /* Safe-area aware: on notched phones the strip starts below the notch, like the public site. */
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px !important;
     -webkit-overflow-scrolling: touch;
   }
   /* The brand label shrinks; the nav list scrolls horizontally as a tab strip. */
@@ -123,5 +124,10 @@ body {
   }
   .knc-admin-signout-top {
     display: inline-flex !important;
+  }
+  /* The tab strip above is ALSO sticky at top:0 (higher z-index), so a sticky topbar would wedge
+     underneath it and cover the first content rows. On phones the topbar scrolls away normally. */
+  .knc-admin-topbar {
+    position: static !important;
   }
 }

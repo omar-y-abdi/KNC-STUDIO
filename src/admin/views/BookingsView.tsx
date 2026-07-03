@@ -10,9 +10,12 @@
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { formatWhenLabel } from '../../booking/calendar'
+import { palette } from '../../booking/bookingStyles'
+import { defaultClock } from '../../config'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import type { Lang } from '../../i18n/index'
 import { cancelBooking, listBookings } from '../adapters/bookingsAdmin'
+import { useNarrow } from '../chrome'
 import { ConfirmDialog } from '../ConfirmDialog'
 import type { AdminBarber, AdminBarberId, AdminBooking, AdminStylesBundle } from './viewTypes'
 
@@ -38,6 +41,8 @@ type Load =
 
 export function BookingsView(props: BookingsViewProps): JSX.Element {
   const { s, lang } = props
+  const narrow = useNarrow()
+  const c = palette(props.dark)
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
   const [pendingCancel, setPendingCancel] = useState<AdminBooking | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,7 +70,8 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     }
   }, [props.barberId, props.allBarbers])
 
-  const now = Date.now()
+  // The injectable clock (same "today" source as the schedule views + deterministic screenshots).
+  const now = defaultClock().getTime()
   const { upcoming, past } = useMemo(() => {
     if (load.kind !== 'ready') return { upcoming: [], past: [] }
     const up: AdminBooking[] = []
@@ -107,7 +113,123 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     )
   }
 
-  const renderTable = (rows: readonly AdminBooking[], emptyText: string): JSX.Element => {
+  // Mobile: stacked cards — time first (the fact a barber scans for), then customer, service, a
+  // tap-to-call contact, and the cancel action. No side-scrolling table on a phone.
+  const renderCards = (
+    rows: readonly AdminBooking[],
+    emptyText: string,
+    cancellable: boolean,
+  ): JSX.Element => {
+    if (rows.length === 0) return <div style={s.emptyState}>{emptyText}</div>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {rows.map((b) => {
+          const cancelled = b.status === 'cancelled'
+          const contact = b.method === 'sms' ? b.phone : b.email
+          return (
+            <div
+              key={b.id}
+              style={{
+                border: '0.5px solid ' + c.line,
+                borderRadius: '12px',
+                background: c.card,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '7px',
+                opacity: cancelled ? 0.55 : 1,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
+                <span style={{ fontSize: '14px', fontWeight: 700 }}>
+                  {formatWhenLabel(lang, stockholmWallClockDate(b.startAt))}
+                </span>
+                <span
+                  style={{
+                    ...s.pill,
+                    flex: 'none',
+                    color: cancelled ? s.errorText.color : undefined,
+                  }}
+                >
+                  {cancelled ? 'Avbokad' : 'Bekräftad'}
+                </span>
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: 600 }}>
+                {b.customerName}
+                {props.allBarbers ? (
+                  <span style={s.mutedText}> · hos {barberName(b.barberId)}</span>
+                ) : null}
+              </div>
+              <div style={{ ...s.mutedText, fontSize: '13px' }}>
+                {b.serviceName} · {b.durationMin} min · {b.price} kr
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  marginTop: '3px',
+                }}
+              >
+                {b.method === 'sms' && contact !== null ? (
+                  <a
+                    href={`tel:${contact}`}
+                    style={{
+                      ...s.ghostBtn,
+                      padding: '7px 13px',
+                      fontSize: '13px',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <img
+                      src="/icons/phone.svg"
+                      alt=""
+                      style={{
+                        width: '13px',
+                        height: '13px',
+                        filter: c.iconF,
+                        opacity: 0.7,
+                      }}
+                    />
+                    {contact}
+                  </a>
+                ) : (
+                  <span style={s.mutedText}>{contact ?? '—'}</span>
+                )}
+                {cancelled || !cancellable ? null : (
+                  <button
+                    type="button"
+                    style={{ ...s.dangerBtn, padding: '7px 13px', fontSize: '13px' }}
+                    onClick={() => setPendingCancel(b)}
+                  >
+                    Avboka
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const renderTable = (
+    rows: readonly AdminBooking[],
+    emptyText: string,
+    cancellable: boolean,
+  ): JSX.Element => {
+    if (narrow) return renderCards(rows, emptyText, cancellable)
     if (rows.length === 0) return <div style={s.emptyState}>{emptyText}</div>
     return (
       <div style={{ overflowX: 'auto' }}>
@@ -149,7 +271,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                     </span>
                   </td>
                   <td style={{ ...s.td, textAlign: 'right' }}>
-                    {cancelled ? (
+                    {cancelled || !cancellable ? (
                       <span style={s.mutedText}>—</span>
                     ) : (
                       <button type="button" style={s.dangerBtn} onClick={() => setPendingCancel(b)}>
@@ -187,9 +309,9 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         ) : (
           <>
             <h3 style={{ ...s.label, marginTop: '14px', fontSize: '13px' }}>Kommande</h3>
-            {renderTable(upcoming, 'Inga kommande bokningar.')}
+            {renderTable(upcoming, 'Inga kommande bokningar.', true)}
             <h3 style={{ ...s.label, marginTop: '22px', fontSize: '13px' }}>Tidigare</h3>
-            {renderTable(past, 'Inga tidigare bokningar.')}
+            {renderTable(past, 'Inga tidigare bokningar.', false)}
           </>
         )}
       </section>

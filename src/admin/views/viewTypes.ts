@@ -9,6 +9,7 @@ export type {
   AdminBooking,
   GalleryImage,
   GalleryKind,
+  SlotBlock,
   TimeOff,
   Weekday,
   WeekSchedule,

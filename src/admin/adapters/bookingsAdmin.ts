@@ -56,14 +56,18 @@ const COLUMNS =
 /**
  * List bookings, newest start first. With `barberId` the owner scopes to one barber; without it the
  * caller sees everything RLS allows (owner=all bookings, barber=own). A barber passing another id
- * still gets only their own rows (RLS), so the filter cannot widen access.
+ * still gets only their own rows (RLS), so the filter cannot widen access. `fromIso` (an ISO
+ * instant) trims the result to bookings starting at/after it — the day grid passes local midnight
+ * so its payload stays bounded as history accumulates.
  */
 export async function listBookings(
   barberId?: AdminBarberId,
+  fromIso?: string,
 ): Promise<AdminResult<readonly AdminBooking[]>> {
   try {
     const base = getAdminClient().from('bookings').select(COLUMNS)
-    const query = barberId === undefined ? base : base.eq('barber_id', barberId)
+    const scoped = barberId === undefined ? base : base.eq('barber_id', barberId)
+    const query = fromIso === undefined ? scoped : scoped.gte('start_at', fromIso)
     const { data, error } = await query.order('start_at', { ascending: false })
     if (error !== null || data === null) return err('network', READ_ERROR)
 

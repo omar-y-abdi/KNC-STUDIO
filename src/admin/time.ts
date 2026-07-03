@@ -3,7 +3,7 @@
 // SLOTS the booking backend uses); the schedule editor offers those as the selectable start/end
 // bounds so a barber can only pick sane, on-grid hours.
 
-import type { DaySchedule, WeekSchedule, Weekday } from './types'
+import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule, Weekday } from './types'
 
 /** Minutes from midnight for the default working day (09:00 / 18:00). */
 export const DEFAULT_START_MIN = 540
@@ -120,4 +120,135 @@ export function toDateIso(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// --- Day grid (the tap-to-block walk-in view) -----------------------------------------------------
+
+/**
+ * The day grid blocks in 15-MIN QUARTERS: fine enough for "a text booking ate 11:15–11:30",
+ * coarse enough to stay tappable. The UI clusters quarters under HOUR buttons (press an hour to
+ * expand its four quarters), so the grid never shows more than 9 hour chips + 4 quarter chips.
+ */
+export const QUARTER_LEN_MIN = 15
+
+/**
+ * What one chip on the day grid IS, in priority order:
+ *   `booked`  — overlaps a confirmed booking (shows the customer; never tappable)
+ *   `blocked` — overlaps a walk-in block row (tap = unblock)
+ *   `closed`  — outside working hours, a non-working weekday, or a time-off day
+ *   `past`    — already started (only on today)
+ *   `open`    — bookable online right now (tap = block)
+ */
+export type SlotState = 'open' | 'blocked' | 'booked' | 'closed' | 'past'
+
+/** A confirmed booking mapped onto the day's minute line (salon-local). */
+export interface DayBooking {
+  readonly startMin: number
+  readonly endMin: number
+  /** Short label for the chip (customer first name). */
+  readonly label: string
+}
+
+/** One rendered 15-min quarter on the day grid. */
+export interface DaySlot {
+  readonly startMin: number
+  /** `HH:MM` start label. */
+  readonly label: string
+  readonly state: SlotState
+  /** The covering block row's id when `state === 'blocked'` (the delete target). */
+  readonly blockId: string | null
+  /** The covering booking's label when `state === 'booked'`. */
+  readonly bookingLabel: string | null
+}
+
+/** One expandable hour on the day grid: the hour chip + its four 15-min quarters. */
+export interface HourGroup {
+  readonly startMin: number
+  /** `HH:MM` hour label ("09:00"). */
+  readonly label: string
+  readonly quarters: readonly DaySlot[]
+}
+
+/** The inputs the quarter math needs — pure data, no I/O. */
+export interface DayGridArgs {
+  /** The weekday's schedule row (undefined = no row = off). */
+  readonly day: DaySchedule | undefined
+  /** A time-off range covers the date. */
+  readonly dayOff: boolean
+  /** The date's walk-in block rows. */
+  readonly blocks: readonly SlotBlock[]
+  /** The date's CONFIRMED bookings on the salon-local minute line. */
+  readonly bookings: readonly DayBooking[]
+  /**
+   * Quarters starting before this are `past` — the current salon-local minute for today,
+   * `0` for a future date.
+   */
+  readonly pastCutoffMin: number
+}
+
+/** Does window [aStart, aEnd) overlap [bStart, bEnd)? (Half-open, mirrors the DB overlap math.) */
+function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && aEnd > bStart
+}
+
+/** State of ONE quarter window [min, min+15). */
+function quarterAt(args: DayGridArgs, min: number): DaySlot {
+  const end = min + QUARTER_LEN_MIN
+  const booking = args.bookings.find((b) => overlaps(min, end, b.startMin, b.endMin))
+  const block = args.blocks.find((b) => overlaps(min, end, b.startMin, b.endMin))
+  const closed =
+    args.dayOff ||
+    args.day === undefined ||
+    !args.day.working ||
+    min < args.day.startMin ||
+    end > args.day.endMin
+
+  const state: SlotState =
+    booking !== undefined
+      ? 'booked'
+      : block !== undefined
+        ? 'blocked'
+        : closed
+          ? 'closed'
+          : min < args.pastCutoffMin
+            ? 'past'
+            : 'open'
+
+  return {
+    startMin: min,
+    label: minutesToHHMM(min),
+    state,
+    blockId: state === 'blocked' && block !== undefined ? block.id : null,
+    bookingLabel: state === 'booked' && booking !== undefined ? booking.label : null,
+  }
+}
+
+/**
+ * The day's hour groups (09:00..17:00, each with four 15-min quarters), covering the salon day
+ * 09:00–18:00. Pure. Hours whose quarters are ALL closed are still returned — the component
+ * decides whether to render or drop them (a shrunk working window should not shift the layout
+ * unpredictably between days).
+ */
+export function dayHours(args: DayGridArgs): readonly HourGroup[] {
+  const out: HourGroup[] = []
+  for (let hour = DEFAULT_START_MIN; hour < DEFAULT_END_MIN; hour += 60) {
+    const quarters: DaySlot[] = []
+    for (let q = hour; q < hour + 60; q += QUARTER_LEN_MIN) quarters.push(quarterAt(args, q))
+    out.push({ startMin: hour, label: minutesToHHMM(hour), quarters })
+  }
+  return out
+}
+
+/** The time-off entry covering an ISO date, if any (inclusive range; ISO strings compare safely). */
+export function timeOffCovering(timeOff: readonly TimeOff[], dateIso: string): TimeOff | undefined {
+  return timeOff.find((t) => t.startDate <= dateIso && dateIso <= t.endDate)
+}
+
+/** The next `count` days starting at `from` (local midnights), for the day-picker strip. */
+export function upcomingDates(from: Date, count: number): readonly Date[] {
+  const out: Date[] = []
+  for (let i = 0; i < count; i++) {
+    out.push(new Date(from.getFullYear(), from.getMonth(), from.getDate() + i))
+  }
+  return out
 }

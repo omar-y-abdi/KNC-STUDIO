@@ -1,19 +1,36 @@
-// Admin login (`/login`). Email + password -> `signIn`. Three states are explicit:
-//   - backend UNCONFIGURED (no VITE_SUPABASE_*): a clear notice, no crash, no network attempt.
-//   - submitting: the button is busy + disabled.
-//   - error: an inline, aria-live message (wrong credentials / no profile / network).
-// On success the parent (`Root`) navigates to `/admin` via the passed `onSignedIn` callback (which
-// also receives the resolved profile so the panel renders immediately without a second fetch).
+// Admin login (`/login`) — the staff door, dressed exactly like the site the customers see.
 //
-// Accessibility: labelled inputs, the error region is `role="alert"` (assertive) so SR users hear
-// failures, focus starts on the email field, and Enter submits (native form).
+// Desktop mirrors the public DESKTOP chrome: the nav bar (pole logo + tracked KNC STUDIO wordmark,
+// linking home) with the site's original theme switch, then hero typography (tracked kicker,
+// SF Pro Display heading) over a booking-panel-style form card. No footer: staff don't need the
+// salon's address or opening hours to sign in.
+//
+// Mobile mirrors the public MOBILE hero instead: the warm panel surface fills the screen,
+// safe-area-aware top row (back-to-site link left, theme switch right — nothing under the notch),
+// and the centred pole logo + wordmark above the kicker and form. Same building blocks, same
+// tokens (`shellPalette`, booking `palette`, `PoleLogo`, `ThemeSwitch`), so the two surfaces
+// cannot drift apart.
+//
+// States are explicit and complete:
+//   - backend UNCONFIGURED (no VITE_SUPABASE_*): a clear notice, no crash, no network attempt.
+//   - already signed in: a session check on mount routes straight to /admin (no re-typing).
+//   - empty fields: caught locally before any network call.
+//   - submitting: the button is busy + disabled (double-submit safe).
+//   - error: an inline, aria-live message (wrong credentials / no profile / network).
+//
+// Accessibility: labelled inputs, aria-live error region, focus starts on the email field, Enter
+// submits (native form).
 
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { shellPalette } from '../app/shared'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
+import { appStrings } from '../i18n/index'
+import { PoleLogo } from '../ui/PoleLogo'
 import { buildAdminStyles } from './adminStyles'
-import { signIn } from './auth'
+import { ThemeSwitch, useNarrow } from './chrome'
+import { getActiveProfile, signIn } from './auth'
 import type { AdminProfile } from './types'
 import { useTheme } from './useTheme'
 
@@ -27,10 +44,15 @@ type Status =
   | { readonly kind: 'submitting' }
   | { readonly kind: 'error'; readonly message: string }
 
+const FONT_DISPLAY = "'SF Pro Display',-apple-system,system-ui,sans-serif"
+
 export function LoginPage(props: LoginPageProps): JSX.Element {
-  const { dark } = useTheme()
+  const { dark, toggleMode } = useTheme()
+  const narrow = useNarrow()
   const c = palette(dark)
+  const shell = shellPalette(dark)
   const s = buildAdminStyles(c, dark)
+  const tx = appStrings('sv') // the admin surface is Swedish-first (matches the panel)
   const configured = isBackendConfigured()
 
   const [email, setEmail] = useState('')
@@ -42,11 +64,29 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
     if (configured) emailRef.current?.focus()
   }, [configured])
 
+  // A returning barber with a live session skips the form entirely.
+  useEffect(() => {
+    if (!configured) return
+    let active = true
+    void getActiveProfile().then((result) => {
+      if (active && result.ok) props.onSignedIn(result.value)
+    })
+    return () => {
+      active = false
+    }
+    // Mount-only: `configured` is a build-time constant and `onSignedIn` navigates away.
+  }, [])
+
   const onSubmit = async (e: JSX.TargetedEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     if (status.kind === 'submitting') return
+    const trimmedEmail = email.trim()
+    if (trimmedEmail === '' || password === '') {
+      setStatus({ kind: 'error', message: 'Fyll i både e‑post och lösenord.' })
+      return
+    }
     setStatus({ kind: 'submitting' })
-    const result = await signIn(email.trim(), password)
+    const result = await signIn(trimmedEmail, password)
     if (result.ok) {
       props.onSignedIn(result.value)
       return
@@ -54,101 +94,263 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
     setStatus({ kind: 'error', message: result.error.message })
   }
 
-  const wrapStyle: JSX.CSSProperties = {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px',
-    background: c.bg,
-    color: c.text,
-    fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
-    WebkitFontSmoothing: 'antialiased',
-  }
-  const cardStyle: JSX.CSSProperties = {
+  const panelStyle: JSX.CSSProperties = {
     width: '100%',
-    maxWidth: '380px',
+    maxWidth: '400px',
+    boxSizing: 'border-box',
     border: '0.5px solid ' + c.line,
-    borderRadius: '16px',
+    borderRadius: '14px',
     background: c.card,
-    padding: '28px 26px',
-    boxShadow: '0 24px 60px rgba(0,0,0,.18)',
-  }
-  const titleStyle: JSX.CSSProperties = {
-    fontFamily: "'SF Pro Display',-apple-system,system-ui,sans-serif",
-    fontSize: '22px',
-    fontWeight: 700,
-    letterSpacing: '-0.3px',
-    margin: '0 0 6px',
+    padding: '22px 22px 20px',
+    boxShadow: '0 1px 2px rgba(0,0,0,.04)',
+    textAlign: 'left',
   }
 
-  return (
-    <div style={wrapStyle}>
-      <div style={cardStyle}>
-        <h1 style={titleStyle}>KNC Studio</h1>
-        <p style={{ ...s.sectionLead, marginBottom: '20px' }}>Adminpanel — logga in</p>
+  const formBody = !configured ? (
+    <div role="alert" style={{ ...panelStyle, background: c.subtle }}>
+      <p style={{ margin: 0, fontSize: '13.5px', lineHeight: 1.5 }}>
+        Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt
+        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_URL</code> och
+        <code style={{ opacity: 0.8 }}> VITE_SUPABASE_ANON_KEY</code> för att aktivera inloggning.
+      </p>
+    </div>
+  ) : (
+    <form onSubmit={onSubmit} noValidate style={panelStyle}>
+      <div style={s.fieldRow}>
+        <label htmlFor="admin-email" style={s.label}>
+          E‑post
+        </label>
+        <input
+          ref={emailRef}
+          id="admin-email"
+          type="email"
+          autoComplete="username"
+          required
+          value={email}
+          onInput={(e) => setEmail(e.currentTarget.value)}
+          style={s.input}
+        />
+      </div>
 
-        {!configured ? (
-          <div role="alert" style={{ ...s.card, margin: 0, background: c.subtle }}>
-            <p style={{ margin: 0, fontSize: '13.5px', lineHeight: 1.5 }}>
-              Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt
-              <code style={{ opacity: 0.8 }}> VITE_SUPABASE_URL</code> och
-              <code style={{ opacity: 0.8 }}> VITE_SUPABASE_ANON_KEY</code> för att aktivera
-              inloggning.
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={onSubmit} noValidate>
-            <div style={s.fieldRow}>
-              <label htmlFor="admin-email" style={s.label}>
-                E‑post
-              </label>
-              <input
-                ref={emailRef}
-                id="admin-email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onInput={(e) => setEmail(e.currentTarget.value)}
-                style={s.input}
-              />
-            </div>
+      <div style={s.fieldRow}>
+        <label htmlFor="admin-password" style={s.label}>
+          Lösenord
+        </label>
+        <input
+          id="admin-password"
+          type="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onInput={(e) => setPassword(e.currentTarget.value)}
+          style={s.input}
+        />
+      </div>
 
-            <div style={s.fieldRow}>
-              <label htmlFor="admin-password" style={s.label}>
-                Lösenord
-              </label>
-              <input
-                id="admin-password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onInput={(e) => setPassword(e.currentTarget.value)}
-                style={s.input}
-              />
-            </div>
+      <div aria-live="assertive" style={{ minHeight: '18px', marginBottom: '12px' }}>
+        {status.kind === 'error' ? <span style={s.errorText}>{status.message}</span> : null}
+      </div>
 
-            <div aria-live="assertive" style={{ minHeight: '18px', marginBottom: '12px' }}>
-              {status.kind === 'error' ? <span style={s.errorText}>{status.message}</span> : null}
-            </div>
+      <button
+        type="submit"
+        disabled={status.kind === 'submitting'}
+        style={{
+          width: '100%',
+          padding: '13px',
+          border: 'none',
+          borderRadius: '11px',
+          fontFamily: 'inherit',
+          fontSize: '15px',
+          fontWeight: 600,
+          background: shell.accent,
+          color: shell.accentText,
+          opacity: status.kind === 'submitting' ? 0.6 : 1,
+          cursor: status.kind === 'submitting' ? 'default' : 'pointer',
+          transition: 'opacity .15s',
+        }}
+      >
+        {status.kind === 'submitting' ? 'Loggar in …' : 'Logga in'}
+      </button>
+    </form>
+  )
 
-            <button
-              type="submit"
-              disabled={status.kind === 'submitting'}
+  const kicker = (
+    <div
+      style={{
+        fontSize: narrow ? '11px' : '13px',
+        fontWeight: 600,
+        letterSpacing: narrow ? '2.5px' : '1.5px',
+        opacity: 0.45,
+        marginBottom: '14px',
+      }}
+    >
+      ADMINPANEL
+    </div>
+  )
+
+  // ---- MOBILE: the public mobile hero's shape — warm panel surface, safe-area top row, centred
+  // pole logo + wordmark, then the form. ----
+  if (narrow) {
+    return (
+      <div
+        style={{
+          minHeight: '100dvh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: dark ? '#242427' : '#f4f3f0',
+          color: shell.text,
+          fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+          WebkitFontSmoothing: 'antialiased',
+        }}
+      >
+        {/* Safe-area-aware top row (mirrors MobileSite's chrome row: nothing under the notch). */}
+        <div style={{ flex: 'none', padding: '0 22px' }}>
+          <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }} />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+            }}
+          >
+            <a
+              href="/"
               style={{
-                ...s.primaryBtn,
-                width: '100%',
-                opacity: status.kind === 'submitting' ? 0.6 : 1,
-                cursor: status.kind === 'submitting' ? 'default' : 'pointer',
+                fontSize: '12px',
+                fontWeight: 600,
+                textDecoration: 'none',
+                color: 'inherit',
+                opacity: 0.6,
               }}
             >
-              {status.kind === 'submitting' ? 'Loggar in …' : 'Logga in'}
-            </button>
-          </form>
-        )}
+              ‹ Till webbplatsen
+            </a>
+            <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+          </div>
+        </div>
+
+        <main
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '20px 26px calc(env(safe-area-inset-bottom, 0px) + 48px)',
+          }}
+        >
+          <PoleLogo
+            uid="login"
+            style={{ width: '66px', height: '66px', margin: '0 0 16px', color: shell.text }}
+          />
+          <h1
+            style={{
+              margin: '0 0 16px',
+              fontFamily: FONT_DISPLAY,
+              fontWeight: 700,
+              fontSize: '22px',
+              letterSpacing: '2.5px',
+            }}
+          >
+            KNC STUDIO
+          </h1>
+          {kicker}
+          {formBody}
+        </main>
       </div>
+    )
+  }
+
+  // ---- DESKTOP: the public desktop chrome — nav bar + hero typography + form card. ----
+  return (
+    <div
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: shell.bg,
+        color: shell.text,
+        fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+        WebkitFontSmoothing: 'antialiased',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          padding: '15px 30px',
+          background: shell.navBg,
+          borderBottom: '.5px solid ' + shell.line,
+        }}
+      >
+        <a
+          href="/"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '9px',
+            textDecoration: 'none',
+            color: 'inherit',
+          }}
+          aria-label="KNC Studio — till webbplatsen"
+        >
+          <PoleLogo uid="login" style={{ width: '26px', height: '26px', flex: 'none' }} />
+          <span
+            style={{
+              fontFamily: FONT_DISPLAY,
+              fontWeight: 700,
+              letterSpacing: '2px',
+              fontSize: '20px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            KNC STUDIO
+          </span>
+        </a>
+        <ThemeSwitch dark={dark} onToggle={toggleMode} label={tx.ariaTheme} />
+      </div>
+
+      <main
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: '48px 40px 72px',
+        }}
+      >
+        {kicker}
+        <h1
+          style={{
+            fontFamily: FONT_DISPLAY,
+            fontWeight: 600,
+            fontSize: '38px',
+            letterSpacing: '-0.8px',
+            lineHeight: 1.08,
+            margin: '0 0 10px',
+          }}
+        >
+          Logga in
+        </h1>
+        <p
+          style={{
+            fontSize: '15px',
+            lineHeight: 1.5,
+            opacity: 0.5,
+            maxWidth: '380px',
+            margin: '0 auto 28px',
+          }}
+        >
+          Hantera ditt schema och dina bokningar.
+        </p>
+        {formBody}
+      </main>
     </div>
   )
 }

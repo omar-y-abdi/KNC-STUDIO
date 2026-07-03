@@ -17,7 +17,6 @@ export interface AdminStyles {
   navList: JSX.CSSProperties
   content: JSX.CSSProperties
   topbar: JSX.CSSProperties
-  whoBanner: JSX.CSSProperties
   card: JSX.CSSProperties
   sectionTitle: JSX.CSSProperties
   sectionLead: JSX.CSSProperties
@@ -109,16 +108,6 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
       background: c.bg,
       zIndex: 5,
       flexWrap: 'wrap',
-    },
-    whoBanner: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '10px',
-      padding: '10px 24px',
-      background: c.subtle,
-      borderBottom: subtleLine,
-      fontSize: '13px',
-      fontWeight: 500,
     },
     card: {
       border: subtleLine,
