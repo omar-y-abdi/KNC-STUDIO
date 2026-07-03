@@ -56,6 +56,71 @@ export interface AdminStrings {
   readonly bookingsCancelDialogBodySuffix: string
   readonly bookingsCancelDialogConfirm: string
   readonly bookingsCancelDialogKeep: string
+  // ScheduleView — section headings + loading
+  readonly scheduleHeadingPrefix: string
+  readonly scheduleLoading: string
+  readonly scheduleWeekHeadingPrefix: string
+  readonly scheduleWeekLead: string
+  // ScheduleView — bulk time row
+  readonly scheduleFrom: string
+  readonly scheduleTo: string
+  readonly scheduleSameTimeAllDays: string
+  // ScheduleView — per-day rows
+  readonly scheduleDayOffLabel: string
+  readonly scheduleStartTimeAria: string
+  readonly scheduleEndTimeAria: string
+  readonly scheduleWorkingAria: string
+  readonly scheduleInvalidHours: string
+  // ScheduleView — auto-save status line
+  readonly scheduleSaving: string
+  readonly scheduleSaved: string
+  readonly scheduleRetry: string
+  // ScheduleView — time-off section
+  readonly scheduleTimeOffHeading: string
+  readonly scheduleTimeOffLead: string
+  readonly scheduleTimeOffReason: string
+  readonly scheduleTimeOffAdding: string
+  readonly scheduleTimeOffAdd: string
+  readonly scheduleTimeOffAdded: string
+  readonly scheduleTimeOffRemoved: string
+  readonly scheduleTimeOffEmpty: string
+  readonly scheduleTimeOffRemove: string
+  readonly scheduleTimeOffColPeriod: string
+  readonly scheduleTimeOffColReason: string
+  readonly scheduleTimeOffColAction: string
+  readonly scheduleTimeOffDateError: string
+  readonly scheduleTimeOffDeleteTitle: string
+  readonly scheduleTimeOffDeleteCancel: string
+  // ScheduleDayGrid — headings + navigation
+  readonly scheduleGridHeading: string
+  readonly scheduleGridLead: string
+  readonly scheduleGridAriaDayPicker: string
+  readonly scheduleGridToday: string
+  readonly scheduleGridLoading: string
+  // ScheduleDayGrid — day state cards
+  readonly scheduleGridDayOff: string
+  readonly scheduleGridNonWorkingDay: string
+  readonly scheduleGridDayBlockedMsg: string
+  readonly scheduleGridDayNotInWeekMsg: string
+  readonly scheduleGridRangeOffMsg: string
+  // ScheduleDayGrid — whole-day controls + legend
+  readonly scheduleGridOpenDay: string
+  readonly scheduleGridBlockDay: string
+  readonly scheduleGridLegendFree: string
+  readonly scheduleGridLegendBlocked: string
+  readonly scheduleGridLegendBooked: string
+  readonly scheduleGridLegendClosed: string
+  // ScheduleDayGrid — hour/quarter controls + slot states
+  readonly scheduleGridSaveError: string
+  readonly scheduleGridBlockHour: string
+  readonly scheduleGridOpenHour: string
+  readonly scheduleGridSlotFree: string
+  readonly scheduleGridSlotBlocked: string
+  readonly scheduleGridSlotBooked: string
+  readonly scheduleGridSlotPast: string
+  readonly scheduleGridSlotClosed: string
+  /** Suffix for `${n}/4 ${t.scheduleGridFreeCountSuffix}` in the hour chip summary. */
+  readonly scheduleGridFreeCountSuffix: string
 }
 
 // --- Swedish (default) ---------------------------------------------------------------------------
@@ -98,6 +163,61 @@ const SV: AdminStrings = {
   bookingsCancelDialogBodySuffix: '. Detta går inte att ångra.',
   bookingsCancelDialogConfirm: 'Avboka',
   bookingsCancelDialogKeep: 'Behåll',
+  scheduleHeadingPrefix: 'Schema',
+  scheduleLoading: 'Laddar schema …',
+  scheduleWeekHeadingPrefix: 'Veckoschema',
+  scheduleWeekLead: 'Markera vilka dagar du jobbar och sätt tider — ändringar sparas automatiskt.',
+  scheduleFrom: 'Från',
+  scheduleTo: 'Till',
+  scheduleSameTimeAllDays: 'Samma tid alla dagar',
+  scheduleDayOffLabel: 'Ledig',
+  scheduleStartTimeAria: 'Starttid',
+  scheduleEndTimeAria: 'Sluttid',
+  scheduleWorkingAria: 'Jobbar',
+  scheduleInvalidHours: 'Sluttid måste vara efter starttid.',
+  scheduleSaving: 'Sparar …',
+  scheduleSaved: 'Sparat ✓',
+  scheduleRetry: 'Försök igen',
+  scheduleTimeOffHeading: 'Ledighet',
+  scheduleTimeOffLead: 'Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som bokningsbara.',
+  scheduleTimeOffReason: 'Anledning (valfritt)',
+  scheduleTimeOffAdding: 'Lägger till …',
+  scheduleTimeOffAdd: 'Lägg till',
+  scheduleTimeOffAdded: 'Ledighet tillagd.',
+  scheduleTimeOffRemoved: 'Ledighet borttagen.',
+  scheduleTimeOffEmpty: 'Ingen ledighet inlagd.',
+  scheduleTimeOffRemove: 'Ta bort',
+  scheduleTimeOffColPeriod: 'Period',
+  scheduleTimeOffColReason: 'Anledning',
+  scheduleTimeOffColAction: 'Åtgärd',
+  scheduleTimeOffDateError: 'Slutdatum måste vara samma eller efter startdatum.',
+  scheduleTimeOffDeleteTitle: 'Ta bort ledigheten?',
+  scheduleTimeOffDeleteCancel: 'Avbryt',
+  scheduleGridHeading: 'Dagsöversikt',
+  scheduleGridLead: 'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) — sparas direkt. Tryck igen för att öppna.',
+  scheduleGridAriaDayPicker: 'Välj dag',
+  scheduleGridToday: 'Idag',
+  scheduleGridLoading: 'Laddar …',
+  scheduleGridDayOff: 'Ledig dag',
+  scheduleGridNonWorkingDay: 'Ingen arbetsdag',
+  scheduleGridDayBlockedMsg: 'Dagen är blockerad — inga tider kan bokas.',
+  scheduleGridDayNotInWeekMsg: 'Dagen är avmarkerad i veckoschemat.',
+  scheduleGridRangeOffMsg: 'Dagen ingår i en ledighetsperiod — hantera den under Ledighet.',
+  scheduleGridOpenDay: 'Öppna dagen',
+  scheduleGridBlockDay: 'Blockera hela dagen',
+  scheduleGridLegendFree: 'Ledig',
+  scheduleGridLegendBlocked: 'Blockerad',
+  scheduleGridLegendBooked: 'Bokad',
+  scheduleGridLegendClosed: 'Stängt',
+  scheduleGridSaveError: 'Kunde inte spara. Försök igen.',
+  scheduleGridBlockHour: 'Blockera',
+  scheduleGridOpenHour: 'Öppna',
+  scheduleGridSlotFree: 'Ledig',
+  scheduleGridSlotBlocked: 'Blockerad',
+  scheduleGridSlotBooked: 'Bokad',
+  scheduleGridSlotPast: 'Passerad',
+  scheduleGridSlotClosed: 'Stängt',
+  scheduleGridFreeCountSuffix: 'lediga',
 }
 
 // --- English -------------------------------------------------------------------------------------
@@ -140,6 +260,61 @@ const EN: AdminStrings = {
   bookingsCancelDialogBodySuffix: '. This cannot be undone.',
   bookingsCancelDialogConfirm: 'Cancel booking',
   bookingsCancelDialogKeep: 'Keep',
+  scheduleHeadingPrefix: 'Schedule',
+  scheduleLoading: 'Loading schedule …',
+  scheduleWeekHeadingPrefix: 'Weekly schedule',
+  scheduleWeekLead: 'Mark which days you work and set hours — changes are saved automatically.',
+  scheduleFrom: 'From',
+  scheduleTo: 'To',
+  scheduleSameTimeAllDays: 'Same time for all days',
+  scheduleDayOffLabel: 'Off',
+  scheduleStartTimeAria: 'Start time',
+  scheduleEndTimeAria: 'End time',
+  scheduleWorkingAria: 'Working',
+  scheduleInvalidHours: 'End time must be after start time.',
+  scheduleSaving: 'Saving …',
+  scheduleSaved: 'Saved ✓',
+  scheduleRetry: 'Try again',
+  scheduleTimeOffHeading: 'Time off',
+  scheduleTimeOffLead: 'Block a day or a period (holiday, day off). Blocked dates will not be available for booking.',
+  scheduleTimeOffReason: 'Reason (optional)',
+  scheduleTimeOffAdding: 'Adding …',
+  scheduleTimeOffAdd: 'Add',
+  scheduleTimeOffAdded: 'Time off added.',
+  scheduleTimeOffRemoved: 'Time off removed.',
+  scheduleTimeOffEmpty: 'No time off scheduled.',
+  scheduleTimeOffRemove: 'Remove',
+  scheduleTimeOffColPeriod: 'Period',
+  scheduleTimeOffColReason: 'Reason',
+  scheduleTimeOffColAction: 'Action',
+  scheduleTimeOffDateError: 'End date must be the same as or after the start date.',
+  scheduleTimeOffDeleteTitle: 'Remove time off?',
+  scheduleTimeOffDeleteCancel: 'Cancel',
+  scheduleGridHeading: 'Day overview',
+  scheduleGridLead: 'Select a day, tap an hour and block the quarters that are taken (e.g. booked by text) — saved immediately. Tap again to open.',
+  scheduleGridAriaDayPicker: 'Select day',
+  scheduleGridToday: 'Today',
+  scheduleGridLoading: 'Loading …',
+  scheduleGridDayOff: 'Day off',
+  scheduleGridNonWorkingDay: 'No working day',
+  scheduleGridDayBlockedMsg: 'The day is blocked — no times can be booked.',
+  scheduleGridDayNotInWeekMsg: 'The day is not in the weekly schedule.',
+  scheduleGridRangeOffMsg: 'The day is part of a time-off period — manage it under Time off.',
+  scheduleGridOpenDay: 'Open day',
+  scheduleGridBlockDay: 'Block whole day',
+  scheduleGridLegendFree: 'Free',
+  scheduleGridLegendBlocked: 'Blocked',
+  scheduleGridLegendBooked: 'Booked',
+  scheduleGridLegendClosed: 'Closed',
+  scheduleGridSaveError: 'Could not save. Try again.',
+  scheduleGridBlockHour: 'Block',
+  scheduleGridOpenHour: 'Open',
+  scheduleGridSlotFree: 'Free',
+  scheduleGridSlotBlocked: 'Blocked',
+  scheduleGridSlotBooked: 'Booked',
+  scheduleGridSlotPast: 'Past',
+  scheduleGridSlotClosed: 'Closed',
+  scheduleGridFreeCountSuffix: 'free',
 }
 
 // --- Accessor (same pattern as bookingStrings / appStrings in index.ts) -------------------------
