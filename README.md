@@ -1,6 +1,6 @@
-# KNC Studio — website
+# Blade & Blend Studio — website
 
-Production frontend for KNC Studio (barbershop, Göteborg). A faithful, hardened rewrite of the
+Production frontend for Blade & Blend Studio (barbershop, Göteborg). A faithful, hardened rewrite of the
 original single-file prototype into a real, deployable codebase. One responsive site: an editorial
 desktop layout and a Material-style mobile layout, with an online booking flow.
 

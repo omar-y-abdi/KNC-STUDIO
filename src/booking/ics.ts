@@ -43,7 +43,7 @@ export function formatIcsUtc(dt: Date): string {
 
 /** Inputs for a single VEVENT. All text fields are escaped by the builder. */
 export interface IcsEvent {
-  /** Globally-unique id (injected at the edge, e.g. `${ts}@kncstudio`). */
+  /** Globally-unique id (injected at the edge, e.g. `${ts}@bladeblendstudio`). */
   readonly uid: string
   /** Creation stamp in UTC (injected at the edge). */
   readonly dtstamp: Date
@@ -56,7 +56,7 @@ export interface IcsEvent {
   readonly description: string
 }
 
-const PRODID = '-//KNC Studio//Booking//EN'
+const PRODID = '-//Blade & Blend Studio//Booking//EN'
 
 /**
  * Build a complete VCALENDAR string with CRLF line endings (RFC5545). Long-line folding is

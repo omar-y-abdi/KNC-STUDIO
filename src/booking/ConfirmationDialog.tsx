@@ -80,7 +80,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         <div style="display:flex;flex-direction:column;gap:8px;">
           <a
             href={props.icsHref}
-            download="knc-studio.ics"
+            download="blade-blend-studio.ics"
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >

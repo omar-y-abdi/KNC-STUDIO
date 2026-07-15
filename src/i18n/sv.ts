@@ -29,7 +29,7 @@ export const bookingSv: BookingStrings = {
   phone: 'Telefon',
   book: 'Boka tid',
   policy:
-    'Vid bokning accepterar du att avbokning måste ske senast 24 timmar före besöket. Sen avbokning eller utebliven tid ger KNC Studio rätt att debitera för den bokade tiden.',
+    'Vid bokning accepterar du att avbokning måste ske senast 24 timmar före besöket. Sen avbokning eller utebliven tid ger Blade & Blend Studio rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
   addToCal: 'Lägg till i kalender',
   calApple: 'Apple Kalender',
@@ -73,7 +73,7 @@ export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
   intro:
-    'KNC Studio är en barbershop på Geijersgatan i Göteborg. Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
+    'Blade & Blend Studio är en barbershop på Geijersgatan i Göteborg. Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',

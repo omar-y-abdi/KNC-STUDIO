@@ -1,4 +1,4 @@
-# Going live — KNC Studio Supabase backend
+# Going live — Blade & Blend Studio Supabase backend
 
 The site ships **mock-by-default**: with no `VITE_SUPABASE_*` env it runs fully on the offline
 adapters (bookings/reviews/cancellation are simulated, nothing is persisted) and the visual baseline

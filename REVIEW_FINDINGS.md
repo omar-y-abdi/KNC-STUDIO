@@ -1,4 +1,4 @@
-# KNC Studio — Consolidated Review Findings
+# Blade & Blend Studio — Consolidated Review Findings
 
 Three independent, read-only review passes (one each), consolidated. Sources:
 **[SEC]** Security & Auth · **[DB]** Backend & Database · **[CODE]** Code Quality.

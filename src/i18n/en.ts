@@ -29,7 +29,7 @@ export const bookingEn: BookingStrings = {
   phone: 'Phone',
   book: 'Book appointment',
   policy:
-    'By booking you agree that cancellations must be made at least 24 hours before the visit. Late cancellation or a no‑show entitles KNC Studio to charge for the booked time.',
+    'By booking you agree that cancellations must be made at least 24 hours before the visit. Late cancellation or a no‑show entitles Blade & Blend Studio to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
   addToCal: 'Add to calendar',
   calApple: 'Apple Calendar',
@@ -73,7 +73,7 @@ export const aboutEn: AboutStrings = {
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',
   intro:
-    'KNC Studio is a barbershop on Geijersgatan in Gothenburg. We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
+    'Blade & Blend Studio is a barbershop on Geijersgatan in Gothenburg. We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
   galleryTitle: 'Inside the shop',
   galleryAlt: 'Photo from the salon (placeholder)',
   stylistsTitle: 'The barbers',

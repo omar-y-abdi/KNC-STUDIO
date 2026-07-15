@@ -47,3 +47,28 @@
   font-weight: 700;
   font-display: swap;
 }
+
+/* Playfair Display (self-hosted, latin) — the elegant high-contrast serif for the brand marks only
+   (B&B monogram, BLADE & BLEND wordmark, BNB corner). `block` avoids a fallback-serif flash swapping
+   to Playfair on the logo; the rest of the site keeps SF Pro. */
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/PlayfairDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/PlayfairDisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/PlayfairDisplay-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}

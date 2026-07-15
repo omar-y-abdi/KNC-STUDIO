@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://knc-studio.vercel.app/sitemap.xml
+Sitemap: https://blade-blend-studio.vercel.app/sitemap.xml

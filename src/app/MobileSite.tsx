@@ -3,8 +3,8 @@
 // Invariants:
 //  - folding panel: borderRadius `0 0 28px 28px` when booking, flush `0` on homepage;
 //    height PANEL_COMPACT (booking) vs PANEL_FULL (homepage).
-//  - "KNC STUDIO" cross-fades between heroKnc (centered hero flow) and headerKnc (absolute
-//    top-left, fades in when booking) — two elements, not one sliding element.
+//  - the brand cross-fades between the centered hero lockup (home flow) and the compact CornerMark
+//    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
 //  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
 
 import type { JSX } from 'preact'
@@ -12,7 +12,8 @@ import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
-import { PoleLogo } from '../ui/PoleLogo'
+import { CornerMark } from '../ui/logos/CornerMark'
+import { HeroLockup } from '../ui/logos/HeroLockup'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
@@ -69,49 +70,30 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     '--mob-btn-bg': mobBtnBgColor,
     '--mob-border': c.line,
   }
-  const heroKncStyle: JSX.CSSProperties = {
-    margin: '0 0 16px',
-    fontFamily: "'SF Pro Display'",
-    fontWeight: 700,
-    fontSize: '22px',
-    letterSpacing: '2.5px',
+  // Centered hero mark (home): the full B&B lockup. Fluid width so it never overflows small screens.
+  // Colour follows the theme through currentColor.
+  const heroLockupStyle: JSX.CSSProperties = {
+    margin: '0 0 24px',
     color: 'var(--mob-text)',
-    textAlign: 'center',
+    width: 'min(300px, 80vw)',
+    height: 'auto',
+    display: 'block',
   }
-  const headerKncStyle: JSX.CSSProperties = {
+  // Compact corner mark (absolute top-left) — fades in once a section opens, mirroring the pole's
+  // old placement. pointer-events:none so it never blocks the controls beneath it.
+  const headerMarkStyle: JSX.CSSProperties = {
     position: 'absolute',
     zIndex: 6,
     margin: 0,
     display: 'flex',
     alignItems: 'center',
-    gap: '7px',
     whiteSpace: 'nowrap',
-    fontFamily: "'SF Pro Display'",
-    fontWeight: 700,
-    fontSize: '16px',
-    letterSpacing: '2px',
     color: 'var(--mob-text)',
     top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
     opacity: inSection ? 1 : 0,
     pointerEvents: 'none',
     transition: 'opacity .4s ease',
-  }
-  // Barber-pole logo (inline SVG, crisp on Retina — an <img>+filter is rasterized blurry by iOS
-  // Safari): above the wordmark on the homepage hero; left of it in the compact booking header.
-  // Colour follows the theme through currentColor.
-  const heroLogoStyle: JSX.CSSProperties = {
-    alignSelf: 'center',
-    width: '66px',
-    height: '66px',
-    margin: '0 0 16px',
-    color: 'var(--mob-text)',
-  }
-  const headerLogoStyle: JSX.CSSProperties = {
-    width: '28px',
-    height: '28px',
-    flex: 'none',
-    color: 'var(--mob-text)',
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
@@ -243,50 +225,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           </div>
         </div>
 
-        <div style={headerKncStyle} aria-hidden="true">
-          <PoleLogo uid="hdr" style={headerLogoStyle} />
-          KNC STUDIO
+        <div style={headerMarkStyle} aria-hidden="true">
+          <CornerMark height={26} />
         </div>
 
         <div style={heroExtrasStyle}>
-          <PoleLogo uid="hero" style={heroLogoStyle} />
-          <h1 style={heroKncStyle}>KNC STUDIO</h1>
-          <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 600,
-              letterSpacing: '2.5px',
-              color: 'var(--mob-muted)',
-              marginBottom: '10px',
-              textAlign: 'center',
-            }}
-          >
-            {tx.kicker}
-          </div>
-          <h2
-            style={{
-              fontFamily: "'SF Pro Display'",
-              fontWeight: 600,
-              fontSize: '34px',
-              letterSpacing: '2.5px',
-              lineHeight: 1.08,
-              margin: '0 0 10px',
-              textAlign: 'center',
-            }}
-          >
-            hmu
-          </h2>
-          <p
-            style={{
-              fontSize: '14px',
-              lineHeight: 1.55,
-              color: 'var(--mob-muted)',
-              margin: '0 0 24px',
-              textAlign: 'center',
-            }}
-          >
-            for a fresh fade
-          </p>
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
+            <HeroLockup height={190} style={heroLockupStyle} />
+          </h1>
           <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
             {tx.book}
           </button>

@@ -8,7 +8,7 @@ import { palette } from '../booking/bookingStyles'
 import { useTheme } from './useTheme'
 
 export interface AuthCardProps {
-  /** The line under the "KNC Studio" title, e.g. "Adminpanel — logga in". */
+  /** The line under the "Blade & Blend Studio" title, e.g. "Adminpanel — logga in". */
   readonly subtitle: string
   /** The screen's body (a form or a status message). */
   readonly children: ComponentChildren
@@ -70,7 +70,7 @@ export function AuthCard(props: AuthCardProps): JSX.Element {
   return (
     <div style={wrapStyle}>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>KNC Studio</h1>
+        <h1 style={titleStyle}>Blade & Blend Studio</h1>
         <p style={leadStyle}>{props.subtitle}</p>
         {props.children}
       </div>

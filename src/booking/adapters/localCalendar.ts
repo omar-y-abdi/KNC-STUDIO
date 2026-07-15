@@ -21,7 +21,7 @@ function locationLine(): string {
   return `${BUSINESS.name}, ${BUSINESS.street}, ${BUSINESS.postalCode} ${BUSINESS.city}`
 }
 
-/** Event title: "KNC Studio – <service> (<barber>)". */
+/** Event title: "Blade & Blend Studio – <service> (<barber>)". */
 function eventTitle(booking: Booking): string {
   return `${BUSINESS.name} – ${booking.service.name} (${booking.barber.name})`
 }
@@ -59,7 +59,7 @@ function icsHref(booking: Booking, uid: string, dtstamp: Date): string {
 
 /** Derive all calendar/map links for a booking (effects — UID + now — at this edge). */
 export function buildLinks(booking: Booking, now: Date = new Date()): BookingLinks {
-  const uid = `${now.getTime()}@kncstudio`
+  const uid = `${now.getTime()}@bladeblendstudio`
   return {
     icsHref: icsHref(booking, uid, now),
     gcalHref: googleCalHref(booking),

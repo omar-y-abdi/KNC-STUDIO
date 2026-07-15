@@ -499,7 +499,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px 0 22px;">
           <div style="display:flex;align-items:baseline;gap:8px;">
             <span style="font-family:'SF Pro Display';font-weight:700;letter-spacing:1.5px;font-size:15px;">
-              KNC STUDIO
+              BLADE & BLEND STUDIO
             </span>
             <span style="font-size:11px;opacity:.5;letter-spacing:.3px;">Göteborg</span>
           </div>

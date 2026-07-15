@@ -3,7 +3,7 @@
 
 /** Immutable business facts (mirrors the salon's real details). */
 export const BUSINESS = {
-  name: 'KNC Studio',
+  name: 'Blade & Blend Studio',
   street: 'Geijersgatan 10',
   postalCode: '411 34',
   city: 'Göteborg',

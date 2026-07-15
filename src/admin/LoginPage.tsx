@@ -1,6 +1,6 @@
 // Admin login (`/login`) — the staff door, dressed exactly like the site the customers see.
 //
-// Desktop mirrors the public DESKTOP chrome: the nav bar (pole logo + tracked KNC STUDIO wordmark,
+// Desktop mirrors the public DESKTOP chrome: the nav bar (pole logo + tracked BLADE & BLEND STUDIO wordmark,
 // linking home) with the site's original theme switch, then hero typography (tracked kicker,
 // SF Pro Display heading) over a booking-panel-style form card. No footer: staff don't need the
 // salon's address or opening hours to sign in.
@@ -283,7 +283,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
               letterSpacing: '2.5px',
             }}
           >
-            KNC STUDIO
+            BLADE & BLEND STUDIO
           </h1>
           {kicker}
           {formBody}
@@ -337,7 +337,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
               whiteSpace: 'nowrap',
             }}
           >
-            KNC STUDIO
+            BLADE & BLEND STUDIO
           </span>
         </a>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

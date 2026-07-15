@@ -172,7 +172,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
         <div style={s.brand}>
           <PoleLogo uid="admin" style={{ width: '24px', height: '24px', flex: 'none' }} />
-          <span style={{ letterSpacing: '1.5px', whiteSpace: 'nowrap' }}>KNC STUDIO</span>
+          <span style={{ letterSpacing: '1.5px', whiteSpace: 'nowrap' }}>BLADE & BLEND STUDIO</span>
         </div>
         <div style={s.navList} class="knc-admin-navlist">
           {visibleTabs.map(navButton)}
