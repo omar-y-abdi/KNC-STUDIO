@@ -25,6 +25,10 @@ export interface ConfirmationDialogProps {
   readonly showDirections: boolean
   readonly calRowHover: string
   readonly onReset: () => void
+  /** Open "Mina bokningar" (resets the flow, then opens the popup). Omitted → the button is hidden. */
+  readonly onMyBookings?: (() => void) | undefined
+  /** Label for the "Mina bokningar" button (from the shell strings); required when onMyBookings is set. */
+  readonly myBookingsLabel?: string | undefined
   readonly onBackdropClick: (e: JSX.TargetedMouseEvent<HTMLDivElement>) => void
 }
 
@@ -112,6 +116,14 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         </div>
       </div>
       <div style="padding:6px 18px 18px;">
+        {props.onMyBookings !== undefined && props.myBookingsLabel !== undefined ? (
+          <button
+            onClick={props.onMyBookings}
+            style={{ ...s.secondaryBtnStyle, marginBottom: '10px' }}
+          >
+            {props.myBookingsLabel}
+          </button>
+        ) : null}
         <button onClick={props.onReset} style={s.resetBtnStyle}>
           {t.newBooking}
         </button>

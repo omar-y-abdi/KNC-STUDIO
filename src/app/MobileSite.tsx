@@ -41,6 +41,8 @@ export interface MobileSiteProps {
   readonly closeMobBooking: () => void
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
+  /** Open the "Mina bokningar" (my-appointments) popup. */
+  readonly openMyBookings: () => void
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
@@ -135,6 +137,21 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     fontSize: '16px',
     padding: '15px',
     borderRadius: '13px',
+  }
+  // Secondary hero action, stacked UNDER "Boka tid" at a smaller scale (shorter, smaller type) and a
+  // softer shade so it reads as secondary. Full-width to align cleanly with the primary above it.
+  const heroSecondaryBtnStyle: JSX.CSSProperties = {
+    alignSelf: 'stretch',
+    marginTop: '10px',
+    border: '.5px solid ' + c.line,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    background: mobBtnBgColor,
+    color: c.text,
+    fontWeight: 600,
+    fontSize: '14px',
+    padding: '12px',
+    borderRadius: '12px',
   }
   const infoBlockStyle: JSX.CSSProperties = {
     position: 'absolute',
@@ -236,6 +253,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
             {tx.book}
           </button>
+          <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle}>
+            {tx.myBookings}
+          </button>
           <HeroLinks
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
@@ -313,7 +333,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       {inSection ? (
         <div style={m3BodyStyle}>
           {view === 'booking' ? (
-            <BookingFlow mode={props.mode} defaultLang={props.lang} showHeader={false} />
+            <BookingFlow
+              mode={props.mode}
+              defaultLang={props.lang}
+              showHeader={false}
+              onMyBookings={props.openMyBookings}
+            />
           ) : (
             <AboutSection mode={props.mode} lang={props.lang} />
           )}

@@ -19,6 +19,8 @@ export interface DesktopSiteProps extends ShellProps {
   readonly findUsStyle: JSX.CSSProperties
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
+  /** Open the "Mina bokningar" (my-appointments) popup. */
+  readonly openMyBookings: () => void
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -76,6 +78,30 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         padding: '13px 28px',
         borderRadius: '11px',
       }
+  // The two hero actions sit on one centered row (same scale). "Mina bokningar" is a softer,
+  // lower-emphasis variant — a slightly different shade than the filled "Boka tid" — so it reads as
+  // the secondary action without competing. Wraps (never overflows) if the viewport is unusually narrow.
+  const heroActionsStyle: JSX.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  }
+  const heroSecondaryBtnStyle: JSX.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    background: c.navBg,
+    color: c.text,
+    border: '.5px solid ' + c.line,
+    fontWeight: 600,
+    fontSize: '15px',
+    padding: '13px 28px',
+    borderRadius: '11px',
+  }
   // One fold per state — both always mounted, each collapsed to 0fr unless active. Keeping both
   // mounted means open AND close animate smoothly (no content unmounting mid-collapse), and the
   // booking fold's render path is byte-identical to before.
@@ -141,9 +167,14 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin: 0 0 30px; color: inherit">
             {tx.kicker}
           </div>
-          <button onClick={props.toggleDeskBooking} style={heroBtnStyle} type="button">
-            {tx.book}
-          </button>
+          <div style={heroActionsStyle}>
+            <button onClick={props.toggleDeskBooking} style={heroBtnStyle} type="button">
+              {tx.book}
+            </button>
+            <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle} type="button">
+              {tx.myBookings}
+            </button>
+          </div>
           <HeroLinks
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
@@ -163,7 +194,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 ';max-width:1180px;margin:0 auto;width:100%;box-sizing:border-box;'
               }
             >
-              <BookingFlow mode={props.mode} defaultLang={props.lang} showHeader={false} />
+              <BookingFlow
+                mode={props.mode}
+                defaultLang={props.lang}
+                showHeader={false}
+                onMyBookings={props.openMyBookings}
+              />
             </div>
           </div>
         </div>

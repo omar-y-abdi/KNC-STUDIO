@@ -56,6 +56,8 @@ export interface BookingStrings {
 export interface AppStrings {
   findUs: string
   book: string
+  /** Secondary hero action next to/under "Boka tid" — opens the Mina bokningar popup. */
+  myBookings: string
   kicker: string
   hours: string
   addr: string
@@ -117,6 +119,48 @@ export interface AboutStrings {
   ratingGroupLabel: string
 }
 
+/** Strings for the "Mina bokningar" / My-appointments self-service dialog flow. */
+export interface MyBookingsStrings {
+  title: string
+  /** Lookup step — enter the phone the bookings were made with. */
+  lookupLead: string
+  phone: string
+  phonePh: string
+  lookupBtn: string
+  lookingUp: string
+  errPhone: string
+  /** First unknown-number failure (red field + retry). */
+  notFoundFirst: string
+  /** Same number a second time — escalate to contacting the salon. */
+  notFoundEscalated: string
+  /** Network/parse failure (retry, no escalation). */
+  errSystem: string
+  /** List step. */
+  upcomingTitle: string
+  pastTitle: string
+  upcomingEmpty: string
+  /** Link back to the lookup step (check a different number). */
+  changeNumber: string
+  /** Expanded-row detail labels. */
+  fBarber: string
+  fService: string
+  fDuration: string
+  min: string
+  /** Self-cancel (upcoming rows only). */
+  cancelBtn: string
+  cancelConfirmQ: string
+  cancelConfirmYes: string
+  cancelConfirmNo: string
+  cancelling: string
+  errCancel: string
+  cancelledNote: string
+  /** Localised time connector for a row label ("kl " / ""). */
+  atSep: string
+  ariaClose: string
+  ariaExpandRow: string
+  ariaExpandPast: string
+}
+
 /** Strings for the "Avbokning" / cancellation dialog flow. */
 export interface CancelStrings {
   title: string
@@ -151,17 +195,22 @@ export interface CalendarLabels {
   headers: readonly string[]
 }
 
-import { aboutSv, appSv, bookingSv, cancelSv, labelsSv } from './sv'
-import { aboutEn, appEn, bookingEn, cancelEn, labelsEn } from './en'
+import { aboutSv, appSv, bookingSv, cancelSv, labelsSv, myBookingsSv } from './sv'
+import { aboutEn, appEn, bookingEn, cancelEn, labelsEn, myBookingsEn } from './en'
 
 const BOOKING: Readonly<Record<Lang, BookingStrings>> = { sv: bookingSv, en: bookingEn }
 const APP: Readonly<Record<Lang, AppStrings>> = { sv: appSv, en: appEn }
 const LABELS: Readonly<Record<Lang, CalendarLabels>> = { sv: labelsSv, en: labelsEn }
 const ABOUT: Readonly<Record<Lang, AboutStrings>> = { sv: aboutSv, en: aboutEn }
 const CANCEL: Readonly<Record<Lang, CancelStrings>> = { sv: cancelSv, en: cancelEn }
+const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
+  sv: myBookingsSv,
+  en: myBookingsEn,
+}
 
 export const bookingStrings = (lang: Lang): BookingStrings => BOOKING[lang]
 export const appStrings = (lang: Lang): AppStrings => APP[lang]
 export const calendarLabels = (lang: Lang): CalendarLabels => LABELS[lang]
 export const aboutStrings = (lang: Lang): AboutStrings => ABOUT[lang]
 export const cancelStrings = (lang: Lang): CancelStrings => CANCEL[lang]
+export const myBookingsStrings = (lang: Lang): MyBookingsStrings => MY_BOOKINGS[lang]

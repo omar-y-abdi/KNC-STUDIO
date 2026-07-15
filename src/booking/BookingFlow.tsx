@@ -8,7 +8,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { Lang } from '../i18n/index'
-import { bookingStrings } from '../i18n/index'
+import { appStrings, bookingStrings } from '../i18n/index'
 import {
   cap,
   buildWeeks,
@@ -32,6 +32,7 @@ import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyle
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
+import { rememberPhone } from '../mybookings/deviceMemory'
 import { pseudoClass } from '../ui/pseudo'
 
 type Mode = 'light' | 'dark'
@@ -50,6 +51,8 @@ export interface BookingFlowProps {
   readonly port?: BookingPort
   /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
   readonly barbersPort?: BarbersPort
+  /** Open the app-level "Mina bokningar" popup — surfaced on the confirmation screen. */
+  readonly onMyBookings?: () => void
 }
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
@@ -472,6 +475,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         setSubmitError(submitResult.error.message)
         return
       }
+      // Remember this device's phone so the customer can open "Mina bokningar" later without
+      // re-typing it (best-effort; localStorage failures are swallowed inside rememberPhone).
+      rememberPhone(contact.value.phone)
       setResult(submitResult)
       setFieldErrors(NO_FIELD_ERRORS)
       setSubmitError(null)
@@ -734,6 +740,15 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           showDirections={showDirections}
           calRowHover={calRowHover}
           onReset={reset}
+          onMyBookings={
+            props.onMyBookings
+              ? () => {
+                  reset()
+                  props.onMyBookings?.()
+                }
+              : undefined
+          }
+          myBookingsLabel={appStrings(lang).myBookings}
           onBackdropClick={onConfirmBackdrop}
         />
       ) : null}

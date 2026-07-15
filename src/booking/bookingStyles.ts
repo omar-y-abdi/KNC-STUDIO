@@ -128,6 +128,9 @@ export interface BookingStyles {
   calRowStyle: JSX.CSSProperties
   calIconStyle: JSX.CSSProperties
   resetBtnStyle: JSX.CSSProperties
+  /** Secondary full-width button — same geometry as `resetBtnStyle`, softer shade (subtle bg +
+   * border). Used for the "Mina bokningar" action on the confirmation screen. */
+  secondaryBtnStyle: JSX.CSSProperties
   /** Invalid-input variant of `inputStyle`: same geometry, red border + subtle red ring. */
   inputErrorStyle: JSX.CSSProperties
   /** Red note rendered under an invalid field (label geometry, full-opacity red). */
@@ -336,6 +339,18 @@ export function buildBookingStyles(
       border: 'none',
       background: c.accent,
       color: c.accentText,
+      borderRadius: '10px',
+      fontSize: '15px',
+      fontWeight: 600,
+      fontFamily: 'inherit',
+      cursor: 'pointer',
+    },
+    secondaryBtnStyle: {
+      width: '100%',
+      padding: '12px',
+      border: '.5px solid ' + c.line,
+      background: c.subtle,
+      color: c.text,
       borderRadius: '10px',
       fontSize: '15px',
       fontWeight: 600,

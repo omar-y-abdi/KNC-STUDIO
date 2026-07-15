@@ -4,6 +4,7 @@ import type {
   BookingStrings,
   CalendarLabels,
   CancelStrings,
+  MyBookingsStrings,
 } from './index'
 
 // Swedish strings.
@@ -57,6 +58,7 @@ export const bookingSv: BookingStrings = {
 export const appSv: AppStrings = {
   findUs: 'Hitta oss',
   book: 'Boka tid',
+  myBookings: 'Mina bokningar',
   kicker: 'BARBERSHOP · GÖTEBORG',
   hours: 'Öppet Mån–Lör 09–18 · Sön stängt',
   addr: 'Geijersgatan 10, 411 34 Göteborg',
@@ -112,6 +114,39 @@ export const aboutSv: AboutStrings = {
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',
+}
+
+export const myBookingsSv: MyBookingsStrings = {
+  title: 'Mina bokningar',
+  lookupLead: 'Ange numret du bokade med, så visar vi dina tider.',
+  phone: 'Telefon',
+  phonePh: '07X XXX XX XX',
+  lookupBtn: 'Visa mina bokningar',
+  lookingUp: 'Hämtar …',
+  errPhone: 'Ogiltigt telefonnummer',
+  notFoundFirst: 'Vi hittade inga bokningar på det numret. Kontrollera numret och försök igen.',
+  notFoundEscalated:
+    'Fortfarande inga bokningar kopplade till det numret. Kontakta salongen så hjälper vi dig.',
+  errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
+  upcomingTitle: 'Kommande',
+  pastTitle: 'Tidigare',
+  upcomingEmpty: 'Du har inga kommande bokningar.',
+  changeNumber: 'Byt nummer',
+  fBarber: 'Barberare',
+  fService: 'Behandling',
+  fDuration: 'Längd',
+  min: 'min',
+  cancelBtn: 'Avboka tid',
+  cancelConfirmQ: 'Är du säker på att du vill avboka den här tiden?',
+  cancelConfirmYes: 'Ja, avboka tid',
+  cancelConfirmNo: 'Avbryt',
+  cancelling: 'Avbokar …',
+  errCancel: 'Något gick fel vid avbokningen. Försök igen.',
+  cancelledNote: 'Tiden är avbokad.',
+  atSep: 'kl ',
+  ariaClose: 'Stäng',
+  ariaExpandRow: 'Visa detaljer',
+  ariaExpandPast: 'Visa tidigare bokningar',
 }
 
 export const cancelSv: CancelStrings = {

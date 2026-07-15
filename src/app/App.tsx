@@ -10,6 +10,7 @@ import { BUSINESS } from '../config'
 import type { Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
+import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
 import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
@@ -23,6 +24,8 @@ interface AppState {
   readonly view: View
   /** Whether the "Avbokning" (cancellation) popup is open. Lives here alongside the view folds. */
   readonly cancelOpen: boolean
+  /** Whether the "Mina bokningar" (my-appointments) popup is open. */
+  readonly myBookingsOpen: boolean
 }
 
 export function App(): JSX.Element {
@@ -32,6 +35,7 @@ export function App(): JSX.Element {
     lang: 'sv',
     view: 'home',
     cancelOpen: false,
+    myBookingsOpen: false,
   }))
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
@@ -90,6 +94,8 @@ export function App(): JSX.Element {
   const closeMobBooking = (): void => setState({ view: 'home' })
   const openCancel = (): void => setState({ cancelOpen: true })
   const closeCancel = (): void => setState({ cancelOpen: false })
+  const openMyBookings = (): void => setState({ myBookingsOpen: true })
+  const closeMyBookings = (): void => setState({ myBookingsOpen: false })
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -191,6 +197,9 @@ export function App(): JSX.Element {
   const cancelDialog = state.cancelOpen ? (
     <CancellationDialog mode={state.mode} lang={lang} onClose={closeCancel} />
   ) : null
+  const myBookingsDialog = state.myBookingsOpen ? (
+    <MyBookingsDialog mode={state.mode} lang={lang} onClose={closeMyBookings} />
+  ) : null
 
   if (isMobile) {
     return (
@@ -212,8 +221,10 @@ export function App(): JSX.Element {
           openMobAbout={openMobAbout}
           closeMobBooking={closeMobBooking}
           openCancel={openCancel}
+          openMyBookings={openMyBookings}
         />
         {cancelDialog}
+        {myBookingsDialog}
       </>
     )
   }
@@ -235,8 +246,10 @@ export function App(): JSX.Element {
         toggleDeskAbout={toggleDeskAbout}
         findUsStyle={findUsStyle}
         openCancel={openCancel}
+        openMyBookings={openMyBookings}
       />
       {cancelDialog}
+      {myBookingsDialog}
     </>
   )
 }

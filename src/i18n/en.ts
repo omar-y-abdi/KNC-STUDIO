@@ -4,6 +4,7 @@ import type {
   BookingStrings,
   CalendarLabels,
   CancelStrings,
+  MyBookingsStrings,
 } from './index'
 
 // English strings.
@@ -57,6 +58,7 @@ export const bookingEn: BookingStrings = {
 export const appEn: AppStrings = {
   findUs: 'Find us',
   book: 'Book appointment',
+  myBookings: 'My appointments',
   kicker: 'BARBERSHOP · GOTHENBURG',
   hours: 'Open Mon–Sat 09–18 · Sun closed',
   addr: 'Geijersgatan 10, 411 34 Gothenburg',
@@ -112,6 +114,39 @@ export const aboutEn: AboutStrings = {
   ratingValueLabel: 'Rating: {n} of 5',
   ratingStarLabel: '{n} stars',
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
+}
+
+export const myBookingsEn: MyBookingsStrings = {
+  title: 'My appointments',
+  lookupLead: 'Enter the number you booked with and we’ll show your appointments.',
+  phone: 'Phone',
+  phonePh: '07X XXX XX XX',
+  lookupBtn: 'Show my appointments',
+  lookingUp: 'Looking up …',
+  errPhone: 'Invalid phone number',
+  notFoundFirst: 'We found no bookings for that number. Check the number and try again.',
+  notFoundEscalated:
+    'Still no bookings linked to that number. Please contact the salon and we’ll help you.',
+  errSystem: 'Could not load your appointments. Please try again.',
+  upcomingTitle: 'Upcoming',
+  pastTitle: 'Past',
+  upcomingEmpty: 'You have no upcoming appointments.',
+  changeNumber: 'Use another number',
+  fBarber: 'Barber',
+  fService: 'Service',
+  fDuration: 'Duration',
+  min: 'min',
+  cancelBtn: 'Cancel appointment',
+  cancelConfirmQ: 'Are you sure you want to cancel this appointment?',
+  cancelConfirmYes: 'Yes, cancel it',
+  cancelConfirmNo: 'Go back',
+  cancelling: 'Cancelling …',
+  errCancel: 'Something went wrong while cancelling. Please try again.',
+  cancelledNote: 'The appointment is cancelled.',
+  atSep: '',
+  ariaClose: 'Close',
+  ariaExpandRow: 'Show details',
+  ariaExpandPast: 'Show past appointments',
 }
 
 export const cancelEn: CancelStrings = {

@@ -68,6 +68,27 @@ const bookingLookupErr = z.object({ ok: z.literal(false), error: z.literal('not_
 export const bookingLookupResponse = z.discriminatedUnion('ok', [bookingLookupOk, bookingLookupErr])
 export type BookingLookupResponse = z.infer<typeof bookingLookupResponse>
 
+// --- list_bookings_by_phone (Mina bokningar) -----------------------------------------------------
+// The self-service history RPC. Enumerates EVERY confirmed booking for a proven phone (past +
+// future), so the adapter can split them into the upcoming/past sections. Always `{ ok: true }`; an
+// unknown phone returns an empty `bookings` array (the client treats empty as "not found"). Each row
+// carries just the display fields the dialog renders (barber via roster, service · price, when).
+
+const myBookingRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  service_name: z.string(),
+  price: z.number(),
+  duration_min: z.number(),
+  start_at: isoTimestamp,
+})
+
+export const listBookingsByPhoneResponse = z.object({
+  ok: z.literal(true),
+  bookings: z.array(myBookingRow),
+})
+export type ListBookingsByPhoneResponse = z.infer<typeof listBookingsByPhoneResponse>
+
 // --- create_review -------------------------------------------------------------------------------
 
 const createReviewOk = z.object({
