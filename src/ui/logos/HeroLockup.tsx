@@ -24,10 +24,24 @@ export function HeroLockup({ height, style }: HeroLockupProps): JSX.Element {
       fill="currentColor"
       style={style}
     >
-      <text x="174" y="150" text-anchor="middle" font-family="'Playfair Display'" font-weight={700} font-size={150}>
+      <text
+        x="174"
+        y="150"
+        text-anchor="middle"
+        font-family="'Playfair Display'"
+        font-weight={700}
+        font-size={150}
+      >
         B
       </text>
-      <text x="286" y="150" text-anchor="middle" font-family="'Playfair Display'" font-weight={700} font-size={150}>
+      <text
+        x="286"
+        y="150"
+        text-anchor="middle"
+        font-family="'Playfair Display'"
+        font-weight={700}
+        font-size={150}
+      >
         B
       </text>
       <text

@@ -23,11 +23,27 @@ export function CornerMark({ height, style }: CornerMarkProps): JSX.Element {
       style={style}
     >
       <line x1="6" y1="9" x2="52" y2="9" stroke="currentColor" stroke-width="1.6" />
-      <text x="29" y="33" text-anchor="middle" font-family="'Playfair Display'" font-weight={400} font-size={21} letter-spacing="4">
+      <text
+        x="29"
+        y="33"
+        text-anchor="middle"
+        font-family="'Playfair Display'"
+        font-weight={400}
+        font-size={21}
+        letter-spacing="4"
+      >
         BNB
       </text>
       <line x1="6" y1="40" x2="52" y2="40" stroke="currentColor" stroke-width="1.6" />
-      <text x="70" y="32" text-anchor="start" font-family="'Playfair Display'" font-weight={700} font-size={22} letter-spacing="3">
+      <text
+        x="70"
+        y="32"
+        text-anchor="start"
+        font-family="'Playfair Display'"
+        font-weight={700}
+        font-size={22}
+        letter-spacing="3"
+      >
         BLADE &amp; BLEND
       </text>
     </svg>
