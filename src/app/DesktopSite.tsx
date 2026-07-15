@@ -6,7 +6,7 @@ import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
-import { Monogram } from '../ui/logos/Monogram'
+import { DeskLockup } from '../ui/logos/DeskLockup'
 import type { AppStrings } from '../i18n/index'
 import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
@@ -26,8 +26,6 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   // Hero stays put; each link toggles its own fold below it (same grid-rows animation for both).
   const booking = view === 'booking'
   const about = view === 'about'
-  // Home = static hero; the centered monogram shows only here and recedes once a fold opens.
-  const atHome = view === 'home'
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
@@ -42,16 +40,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   }
   // Nav corner brand (persistent, top-left) — the compact "BNB · BLADE & BLEND" mark.
   const navLogoStyle: JSX.CSSProperties = { margin: 0, display: 'flex', alignItems: 'center' }
-  // Centered hero monogram — visible on home so the middle isn't empty; collapses (height + opacity)
-  // once a booking/about fold opens so it never crowds the content below.
+  // Centered hero mark — the B&B lockup (monogram + ─ STUDIO ─ + tagline). Always visible on desktop
+  // (stays put when a booking/about fold opens below).
   const heroMarkStyle: JSX.CSSProperties = {
     display: 'flex',
     justifyContent: 'center',
-    overflow: 'hidden',
-    opacity: atHome ? 1 : 0,
-    maxHeight: atHome ? '160px' : '0',
-    marginBottom: atHome ? '24px' : '0',
-    transition: 'opacity .38s ease, max-height .5s ' + EASE + ', margin-bottom .5s ' + EASE,
+    marginBottom: '22px',
   }
   const heroBtnStyle: JSX.CSSProperties = booking
     ? {
@@ -142,17 +136,11 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style="text-align: center; padding: 74px 40px 60px; color: inherit">
           <div style={heroMarkStyle} aria-hidden="true">
-            <Monogram height={84} />
+            <DeskLockup height={150} />
           </div>
-          <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin-bottom: 16px; color: inherit">
+          <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin: 0 0 30px; color: inherit">
             {tx.kicker}
           </div>
-          <h2 style="font-family: 'SF Pro Display'; font-weight: 600; font-size: 54px; letter-spacing: -1.5px; line-height: 1.05; margin: 0 auto 16px; max-width: 640px; color: inherit">
-            hmu
-          </h2>
-          <p style="font-size: 18px; line-height: 1.5; opacity: .5; max-width: 500px; margin: 0 auto 32px; color: inherit">
-            for a fresh fade
-          </p>
           <button onClick={props.toggleDeskBooking} style={heroBtnStyle} type="button">
             {tx.book}
           </button>
