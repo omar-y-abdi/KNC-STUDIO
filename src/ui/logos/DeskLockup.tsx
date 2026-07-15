@@ -60,7 +60,7 @@ export function DeskLockup({ height, style }: DeskLockupProps): JSX.Element {
         font-size={12.5}
         letter-spacing="2"
       >
-        SHARPEN YOUR LOOK. ELEVATE YOUR STANDARD.
+        SHARPEN YOUR LOOK · ELEVATE YOUR STANDARDS
       </text>
     </svg>
   )

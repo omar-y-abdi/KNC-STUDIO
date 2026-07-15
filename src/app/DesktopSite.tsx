@@ -136,7 +136,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style="text-align: center; padding: 74px 40px 60px; color: inherit">
           <div style={heroMarkStyle} aria-hidden="true">
-            <DeskLockup height={150} />
+            <DeskLockup height={300} />
           </div>
           <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin: 0 0 30px; color: inherit">
             {tx.kicker}
