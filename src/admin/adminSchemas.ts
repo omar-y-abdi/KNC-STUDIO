@@ -91,6 +91,21 @@ export const slotBlockRow = z.object({
 export type SlotBlockRow = z.infer<typeof slotBlockRow>
 export const slotBlockRows = z.array(slotBlockRow)
 
+// --- services (admin CRUD) -----------------------------------------------------------------------
+// A per-barber service-menu row (owner=all, barber=own). Maps to `AdminService` in types.ts.
+
+export const serviceRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  name: z.string(),
+  price: z.number(),
+  duration_min: z.number(),
+  active: z.boolean(),
+  sort_order: z.number(),
+})
+export type ServiceRow = z.infer<typeof serviceRow>
+export const serviceRows = z.array(serviceRow)
+
 // --- about_content -------------------------------------------------------------------------------
 
 export const aboutRow = z.object({

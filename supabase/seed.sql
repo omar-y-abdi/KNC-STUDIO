@@ -77,3 +77,18 @@ insert into public.about_content (key, lang, value) values
   ('reviewsTitle',  'sv', 'Omdömen'),
   ('reviewsTitle',  'en', 'Reviews')
 on conflict (key, lang) do nothing;
+
+-- Per-barber starter service menu (Task 2 §1) — the same flat menu for each seed barber, now
+-- editable per barber in the panel. Only seeds a barber that has NO services yet, so it is idempotent
+-- across `db reset` and never clobbers edits.
+insert into public.services (barber_id, name, price, duration_min, sort_order)
+select b.id, m.name, m.price, m.duration_min, m.sort_order
+from public.barbers b
+cross join (values
+  ('Hårklippning + skägg', 450, 60, 0),
+  ('Hårklippning',         350, 45, 1),
+  ('Skäggklippning',       200, 30, 2),
+  ('Studentklippning',     300, 45, 3),
+  ('Klippning, barn',      289, 45, 4)
+) as m(name, price, duration_min, sort_order)
+where not exists (select 1 from public.services s where s.barber_id = b.id);

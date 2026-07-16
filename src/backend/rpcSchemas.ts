@@ -139,6 +139,22 @@ export const publicBarberRow = z.object({
 })
 export type PublicBarberRow = z.infer<typeof publicBarberRow>
 
+// --- public services row (direct table select) ---------------------------------------------------
+// One row of a barber's flat service menu. The public booking flow reads the CHOSEN barber's ACTIVE
+// rows (RLS restricts anon to active; the adapter filters active too). `active` is included so a
+// malformed/unexpected row can be dropped. Maps to the booking domain `ServiceItem` (dur = duration_min).
+
+export const publicServiceRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  name: z.string(),
+  price: z.number(),
+  duration_min: z.number(),
+  active: z.boolean(),
+  sort_order: z.number(),
+})
+export type PublicServiceRow = z.infer<typeof publicServiceRow>
+
 // --- public about_content row (direct table select) ----------------------------------------------
 // One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.
 

@@ -25,6 +25,7 @@ import { LangSwitch, ThemeSwitch } from './chrome'
 import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
 import { BarbersView } from './views/BarbersView'
+import { ServicesView } from './views/ServicesView'
 import { AboutView } from './views/AboutView'
 import { useBarbers } from './useBarbers'
 import type { AdminBarberId, AdminProfile } from './types'
@@ -39,7 +40,7 @@ export interface AdminShellProps {
 }
 
 /** The tabs a barber can see; the owner gets all of them. */
-type Tab = 'bookings' | 'schedule' | 'allBookings' | 'barbers' | 'about'
+type Tab = 'bookings' | 'schedule' | 'services' | 'allBookings' | 'barbers' | 'about'
 
 interface TabDef {
   readonly id: Tab
@@ -57,6 +58,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   const TABS: readonly TabDef[] = [
     { id: 'schedule', label: t.tabSchedule, ownerOnly: false },
     { id: 'bookings', label: t.tabBookings, ownerOnly: false },
+    { id: 'services', label: t.tabServices, ownerOnly: false },
     { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
     { id: 'about', label: t.tabAbout, ownerOnly: true },
@@ -112,6 +114,20 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           </section>
         ) : (
           <ScheduleView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            barberName={effectiveBarberName}
+          />
+        )
+      case 'services':
+        return effectiveBarberId === null ? (
+          <section style={s.card}>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+          </section>
+        ) : (
+          <ServicesView
             dark={props.dark}
             lang={props.lang}
             s={s}

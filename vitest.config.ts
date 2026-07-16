@@ -24,6 +24,7 @@ export default defineConfig({
         'src/mybookings/escalation.ts',
         'src/mybookings/deviceMemory.ts',
         'src/mybookings/demoMyBookings.ts',
+        'src/admin/serviceValidation.ts',
       ],
     },
   },

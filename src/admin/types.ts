@@ -65,6 +65,34 @@ export interface BarberEdit {
   readonly sortOrder: number
 }
 
+/** A per-barber service-menu row as the admin manages it (the full row, incl. inactive). */
+export interface AdminService {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  readonly active: boolean
+  readonly sortOrder: number
+}
+
+/** Fields set when creating a service (barber_id + id come from the call/DB). */
+export interface NewService {
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  readonly sortOrder: number
+}
+
+/** Fields editable on an existing service (id is the immutable key). */
+export interface ServiceEdit {
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  readonly active: boolean
+  readonly sortOrder: number
+}
+
 /** JS getDay() weekday: 0=Sun .. 6=Sat. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 

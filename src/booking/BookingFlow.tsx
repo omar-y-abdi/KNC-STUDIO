@@ -20,10 +20,11 @@ import {
 } from './calendar'
 import type { Barber, Booking, BookingDraft, BookingResult } from './domain'
 import { initialDraft } from './domain'
-import { pricing } from './pricing'
+import { useServices } from './useServices'
 import { defaultBookingPort } from './adapters/index'
 import type { BookingPort } from './port'
 import type { BarbersPort } from './barbersPort'
+import type { ServicesPort } from './servicesPort'
 import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
@@ -51,6 +52,8 @@ export interface BookingFlowProps {
   readonly port?: BookingPort
   /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
   readonly barbersPort?: BarbersPort
+  /** Injected services seam — the chosen barber's menu in step 3 (default: env-selected; mock = seed). */
+  readonly servicesPort?: ServicesPort
   /** Open the app-level "Mina bokningar" popup — surfaced on the confirmation screen. */
   readonly onMyBookings?: () => void
 }
@@ -116,6 +119,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const { roster } = useRoster(props.barbersPort)
   const today = clock()
   const S = state
+  // The chosen barber's flat service menu (per-barber, editable in the admin panel). Under the mock
+  // this is the immediate starter menu; under a backend it is that barber's active `services` rows.
+  const { services: barberServices } = useServices(S.barberId, props.servicesPort)
 
   // Load real availability whenever barber + date + service are all chosen. The result is the set of
   // TAKEN slot times; the grid greys those (simple membership — no overlap math in the UI). A
@@ -290,41 +296,45 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     note: string
     items: ServiceRow[]
   }
+  // A single, flat group: the chosen barber's menu (no weekday branching). An empty menu (a barber
+  // with no active services) renders the "no services" placeholder instead.
   let serviceGroups: ServiceGroupView[] = []
-  if (selDate) {
-    serviceGroups = pricing(selDate, t).map((g) => ({
-      title: g.title,
-      note: g.note,
-      items: g.items.map((it) => {
-        const ssel = S.service !== null && S.service.id === it.id
-        return {
-          name: it.name,
-          dur: it.dur + ' ' + t.min,
-          priceLabel: it.price + ' kr',
-          selected: ssel,
-          notSelected: !ssel,
-          rowStyle: {
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            padding: '13px 15px',
-            border: 'none',
-            borderTop: g.items[0] === it ? 'none' : '0.5px solid ' + c.line,
-            background: ssel ? c.subtle : 'transparent',
-            color: 'inherit',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          } satisfies JSX.CSSProperties,
-          rowHover: 'background:' + c.subtle + ';',
-          onClick: () =>
-            setState({
-              service: { id: it.id, name: it.name, price: it.price, dur: it.dur },
-              time: null,
-            }),
-        }
-      }),
-    }))
+  if (selDate && barberServices.length > 0) {
+    serviceGroups = [
+      {
+        title: '',
+        note: '',
+        items: barberServices.map((it, idx) => {
+          const ssel = S.service !== null && S.service.id === it.id
+          return {
+            name: it.name,
+            dur: it.dur + ' ' + t.min,
+            priceLabel: it.price + ' kr',
+            selected: ssel,
+            notSelected: !ssel,
+            rowStyle: {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              padding: '13px 15px',
+              border: 'none',
+              borderTop: idx === 0 ? 'none' : '0.5px solid ' + c.line,
+              background: ssel ? c.subtle : 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            } satisfies JSX.CSSProperties,
+            rowHover: 'background:' + c.subtle + ';',
+            onClick: () =>
+              setState({
+                service: { id: it.id, name: it.name, price: it.price, dur: it.dur },
+                time: null,
+              }),
+          }
+        }),
+      },
+    ]
   }
 
   interface TimeSlot {
@@ -626,12 +636,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                 <div style="display:flex;flex-direction:column;gap:16px;">
                   {serviceGroups.map((g, gi) => (
                     <div key={gi}>
-                      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;">
-                        <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;">
-                          {g.title}
-                        </span>
-                        <span style="font-size:11px;opacity:.4;">{g.note}</span>
-                      </div>
+                      {g.title !== '' ? (
+                        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;">
+                          <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;">
+                            {g.title}
+                          </span>
+                          <span style="font-size:11px;opacity:.4;">{g.note}</span>
+                        </div>
+                      ) : null}
                       <div style={s.panelStyleFlush}>
                         {g.items.map((it, ii) => (
                           <button

@@ -14,6 +14,33 @@ export interface AdminStrings {
   readonly tabAllBookings: string
   readonly tabBarbers: string
   readonly tabAbout: string
+  readonly tabServices: string
+  // Services (per-barber menu) view.
+  readonly servicesTitle: string
+  readonly servicesLead: string
+  readonly svcColName: string
+  readonly svcColPrice: string
+  readonly svcColDuration: string
+  readonly svcNamePh: string
+  readonly svcActive: string
+  readonly svcInactiveTag: string
+  readonly svcSave: string
+  readonly svcSaving: string
+  readonly svcSaved: string
+  readonly svcDelete: string
+  readonly svcMoveUp: string
+  readonly svcMoveDown: string
+  readonly svcAddTitle: string
+  readonly svcAddBtn: string
+  readonly svcAdding: string
+  readonly svcLoading: string
+  readonly svcEmpty: string
+  readonly svcSaveError: string
+  readonly svcValidation: string
+  readonly svcDeleteTitle: string
+  readonly svcDeleteBody: string
+  readonly svcDeleteConfirm: string
+  readonly svcDeleteCancel: string
   // Shell chrome
   readonly signOut: string
   /** Used as `{t.greeting} {firstName}` in the topbar — kept as a plain word ("Hej" / "Hi"). */
@@ -267,6 +294,33 @@ const SV: AdminStrings = {
   tabAllBookings: 'Alla bokningar',
   tabBarbers: 'Barberare',
   tabAbout: 'Om oss',
+  tabServices: 'Tjänster',
+  servicesTitle: 'Tjänster',
+  servicesLead:
+    'Lägg till behandlingar, sätt pris och längd, och ordna listan. Kunderna ser dina aktiva tjänster när de bokar. En rabatt är bara en egen tjänst (t.ex. "Studentklippning").',
+  svcColName: 'Namn',
+  svcColPrice: 'Pris (kr)',
+  svcColDuration: 'Längd (min)',
+  svcNamePh: 'T.ex. Skinfade',
+  svcActive: 'Aktiv',
+  svcInactiveTag: 'Dold för kunder',
+  svcSave: 'Spara',
+  svcSaving: 'Sparar …',
+  svcSaved: 'Sparat',
+  svcDelete: 'Ta bort',
+  svcMoveUp: 'Flytta upp',
+  svcMoveDown: 'Flytta ner',
+  svcAddTitle: 'Ny tjänst',
+  svcAddBtn: 'Lägg till tjänst',
+  svcAdding: 'Lägger till …',
+  svcLoading: 'Laddar tjänster …',
+  svcEmpty: 'Inga tjänster ännu. Lägg till den första nedan.',
+  svcSaveError: 'Kunde inte spara. Försök igen.',
+  svcValidation: 'Ange namn, pris och längd.',
+  svcDeleteTitle: 'Ta bort tjänst?',
+  svcDeleteBody: 'Behandlingen tas bort permanent. Redan bokade tider påverkas inte.',
+  svcDeleteConfirm: 'Ta bort',
+  svcDeleteCancel: 'Avbryt',
   signOut: 'Logga ut',
   greeting: 'Hej',
   ariaSelectBarber: 'Välj barberare att hantera',
@@ -315,7 +369,8 @@ const SV: AdminStrings = {
   scheduleSaved: 'Sparat ✓',
   scheduleRetry: 'Försök igen',
   scheduleTimeOffHeading: 'Ledighet',
-  scheduleTimeOffLead: 'Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som bokningsbara.',
+  scheduleTimeOffLead:
+    'Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som bokningsbara.',
   scheduleTimeOffReason: 'Anledning (valfritt)',
   scheduleTimeOffAdding: 'Lägger till …',
   scheduleTimeOffAdd: 'Lägg till',
@@ -330,7 +385,8 @@ const SV: AdminStrings = {
   scheduleTimeOffDeleteTitle: 'Ta bort ledigheten?',
   scheduleTimeOffDeleteCancel: 'Avbryt',
   scheduleGridHeading: 'Dagsöversikt',
-  scheduleGridLead: 'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) — sparas direkt. Tryck igen för att öppna.',
+  scheduleGridLead:
+    'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) — sparas direkt. Tryck igen för att öppna.',
   scheduleGridAriaDayPicker: 'Välj dag',
   scheduleGridToday: 'Idag',
   scheduleGridLoading: 'Laddar …',
@@ -355,7 +411,8 @@ const SV: AdminStrings = {
   scheduleGridSlotClosed: 'Stängt',
   scheduleGridFreeCountSuffix: 'lediga',
   barbersTitle: 'Barberare',
-  barbersLead: 'Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad barberare för att ge dem ett inloggningskonto.',
+  barbersLead:
+    'Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad barberare för att ge dem ett inloggningskonto.',
   barbersAddNew: '+ Ny barberare',
   barbersNewHeading: 'Ny barberare',
   barbersLoading: 'Laddar barberare …',
@@ -395,7 +452,8 @@ const SV: AdminStrings = {
   barbersIdError: 'Id får bara innehålla a–z, 0–9 och bindestreck (max 32).',
   barbersNameRequired: 'Namn krävs.',
   barbersEmailError: 'Ange en giltig e-postadress.',
-  barbersDefaultPasswordNote: 'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+  barbersDefaultPasswordNote:
+    'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
   aboutTextTitle: 'Om oss · text',
   aboutTextLead: 'Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.',
   aboutLoading: 'Laddar innehåll …',
@@ -426,7 +484,8 @@ const SV: AdminStrings = {
   aboutGalleryDeleteBody: 'Bilden tas bort från galleriet och lagringen. Detta går inte att ångra.',
   aboutGalleryDeleteCancel: 'Avbryt',
   loginErrorEmptyFields: 'Fyll i både e‑post och lösenord.',
-  loginNotConfiguredPre: 'Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt',
+  loginNotConfiguredPre:
+    'Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt',
   loginNotConfiguredMid: 'och',
   loginNotConfiguredPost: 'för att aktivera inloggning.',
   loginEmailLabel: 'E‑post',
@@ -451,19 +510,22 @@ const SV: AdminStrings = {
   changePwSaving: 'Sparar …',
   changePwSubmit: 'Byt lösenord',
   forgotPwSubtitle: 'Glömt lösenord',
-  forgotPwSuccess: 'Om ett konto med den adressen finns har vi skickat en återställningslänk. Kolla din inkorg (och skräpposten).',
+  forgotPwSuccess:
+    'Om ett konto med den adressen finns har vi skickat en återställningslänk. Kolla din inkorg (och skräpposten).',
   forgotPwEmailLabel: 'E‑post',
   forgotPwSending: 'Skickar …',
   forgotPwSubmit: 'Skicka återställningslänk',
   forcedPwSubtitle: 'Byt ditt lösenord',
-  forcedPwIntro: 'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
+  forcedPwIntro:
+    'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
   forcedPwNewPassword: 'Nytt lösenord',
   forcedPwConfirmPassword: 'Bekräfta nytt lösenord',
   forcedPwClearError: 'Lösenordet är ändrat, men ett nätverksfel inträffade. Kontakta ägaren.',
   forcedPwSaving: 'Sparar …',
   forcedPwSubmit: 'Byt lösenord',
   resetPwSubtitle: 'Återställ lösenord',
-  resetPwInvalidLink: 'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.',
+  resetPwInvalidLink:
+    'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.',
   resetPwChecking: 'Kontrollerar länken …',
   resetPwSuccess: 'Ditt lösenord är uppdaterat. Logga in med ditt nya lösenord.',
   resetPwNewPassword: 'Nytt lösenord',
@@ -480,6 +542,33 @@ const EN: AdminStrings = {
   tabAllBookings: 'All bookings',
   tabBarbers: 'Barbers',
   tabAbout: 'About us',
+  tabServices: 'Services',
+  servicesTitle: 'Services',
+  servicesLead:
+    'Add services, set price and length, and order the list. Customers see your active services when booking. A discount is just its own service (e.g. "Student cut").',
+  svcColName: 'Name',
+  svcColPrice: 'Price (kr)',
+  svcColDuration: 'Length (min)',
+  svcNamePh: 'e.g. Skin fade',
+  svcActive: 'Active',
+  svcInactiveTag: 'Hidden from customers',
+  svcSave: 'Save',
+  svcSaving: 'Saving …',
+  svcSaved: 'Saved',
+  svcDelete: 'Delete',
+  svcMoveUp: 'Move up',
+  svcMoveDown: 'Move down',
+  svcAddTitle: 'New service',
+  svcAddBtn: 'Add service',
+  svcAdding: 'Adding …',
+  svcLoading: 'Loading services …',
+  svcEmpty: 'No services yet. Add the first one below.',
+  svcSaveError: 'Could not save. Please try again.',
+  svcValidation: 'Enter a name, price and length.',
+  svcDeleteTitle: 'Delete service?',
+  svcDeleteBody: 'The service is removed permanently. Existing bookings are unaffected.',
+  svcDeleteConfirm: 'Delete',
+  svcDeleteCancel: 'Cancel',
   signOut: 'Sign out',
   greeting: 'Hi',
   ariaSelectBarber: 'Select barber to manage',
@@ -528,7 +617,8 @@ const EN: AdminStrings = {
   scheduleSaved: 'Saved ✓',
   scheduleRetry: 'Try again',
   scheduleTimeOffHeading: 'Time off',
-  scheduleTimeOffLead: 'Block a day or a period (holiday, day off). Blocked dates will not be available for booking.',
+  scheduleTimeOffLead:
+    'Block a day or a period (holiday, day off). Blocked dates will not be available for booking.',
   scheduleTimeOffReason: 'Reason (optional)',
   scheduleTimeOffAdding: 'Adding …',
   scheduleTimeOffAdd: 'Add',
@@ -543,7 +633,8 @@ const EN: AdminStrings = {
   scheduleTimeOffDeleteTitle: 'Remove time off?',
   scheduleTimeOffDeleteCancel: 'Cancel',
   scheduleGridHeading: 'Day overview',
-  scheduleGridLead: 'Select a day, tap an hour and block the quarters that are taken (e.g. booked by text) — saved immediately. Tap again to open.',
+  scheduleGridLead:
+    'Select a day, tap an hour and block the quarters that are taken (e.g. booked by text) — saved immediately. Tap again to open.',
   scheduleGridAriaDayPicker: 'Select day',
   scheduleGridToday: 'Today',
   scheduleGridLoading: 'Loading …',
@@ -568,7 +659,8 @@ const EN: AdminStrings = {
   scheduleGridSlotClosed: 'Closed',
   scheduleGridFreeCountSuffix: 'free',
   barbersTitle: 'Barbers',
-  barbersLead: 'Add, edit and hide barbers. Click "Create login" for an unlinked barber to give them a login account.',
+  barbersLead:
+    'Add, edit and hide barbers. Click "Create login" for an unlinked barber to give them a login account.',
   barbersAddNew: '+ New barber',
   barbersNewHeading: 'New barber',
   barbersLoading: 'Loading barbers …',
@@ -608,7 +700,8 @@ const EN: AdminStrings = {
   barbersIdError: 'Id may only contain a–z, 0–9 and hyphens (max 32).',
   barbersNameRequired: 'Name is required.',
   barbersEmailError: 'Enter a valid email address.',
-  barbersDefaultPasswordNote: 'Account created. Temporary password: 123456 — the barber changes it at first login.',
+  barbersDefaultPasswordNote:
+    'Account created. Temporary password: 123456 — the barber changes it at first login.',
   aboutTextTitle: 'About us · text',
   aboutTextLead: 'Edit the section texts in Swedish and English. Each field is saved separately.',
   aboutLoading: 'Loading content …',
@@ -636,10 +729,12 @@ const EN: AdminStrings = {
   aboutGalleryDeletedOk: 'Image removed.',
   aboutGalleryRemove: 'Remove',
   aboutGalleryDeleteTitle: 'Remove image?',
-  aboutGalleryDeleteBody: 'The image will be removed from the gallery and storage. This cannot be undone.',
+  aboutGalleryDeleteBody:
+    'The image will be removed from the gallery and storage. This cannot be undone.',
   aboutGalleryDeleteCancel: 'Cancel',
   loginErrorEmptyFields: 'Fill in both email and password.',
-  loginNotConfiguredPre: 'The admin panel requires the live backend, which is not configured in this environment. Set',
+  loginNotConfiguredPre:
+    'The admin panel requires the live backend, which is not configured in this environment. Set',
   loginNotConfiguredMid: 'and',
   loginNotConfiguredPost: 'to enable sign-in.',
   loginEmailLabel: 'Email',
@@ -664,19 +759,22 @@ const EN: AdminStrings = {
   changePwSaving: 'Saving …',
   changePwSubmit: 'Change password',
   forgotPwSubtitle: 'Forgot password',
-  forgotPwSuccess: 'If an account with that address exists, we have sent a reset link. Check your inbox (and your spam folder).',
+  forgotPwSuccess:
+    'If an account with that address exists, we have sent a reset link. Check your inbox (and your spam folder).',
   forgotPwEmailLabel: 'Email',
   forgotPwSending: 'Sending …',
   forgotPwSubmit: 'Send reset link',
   forcedPwSubtitle: 'Change your password',
-  forcedPwIntro: 'Your account has a temporary password. You must choose a new one to access the panel.',
+  forcedPwIntro:
+    'Your account has a temporary password. You must choose a new one to access the panel.',
   forcedPwNewPassword: 'New password',
   forcedPwConfirmPassword: 'Confirm new password',
   forcedPwClearError: 'Your password was changed, but a network error occurred. Contact the owner.',
   forcedPwSaving: 'Saving …',
   forcedPwSubmit: 'Change password',
   resetPwSubtitle: 'Reset password',
-  resetPwInvalidLink: 'The reset link is invalid or has expired. Request a new one on the sign-in page.',
+  resetPwInvalidLink:
+    'The reset link is invalid or has expired. Request a new one on the sign-in page.',
   resetPwChecking: 'Checking the link …',
   resetPwSuccess: 'Your password has been updated. Sign in with your new password.',
   resetPwNewPassword: 'New password',
