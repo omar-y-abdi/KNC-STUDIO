@@ -35,7 +35,17 @@ import {
 import { WorkSwitch, useNarrow } from '../chrome'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ScheduleDayGrid } from './ScheduleDayGrid'
-import type { AdminBarberId, AdminStylesBundle, TimeOff, Weekday, WeekSchedule } from './viewTypes'
+import { listBookings } from '../adapters/bookingsAdmin'
+import { orphansInRange, orphansOnDate, orphansUnderWeek } from '../scheduleConflicts'
+import { ConflictHost, useUnavailabilityConflict } from '../useUnavailabilityConflict'
+import type {
+  AdminBarberId,
+  AdminBooking,
+  AdminStylesBundle,
+  TimeOff,
+  Weekday,
+  WeekSchedule,
+} from './viewTypes'
 
 export interface ScheduleViewProps {
   readonly dark: boolean
@@ -60,6 +70,9 @@ const SAVE_DEBOUNCE_MS = 600
 
 /** Weekday order for display: Monday-first (1..6, then 0=Sunday) reads naturally for a work week. */
 const DISPLAY_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0]
+
+/** A deferred conflict change is never applied before the barber chooses, so aborting undoes nothing. */
+const noRevert = (): void => undefined
 
 export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const { s, lang } = props
@@ -86,6 +99,13 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const [pendingOff, setPendingOff] = useState<TimeOff | null>(null)
   const [offDeleteBusy, setOffDeleteBusy] = useState(false)
 
+  // This barber's upcoming bookings, used to detect which confirmed bookings a proposed
+  // unavailability would strand (block a day / change the week / add ledighet). A nonce refetches
+  // after cancellations — it also flows to the day grid so its display refreshes.
+  const [bookings, setBookings] = useState<readonly AdminBooking[]>([])
+  const [bookingsNonce, setBookingsNonce] = useState(0)
+  const conflict = useUnavailabilityConflict(() => setBookingsNonce((n) => n + 1))
+
   // Auto-save plumbing: a debounce timer + a generation counter so a stale response (or a save for
   // a previously-selected barber) can never clobber newer state.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -102,7 +122,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     else setWeekSave({ kind: 'error', message: result.error.message })
   }
 
-  const mutate = (next: WeekSchedule): void => {
+  const commitWeek = (next: WeekSchedule): void => {
     setWeek(next)
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveGen.current++ // invalidate any in-flight save; this edit supersedes it
@@ -118,6 +138,26 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       saveTimer.current = null
       void doSave(barberId, next)
     }, SAVE_DEBOUNCE_MS)
+  }
+
+  // Trigger B — a veckoschema change (weekday off / narrowed hours / same-time-all-days) that would
+  // strand confirmed bookings is HELD behind the conflict dialog instead of silently saving. The
+  // change stays deferred (week/pendingSave untouched) until the barber chooses, so aborting needs no
+  // revert and a barber-switch flush can't commit a conflicted week. Invalid weeks skip the check
+  // (they never save anyway) and fall through to the inline "invalid hours" state.
+  const mutate = (next: WeekSchedule): void => {
+    if (weekIsValid(next)) {
+      const orphans = orphansUnderWeek(bookings, next, defaultClock())
+      if (orphans.length > 0) {
+        void conflict.request({
+          orphans,
+          applyChange: async () => commitWeek(next),
+          revert: noRevert,
+        })
+        return
+      }
+    }
+    commitWeek(next)
   }
 
   // Load the week + time-off whenever the target barber changes; flush any pending save for the
@@ -157,6 +197,20 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
   }, [props.barberId])
 
+  // Upcoming bookings for conflict detection (from local midnight; older bookings can't be stranded).
+  // Refetches on barber change and after a cancellation bumps the nonce.
+  useEffect(() => {
+    let active = true
+    const now = defaultClock()
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    void listBookings(props.barberId, midnight.toISOString()).then((r) => {
+      if (active && r.ok) setBookings(r.value)
+    })
+    return () => {
+      active = false
+    }
+  }, [props.barberId, bookingsNonce])
+
   const onToggleDay = (weekday: Weekday): void => mutate(toggleWorking(week, weekday))
   const onDayStart = (weekday: Weekday, startMin: number): void => {
     const day = week[weekday]
@@ -190,19 +244,55 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     return true
   }
 
-  const onAddTimeOff = async (): Promise<void> => {
-    if (offEnd < offStart) {
-      setOffMsg({ kind: 'err', text: t.scheduleTimeOffDateError })
-      return
-    }
+  const commitTimeOff = async (
+    startDate: string,
+    endDate: string,
+    reason: string,
+  ): Promise<void> => {
     setOffBusy(true)
     setOffMsg(null)
-    const ok = await addOff(offStart, offEnd, offReason.trim())
+    const ok = await addOff(startDate, endDate, reason)
     setOffBusy(false)
     if (ok) {
       setOffReason('')
       setOffMsg({ kind: 'ok', text: t.scheduleTimeOffAdded })
     }
+  }
+
+  // Trigger C — adding ledighet. If confirmed bookings fall inside the range, the conflict dialog
+  // decides; otherwise it's applied straight away (unchanged behavior).
+  const onAddTimeOff = async (): Promise<void> => {
+    if (offEnd < offStart) {
+      setOffMsg({ kind: 'err', text: t.scheduleTimeOffDateError })
+      return
+    }
+    const now = defaultClock().getTime()
+    const start = offStart
+    const end = offEnd
+    const reason = offReason.trim()
+    const orphans = orphansInRange(bookings, start, end).filter((b) => b.startAt.getTime() >= now)
+    await conflict.request({
+      orphans,
+      applyChange: () => commitTimeOff(start, end, reason),
+      revert: noRevert,
+    })
+  }
+
+  // Trigger A — the day grid's "Blockera hela dagen". No clash → block straight away (grid shows any
+  // error from the boolean). A clash → open the dialog and report success so the grid doesn't flag an
+  // error; the dialog then applies the block (and cancels, if chosen).
+  const onBlockDay = async (dateIso: string): Promise<boolean> => {
+    const now = defaultClock().getTime()
+    const orphans = orphansOnDate(bookings, dateIso).filter((b) => b.startAt.getTime() >= now)
+    if (orphans.length === 0) return addOff(dateIso, dateIso, '')
+    void conflict.request({
+      orphans,
+      applyChange: async () => {
+        await addOff(dateIso, dateIso, '')
+      },
+      revert: noRevert,
+    })
+    return true
   }
 
   const onDeleteTimeOff = async (): Promise<void> => {
@@ -280,7 +370,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         barberId={props.barberId}
         week={week}
         timeOff={timeOff}
-        onBlockDay={(dateIso) => addOff(dateIso, dateIso, '')}
+        bookingsRefreshKey={bookingsNonce}
+        onBlockDay={onBlockDay}
         onOpenDay={(id) => removeOff(id)}
       />
 
@@ -614,6 +705,9 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           }}
         />
       ) : null}
+
+      {/* Trigger A/B/C — the unavailability↔booking conflict dialogs (nothing when no clash). */}
+      <ConflictHost dark={props.dark} lang={lang} ctl={conflict} />
     </>
   )
 }

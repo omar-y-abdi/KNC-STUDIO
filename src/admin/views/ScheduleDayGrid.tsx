@@ -45,6 +45,8 @@ export interface ScheduleDayGridProps {
   readonly barberId: AdminBarberId
   readonly week: WeekSchedule
   readonly timeOff: readonly TimeOff[]
+  /** Bump to force a bookings refetch (the parent cancels bookings during the conflict flow). */
+  readonly bookingsRefreshKey?: number
   /** Block the whole day (parent inserts a single-day time-off row and updates its list). */
   readonly onBlockDay: (dateIso: string) => Promise<boolean>
   /** Reopen a day blocked by a SINGLE-DAY time-off row (parent deletes it + updates its list). */
@@ -99,7 +101,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId, bookingsNonce])
+  }, [props.barberId, bookingsNonce, props.bookingsRefreshKey])
 
   const off = timeOffCovering(props.timeOff, dateIso)
   const hours = useMemo((): readonly HourGroup[] => {

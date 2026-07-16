@@ -199,6 +199,19 @@ export interface AdminStrings {
   readonly reserveServiceName: string
   readonly reserveErrPhone: string
   readonly reserveOk: string
+  // Unavailability ↔ booking conflict (block day / veckoschema / ledighet that clashes with bookings)
+  readonly unavailTitle: string
+  readonly unavailLead: string
+  readonly unavailExplainCancel: string
+  readonly unavailExplainKeep: string
+  readonly unavailCancelBtn: string
+  readonly unavailKeepBtn: string
+  readonly unavailAbortBtn: string
+  readonly unavailBusy: string
+  readonly unavailCancelledTitle: string
+  readonly unavailCancelledLead: string
+  readonly unavailNoPhone: string
+  readonly unavailClose: string
   // BarbersView — section headings + roster states
   readonly barbersTitle: string
   readonly barbersLead: string
@@ -512,6 +525,19 @@ const SV: AdminStrings = {
   reserveServiceName: 'Reserverad tid',
   reserveErrPhone: 'Ogiltigt telefonnummer',
   reserveOk: 'Kunden är bokad.',
+  unavailTitle: 'Kunder är bokade',
+  unavailLead: 'Följande kunder är bokade under tiden du vill vara borta:',
+  unavailExplainCancel: 'Avboka kunder – avbokar kunderna nedan och gör dig ledig.',
+  unavailExplainKeep:
+    'Ha kvar kunder – kunderna behåller sina tider; resten av tiden blockeras för nya bokningar.',
+  unavailCancelBtn: 'Avboka kunder',
+  unavailKeepBtn: 'Ha kvar kunder, blockera resten',
+  unavailAbortBtn: 'Avbryt',
+  unavailBusy: 'Avbokar …',
+  unavailCancelledTitle: 'Avbokade kunder',
+  unavailCancelledLead: 'Dessa bokningar har avbokats:',
+  unavailNoPhone: 'Inget nummer',
+  unavailClose: 'Stäng',
   barbersTitle: 'Barberare',
   barbersLead:
     'Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad barberare för att ge dem ett inloggningskonto.',
@@ -811,6 +837,19 @@ const EN: AdminStrings = {
   reserveServiceName: 'Reserved time',
   reserveErrPhone: 'Invalid phone number',
   reserveOk: 'The customer is booked.',
+  unavailTitle: 'Customers are booked',
+  unavailLead: 'These customers are booked during the time you want off:',
+  unavailExplainCancel: 'Cancel customers – cancels the customers below and frees you up.',
+  unavailExplainKeep:
+    'Keep customers – they keep their times; the rest is blocked for new bookings.',
+  unavailCancelBtn: 'Cancel customers',
+  unavailKeepBtn: 'Keep customers, block the rest',
+  unavailAbortBtn: 'Back',
+  unavailBusy: 'Cancelling …',
+  unavailCancelledTitle: 'Cancelled bookings',
+  unavailCancelledLead: 'These bookings have been cancelled:',
+  unavailNoPhone: 'No number',
+  unavailClose: 'Close',
   barbersTitle: 'Barbers',
   barbersLead:
     'Add, edit and hide barbers. Click "Create login" for an unlinked barber to give them a login account.',
