@@ -208,6 +208,7 @@ export interface AdminStrings {
   readonly unavailKeepBtn: string
   readonly unavailAbortBtn: string
   readonly unavailBusy: string
+  readonly unavailCancelError: string
   readonly unavailCancelledTitle: string
   readonly unavailCancelledLead: string
   readonly unavailNoPhone: string
@@ -534,6 +535,8 @@ const SV: AdminStrings = {
   unavailKeepBtn: 'Ha kvar kunder, blockera resten',
   unavailAbortBtn: 'Avbryt',
   unavailBusy: 'Avbokar …',
+  unavailCancelError:
+    'Avbokade {done} av {total} kunder. Kunde inte avboka resten – försök igen, behåll resten, eller avbryt.',
   unavailCancelledTitle: 'Avbokade kunder',
   unavailCancelledLead: 'Dessa bokningar har avbokats:',
   unavailNoPhone: 'Inget nummer',
@@ -846,6 +849,8 @@ const EN: AdminStrings = {
   unavailKeepBtn: 'Keep customers, block the rest',
   unavailAbortBtn: 'Back',
   unavailBusy: 'Cancelling …',
+  unavailCancelError:
+    "Cancelled {done} of {total} customers. Couldn't cancel the rest — try again, keep the rest, or go back.",
   unavailCancelledTitle: 'Cancelled bookings',
   unavailCancelledLead: 'These bookings have been cancelled:',
   unavailNoPhone: 'No number',

@@ -4,6 +4,7 @@ import {
   orphansOnDate,
   orphansInRange,
   orphansUnderWeek,
+  partitionCancellations,
 } from '../../src/admin/scheduleConflicts'
 import type { AdminBooking, DaySchedule, Weekday, WeekSchedule } from '../../src/admin/types'
 import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
@@ -122,5 +123,38 @@ describe('orphansUnderWeek (trigger B — veckoschema change)', () => {
   it('ignores cancelled bookings', () => {
     const cancelled = bk({ startAt: tue12, status: 'cancelled' })
     expect(orphansUnderWeek([cancelled], week({ 2: { working: false } }), now)).toHaveLength(0)
+  })
+})
+
+describe('partitionCancellations', () => {
+  const a = bk({ id: 'a', startAt: tue12 })
+  const b = bk({ id: 'b', startAt: tue12 })
+  const c = bk({ id: 'c', startAt: tue12 })
+
+  it('puts every booking in `done` when all cancels succeed', () => {
+    const out = partitionCancellations([a, b, c], [true, true, true])
+    expect(out.done.map((x) => x.id)).toEqual(['a', 'b', 'c'])
+    expect(out.failed).toHaveLength(0)
+  })
+  it('puts every booking in `failed` when all cancels fail', () => {
+    const out = partitionCancellations([a, b, c], [false, false, false])
+    expect(out.failed.map((x) => x.id)).toEqual(['a', 'b', 'c'])
+    expect(out.done).toHaveLength(0)
+  })
+  it('splits a mixed batch, preserving order in each bucket', () => {
+    const out = partitionCancellations([a, b, c], [true, false, true])
+    expect(out.done.map((x) => x.id)).toEqual(['a', 'c'])
+    expect(out.failed.map((x) => x.id)).toEqual(['b'])
+  })
+  it('treats a missing ok-flag as failed (never assumes success)', () => {
+    // Short `oks` (e.g. the loop threw before the last attempt) → the untried booking is failed.
+    const out = partitionCancellations([a, b, c], [true])
+    expect(out.done.map((x) => x.id)).toEqual(['a'])
+    expect(out.failed.map((x) => x.id)).toEqual(['b', 'c'])
+  })
+  it('returns two empty buckets for an empty batch', () => {
+    const out = partitionCancellations([], [])
+    expect(out.done).toHaveLength(0)
+    expect(out.failed).toHaveLength(0)
   })
 })

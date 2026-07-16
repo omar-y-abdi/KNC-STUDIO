@@ -68,3 +68,29 @@ export function orphansUnderWeek(
       !allowedUnder(nextWeek, wallOf(b), b.durationMin),
   )
 }
+
+/** Outcome of a batch of cancellation attempts, order-preserving. */
+export interface CancellationOutcome {
+  /** Bookings whose cancellation succeeded — the list to show as "cancelled". */
+  readonly done: readonly AdminBooking[]
+  /** Bookings whose cancellation failed — non-empty means "don't apply the change yet". */
+  readonly failed: readonly AdminBooking[]
+}
+
+/**
+ * Split cancellation attempts into succeeded/failed, preserving order. `oks[i]` is whether cancelling
+ * `bookings[i]` succeeded; a missing/`undefined` flag counts as failed (total — never assume success).
+ * Pure, so the "did every cancel succeed?" decision that gates applying the unavailability change is
+ * unit-testable without the RPC.
+ */
+export function partitionCancellations(
+  bookings: readonly AdminBooking[],
+  oks: readonly boolean[],
+): CancellationOutcome {
+  const done: AdminBooking[] = []
+  const failed: AdminBooking[] = []
+  bookings.forEach((b, i) => {
+    ;(oks[i] === true ? done : failed).push(b)
+  })
+  return { done, failed }
+}

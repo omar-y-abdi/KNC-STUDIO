@@ -15,6 +15,7 @@ import { buildAdminStyles } from './adminStyles'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
 import type { AdminBooking } from './types'
+import type { CancelFailure } from './useUnavailabilityConflict'
 
 const TITLE_ID = 'admin-unavail-title'
 
@@ -25,6 +26,8 @@ export interface UnavailabilityDialogProps {
   readonly bookings: readonly AdminBooking[]
   /** Cancellation in flight (disables the actions, relabels the cancel button). */
   readonly busy: boolean
+  /** A partial-cancellation failure to surface (N of M cancelled); null when none. */
+  readonly error: CancelFailure | null
   readonly onCancelCustomers: () => void
   readonly onKeepBlock: () => void
   readonly onAbort: () => void
@@ -126,6 +129,14 @@ export function UnavailabilityDialog(props: UnavailabilityDialogProps): JSX.Elem
         <span>{t.unavailExplainCancel}</span>
         <span>{t.unavailExplainKeep}</span>
       </div>
+
+      {props.error !== null ? (
+        <p style={{ ...s.errorText, margin: '0 0 14px', lineHeight: 1.45 }}>
+          {t.unavailCancelError
+            .replace('{done}', String(props.error.done))
+            .replace('{total}', String(props.error.total))}
+        </p>
+      ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
         <button
