@@ -106,6 +106,23 @@ export const serviceRow = z.object({
 export type ServiceRow = z.infer<typeof serviceRow>
 export const serviceRows = z.array(serviceRow)
 
+// --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
+
+export const siteContentRow = z.object({
+  key: z.string(),
+  lang,
+  value: z.string(),
+})
+export type SiteContentRowT = z.infer<typeof siteContentRow>
+export const siteContentRows = z.array(siteContentRow)
+
+export const siteSettingRow = z.object({
+  key: z.string(),
+  value: z.string(),
+})
+export type SiteSettingRowT = z.infer<typeof siteSettingRow>
+export const siteSettingRows = z.array(siteSettingRow)
+
 // --- about_content -------------------------------------------------------------------------------
 
 export const aboutRow = z.object({

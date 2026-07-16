@@ -25,6 +25,7 @@ export default defineConfig({
         'src/mybookings/deviceMemory.ts',
         'src/mybookings/demoMyBookings.ts',
         'src/admin/serviceValidation.ts',
+        'src/site/siteChrome.ts',
       ],
     },
   },

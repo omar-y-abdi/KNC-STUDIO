@@ -26,6 +26,7 @@ import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
 import { BarbersView } from './views/BarbersView'
 import { ServicesView } from './views/ServicesView'
+import { SiteView } from './views/SiteView'
 import { AboutView } from './views/AboutView'
 import { useBarbers } from './useBarbers'
 import type { AdminBarberId, AdminProfile } from './types'
@@ -40,7 +41,7 @@ export interface AdminShellProps {
 }
 
 /** The tabs a barber can see; the owner gets all of them. */
-type Tab = 'bookings' | 'schedule' | 'services' | 'allBookings' | 'barbers' | 'about'
+type Tab = 'bookings' | 'schedule' | 'services' | 'allBookings' | 'barbers' | 'site' | 'about'
 
 interface TabDef {
   readonly id: Tab
@@ -61,6 +62,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     { id: 'services', label: t.tabServices, ownerOnly: false },
     { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
+    { id: 'site', label: t.tabSite, ownerOnly: true },
     { id: 'about', label: t.tabAbout, ownerOnly: true },
   ]
 
@@ -150,6 +152,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         )
       case 'barbers':
         return <BarbersView lang={props.lang} s={s} onRosterChanged={() => void reloadBarbers()} />
+      case 'site':
+        return <SiteView dark={props.dark} lang={props.lang} s={s} />
       case 'about':
         return <AboutView dark={props.dark} lang={props.lang} s={s} />
     }

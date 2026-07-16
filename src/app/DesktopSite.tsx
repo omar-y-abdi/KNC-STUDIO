@@ -8,6 +8,7 @@ import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { DeskLockup } from '../ui/logos/DeskLockup'
 import type { AppStrings } from '../i18n/index'
+import { scalePx, type SizePreset } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
 
@@ -21,6 +22,10 @@ export interface DesktopSiteProps extends ShellProps {
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
+  /** Owner-set font-size preset for the homepage editable text (kicker / hours / address). */
+  readonly homepageScale: SizePreset
+  /** Owner-set font-size preset forwarded to the "Om oss" section. */
+  readonly aboutScale: SizePreset
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -119,7 +124,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
     padding: '18px 40px',
     borderTop: '.5px solid ' + c.line,
     background: c.footer,
-    fontSize: '13px',
+    fontSize: scalePx(13, props.homepageScale) + 'px',
     opacity: 0.6,
     flex: 'none',
     flexWrap: 'wrap',
@@ -164,7 +169,16 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <div style={heroMarkStyle} aria-hidden="true">
             <DeskLockup height={300} />
           </div>
-          <div style="font-size: 13px; font-weight: 600; letter-spacing: 1.5px; opacity: .45; margin: 0 0 30px; color: inherit">
+          <div
+            style={{
+              fontSize: scalePx(13, props.homepageScale) + 'px',
+              fontWeight: 600,
+              letterSpacing: '1.5px',
+              opacity: 0.45,
+              margin: '0 0 30px',
+              color: 'inherit',
+            }}
+          >
             {tx.kicker}
           </div>
           <div style={heroActionsStyle}>
@@ -206,7 +220,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         {/* About fold — identical animation; AboutSection brings its own border-top + max-width. */}
         <div style={foldStyle(about)} data-testid="fold-about">
           <div style={deskFoldInnerStyle}>
-            <AboutSection mode={props.mode} lang={props.lang} />
+            <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
           </div>
         </div>
       </div>

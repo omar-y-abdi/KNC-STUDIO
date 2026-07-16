@@ -155,6 +155,22 @@ export const publicServiceRow = z.object({
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
 
+// --- public site_content / site_settings rows (Task 2 §2) ----------------------------------------
+// Editable homepage text (key,lang,value) + non-localized settings (key,value). anon may read both.
+
+export const siteContentRow = z.object({
+  key: z.string(),
+  lang: z.enum(['sv', 'en']),
+  value: z.string(),
+})
+export type SiteContentRow = z.infer<typeof siteContentRow>
+
+export const siteSettingRow = z.object({
+  key: z.string(),
+  value: z.string(),
+})
+export type SiteSettingRow = z.infer<typeof siteSettingRow>
+
 // --- public about_content row (direct table select) ----------------------------------------------
 // One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.
 

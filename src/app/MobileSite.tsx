@@ -15,6 +15,7 @@ import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HeroLockup } from '../ui/logos/HeroLockup'
 import type { AppStrings, Lang } from '../i18n/index'
+import { scalePx, type SizePreset } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
 
@@ -43,6 +44,10 @@ export interface MobileSiteProps {
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
+  /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
+  readonly homepageScale: SizePreset
+  /** Owner-set font-size preset forwarded to the "Om oss" section. */
+  readonly aboutScale: SizePreset
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
@@ -273,7 +278,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  fontSize: '12px',
+                  fontSize: scalePx(12, props.homepageScale) + 'px',
                   color: 'var(--mob-muted)',
                 }}
               >
@@ -289,7 +294,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
-                  fontSize: '12px',
+                  fontSize: scalePx(12, props.homepageScale) + 'px',
                   color: 'var(--mob-muted)',
                 }}
               >
@@ -340,7 +345,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               onMyBookings={props.openMyBookings}
             />
           ) : (
-            <AboutSection mode={props.mode} lang={props.lang} />
+            <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
           )}
         </div>
       ) : null}

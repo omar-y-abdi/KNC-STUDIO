@@ -15,6 +15,23 @@ export interface AdminStrings {
   readonly tabBarbers: string
   readonly tabAbout: string
   readonly tabServices: string
+  readonly tabSite: string
+  // Startsida (homepage chrome) view.
+  readonly siteTextTitle: string
+  readonly siteTextLead: string
+  readonly siteFieldKicker: string
+  readonly siteFieldHours: string
+  readonly siteFieldAddr: string
+  readonly siteFontTitle: string
+  readonly siteFontLead: string
+  readonly siteFontHomepage: string
+  readonly siteFontAbout: string
+  readonly siteSizeSm: string
+  readonly siteSizeMd: string
+  readonly siteSizeLg: string
+  readonly siteSizeXl: string
+  readonly siteLoading: string
+  readonly siteSaveError: string
   // Services (per-barber menu) view.
   readonly servicesTitle: string
   readonly servicesLead: string
@@ -295,6 +312,24 @@ const SV: AdminStrings = {
   tabBarbers: 'Barberare',
   tabAbout: 'Om oss',
   tabServices: 'Tjänster',
+  tabSite: 'Startsida',
+  siteTextTitle: 'Startsidans text',
+  siteTextLead:
+    'Redigera texten på startsidan. Tomt fält återgår till standardtexten. Loggan och knapptexterna ändras inte här.',
+  siteFieldKicker: 'Underrubrik (t.ex. "BARBERSHOP · GÖTEBORG")',
+  siteFieldHours: 'Öppettider',
+  siteFieldAddr: 'Adress',
+  siteFontTitle: 'Textstorlek',
+  siteFontLead:
+    'Välj textstorlek för startsidan och Om oss-sektionen. Alla val håller sig inom layouten.',
+  siteFontHomepage: 'Startsidans text',
+  siteFontAbout: 'Om oss-sektionen',
+  siteSizeSm: 'Liten',
+  siteSizeMd: 'Mellan',
+  siteSizeLg: 'Stor',
+  siteSizeXl: 'Extra stor',
+  siteLoading: 'Laddar startsidan …',
+  siteSaveError: 'Kunde inte spara. Försök igen.',
   servicesTitle: 'Tjänster',
   servicesLead:
     'Lägg till behandlingar, sätt pris och längd, och ordna listan. Kunderna ser dina aktiva tjänster när de bokar. En rabatt är bara en egen tjänst (t.ex. "Studentklippning").',
@@ -543,6 +578,24 @@ const EN: AdminStrings = {
   tabBarbers: 'Barbers',
   tabAbout: 'About us',
   tabServices: 'Services',
+  tabSite: 'Home page',
+  siteTextTitle: 'Home page text',
+  siteTextLead:
+    'Edit the text on the home page. An empty field falls back to the default. The logo and button labels are not changed here.',
+  siteFieldKicker: 'Sub-heading (e.g. "BARBERSHOP · GOTHENBURG")',
+  siteFieldHours: 'Opening hours',
+  siteFieldAddr: 'Address',
+  siteFontTitle: 'Text size',
+  siteFontLead:
+    'Choose the text size for the home page and the About section. Every option stays within the layout.',
+  siteFontHomepage: 'Home page text',
+  siteFontAbout: 'About section',
+  siteSizeSm: 'Small',
+  siteSizeMd: 'Medium',
+  siteSizeLg: 'Large',
+  siteSizeXl: 'Extra large',
+  siteLoading: 'Loading home page …',
+  siteSaveError: 'Could not save. Please try again.',
   servicesTitle: 'Services',
   servicesLead:
     'Add services, set price and length, and order the list. Customers see your active services when booking. A discount is just its own service (e.g. "Student cut").',

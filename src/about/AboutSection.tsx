@@ -14,6 +14,7 @@ import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles
 import { FOCUS_CLS } from '../ui/pseudo'
 import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
+import { scalePx, type SizePreset } from '../site/siteChrome'
 import { useRoster } from '../booking/useRoster'
 import type { BarbersPort } from '../booking/barbersPort'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
@@ -52,6 +53,8 @@ export interface AboutSectionProps {
   readonly aboutContentPort?: AboutContentPort
   /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = placeholders). */
   readonly galleryPort?: GalleryPort
+  /** Owner-set font-size preset for the section's editorial header (default 'md' = 1.0×). */
+  readonly fontScale?: SizePreset
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
@@ -186,8 +189,11 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     width: '100vw',
     marginLeft: 'calc(50% - 50vw)',
   }
+  // Owner-set section scale (Task 2 §2) — applied to the editorial header block (eyebrow / heading /
+  // intro). Bounded preset, so even 'xl' stays within the section without overflow.
+  const scale = props.fontScale ?? 'md'
   const eyebrowStyle: JSX.CSSProperties = {
-    fontSize: '12px',
+    fontSize: scalePx(12, scale) + 'px',
     fontWeight: 700,
     letterSpacing: '1.5px',
     opacity: 0.45,
@@ -196,13 +202,13 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const headingStyle: JSX.CSSProperties = {
     fontFamily: "'SF Pro Display'",
     fontWeight: 600,
-    fontSize: '34px',
+    fontSize: scalePx(34, scale) + 'px',
     letterSpacing: '-0.8px',
     lineHeight: 1.1,
     margin: '0 0 16px',
   }
   const introStyle: JSX.CSSProperties = {
-    fontSize: '16px',
+    fontSize: scalePx(16, scale) + 'px',
     lineHeight: 1.6,
     opacity: 0.62,
     maxWidth: '600px',
