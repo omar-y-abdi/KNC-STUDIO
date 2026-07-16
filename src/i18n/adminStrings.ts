@@ -182,6 +182,23 @@ export interface AdminStrings {
   readonly scheduleGridSlotClosed: string
   /** Suffix for `${n}/4 ${t.scheduleGridFreeCountSuffix}` in the hour chip summary. */
   readonly scheduleGridFreeCountSuffix: string
+  // ScheduleDayGrid — "Reservera kund" (manual booking)
+  readonly reserveBtn: string
+  readonly reserveTitle: string
+  readonly reserveLeadPrefix: string
+  readonly reserveName: string
+  readonly reserveNamePh: string
+  readonly reservePrice: string
+  readonly reservePricePh: string
+  readonly reservePhone: string
+  readonly reservePhonePh: string
+  readonly reserveConfirm: string
+  readonly reserveBusy: string
+  readonly reserveCancel: string
+  readonly reserveDefaultName: string
+  readonly reserveServiceName: string
+  readonly reserveErrPhone: string
+  readonly reserveOk: string
   // BarbersView — section headings + roster states
   readonly barbersTitle: string
   readonly barbersLead: string
@@ -479,6 +496,22 @@ const SV: AdminStrings = {
   scheduleGridSlotPast: 'Passerad',
   scheduleGridSlotClosed: 'Stängt',
   scheduleGridFreeCountSuffix: 'lediga',
+  reserveBtn: 'Reservera kund',
+  reserveTitle: 'Reservera kund',
+  reserveLeadPrefix: 'Tid:',
+  reserveName: 'Namn',
+  reserveNamePh: 'Kundens namn (valfritt)',
+  reservePrice: 'Pris (kr)',
+  reservePricePh: 'Valfritt',
+  reservePhone: 'Telefon',
+  reservePhonePh: '07X XXX XX XX (valfritt)',
+  reserveConfirm: 'Boka kund',
+  reserveBusy: 'Bokar …',
+  reserveCancel: 'Avbryt',
+  reserveDefaultName: 'Reserverad kund',
+  reserveServiceName: 'Reserverad tid',
+  reserveErrPhone: 'Ogiltigt telefonnummer',
+  reserveOk: 'Kunden är bokad.',
   barbersTitle: 'Barberare',
   barbersLead:
     'Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad barberare för att ge dem ett inloggningskonto.',
@@ -762,6 +795,22 @@ const EN: AdminStrings = {
   scheduleGridSlotPast: 'Past',
   scheduleGridSlotClosed: 'Closed',
   scheduleGridFreeCountSuffix: 'free',
+  reserveBtn: 'Reserve customer',
+  reserveTitle: 'Reserve customer',
+  reserveLeadPrefix: 'Time:',
+  reserveName: 'Name',
+  reserveNamePh: 'Customer name (optional)',
+  reservePrice: 'Price (kr)',
+  reservePricePh: 'Optional',
+  reservePhone: 'Phone',
+  reservePhonePh: '07X XXX XX XX (optional)',
+  reserveConfirm: 'Book customer',
+  reserveBusy: 'Booking …',
+  reserveCancel: 'Cancel',
+  reserveDefaultName: 'Reserved',
+  reserveServiceName: 'Reserved time',
+  reserveErrPhone: 'Invalid phone number',
+  reserveOk: 'The customer is booked.',
   barbersTitle: 'Barbers',
   barbersLead:
     'Add, edit and hide barbers. Click "Create login" for an unlinked barber to give them a login account.',

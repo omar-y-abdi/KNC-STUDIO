@@ -174,7 +174,7 @@ export const adminBookingRow = z.object({
   start_at: isoTimestamp,
   end_at: isoTimestamp,
   customer_name: z.string(),
-  method: z.enum(['sms', 'email']),
+  method: z.enum(['sms', 'email', 'walkin']),
   phone: z.string().nullable(),
   email: z.string().nullable(),
   lang,
@@ -182,6 +182,20 @@ export const adminBookingRow = z.object({
 })
 export type AdminBookingRow = z.infer<typeof adminBookingRow>
 export const adminBookingRows = z.array(adminBookingRow)
+
+// --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------
+// {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'invalid'|'slot_taken'}
+
+const adminCreateOk = z.object({ ok: z.literal(true) })
+const adminCreateErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'invalid', 'slot_taken']),
+})
+export const adminCreateBookingResponse = z.discriminatedUnion('ok', [
+  adminCreateOk,
+  adminCreateErr,
+])
+export type AdminCreateBookingResponse = z.infer<typeof adminCreateBookingResponse>
 
 // --- admin_cancel_booking RPC --------------------------------------------------------------------
 // {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'not_found'}

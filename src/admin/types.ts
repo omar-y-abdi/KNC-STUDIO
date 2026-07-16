@@ -151,7 +151,7 @@ export interface AdminBooking {
   /** Appointment end instant. */
   readonly endAt: Date
   readonly customerName: string
-  readonly method: 'sms' | 'email'
+  readonly method: 'sms' | 'email' | 'walkin'
   readonly phone: string | null
   readonly email: string | null
   readonly lang: Lang

@@ -10,12 +10,63 @@
 // Boundary discipline: rows + RPC response Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { adminBookingRows, adminCancelResponse, parseWith } from '../adminSchemas'
+import {
+  adminBookingRows,
+  adminCancelResponse,
+  adminCreateBookingResponse,
+  parseWith,
+} from '../adminSchemas'
 import type { AdminBarberId, AdminBooking, AdminResult } from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa bokningar.'
 const CANCEL_ERROR = 'Kunde inte avboka. Försök igen.'
+const RESERVE_ERROR = 'Kunde inte reservera. Försök igen.'
+
+/** Fields for a manual "Reservera kund" booking (all but the time are optional at the UI). */
+export interface ManualBooking {
+  readonly startAt: Date
+  readonly durationMin: number
+  readonly serviceName: string
+  readonly price: number
+  readonly customerName: string
+  /** Normalized phone, or null for a contact-less walk-in. */
+  readonly phone: string | null
+}
+
+/**
+ * Reserve a customer via the `admin_create_booking` RPC (owner any barber; a barber only their own).
+ * Writes a real booking row honoring the no-double-book constraint; a phone makes it visible under
+ * "Mina bokningar". Maps the RPC's typed errors to admin errors the dialog can message precisely.
+ */
+export async function createManualBooking(
+  barberId: AdminBarberId,
+  b: ManualBooking,
+): Promise<AdminResult<true>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_create_booking', {
+      p_barber_id: barberId,
+      p_start_at: b.startAt.toISOString(),
+      p_duration_min: b.durationMin,
+      p_service_name: b.serviceName,
+      p_price: b.price,
+      p_customer_name: b.customerName,
+      p_phone: b.phone,
+    })
+    if (error !== null) return err('network', RESERVE_ERROR)
+
+    const parsed = parseWith(adminCreateBookingResponse, data)
+    if (!parsed.ok) return err('malformed', RESERVE_ERROR)
+    if (!parsed.value.ok) {
+      if (parsed.value.error === 'forbidden') return err('forbidden', 'Du saknar behörighet.')
+      if (parsed.value.error === 'slot_taken') return err('validation', 'Tiden är redan bokad.')
+      return err('validation', 'Kontrollera uppgifterna och försök igen.')
+    }
+    return ok(true)
+  } catch {
+    return err('network', RESERVE_ERROR)
+  }
+}
 
 /** Map a parsed raw booking row into the admin domain type (timestamps -> Date). */
 function toBooking(r: {
@@ -27,7 +78,7 @@ function toBooking(r: {
   start_at: string
   end_at: string
   customer_name: string
-  method: 'sms' | 'email'
+  method: 'sms' | 'email' | 'walkin'
   phone: string | null
   email: string | null
   lang: 'sv' | 'en'

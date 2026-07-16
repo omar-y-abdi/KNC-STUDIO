@@ -14,12 +14,13 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
-import { cap, monthLabel, weekdayLabel } from '../../booking/calendar'
+import { cap, formatWhenLabel, monthLabel, weekdayLabel } from '../../booking/calendar'
 import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
 import { adminText, type AdminStrings } from '../../i18n/adminStrings'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
-import { listBookings } from '../adapters/bookingsAdmin'
+import { createManualBooking, listBookings } from '../adapters/bookingsAdmin'
+import { ReserveDialog, type ReserveFields } from '../ReserveDialog'
 import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
 import { QUARTER_LEN_MIN, dayHours, timeOffCovering, toDateIso, upcomingDates } from '../time'
@@ -38,6 +39,7 @@ const STRIP_DAYS = 14
 
 export interface ScheduleDayGridProps {
   readonly c: Palette
+  readonly dark: boolean
   readonly lang: Lang
   readonly s: AdminStylesBundle
   readonly barberId: AdminBarberId
@@ -63,6 +65,12 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const [busyQuarters, setBusyQuarters] = useState<readonly number[]>([])
   const [dayBusy, setDayBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // "Reservera kund": the hour being reserved (start minute-of-day), plus the async write state. A
+  // nonce bump re-runs the bookings fetch so a new reservation shows immediately as a booked slot.
+  const [reserveMin, setReserveMin] = useState<number | null>(null)
+  const [reserveBusy, setReserveBusy] = useState(false)
+  const [reserveError, setReserveError] = useState<string | null>(null)
+  const [bookingsNonce, setBookingsNonce] = useState(0)
 
   // Blocks are per-date; bookings are per-barber (fetched once, filtered per day below).
   useEffect(() => {
@@ -91,7 +99,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId])
+  }, [props.barberId, bookingsNonce])
 
   const off = timeOffCovering(props.timeOff, dateIso)
   const hours = useMemo((): readonly HourGroup[] => {
@@ -174,6 +182,42 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
 
   // Whole-day control: single-day off -> reopen; range off -> managed under Ledighet; else block.
   const inRangeOff = off !== undefined && off.startDate !== off.endDate
+
+  // "Reservera kund": build the salon-local start instant for a given minute-of-day on the selected
+  // date (browser TZ = salon TZ, same convention as the public booking flow).
+  const startAtFor = (minuteOfDay: number): Date => {
+    const base = parseIsoLocal(dateIso)
+    return new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate(),
+      Math.floor(minuteOfDay / 60),
+      minuteOfDay % 60,
+    )
+  }
+  const reserveTimeLabel = reserveMin === null ? '' : formatWhenLabel(lang, startAtFor(reserveMin))
+
+  const onReserveSubmit = async (fields: ReserveFields): Promise<void> => {
+    if (reserveMin === null) return
+    setReserveBusy(true)
+    setReserveError(null)
+    const r = await createManualBooking(props.barberId, {
+      startAt: startAtFor(reserveMin),
+      durationMin: 45,
+      serviceName: t.reserveServiceName,
+      price: fields.price,
+      customerName: fields.customerName,
+      phone: fields.phone,
+    })
+    setReserveBusy(false)
+    if (!r.ok) {
+      setReserveError(r.error.message)
+      return
+    }
+    setReserveMin(null)
+    setExpanded(null)
+    setBookingsNonce((n) => n + 1)
+  }
 
   const dayChip = (d: Date): JSX.Element => {
     const iso = toDateIso(d)
@@ -293,7 +337,11 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         disabled={!tappable || busy}
         onClick={() => void toggleQuarter(q)}
         aria-pressed={q.state === 'blocked'}
-        aria-label={q.state === 'blocked' ? `${t.scheduleGridOpenHour} ${q.label}` : `${t.scheduleGridBlockHour} ${q.label} (${sub})`}
+        aria-label={
+          q.state === 'blocked'
+            ? `${t.scheduleGridOpenHour} ${q.label}`
+            : `${t.scheduleGridBlockHour} ${q.label} (${sub})`
+        }
         style={quarterChipStyle(c, q.state, tappable, busy)}
       >
         <span style={{ fontSize: '14px', fontWeight: 700 }}>{q.label}</span>
@@ -342,28 +390,36 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         >
           {hour.quarters.map(quarterChip)}
         </div>
-        {anyOpen || anyBlocked ? (
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {anyOpen ? (
-              <button
-                type="button"
-                style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
-                onClick={() => void toggleHourBulk(hour, true)}
-              >
-                {`${t.scheduleGridBlockHour} ${hour.label.slice(0, 2)}–${endLabel}`}
-              </button>
-            ) : null}
-            {anyBlocked ? (
-              <button
-                type="button"
-                style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
-                onClick={() => void toggleHourBulk(hour, false)}
-              >
-                {`${t.scheduleGridOpenHour} ${hour.label.slice(0, 2)}–${endLabel}`}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            style={{ ...s.primaryBtn, padding: '7px 12px', fontSize: '13px' }}
+            onClick={() => {
+              setReserveError(null)
+              setReserveMin(hour.startMin)
+            }}
+          >
+            {t.reserveBtn}
+          </button>
+          {anyOpen ? (
+            <button
+              type="button"
+              style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
+              onClick={() => void toggleHourBulk(hour, true)}
+            >
+              {`${t.scheduleGridBlockHour} ${hour.label.slice(0, 2)}–${endLabel}`}
+            </button>
+          ) : null}
+          {anyBlocked ? (
+            <button
+              type="button"
+              style={{ ...s.ghostBtn, padding: '7px 12px', fontSize: '13px' }}
+              onClick={() => void toggleHourBulk(hour, false)}
+            >
+              {`${t.scheduleGridOpenHour} ${hour.label.slice(0, 2)}–${endLabel}`}
+            </button>
+          ) : null}
+        </div>
       </div>
     )
   }
@@ -461,6 +517,23 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
       <div aria-live="assertive" style={{ minHeight: '18px', marginTop: '8px' }}>
         {error !== null ? <span style={s.errorText}>{error}</span> : null}
       </div>
+
+      {reserveMin !== null ? (
+        <ReserveDialog
+          dark={props.dark}
+          lang={lang}
+          timeLabel={reserveTimeLabel}
+          busy={reserveBusy}
+          serverError={reserveError}
+          onSubmit={(fields) => void onReserveSubmit(fields)}
+          onClose={() => {
+            if (!reserveBusy) {
+              setReserveMin(null)
+              setReserveError(null)
+            }
+          }}
+        />
+      ) : null}
     </section>
   )
 }

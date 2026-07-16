@@ -251,7 +251,9 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   if (loadError !== null) {
     return (
       <section style={s.card}>
-        <h2 style={s.sectionTitle}>{t.scheduleHeadingPrefix} · {props.barberName}</h2>
+        <h2 style={s.sectionTitle}>
+          {t.scheduleHeadingPrefix} · {props.barberName}
+        </h2>
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
       </section>
     )
@@ -259,7 +261,9 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   if (!loaded) {
     return (
       <section style={s.card}>
-        <h2 style={s.sectionTitle}>{t.scheduleHeadingPrefix} · {props.barberName}</h2>
+        <h2 style={s.sectionTitle}>
+          {t.scheduleHeadingPrefix} · {props.barberName}
+        </h2>
         <div style={s.emptyState}>{t.scheduleLoading}</div>
       </section>
     )
@@ -270,6 +274,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       {/* 1. Day grid — tap to block/unblock a slot, saved instantly */}
       <ScheduleDayGrid
         c={c}
+        dark={props.dark}
         lang={lang}
         s={s}
         barberId={props.barberId}
@@ -445,9 +450,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
                   />
                 </div>
                 {timeControls}
-                {invalid ? (
-                  <span style={s.errorText}>{t.scheduleInvalidHours}</span>
-                ) : null}
+                {invalid ? <span style={s.errorText}>{t.scheduleInvalidHours}</span> : null}
               </div>
             )
           })}
