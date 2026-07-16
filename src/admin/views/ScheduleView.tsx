@@ -160,20 +160,32 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     commitWeek(next)
   }
 
-  // Load the week + time-off whenever the target barber changes; flush any pending save for the
-  // PREVIOUS barber first so a quick barber-switch never drops an edit.
+  // Load week + time-off + upcoming bookings whenever the target barber changes; flush any pending save
+  // for the PREVIOUS barber first so a quick barber-switch never drops an edit. Bookings are part of this
+  // gate (cleared up front, refetched here) — NOT a separate ungated fetch — so the editor is never
+  // interactive with another barber's, or a not-yet-loaded, bookings list. Otherwise a block/toggle in
+  // that window would test the conflict against the wrong (or empty) set: cancel the wrong barber's
+  // customer, or miss the warning entirely and strand a real booking.
   useEffect(() => {
     let active = true
     setLoaded(false)
     setLoadError(null)
     setWeekSave({ kind: 'idle' })
     setOffMsg(null)
+    setBookings([])
+    const now = defaultClock()
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     void (async () => {
-      const [wk, off] = await Promise.all([readWeek(props.barberId), listTimeOff(props.barberId)])
+      const [wk, off, bk] = await Promise.all([
+        readWeek(props.barberId),
+        listTimeOff(props.barberId),
+        listBookings(props.barberId, midnight.toISOString()),
+      ])
       if (!active) return
       if (wk.ok) setWeek(wk.value)
       else setLoadError(wk.error.message)
       if (off.ok) setTimeOff(off.value)
+      if (bk.ok) setBookings(bk.value)
       setLoaded(true)
     })()
     return () => {
@@ -197,9 +209,15 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
   }, [props.barberId])
 
-  // Upcoming bookings for conflict detection (from local midnight; older bookings can't be stranded).
-  // Refetches on barber change and after a cancellation bumps the nonce.
+  // Refresh bookings after a cancellation (the conflict flow bumps the nonce). The initial + per-barber
+  // loads are owned by the gate effect above; this fires ONLY on a nonce bump, so it never re-gates or
+  // flickers the editor. Skip the initial run — nonce starts at 0 and the gate already has the bookings.
+  const bookingsPrimed = useRef(false)
   useEffect(() => {
+    if (!bookingsPrimed.current) {
+      bookingsPrimed.current = true
+      return
+    }
     let active = true
     const now = defaultClock()
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -209,7 +227,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId, bookingsNonce])
+  }, [bookingsNonce])
 
   const onToggleDay = (weekday: Weekday): void => mutate(toggleWorking(week, weekday))
   const onDayStart = (weekday: Weekday, startMin: number): void => {
