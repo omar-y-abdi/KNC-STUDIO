@@ -123,6 +123,14 @@ export const siteSettingRow = z.object({
 export type SiteSettingRowT = z.infer<typeof siteSettingRow>
 export const siteSettingRows = z.array(siteSettingRow)
 
+// --- barber_photos (Task 2 §3) -------------------------------------------------------------------
+
+export const barberPhotoRowT = z.object({
+  barber_id: z.string(),
+  storage_path: z.string(),
+})
+export type BarberPhotoRowT = z.infer<typeof barberPhotoRowT>
+
 // --- about_content -------------------------------------------------------------------------------
 
 export const aboutRow = z.object({

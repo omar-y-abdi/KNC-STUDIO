@@ -171,6 +171,15 @@ export const siteSettingRow = z.object({
 })
 export type SiteSettingRow = z.infer<typeof siteSettingRow>
 
+// --- public barber_photos row (Task 2 §3) --------------------------------------------------------
+// One barber's profile-photo path (anon may read; the adapter resolves it to a public Storage URL).
+
+export const barberPhotoRow = z.object({
+  barber_id: z.string(),
+  storage_path: z.string(),
+})
+export type BarberPhotoRow = z.infer<typeof barberPhotoRow>
+
 // --- public about_content row (direct table select) ----------------------------------------------
 // One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.
 

@@ -21,11 +21,13 @@ export interface BarberCopy {
   readonly bioEn: string
 }
 
-/** A public roster entry: the booking-grid `Barber` plus its (optional) About copy. */
+/** A public roster entry: the booking-grid `Barber` plus its (optional) About copy + profile photo. */
 export interface RosterBarber {
   readonly barber: Barber
   /** About copy from the DB row; `null` under the mock (i18n constants are the fallback). */
   readonly copy: BarberCopy | null
+  /** Resolved public URL of the barber's profile photo, or `null` (→ the placeholder avatar). */
+  readonly photoUrl: string | null
 }
 
 export interface BarbersPort {

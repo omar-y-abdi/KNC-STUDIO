@@ -6,10 +6,11 @@
 import { BARBERS } from '../barbers'
 import type { BarbersPort, RosterBarber } from '../barbersPort'
 
-/** The constant roster as `RosterBarber[]` (copy=null) — the seed + the mock fallback. */
+/** The constant roster as `RosterBarber[]` (no DB copy, no photo) — the seed + the mock fallback. */
 export const CONSTANT_ROSTER: readonly RosterBarber[] = BARBERS.map((barber) => ({
   barber,
   copy: null,
+  photoUrl: null,
 }))
 
 export const mockBarbersAdapter: BarbersPort = {

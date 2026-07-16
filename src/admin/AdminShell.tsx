@@ -26,6 +26,7 @@ import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
 import { BarbersView } from './views/BarbersView'
 import { ServicesView } from './views/ServicesView'
+import { ProfileView } from './views/ProfileView'
 import { SiteView } from './views/SiteView'
 import { AboutView } from './views/AboutView'
 import { useBarbers } from './useBarbers'
@@ -41,7 +42,8 @@ export interface AdminShellProps {
 }
 
 /** The tabs a barber can see; the owner gets all of them. */
-type Tab = 'bookings' | 'schedule' | 'services' | 'allBookings' | 'barbers' | 'site' | 'about'
+type Tab =
+  'bookings' | 'schedule' | 'services' | 'profile' | 'allBookings' | 'barbers' | 'site' | 'about'
 
 interface TabDef {
   readonly id: Tab
@@ -60,6 +62,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     { id: 'schedule', label: t.tabSchedule, ownerOnly: false },
     { id: 'bookings', label: t.tabBookings, ownerOnly: false },
     { id: 'services', label: t.tabServices, ownerOnly: false },
+    { id: 'profile', label: t.tabProfile, ownerOnly: false },
     { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
     { id: 'site', label: t.tabSite, ownerOnly: true },
@@ -152,6 +155,20 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         )
       case 'barbers':
         return <BarbersView lang={props.lang} s={s} onRosterChanged={() => void reloadBarbers()} />
+      case 'profile':
+        return effectiveBarberId === null ? (
+          <section style={s.card}>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+          </section>
+        ) : (
+          <ProfileView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            barberName={effectiveBarberName}
+          />
+        )
       case 'site':
         return <SiteView dark={props.dark} lang={props.lang} s={s} />
       case 'about':

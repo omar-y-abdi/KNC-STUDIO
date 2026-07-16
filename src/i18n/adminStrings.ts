@@ -16,6 +16,23 @@ export interface AdminStrings {
   readonly tabAbout: string
   readonly tabServices: string
   readonly tabSite: string
+  readonly tabProfile: string
+  // Profil (barber photo) view.
+  readonly profileTitle: string
+  readonly profileLead: string
+  readonly profilePhotoAlt: string
+  readonly profileUpload: string
+  readonly profileReplace: string
+  readonly profileUploading: string
+  readonly profileRemove: string
+  readonly profileRemoving: string
+  readonly profileNoPhoto: string
+  readonly profileUploadedOk: string
+  readonly profileRemovedOk: string
+  readonly profileLoading: string
+  readonly profileError: string
+  readonly profileDeleteTitle: string
+  readonly profileDeleteBody: string
   // Startsida (homepage chrome) view.
   readonly siteTextTitle: string
   readonly siteTextLead: string
@@ -313,6 +330,23 @@ const SV: AdminStrings = {
   tabAbout: 'Om oss',
   tabServices: 'Tjänster',
   tabSite: 'Startsida',
+  tabProfile: 'Profil',
+  profileTitle: 'Profilbild',
+  profileLead:
+    'Bilden visas i "Om oss" på hemsidan. Utan bild visas en platshållare. Kvadratiskt format ser bäst ut.',
+  profilePhotoAlt: 'Profilbild',
+  profileUpload: 'Ladda upp bild',
+  profileReplace: 'Byt bild',
+  profileUploading: 'Laddar upp …',
+  profileRemove: 'Ta bort bild',
+  profileRemoving: 'Tar bort …',
+  profileNoPhoto: 'Ingen bild uppladdad ännu.',
+  profileUploadedOk: 'Bilden är uppladdad.',
+  profileRemovedOk: 'Bilden är borttagen.',
+  profileLoading: 'Laddar profil …',
+  profileError: 'Kunde inte spara. Försök igen.',
+  profileDeleteTitle: 'Ta bort profilbild?',
+  profileDeleteBody: 'Bilden tas bort och platshållaren visas igen på hemsidan.',
   siteTextTitle: 'Startsidans text',
   siteTextLead:
     'Redigera texten på startsidan. Tomt fält återgår till standardtexten. Loggan och knapptexterna ändras inte här.',
@@ -579,6 +613,23 @@ const EN: AdminStrings = {
   tabAbout: 'About us',
   tabServices: 'Services',
   tabSite: 'Home page',
+  tabProfile: 'Profile',
+  profileTitle: 'Profile photo',
+  profileLead:
+    'The photo shows in the "About" section on the site. Without one a placeholder is shown. A square image looks best.',
+  profilePhotoAlt: 'Profile photo',
+  profileUpload: 'Upload photo',
+  profileReplace: 'Replace photo',
+  profileUploading: 'Uploading …',
+  profileRemove: 'Remove photo',
+  profileRemoving: 'Removing …',
+  profileNoPhoto: 'No photo uploaded yet.',
+  profileUploadedOk: 'The photo is uploaded.',
+  profileRemovedOk: 'The photo is removed.',
+  profileLoading: 'Loading profile …',
+  profileError: 'Could not save. Please try again.',
+  profileDeleteTitle: 'Remove profile photo?',
+  profileDeleteBody: 'The photo is removed and the placeholder shows again on the site.',
   siteTextTitle: 'Home page text',
   siteTextLead:
     'Edit the text on the home page. An empty field falls back to the default. The logo and button labels are not changed here.',

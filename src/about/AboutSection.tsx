@@ -320,13 +320,29 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             const copy = stylistCopyFor(entry, lang, i18nStylists)
             return (
               <div key={b.id} style={stylistCardStyle}>
-                <PlaceholderPhoto
-                  c={c}
-                  dark={dark}
-                  glyph="person"
-                  alt={tx.stylistAvatarAlt}
-                  ratio="1 / 1"
-                />
+                {entry.photoUrl !== null ? (
+                  <img
+                    src={entry.photoUrl}
+                    alt={b.name}
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                      objectFit: 'cover',
+                      borderRadius: '14px',
+                      border: '0.5px solid ' + c.line,
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <PlaceholderPhoto
+                    c={c}
+                    dark={dark}
+                    glyph="person"
+                    alt={tx.stylistAvatarAlt}
+                    ratio="1 / 1"
+                  />
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
                   <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
