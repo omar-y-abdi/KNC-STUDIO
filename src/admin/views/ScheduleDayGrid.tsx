@@ -19,7 +19,7 @@ import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
 import { adminText, type AdminStrings } from '../../i18n/adminStrings'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
-import { createManualBooking, listBookings } from '../adapters/bookingsAdmin'
+import { createManualBooking } from '../adapters/bookingsAdmin'
 import { ReserveDialog, type ReserveFields } from '../ReserveDialog'
 import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
@@ -45,8 +45,14 @@ export interface ScheduleDayGridProps {
   readonly barberId: AdminBarberId
   readonly week: WeekSchedule
   readonly timeOff: readonly TimeOff[]
-  /** Bump to force a bookings refetch (the parent cancels bookings during the conflict flow). */
-  readonly bookingsRefreshKey?: number
+  /**
+   * The barber's upcoming bookings, owned and fetched by the parent — the SAME array the parent's
+   * conflict detection reads. The grid must not fetch its own copy: a private list drifts out of sync
+   * with the parent's, and an unavailability change would then be checked against a stale set.
+   */
+  readonly bookings: readonly AdminBooking[]
+  /** Tell the parent its bookings are out of date (a reservation was created here) so it refetches. */
+  readonly onBookingsChanged: () => void
   /** Block the whole day (parent inserts a single-day time-off row and updates its list). */
   readonly onBlockDay: (dateIso: string) => Promise<boolean>
   /** Reopen a day blocked by a SINGLE-DAY time-off row (parent deletes it + updates its list). */
@@ -63,18 +69,17 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const [dateIso, setDateIso] = useState(todayIso)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [blocks, setBlocks] = useState<readonly SlotBlock[] | null>(null)
-  const [bookings, setBookings] = useState<readonly AdminBooking[]>([])
   const [busyQuarters, setBusyQuarters] = useState<readonly number[]>([])
   const [dayBusy, setDayBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // "Reservera kund": the hour being reserved (start minute-of-day), plus the async write state. A
-  // nonce bump re-runs the bookings fetch so a new reservation shows immediately as a booked slot.
+  // "Reservera kund": the hour being reserved (start minute-of-day), plus the async write state. A new
+  // reservation is reported UP (onBookingsChanged) so the parent refetches; the fresh list flows back
+  // down as props.bookings and the slot renders as booked.
   const [reserveMin, setReserveMin] = useState<number | null>(null)
   const [reserveBusy, setReserveBusy] = useState(false)
   const [reserveError, setReserveError] = useState<string | null>(null)
-  const [bookingsNonce, setBookingsNonce] = useState(0)
 
-  // Blocks are per-date; bookings are per-barber (fetched once, filtered per day below).
+  // Blocks are per-date; bookings come from the parent (per-barber, filtered per day below).
   useEffect(() => {
     let active = true
     setBlocks(null)
@@ -89,20 +94,6 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     }
   }, [props.barberId, dateIso])
 
-  useEffect(() => {
-    let active = true
-    setBookings([])
-    // Local midnight today — the strip only shows today+forward, so older bookings are dead weight.
-    const now = defaultClock()
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    void listBookings(props.barberId, midnight.toISOString()).then((r) => {
-      if (active && r.ok) setBookings(r.value)
-    })
-    return () => {
-      active = false
-    }
-  }, [props.barberId, bookingsNonce, props.bookingsRefreshKey])
-
   const off = timeOffCovering(props.timeOff, dateIso)
   const hours = useMemo((): readonly HourGroup[] => {
     const selected = parseIsoLocal(dateIso)
@@ -112,10 +103,10 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
       day: props.week[selected.getDay()],
       dayOff: off !== undefined,
       blocks: blocks ?? [],
-      bookings: dayBookings(bookings, dateIso),
+      bookings: dayBookings(props.bookings, dateIso),
       pastCutoffMin,
     })
-  }, [props.week, off, blocks, bookings, dateIso])
+  }, [props.week, off, blocks, props.bookings, dateIso])
 
   // The whole day is off (time off / non-working weekday): show a calm state card, not 9 dead chips.
   const dayIsOff = hours.every((h) => h.quarters.every((q) => q.state === 'closed'))
@@ -185,8 +176,9 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   // Whole-day control: single-day off -> reopen; range off -> managed under Ledighet; else block.
   const inRangeOff = off !== undefined && off.startDate !== off.endDate
 
-  // "Reservera kund": build the salon-local start instant for a given minute-of-day on the selected
-  // date (browser TZ = salon TZ, same convention as the public booking flow).
+  // "Reservera kund": the salon-local WALL CLOCK for a minute-of-day on the selected date, carried in a
+  // browser-local Date (also what the confirm label renders). The adapter re-anchors it to the true
+  // Stockholm instant before the write, so a non-Stockholm admin machine still books the right time.
   const startAtFor = (minuteOfDay: number): Date => {
     const base = parseIsoLocal(dateIso)
     return new Date(
@@ -218,7 +210,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     }
     setReserveMin(null)
     setExpanded(null)
-    setBookingsNonce((n) => n + 1)
+    props.onBookingsChanged()
   }
 
   const dayChip = (d: Date): JSX.Element => {

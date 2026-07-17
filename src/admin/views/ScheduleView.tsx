@@ -388,7 +388,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         barberId={props.barberId}
         week={week}
         timeOff={timeOff}
-        bookingsRefreshKey={bookingsNonce}
+        bookings={bookings}
+        onBookingsChanged={() => setBookingsNonce((n) => n + 1)}
         onBlockDay={onBlockDay}
         onOpenDay={(id) => removeOff(id)}
       />
