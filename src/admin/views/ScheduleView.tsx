@@ -111,6 +111,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveGen = useRef(0)
   const pendingSave = useRef<WeekSchedule | null>(null)
+  /** Bumped on every barber load; lets a late fetch tell whether its barber is still the current one. */
+  const barberGen = useRef(0)
 
   const doSave = async (barberId: AdminBarberId, next: WeekSchedule): Promise<void> => {
     const gen = ++saveGen.current
@@ -168,6 +170,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   // customer, or miss the warning entirely and strand a real booking.
   useEffect(() => {
     let active = true
+    barberGen.current++ // invalidate any in-flight nonce refetch holding the PREVIOUS barber's rows
     setLoaded(false)
     setLoadError(null)
     setWeekSave({ kind: 'idle' })
@@ -185,7 +188,12 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       if (wk.ok) setWeek(wk.value)
       else setLoadError(wk.error.message)
       if (off.ok) setTimeOff(off.value)
+      // Bookings MUST fail closed. Without them the conflict check silently sees zero orphans and every
+      // unavailability change applies unwarned — stranding the customers this feature exists to protect
+      // — and the grid would paint a booked day as free. So a failed read blocks the editor, exactly
+      // like a failed week read, instead of quietly handing over a lying UI.
       if (bk.ok) setBookings(bk.value)
+      else setLoadError(bk.error.message)
       setLoaded(true)
     })()
     return () => {
@@ -209,9 +217,13 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
   }, [props.barberId])
 
-  // Refresh bookings after a cancellation (the conflict flow bumps the nonce). The initial + per-barber
+  // Refresh bookings after a reservation or cancellation (both bump the nonce). The initial + per-barber
   // loads are owned by the gate effect above; this fires ONLY on a nonce bump, so it never re-gates or
   // flickers the editor. Skip the initial run — nonce starts at 0 and the gate already has the bookings.
+  // This effect does NOT depend on barberId, so a switch never runs its cleanup: an in-flight fetch here
+  // still holds the old barber's id. `barberGen` (bumped by the gate) is what makes such a late result
+  // drop instead of overwriting the new barber's list — otherwise "Avboka kunder" could cancel a
+  // customer belonging to the barber we just switched away from.
   const bookingsPrimed = useRef(false)
   useEffect(() => {
     if (!bookingsPrimed.current) {
@@ -219,10 +231,12 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       return
     }
     let active = true
+    const gen = barberGen.current
     const now = defaultClock()
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     void listBookings(props.barberId, midnight.toISOString()).then((r) => {
-      if (active && r.ok) setBookings(r.value)
+      if (!active || gen !== barberGen.current) return
+      if (r.ok) setBookings(r.value)
     })
     return () => {
       active = false
