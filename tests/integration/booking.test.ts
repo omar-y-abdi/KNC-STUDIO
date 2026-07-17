@@ -137,16 +137,18 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
 
   // The availability READ path is the anon `available_slots` RPC (NOT behind the gateway), so it is
   // still driven through the real adapter — seeding the booking via the create_booking RPC above.
-  it('availability reports the booked slot time as taken after a booking', async () => {
+  it('availability drops the booked slot time from the available set after a booking', async () => {
     const env = readStackEnv()
     if (!env) return
 
+    // availability() returns the AVAILABLE times (not TAKEN): the free slot is offered BEFORE the
+    // booking and gone AFTER it.
     const before = await supabaseBookingAdapter.availability({
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
     })
-    expect(before).not.toContain(VALID_TIME)
+    expect(before).toContain(VALID_TIME)
 
     const booked = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(booked.ok).toBe(true)
@@ -156,7 +158,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
     })
-    expect(after).toContain(VALID_TIME)
+    expect(after).not.toContain(VALID_TIME)
   })
 
   it('a different barber is NOT blocked by another barber’s booking at the same time', async () => {
@@ -171,6 +173,6 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
     })
-    expect(victorSlots).not.toContain(VALID_TIME)
+    expect(victorSlots).toContain(VALID_TIME)
   })
 })
