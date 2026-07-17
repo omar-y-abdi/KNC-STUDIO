@@ -226,22 +226,26 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       if (env) await restoreSeedState(env)
     })
 
-    it('a working day with no bookings has the full grid AVAILABLE (nothing taken)', async () => {
+    it('a working day with no bookings has the full packed grid AVAILABLE', async () => {
       const env = readAdminStackEnv()
       expect(env).not.toBeNull()
       if (!env) return
       await restoreSeedState(env) // ensure Mon–Sat 09–18 seed
 
-      // 2040-03-14 is a Wednesday (working under the seed). No bookings ⇒ nothing taken.
-      const taken = await supabaseBookingAdapter.availability({
+      // 2040-03-14 is a Wednesday (working under the seed). No bookings ⇒ the full 45-min packed grid is
+      // available (== the old fixed 45-min grid, since packing an empty 09–18 day at 45 min yields it).
+      const available = await supabaseBookingAdapter.availability({
         barberId: asBarberId('hassan'),
         dateIso: '2040-03-14',
         durationMin: 45,
       })
-      expect(taken).toEqual([])
+      expect(available).toEqual([
+        '09:00', '09:45', '10:30', '11:15', '12:00', '12:45',
+        '13:30', '14:15', '15:00', '15:45', '16:30', '17:15',
+      ])
     })
 
-    it('reflects a confirmed booking (the booked slot becomes taken)', async () => {
+    it('reflects a confirmed booking (the booked slot drops out of the available set)', async () => {
       const env = readAdminStackEnv()
       expect(env).not.toBeNull()
       if (!env) return
@@ -254,15 +258,15 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       const start = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0)
       await insertBookingRaw(env, 'hassan', start, 45)
 
-      const taken = await supabaseBookingAdapter.availability({
+      const available = await supabaseBookingAdapter.availability({
         barberId: asBarberId('hassan'),
         dateIso,
         durationMin: 45,
       })
-      expect(taken).toContain(time)
+      expect(available).not.toContain(time)
     })
 
-    it('an OFF day (no working schedule) ⇒ the whole grid is taken', async () => {
+    it('an OFF day (no working schedule) ⇒ no times are available', async () => {
       const env = readAdminStackEnv()
       expect(env).not.toBeNull()
       if (!env) return
@@ -274,13 +278,13 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
         'update public.barber_schedules set working = false where barber_id = $1 and weekday = 3',
         ['hassan'],
       )
-      const taken = await supabaseBookingAdapter.availability({
+      const available = await supabaseBookingAdapter.availability({
         barberId: asBarberId('hassan'),
         dateIso: '2040-03-14', // a Wednesday
         durationMin: 45,
       })
-      // available_slots returns nothing ⇒ every fixed slot is taken (the grid fully greys).
-      expect(taken.length).toBe(12)
+      // available_slots returns nothing on a non-working day ⇒ the available set is empty.
+      expect(available).toEqual([])
     })
   })
 
