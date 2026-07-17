@@ -7,6 +7,7 @@ export type {
   AdminBarber,
   AdminBarberId,
   AdminBooking,
+  AdminService,
   GalleryImage,
   GalleryKind,
   SlotBlock,

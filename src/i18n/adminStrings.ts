@@ -186,6 +186,7 @@ export interface AdminStrings {
   readonly reserveBtn: string
   readonly reserveTitle: string
   readonly reserveLeadPrefix: string
+  readonly reserveService: string
   readonly reserveName: string
   readonly reserveNamePh: string
   readonly reservePrice: string
@@ -513,6 +514,7 @@ const SV: AdminStrings = {
   reserveBtn: 'Reservera kund',
   reserveTitle: 'Reservera kund',
   reserveLeadPrefix: 'Tid:',
+  reserveService: 'Tjänst',
   reserveName: 'Namn',
   reserveNamePh: 'Kundens namn (valfritt)',
   reservePrice: 'Pris (kr)',
@@ -827,6 +829,7 @@ const EN: AdminStrings = {
   reserveBtn: 'Reserve customer',
   reserveTitle: 'Reserve customer',
   reserveLeadPrefix: 'Time:',
+  reserveService: 'Service',
   reserveName: 'Name',
   reserveNamePh: 'Customer name (optional)',
   reservePrice: 'Price (kr)',

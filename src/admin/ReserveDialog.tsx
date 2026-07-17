@@ -17,12 +17,27 @@ import { adminText } from '../i18n/adminStrings'
 
 const TITLE_ID = 'admin-reserve-title'
 
+/** Generic block length (minutes) when the barber has no service menu — preserves prior behavior. */
+const FALLBACK_DURATION_MIN = 45
+
+/** A bookable service the picker offers — the subset of an admin service the reservation needs. */
+export interface ReserveService {
+  readonly id: string
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+}
+
 /** The normalized reservation fields the parent sends to `createManualBooking`. */
 export interface ReserveFields {
   readonly customerName: string
   readonly price: number
   /** Normalized phone, or null for a contact-less walk-in. */
   readonly phone: string | null
+  /** Length of the reserved block (minutes) — from the picked service or the generic fallback. */
+  readonly durationMin: number
+  /** Name of the reserved service — from the picked service or the generic fallback. */
+  readonly serviceName: string
 }
 
 export interface ReserveDialogProps {
@@ -30,6 +45,8 @@ export interface ReserveDialogProps {
   readonly lang: Lang
   /** Human label of the slot being reserved (e.g. "Måndag 13 juli 12:00"). */
   readonly timeLabel: string
+  /** The barber's ACTIVE services. Empty → a generic 45-min reservation with no picker shown. */
+  readonly services: readonly ReserveService[]
   readonly busy: boolean
   /** Server-side error to show above the actions (null when none). */
   readonly serverError: string | null
@@ -43,10 +60,24 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
   const t = adminText(props.lang)
   const red = systemRed(props.dark)
 
+  // The service picker drives the reservation's duration + name; the price input is PRE-FILLED from the
+  // picked service but stays editable. An empty menu → no picker + a generic fallback block.
+  const hasServices = props.services.length > 0
+  const [serviceId, setServiceId] = useState<string>(() => props.services[0]?.id ?? '')
   const [name, setName] = useState('')
-  const [price, setPrice] = useState('')
+  const [price, setPrice] = useState<string>(() =>
+    props.services[0] !== undefined ? String(props.services[0].price) : '',
+  )
   const [phone, setPhone] = useState('')
   const [phoneError, setPhoneError] = useState(false)
+
+  const selectedService = props.services.find((svc) => svc.id === serviceId)
+
+  const onServiceChange = (id: string): void => {
+    setServiceId(id)
+    const svc = props.services.find((s2) => s2.id === id)
+    if (svc !== undefined) setPrice(String(svc.price))
+  }
 
   const backdropStyle =
     'position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;' +
@@ -83,6 +114,8 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       customerName: name.trim() === '' ? t.reserveDefaultName : name.trim(),
       price: Number.isInteger(priceNum) && priceNum >= 0 ? priceNum : 0,
       phone: normalizedPhone,
+      durationMin: selectedService?.durationMin ?? FALLBACK_DURATION_MIN,
+      serviceName: selectedService?.name ?? t.reserveServiceName,
     })
   }
 
@@ -130,6 +163,26 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       <p style={{ margin: 0, fontSize: '13px', opacity: 0.6 }}>
         {t.reserveLeadPrefix} {props.timeLabel}
       </p>
+
+      {hasServices ? (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '12px' }}>
+          <span style={s.label}>{t.reserveService}</span>
+          <select
+            style={{ ...s.select, width: '100%', minWidth: 0 }}
+            value={serviceId}
+            onChange={(e) => onServiceChange(e.currentTarget.value)}
+          >
+            {props.services.map((svc) => (
+              <option key={svc.id} value={svc.id}>
+                {svc.name} · {svc.durationMin} min · {svc.price} kr
+              </option>
+            ))}
+          </select>
+          {selectedService !== undefined ? (
+            <span style={s.mutedText}>{selectedService.durationMin} min</span>
+          ) : null}
+        </label>
+      ) : null}
 
       {field(t.reserveName, name, setName, t.reserveNamePh)}
       {field(t.reservePrice, price, setPrice, t.reservePricePh, { inputMode: 'numeric' })}

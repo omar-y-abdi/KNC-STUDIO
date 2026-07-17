@@ -20,6 +20,7 @@ import type { Lang } from '../../i18n/index'
 import { adminText, type AdminStrings } from '../../i18n/adminStrings'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { createManualBooking } from '../adapters/bookingsAdmin'
+import { listServices } from '../adapters/servicesAdmin'
 import { ReserveDialog, type ReserveFields } from '../ReserveDialog'
 import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
@@ -28,6 +29,7 @@ import type { DayBooking, DaySlot, HourGroup, SlotState } from '../time'
 import type {
   AdminBarberId,
   AdminBooking,
+  AdminService,
   AdminStylesBundle,
   SlotBlock,
   TimeOff,
@@ -78,6 +80,10 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const [reserveMin, setReserveMin] = useState<number | null>(null)
   const [reserveBusy, setReserveBusy] = useState(false)
   const [reserveError, setReserveError] = useState<string | null>(null)
+  // The barber's ACTIVE service menu — loaded per barber (mirrors the blocks fetch). Drives the reserve
+  // dialog's picker so a walk-in occupies the chosen service's real length; empty (not-yet-loaded, no
+  // menu, or a load failure) → the dialog falls back to a generic 45-min reservation with no picker.
+  const [services, setServices] = useState<readonly AdminService[]>([])
 
   // Blocks are per-date; bookings come from the parent (per-barber, filtered per day below).
   useEffect(() => {
@@ -93,6 +99,18 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
       active = false
     }
   }, [props.barberId, dateIso])
+
+  // Active services for the reserve picker — per barber, independent of the selected date.
+  useEffect(() => {
+    let active = true
+    void listServices(props.barberId).then((r) => {
+      if (!active) return
+      if (r.ok) setServices(r.value.filter((svc) => svc.active))
+    })
+    return () => {
+      active = false
+    }
+  }, [props.barberId])
 
   const off = timeOffCovering(props.timeOff, dateIso)
   const hours = useMemo((): readonly HourGroup[] => {
@@ -197,8 +215,8 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     setReserveError(null)
     const r = await createManualBooking(props.barberId, {
       startAt: startAtFor(reserveMin),
-      durationMin: 45,
-      serviceName: t.reserveServiceName,
+      durationMin: fields.durationMin,
+      serviceName: fields.serviceName,
       price: fields.price,
       customerName: fields.customerName,
       phone: fields.phone,
@@ -517,6 +535,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           dark={props.dark}
           lang={lang}
           timeLabel={reserveTimeLabel}
+          services={services}
           busy={reserveBusy}
           serverError={reserveError}
           onSubmit={(fields) => void onReserveSubmit(fields)}
