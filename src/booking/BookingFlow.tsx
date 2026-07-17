@@ -28,7 +28,6 @@ import type { ServicesPort } from './servicesPort'
 import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
-import { SLOTS } from './slots'
 import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyles'
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
@@ -65,10 +64,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [result, setResult] = useState<BookingResult | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>(NO_FIELD_ERRORS)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  // Real availability: the TAKEN slot times for the chosen barber+date+service, loaded through the
-  // port (DB-backed when configured, the deterministic `slotTaken` formula under the mock). The
-  // grid greys a slot iff its time is in this list. `slotsLoading` covers the in-flight fetch.
-  const [takenTimes, setTakenTimes] = useState<readonly string[]>([])
+  // Real availability: the AVAILABLE start times for the chosen barber+date+service, loaded through
+  // the port (DB-backed when configured, the deterministic `packSlots` grid under the mock). The grid
+  // renders exactly these as selectable chips. `slotsLoading` covers the in-flight fetch.
+  const [availableTimes, setAvailableTimes] = useState<readonly string[]>([])
   const [slotsLoading, setSlotsLoading] = useState<boolean>(false)
   // Turnstile token (proves the submitter is human; verified by the submit-booking gateway) + a
   // nonce bumped after each submit attempt to force a FRESH token (Turnstile tokens are single-use
@@ -123,14 +122,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // this is the immediate starter menu; under a backend it is that barber's active `services` rows.
   const { services: barberServices } = useServices(S.barberId, props.servicesPort)
 
-  // Load real availability whenever barber + date + service are all chosen. The result is the set of
-  // TAKEN slot times; the grid greys those (simple membership — no overlap math in the UI). A
-  // `cancelled` flag drops stale responses so fast re-selection can't show the wrong day's slots.
-  // On any failure we fall back to "nothing taken" (the DB exclusion constraint is the backstop).
+  // Load real availability whenever barber + date + service are all chosen. The result is the list of
+  // AVAILABLE start times; the grid renders exactly those as chips. A `cancelled` flag drops stale
+  // responses so fast re-selection can't show the wrong day's slots. On any failure we fail closed to
+  // an empty list (the empty-state message shows; create_booking still validates the slot on submit).
   const serviceDur = S.service?.dur
   useEffect(() => {
     if (S.barberId === null || S.dateIso === null || serviceDur === undefined) {
-      setTakenTimes([])
+      setAvailableTimes([])
       setSlotsLoading(false)
       return
     }
@@ -140,12 +139,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       .availability({ barberId: S.barberId, dateIso: S.dateIso, durationMin: serviceDur })
       .then((times) => {
         if (cancelled) return
-        setTakenTimes(times)
+        setAvailableTimes(times)
         setSlotsLoading(false)
       })
       .catch(() => {
         if (cancelled) return
-        setTakenTimes([])
+        setAvailableTimes([])
         setSlotsLoading(false)
       })
     return () => {
@@ -340,40 +339,21 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   interface TimeSlot {
     label: string
     chipStyle: JSX.CSSProperties
-    onClick: undefined | (() => void)
+    onClick: () => void
   }
+  // Every returned time is AVAILABLE (the adapter already packed + filtered) — render each as a
+  // selectable chip; the chosen one gets the accent highlight. No greying/line-through here:
+  // unavailable times simply aren't in the list.
   const timeSlots: TimeSlot[] =
     selDate !== null && S.service !== null
-      ? SLOTS.map((time) => {
-          // A slot is taken iff its time is in the loaded availability set (membership only — all
-          // overlap math lives in the adapter). Under the mock this equals the `slotTaken` output.
-          const taken = takenTimes.includes(time)
+      ? availableTimes.map((time) => {
           const sel = S.time === time
-          let bg = c.card
-          let color = 'inherit'
-          let bd = '0.5px solid ' + c.inputLine
-          let cursor = 'pointer'
-          let deco = 'none'
-          let op = 1
-          if (taken) {
-            bg = c.subtle
-            op = 0.4
-            cursor = 'default'
-            deco = 'line-through'
-            bd = '0.5px solid transparent'
-          } else if (sel) {
-            bg = c.accent
-            color = c.accentText
-            bd = '1px solid ' + c.accent
-          }
           return {
             label: time,
             chipStyle: {
-              border: bd,
-              background: bg,
-              color,
-              opacity: op,
-              textDecoration: deco,
+              border: sel ? '1px solid ' + c.accent : '0.5px solid ' + c.inputLine,
+              background: sel ? c.accent : c.card,
+              color: sel ? c.accentText : 'inherit',
               borderRadius: '9px',
               padding: '9px 4px',
               width: '64px',
@@ -381,10 +361,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               fontFamily: 'inherit',
               fontSize: '14px',
               fontWeight: sel ? 600 : 500,
-              cursor,
+              cursor: 'pointer',
               transition: 'background .12s',
             } satisfies JSX.CSSProperties,
-            onClick: taken ? undefined : () => setState({ time, showPopup: true }),
+            onClick: () => setState({ time, showPopup: true }),
           }
         })
       : []
@@ -691,7 +671,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               {timesReady && slotsLoading ? (
                 <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
               ) : null}
-              {timesReady && !slotsLoading ? (
+              {timesReady && !slotsLoading && availableTimes.length > 0 ? (
                 <div>
                   <div style="font-size:13px;opacity:.5;margin:0 0 13px 0;">{timeSubLabel}</div>
                   <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -702,6 +682,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     ))}
                   </div>
                 </div>
+              ) : null}
+              {timesReady && !slotsLoading && availableTimes.length === 0 ? (
+                <div style={s.timePlaceholderStyle}>{t.noSlots}</div>
               ) : null}
               {notTimesReady ? (
                 <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div>

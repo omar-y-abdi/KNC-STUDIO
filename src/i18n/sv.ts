@@ -17,6 +17,7 @@ export const bookingSv: BookingStrings = {
   pickDayForService: 'Välj en dag i kalendern för att se behandlingar.',
   pickServiceForTime: 'Välj en behandling för att se lediga tider.',
   loadingTimes: 'Laddar tider …',
+  noSlots: 'Inga lediga tider den här dagen. Välj en annan dag.',
   legendChosen: 'Vald',
   legendClosed: 'Stängt / upptaget',
   yourDetails: 'Dina uppgifter',

@@ -10,7 +10,8 @@ export interface AvailabilityParams {
   readonly barberId: BarberId
   /** Local date `YYYY-MM-DD` (the calendar's selected day). */
   readonly dateIso: string
-  /** Selected service duration in minutes (a slot is blocked iff it would overlap a booking). */
+  /** Selected service duration in minutes — the bookable start times step by this and pack tightly
+   * around existing bookings/blocks. */
   readonly durationMin: number
 }
 
@@ -18,9 +19,11 @@ export interface BookingPort {
   /** Submit a confirmed booking. Pure-local adapters resolve synchronously-wrapped. */
   submit(booking: Booking): Promise<BookingResult>
   /**
-   * The TAKEN slot times for `barberId` on `dateIso` given `durationMin` — a subset of `SLOTS`
-   * (e.g. `['09:45','13:30']`). The UI greys a slot iff its time is in this list (simple membership;
-   * all overlap math lives inside the adapter). Resolves to the taken times.
+   * The AVAILABLE start times to render for `barberId` on `dateIso` given `durationMin` — ascending
+   * `"HH:MM"` (e.g. `['09:00','09:30','10:30']`), duration-stepped and packed around existing
+   * bookings/blocks (all packing math lives inside the adapter). An empty array means "no bookable
+   * times" (barber off/on time-off, fully booked, or — for the backend adapter — a read error;
+   * fail-closed). The UI renders each returned time as a selectable chip.
    */
   availability(params: AvailabilityParams): Promise<readonly string[]>
 }

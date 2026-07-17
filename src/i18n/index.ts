@@ -13,6 +13,9 @@ export interface BookingStrings {
   pickServiceForTime: string
   /** Shown in the time column while real availability is loading from the backend. */
   loadingTimes: string
+  /** Shown in the time column when a barber+date+service is chosen but no bookable times remain
+   * (barber off/on time-off, fully booked, or — for the backend — a read error; fail-closed). */
+  noSlots: string
   legendChosen: string
   legendClosed: string
   yourDetails: string

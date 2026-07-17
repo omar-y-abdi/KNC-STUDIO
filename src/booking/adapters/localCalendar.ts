@@ -11,7 +11,8 @@ import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
 import type { AvailabilityParams, BookingPort } from '../port'
-import { SLOTS, slotTaken } from '../slots'
+import { packSlots } from '../slotPacking'
+import type { BlockedInterval } from '../slotPacking'
 
 /** Apple Maps directions URL for the studio. */
 const MAPS_HREF = BUSINESS.mapsHref
@@ -67,19 +68,40 @@ export function buildLinks(booking: Booking, now: Date = new Date()): BookingLin
   }
 }
 
-/** Day-of-month from a `YYYY-MM-DD` string (the only part `slotTaken` needs), or 0 if malformed. */
+/** Day-of-month from a `YYYY-MM-DD` string (the seed the deterministic mock block needs), or 0 if
+ * malformed. */
 function dayOfMonth(dateIso: string): number {
   return parseDateIso(dateIso)?.day ?? 0
+}
+
+/** The mock's working window: 09:00–18:00 in minutes since midnight (matches the demo baseline). */
+const MOCK_OPEN_MIN = 540
+const MOCK_CLOSE_MIN = 1080
+
+/** Candidate lengths (minutes) for the mock's single deterministic booking. */
+const MOCK_BLOCK_LENGTHS = [45, 60, 90] as const
+
+/**
+ * ONE deterministic "existing booking" for the demo, derived purely from (day-of-month, barber index)
+ * so the offline grid shows tight packing right after it — and reproduces byte-for-byte in the visual
+ * baseline. An unknown barber (index < 0) yields no block (a clean, fully-open grid). The single
+ * interval always sits inside the working window (start 540..870, length ≤ 90 → end ≤ 960).
+ */
+function mockBlocked(day: number, barberIdx: number): readonly BlockedInterval[] {
+  if (barberIdx < 0) return []
+  const startStep = (day * 5 + barberIdx * 7) % 12 // 0..11 → a 30-min-grid start across the morning
+  const start = MOCK_OPEN_MIN + startStep * 30 // 540..870
+  const len = MOCK_BLOCK_LENGTHS[(day + barberIdx) % 3] ?? 45 // 45 | 60 | 90
+  return [[start, start + len]]
 }
 
 /**
  * Local-only BookingPort: always succeeds, producing the calendar/map links (the .ics + Google
  * Cal + maps links the original mock produced, now hardened).
  *
- * `availability` reproduces the mock's UI greying formula so the offline/demo/visual baseline is
- * unchanged: for the date + barber, it includes each `SLOTS[i]` whose
- * `slotTaken(dayOfMonth, barberIndex, i, durationMin)` is true — so the UI's
- * `takenTimes.includes(time)` check matches `slotTaken(...)` exactly.
+ * `availability` returns the AVAILABLE start times via the shared `packSlots` util — duration-stepped
+ * over the fixed 09:00–18:00 window and packed around one deterministic mock booking derived from
+ * (day-of-month, barber index), so the offline/demo/visual baseline is stable and reproducible.
  */
 export const localCalendarAdapter: BookingPort = {
   submit(booking: Booking): Promise<BookingResult> {
@@ -88,9 +110,15 @@ export const localCalendarAdapter: BookingPort = {
     return Promise.resolve(result)
   },
   availability(params: AvailabilityParams): Promise<readonly string[]> {
-    const day = dayOfMonth(params.dateIso)
-    const bi = barberIndex(params.barberId)
-    const taken = SLOTS.filter((_time, i) => slotTaken(day, bi, i, params.durationMin))
-    return Promise.resolve(taken)
+    const times = packSlots({
+      openMin: MOCK_OPEN_MIN,
+      closeMin: MOCK_CLOSE_MIN,
+      durationMin: params.durationMin,
+      blocked: mockBlocked(dayOfMonth(params.dateIso), barberIndex(params.barberId)),
+      // The mock has no clock — pass a future-safe cutoff so the grid stays deterministic (no past
+      // filtering); the real backend does the now-filter server-side.
+      nowMin: -1,
+    })
+    return Promise.resolve(times)
   },
 }
