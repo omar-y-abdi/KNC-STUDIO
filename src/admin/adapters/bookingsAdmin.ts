@@ -18,6 +18,7 @@ import {
 } from '../adminSchemas'
 import type { AdminBarberId, AdminBooking, AdminResult } from '../types'
 import { err, ok } from '../types'
+import { localWallClockToStockholmIso } from '../../booking/stockholmTime'
 
 const READ_ERROR = 'Kunde inte läsa bokningar.'
 const CANCEL_ERROR = 'Kunde inte avboka. Försök igen.'
@@ -46,7 +47,10 @@ export async function createManualBooking(
   try {
     const { data, error } = await getAdminClient().rpc('admin_create_booking', {
       p_barber_id: barberId,
-      p_start_at: b.startAt.toISOString(),
+      // `startAt` carries the salon-local WALL CLOCK the barber picked, in a browser-local Date.
+      // Re-anchor it to the Stockholm instant at the wire boundary — same as the public booking flow
+      // (supabaseBooking.ts) — so an admin on a non-Stockholm machine can't store the wrong time.
+      p_start_at: localWallClockToStockholmIso(b.startAt),
       p_duration_min: b.durationMin,
       p_service_name: b.serviceName,
       p_price: b.price,
