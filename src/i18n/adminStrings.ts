@@ -264,6 +264,18 @@ export interface AdminStrings {
   readonly barbersEmailError: string
   /** The "login created" note. KEEP the literal "123456" — only the surrounding copy is translated. */
   readonly barbersDefaultPasswordNote: string
+  // BarbersView — delete flow (type-the-id confirm + has-bookings purge confirm)
+  readonly barbersDelete: string
+  readonly barbersDeleteTitle: string
+  /** Body of the type-to-confirm dialog. `{name}` is interpolated with the barber's name. */
+  readonly barbersDeleteBody: string
+  readonly barbersDeleteConfirm: string
+  readonly barbersDeleteCancel: string
+  /** Purge confirm body. `{count}`/`{past}`/`{upcoming}` are interpolated with the booking counts. */
+  readonly barbersDeleteBookingsBody: string
+  readonly barbersDeleteBookingsConfirm: string
+  readonly barbersDeleteBookingsCancel: string
+  readonly barbersDeletedOk: string
   // AboutView — text editor headings + controls
   readonly aboutTextTitle: string
   readonly aboutTextLead: string
@@ -587,6 +599,17 @@ const SV: AdminStrings = {
   barbersEmailError: 'Ange en giltig e-postadress.',
   barbersDefaultPasswordNote:
     'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+  barbersDelete: 'Radera',
+  barbersDeleteTitle: 'Radera barberare?',
+  barbersDeleteBody:
+    'Barberaren {name} tas bort permanent. Detta går inte att ångra. Skriv barberarens id nedan för att bekräfta.',
+  barbersDeleteConfirm: 'Radera',
+  barbersDeleteCancel: 'Avbryt',
+  barbersDeleteBookingsBody:
+    'Barberaren har {count} bokningar ({past} tidigare, {upcoming} kommande). Radera dem också?',
+  barbersDeleteBookingsConfirm: 'Radera allt',
+  barbersDeleteBookingsCancel: 'Avbryt',
+  barbersDeletedOk: 'Barberaren raderad.',
   aboutTextTitle: 'Om oss · text',
   aboutTextLead: 'Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.',
   aboutLoading: 'Laddar innehåll …',
@@ -902,6 +925,17 @@ const EN: AdminStrings = {
   barbersEmailError: 'Enter a valid email address.',
   barbersDefaultPasswordNote:
     'Account created. Temporary password: 123456 — the barber changes it at first login.',
+  barbersDelete: 'Delete',
+  barbersDeleteTitle: 'Delete barber?',
+  barbersDeleteBody:
+    'The barber {name} is permanently deleted. This cannot be undone. Type the barber id below to confirm.',
+  barbersDeleteConfirm: 'Delete',
+  barbersDeleteCancel: 'Cancel',
+  barbersDeleteBookingsBody:
+    'This barber has {count} bookings ({past} past, {upcoming} upcoming). Delete them too?',
+  barbersDeleteBookingsConfirm: 'Delete all',
+  barbersDeleteBookingsCancel: 'Cancel',
+  barbersDeletedOk: 'Barber deleted.',
   aboutTextTitle: 'About us · text',
   aboutTextLead: 'Edit the section texts in Swedish and English. Each field is saved separately.',
   aboutLoading: 'Loading content …',

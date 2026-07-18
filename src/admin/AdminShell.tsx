@@ -154,7 +154,14 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           />
         )
       case 'barbers':
-        return <BarbersView lang={props.lang} s={s} onRosterChanged={() => void reloadBarbers()} />
+        return (
+          <BarbersView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            onRosterChanged={() => void reloadBarbers()}
+          />
+        )
       case 'profile':
         return effectiveBarberId === null ? (
           <section style={s.card}>
