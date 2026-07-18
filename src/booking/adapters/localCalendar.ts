@@ -99,9 +99,10 @@ function mockBlocked(day: number, barberIdx: number): readonly BlockedInterval[]
  * Local-only BookingPort: always succeeds, producing the calendar/map links (the .ics + Google
  * Cal + maps links the original mock produced, now hardened).
  *
- * `availability` returns the AVAILABLE start times via the shared `packSlots` util — duration-stepped
- * over the fixed 09:00–18:00 window and packed around one deterministic mock booking derived from
- * (day-of-month, barber index), so the offline/demo/visual baseline is stable and reproducible.
+ * `availability` returns the AVAILABLE start times via the shared `packSlots` util — a fixed 15-min
+ * grid over the 09:00–18:00 window, offering each start where the service fits (ends by close, overlaps
+ * no booking/block) around one deterministic mock booking derived from (day-of-month, barber index),
+ * so the offline/demo/visual baseline is stable and reproducible.
  */
 export const localCalendarAdapter: BookingPort = {
   submit(booking: Booking): Promise<BookingResult> {

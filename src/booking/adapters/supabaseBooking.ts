@@ -5,8 +5,8 @@
 // + maps) is identical regardless of backend.
 //
 // `available_slots(p_barber_id, p_date, p_duration_min)` is schedule-aware: it returns NOTHING when
-// the barber is off that weekday or on time-off, and otherwise the start times that step by the
-// service duration and pack around confirmed bookings/blocks — all computed in Europe/Stockholm on
+// the barber is off that weekday or on time-off, and otherwise the AVAILABLE start times on a fixed
+// 15-min grid where the service fits (ends by close, overlaps no booking/block) — computed in Europe/Stockholm on
 // the server. So an OFF day yields an empty list here (no times shown), exactly matching "barber off".
 //
 // Boundary discipline: every RPC response is Zod-parsed (never trust the wire) and every failure —
