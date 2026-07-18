@@ -117,6 +117,28 @@ export interface AdminStrings {
   readonly bookingsCancelDialogBodySuffix: string
   readonly bookingsCancelDialogConfirm: string
   readonly bookingsCancelDialogKeep: string
+  // BookingsView — 3-section switcher (Kommande/Avbokade/Tidigare) + Avbokade empty state
+  readonly bookingsSectionCancelled: string
+  readonly bookingsEmptyCancelled: string
+  // BookingsView — multi-select history clearing (Tidigare + Avbokade only)
+  readonly bookingsSelectWeek: string
+  readonly bookingsSelectAll: string
+  /** Label of the delete-selected action; the count is interpolated in the view. */
+  readonly bookingsClearSelected: string
+  readonly bookingsClearTitle: string
+  readonly bookingsClearBody: string
+  readonly bookingsClearConfirm: string
+  readonly bookingsClearCancel: string
+  readonly bookingsClearedOk: string
+  // BookingsView — owner-only global purge (type-to-confirm)
+  readonly bookingsPurgeAll: string
+  /** The token the owner must type to confirm the global purge (same literal in both languages). */
+  readonly bookingsPurgeToken: string
+  readonly bookingsPurgeTitle: string
+  readonly bookingsPurgeBody: string
+  readonly bookingsPurgeConfirm: string
+  readonly bookingsPurgeCancel: string
+  readonly bookingsPurgedOk: string
   // ScheduleView — section headings + loading
   readonly scheduleHeadingPrefix: string
   readonly scheduleLoading: string
@@ -466,6 +488,24 @@ const SV: AdminStrings = {
   bookingsCancelDialogBodySuffix: '. Detta går inte att ångra.',
   bookingsCancelDialogConfirm: 'Avboka',
   bookingsCancelDialogKeep: 'Behåll',
+  bookingsSectionCancelled: 'Avbokade',
+  bookingsEmptyCancelled: 'Inga avbokade bokningar.',
+  bookingsSelectWeek: 'Markera veckan',
+  bookingsSelectAll: 'Markera alla',
+  bookingsClearSelected: 'Radera markerade',
+  bookingsClearTitle: 'Radera markerade bokningar?',
+  bookingsClearBody: 'Detta raderar de markerade bokningarna permanent.',
+  bookingsClearConfirm: 'Radera',
+  bookingsClearCancel: 'Avbryt',
+  bookingsClearedOk: 'Bokningarna raderades.',
+  bookingsPurgeAll: 'Töm all historik',
+  bookingsPurgeToken: 'RADERA ALLT',
+  bookingsPurgeTitle: 'Töm ALL historik?',
+  bookingsPurgeBody:
+    'Detta raderar alla barberares tidigare och avbokade bokningar permanent. Skriv token nedan för att bekräfta.',
+  bookingsPurgeConfirm: 'Töm historik',
+  bookingsPurgeCancel: 'Avbryt',
+  bookingsPurgedOk: 'All historik tömd.',
   scheduleHeadingPrefix: 'Schema',
   scheduleLoading: 'Laddar schema …',
   scheduleWeekHeadingPrefix: 'Veckoschema',
@@ -792,6 +832,24 @@ const EN: AdminStrings = {
   bookingsCancelDialogBodySuffix: '. This cannot be undone.',
   bookingsCancelDialogConfirm: 'Cancel booking',
   bookingsCancelDialogKeep: 'Keep',
+  bookingsSectionCancelled: 'Cancelled',
+  bookingsEmptyCancelled: 'No cancelled bookings.',
+  bookingsSelectWeek: 'Select week',
+  bookingsSelectAll: 'Select all',
+  bookingsClearSelected: 'Delete selected',
+  bookingsClearTitle: 'Delete selected bookings?',
+  bookingsClearBody: 'This permanently deletes the selected bookings.',
+  bookingsClearConfirm: 'Delete',
+  bookingsClearCancel: 'Cancel',
+  bookingsClearedOk: 'The bookings were deleted.',
+  bookingsPurgeAll: 'Clear all history',
+  bookingsPurgeToken: 'RADERA ALLT',
+  bookingsPurgeTitle: 'Clear ALL history?',
+  bookingsPurgeBody:
+    'This permanently deletes the past and cancelled bookings of every barber. Type the token below to confirm.',
+  bookingsPurgeConfirm: 'Clear history',
+  bookingsPurgeCancel: 'Cancel',
+  bookingsPurgedOk: 'All history cleared.',
   scheduleHeadingPrefix: 'Schedule',
   scheduleLoading: 'Loading schedule …',
   scheduleWeekHeadingPrefix: 'Weekly schedule',
