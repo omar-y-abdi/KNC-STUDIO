@@ -1,28 +1,32 @@
--- pgTAP — available_slots RPC, PACKED model (migration 0025 + .claude/runtime/SLOT_PACKING_SPEC.md).
--- The RPC no longer returns a fixed 45-min grid; it emits bookable start times STEPPED BY the
--- service duration and LEFT-PACKED into each free interval between bookings/blocks. Proves:
---   empty day, dur=30 -> 09:00,09:30,…,17:30 (18)   | dur=45 -> the 12-slot grid | dur=90 -> 6 slots
---   a 90-min booking 09:00–10:30, dur=30 -> first free slot is EXACTLY 10:30 (gap right after)
---   a 45-min booking 09:00–09:45, dur=30 -> first free slot is 09:45 (offset grid, NOT 10:00)
---   a MID-DAY booking 10:00–11:30, dur=30 -> 09:00 & 09:30 emitted BEFORE it, 11:30 right after
+-- pgTAP — available_slots RPC, FIXED 15-min GRID model (migration 0026 + .claude/runtime/SLOT_PACKING_SPEC.md).
+-- The RPC no longer steps by the service duration and packs each free gap from its left edge; it now
+-- emits every start on a FIXED 15-minute grid anchored at open, keeping the ones where the chosen
+-- service FITS (ends by close AND its half-open [t,t+dur) window overlaps no confirmed booking / block).
+-- Proves:
+--   empty day, dur=30 -> 09:00,09:15,…,17:30 (35)  | dur=45 -> …,17:15 (34) | dur=90 -> …,16:30 (31)
+--   a 90-min booking 09:00–10:30, dur=30 -> first free start is EXACTLY 10:30 (the tick at the end fits)
+--   a 45-min booking 09:00–09:45, dur=30 -> 09:45 AND 10:00 both bookable (the model change: 10:00 is a
+--     grid tick that FITS after the booking — the old duration-stepped packer skipped it)
+--   a MID-DAY booking 10:00–11:30, dur=30 -> 09:00,09:15,09:30 emitted BEFORE it (09:30 ends at the
+--     block start, half-open fit), then the grid resumes at 11:30 (the tick at the block end fits)
 --   p_duration_min <= 0 / off-day / non-working weekday / time-off  -> no rows
 --   anon (the public booking flow) can EXECUTE the RPC (grants preserved across the rewrite)
 --
 -- CRITICAL (mirrors the prior test's advisor note): each conflicting booking's start_at/end_at is
 --   built with the SAME (date + time) AT TIME ZONE 'Europe/Stockholm' expression the RPC uses to map
 --   instants back to salon-local minutes — NOT a raw UTC literal — so the overlap lands on the exact
---   minutes the packer reasons about (a UTC literal would be an hour off in winter and the packing
+--   minutes the grid reasons about (a UTC literal would be an hour off in winter and the fit
 --   assertions would pass/fail for the WRONG reason). Day-of-week is derived from the chosen dates.
 --
 -- All assertions are on the FUTURE date 2099-01-05 (a Monday), so the now()-filter always passes and
--- the packed grid is exercised in full. Fixtures mirror the other tests: controlled hassan schedule
--- working ONLY Monday (weekday 1) 09:00–18:00 (540..1080); every other weekday absent (off).
+-- the full grid is exercised. Fixtures mirror the other tests: controlled hassan schedule working ONLY
+-- Monday (weekday 1) 09:00–18:00 (540..1080); every other weekday absent (off).
 --
 -- NOTE: this suite was NOT executed here — the local pgTAP/Docker stack is down in this environment.
 -- The assertions are written against the spec's worked examples; the parent runs them / verifies.
 
 begin;
-select plan(18);
+select plan(21);
 
 -- Sanity-anchor the chosen dates' weekdays so the test is self-consistent with the seed model.
 select is(pg_catalog.date_part('dow', date '2099-01-05')::int, 1, 'fixture: 2099-01-05 is a Monday (dow=1)');
@@ -35,35 +39,39 @@ insert into public.barber_schedules (barber_id, weekday, working, start_min, end
 values ('hassan', 1, true, 540, 1080);
 
 -- =============================================================================================
--- EMPTY WORKING MONDAY — the duration STEP defines the grid, packed from the open edge.
+-- EMPTY WORKING MONDAY — a FIXED 15-min grid; the duration only sets the LAST start (t+dur<=close).
 -- =============================================================================================
--- dur=30: 09:00,09:30,…,17:30 (last t=1050, 1050+30=1080=close). 18 slots.
+-- dur=30: 09:00,09:15,…,17:30 (last t=1050, 1050+30=1080=close). 35 slots = (1050-540)/15+1.
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  array['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30',
-        '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30']::text[],
-  'empty day, dur=30 -> 30-min-stepped grid 09:00..17:30 (18 slots)'
+  array['09:00','09:15','09:30','09:45','10:00','10:15','10:30','10:45','11:00','11:15','11:30','11:45',
+        '12:00','12:15','12:30','12:45','13:00','13:15','13:30','13:45','14:00','14:15','14:30','14:45',
+        '15:00','15:15','15:30','15:45','16:00','16:15','16:30','16:45','17:00','17:15','17:30']::text[],
+  'empty day, dur=30 -> fixed 15-min grid 09:00..17:30 (35 slots)'
 );
--- dur=45: 09:00,09:45,…,17:15 — coincides with the OLD fixed grid. 12 slots.
+-- dur=45: same 15-min grid, last start 17:15 (17:15+45=18:00). 34 slots = (1035-540)/15+1.
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 45) s),
-  array['09:00','09:45','10:30','11:15','12:00','12:45',
-        '13:30','14:15','15:00','15:45','16:30','17:15']::text[],
-  'empty day, dur=45 -> 45-min-stepped grid 09:00..17:15 (12 slots, == the old fixed grid)'
+  array['09:00','09:15','09:30','09:45','10:00','10:15','10:30','10:45','11:00','11:15','11:30','11:45',
+        '12:00','12:15','12:30','12:45','13:00','13:15','13:30','13:45','14:00','14:15','14:30','14:45',
+        '15:00','15:15','15:30','15:45','16:00','16:15','16:30','16:45','17:00','17:15']::text[],
+  'empty day, dur=45 -> fixed 15-min grid 09:00..17:15 (34 slots)'
 );
--- dur=90: 09:00,10:30,12:00,13:30,15:00,16:30 (last 990, +90=1080). 6 slots.
+-- dur=90: same 15-min grid, last start 16:30 (16:30+90=18:00). 31 slots = (990-540)/15+1.
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 90) s),
-  array['09:00','10:30','12:00','13:30','15:00','16:30']::text[],
-  'empty day, dur=90 -> 90-min-stepped grid 09:00..16:30 (6 slots)'
+  array['09:00','09:15','09:30','09:45','10:00','10:15','10:30','10:45','11:00','11:15','11:30','11:45',
+        '12:00','12:15','12:30','12:45','13:00','13:15','13:30','13:45','14:00','14:15','14:30','14:45',
+        '15:00','15:15','15:30','15:45','16:00','16:15','16:30']::text[],
+  'empty day, dur=90 -> fixed 15-min grid 09:00..16:30 (31 slots)'
 );
 
 -- ANON CONTRACT: available_slots is anon-callable (the public booking flow uses it). Prove anon can
--- EXECUTE it after the rewrite (grants preserved) and gets the full 30-min grid.
+-- EXECUTE it after the rewrite (grants preserved) and gets the full 15-min grid.
 set local role anon;
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30)),
-  18, 'anon CAN call available_slots (grants preserved) and gets the 18-slot 30-min grid'
+  35, 'anon CAN call available_slots (grants preserved) and gets the 35-slot 15-min grid'
 );
 reset role;
 
@@ -74,8 +82,8 @@ select is(
 );
 
 -- =============================================================================================
--- PACK AROUND A BOOKING AT THE OPEN EDGE — the next slot starts EXACTLY when the booking ends.
--- 90-min booking 09:00–10:30, dur=30 -> gap [540,540] emits nothing; tail from 630 -> 10:30,11:00,…
+-- FIT AROUND A BOOKING AT THE OPEN EDGE — the grid resumes at the tick that first fits after the block.
+-- 90-min booking 09:00–10:30 [540,630), dur=30 -> t=540..615 all overlap; t=630 fits (630>=630).
 -- =============================================================================================
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
@@ -86,22 +94,29 @@ values (
   (date '2099-01-05' + time '10:30') at time zone 'Europe/Stockholm',
   'Booked 90','sms','0701119999',null,'sv'
 );
+-- Grid resumes at 10:30 (the booking end) and continues on the fixed 15-min ticks. 29 slots.
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  array['10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00',
-        '14:30','15:00','15:30','16:00','16:30','17:00','17:30']::text[],
-  'a 90-min booking 09:00–10:30, dur=30 -> slots pack from 10:30 (the booking end) onward (15 slots)'
+  array['10:30','10:45','11:00','11:15','11:30','11:45','12:00','12:15','12:30','12:45','13:00','13:15',
+        '13:30','13:45','14:00','14:15','14:30','14:45','15:00','15:15','15:30','15:45','16:00','16:15',
+        '16:30','16:45','17:00','17:15','17:30']::text[],
+  'a 90-min booking 09:00–10:30, dur=30 -> grid resumes at 10:30 (the booking end) onward (29 slots)'
 );
 select is(
   (select pg_catalog.min(s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  '10:30', 'the first free 30-min slot is EXACTLY the 90-min booking''s end (gap right after)'
+  '10:30', 'the first free 30-min tick is EXACTLY the 90-min booking''s end (the tick at be fits, t>=be)'
+);
+select is(
+  (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:15'),
+  0, '10:15 is absent — [10:15,10:45) still overlaps the booking [540,630), so the tick does NOT fit'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
 
 -- =============================================================================================
--- PACK ONTO AN OFFSET GRID — a 45-min booking shifts every later 30-min slot off the :00/:30 grid.
--- 45-min booking 09:00–09:45, dur=30 -> tail from 585 -> 09:45,10:15,10:45,… (NOT 10:00).
+-- THE MODEL CHANGE — the grid stays FIXED; a shorter booking does NOT shift later ticks off :00/:15.
+-- 45-min booking 09:00–09:45 [540,585), dur=30 -> 09:45 fits (585>=585) AND 10:00 fits (600>=585).
+-- Under the OLD duration-stepped packer 10:00 was skipped (it stepped 09:45,10:15,…); now it is back.
 -- =============================================================================================
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
@@ -114,21 +129,27 @@ values (
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  array['09:45','10:15','10:45','11:15','11:45','12:15','12:45','13:15',
-        '13:45','14:15','14:45','15:15','15:45','16:15','16:45','17:15']::text[],
-  'a 45-min booking 09:00–09:45, dur=30 -> offset grid 09:45,10:15,… (16 slots, never 10:00)'
+  array['09:45','10:00','10:15','10:30','10:45','11:00','11:15','11:30','11:45','12:00','12:15','12:30',
+        '12:45','13:00','13:15','13:30','13:45','14:00','14:15','14:30','14:45','15:00','15:15','15:30',
+        '15:45','16:00','16:15','16:30','16:45','17:00','17:15','17:30']::text[],
+  'a 45-min booking 09:00–09:45, dur=30 -> fixed grid resumes at 09:45 and KEEPS 10:00 (32 slots)'
+);
+select is(
+  (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:00'),
+  1, '10:00 IS offered — a fixed 15-min tick that fits after the booking (the model change vs. the old packer)'
 );
 select is(
   (select pg_catalog.min(s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  '09:45', 'the first free 30-min slot is 09:45 (the booking end), NOT the fixed-grid 10:00'
+  '09:45', 'the first free 30-min tick is 09:45 (the booking end); 09:00/09:15/09:30 overlap and drop out'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
 
 -- =============================================================================================
--- PACK BOTH SIDES OF A MID-DAY BOOKING — proves the gap-loop emits BEFORE the block, and the tail
--- resumes EXACTLY at its end. 10:00–11:30, dur=30 -> gap [540,600] -> 09:00,09:30; tail from 690 ->
--- 11:30,12:00,…,17:30. (The one case an impl that only packs the tail would get wrong.)
+-- FIT BOTH SIDES OF A MID-DAY BOOKING — proves the grid emits BEFORE the block (half-open at the block
+-- start) and resumes AT its end. 90-min booking 10:00–11:30 [600,690), dur=30 -> leading 09:00,09:15,
+-- 09:30 (09:30: [570,600) ends at the block start, 600>600 false -> fits); t=585..675 overlap; then the
+-- grid resumes at 11:30 (690>=690). 28 slots. (The one case a tail-only impl would get wrong.)
 -- =============================================================================================
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
@@ -141,17 +162,22 @@ values (
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
-  array['09:00','09:30','11:30','12:00','12:30','13:00','13:30','14:00',
-        '14:30','15:00','15:30','16:00','16:30','17:00','17:30']::text[],
-  'a mid-day booking 10:00–11:30, dur=30 -> 09:00,09:30 before it and 11:30… after it (15 slots)'
+  array['09:00','09:15','09:30','11:30','11:45','12:00','12:15','12:30','12:45','13:00','13:15','13:30',
+        '13:45','14:00','14:15','14:30','14:45','15:00','15:15','15:30','15:45','16:00','16:15','16:30',
+        '16:45','17:00','17:15','17:30']::text[],
+  'a mid-day booking 10:00–11:30, dur=30 -> 09:00,09:15,09:30 before it and 11:30… after it (28 slots)'
 );
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '09:30'),
-  1, '09:30 (a slot BEFORE the booking) is emitted — the free-gap loop runs, not just the tail'
+  1, '09:30 (a tick BEFORE the booking, ending exactly at the block start) fits — the grid emits before the block'
+);
+select is(
+  (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '09:45'),
+  0, '09:45 is absent — [09:45,10:15) overlaps the booking [600,690), so the tick does NOT fit'
 );
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '11:30'),
-  1, '11:30 (the booking end) is the first slot AFTER the booking — the tail packs from be'
+  1, '11:30 (the booking end) is the first tick AFTER the booking — the tick at be fits (t>=be)'
 );
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:00'),

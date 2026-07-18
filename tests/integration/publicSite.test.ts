@@ -232,16 +232,20 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       if (!env) return
       await restoreSeedState(env) // ensure Mon–Sat 09–18 seed
 
-      // 2040-03-14 is a Wednesday (working under the seed). No bookings ⇒ the full 45-min packed grid is
-      // available (== the old fixed 45-min grid, since packing an empty 09–18 day at 45 min yields it).
+      // 2040-03-14 is a Wednesday (working under the seed). No bookings ⇒ the full 15-min-grid packed
+      // set is available: a 45-min service fits at every quarter-hour from 09:00 whose window ends by
+      // 18:00 (last start 17:15 → 17:15 + 45 = 18:00), i.e. 09:00, 09:15, …, 17:15 (34 starts).
       const available = await supabaseBookingAdapter.availability({
         barberId: asBarberId('hassan'),
         dateIso: '2040-03-14',
         durationMin: 45,
       })
       expect(available).toEqual([
-        '09:00', '09:45', '10:30', '11:15', '12:00', '12:45',
-        '13:30', '14:15', '15:00', '15:45', '16:30', '17:15',
+        '09:00', '09:15', '09:30', '09:45', '10:00', '10:15', '10:30', '10:45',
+        '11:00', '11:15', '11:30', '11:45', '12:00', '12:15', '12:30', '12:45',
+        '13:00', '13:15', '13:30', '13:45', '14:00', '14:15', '14:30', '14:45',
+        '15:00', '15:15', '15:30', '15:45', '16:00', '16:15', '16:30', '16:45',
+        '17:00', '17:15',
       ])
     })
 
