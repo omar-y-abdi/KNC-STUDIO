@@ -1,8 +1,9 @@
 // Pure slot-packing: given a barber's working window, the chosen service duration, and the blocked
-// intervals for a day, produce the bookable START times — stepped by the service duration and packed
-// tightly from the LEFT edge of every free gap (the open time OR a booking/block end). This is the
-// TS twin of the SQL `available_slots` RPC; the two MUST agree — see
-// `.claude/runtime/SLOT_PACKING_SPEC.md` (the authoritative algorithm + worked examples).
+// intervals for a day, produce the bookable START times on a FIXED 15-minute grid anchored at the
+// open time — a start is offered whenever the chosen service FITS there: it ends by close AND its
+// `[start, start+duration)` window overlaps no confirmed booking / block. This is the TS twin of the
+// SQL `available_slots` RPC; the two MUST agree — see `.claude/runtime/SLOT_PACKING_SPEC.md` (the
+// authoritative algorithm + worked examples).
 //
 // No effects: the caller passes `nowMin` (the minute-of-day cutoff for TODAY, or a value `< openMin`
 // for a future date so nothing is filtered). Half-open interval math mirrors create_booking's overlap
@@ -34,36 +35,29 @@ function hhmm(min: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+/** The fixed start-grid stride: candidate starts are `openMin, openMin+15, openMin+30, …`. */
+const STEP_MIN = 15
+
 /**
- * The bookable start times for a day, ascending as `"HH:MM"`. Free-interval left-packing: every gap
- * between blocks (and the tail up to close) is filled from ITS OWN left edge in `durationMin` steps,
- * so a 30-min slot appears EXACTLY when a preceding 90-min booking ends. Total — returns `[]` when
- * the service has no positive duration or the working window is empty.
+ * The bookable start times for a day, ascending as `"HH:MM"`. Candidate starts step on a FIXED
+ * 15-minute grid anchored at `openMin`; each is offered iff it is strictly after `nowMin`, ends by
+ * `closeMin` (`t + durationMin <= closeMin`), and its `[t, t + durationMin)` window overlaps none of
+ * the `blocked` intervals. The duration only changes WHICH ticks fit and the latest start — never the
+ * 15-min stride — so consecutive (overlapping) ticks are all offered when free. Total — returns `[]`
+ * when the service has no positive duration or the working window is empty.
  */
 export function packSlots(params: PackSlotsParams): string[] {
   const { openMin, closeMin, durationMin, blocked, nowMin } = params
   if (durationMin <= 0 || closeMin <= openMin) return []
 
-  // Sort a COPY (never mutate the caller's array); overlaps are handled by the cursor, no pre-merge.
-  const sorted = [...blocked].sort((a, b) => a[0] - b[0])
-  const emitted: string[] = []
-
-  // Left-pack one free gap `[from, until)` in `durationMin` steps, keeping only candidates > nowMin.
-  const emitGap = (from: number, until: number): void => {
-    let t = from
-    while (t + durationMin <= until) {
-      if (t > nowMin) emitted.push(hhmm(t))
-      t += durationMin
-    }
+  const out: string[] = []
+  // Fixed 15-min grid anchored at open; `durationMin` only gates the fit test and the last start.
+  for (let t = openMin; t + durationMin <= closeMin; t += STEP_MIN) {
+    if (t <= nowMin) continue // future-only: emit iff the start is strictly after the cutoff
+    // Half-open fit over EVERY block (reads only — no pre-sort/merge, caller's array never mutated):
+    // the slot ends at/before a block start, OR starts at/after its end.
+    const fits = blocked.every(([bs, be]) => t + durationMin <= bs || t >= be)
+    if (fits) out.push(hhmm(t))
   }
-
-  let cursor = openMin
-  for (const [bs, be] of sorted) {
-    emitGap(cursor, Math.min(bs, closeMin))
-    cursor = Math.max(cursor, be)
-    if (cursor >= closeMin) break
-  }
-  // Tail gap from the last cursor to close (no-op when a block already pushed the cursor to close).
-  emitGap(cursor, closeMin)
-  return emitted
+  return out
 }
