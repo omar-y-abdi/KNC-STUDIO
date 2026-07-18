@@ -218,6 +218,72 @@ const cancelErr = z.object({
 export const adminCancelResponse = z.discriminatedUnion('ok', [cancelOk, cancelErr])
 export type AdminCancelResponse = z.infer<typeof adminCancelResponse>
 
+// --- admin_delete_barber RPC ---------------------------------------------------------------------
+// Owner-only hard delete. With `p_purge_bookings=false` the RPC REFUSES while the barber still has
+// bookings and echoes the counts so the UI can confirm; `true` deletes the bookings too and reports
+// how many. `ok` alone can't discriminate the two `ok:false` shapes, so this is a plain `z.union`
+// (fail-closed: a `has_bookings` payload missing the counts matches no member and fails parsing).
+//   {ok:true, deleted_bookings:n}
+// | {ok:false, error:'has_bookings', count, past, upcoming}
+// | {ok:false, error:'forbidden'|'not_found'}
+const deleteBarberOk = z.object({
+  ok: z.literal(true),
+  deleted_bookings: z.number().int().nonnegative(),
+})
+const deleteBarberHasBookings = z.object({
+  ok: z.literal(false),
+  error: z.literal('has_bookings'),
+  count: z.number().int().nonnegative(),
+  past: z.number().int().nonnegative(),
+  upcoming: z.number().int().nonnegative(),
+})
+const deleteBarberDenied = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found']),
+})
+export const adminDeleteBarberResponse = z.union([
+  deleteBarberOk,
+  deleteBarberHasBookings,
+  deleteBarberDenied,
+])
+export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>
+
+// --- admin_delete_bookings RPC -------------------------------------------------------------------
+// Bulk hard delete of bookings by id (owner any barber; a barber only their own). Intended for
+// past/cancelled rows: REFUSES (`has_upcoming`) if any id is still a live upcoming appointment, and
+// rejects an empty selection (`empty`). Reports how many rows were deleted.
+// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'}
+const deleteBookingsOk = z.object({
+  ok: z.literal(true),
+  count: z.number().int().nonnegative(),
+})
+const deleteBookingsErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['empty', 'forbidden', 'has_upcoming']),
+})
+export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
+  deleteBookingsOk,
+  deleteBookingsErr,
+])
+export type AdminDeleteBookingsResponse = z.infer<typeof adminDeleteBookingsResponse>
+
+// --- admin_purge_history RPC ---------------------------------------------------------------------
+// Owner-only: delete ALL past/cancelled history in one shot, reporting the row count removed.
+// {ok:true, count:n} | {ok:false, error:'forbidden'}
+const purgeHistoryOk = z.object({
+  ok: z.literal(true),
+  count: z.number().int().nonnegative(),
+})
+const purgeHistoryErr = z.object({
+  ok: z.literal(false),
+  error: z.literal('forbidden'),
+})
+export const adminPurgeHistoryResponse = z.discriminatedUnion('ok', [
+  purgeHistoryOk,
+  purgeHistoryErr,
+])
+export type AdminPurgeHistoryResponse = z.infer<typeof adminPurgeHistoryResponse>
+
 // --- available_slots RPC -------------------------------------------------------------------------
 // `setof text` -> PostgREST returns an array of `HH:MM` strings.
 

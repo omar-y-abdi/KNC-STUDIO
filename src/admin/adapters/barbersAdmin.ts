@@ -13,8 +13,22 @@
 // Boundary discipline: every row Zod-parsed; failure -> AdminError. Never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { barberRow, barberRows, parseWith, profileRow } from '../adminSchemas'
-import type { AdminBarber, AdminBarberId, AdminResult, BarberEdit, NewBarber } from '../types'
+import {
+  adminDeleteBarberResponse,
+  barberRow,
+  barberRows,
+  parseWith,
+  profileRow,
+} from '../adminSchemas'
+import type {
+  AdminBarber,
+  AdminBarberId,
+  AdminError,
+  AdminResult,
+  BarberEdit,
+  DeleteBarberOutcome,
+  NewBarber,
+} from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa barberare.'
@@ -140,6 +154,47 @@ export async function setBarberActive(
     return ok(toBarber(parsed.value))
   } catch {
     return err('network', WRITE_ERROR)
+  }
+}
+
+/** Build the `error` branch of a `DeleteBarberOutcome` from a typed kind + Swedish message. */
+function deleteBarberError(kind: AdminError['kind'], message: string): DeleteBarberOutcome {
+  return { kind: 'error', error: { kind, message } }
+}
+
+/**
+ * Delete a barber via the `admin_delete_barber` RPC (owner-only; RLS + the SECURITY DEFINER RPC are
+ * the whole boundary). With `purgeBookings=false` the RPC REFUSES while the barber still has bookings
+ * and returns the counts (total/past/upcoming) so the UI can confirm a purge; with `true` it deletes
+ * those bookings too and reports how many. Returns a structured `DeleteBarberOutcome` (not an
+ * `AdminResult`) so the caller branches on the `has_bookings` confirmation without a stringly error;
+ * authorization, transport and parse failures collapse to the `error` variant.
+ */
+export async function deleteBarber(
+  id: AdminBarberId,
+  purgeBookings: boolean,
+): Promise<DeleteBarberOutcome> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_delete_barber', {
+      p_barber_id: id,
+      p_purge_bookings: purgeBookings,
+    })
+    if (error !== null) return deleteBarberError('network', WRITE_ERROR)
+
+    const parsed = parseWith(adminDeleteBarberResponse, data)
+    if (!parsed.ok) return deleteBarberError('malformed', WRITE_ERROR)
+
+    const r = parsed.value
+    if (r.ok) return { kind: 'ok', deletedBookings: r.deleted_bookings }
+    if (r.error === 'has_bookings') {
+      return { kind: 'has_bookings', count: r.count, past: r.past, upcoming: r.upcoming }
+    }
+    if (r.error === 'forbidden') {
+      return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
+    }
+    return deleteBarberError('not_found', 'Barberaren finns inte.')
+  } catch {
+    return deleteBarberError('network', WRITE_ERROR)
   }
 }
 

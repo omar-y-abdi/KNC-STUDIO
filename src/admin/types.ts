@@ -202,3 +202,20 @@ export function ok<T>(value: T): AdminResult<T> {
 export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T> {
   return { ok: false, error: { kind, message } }
 }
+
+// --- Delete outcomes -----------------------------------------------------------------------------
+
+/**
+ * Outcome of `deleteBarber`. NOT an `AdminResult`: the `has_bookings` refusal is a first-class,
+ * structured branch (not a stringly error) so the UI can show a "purge N bookings?" confirmation with
+ * the exact counts. Authorization, transport and parse failures collapse to `error` (an `AdminError`).
+ */
+export type DeleteBarberOutcome =
+  | { readonly kind: 'ok'; readonly deletedBookings: number }
+  | {
+      readonly kind: 'has_bookings'
+      readonly count: number
+      readonly past: number
+      readonly upcoming: number
+    }
+  | { readonly kind: 'error'; readonly error: AdminError }

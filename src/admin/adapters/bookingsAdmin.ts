@@ -14,6 +14,8 @@ import {
   adminBookingRows,
   adminCancelResponse,
   adminCreateBookingResponse,
+  adminDeleteBookingsResponse,
+  adminPurgeHistoryResponse,
   parseWith,
 } from '../adminSchemas'
 import type { AdminBarberId, AdminBooking, AdminResult } from '../types'
@@ -23,6 +25,8 @@ import { localWallClockToStockholmIso } from '../../booking/stockholmTime'
 const READ_ERROR = 'Kunde inte läsa bokningar.'
 const CANCEL_ERROR = 'Kunde inte avboka. Försök igen.'
 const RESERVE_ERROR = 'Kunde inte reservera. Försök igen.'
+const DELETE_ERROR = 'Kunde inte radera bokningar. Försök igen.'
+const PURGE_ERROR = 'Kunde inte tömma historiken. Försök igen.'
 
 /** Fields for a manual "Reservera kund" booking (all but the time are optional at the UI). */
 export interface ManualBooking {
@@ -157,5 +161,53 @@ export async function cancelBooking(bookingId: string): Promise<AdminResult<{ id
     return ok({ id: parsed.value.booking.id })
   } catch {
     return err('network', CANCEL_ERROR)
+  }
+}
+
+/**
+ * Permanently delete bookings by id via the `admin_delete_bookings` RPC (owner any barber; a barber
+ * only their own — the RPC re-derives authority). Intended for past/cancelled rows: the RPC REFUSES
+ * (`has_upcoming`) if any id is still a live upcoming appointment, and rejects an empty selection
+ * (`empty`). Returns the number of rows actually deleted.
+ */
+export async function deleteBookings(ids: readonly string[]): Promise<AdminResult<number>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_delete_bookings', {
+      p_ids: ids,
+    })
+    if (error !== null) return err('network', DELETE_ERROR)
+
+    const parsed = parseWith(adminDeleteBookingsResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    if (!parsed.value.ok) {
+      if (parsed.value.error === 'forbidden') {
+        return err('forbidden', 'Du kan bara radera egna bokningar.')
+      }
+      if (parsed.value.error === 'has_upcoming') {
+        return err('validation', 'Kommande bokningar kan inte raderas.')
+      }
+      return err('validation', 'Inga bokningar valda.')
+    }
+    return ok(parsed.value.count)
+  } catch {
+    return err('network', DELETE_ERROR)
+  }
+}
+
+/**
+ * Purge ALL past/cancelled booking history via the `admin_purge_history` RPC (owner-only; a barber is
+ * denied with `forbidden`). Returns the number of rows removed. Irreversible — the caller confirms first.
+ */
+export async function purgeHistory(): Promise<AdminResult<number>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_purge_history')
+    if (error !== null) return err('network', PURGE_ERROR)
+
+    const parsed = parseWith(adminPurgeHistoryResponse, data)
+    if (!parsed.ok) return err('malformed', PURGE_ERROR)
+    if (!parsed.value.ok) return err('forbidden', 'Bara ägaren kan tömma all historik.')
+    return ok(parsed.value.count)
+  } catch {
+    return err('network', PURGE_ERROR)
   }
 }
