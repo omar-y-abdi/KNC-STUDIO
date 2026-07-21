@@ -83,6 +83,20 @@ body {
   display: none;
 }
 
+/* Native <input type="date"> on iOS Safari carries an intrinsic shadow-DOM width
+   (::-webkit-date-and-time-value) that ignores the host's width/min-width, so on a narrow phone the
+   Ledighet (time-off) date fields bleed past the card border. appearance:none + a left-aligned value
+   drops that platform-intrinsic width, so the input honors its width:100% / border-box. Desktop is
+   unaffected (the fields already fit); scoped to the admin shell only. */
+.knc-admin-shell input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.knc-admin-shell input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
 /* NOTE: the shell/sidebar/navlist carry INLINE layout styles (display/width/flex-direction), which
    beat plain class selectors. The mobile overrides below therefore need `!important` to win — that is
    the only way a media-query class rule can override an inline style. Scoped to `.knc-admin-*`, so the
