@@ -85,16 +85,35 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     pausedRef.current = props.paused
   }, [props.paused])
 
-  // Two copies of the tile list make one seamless loop; wrap on one copy's width. One tile per item
-  // (a real photo when present, else a placeholder id), rendered twice — only the COUNT matters here.
+  // One tile per item (a real photo when present, else a placeholder id). The set is repeated to
+  // form a seamless loop; the transform wraps on ONE loop-half's width.
   const usePhotos = props.photos.length > 0
   const itemCount = usePhotos ? props.photos.length : props.ids.length
-  const tiles = [...Array(itemCount * 2).keys()]
+
+  // Repeat the photo set enough times that ONE loop-half always spans at least the row's full width.
+  // A short photo list otherwise leaves a wide screen half-empty — tiles bunch on one side with a
+  // hard clip and dead space instead of a continuous stream (the reported "clipped/broken" look).
+  // `perHalf` sets are rendered TWICE (the two halves) so the wrap is seamless. Recomputed on resize.
+  const [perHalf, setPerHalf] = useState(1)
+  useLayoutEffect(() => {
+    const el = trackRef.current
+    if (el === null) return
+    const compute = (): void => {
+      const container = el.parentElement !== null ? el.parentElement.clientWidth : 0
+      const base = itemCount * (TILE_W + TILE_GAP)
+      setPerHalf(base > 0 && container > 0 ? Math.max(1, Math.ceil(container / base)) : 1)
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [itemCount])
+
+  const tiles = [...Array(itemCount * perHalf * 2).keys()]
 
   useLayoutEffect(() => {
     const el = trackRef.current
     if (el) half.current = el.scrollWidth / 2
-  }, [props.ids, props.photos])
+  }, [props.ids, props.photos, perHalf])
 
   // Wrap the offset back into (-half, 0] so the loop is endless in either direction.
   const wrap = (): void => {
