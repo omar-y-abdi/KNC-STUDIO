@@ -68,6 +68,9 @@ export const appSv: AppStrings = {
   ariaCall: 'Ring',
   aboutLink: 'Om oss',
   cancelLink: 'Avbokning',
+  privacy: 'Integritetspolicy',
+  purpose:
+    'Onlinebokning för Blade & Blend Studio. Barberare kan koppla sitt Google-konto för att spegla sina bokningar till Google Calendar.',
 }
 
 // NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or

@@ -330,6 +330,27 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
             </a>
           </div>
+          <p
+            style={{
+              margin: '16px 0 0',
+              fontSize: scalePx(11.5, props.homepageScale) + 'px',
+              lineHeight: 1.5,
+              color: 'var(--mob-muted)',
+              textAlign: 'left',
+            }}
+          >
+            {tx.purpose}{' '}
+            <a
+              href="/privacy.html"
+              style={{
+                color: 'inherit',
+                textDecoration: 'underline',
+                textUnderlineOffset: '2px',
+              }}
+            >
+              {tx.privacy}
+            </a>
+          </p>
         </div>
       </div>
 

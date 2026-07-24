@@ -70,6 +70,11 @@ export interface AppStrings {
   /** Underlined hero links added under the "Boka tid" button. */
   aboutLink: string
   cancelLink: string
+  /** Footer privacy-policy link label. */
+  privacy: string
+  /** Footer one-line statement of what the app does + its Google Calendar integration — required so
+   *  the OAuth homepage explains the app's purpose and links to the privacy policy. */
+  purpose: string
 }
 
 /**
