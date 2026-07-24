@@ -63,8 +63,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error('calendar-disconnect: delete_token failed:', deleteError.message)
     return json({ ok: false, error: 'disconnect_failed' }, 500)
   }
-  // Best-effort revoke — the row is already gone regardless.
-  if (typeof token === 'string' && token !== '') await revokeToken(token)
+  // Best-effort revoke at Google (this is what removes the app from the barber's "third-party access"
+  // and frees an unverified-app user slot). The token row is already gone regardless; a failed revoke
+  // is logged, not fatal.
+  if (typeof token === 'string' && token !== '') {
+    const revoked = await revokeToken(token)
+    if (!revoked) console.error(`calendar-disconnect: google revoke did not confirm for barber ${barberId}`)
+  }
 
   return json({ ok: true }, 200)
 })

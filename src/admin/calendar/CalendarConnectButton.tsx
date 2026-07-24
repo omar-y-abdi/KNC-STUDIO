@@ -56,14 +56,29 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
         {connected ? (
-          <button
-            type="button"
-            style={{ ...s.ghostBtn, opacity: cal.busy ? 0.6 : 1 }}
-            disabled={cal.busy}
-            onClick={() => void cal.disconnect()}
-          >
-            {cal.busy ? t.calendarDisconnecting : t.calendarDisconnect}
-          </button>
+          <>
+            <a
+              href="https://calendar.google.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                ...s.ghostBtn,
+                display: 'inline-block',
+                textAlign: 'center',
+                textDecoration: 'none',
+              }}
+            >
+              {t.calendarOpenApp}
+            </a>
+            <button
+              type="button"
+              style={{ ...s.ghostBtn, opacity: cal.busy ? 0.6 : 1 }}
+              disabled={cal.busy}
+              onClick={() => void cal.disconnect()}
+            >
+              {cal.busy ? t.calendarDisconnecting : t.calendarDisconnect}
+            </button>
+          </>
         ) : (
           <button
             type="button"

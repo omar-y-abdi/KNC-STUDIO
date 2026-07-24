@@ -88,6 +88,7 @@ export interface AdminStrings {
   readonly calendarHint: string
   readonly calendarLoading: string
   readonly calendarSyncErrorPrefix: string
+  readonly calendarOpenApp: string
   readonly ariaSelectBarber: string
   readonly themeLight: string
   readonly themeDark: string
@@ -475,6 +476,7 @@ const SV: AdminStrings = {
   calendarHint: 'Få dina bokningar direkt i Google Calendar-appen (iPhone + Android).',
   calendarLoading: 'Laddar kalenderstatus…',
   calendarSyncErrorPrefix: 'Senaste synk misslyckades:',
+  calendarOpenApp: 'Öppna Google Calendar',
   ariaSelectBarber: 'Välj barberare att hantera',
   themeLight: 'Byt till ljust läge',
   themeDark: 'Byt till mörkt läge',
@@ -827,6 +829,7 @@ const EN: AdminStrings = {
   calendarHint: 'Get your bookings straight into the Google Calendar app (iPhone + Android).',
   calendarLoading: 'Loading calendar status…',
   calendarSyncErrorPrefix: 'Last sync failed:',
+  calendarOpenApp: 'Open Google Calendar',
   ariaSelectBarber: 'Select barber to manage',
   themeLight: 'Switch to light mode',
   themeDark: 'Switch to dark mode',
