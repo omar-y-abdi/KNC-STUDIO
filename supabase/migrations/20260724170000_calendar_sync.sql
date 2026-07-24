@@ -259,3 +259,24 @@ grant execute on function public.calendar_record_error(text, text)          to s
 grant execute on function public.calendar_store_token(text, text, text, text) to service_role;
 grant execute on function public.calendar_delete_token(text)                to service_role;
 grant execute on function public.calendar_connection_status()               to authenticated;
+
+-- CRITICAL (see 0019 / 0020 / 0031): `revoke ... from public` above strips ONLY the PUBLIC
+-- pseudo-role grant. Supabase's `ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS ... TO anon,
+-- authenticated, service_role` ALSO grants EXECUTE on every new public function to `anon` and
+-- `authenticated` individually, and revoke-from-public leaves those intact. Without the explicit
+-- revokes below, anon/authenticated could call these service_role-only RPCs DIRECTLY via PostgREST —
+-- e.g. calendar_backfill_source('hassan') would return the refresh_token + every customer's name and
+-- phone, and calendar_store_token(...) would let anyone hijack a barber's calendar sync. Revoke the
+-- per-role default grants (a no-op if the grant is absent).
+revoke execute on function public.calendar_sync_source(uuid)                   from anon, authenticated;
+revoke execute on function public.calendar_deletion_context(uuid)              from anon, authenticated;
+revoke execute on function public.calendar_backfill_source(text)               from anon, authenticated;
+revoke execute on function public.calendar_record_event(uuid, text, text)      from anon, authenticated;
+revoke execute on function public.calendar_forget_event(uuid)                  from anon, authenticated;
+revoke execute on function public.calendar_record_error(text, text)            from anon, authenticated;
+revoke execute on function public.calendar_store_token(text, text, text, text) from anon, authenticated;
+revoke execute on function public.calendar_delete_token(text)                  from anon, authenticated;
+-- calendar_connection_status stays callable by `authenticated` (it self-scopes via current_barber_id()
+-- and is harmless for anon — auth.uid() is null -> connected:false); strip anon's default grant anyway
+-- to keep least-privilege consistent with the admin RPCs (0031).
+revoke execute on function public.calendar_connection_status()                 from anon;
