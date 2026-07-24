@@ -68,9 +68,6 @@ export const appEn: AppStrings = {
   ariaCall: 'Call',
   aboutLink: 'About',
   cancelLink: 'Cancel booking',
-  privacy: 'Privacy policy',
-  purpose:
-    'Online booking for Blade & Blend Studio. Barbers can connect their Google account to mirror their bookings to Google Calendar.',
 }
 
 // NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or

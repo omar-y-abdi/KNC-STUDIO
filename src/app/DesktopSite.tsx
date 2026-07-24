@@ -228,13 +228,6 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <div style={footerStyle}>
         <span>{tx.hours}</span>
         <span>{tx.addr}</span>
-        <a
-          href="/privacy.html"
-          style="color:inherit;text-decoration:underline;text-underline-offset:2px;"
-        >
-          {tx.privacy}
-        </a>
-        <span style="flex-basis:100%;">{tx.purpose}</span>
       </div>
     </div>
   )
