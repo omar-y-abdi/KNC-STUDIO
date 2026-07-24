@@ -181,6 +181,71 @@ export function decodeIdTokenEmail(idToken: string): string | null {
 
 // --- Google HTTP (EFFECT; each throws on an unexpected non-2xx) -----------------------------------
 
+/** A Google HTTP failure carrying the status + a short body snippet, so a caller can CLASSIFY it
+ *  (e.g. retry only transient failures) instead of string-parsing a message. Extends Error, and its
+ *  `message` keeps the old `"<context>: <status>"` shape, so existing message-based logging is
+ *  unaffected. */
+export class GoogleHttpError extends Error {
+  readonly status: number
+  readonly body: string
+  constructor(status: number, context: string, body: string) {
+    super(`${context}: ${status}`)
+    this.name = 'GoogleHttpError'
+    this.status = status
+    this.body = body
+  }
+}
+
+/** Build a GoogleHttpError from a non-2xx response, capturing a short body snippet for classification.
+ *  The body read is diagnostic only — a read failure must never mask the status. */
+async function httpError(res: Response, context: string): Promise<GoogleHttpError> {
+  let body = ''
+  try {
+    body = (await res.text()).slice(0, 300)
+  } catch {
+    // ignore — the status is the load-bearing signal
+  }
+  return new GoogleHttpError(res.status, context, body)
+}
+
+/** Transient = worth retrying: 429 (rate limit), any 5xx, and the 403 a freshly-enabled Calendar API
+ *  returns for the first few minutes of its first use in a project (SERVICE_DISABLED /
+ *  accessNotConfigured), which self-heals. Everything else (bad code, invalid_grant, 404) is permanent
+ *  and MUST NOT be retried. */
+export function isTransientGoogleError(err: unknown): boolean {
+  if (!(err instanceof GoogleHttpError)) return false
+  if (err.status === 429 || err.status >= 500) return true
+  return (
+    err.status === 403 &&
+    /SERVICE_DISABLED|accessNotConfigured|has not been used|is disabled/i.test(err.body)
+  )
+}
+
+export interface RetryOptions {
+  readonly retries: number
+  readonly delayMs: number
+  /** Injected so tests don't wait on the wall clock (effect at the edge). */
+  readonly sleep?: (ms: number) => Promise<void>
+}
+
+/** Run `fn`, retrying ONLY transient Google failures with linear backoff. A non-transient error — or
+ *  the final attempt — rethrows. PRECONDITION: `fn` is safe to re-run after a throw (a failed insert
+ *  created no event), so a retry cannot duplicate work. */
+export async function withGoogleRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
+  const sleep = opts.sleep ?? ((ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)))
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= opts.retries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (attempt === opts.retries || !isTransientGoogleError(err)) throw err
+      await sleep(opts.delayMs * (attempt + 1))
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('withGoogleRetry: exhausted')
+}
+
 export interface TokenResponse {
   readonly access_token: string
   readonly refresh_token?: string
@@ -204,7 +269,7 @@ export async function exchangeCode(
       grant_type: 'authorization_code',
     }),
   })
-  if (!res.ok) throw new Error(`google token exchange failed: ${res.status}`)
+  if (!res.ok) throw await httpError(res, 'google token exchange failed')
   return (await res.json()) as TokenResponse
 }
 
@@ -223,7 +288,7 @@ export async function refreshAccessToken(
       grant_type: 'refresh_token',
     }),
   })
-  if (!res.ok) throw new Error(`google token refresh failed: ${res.status}`)
+  if (!res.ok) throw await httpError(res, 'google token refresh failed')
   const data = (await res.json()) as { access_token?: unknown }
   if (typeof data.access_token !== 'string') throw new Error('google token refresh: no access_token')
   return data.access_token
@@ -242,7 +307,7 @@ export async function insertEvent(
       body: JSON.stringify(event),
     },
   )
-  if (!res.ok) throw new Error(`google event insert failed: ${res.status}`)
+  if (!res.ok) throw await httpError(res, 'google event insert failed')
   const data = (await res.json()) as { id?: unknown }
   if (typeof data.id !== 'string') throw new Error('google event insert: no id')
   return data.id
@@ -265,7 +330,7 @@ export async function patchEvent(
     },
   )
   if (res.status === 404 || res.status === 410) return false
-  if (!res.ok) throw new Error(`google event patch failed: ${res.status}`)
+  if (!res.ok) throw await httpError(res, 'google event patch failed')
   return true
 }
 
@@ -280,18 +345,21 @@ export async function deleteEvent(
   )
   // Success (204) or already gone (404/410) are both the desired end-state.
   if (res.ok || res.status === 404 || res.status === 410) return
-  throw new Error(`google event delete failed: ${res.status}`)
+  throw await httpError(res, 'google event delete failed')
 }
 
-/** Best-effort revoke of a refresh token at disconnect — failures are ignored (the row is deleted
- *  regardless, and an already-invalid token is a no-op). */
-export async function revokeToken(token: string): Promise<void> {
+/** Best-effort revoke of a refresh token at disconnect. Returns true on a 2xx (Google removed the
+ *  grant — which is what frees the barber's Google "third-party access" entry), false otherwise
+ *  (already-invalid token, or network). The caller LOGS a false but never fails the disconnect: the
+ *  local token row is deleted regardless. */
+export async function revokeToken(token: string): Promise<boolean> {
   try {
-    await fetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, {
+    const res = await fetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
     })
+    return res.ok
   } catch {
-    // ignore — revoke is best-effort
+    return false // revoke is best-effort; disconnect still succeeds
   }
 }

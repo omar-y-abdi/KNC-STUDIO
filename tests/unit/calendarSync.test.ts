@@ -5,8 +5,16 @@
 // The shared module uses only Web-standard globals (crypto.subtle, TextEncoder/atob), so it imports
 // cleanly in Node/vitest as well as in the Deno edge runtime.
 
-import { describe, expect, it } from 'vitest'
-import { buildEvent, signState, verifyState } from '../../supabase/functions/_shared/calendar'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  buildEvent,
+  GoogleHttpError,
+  isTransientGoogleError,
+  revokeToken,
+  signState,
+  verifyState,
+  withGoogleRetry,
+} from '../../supabase/functions/_shared/calendar'
 import { parseCalendarStatus } from '../../src/admin/calendar/status'
 
 const SECRET = 'unit-test-state-secret'
@@ -112,5 +120,105 @@ describe('parseCalendarStatus', () => {
     expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
       'boom',
     )
+  })
+})
+
+describe('isTransientGoogleError', () => {
+  it('treats 429 and 5xx as transient', () => {
+    expect(isTransientGoogleError(new GoogleHttpError(429, 'x', ''))).toBe(true)
+    expect(isTransientGoogleError(new GoogleHttpError(500, 'x', ''))).toBe(true)
+    expect(isTransientGoogleError(new GoogleHttpError(503, 'x', ''))).toBe(true)
+  })
+  it('treats a Calendar-API cold-start 403 as transient, other 403s as permanent', () => {
+    expect(
+      isTransientGoogleError(new GoogleHttpError(403, 'x', '{"error":{"status":"SERVICE_DISABLED"}}')),
+    ).toBe(true)
+    expect(isTransientGoogleError(new GoogleHttpError(403, 'x', 'plain forbidden'))).toBe(false)
+  })
+  it('treats other 4xx and non-Google errors as permanent', () => {
+    expect(isTransientGoogleError(new GoogleHttpError(400, 'x', ''))).toBe(false)
+    expect(isTransientGoogleError(new GoogleHttpError(404, 'x', ''))).toBe(false)
+    expect(isTransientGoogleError(new Error('boom'))).toBe(false)
+    expect(isTransientGoogleError(null)).toBe(false)
+  })
+})
+
+describe('withGoogleRetry', () => {
+  const noSleep = (): Promise<void> => Promise.resolve()
+
+  it('returns the value without retrying on success', async () => {
+    let calls = 0
+    const out = await withGoogleRetry(
+      async () => {
+        calls++
+        return 'ok'
+      },
+      { retries: 3, delayMs: 1, sleep: noSleep },
+    )
+    expect(out).toBe('ok')
+    expect(calls).toBe(1)
+  })
+
+  it('retries a transient failure then succeeds', async () => {
+    let calls = 0
+    const out = await withGoogleRetry(
+      async () => {
+        calls++
+        if (calls < 3) throw new GoogleHttpError(503, 'down', '')
+        return 'recovered'
+      },
+      { retries: 3, delayMs: 1, sleep: noSleep },
+    )
+    expect(out).toBe('recovered')
+    expect(calls).toBe(3)
+  })
+
+  it('does NOT retry a non-transient failure', async () => {
+    let calls = 0
+    await expect(
+      withGoogleRetry(
+        async () => {
+          calls++
+          throw new GoogleHttpError(400, 'bad', '')
+        },
+        { retries: 3, delayMs: 1, sleep: noSleep },
+      ),
+    ).rejects.toThrow('bad: 400')
+    expect(calls).toBe(1)
+  })
+
+  it('rethrows the last error after exhausting retries', async () => {
+    let calls = 0
+    await expect(
+      withGoogleRetry(
+        async () => {
+          calls++
+          throw new GoogleHttpError(500, 'down', '')
+        },
+        { retries: 2, delayMs: 1, sleep: noSleep },
+      ),
+    ).rejects.toThrow('down: 500')
+    expect(calls).toBe(3) // initial + 2 retries
+  })
+})
+
+describe('revokeToken', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns true when Google responds 2xx', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 200 }))
+    expect(await revokeToken('tok')).toBe(true)
+  })
+
+  it('returns false on a non-2xx', async () => {
+    vi.stubGlobal('fetch', async () => new Response('bad', { status: 400 }))
+    expect(await revokeToken('tok')).toBe(false)
+  })
+
+  it('returns false when the request throws', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('network')
+    })
+    expect(await revokeToken('tok')).toBe(false)
   })
 })

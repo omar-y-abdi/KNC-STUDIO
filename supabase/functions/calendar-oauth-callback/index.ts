@@ -20,6 +20,7 @@ import {
   insertEvent,
   refreshAccessToken,
   verifyState,
+  withGoogleRetry,
 } from '../_shared/calendar.ts'
 import type { BookingEventInput } from '../_shared/calendar.ts'
 
@@ -36,6 +37,27 @@ function page(title: string, message: string, returnTo: string | undefined): str
       ? `<p><a href="${returnTo}/admin" style="color:#0a7">Tillbaka till appen</a></p>`
       : '<p>Du kan stänga det här fönstret.</p>'
   return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,system-ui,sans-serif;max-width:32rem;margin:12vh auto;padding:0 1.5rem;text-align:center;color:#111"><h1 style="font-size:1.4rem">${title}</h1><p style="color:#555">${message}</p>${link}</body></html>`
+}
+
+/** Finish the consent round-trip. Prefer redirecting the barber straight back INTO the app — they land
+ *  on /admin, where the panel already reflects the new state — instead of stranding them on this
+ *  supabase.co page. Fall back to the standalone page only when the signed state carried no app origin.
+ *  `outcome` becomes a `?calendar=` hint the app MAY surface. return_to was HMAC-signed + https-checked
+ *  in calendar-oauth-start, so this redirect target is trusted. */
+function done(
+  returnTo: string | undefined,
+  outcome: 'connected' | 'error',
+  title: string,
+  message: string,
+  status: number,
+): Response {
+  if (returnTo !== undefined) {
+    return new Response(null, {
+      status: 303,
+      headers: { location: `${returnTo}/admin?calendar=${outcome}` },
+    })
+  }
+  return html(page(title, message, returnTo), status)
 }
 
 interface BackfillBooking extends BookingEventInput {
@@ -59,11 +81,32 @@ async function backfill(
   const rows = Array.isArray(d['bookings']) ? (d['bookings'] as BackfillBooking[]) : []
   if (typeof refreshToken !== 'string' || rows.length === 0) return
 
-  const accessToken = await refreshAccessToken(refreshToken, clientId, clientSecret)
+  // Mint the access token WITH retry. This is the step whose silent throw used to abort the whole
+  // backfill on a first-connect transient (e.g. the Calendar API's cold-start 403) — leaving zero
+  // events AND no recorded error. If it still fails after retries, RECORD it (surfaced in the panel)
+  // instead of swallowing, so the failure is visible and a reconnect isn't the only clue.
+  let accessToken: string
+  try {
+    accessToken = await withGoogleRetry(
+      () => refreshAccessToken(refreshToken, clientId, clientSecret),
+      { retries: 3, delayMs: 500 },
+    )
+  } catch (err) {
+    await service.rpc('calendar_record_error', {
+      p_barber_id: barberId,
+      p_error: `backfill setup: ${err instanceof Error ? err.message : 'unknown'}`,
+    })
+    return
+  }
+
   for (const b of rows) {
     if (b.google_event_id !== null) continue // already synced
     try {
-      const eventId = await insertEvent(accessToken, calendarId, buildEvent(b))
+      // Retry each insert independently — a thrown insert created nothing, so a retry can't duplicate.
+      const eventId = await withGoogleRetry(
+        () => insertEvent(accessToken, calendarId, buildEvent(b)),
+        { retries: 2, delayMs: 500 },
+      )
       await service.rpc('calendar_record_event', {
         p_booking_id: b.id,
         p_barber_id: barberId,
@@ -111,7 +154,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri)
     if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
       // Should not happen with prompt=consent; without a refresh token we cannot sync unattended.
-      return html(page('Fel', 'Google gav ingen refresh-token. Försök koppla igen.', payload.return_to), 400)
+      return done(payload.return_to, 'error', 'Fel', 'Google gav ingen refresh-token. Försök koppla igen.', 400)
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
 
@@ -124,7 +167,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (storeError) {
       console.error('calendar-oauth-callback: store_token failed:', storeError.message)
-      return html(page('Fel', 'Kunde inte spara kopplingen. Försök igen.', payload.return_to), 500)
+      return done(payload.return_to, 'error', 'Fel', 'Kunde inte spara kopplingen. Försök igen.', 500)
     }
 
     // Backfill is best-effort — the connection is already saved, and calendar-sync catches up on the
@@ -135,12 +178,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error('calendar-oauth-callback: backfill error:', backfillErr)
     }
 
-    return html(
-      page('Kalender kopplad!', 'Dina bokningar dyker upp i Google Calendar-appen.', payload.return_to),
+    return done(
+      payload.return_to,
+      'connected',
+      'Kalender kopplad!',
+      'Dina bokningar dyker upp i Google Calendar-appen.',
       200,
     )
   } catch (exchangeErr) {
     console.error('calendar-oauth-callback: exchange error:', exchangeErr)
-    return html(page('Fel', 'Kunde inte slutföra kopplingen. Försök igen.', payload.return_to), 502)
+    return done(payload.return_to, 'error', 'Fel', 'Kunde inte slutföra kopplingen. Försök igen.', 502)
   }
 })
