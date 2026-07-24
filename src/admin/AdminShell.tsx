@@ -110,6 +110,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 : t.bookingsBarberHeading
             }
             lead={isOwner ? t.bookingsOwnerLead : t.bookingsBarberLead}
+            showCalendarConnect={!isOwner}
           />
         )
       case 'schedule':

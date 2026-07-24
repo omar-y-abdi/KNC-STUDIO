@@ -37,6 +37,7 @@ import { isoWeek, weekLabel } from '../weekOfYear'
 import { partitionSections } from './bookingsSections'
 import type { BookingSection, SectionedBookings, WeekGroup } from './bookingsSections'
 import type { AdminBarber, AdminBarberId, AdminBooking, AdminStylesBundle } from './viewTypes'
+import { CalendarConnectButton } from '../calendar/CalendarConnectButton'
 
 export interface BookingsViewProps {
   readonly dark: boolean
@@ -51,6 +52,9 @@ export interface BookingsViewProps {
   /** Heading shown above the tables (e.g. "Mina bokningar" / "Alla bokningar"). */
   readonly heading: string
   readonly lead: string
+  /** Show the barber's own "Koppla kalender" panel — barber view only, NEVER the owner (an owner
+   *  cannot consent for a barber's Google account). */
+  readonly showCalendarConnect?: boolean
 }
 
 type Load =
@@ -484,6 +488,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
           {props.heading}
         </h2>
         <p style={s.sectionLead}>{props.lead}</p>
+
+        {props.showCalendarConnect === true ? (
+          <CalendarConnectButton s={s} dark={props.dark} lang={lang} />
+        ) : null}
 
         <div aria-live="polite" style={{ minHeight: '18px', margin: '8px 0 4px' }}>
           {notice !== null ? (
