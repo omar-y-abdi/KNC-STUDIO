@@ -79,6 +79,15 @@ export interface AdminStrings {
   readonly signOut: string
   /** Used as `{t.greeting} {firstName}` in the topbar — kept as a plain word ("Hej" / "Hi"). */
   readonly greeting: string
+  // Kalender-koppling (Google Calendar-sync) — barberns "Mina bokningar".
+  readonly calendarConnect: string
+  readonly calendarConnecting: string
+  readonly calendarConnected: string
+  readonly calendarDisconnect: string
+  readonly calendarDisconnecting: string
+  readonly calendarHint: string
+  readonly calendarLoading: string
+  readonly calendarSyncErrorPrefix: string
   readonly ariaSelectBarber: string
   readonly themeLight: string
   readonly themeDark: string
@@ -458,6 +467,14 @@ const SV: AdminStrings = {
   svcDeleteCancel: 'Avbryt',
   signOut: 'Logga ut',
   greeting: 'Hej',
+  calendarConnect: 'Koppla kalender',
+  calendarConnecting: 'Öppnar Google…',
+  calendarConnected: 'Kalender kopplad',
+  calendarDisconnect: 'Koppla loss',
+  calendarDisconnecting: 'Kopplar loss…',
+  calendarHint: 'Få dina bokningar direkt i Google Calendar-appen (iPhone + Android).',
+  calendarLoading: 'Laddar kalenderstatus…',
+  calendarSyncErrorPrefix: 'Senaste synk misslyckades:',
   ariaSelectBarber: 'Välj barberare att hantera',
   themeLight: 'Byt till ljust läge',
   themeDark: 'Byt till mörkt läge',
@@ -802,6 +819,14 @@ const EN: AdminStrings = {
   svcDeleteCancel: 'Cancel',
   signOut: 'Sign out',
   greeting: 'Hi',
+  calendarConnect: 'Connect calendar',
+  calendarConnecting: 'Opening Google…',
+  calendarConnected: 'Calendar connected',
+  calendarDisconnect: 'Disconnect',
+  calendarDisconnecting: 'Disconnecting…',
+  calendarHint: 'Get your bookings straight into the Google Calendar app (iPhone + Android).',
+  calendarLoading: 'Loading calendar status…',
+  calendarSyncErrorPrefix: 'Last sync failed:',
   ariaSelectBarber: 'Select barber to manage',
   themeLight: 'Switch to light mode',
   themeDark: 'Switch to dark mode',

@@ -416,6 +416,34 @@ verify_jwt = false
 enabled = true
 verify_jwt = true
 
+# calendar-oauth-start: called BY an authenticated barber FROM the admin panel to get the Google
+# consent URL. Holds a valid Supabase JWT -> verify_jwt = true. Also validates the JWT internally
+# (auth.getUser) and requires a linked barber (profiles.role = 'barber') before doing any work.
+[functions.calendar-oauth-start]
+enabled = true
+verify_jwt = true
+
+# calendar-oauth-callback: the Google OAuth redirect target — a TOP-LEVEL browser redirect from
+# accounts.google.com that carries NO Supabase JWT -> verify_jwt = false. Secured instead by the
+# HMAC-signed `state` minted by calendar-oauth-start (CALENDAR_STATE_SECRET). Register its URL under
+# the OAuth client's Authorised redirect URIs: <SUPABASE_URL>/functions/v1/calendar-oauth-callback.
+[functions.calendar-oauth-callback]
+enabled = true
+verify_jwt = false
+
+# calendar-sync: invoked by a bookings INSERT/UPDATE/DELETE Database Webhook (server -> server, no
+# user JWT) -> verify_jwt = false. Fail-closed on the shared WEBHOOK_SECRET header (same recipe as
+# send-confirmation). Re-reads every field from the DB by id (never trusts the webhook body).
+[functions.calendar-sync]
+enabled = true
+verify_jwt = false
+
+# calendar-disconnect: called BY an authenticated barber FROM the admin panel to unlink their own
+# calendar. Holds a valid Supabase JWT -> verify_jwt = true; also validates internally.
+[functions.calendar-disconnect]
+enabled = true
+verify_jwt = true
+
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local
 # Postgres container to be OOM-killed (exit 137) during `db reset` on this 8 GiB Docker host. It is

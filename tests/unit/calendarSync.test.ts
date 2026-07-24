@@ -1,0 +1,116 @@
+// Unit tests for the pure calendar-SYNC logic:
+//   - signState / verifyState (the OAuth `state` HMAC — security-critical) from the shared edge module,
+//   - buildEvent (booking -> Google event mapping),
+//   - parseCalendarStatus (the RPC boundary parser).
+// The shared module uses only Web-standard globals (crypto.subtle, TextEncoder/atob), so it imports
+// cleanly in Node/vitest as well as in the Deno edge runtime.
+
+import { describe, expect, it } from 'vitest'
+import { buildEvent, signState, verifyState } from '../../supabase/functions/_shared/calendar'
+import { parseCalendarStatus } from '../../src/admin/calendar/status'
+
+const SECRET = 'unit-test-state-secret'
+const NOW_MS = 1_700_000_000_000
+const NOW_SEC = NOW_MS / 1000
+
+describe('signState / verifyState', () => {
+  it('round-trips a valid payload', async () => {
+    const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
+    const payload = await verifyState(token, SECRET, 600, NOW_MS)
+    expect(payload).not.toBeNull()
+    expect(payload?.barber_id).toBe('hassan')
+  })
+
+  it('rejects a tampered signature', async () => {
+    const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
+    const tampered = token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A')
+    expect(await verifyState(tampered, SECRET, 600, NOW_MS)).toBeNull()
+  })
+
+  it('rejects a tampered body (id swap)', async () => {
+    const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
+    const forged = await signState({ barber_id: 'victor', iat: NOW_SEC }, SECRET)
+    // Splice hassan's signature onto victor's body — the HMAC must not validate.
+    const body = forged.split('.')[0]
+    const sig = token.split('.')[1]
+    expect(await verifyState(`${body}.${sig}`, SECRET, 600, NOW_MS)).toBeNull()
+  })
+
+  it('rejects a wrong secret', async () => {
+    const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
+    expect(await verifyState(token, 'other-secret', 600, NOW_MS)).toBeNull()
+  })
+
+  it('rejects an expired token', async () => {
+    const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
+    expect(await verifyState(token, SECRET, 600, NOW_MS + 601_000)).toBeNull()
+  })
+
+  it('rejects a malformed token', async () => {
+    expect(await verifyState('not-a-token', SECRET, 600, NOW_MS)).toBeNull()
+    expect(await verifyState('a.b.c', SECRET, 600, NOW_MS)).toBeNull()
+  })
+
+  it('preserves return_to when present', async () => {
+    const token = await signState(
+      { barber_id: 'victor', iat: NOW_SEC, return_to: 'https://app.example' },
+      SECRET,
+    )
+    const payload = await verifyState(token, SECRET, 600, NOW_MS)
+    expect(payload?.return_to).toBe('https://app.example')
+  })
+})
+
+describe('buildEvent', () => {
+  const base = {
+    service_name: 'Skägg & puts',
+    customer_name: 'Omar',
+    phone: '0701234567',
+    start_at: '2026-07-24T12:00:00+00:00',
+    end_at: '2026-07-24T12:30:00+00:00',
+  }
+
+  it('maps summary, description, time, timezone and reminder', () => {
+    const e = buildEvent(base)
+    expect(e.summary).toBe('Omar — Skägg & puts')
+    expect(e.description).toContain('Kund: Omar')
+    expect(e.description).toContain('Telefon: 0701234567')
+    expect(e.description).toContain('Tjänst: Skägg & puts')
+    expect(e.start).toEqual({ dateTime: base.start_at, timeZone: 'Europe/Stockholm' })
+    expect(e.end).toEqual({ dateTime: base.end_at, timeZone: 'Europe/Stockholm' })
+    expect(e.reminders.useDefault).toBe(false)
+    expect(e.reminders.overrides[0]).toEqual({ method: 'popup', minutes: 30 })
+  })
+
+  it('omits the phone line when phone is null', () => {
+    const e = buildEvent({ ...base, phone: null })
+    expect(e.description).not.toContain('Telefon')
+  })
+})
+
+describe('parseCalendarStatus', () => {
+  it('parses a connected row', () => {
+    expect(
+      parseCalendarStatus({ connected: true, google_email: 'a@b.se', last_sync_error: null }),
+    ).toEqual({ connected: true, googleEmail: 'a@b.se', lastSyncError: null })
+  })
+
+  it('defaults to disconnected on junk', () => {
+    expect(parseCalendarStatus(null)).toEqual({
+      connected: false,
+      googleEmail: null,
+      lastSyncError: null,
+    })
+    expect(parseCalendarStatus({ connected: 'yes' })).toEqual({
+      connected: false,
+      googleEmail: null,
+      lastSyncError: null,
+    })
+  })
+
+  it('carries a sync error string', () => {
+    expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
+      'boom',
+    )
+  })
+})

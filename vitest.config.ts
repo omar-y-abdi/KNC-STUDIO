@@ -26,6 +26,7 @@ export default defineConfig({
         'src/mybookings/demoMyBookings.ts',
         'src/admin/serviceValidation.ts',
         'src/site/siteChrome.ts',
+        'src/admin/calendar/status.ts',
       ],
     },
   },
