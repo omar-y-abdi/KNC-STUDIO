@@ -139,7 +139,7 @@ body {
     display: none !important;
     position: absolute;
     top: 100%;
-    right: 2px;
+    right: 12px;
     width: min(256px, calc(100vw - 24px));
     max-width: calc(100vw - 24px);
     padding: 4px !important;
