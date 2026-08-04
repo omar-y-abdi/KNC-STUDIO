@@ -10,9 +10,10 @@
 // is the site's original track/knob switch (ThemeSwitch), and the language toggle is the same mini
 // pill pair the site nav uses.
 //
-// Fully responsive: on narrow screens the sidebar collapses into a horizontal, safe-area-aware tab
-// strip (see global.css `.knc-admin-*`), and the top bar scrolls with the page instead of stacking
-// under the strip. All controls are buttons (keyboard-operable); the active tab is `aria-current`.
+// Fully responsive: on narrow screens the sidebar becomes a compact header with the public site's
+// circular down-chevron. It opens a small vertical tab menu instead of forcing a horizontal strip.
+// The top bar scrolls with the page instead of stacking under the sticky header. All controls are
+// buttons (keyboard-operable); the active tab is `aria-current`.
 
 import type { JSX } from 'preact'
 import { useMemo, useState } from 'preact/hooks'
@@ -72,6 +73,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
   // Schedule first: managing today's availability is the barber's most frequent task.
   const [tab, setTab] = useState<Tab>('schedule')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
@@ -190,7 +192,10 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       <button
         key={def.id}
         type="button"
-        onClick={() => setTab(def.id)}
+        onClick={() => {
+          setTab(def.id)
+          setMobileMenuOpen(false)
+        }}
         aria-current={active ? 'page' : undefined}
         style={{
           textAlign: 'left',
@@ -215,11 +220,47 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   return (
     <div style={s.appShell} class="knc-admin-shell">
       <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
-        <div style={s.brand}>
+        <button
+          type="button"
+          class="knc-admin-mobile-menu-toggle"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          aria-label={t.ariaNav}
+          aria-controls="admin-nav-tabs"
+          aria-expanded={mobileMenuOpen}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '32px',
+            height: '32px',
+            padding: 0,
+            borderRadius: '50%',
+            border: 'none',
+            cursor: 'pointer',
+            background: c.closeBg,
+            flex: 'none',
+          }}
+        >
+          <img
+            src="/icons/chevron.down.svg"
+            alt=""
+            aria-hidden="true"
+            style={{
+              width: '13px',
+              height: '13px',
+              filter: c.iconF,
+              transform: mobileMenuOpen ? 'rotate(180deg)' : undefined,
+            }}
+          />
+        </button>
+        <div style={s.brand} class="knc-admin-brand">
           <PoleLogo uid="admin" style={{ width: '24px', height: '24px', flex: 'none' }} />
           <span style={{ letterSpacing: '1.5px' }}>BLADE & BLEND STUDIO</span>
         </div>
-        <div style={s.navList} class="knc-admin-navlist">
+        <div
+          id="admin-nav-tabs"
+          style={s.navList}
+          class={`knc-admin-navlist${mobileMenuOpen ? ' knc-admin-navlist-open' : ''}`}
+        >
           {visibleTabs.map(navButton)}
         </div>
         <button
