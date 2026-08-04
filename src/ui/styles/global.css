@@ -124,9 +124,12 @@ body {
   }
   .knc-admin-mobile-menu-toggle {
     display: inline-flex !important;
+    order: 2;
+    margin-left: auto;
   }
   /* The brand label shrinks beside the menu toggle. */
   .knc-admin-brand {
+    order: 1;
     padding: 0 8px 0 2px !important;
     font-size: 15px !important;
     white-space: nowrap;
@@ -136,7 +139,7 @@ body {
     display: none !important;
     position: absolute;
     top: 100%;
-    left: 12px;
+    right: 12px;
     width: min(256px, calc(100vw - 24px));
     max-width: calc(100vw - 24px);
     padding: 4px !important;
