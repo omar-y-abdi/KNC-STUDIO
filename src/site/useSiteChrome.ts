@@ -1,4 +1,5 @@
-// `useSiteChrome` — the owner-editable homepage chrome as React state, refetched per language.
+// `useSiteChrome` — owner-editable public copy + sizing as React state, refetched per language and
+// updated when the owner changes `site_content`.
 //
 // Under the MOCK (no backend): `DEFAULT_CHROME` is the immediate, stable value (no flash, no shift) —
 // the site renders from its i18n defaults + 1.0× scale exactly as before. Under a BACKEND: the same
@@ -29,8 +30,12 @@ export function useSiteChrome(
       .catch(() => {
         if (!cancelled) setChrome(DEFAULT_CHROME)
       })
+    const unsubscribe = port.subscribe?.(lang, (next) => {
+      if (!cancelled) setChrome(next)
+    })
     return () => {
       cancelled = true
+      unsubscribe?.()
     }
   }, [lang, port])
 

@@ -39,6 +39,10 @@ export interface AdminStrings {
   readonly siteFieldKicker: string
   readonly siteFieldHours: string
   readonly siteFieldAddr: string
+  readonly siteBookingTextTitle: string
+  readonly siteBookingTextLead: string
+  readonly siteFieldPolicy: string
+  readonly siteFieldBookedTitle: string
   readonly siteFontTitle: string
   readonly siteFontLead: string
   readonly siteFontHomepage: string
@@ -429,6 +433,11 @@ const SV: AdminStrings = {
   siteFieldKicker: 'Underrubrik (t.ex. "BARBERSHOP · GÖTEBORG")',
   siteFieldHours: 'Öppettider',
   siteFieldAddr: 'Adress',
+  siteBookingTextTitle: 'Bokningens popuptexter',
+  siteBookingTextLead:
+    'Redigera informationen före bokning och bekräftelserubriken efter bokning. Knapptexterna ändras inte här.',
+  siteFieldPolicy: 'Meddelande före bokning',
+  siteFieldBookedTitle: 'Bekräftelserubrik',
   siteFontTitle: 'Textstorlek',
   siteFontLead:
     'Välj textstorlek för startsidan och Om oss-sektionen. Alla val håller sig inom layouten.',
@@ -782,6 +791,11 @@ const EN: AdminStrings = {
   siteFieldKicker: 'Sub-heading (e.g. "BARBERSHOP · GOTHENBURG")',
   siteFieldHours: 'Opening hours',
   siteFieldAddr: 'Address',
+  siteBookingTextTitle: 'Booking pop-up text',
+  siteBookingTextLead:
+    'Edit the notice before booking and the confirmation heading after booking. Button labels are not changed here.',
+  siteFieldPolicy: 'Notice before booking',
+  siteFieldBookedTitle: 'Confirmation heading',
   siteFontTitle: 'Text size',
   siteFontLead:
     'Choose the text size for the home page and the About section. Every option stays within the layout.',

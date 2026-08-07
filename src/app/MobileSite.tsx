@@ -15,6 +15,7 @@ import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HeroLockup } from '../ui/logos/HeroLockup'
 import type { AppStrings, Lang } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
 import { scalePx, type SizePreset } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
@@ -48,6 +49,8 @@ export interface MobileSiteProps {
   readonly homepageScale: SizePreset
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
+  /** Owner-edited policy + confirmation title shown in the booking popups. */
+  readonly bookingPopupText: BookingPopupText
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
@@ -343,6 +346,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               defaultLang={props.lang}
               showHeader={false}
               onMyBookings={props.openMyBookings}
+              popupText={props.bookingPopupText}
             />
           ) : (
             <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />

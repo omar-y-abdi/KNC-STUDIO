@@ -8,6 +8,7 @@ import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { DeskLockup } from '../ui/logos/DeskLockup'
 import type { AppStrings } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
 import { scalePx, type SizePreset } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
@@ -26,6 +27,8 @@ export interface DesktopSiteProps extends ShellProps {
   readonly homepageScale: SizePreset
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
+  /** Owner-edited policy + confirmation title shown in the booking popups. */
+  readonly bookingPopupText: BookingPopupText
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -213,6 +216,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 defaultLang={props.lang}
                 showHeader={false}
                 onMyBookings={props.openMyBookings}
+                popupText={props.bookingPopupText}
               />
             </div>
           </div>

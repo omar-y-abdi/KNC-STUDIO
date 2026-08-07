@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_CHROME, parseScale, scalePx, SIZE_PRESETS } from '../../src/site/siteChrome'
+import {
+  DEFAULT_CHROME,
+  SITE_TEXT_KEYS,
+  parseScale,
+  scalePx,
+  textOrDefault,
+  SIZE_PRESETS,
+} from '../../src/site/siteChrome'
 
 describe('parseScale', () => {
   it('passes through the four valid presets', () => {
@@ -31,6 +38,18 @@ describe('scalePx', () => {
     const sizes = SIZE_PRESETS.map((p) => scalePx(base, p))
     const sorted = [...sizes].sort((a, b) => a - b)
     expect(sizes).toEqual(sorted)
+  })
+})
+
+describe('editable public copy', () => {
+  it('includes the booking policy and confirmation heading keys', () => {
+    expect(SITE_TEXT_KEYS).toEqual(['kicker', 'hours', 'addr', 'policy', 'bookedTitle'])
+  })
+
+  it('uses defaults for blank editor values while preserving non-blank copy', () => {
+    expect(textOrDefault(undefined, 'Default')).toBe('Default')
+    expect(textOrDefault('   ', 'Default')).toBe('Default')
+    expect(textOrDefault('Saved copy', 'Default')).toBe('Saved copy')
   })
 })
 

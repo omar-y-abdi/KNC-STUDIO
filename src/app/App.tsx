@@ -8,10 +8,12 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { BUSINESS } from '../config'
 import type { AppStrings, Lang } from '../i18n/index'
-import { appStrings } from '../i18n/index'
+import { appStrings, bookingStrings } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
 import { useSiteChrome } from '../site/useSiteChrome'
+import { textOrDefault } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
@@ -50,15 +52,20 @@ export function App(): JSX.Element {
 
   const dark = state.mode === 'dark'
   const lang = state.lang
-  // Owner-editable homepage chrome (text overlay + font-size presets). Under the mock this is the
-  // neutral default, so `tx` === the i18n copy and both scales are 1.0× — byte-identical to before.
+  // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
+  // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
   const chrome = useSiteChrome(lang)
   const txBase = appStrings(lang)
   const tx: AppStrings = {
     ...txBase,
-    kicker: chrome.text.kicker ?? txBase.kicker,
-    hours: chrome.text.hours ?? txBase.hours,
-    addr: chrome.text.addr ?? txBase.addr,
+    kicker: textOrDefault(chrome.text.kicker, txBase.kicker),
+    hours: textOrDefault(chrome.text.hours, txBase.hours),
+    addr: textOrDefault(chrome.text.addr, txBase.addr),
+  }
+  const bookingBase = bookingStrings(lang)
+  const bookingPopupText: BookingPopupText = {
+    policy: textOrDefault(chrome.text.policy, bookingBase.policy),
+    bookedTitle: textOrDefault(chrome.text.bookedTitle, bookingBase.bookedTitle),
   }
   const view = state.view
   // "In a section" = booking or about is open (panel collapsed, content below). Home = static hero.
@@ -234,6 +241,7 @@ export function App(): JSX.Element {
           openMyBookings={openMyBookings}
           homepageScale={chrome.homepageScale}
           aboutScale={chrome.aboutScale}
+          bookingPopupText={bookingPopupText}
         />
         {cancelDialog}
         {myBookingsDialog}
@@ -261,6 +269,7 @@ export function App(): JSX.Element {
         openMyBookings={openMyBookings}
         homepageScale={chrome.homepageScale}
         aboutScale={chrome.aboutScale}
+        bookingPopupText={bookingPopupText}
       />
       {cancelDialog}
       {myBookingsDialog}

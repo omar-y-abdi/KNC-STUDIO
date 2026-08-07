@@ -7,7 +7,7 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
-import type { Lang } from '../i18n/index'
+import type { BookingStrings, Lang } from '../i18n/index'
 import { appStrings, bookingStrings } from '../i18n/index'
 import {
   cap,
@@ -55,7 +55,11 @@ export interface BookingFlowProps {
   readonly servicesPort?: ServicesPort
   /** Open the app-level "Mina bokningar" popup — surfaced on the confirmation screen. */
   readonly onMyBookings?: () => void
+  /** Owner-edited customer copy for the policy notice and confirmation title. */
+  readonly popupText?: BookingPopupText
 }
+
+export type BookingPopupText = Readonly<Pick<BookingStrings, 'policy' | 'bookedTitle'>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
@@ -107,7 +111,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   }
 
   const lang: Lang = state.lang ?? props.defaultLang ?? 'sv'
-  const t = bookingStrings(lang)
+  const t: BookingStrings = { ...bookingStrings(lang), ...props.popupText }
   const dark = (props.mode ?? 'light') === 'dark'
   const showDirections = props.showDirections !== false
   const showHeader = props.showHeader !== false

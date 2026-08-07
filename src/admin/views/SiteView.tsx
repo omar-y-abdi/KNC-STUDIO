@@ -1,7 +1,8 @@
-// Startsida view (OWNER only) — edit the homepage text (kicker / hours / address, per language) and
-// the two font-size presets (homepage + About). Text cells save independently (upsert) like AboutView;
-// each font select saves on change. The public site overlays these values onto its i18n defaults, so
-// edits here show up on the live home page. All writes are owner-only at the RLS layer.
+// Startsida view (OWNER only) — edit homepage text (kicker / hours / address) and booking-popup
+// copy (policy / confirmation heading), all per language, plus two font-size presets. Text cells
+// save independently (upsert) like AboutView; each font select saves on change. The public site
+// overlays these values onto i18n defaults, so owner edits reach open public pages. All writes are
+// owner-only at the RLS layer.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -19,12 +20,14 @@ import {
   SIZE_PRESETS,
   parseScale,
   type SizePreset,
+  type SiteTextKey,
 } from '../../site/siteChrome'
 import type { AdminStylesBundle } from './viewTypes'
 
 const LANGS: readonly Lang[] = ['sv', 'en']
-const TEXT_FIELDS = ['kicker', 'hours', 'addr'] as const
-type TextField = (typeof TEXT_FIELDS)[number]
+const HOMEPAGE_TEXT_FIELDS: readonly SiteTextKey[] = ['kicker', 'hours', 'addr']
+const BOOKING_TEXT_FIELDS: readonly SiteTextKey[] = ['policy', 'bookedTitle']
+type TextField = SiteTextKey
 
 const cellKey = (key: string, lang: Lang): string => `${key}:${lang}`
 
@@ -110,6 +113,8 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     kicker: t.siteFieldKicker,
     hours: t.siteFieldHours,
     addr: t.siteFieldAddr,
+    policy: t.siteFieldPolicy,
+    bookedTitle: t.siteFieldBookedTitle,
   }
 
   const sizeLabel: Record<SizePreset, string> = {
@@ -140,6 +145,75 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     </label>
   )
 
+  const textEditors = (fields: readonly TextField[]): JSX.Element => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
+      {fields.map((field) => (
+        <div key={field}>
+          <h3 style={{ ...s.label, fontSize: '13px' }}>{fieldLabels[field]}</h3>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+              gap: '12px',
+            }}
+          >
+            {LANGS.map((cellLang) => {
+              const ck = cellKey(field, cellLang)
+              return (
+                <div key={ck}>
+                  <label style={s.label} htmlFor={`site-${ck}`}>
+                    {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
+                  </label>
+                  {field === 'policy' ? (
+                    <textarea
+                      id={`site-${ck}`}
+                      style={s.textarea}
+                      rows={5}
+                      maxLength={400}
+                      value={valueFor(field, cellLang)}
+                      onInput={(e) => setValue(field, cellLang, e.currentTarget.value)}
+                    />
+                  ) : (
+                    <input
+                      id={`site-${ck}`}
+                      style={s.input}
+                      maxLength={400}
+                      value={valueFor(field, cellLang)}
+                      onInput={(e) => setValue(field, cellLang, e.currentTarget.value)}
+                    />
+                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginTop: '6px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
+                      onClick={() => void saveCell(field, cellLang)}
+                      disabled={savingKey === ck}
+                    >
+                      {savingKey === ck ? t.aboutSaving : t.aboutSave}
+                    </button>
+                    <span aria-live="polite">
+                      {savedKey === ck ? <span style={s.successText}>{t.aboutSaved}</span> : null}
+                      {errorFor?.key === ck ? (
+                        <span style={s.errorText}>{errorFor.message}</span>
+                      ) : null}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
   return (
     <>
       <section style={s.card} aria-labelledby="site-text-heading">
@@ -153,63 +227,22 @@ export function SiteView(props: SiteViewProps): JSX.Element {
         ) : !loaded ? (
           <div style={s.emptyState}>{t.siteLoading}</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
-            {TEXT_FIELDS.map((field) => (
-              <div key={field}>
-                <h3 style={{ ...s.label, fontSize: '13px' }}>{fieldLabels[field]}</h3>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
-                    gap: '12px',
-                  }}
-                >
-                  {LANGS.map((cellLang) => {
-                    const ck = cellKey(field, cellLang)
-                    return (
-                      <div key={ck}>
-                        <label style={s.label} htmlFor={`site-${ck}`}>
-                          {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
-                        </label>
-                        <input
-                          id={`site-${ck}`}
-                          style={s.input}
-                          maxLength={400}
-                          value={valueFor(field, cellLang)}
-                          onInput={(e) => setValue(field, cellLang, e.currentTarget.value)}
-                        />
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            marginTop: '6px',
-                          }}
-                        >
-                          <button
-                            type="button"
-                            style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
-                            onClick={() => void saveCell(field, cellLang)}
-                            disabled={savingKey === ck}
-                          >
-                            {savingKey === ck ? t.aboutSaving : t.aboutSave}
-                          </button>
-                          <span aria-live="polite">
-                            {savedKey === ck ? (
-                              <span style={s.successText}>{t.aboutSaved}</span>
-                            ) : null}
-                            {errorFor?.key === ck ? (
-                              <span style={s.errorText}>{errorFor.message}</span>
-                            ) : null}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+          textEditors(HOMEPAGE_TEXT_FIELDS)
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-booking-text-heading">
+        <h2 id="site-booking-text-heading" style={s.sectionTitle}>
+          {t.siteBookingTextTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteBookingTextLead}</p>
+
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          textEditors(BOOKING_TEXT_FIELDS)
         )}
       </section>
 

@@ -1,8 +1,8 @@
 // The real (Supabase) SiteChromePort adapter. `load` reads `site_content` (this language's editable
-// homepage strings) + `site_settings` (the font-size presets) and assembles a `SiteChrome`. anon may
-// select both (public-read RLS). Only the three known text keys are picked up; unknown keys/malformed
-// rows are ignored. Any transport error resolves to `DEFAULT_CHROME`, so the site falls back to its
-// i18n defaults rather than crashing.
+// homepage + booking-popup strings) + `site_settings` (font-size presets) and assembles a
+// `SiteChrome`. Anon may select both (public-read RLS). Only known text keys are picked up; unknown
+// keys/malformed rows are ignored. Any transport error resolves to `DEFAULT_CHROME`, so the site
+// falls back to i18n defaults rather than crashing.
 //
 // Boundary discipline: every row Zod-parsed; the scale tokens narrowed via `parseScale` (unknown →
 // 'md'), never trusted raw.
@@ -55,6 +55,24 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
       }
     } catch {
       return DEFAULT_CHROME
+    }
+  },
+
+  subscribe(lang: Lang, onChange: (chrome: SiteChrome) => void): () => void {
+    const supabase = getSupabase()
+    const channel = supabase
+      .channel(`site-content:${lang}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
+        () => {
+          void supabaseSiteChromeAdapter.load(lang).then(onChange)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
     }
   },
 }

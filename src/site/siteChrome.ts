@@ -1,6 +1,6 @@
-// Shared model for the owner-editable homepage chrome (Task 2 §2): the bilingual text overlay
-// (kicker / hours / address) + the two per-section font-size presets. Pure — no effects — so the
-// scale math is unit-testable and the whole thing has one source of truth.
+// Shared model for the owner-editable public-site copy (Task 2 §2): the bilingual homepage overlay
+// (kicker / hours / address), booking-popup policy + confirmation title, and two font-size presets.
+// Pure — no effects — so the scale math is unit-testable and the whole thing has one source of truth.
 //
 // Font size is a BOUNDED preset (never a free px value): four gentle multipliers the client clamps
 // onto each adjustable element's base size, so no choice can overflow or break the layout.
@@ -24,13 +24,18 @@ export function scalePx(basePx: number, preset: SizePreset): number {
   return Math.round(basePx * SCALE[preset])
 }
 
-/** The `site_content` keys the homepage text is stored under. */
-export const SITE_TEXT_KEYS = ['kicker', 'hours', 'addr'] as const
+/** The `site_content` keys stored per language for the public site. */
+export const SITE_TEXT_KEYS = ['kicker', 'hours', 'addr', 'policy', 'bookedTitle'] as const
 export type SiteTextKey = (typeof SITE_TEXT_KEYS)[number]
 
 /** The DB-editable homepage strings (partial: an unset key keeps its i18n default). Mirrors
  * `AboutOverlay` — present-or-absent, so it composes under `exactOptionalPropertyTypes`. */
 export type SiteText = Readonly<Partial<Record<SiteTextKey, string>>>
+
+/** Use the i18n default until an owner has entered non-blank replacement copy. */
+export function textOrDefault(value: string | undefined, fallback: string): string {
+  return value?.trim() === '' || value === undefined ? fallback : value
+}
 
 /** The full homepage-chrome overlay the public site consumes. */
 export interface SiteChrome {
