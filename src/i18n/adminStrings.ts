@@ -41,8 +41,22 @@ export interface AdminStrings {
   readonly siteFieldAddr: string
   readonly siteBookingTextTitle: string
   readonly siteBookingTextLead: string
+  readonly siteBookingDetailsGroup: string
+  readonly siteBookingConfirmationGroup: string
+  readonly siteFieldYourDetails: string
+  readonly siteFieldSummary: string
+  readonly siteFieldBarberLabel: string
+  readonly siteFieldWhenLabel: string
+  readonly siteFieldServiceLabel: string
+  readonly siteFieldTotalLabel: string
+  readonly siteFieldNameLabel: string
+  readonly siteFieldNamePlaceholder: string
+  readonly siteFieldPhoneLabel: string
+  readonly siteFieldPhonePlaceholder: string
   readonly siteFieldPolicy: string
   readonly siteFieldBookedTitle: string
+  readonly siteFieldConfirmSent: string
+  readonly siteFieldAddToCal: string
   readonly siteFontTitle: string
   readonly siteFontLead: string
   readonly siteFontHomepage: string
@@ -435,9 +449,23 @@ const SV: AdminStrings = {
   siteFieldAddr: 'Adress',
   siteBookingTextTitle: 'Bokningens popuptexter',
   siteBookingTextLead:
-    'Redigera informationen före bokning och bekräftelserubriken efter bokning. Knapptexterna ändras inte här.',
+    'Redigera alla synliga texter utom knappar. Barberare, Tid och Behandling används i båda rutorna. Behåll {phone} där kundens telefonnummer ska visas.',
+  siteBookingDetailsGroup: 'Före bokning',
+  siteBookingConfirmationGroup: 'Efter bokning',
+  siteFieldYourDetails: 'Popupens rubrik',
+  siteFieldSummary: 'Bokningssammanfattningens rubrik',
+  siteFieldBarberLabel: 'Etikett: Barberare (båda rutorna)',
+  siteFieldWhenLabel: 'Etikett: Tid (båda rutorna)',
+  siteFieldServiceLabel: 'Etikett: Behandling (båda rutorna)',
+  siteFieldTotalLabel: 'Etikett: Att betala',
+  siteFieldNameLabel: 'Etikett: Namn',
+  siteFieldNamePlaceholder: 'Platshållare: Namn',
+  siteFieldPhoneLabel: 'Etikett: Telefon',
+  siteFieldPhonePlaceholder: 'Platshållare: Telefon',
   siteFieldPolicy: 'Meddelande före bokning',
   siteFieldBookedTitle: 'Bekräftelserubrik',
+  siteFieldConfirmSent: 'SMS-bekräftelse ({phone} = kundens nummer)',
+  siteFieldAddToCal: 'Rubrik ovanför kalenderalternativen',
   siteFontTitle: 'Textstorlek',
   siteFontLead:
     'Välj textstorlek för startsidan och Om oss-sektionen. Alla val håller sig inom layouten.',
@@ -793,9 +821,23 @@ const EN: AdminStrings = {
   siteFieldAddr: 'Address',
   siteBookingTextTitle: 'Booking pop-up text',
   siteBookingTextLead:
-    'Edit the notice before booking and the confirmation heading after booking. Button labels are not changed here.',
+    'Edit every visible string except buttons. Barber, Time and Service are shared by both dialogs. Keep {phone} where the customer phone number should appear.',
+  siteBookingDetailsGroup: 'Before booking',
+  siteBookingConfirmationGroup: 'After booking',
+  siteFieldYourDetails: 'Pop-up heading',
+  siteFieldSummary: 'Booking summary heading',
+  siteFieldBarberLabel: 'Label: Barber (both dialogs)',
+  siteFieldWhenLabel: 'Label: Time (both dialogs)',
+  siteFieldServiceLabel: 'Label: Service (both dialogs)',
+  siteFieldTotalLabel: 'Label: Total',
+  siteFieldNameLabel: 'Label: Name',
+  siteFieldNamePlaceholder: 'Placeholder: Name',
+  siteFieldPhoneLabel: 'Label: Phone',
+  siteFieldPhonePlaceholder: 'Placeholder: Phone',
   siteFieldPolicy: 'Notice before booking',
   siteFieldBookedTitle: 'Confirmation heading',
+  siteFieldConfirmSent: 'SMS confirmation ({phone} = customer number)',
+  siteFieldAddToCal: 'Heading above calendar options',
   siteFontTitle: 'Text size',
   siteFontLead:
     'Choose the text size for the home page and the About section. Every option stays within the layout.',

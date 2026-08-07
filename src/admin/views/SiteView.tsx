@@ -1,8 +1,7 @@
-// Startsida view (OWNER only) — edit homepage text (kicker / hours / address) and booking-popup
-// copy (policy / confirmation heading), all per language, plus two font-size presets. Text cells
-// save independently (upsert) like AboutView; each font select saves on change. The public site
-// overlays these values onto i18n defaults, so owner edits reach open public pages. All writes are
-// owner-only at the RLS layer.
+// Startsida view (OWNER only) — edit homepage text and every non-button string in the booking
+// details/confirmation dialogs, all per language, plus two font-size presets. Unsaved cells are
+// prefilled from the shipped i18n copy; saves upsert one cell and reach open public pages via
+// Realtime. All writes are owner-only at the RLS layer.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -16,8 +15,13 @@ import {
 } from '../adapters/siteAdmin'
 import {
   ABOUT_SCALE_KEY,
+  BOOKING_CONFIRMATION_TEXT_KEYS,
+  BOOKING_DETAILS_TEXT_KEYS,
   HOMEPAGE_SCALE_KEY,
+  HOMEPAGE_TEXT_KEYS,
+  SITE_TEXT_KEYS,
   SIZE_PRESETS,
+  defaultSiteText,
   parseScale,
   type SizePreset,
   type SiteTextKey,
@@ -25,8 +29,6 @@ import {
 import type { AdminStylesBundle } from './viewTypes'
 
 const LANGS: readonly Lang[] = ['sv', 'en']
-const HOMEPAGE_TEXT_FIELDS: readonly SiteTextKey[] = ['kicker', 'hours', 'addr']
-const BOOKING_TEXT_FIELDS: readonly SiteTextKey[] = ['policy', 'bookedTitle']
 type TextField = SiteTextKey
 
 const cellKey = (key: string, lang: Lang): string => `${key}:${lang}`
@@ -61,7 +63,13 @@ export function SiteView(props: SiteViewProps): JSX.Element {
         return
       }
       const map = new Map<string, string>()
-      for (const row of content.value) map.set(cellKey(row.key, row.lang), row.value)
+      for (const cellLang of LANGS) {
+        const defaults = defaultSiteText(cellLang)
+        for (const key of SITE_TEXT_KEYS) map.set(cellKey(key, cellLang), defaults[key])
+      }
+      for (const row of content.value) {
+        if (row.value.trim() !== '') map.set(cellKey(row.key, row.lang), row.value)
+      }
       setCells(map)
       if (settings.ok) {
         setHomepageScale(parseScale(settings.value.get(HOMEPAGE_SCALE_KEY)))
@@ -88,13 +96,17 @@ export function SiteView(props: SiteViewProps): JSX.Element {
 
   const saveCell = async (key: TextField, l: Lang): Promise<void> => {
     const ck = cellKey(key, l)
+    const value = valueFor(key, l)
     setSavingKey(ck)
     setErrorFor(null)
-    const result = await saveSiteContent(key, l, valueFor(key, l))
+    const result = await saveSiteContent(key, l, value)
     setSavingKey(null)
     if (!result.ok) {
       setErrorFor({ key: ck, message: result.error.message })
       return
+    }
+    if (value.trim() === '') {
+      setCells((prev) => new Map(prev).set(ck, defaultSiteText(l)[key]))
     }
     setSavedKey(ck)
   }
@@ -113,8 +125,20 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     kicker: t.siteFieldKicker,
     hours: t.siteFieldHours,
     addr: t.siteFieldAddr,
+    yourDetails: t.siteFieldYourDetails,
+    summary: t.siteFieldSummary,
+    fBarber: t.siteFieldBarberLabel,
+    fWhen: t.siteFieldWhenLabel,
+    fService: t.siteFieldServiceLabel,
+    fTotal: t.siteFieldTotalLabel,
+    name: t.siteFieldNameLabel,
+    namePh: t.siteFieldNamePlaceholder,
+    phone: t.siteFieldPhoneLabel,
+    phonePh: t.siteFieldPhonePlaceholder,
     policy: t.siteFieldPolicy,
     bookedTitle: t.siteFieldBookedTitle,
+    confirmSent: t.siteFieldConfirmSent,
+    addToCal: t.siteFieldAddToCal,
   }
 
   const sizeLabel: Record<SizePreset, string> = {
@@ -164,7 +188,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                   <label style={s.label} htmlFor={`site-${ck}`}>
                     {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
                   </label>
-                  {field === 'policy' ? (
+                  {field === 'policy' || field === 'confirmSent' ? (
                     <textarea
                       id={`site-${ck}`}
                       style={s.textarea}
@@ -227,7 +251,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
         ) : !loaded ? (
           <div style={s.emptyState}>{t.siteLoading}</div>
         ) : (
-          textEditors(HOMEPAGE_TEXT_FIELDS)
+          textEditors(HOMEPAGE_TEXT_KEYS)
         )}
       </section>
 
@@ -242,7 +266,16 @@ export function SiteView(props: SiteViewProps): JSX.Element {
         ) : !loaded ? (
           <div style={s.emptyState}>{t.siteLoading}</div>
         ) : (
-          textEditors(BOOKING_TEXT_FIELDS)
+          <>
+            <h3 style={{ ...s.sectionTitle, fontSize: '16px', marginTop: '18px' }}>
+              {t.siteBookingDetailsGroup}
+            </h3>
+            {textEditors(BOOKING_DETAILS_TEXT_KEYS)}
+            <h3 style={{ ...s.sectionTitle, fontSize: '16px', marginTop: '28px' }}>
+              {t.siteBookingConfirmationGroup}
+            </h3>
+            {textEditors(BOOKING_CONFIRMATION_TEXT_KEYS)}
+          </>
         )}
       </section>
 

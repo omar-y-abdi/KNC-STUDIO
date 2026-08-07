@@ -119,15 +119,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
 
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
-          {field(
-            t.phone,
-            props.phoneValue,
-            props.onPhone,
-            '07X XXX XX XX',
-            'tel',
-            e.phone,
-            t.errPhone,
-          )}
+          {field(t.phone, props.phoneValue, props.onPhone, t.phonePh, 'tel', e.phone, t.errPhone)}
         </div>
 
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>

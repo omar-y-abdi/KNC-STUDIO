@@ -29,10 +29,12 @@ export const bookingSv: BookingStrings = {
   name: 'Namn',
   namePh: 'För- och efternamn',
   phone: 'Telefon',
+  phonePh: '07X XXX XX XX',
   book: 'Boka tid',
   policy:
     'Vid bokning accepterar du att avbokning måste ske senast 24 timmar före besöket. Sen avbokning eller utebliven tid ger Blade & Blend Studio rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
+  confirmSent: 'En bekräftelse skickas via SMS till {phone}.',
   addToCal: 'Lägg till i kalender',
   calApple: 'Apple Kalender',
   calGoogle: 'Google Kalender',

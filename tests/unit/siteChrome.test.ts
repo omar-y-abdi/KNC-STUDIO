@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_CHROME,
   SITE_TEXT_KEYS,
+  defaultSiteText,
   parseScale,
+  resolveSiteText,
   scalePx,
   textOrDefault,
   SIZE_PRESETS,
@@ -42,8 +44,45 @@ describe('scalePx', () => {
 })
 
 describe('editable public copy', () => {
-  it('includes the booking policy and confirmation heading keys', () => {
-    expect(SITE_TEXT_KEYS).toEqual(['kicker', 'hours', 'addr', 'policy', 'bookedTitle'])
+  it('includes every non-button string visible in the booking details and confirmation dialogs', () => {
+    expect(SITE_TEXT_KEYS).toEqual([
+      'kicker',
+      'hours',
+      'addr',
+      'yourDetails',
+      'summary',
+      'fBarber',
+      'fWhen',
+      'fService',
+      'fTotal',
+      'name',
+      'namePh',
+      'phone',
+      'phonePh',
+      'policy',
+      'bookedTitle',
+      'confirmSent',
+      'addToCal',
+    ])
+  })
+
+  it('provides the current localized copy when the database has no saved rows', () => {
+    const defaults = defaultSiteText('sv')
+    expect(defaults.yourDetails).toBe('Dina uppgifter')
+    expect(defaults.phonePh).toBe('07X XXX XX XX')
+    expect(defaults.policy).toContain('Vid bokning accepterar du')
+    expect(defaults.bookedTitle).toBe('Tack — din tid är bokad!')
+    expect(defaults.confirmSent).toBe('En bekräftelse skickas via SMS till {phone}.')
+  })
+
+  it('overlays saved copy but keeps defaults for missing or blank rows', () => {
+    const resolved = resolveSiteText(
+      { yourDetails: 'Anpassad rubrik', policy: '   ', confirmSent: 'SMS: {phone}' },
+      'sv',
+    )
+    expect(resolved.yourDetails).toBe('Anpassad rubrik')
+    expect(resolved.policy).toContain('Vid bokning accepterar du')
+    expect(resolved.confirmSent).toBe('SMS: {phone}')
   })
 
   it('uses defaults for blank editor values while preserving non-blank copy', () => {

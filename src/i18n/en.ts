@@ -29,10 +29,12 @@ export const bookingEn: BookingStrings = {
   name: 'Name',
   namePh: 'First and last name',
   phone: 'Phone',
+  phonePh: '07X XXX XX XX',
   book: 'Book appointment',
   policy:
     'By booking you agree that cancellations must be made at least 24 hours before the visit. Late cancellation or a no‑show entitles Blade & Blend Studio to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
+  confirmSent: 'A confirmation will be sent by SMS to {phone}.',
   addToCal: 'Add to calendar',
   calApple: 'Apple Calendar',
   calGoogle: 'Google Calendar',

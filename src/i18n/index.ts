@@ -27,9 +27,12 @@ export interface BookingStrings {
   name: string
   namePh: string
   phone: string
+  phonePh: string
   book: string
   policy: string
   bookedTitle: string
+  /** Confirmation sentence template. Every `{phone}` token becomes the customer's phone number. */
+  confirmSent: string
   addToCal: string
   calApple: string
   calGoogle: string

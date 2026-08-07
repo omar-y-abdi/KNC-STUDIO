@@ -9,6 +9,7 @@ import { BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
 import { appStrings, bookingStrings } from '../i18n/index'
+import type { BookingPopupTextKey } from '../site/siteChrome'
 import {
   cap,
   buildWeeks,
@@ -59,7 +60,7 @@ export interface BookingFlowProps {
   readonly popupText?: BookingPopupText
 }
 
-export type BookingPopupText = Readonly<Pick<BookingStrings, 'policy' | 'bookedTitle'>>
+export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
@@ -393,14 +394,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
   const mapsHref = result?.ok === true ? result.links.mapsHref : BUSINESS.mapsHref
 
-  // Confirmation sentence — computed from live state (persists until reset). SMS is the only channel.
+  // Confirmation sentence — owner-editable template with the customer's live phone inserted.
   let confirmSentLine = ''
   if (selDate !== null && S.time && S.service) {
-    const dest = f.phone || ''
-    confirmSentLine =
-      lang === 'sv'
-        ? 'En bekräftelse skickas via SMS' + (dest ? ' till ' + dest : '') + '.'
-        : 'A confirmation will be sent by SMS' + (dest ? ' to ' + dest : '') + '.'
+    confirmSentLine = t.confirmSent.split('{phone}').join(f.phone)
   }
 
   const s = buildBookingStyles(c, dark, bookDisabled)

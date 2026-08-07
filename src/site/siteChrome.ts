@@ -1,9 +1,11 @@
-// Shared model for the owner-editable public-site copy (Task 2 §2): the bilingual homepage overlay
-// (kicker / hours / address), booking-popup policy + confirmation title, and two font-size presets.
-// Pure — no effects — so the scale math is unit-testable and the whole thing has one source of truth.
+// Shared model for owner-editable public-site copy (Task 2 §2): bilingual homepage text, every
+// non-button string in the booking details/confirmation dialogs, and two font-size presets.
 //
 // Font size is a BOUNDED preset (never a free px value): four gentle multipliers the client clamps
 // onto each adjustable element's base size, so no choice can overflow or break the layout.
+
+import type { BookingStrings, Lang } from '../i18n/index'
+import { appStrings, bookingStrings } from '../i18n/index'
 
 /** The four allowed font-size presets, smallest → largest. */
 export type SizePreset = 'sm' | 'md' | 'lg' | 'xl'
@@ -24,8 +26,33 @@ export function scalePx(basePx: number, preset: SizePreset): number {
   return Math.round(basePx * SCALE[preset])
 }
 
-/** The `site_content` keys stored per language for the public site. */
-export const SITE_TEXT_KEYS = ['kicker', 'hours', 'addr', 'policy', 'bookedTitle'] as const
+export const HOMEPAGE_TEXT_KEYS = ['kicker', 'hours', 'addr'] as const
+export const BOOKING_DETAILS_TEXT_KEYS = [
+  'yourDetails',
+  'summary',
+  'fBarber',
+  'fWhen',
+  'fService',
+  'fTotal',
+  'name',
+  'namePh',
+  'phone',
+  'phonePh',
+  'policy',
+] as const satisfies readonly (keyof BookingStrings)[]
+export const BOOKING_CONFIRMATION_TEXT_KEYS = [
+  'bookedTitle',
+  'confirmSent',
+  'addToCal',
+] as const satisfies readonly (keyof BookingStrings)[]
+export const BOOKING_POPUP_TEXT_KEYS = [
+  ...BOOKING_DETAILS_TEXT_KEYS,
+  ...BOOKING_CONFIRMATION_TEXT_KEYS,
+] as const
+export type BookingPopupTextKey = (typeof BOOKING_POPUP_TEXT_KEYS)[number]
+
+/** Every `site_content` key stored per language for the public site. */
+export const SITE_TEXT_KEYS = [...HOMEPAGE_TEXT_KEYS, ...BOOKING_POPUP_TEXT_KEYS] as const
 export type SiteTextKey = (typeof SITE_TEXT_KEYS)[number]
 
 /** The DB-editable homepage strings (partial: an unset key keeps its i18n default). Mirrors
@@ -35,6 +62,41 @@ export type SiteText = Readonly<Partial<Record<SiteTextKey, string>>>
 /** Use the i18n default until an owner has entered non-blank replacement copy. */
 export function textOrDefault(value: string | undefined, fallback: string): string {
   return value?.trim() === '' || value === undefined ? fallback : value
+}
+
+export type ResolvedSiteText = Readonly<Record<SiteTextKey, string>>
+
+/** Current shipped copy, used to prefill admin fields before any owner override exists. */
+export function defaultSiteText(lang: Lang): ResolvedSiteText {
+  const app = appStrings(lang)
+  const booking = bookingStrings(lang)
+  return {
+    kicker: app.kicker,
+    hours: app.hours,
+    addr: app.addr,
+    yourDetails: booking.yourDetails,
+    summary: booking.summary,
+    fBarber: booking.fBarber,
+    fWhen: booking.fWhen,
+    fService: booking.fService,
+    fTotal: booking.fTotal,
+    name: booking.name,
+    namePh: booking.namePh,
+    phone: booking.phone,
+    phonePh: booking.phonePh,
+    policy: booking.policy,
+    bookedTitle: booking.bookedTitle,
+    confirmSent: booking.confirmSent,
+    addToCal: booking.addToCal,
+  }
+}
+
+/** Overlay saved owner copy while treating missing/blank rows as the shipped localized copy. */
+export function resolveSiteText(text: SiteText, lang: Lang): ResolvedSiteText {
+  const defaults = defaultSiteText(lang)
+  const resolved: Record<SiteTextKey, string> = { ...defaults }
+  for (const key of SITE_TEXT_KEYS) resolved[key] = textOrDefault(text[key], defaults[key])
+  return resolved
 }
 
 /** The full homepage-chrome overlay the public site consumes. */
