@@ -206,7 +206,9 @@ export async function deleteBarber(
  */
 export async function linkedBarberIds(): Promise<AdminResult<ReadonlySet<AdminBarberId>>> {
   try {
-    const { data, error } = await getAdminClient().from('profiles').select('role, barber_id')
+    const { data, error } = await getAdminClient()
+      .from('profiles')
+      .select('role, barber_id, must_change_password')
     if (error !== null || data === null) return err('network', READ_ERROR)
 
     const linked = new Set<AdminBarberId>()
