@@ -17,6 +17,22 @@ export interface AdminStrings {
   readonly tabServices: string
   readonly tabSite: string
   readonly tabProfile: string
+  readonly tabSettings: string
+  // Settings (authenticated owner/barber account)
+  readonly settingsTitle: string
+  readonly settingsLead: string
+  readonly settingsEmailTitle: string
+  readonly settingsEmailLead: string
+  readonly settingsCurrentEmail: string
+  readonly settingsNewEmail: string
+  readonly settingsEmailPlaceholder: string
+  readonly settingsEmailInvalid: string
+  readonly settingsEmailSame: string
+  readonly settingsEmailSaving: string
+  readonly settingsEmailSubmit: string
+  readonly settingsEmailSent: string
+  readonly settingsPasswordTitle: string
+  readonly settingsPasswordLead: string
   // Profil (barber photo) view.
   readonly profileTitle: string
   readonly profileLead: string
@@ -374,15 +390,12 @@ export interface AdminStrings {
   readonly loginBackToSiteAria: string
   readonly loginHeading: string
   readonly loginLead: string
-  readonly loginChangePasswordLink: string
   readonly loginForgotPasswordLink: string
   // Shared auth links (identical across the password screens)
   readonly authToSignIn: string
   readonly authBackToSignIn: string
-  // ChangePasswordForm ("Byt lösenord" — flow A)
-  readonly changePwSubtitle: string
+  // Settings password form
   readonly changePwSuccess: string
-  readonly changePwEmailLabel: string
   readonly changePwCurrentPassword: string
   readonly changePwNewPassword: string
   readonly changePwConfirmPassword: string
@@ -425,6 +438,23 @@ const SV: AdminStrings = {
   tabServices: 'Tjänster',
   tabSite: 'Startsida',
   tabProfile: 'Profil',
+  tabSettings: 'Inställningar',
+  settingsTitle: 'Inställningar',
+  settingsLead: 'Hantera inloggningsuppgifterna för ditt konto.',
+  settingsEmailTitle: 'E‑post',
+  settingsEmailLead:
+    'Bekräfta ändringen via länkarna som skickas till både din nuvarande och nya e‑postadress.',
+  settingsCurrentEmail: 'Nuvarande e‑post',
+  settingsNewEmail: 'Ny e‑post',
+  settingsEmailPlaceholder: 'namn@exempel.se',
+  settingsEmailInvalid: 'Ange en giltig e‑postadress.',
+  settingsEmailSame: 'Den nya e‑postadressen måste skilja sig från den nuvarande.',
+  settingsEmailSaving: 'Skickar …',
+  settingsEmailSubmit: 'Skicka bekräftelse',
+  settingsEmailSent:
+    'Bekräftelselänkar har skickats. E‑postadressen ändras när både nuvarande och nya adressen har bekräftats.',
+  settingsPasswordTitle: 'Lösenord',
+  settingsPasswordLead: 'Ange ditt nuvarande lösenord innan du väljer ett nytt.',
   profileTitle: 'Profilbild',
   profileLead:
     'Bilden visas i "Om oss" på hemsidan. Utan bild visas en platshållare. Kvadratiskt format ser bäst ut.',
@@ -749,13 +779,10 @@ const SV: AdminStrings = {
   loginBackToSiteAria: 'Blade & Blend Studio — till webbplatsen',
   loginHeading: 'Logga in',
   loginLead: 'Hantera ditt schema och dina bokningar.',
-  loginChangePasswordLink: 'Byt lösenord',
   loginForgotPasswordLink: 'Glömt lösenord?',
   authToSignIn: 'Till inloggning',
   authBackToSignIn: 'Tillbaka till inloggning',
-  changePwSubtitle: 'Byt lösenord',
-  changePwSuccess: 'Lösenordet är ändrat. Logga in med ditt nya lösenord.',
-  changePwEmailLabel: 'E‑post',
+  changePwSuccess: 'Lösenordet är ändrat.',
   changePwCurrentPassword: 'Nuvarande lösenord',
   changePwNewPassword: 'Nytt lösenord',
   changePwConfirmPassword: 'Bekräfta nytt lösenord',
@@ -797,6 +824,23 @@ const EN: AdminStrings = {
   tabServices: 'Services',
   tabSite: 'Home page',
   tabProfile: 'Profile',
+  tabSettings: 'Settings',
+  settingsTitle: 'Settings',
+  settingsLead: 'Manage your account sign-in details.',
+  settingsEmailTitle: 'Email',
+  settingsEmailLead:
+    'Confirm the change using the links sent to both your current and new email addresses.',
+  settingsCurrentEmail: 'Current email',
+  settingsNewEmail: 'New email',
+  settingsEmailPlaceholder: 'name@example.com',
+  settingsEmailInvalid: 'Enter a valid email address.',
+  settingsEmailSame: 'The new email address must differ from the current one.',
+  settingsEmailSaving: 'Sending …',
+  settingsEmailSubmit: 'Send confirmation',
+  settingsEmailSent:
+    'Confirmation links have been sent. The email changes after both current and new addresses are confirmed.',
+  settingsPasswordTitle: 'Password',
+  settingsPasswordLead: 'Enter your current password before choosing a new one.',
   profileTitle: 'Profile photo',
   profileLead:
     'The photo shows in the "About" section on the site. Without one a placeholder is shown. A square image looks best.',
@@ -1123,13 +1167,10 @@ const EN: AdminStrings = {
   loginBackToSiteAria: 'Blade & Blend Studio — to the website',
   loginHeading: 'Log in',
   loginLead: 'Manage your schedule and bookings.',
-  loginChangePasswordLink: 'Change password',
   loginForgotPasswordLink: 'Forgot password?',
   authToSignIn: 'To sign-in',
   authBackToSignIn: 'Back to sign-in',
-  changePwSubtitle: 'Change password',
-  changePwSuccess: 'Your password has been changed. Sign in with your new password.',
-  changePwEmailLabel: 'Email',
+  changePwSuccess: 'Your password has been changed.',
   changePwCurrentPassword: 'Current password',
   changePwNewPassword: 'New password',
   changePwConfirmPassword: 'Confirm new password',

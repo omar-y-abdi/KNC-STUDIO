@@ -58,7 +58,7 @@ src/
     BookingFlow + sub-components, bookingStyles
   about/                # About section: gallery, stylists, reviews (+ their ports/adapters)
   cancellation/         # phone-proven booking lookup + cancel flow (+ its ports/adapters)
-  admin/                # staff panel (/login + /admin): schedules, bookings, barbers, content
+  admin/                # staff panel: operations + authenticated email/password settings
   i18n/                 # typed sv/en string tables (missing key = compile error)
   ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
 tools/visual/           # pixel-regression harness (capture + compare) + baselines
@@ -130,6 +130,10 @@ Calendar and Maps links locally; nothing is persisted). Setting `VITE_SUPABASE_U
 `VITE_SUPABASE_ANON_KEY` switches every port to the real Supabase adapters — lazy-loaded so
 `supabase-js` stays out of the main bundle — with **no code change**. The full go-live checklist
 (migrations, admin accounts, bot protection, and email delivery) is in `BACKEND.md`.
+
+Transactional email covers confirmations and cancellations for customer + barber. Supabase Cron
+queues a customer-only reminder one day before start time, but only for bookings created at least
+24 hours in advance; Resend idempotency and a delivery ledger prevent duplicates.
 
 ---
 

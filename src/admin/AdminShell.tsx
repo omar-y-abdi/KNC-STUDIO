@@ -1,5 +1,5 @@
 // The admin shell: left nav (tabs) + a content area and one clean top bar. Role drives the nav: a
-// barber sees {Mina bokningar, Mitt schema}; the owner sees those PLUS {Alla bokningar, Barberare,
+// barber sees operational tabs plus Settings; the owner sees those PLUS {Alla bokningar, Barberare,
 // Om oss} and a barber selector to act on any barber.
 //
 // Identity is kept human: a barber sees just their first name in the top bar ("Hej Victor") — they
@@ -30,6 +30,7 @@ import { ServicesView } from './views/ServicesView'
 import { ProfileView } from './views/ProfileView'
 import { SiteView } from './views/SiteView'
 import { AboutView } from './views/AboutView'
+import { SettingsView } from './views/SettingsView'
 import { useBarbers } from './useBarbers'
 import type { AdminBarberId, AdminProfile } from './types'
 
@@ -44,7 +45,15 @@ export interface AdminShellProps {
 
 /** The tabs a barber can see; the owner gets all of them. */
 type Tab =
-  'bookings' | 'schedule' | 'services' | 'profile' | 'allBookings' | 'barbers' | 'site' | 'about'
+  | 'bookings'
+  | 'schedule'
+  | 'services'
+  | 'profile'
+  | 'allBookings'
+  | 'barbers'
+  | 'site'
+  | 'about'
+  | 'settings'
 
 interface TabDef {
   readonly id: Tab
@@ -68,6 +77,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
     { id: 'site', label: t.tabSite, ownerOnly: true },
     { id: 'about', label: t.tabAbout, ownerOnly: true },
+    { id: 'settings', label: t.tabSettings, ownerOnly: false },
   ]
 
   const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
@@ -183,6 +193,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         return <SiteView dark={props.dark} lang={props.lang} s={s} />
       case 'about':
         return <AboutView dark={props.dark} lang={props.lang} s={s} />
+      case 'settings':
+        return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
     }
   }
 

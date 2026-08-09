@@ -21,6 +21,8 @@ const NO_PROFILE = 'Ditt konto saknar en roll. Kontakta ägaren.'
 const RECOVERY_LINK_INVALID = 'Återställningslänken är ogiltig eller har gått ut. Begär en ny.'
 /** The password update itself failed (e.g. server-side policy) after the input passed local checks. */
 const PASSWORD_UPDATE_FAILED = 'Kunde inte uppdatera lösenordet. Försök igen.'
+/** Supabase rejected an authenticated email-change request. */
+const EMAIL_UPDATE_FAILED = 'Kunde inte skicka bekräftelsen. Försök igen.'
 
 /**
  * Sign in with email + password, then resolve the profile. On success the admin client persists the
@@ -91,18 +93,14 @@ export async function signOut(): Promise<void> {
   }
 }
 
-// --- Password change + recovery (available to EVERY account, owner or barber) --------------------
+// --- Account settings + recovery (available to EVERY account, owner or barber) -------------------
 
 /**
- * Change the password of an account that KNOWS its current one (the `/login` "Byt lösenord" flow).
- * Verifies the current password by signing in, updates to the new one, then signs OUT — the caller
- * shows a "log in with your new password" confirmation rather than routing into the panel. Signing out
- * (instead of resolving the profile + entering) keeps this a pure auth operation: a barber whose
- * `profiles` row is missing/malformed can still change their password without a misleading "no role"
- * error appearing AFTER the change already succeeded. `updateUser` runs against the just-established
- * session; local `validateNewPassword` should gate the input first, so a server rejection here is rare.
+ * Change the signed-in account's password from Settings. The explicit sign-in verifies the current
+ * password independently of project-level Auth settings; the update also carries `current_password`
+ * for server-side enforcement. The refreshed session stays active after success.
  */
-export async function changePassword(
+export async function changeOwnPassword(
   email: string,
   currentPassword: string,
   newPassword: string,
@@ -114,9 +112,25 @@ export async function changePassword(
       password: currentPassword,
     })
     if (error !== null || data.user === null) return err('auth', BAD_CREDENTIALS)
-    const updated = await supabase.auth.updateUser({ password: newPassword })
-    await supabase.auth.signOut()
+    const updated = await supabase.auth.updateUser({
+      current_password: currentPassword,
+      password: newPassword,
+    })
     if (updated.error !== null) return err('validation', PASSWORD_UPDATE_FAILED)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+/**
+ * Request an email change for the signed-in account. Supabase's secure email-change setting requires
+ * confirmation from both current and new addresses before the Auth user is updated.
+ */
+export async function requestOwnEmailChange(newEmail: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.updateUser({ email: newEmail })
+    if (error !== null) return err('validation', EMAIL_UPDATE_FAILED)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)

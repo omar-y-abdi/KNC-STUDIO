@@ -31,7 +31,6 @@ import { adminText } from '../i18n/adminStrings'
 import { PoleLogo } from '../ui/PoleLogo'
 import { authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
-import { ChangePasswordForm } from './ChangePasswordForm'
 import { ForgotPasswordForm } from './ForgotPasswordForm'
 import { LangSwitch, ThemeSwitch, useNarrow } from './chrome'
 import { getActiveProfile, signIn } from './auth'
@@ -48,8 +47,8 @@ type Status =
   | { readonly kind: 'submitting' }
   | { readonly kind: 'error'; readonly message: string }
 
-/** Which auth screen the `/login` route shows. Change/forgot render their own full-screen cards. */
-type LoginView = 'signin' | 'change' | 'forgot'
+/** Which auth screen the `/login` route shows. Password changes live inside authenticated Settings. */
+type LoginView = 'signin' | 'forgot'
 
 const FONT_DISPLAY = "'SF Pro Display',-apple-system,system-ui,sans-serif"
 
@@ -103,10 +102,6 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
     setStatus({ kind: 'error', message: result.error.message })
   }
 
-  // Self-service password flows share the `/login` route; each renders its own full-screen AuthCard.
-  if (view === 'change') {
-    return <ChangePasswordForm lang={lang} onBackToSignIn={() => setView('signin')} />
-  }
   if (view === 'forgot') {
     return <ForgotPasswordForm lang={lang} onBackToSignIn={() => setView('signin')} />
   }
@@ -189,10 +184,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
         {status.kind === 'submitting' ? t.loginSubmitting : t.loginSubmit}
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '16px' }}>
-        <button type="button" style={authLinkStyle(c.accent)} onClick={() => setView('change')}>
-          {t.loginChangePasswordLink}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
         <button type="button" style={authLinkStyle(c.accent)} onClick={() => setView('forgot')}>
           {t.loginForgotPasswordLink}
         </button>
