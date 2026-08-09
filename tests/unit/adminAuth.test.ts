@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const authMocks = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   updateUser: vi.fn(),
+  verifyOtp: vi.fn(),
   signOut: vi.fn(),
 }))
 
@@ -10,12 +11,17 @@ vi.mock('../../src/admin/adminClient', () => ({
   getAdminClient: () => ({ auth: authMocks }),
 }))
 
-import { changeOwnPassword, requestOwnEmailChange } from '../../src/admin/auth'
+import {
+  changeOwnPassword,
+  confirmOwnEmailChange,
+  requestOwnEmailChange,
+} from '../../src/admin/auth'
 
 describe('admin account settings auth', () => {
   beforeEach(() => {
     authMocks.signInWithPassword.mockReset()
     authMocks.updateUser.mockReset()
+    authMocks.verifyOtp.mockReset()
     authMocks.signOut.mockReset()
   })
 
@@ -72,5 +78,29 @@ describe('admin account settings auth', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('validation')
+  })
+
+  it('confirms an email change from its one-time token hash', async () => {
+    authMocks.verifyOtp.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
+
+    const result = await confirmOwnEmailChange('email-change-token')
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(authMocks.verifyOtp).toHaveBeenCalledWith({
+      token_hash: 'email-change-token',
+      type: 'email_change',
+    })
+  })
+
+  it('rejects an expired email-change token', async () => {
+    authMocks.verifyOtp.mockResolvedValue({
+      data: { user: null },
+      error: { message: 'Email link is invalid or has expired' },
+    })
+
+    const result = await confirmOwnEmailChange('expired-token')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error.kind).toBe('auth')
   })
 })

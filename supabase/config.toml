@@ -229,9 +229,8 @@ web3 = 30
 # Keep email provider enabled for existing staff login and password reset. Global [auth]
 # enable_signup=false still blocks public account creation; owner provisioning uses service_role.
 enable_signup = true
-# If enabled, a user will be required to confirm any email change on both the old, and new email
-# addresses. If disabled, only the new email is required to confirm.
-double_confirm_changes = true
+# Only the new email address must confirm an email change.
+double_confirm_changes = false
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
@@ -254,10 +253,13 @@ pass = "env(RESEND_API_KEY)"
 admin_email = "auth@bladeblendstudio.se"
 sender_name = "Blade & Blend Studio"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+[auth.email.template.recovery]
+subject = "Återställ ditt lösenord – Blade & Blend Studio"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Bekräfta din nya e-postadress – Blade & Blend Studio"
+content_path = "./supabase/templates/email-change.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

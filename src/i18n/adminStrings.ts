@@ -425,6 +425,14 @@ export interface AdminStrings {
   readonly resetPwConfirmPassword: string
   readonly resetPwSaving: string
   readonly resetPwSubmit: string
+  // EmailChangeConfirmPage (`/auth/confirm`)
+  readonly emailChangeConfirmSubtitle: string
+  readonly emailChangeConfirmIntro: string
+  readonly emailChangeConfirmSubmit: string
+  readonly emailChangeConfirming: string
+  readonly emailChangeConfirmSuccess: string
+  readonly emailChangeConfirmInvalid: string
+  readonly emailChangeConfirmToAdmin: string
 }
 
 // --- Swedish (default) ---------------------------------------------------------------------------
@@ -442,8 +450,7 @@ const SV: AdminStrings = {
   settingsTitle: 'Inställningar',
   settingsLead: 'Hantera inloggningsuppgifterna för ditt konto.',
   settingsEmailTitle: 'E‑post',
-  settingsEmailLead:
-    'Bekräfta ändringen via länkarna som skickas till både din nuvarande och nya e‑postadress.',
+  settingsEmailLead: 'Bekräfta ändringen via länken som skickas till din nya e‑postadress.',
   settingsCurrentEmail: 'Nuvarande e‑post',
   settingsNewEmail: 'Ny e‑post',
   settingsEmailPlaceholder: 'namn@exempel.se',
@@ -452,7 +459,7 @@ const SV: AdminStrings = {
   settingsEmailSaving: 'Skickar …',
   settingsEmailSubmit: 'Skicka bekräftelse',
   settingsEmailSent:
-    'Bekräftelselänkar har skickats. E‑postadressen ändras när både nuvarande och nya adressen har bekräftats.',
+    'En bekräftelselänk har skickats till den nya adressen. E‑postadressen ändras när den nya adressen har bekräftats.',
   settingsPasswordTitle: 'Lösenord',
   settingsPasswordLead: 'Ange ditt nuvarande lösenord innan du väljer ett nytt.',
   profileTitle: 'Profilbild',
@@ -811,6 +818,15 @@ const SV: AdminStrings = {
   resetPwConfirmPassword: 'Bekräfta nytt lösenord',
   resetPwSaving: 'Sparar …',
   resetPwSubmit: 'Spara nytt lösenord',
+  emailChangeConfirmSubtitle: 'Bekräfta ny e‑postadress',
+  emailChangeConfirmIntro:
+    'Bekräfta ändringen med knappen nedan. Din e‑postadress ändras direkt efter bekräftelsen.',
+  emailChangeConfirmSubmit: 'Bekräfta e‑postadress',
+  emailChangeConfirming: 'Bekräftar …',
+  emailChangeConfirmSuccess: 'Din e‑postadress är ändrad.',
+  emailChangeConfirmInvalid:
+    'Bekräftelselänken är ogiltig eller har gått ut. Logga in och skicka en ny länk från Inställningar.',
+  emailChangeConfirmToAdmin: 'Till adminpanelen',
 }
 
 // --- English -------------------------------------------------------------------------------------
@@ -828,8 +844,7 @@ const EN: AdminStrings = {
   settingsTitle: 'Settings',
   settingsLead: 'Manage your account sign-in details.',
   settingsEmailTitle: 'Email',
-  settingsEmailLead:
-    'Confirm the change using the links sent to both your current and new email addresses.',
+  settingsEmailLead: 'Confirm the change using the link sent to your new email address.',
   settingsCurrentEmail: 'Current email',
   settingsNewEmail: 'New email',
   settingsEmailPlaceholder: 'name@example.com',
@@ -838,7 +853,7 @@ const EN: AdminStrings = {
   settingsEmailSaving: 'Sending …',
   settingsEmailSubmit: 'Send confirmation',
   settingsEmailSent:
-    'Confirmation links have been sent. The email changes after both current and new addresses are confirmed.',
+    'A confirmation link has been sent to the new address. The email changes after the new address is confirmed.',
   settingsPasswordTitle: 'Password',
   settingsPasswordLead: 'Enter your current password before choosing a new one.',
   profileTitle: 'Profile photo',
@@ -1199,6 +1214,15 @@ const EN: AdminStrings = {
   resetPwConfirmPassword: 'Confirm new password',
   resetPwSaving: 'Saving …',
   resetPwSubmit: 'Save new password',
+  emailChangeConfirmSubtitle: 'Confirm new email address',
+  emailChangeConfirmIntro:
+    'Confirm the change with the button below. Your email address changes immediately after confirmation.',
+  emailChangeConfirmSubmit: 'Confirm email address',
+  emailChangeConfirming: 'Confirming …',
+  emailChangeConfirmSuccess: 'Your email address has been changed.',
+  emailChangeConfirmInvalid:
+    'The confirmation link is invalid or has expired. Sign in and send a new link from Settings.',
+  emailChangeConfirmToAdmin: 'Go to admin panel',
 }
 
 // --- Accessor (same pattern as bookingStrings / appStrings in index.ts) -------------------------

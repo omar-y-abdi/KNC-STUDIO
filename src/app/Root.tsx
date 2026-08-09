@@ -7,6 +7,7 @@
 //   `/`            -> the existing site (unchanged)
 //   `/login`       -> admin login (lazy)
 //   `/reset`       -> password-recovery landing (lazy)
+//   `/auth/confirm` -> email-change confirmation landing (lazy)
 //   `/admin` + sub -> the panel (lazy, gated)
 //   anything else  -> redirect to `/`
 //
@@ -57,6 +58,12 @@ export function Root(): JSX.Element {
         </Route>
         {/* Password-recovery landing (the email link target). Lazy, same chunk as login. */}
         <Route path="/reset">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* An email scanner may load this route, but only a real button click consumes the token. */}
+        <Route path="/auth/confirm">
           <Suspense fallback={<AdminFallback />}>
             <AdminEntry />
           </Suspense>

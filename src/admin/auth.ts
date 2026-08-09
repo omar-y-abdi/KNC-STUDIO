@@ -23,6 +23,8 @@ const RECOVERY_LINK_INVALID = 'Återställningslänken är ogiltig eller har gå
 const PASSWORD_UPDATE_FAILED = 'Kunde inte uppdatera lösenordet. Försök igen.'
 /** Supabase rejected an authenticated email-change request. */
 const EMAIL_UPDATE_FAILED = 'Kunde inte skicka bekräftelsen. Försök igen.'
+/** Supabase rejected a missing, malformed, consumed, or expired email-change token. */
+const EMAIL_CONFIRM_FAILED = 'Bekräftelselänken är ogiltig eller har gått ut.'
 
 /**
  * Sign in with email + password, then resolve the profile. On success the admin client persists the
@@ -123,14 +125,25 @@ export async function changeOwnPassword(
   }
 }
 
-/**
- * Request an email change for the signed-in account. Supabase's secure email-change setting requires
- * confirmation from both current and new addresses before the Auth user is updated.
- */
+/** Request an email change that the user confirms from the new address. */
 export async function requestOwnEmailChange(newEmail: string): Promise<AdminResult<void>> {
   try {
     const { error } = await getAdminClient().auth.updateUser({ email: newEmail })
     if (error !== null) return err('validation', EMAIL_UPDATE_FAILED)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+/** Confirm a pending email change from the one-time token in the branded callback URL. */
+export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'email_change',
+    })
+    if (error !== null) return err('auth', EMAIL_CONFIRM_FAILED)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)

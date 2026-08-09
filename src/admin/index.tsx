@@ -9,6 +9,7 @@
 
 import type { JSX } from 'preact'
 import { Route, Switch } from 'wouter-preact'
+import { EmailChangeConfirmRoute } from './EmailChangeConfirmRoute'
 import { LoginRoute } from './LoginRoute'
 import { ResetPasswordRoute } from './ResetPasswordRoute'
 import { AdminApp } from './AdminApp'
@@ -19,6 +20,7 @@ export default function AdminEntry(): JSX.Element {
     <Switch>
       <Route path="/login" component={LoginRoute} />
       <Route path="/reset" component={ResetPasswordRoute} />
+      <Route path="/auth/confirm" component={EmailChangeConfirmRoute} />
       <Route path="/admin/:rest*" component={AdminApp} />
       <Route path="/admin" component={AdminApp} />
     </Switch>
