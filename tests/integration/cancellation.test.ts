@@ -10,7 +10,14 @@ import { BARBERS } from '../../src/booking/barbers'
 import type { Barber } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
 import type { CreateBookingArgs } from './_helpers'
-import { backendReady, callCreateBooking, readStackEnv, truncateAll, uniquePhone } from './_helpers'
+import {
+  backendReady,
+  callCreateBooking,
+  fetchActiveServiceId,
+  readStackEnv,
+  truncateAll,
+  uniquePhone,
+} from './_helpers'
 
 const HASSAN: Barber = BARBERS[0] ?? {
   id: asBarberId('hassan'),
@@ -21,17 +28,16 @@ const HASSAN: Barber = BARBERS[0] ?? {
 // 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST CET) = 12:30:00Z — a valid future
 // working-hours slot the create_booking schedule gate accepts.
 const SEED_START_UTC = '2040-03-14T12:30:00.000Z'
+let haircutServiceId = ''
 
 /** Args for a future SMS booking for `phone` at the seed slot. */
 function seedArgs(phone: string): CreateBookingArgs {
   return {
     barberId: HASSAN.id,
-    serviceId: 'h',
-    serviceName: 'Hårklippning',
-    price: 350,
-    durationMin: 45,
+    serviceId: haircutServiceId,
     startAt: SEED_START_UTC,
     phone,
+    email: `cancel-${phone}@example.com`,
     lang: 'sv',
     customerName: 'Cancel Tester',
   }
@@ -44,7 +50,10 @@ const EXPECTED_WHEN_TIME = '13:30'
 describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', () => {
   beforeEach(async () => {
     const env = readStackEnv()
-    if (env) await truncateAll(env.dbUrl)
+    if (env) {
+      await truncateAll(env.dbUrl)
+      haircutServiceId = await fetchActiveServiceId(env.dbUrl, HASSAN.id, 'Hårklippning')
+    }
   })
 
   it('lookup(correct phone) finds the booking, cancel cancels it, re-lookup is not_found', async () => {

@@ -18,8 +18,6 @@ import type { JSX } from 'preact'
 import { lazy } from 'preact/compat'
 import { Suspense } from 'preact/compat'
 import { Redirect, Route, Switch } from 'wouter-preact'
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/react'
 import { App } from './App'
 
 // One dynamic import for the whole admin surface (login + panel share this chunk).
@@ -82,8 +80,6 @@ export function Root(): JSX.Element {
           <Redirect to="/" />
         </Route>
       </Switch>
-      <Analytics />
-      <SpeedInsights />
     </>
   )
 }

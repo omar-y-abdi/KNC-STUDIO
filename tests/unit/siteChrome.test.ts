@@ -72,7 +72,7 @@ describe('editable public copy', () => {
     expect(defaults.phonePh).toBe('07X XXX XX XX')
     expect(defaults.policy).toContain('Vid bokning accepterar du')
     expect(defaults.bookedTitle).toBe('Tack — din tid är bokad!')
-    expect(defaults.confirmSent).toBe('En bekräftelse skickas via SMS till {phone}.')
+    expect(defaults.confirmSent).toContain('skickats till {email}')
   })
 
   it('overlays saved copy but keeps defaults for missing or blank rows', () => {

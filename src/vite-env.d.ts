@@ -13,8 +13,7 @@ interface ImportMetaEnv {
   // type-checks (and runs) with zero Supabase env.
   readonly VITE_SUPABASE_URL?: string
   readonly VITE_SUPABASE_ANON_KEY?: string
-  // Cloudflare Turnstile PUBLIC site key (safe to inline). Unset -> the widget renders nothing and
-  // emits an empty token, symmetric with the `submit-booking` edge fn's fail-open skip when its
-  // TURNSTILE_SECRET is unset. Set to activate the bot challenge on the booking gateway.
+  // Cloudflare Turnstile PUBLIC site key (safe to inline). Unset -> the widget renders nothing;
+  // production booking then fails closed at the gateway. Set it in every production build.
   readonly VITE_TURNSTILE_SITE_KEY?: string
 }

@@ -17,4 +17,4 @@ Blade & Blend Studio is a single-page barbershop website. A visitor picks a barb
 - Barbers: Hassan, Victor, Salman
 
 ## Pages
-- [Blade & Blend Studio](https://blade-blend-studio.vercel.app/): Home and online booking
+- [Blade & Blend Studio](https://bladeblendstudio.se/): Home and online booking

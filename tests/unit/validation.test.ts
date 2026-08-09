@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { parsePhone, parseName, parseContact, normalizePhone } from '../../src/booking/validation'
+import {
+  parsePhone,
+  parseName,
+  parseEmail,
+  parseContact,
+  normalizePhone,
+} from '../../src/booking/validation'
 
 describe('parsePhone (Swedish mobile)', () => {
   it('accepts valid mobile forms (incl. +46 / spacing / dashes)', () => {
@@ -38,21 +44,30 @@ describe('parseName', () => {
   })
 })
 
-describe('parseContact (name + phone, SMS-only)', () => {
-  const valid = { name: 'Omar', phone: '0701234567' }
+describe('parseEmail', () => {
+  it('normalizes valid email and rejects malformed values', () => {
+    const valid = parseEmail(' Omar@Example.COM ')
+    expect(valid.ok).toBe(true)
+    if (valid.ok) expect(valid.value).toBe('omar@example.com')
+    expect(parseEmail('not-an-email').ok).toBe(false)
+  })
+})
 
-  it('accepts a valid name + phone', () => {
+describe('parseContact (name + phone + email)', () => {
+  const valid = { name: 'Omar', phone: '0701234567', email: 'omar@example.com' }
+
+  it('accepts valid name, phone, and email', () => {
     expect(parseContact(valid).ok).toBe(true)
   })
   it('flags a missing name and an invalid phone independently', () => {
-    const r = parseContact({ name: '', phone: 'abc' })
+    const r = parseContact({ name: '', phone: 'abc', email: 'bad' })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: true })
+    if (!r.ok) expect(r.fields).toEqual({ name: true, phone: true, email: true })
   })
   it('flags only the phone when the name is valid', () => {
-    const r = parseContact({ name: 'Omar', phone: 'abc' })
+    const r = parseContact({ name: 'Omar', phone: 'abc', email: 'omar@example.com' })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.fields).toEqual({ name: false, phone: true })
+    if (!r.ok) expect(r.fields).toEqual({ name: false, phone: true, email: false })
   })
   it('returns the branded contact on success', () => {
     const r = parseContact(valid)
@@ -60,6 +75,7 @@ describe('parseContact (name + phone, SMS-only)', () => {
     if (r.ok) {
       expect(r.value.name).toBe('Omar')
       expect(r.value.phone).toBe('0701234567')
+      expect(r.value.email).toBe('omar@example.com')
     }
   })
 })

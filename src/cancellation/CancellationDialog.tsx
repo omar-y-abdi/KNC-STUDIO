@@ -4,7 +4,7 @@
 //
 //   1. lookup  — enter the booking phone number, validate (parsePhone), then CancellationPort.lookup.
 //   2. confirm — show the looked-up booking (barber · when · service · price) with Avboka / Avbryt.
-//   3. done    — "Din tid är avbokad" + the SMS confirmation line, with a close button.
+//   3. done    — "Din tid är avbokad" + booking-list status, with a close button.
 //
 // Effects (the lookup/cancel calls) go through the injectable CancellationPort (default:
 // env-selected — Supabase when configured, the mock otherwise). The dialog is fully theme-aware

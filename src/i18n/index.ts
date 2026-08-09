@@ -28,10 +28,12 @@ export interface BookingStrings {
   namePh: string
   phone: string
   phonePh: string
+  email: string
+  emailPh: string
   book: string
   policy: string
   bookedTitle: string
-  /** Confirmation sentence template. Every `{phone}` token becomes the customer's phone number. */
+  /** Confirmation sentence template. `{email}` and legacy `{phone}` tokens are interpolated. */
   confirmSent: string
   addToCal: string
   calApple: string
@@ -51,6 +53,7 @@ export interface BookingStrings {
   min: string
   errName: string
   errPhone: string
+  errEmail: string
   errSubmit: string
   /** Gateway rejection: too many booking attempts (per-IP/phone backstop). */
   errRateLimited: string

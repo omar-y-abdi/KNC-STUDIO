@@ -16,7 +16,7 @@
 // PII, or auth tokens appear in any response. verify_jwt = true (config.toml) means Supabase also
 // validates the JWT at the gateway before this function runs.
 //
-// CORS: the admin panel is served from Vercel (different origin); CORS headers + OPTIONS preflight
+// CORS: the admin panel is served from Cloudflare (different origin); CORS headers + OPTIONS preflight
 // handling are required for browser-originated requests.
 //
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
@@ -25,7 +25,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // --- CORS -------------------------------------------------------------------------------------
-// The admin panel (Vercel) and this function (Supabase) are different origins. The Authorization
+// The admin panel (Cloudflare) and this function (Supabase) are different origins. The Authorization
 // header must be listed explicitly so browsers permit it in the preflight response.
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',

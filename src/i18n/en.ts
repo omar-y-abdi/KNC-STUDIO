@@ -30,11 +30,14 @@ export const bookingEn: BookingStrings = {
   namePh: 'First and last name',
   phone: 'Phone',
   phonePh: '07X XXX XX XX',
+  email: 'Email',
+  emailPh: 'name@example.com',
   book: 'Book appointment',
   policy:
     'By booking you agree that cancellations must be made at least 24 hours before the visit. Late cancellation or a no‑show entitles Blade & Blend Studio to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
-  confirmSent: 'A confirmation will be sent by SMS to {phone}.',
+  confirmSent:
+    'A booking confirmation has been sent to {email}. You can also find the booking under "My appointments" using your phone number.',
   addToCal: 'Add to calendar',
   calApple: 'Apple Calendar',
   calGoogle: 'Google Calendar',
@@ -53,6 +56,7 @@ export const bookingEn: BookingStrings = {
   min: 'min',
   errName: 'Name is too long',
   errPhone: 'Invalid phone number',
+  errEmail: 'Invalid email address',
   errSubmit: 'Something went wrong. Please try again.',
   errRateLimited: 'Too many booking attempts. Please wait a moment and try again.',
   errChallenge: 'We could not verify you are human. Reload the page and try again.',
@@ -170,7 +174,7 @@ export const cancelEn: CancelStrings = {
   cancelling: 'Cancelling …',
   errCancel: 'Something went wrong while cancelling. Please try again.',
   doneTitle: 'Your appointment is cancelled',
-  doneVia: 'A confirmation will be sent by SMS.',
+  doneVia: 'The appointment has been removed from My appointments.',
   doneBtn: 'Close',
   ariaClose: 'Close',
 }

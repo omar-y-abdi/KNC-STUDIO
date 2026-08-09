@@ -449,7 +449,7 @@ const SV: AdminStrings = {
   siteFieldAddr: 'Adress',
   siteBookingTextTitle: 'Bokningens popuptexter',
   siteBookingTextLead:
-    'Redigera alla synliga texter utom knappar. Barberare, Tid och Behandling används i båda rutorna. Behåll {phone} där kundens telefonnummer ska visas.',
+    'Redigera alla synliga texter utom knappar. Barberare, Tid och Behandling används i båda rutorna. Behåll {email} och {phone} där kundens uppgifter ska visas.',
   siteBookingDetailsGroup: 'Före bokning',
   siteBookingConfirmationGroup: 'Efter bokning',
   siteFieldYourDetails: 'Popupens rubrik',
@@ -464,7 +464,7 @@ const SV: AdminStrings = {
   siteFieldPhonePlaceholder: 'Platshållare: Telefon',
   siteFieldPolicy: 'Meddelande före bokning',
   siteFieldBookedTitle: 'Bekräftelserubrik',
-  siteFieldConfirmSent: 'SMS-bekräftelse ({phone} = kundens nummer)',
+  siteFieldConfirmSent: 'Bokningsbekräftelse ({email} = kundens e-post, {phone} = kundens nummer)',
   siteFieldAddToCal: 'Rubrik ovanför kalenderalternativen',
   siteFontTitle: 'Textstorlek',
   siteFontLead:
@@ -595,7 +595,7 @@ const SV: AdminStrings = {
   scheduleTimeOffDeleteCancel: 'Avbryt',
   scheduleGridHeading: 'Dagsöversikt',
   scheduleGridLead:
-    'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. bokat via sms) — sparas direkt. Tryck igen för att öppna.',
+    'Välj dag, tryck på en timme och blockera kvartarna som är upptagna (t.ex. manuellt bokat) — sparas direkt. Tryck igen för att öppna.',
   scheduleGridAriaDayPicker: 'Välj dag',
   scheduleGridToday: 'Idag',
   scheduleGridLoading: 'Laddar …',
@@ -821,7 +821,7 @@ const EN: AdminStrings = {
   siteFieldAddr: 'Address',
   siteBookingTextTitle: 'Booking pop-up text',
   siteBookingTextLead:
-    'Edit every visible string except buttons. Barber, Time and Service are shared by both dialogs. Keep {phone} where the customer phone number should appear.',
+    'Edit every visible string except buttons. Barber, Time and Service are shared by both dialogs. Keep {email} and {phone} where the customer details should appear.',
   siteBookingDetailsGroup: 'Before booking',
   siteBookingConfirmationGroup: 'After booking',
   siteFieldYourDetails: 'Pop-up heading',
@@ -836,7 +836,8 @@ const EN: AdminStrings = {
   siteFieldPhonePlaceholder: 'Placeholder: Phone',
   siteFieldPolicy: 'Notice before booking',
   siteFieldBookedTitle: 'Confirmation heading',
-  siteFieldConfirmSent: 'SMS confirmation ({phone} = customer number)',
+  siteFieldConfirmSent:
+    'Booking confirmation ({email} = customer email, {phone} = customer number)',
   siteFieldAddToCal: 'Heading above calendar options',
   siteFontTitle: 'Text size',
   siteFontLead:

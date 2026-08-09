@@ -55,14 +55,12 @@ export const supabaseBookingAdapter: BookingPort = {
           booking: {
             barberId: booking.barber.id,
             serviceId: booking.service.id,
-            serviceName: booking.service.name,
-            price: booking.service.price,
-            durationMin: booking.service.dur,
             // H2: `booking.start` is the selected slot in the BROWSER's local components (its wall-clock
             // reads back "13:30" in any tz). Re-anchor to Europe/Stockholm and send the STRING — sending
             // the raw Date would let JSON.stringify serialize it in the browser tz and shift the instant.
             startAt: localWallClockToStockholmIso(booking.start),
             phone: booking.phone,
+            email: booking.email,
             lang: booking.lang,
             customerName: booking.customerName,
           },

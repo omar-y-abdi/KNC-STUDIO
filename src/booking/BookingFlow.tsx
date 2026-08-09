@@ -39,7 +39,7 @@ import { pseudoClass } from '../ui/pseudo'
 type Mode = 'light' | 'dark'
 
 /** Pristine per-field error state — nothing flagged (the default popup). */
-const NO_FIELD_ERRORS: FieldErrors = { name: false, phone: false }
+const NO_FIELD_ERRORS: FieldErrors = { name: false, phone: false, email: false }
 
 export interface BookingFlowProps {
   readonly mode?: Mode
@@ -96,7 +96,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       showPopup: false,
       booked: false,
       monthOffset: 0,
-      form: { name: '', phone: '' },
+      form: { name: '', phone: '', email: '' },
     })
   }
   const closePopup = (): void => {
@@ -385,8 +385,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const sumPrice = S.service ? S.service.price + ' kr' : ''
 
   const f = S.form
-  // SMS is the only channel now — a booking just needs a name + a phone.
-  const bookDisabled = !(f.name.trim() && f.phone.trim())
+  const bookDisabled = !(f.name.trim() && f.phone.trim() && f.email.trim())
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
@@ -394,10 +393,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
   const mapsHref = result?.ok === true ? result.links.mapsHref : BUSINESS.mapsHref
 
-  // Confirmation sentence — owner-editable template with the customer's live phone inserted.
+  // Confirmation sentence — owner-editable template with live contact values inserted.
   let confirmSentLine = ''
   if (selDate !== null && S.time && S.service) {
-    confirmSentLine = t.confirmSent.split('{phone}').join(f.phone)
+    confirmSentLine = t.confirmSent.split('{phone}').join(f.phone).split('{email}').join(f.email)
   }
 
   const s = buildBookingStyles(c, dark, bookDisabled)
@@ -417,6 +416,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     clearFieldError('phone')
     setState((st) => ({ form: { ...st.form, phone: e.currentTarget.value } }))
   }
+  const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    clearFieldError('email')
+    setState((st) => ({ form: { ...st.form, email: e.currentTarget.value } }))
+  }
 
   // Submit seam: validate, build a real Booking, send it through the BookingPort, store the
   // result, then advance. Two distinct failure modes:
@@ -428,7 +431,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     // unreachable: bookDisabled + the step gating guarantee a selected date/time/service/barber.
     if (selDate === null || S.time === null || S.service === null) return
     if (barberObj === undefined) return
-    const contact = parseContact({ name: f.name, phone: f.phone })
+    const contact = parseContact({ name: f.name, phone: f.phone, email: f.email })
     if (!contact.ok) {
       setSubmitError(null)
       setFieldErrors(contact.fields)
@@ -452,6 +455,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       end,
       customerName: contact.value.name,
       phone: contact.value.phone,
+      email: contact.value.email,
       lang,
       turnstileToken,
     }
@@ -705,11 +709,13 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           sumPrice={sumPrice}
           nameValue={f.name}
           phoneValue={f.phone}
+          emailValue={f.email}
           bookDisabled={bookDisabled}
           fieldErrors={fieldErrors}
           submitError={submitError}
           onName={onName}
           onPhone={onPhone}
+          onEmail={onEmail}
           onBook={onBookClick}
           onClose={closePopup}
           onBackdropClick={onPopupBackdrop}

@@ -2,11 +2,10 @@
 // dialog and hands the resulting token up via `onToken`. The booking gateway (`submit-booking`)
 // verifies that token server-side.
 //
-// Offline-symmetric design: with `VITE_TURNSTILE_SITE_KEY` UNSET, this renders NOTHING and emits an
-// empty token immediately — mirroring the edge fn's fail-OPEN skip when its `TURNSTILE_SECRET` is
-// unset. So the booking flow works identically offline / before the key is configured. A token is
-// single-use and expires (~300s), so the flow bumps `resetNonce` after every submit attempt to force
-// a FRESH challenge; the widget's `expired-callback` clears a stale held token in the meantime.
+// With `VITE_TURNSTILE_SITE_KEY` unset, this renders nothing and emits an empty token. That supports
+// the mock adapter locally; the production gateway rejects empty tokens and missing server config.
+// A token is single-use and expires (~300s), so the flow bumps `resetNonce` after every submit attempt
+// to force a fresh challenge; the widget's `expired-callback` clears a stale held token meanwhile.
 //
 // Effects (DOM script injection, the global `window.turnstile` API, widget lifecycle) are isolated
 // here at the edge; the component's contract is purely `(onToken, resetNonce) -> token`.
@@ -107,9 +106,8 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
     onTokenRef.current = onToken
   }, [onToken])
 
-  // Mount: load the script and render the widget once. Unset key -> emit an empty token immediately
-  // (fail-open symmetry). A script-load failure also emits '' (the gateway decides: skip if its secret
-  // is unset, else reject as failed_challenge) so a blocked CDN can never wedge the flow client-side.
+  // Mount: load the script and render the widget once. Unset key or script failure emits an empty
+  // token; mock mode remains usable, while production gateway rejects it as failed_challenge.
   useEffect(() => {
     if (SITE_KEY === undefined) {
       onTokenRef.current('')

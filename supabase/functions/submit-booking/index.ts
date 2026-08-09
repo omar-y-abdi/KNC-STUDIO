@@ -1,12 +1,12 @@
 // submit-booking — Supabase Edge Function (Deno) — the public booking GATEWAY (PLAN §3).
 //
 // The browser (anon) no longer calls create_booking directly. It POSTs here. This function:
-//   1. verifies a Cloudflare Turnstile token server-side (fail-OPEN if TURNSTILE_SECRET is unset,
-//      so booking still works before the key is configured — IP/phone limits still apply),
+//   1. verifies a Cloudflare Turnstile token server-side (fail-closed),
 //   2. throttles per client IP (hashed) over a short window,
 //   3. limits per phone over a day,
 //   4. records the attempt + opportunistically prunes old rows, then
-//   5. calls create_booking (9-arg) via the service_role key and returns its Result VERBATIM.
+//   5. calls create_booking via service_role; the database derives name, price, and duration from
+//      the active services row rather than trusting browser-supplied commercial data.
 //
 // Invocation: browser -> this function (verify_jwt = false; see supabase/config.toml). It is CORS-
 // enabled (preflight + every response) because it is called cross-origin from the static site.
@@ -23,7 +23,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // --- CORS -------------------------------------------------------------------------------------
 
-// `*` because the static site is served from a different origin (Vercel) than the function (Supabase),
+// `*` because the static site is served from a different origin (Cloudflare) than the function (Supabase),
 // and the request carries no credentials/cookies — only the public anon apikey header.
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -47,11 +47,9 @@ const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/sit
 interface BookingInput {
   readonly barberId: string
   readonly serviceId: string
-  readonly serviceName: string
-  readonly price: number
-  readonly durationMin: number
   readonly startAt: string // ISO timestamptz string (already Stockholm-correct; see PLAN §3 H2)
   readonly phone: string
+  readonly email: string
   readonly lang: string
   readonly customerName: string
 }
@@ -66,8 +64,11 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0
 }
 
-function isFiniteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v)
+function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const email = value.trim().toLowerCase()
+  if (email.length === 0 || email.length > 254) return null
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null
 }
 
 function parseRequest(raw: unknown): ParseResult {
@@ -83,12 +84,11 @@ function parseRequest(raw: unknown): ParseResult {
 
   if (!isNonEmptyString(r.barberId)) return { ok: false, error: 'barberId is required' }
   if (!isNonEmptyString(r.serviceId)) return { ok: false, error: 'serviceId is required' }
-  if (!isNonEmptyString(r.serviceName)) return { ok: false, error: 'serviceName is required' }
-  if (!isFiniteNumber(r.price)) return { ok: false, error: 'price must be a number' }
-  if (!isFiniteNumber(r.durationMin)) return { ok: false, error: 'durationMin must be a number' }
   if (!isNonEmptyString(r.startAt)) return { ok: false, error: 'startAt is required' }
   if (!isNonEmptyString(r.phone)) return { ok: false, error: 'phone is required' }
-  if (!isNonEmptyString(r.lang)) return { ok: false, error: 'lang is required' }
+  const email = normalizeEmail(r.email)
+  if (email === null) return { ok: false, error: 'email is invalid' }
+  if (r.lang !== 'sv' && r.lang !== 'en') return { ok: false, error: 'lang is invalid' }
   if (!isNonEmptyString(r.customerName)) return { ok: false, error: 'customerName is required' }
 
   // turnstileToken is optional (empty when the widget is offline / unconfigured); coerce to string.
@@ -100,11 +100,9 @@ function parseRequest(raw: unknown): ParseResult {
     booking: {
       barberId: r.barberId,
       serviceId: r.serviceId,
-      serviceName: r.serviceName,
-      price: r.price,
-      durationMin: r.durationMin,
       startAt: r.startAt,
       phone: r.phone,
+      email,
       lang: r.lang,
       customerName: r.customerName,
     },
@@ -140,15 +138,10 @@ function clientIp(req: Request): string {
   return req.headers.get('cf-connecting-ip') ?? 'unknown'
 }
 
-// Turnstile siteverify. Returns true to PROCEED (success OR no secret configured = fail-open), false to
-// reject. A network/HTTP error during verification is treated as a failed challenge (fail-closed on the
-// verify call itself, once a secret IS configured).
-async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
-  const secret = Deno.env.get('TURNSTILE_SECRET')
-  if (!secret) {
-    console.warn('submit-booking: TURNSTILE_SECRET unset — skipping challenge (fail-open).')
-    return true
-  }
+// Turnstile siteverify. Configuration is checked before this helper; missing/invalid tokens and
+// verification failures all fail closed.
+async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
+  if (token === '') return false
   try {
     const form = new URLSearchParams()
     form.set('secret', secret)
@@ -189,23 +182,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceKey) {
-    console.error('submit-booking: missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.')
+  const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
+  const ipSalt = Deno.env.get('IP_SALT')
+  if (!supabaseUrl || !serviceKey || !turnstileSecret || !ipSalt) {
+    console.error('submit-booking: missing required server configuration.')
     return json({ ok: false, error: 'not_configured' }, 500)
   }
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
   const ip = clientIp(req)
 
-  // 1. Turnstile — server-side challenge (fail-open when no secret is set).
-  const challengeOk = await verifyTurnstile(turnstileToken, ip)
+  // 1. Turnstile — server-side challenge, fail-closed.
+  const challengeOk = await verifyTurnstile(turnstileToken, ip, turnstileSecret)
   if (!challengeOk) {
     return json({ ok: false, error: 'failed_challenge' }, 200)
   }
 
   try {
     // 2. IP hash.
-    const ipSalt = Deno.env.get('IP_SALT') ?? ''
     const ipHash = await sha256Hex(ip + ipSalt)
 
     // 3. Per-IP throttle: count accepted attempts for this hash within the window.
@@ -245,11 +239,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const rpc = await supabase.rpc('create_booking', {
       p_barber_id: booking.barberId,
       p_service_id: booking.serviceId,
-      p_service_name: booking.serviceName,
-      p_price: booking.price,
-      p_duration_min: booking.durationMin,
       p_start_at: booking.startAt,
       p_phone: booking.phone,
+      p_email: booking.email,
       p_lang: booking.lang,
       p_customer_name: booking.customerName,
     })

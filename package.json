@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "cloudflare:dev": "npm run build && wrangler dev",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -18,8 +21,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
     "zod": "^3.25.76"
@@ -43,6 +44,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.61.1",
     "vite": "^8.0.12",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.120.0"
   }
 }

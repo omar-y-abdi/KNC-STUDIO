@@ -22,6 +22,7 @@ export interface DetailsDialogProps {
   readonly sumPrice: string
   readonly nameValue: string
   readonly phoneValue: string
+  readonly emailValue: string
   readonly bookDisabled: boolean
   /** Per-field error flags from the last failed submit (all false = pristine popup). */
   readonly fieldErrors: FieldErrors
@@ -29,6 +30,7 @@ export interface DetailsDialogProps {
   readonly submitError: string | null
   readonly onName: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
   readonly onPhone: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
+  readonly onEmail: (e: JSX.TargetedInputEvent<HTMLInputElement>) => void
   readonly onBook: () => void
   readonly onClose: () => void
   readonly onBackdropClick: (e: JSX.TargetedMouseEvent<HTMLDivElement>) => void
@@ -120,6 +122,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         <div style="display:flex;flex-direction:column;gap:10px;">
           {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
           {field(t.phone, props.phoneValue, props.onPhone, t.phonePh, 'tel', e.phone, t.errPhone)}
+          {field(t.email, props.emailValue, props.onEmail, t.emailPh, 'email', e.email, t.errEmail)}
         </div>
 
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>

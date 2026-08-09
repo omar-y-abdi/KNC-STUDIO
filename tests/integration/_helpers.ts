@@ -69,6 +69,9 @@ export interface PersistedBookingPii {
   readonly customerName: string
   readonly phone: string | null
   readonly email: string | null
+  readonly serviceName: string
+  readonly price: number
+  readonly durationMin: number
 }
 
 /**
@@ -86,13 +89,39 @@ export async function fetchPersistedBookingByPhone(
       customer_name: string
       phone: string | null
       email: string | null
+      service_name: string
+      price: number
+      duration_min: number
     }>(
-      "select customer_name, phone, email from public.bookings where phone = $1 and status = 'confirmed' limit 1",
+      "select customer_name, phone, email, service_name, price, duration_min from public.bookings where phone = $1 and status = 'confirmed' limit 1",
       [phone],
     )
     const row = res.rows[0]
     if (row === undefined) return null
-    return { customerName: row.customer_name, phone: row.phone, email: row.email }
+    return {
+      customerName: row.customer_name,
+      phone: row.phone,
+      email: row.email,
+      serviceName: row.service_name,
+      price: row.price,
+      durationMin: row.duration_min,
+    }
+  })
+}
+
+export async function fetchActiveServiceId(
+  dbUrl: string,
+  barberId: string,
+  name: string,
+): Promise<string> {
+  return withClient(dbUrl, async (client) => {
+    const result = await client.query<{ id: string }>(
+      'select id::text as id from public.services where barber_id = $1 and name = $2 and active = true limit 1',
+      [barberId, name],
+    )
+    const row = result.rows[0]
+    if (row === undefined) throw new Error(`Missing active service ${name} for ${barberId}`)
+    return row.id
   })
 }
 
@@ -121,29 +150,27 @@ export async function fetchPersistedStartAtByPhone(
 // --- create_booking RPC contract (pg, bypassing the HTTP gateway) -------------------------------
 // The browser booking path now POSTs to the `submit-booking` edge function (Turnstile + rate-limit,
 // then create_booking via service_role) — an HTTP layer a `pg` connection cannot serve. So we test
-// the create_booking 9-arg RPC CONTRACT directly here, authenticating as `service_role` (the
+// the create_booking RPC CONTRACT directly here, authenticating as `service_role` (the
 // gateway's own credential). The gateway HTTP layer itself is verified separately.
 
-/** The 9-arg create_booking RPC Result, as returned over a direct pg call. */
+/** create_booking RPC Result, as returned over a direct pg call. */
 export type CreateBookingRpcResult =
   | { readonly ok: true; readonly booking: Record<string, unknown> }
   | { readonly ok: false; readonly error: string }
 
-/** Args for the 9-arg create_booking RPC. `startAt`/`phone` may be null to exercise the guards. */
+/** Args for create_booking. Contact fields may be null to exercise database guards. */
 export interface CreateBookingArgs {
   readonly barberId: string
   readonly serviceId: string
-  readonly serviceName: string
-  readonly price: number
-  readonly durationMin: number
   readonly startAt: string | null
   readonly phone: string | null
+  readonly email: string | null
   readonly lang: string
   readonly customerName: string
 }
 
 /**
- * Call the 9-arg `create_booking` RPC directly as `service_role` (the credential the submit-booking
+ * Call `create_booking` directly as `service_role` (the credential the submit-booking
  * edge gateway uses). Opens + closes its own connection. Returns the RPC's jsonb Result.
  */
 export async function callCreateBooking(
@@ -153,15 +180,13 @@ export async function callCreateBooking(
   return withClient(dbUrl, async (client) => {
     await client.query('set role service_role')
     const res = await client.query<{ result: CreateBookingRpcResult }>(
-      'select public.create_booking($1,$2,$3,$4,$5,$6::timestamptz,$7,$8,$9) as result',
+      'select public.create_booking($1,$2,$3::timestamptz,$4,$5,$6,$7) as result',
       [
         args.barberId,
         args.serviceId,
-        args.serviceName,
-        args.price,
-        args.durationMin,
         args.startAt,
         args.phone,
+        args.email,
         args.lang,
         args.customerName,
       ],

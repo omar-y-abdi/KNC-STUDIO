@@ -30,11 +30,14 @@ export const bookingSv: BookingStrings = {
   namePh: 'För- och efternamn',
   phone: 'Telefon',
   phonePh: '07X XXX XX XX',
+  email: 'E-post',
+  emailPh: 'namn@exempel.se',
   book: 'Boka tid',
   policy:
     'Vid bokning accepterar du att avbokning måste ske senast 24 timmar före besöket. Sen avbokning eller utebliven tid ger Blade & Blend Studio rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
-  confirmSent: 'En bekräftelse skickas via SMS till {phone}.',
+  confirmSent:
+    'En bokningsbekräftelse har skickats till {email}. Bokningen finns även under "Mina bokningar" via ditt telefonnummer.',
   addToCal: 'Lägg till i kalender',
   calApple: 'Apple Kalender',
   calGoogle: 'Google Kalender',
@@ -53,6 +56,7 @@ export const bookingSv: BookingStrings = {
   min: 'min',
   errName: 'Namnet är för långt',
   errPhone: 'Ogiltigt telefonnummer',
+  errEmail: 'Ogiltig e-postadress',
   errSubmit: 'Något gick fel. Försök igen.',
   errRateLimited: 'För många bokningsförsök. Vänta en stund och försök igen.',
   errChallenge: 'Vi kunde inte verifiera att du är en människa. Ladda om sidan och försök igen.',
@@ -170,7 +174,7 @@ export const cancelSv: CancelStrings = {
   cancelling: 'Avbokar …',
   errCancel: 'Något gick fel vid avbokningen. Försök igen.',
   doneTitle: 'Din tid är avbokad',
-  doneVia: 'En bekräftelse skickas via SMS.',
+  doneVia: 'Bokningen är borttagen från Mina bokningar.',
   doneBtn: 'Stäng',
   ariaClose: 'Stäng',
 }

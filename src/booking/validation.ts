@@ -15,6 +15,7 @@ type Brand<T, B> = T & { readonly [brand]: B }
 
 export type Name = Brand<string, 'Name'>
 export type Phone = Brand<string, 'Phone'>
+export type Email = Brand<string, 'Email'>
 
 /** Result-shaped output (no exceptions for control flow). */
 export type ValidationResult<T> =
@@ -46,6 +47,11 @@ const phoneSchema = z
   .transform(normalizePhone)
   .pipe(z.string().regex(SWEDISH_MOBILE, 'Invalid Swedish mobile number'))
 
+const emailSchema = z
+  .string()
+  .transform((value) => value.trim().toLowerCase())
+  .pipe(z.string().email('Invalid email address').max(254, 'Email is too long'))
+
 // --- Parsers (safeParse -> Result) ---------------------------------------------------------
 
 function toResult<T>(
@@ -65,13 +71,17 @@ export function parsePhone(raw: string): ValidationResult<Phone> {
   return toResult(phoneSchema.safeParse(raw), (v) => v as Phone)
 }
 
+export function parseEmail(raw: string): ValidationResult<Email> {
+  return toResult(emailSchema.safeParse(raw), (v) => v as Email)
+}
+
 /**
- * Validated contact details ready to attach to a `Booking`. Email was removed — the only channel is
- * SMS, so a validated phone is always present.
+ * Validated contact details ready to attach to a `Booking`.
  */
 export interface ValidContact {
   readonly name: Name
   readonly phone: Phone
+  readonly email: Email
 }
 
 /**
@@ -81,6 +91,7 @@ export interface ValidContact {
 export interface FieldErrors {
   readonly name: boolean
   readonly phone: boolean
+  readonly email: boolean
 }
 
 /** Result of validating the whole contact form. */
@@ -89,19 +100,24 @@ export type ContactValidation =
   | { readonly ok: false; readonly fields: FieldErrors }
 
 /**
- * Validate the contact form (name + phone, both always required now that SMS is the only channel),
- * reporting which field(s) failed. On success, returns the branded `ValidContact`.
+ * Validate required name, phone, and email, reporting every invalid field.
  */
-export function parseContact(input: { name: string; phone: string }): ContactValidation {
+export function parseContact(input: {
+  name: string
+  phone: string
+  email: string
+}): ContactValidation {
   const name = parseName(input.name)
   const phone = parsePhone(input.phone)
+  const email = parseEmail(input.email)
 
   const fields: FieldErrors = {
     name: !name.ok,
     phone: !phone.ok,
+    email: !email.ok,
   }
-  if (!name.ok || !phone.ok) {
+  if (!name.ok || !phone.ok || !email.ok) {
     return { ok: false, fields }
   }
-  return { ok: true, value: { name: name.value, phone: phone.value } }
+  return { ok: true, value: { name: name.value, phone: phone.value, email: email.value } }
 }

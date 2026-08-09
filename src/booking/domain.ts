@@ -42,15 +42,16 @@ export interface ServiceGroup {
   readonly items: readonly ServiceItem[]
 }
 
-/** The customer-entered contact form (raw, unvalidated). Email was removed — every booking is
- * confirmed over SMS, so the only contact is the phone. */
+/** Customer-entered contact form (raw, unvalidated). Phone identifies bookings in self-service;
+ * email receives transactional confirmation. */
 export interface ContactForm {
   readonly name: string
   readonly phone: string
+  readonly email: string
 }
 
 /** Empty contact form. */
-export const emptyContactForm: ContactForm = { name: '', phone: '' }
+export const emptyContactForm: ContactForm = { name: '', phone: '', email: '' }
 
 /**
  * The full mutable-by-replacement booking draft — the `BookingFlow` `state` object.
@@ -94,9 +95,10 @@ export interface Booking {
   readonly end: Date
   readonly customerName: string
   readonly phone: string
+  readonly email: string
   readonly lang: Lang
-  /** Cloudflare Turnstile token, proving the submitter is human, attached at submit time. Empty
-   * when the widget is unconfigured/offline (the gateway fails open on a missing secret). */
+  /** Cloudflare Turnstile token, proving the submitter is human, attached at submit time. Empty in
+   * local mock mode; production gateway rejects empty tokens and missing server configuration. */
   readonly turnstileToken: string
 }
 

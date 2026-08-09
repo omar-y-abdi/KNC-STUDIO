@@ -26,6 +26,7 @@ function booking(): Booking {
     end,
     customerName: 'Link Tester',
     phone: '0701234567',
+    email: 'link@example.com',
     lang: 'sv',
     turnstileToken: '',
   }

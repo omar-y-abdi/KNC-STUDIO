@@ -16,6 +16,7 @@ import type { CreateBookingArgs } from './_helpers'
 import {
   backendReady,
   callCreateBooking,
+  fetchActiveServiceId,
   fetchPersistedBookingByPhone,
   fetchPersistedStartAtByPhone,
   readStackEnv,
@@ -38,17 +39,16 @@ const VALID_TIME = '13:30'
 const VALID_START_UTC = '2040-03-14T12:30:00.000Z'
 // 07:00 Stockholm (CET) — before the 09:00 opening, so the schedule gate rejects it.
 const EARLY_START_UTC = '2040-03-14T06:00:00.000Z'
+let haircutServiceId = ''
 
 /** Default valid 45-min haircut args for `phone` at the valid working-hours slot. */
 function validArgs(phone: string | null): CreateBookingArgs {
   return {
     barberId: HASSAN.id,
-    serviceId: 'h',
-    serviceName: 'Hårklippning',
-    price: 350,
-    durationMin: 45,
+    serviceId: haircutServiceId,
     startAt: VALID_START_UTC,
     phone,
+    email: phone === null ? 'integration@example.com' : `integration-${phone}@example.com`,
     lang: 'sv',
     customerName: 'Integration Tester',
   }
@@ -62,10 +62,13 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
 
   beforeEach(async () => {
     const env = readStackEnv()
-    if (env) await truncateAll(env.dbUrl)
+    if (env) {
+      await truncateAll(env.dbUrl)
+      haircutServiceId = await fetchActiveServiceId(env.dbUrl, HASSAN.id, 'Hårklippning')
+    }
   })
 
-  it('valid future working-hours slot → ok, persists customer_name/phone (email null) + Stockholm instant', async () => {
+  it('valid slot persists contact and DB-authoritative service fields', async () => {
     const env = readStackEnv()
     expect(env).not.toBeNull()
     if (!env) return
@@ -73,16 +76,18 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const phone = uniquePhone()
     const result = await callCreateBooking(env.dbUrl, validArgs(phone))
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.booking.method).toBe('sms') // email removed: always sms now
+    if (result.ok) expect(result.booking.method).toBe('email')
 
     // GENUINE persistence check: the RPC's ok payload omits customer_name/phone by design, so read the
-    // row directly (superuser) to prove `p_customer_name` landed in the NOT-NULL column AND the SMS
-    // contact persisted (email null for every booking now).
+    // row directly (superuser) to prove contact and server-derived service data persisted.
     const persisted = await fetchPersistedBookingByPhone(env.dbUrl, phone)
     expect(persisted).not.toBeNull()
     expect(persisted?.customerName).toBe('Integration Tester')
     expect(persisted?.phone).toBe(phone)
-    expect(persisted?.email).toBeNull()
+    expect(persisted?.email).toBe(`integration-${phone}@example.com`)
+    expect(persisted?.serviceName).toBe('Hårklippning')
+    expect(persisted?.price).toBe(350)
+    expect(persisted?.durationMin).toBe(45)
 
     // The row stores exactly the instant we passed — 13:30 Stockholm (CET) = 12:30:00Z.
     const storedStartAt = await fetchPersistedStartAtByPhone(env.dbUrl, phone)
@@ -95,6 +100,28 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const result = await callCreateBooking(env.dbUrl, validArgs(null))
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe('invalid_contact')
+  })
+
+  it('email null → invalid_contact', async () => {
+    const env = readStackEnv()
+    if (!env) return
+    const result = await callCreateBooking(env.dbUrl, {
+      ...validArgs(uniquePhone()),
+      email: null,
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('invalid_contact')
+  })
+
+  it('inactive or foreign service id → invalid', async () => {
+    const env = readStackEnv()
+    if (!env) return
+    const result = await callCreateBooking(env.dbUrl, {
+      ...validArgs(uniquePhone()),
+      serviceId: '00000000-0000-0000-0000-000000000000',
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('invalid')
   })
 
   it('unknown barber → invalid', async () => {

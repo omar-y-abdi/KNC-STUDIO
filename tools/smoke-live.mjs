@@ -1,13 +1,14 @@
-// smoke-live.mjs — live, non-browser smoke test for the KNC Studio backend.
+// smoke-live.mjs — live, non-browser smoke test for the Blade & Blend Studio backend.
 //
 // Hits the LIVE Supabase project with the PUBLIC anon key only (never a service_role
-// key). Verifies the four public entry points the booking UI depends on:
+// key). Verifies public entry points the booking UI depends on:
 //
 //   1. available_slots RPC   — returns bookable "HH:MM" slots for a barber/day.
 //   2. submit-booking (400)  — rejects a malformed body with HTTP 400.
-//   3. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
+//   3. submit-booking email  — malformed email is rejected before the bot check.
+//   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
-//   4. lookup_booking RPC    — returns a JSON result for an unknown phone (not_found).
+//   5. lookup_booking RPC    — returns a JSON result for an unknown phone (not_found).
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
@@ -92,21 +93,41 @@ async function checkSubmitBookingInvalid() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 3. submit-booking with a valid body but empty Turnstile token — expect HTTP 200 +
-//    { ok:false, error:"failed_challenge" }. This proves Turnstile is ACTIVE: if the
-//    secret were unset the gate would fail-open and this would NOT be failed_challenge.
+// 3. Malformed email is rejected before Turnstile verification.
+async function checkSubmitBookingInvalidEmail() {
+  const { status, json } = await postJson('/functions/v1/submit-booking', {
+    booking: {
+      barberId: 'hassan',
+      serviceId: 'klippning',
+      startAt: `${SMOKE_DATE}T10:00:00+02:00`,
+      phone: '0701234567',
+      email: 'invalid',
+      lang: 'sv',
+      customerName: 'Smoke Test',
+    },
+    turnstileToken: '',
+  })
+  const pass =
+    status === 400 &&
+    json !== null &&
+    typeof json === 'object' &&
+    json.ok === false &&
+    json.error === 'invalid_payload'
+  return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
+}
+
+// 4. submit-booking with a valid body but empty Turnstile token — expect HTTP 200 +
+//    { ok:false, error:"failed_challenge" }. This proves Turnstile is active and fail-closed.
 async function checkSubmitBookingTurnstileGate() {
   const { status, json } = await postJson('/functions/v1/submit-booking', {
     booking: {
       barberId: 'hassan',
       serviceId: 'klippning',
-      serviceName: 'Klippning',
-      price: 350,
-      durationMin: 30,
       // The Turnstile gate rejects before create_booking ever parses this, so a fixed +02:00
       // offset is fine year-round — the gateway's shape check only needs a non-empty string.
       startAt: `${SMOKE_DATE}T10:00:00+02:00`,
       phone: '0701234567',
+      email: 'smoke@example.com',
       lang: 'sv',
       customerName: 'Smoke Test',
     },
@@ -121,7 +142,7 @@ async function checkSubmitBookingTurnstileGate() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 4. lookup_booking for an unknown phone — expect HTTP 200 + a JSON result
+// 5. lookup_booking for an unknown phone — expect HTTP 200 + a JSON result
 //    (the RPC returns { ok:false, error:"not_found" } when no booking matches).
 async function checkLookupBooking() {
   const { status, json } = await postJson('/rest/v1/rpc/lookup_booking', {
@@ -134,6 +155,7 @@ async function checkLookupBooking() {
 const checks = [
   [`available_slots (hassan, ${SMOKE_DATE}, 30min)`, checkAvailableSlots],
   ['submit-booking invalid (empty body -> 400)', checkSubmitBookingInvalid],
+  ['submit-booking invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
   [
     'submit-booking turnstile gate (empty token -> failed_challenge)',
     checkSubmitBookingTurnstileGate,
@@ -142,7 +164,7 @@ const checks = [
 ]
 
 async function main() {
-  console.log(`KNC Studio live smoke test -> ${baseUrl}\n`)
+  console.log(`Blade & Blend Studio live smoke test -> ${baseUrl}\n`)
   let failures = 0
   for (const [name, fn] of checks) {
     let pass = false
