@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blade &amp; Blend Studio</title>
+    <meta
+      name="description"
+      content="Blade &amp; Blend Studio staff booking synchronization with Google Calendar."
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://bladeblendstudio.se/google-calendar" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --panel: #f6f5f2;
+        --text: #1c1c1e;
+        --muted: #606066;
+        --line: rgba(0, 0, 0, 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e;
+          --panel: #262629;
+          --text: #f5f5f7;
+          --muted: #aaaab0;
+          --line: rgba(255, 255, 255, 0.12);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        width: min(720px, calc(100% - 32px));
+        margin: 48px auto;
+        padding: 36px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(30px, 7vw, 46px);
+        letter-spacing: -0.03em;
+      }
+      h2 {
+        margin: 30px 0 8px;
+        font-size: 20px;
+      }
+      p,
+      li {
+        color: var(--muted);
+      }
+      a {
+        color: var(--text);
+        font-weight: 700;
+      }
+      .eyebrow {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .links {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin-top: 32px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Blade &amp; Blend Studio</h1>
+      <p class="eyebrow">Staff booking calendar integration</p>
+
+      <p>
+        Blade &amp; Blend Studio is a public barbershop and online appointment-booking service in
+        Gothenburg, Sweden. Customers can browse services, choose a barber, and book or manage an
+        appointment without a Google account or staff login.
+      </p>
+
+      <h2>Purpose of Google Calendar access</h2>
+      <p>
+        Authenticated studio barbers may voluntarily connect their own Google account. This keeps
+        confirmed salon bookings synchronized to that barber's Google Calendar in near real time.
+      </p>
+      <ul>
+        <li>
+          <strong>Google Calendar events:</strong> create, update, and delete only calendar events
+          generated from the barber's Blade &amp; Blend Studio bookings.
+        </li>
+        <li>
+          <strong>Email address and account identity:</strong> show the barber which Google account
+          is connected.
+        </li>
+      </ul>
+      <p>
+        Google access is optional, used only for this staff-facing synchronization feature, and can
+        be disconnected by the barber at any time.
+      </p>
+
+      <div class="links">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/">Blade &amp; Blend Studio public booking site</a>
+      </div>
+    </main>
+  </body>
+</html>

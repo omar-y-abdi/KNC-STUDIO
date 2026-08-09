@@ -18,3 +18,5 @@ Blade & Blend Studio is a single-page barbershop website. A visitor picks a barb
 
 ## Pages
 - [Blade & Blend Studio](https://bladeblendstudio.se/): Home and online booking
+- [Privacy Policy](https://bladeblendstudio.se/privacy): Data handling and Google Calendar disclosure
+- [ACP discovery](https://bladeblendstudio.se/.well-known/acp.json): Agentic Commerce Protocol metadata
