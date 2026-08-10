@@ -126,10 +126,17 @@ export async function changeOwnPassword(
 }
 
 /** Request an email change that the user confirms from the new address. */
-export async function requestOwnEmailChange(newEmail: string): Promise<AdminResult<void>> {
+export async function requestOwnEmailChange(
+  newEmail: string,
+  lang: 'sv' | 'en',
+): Promise<AdminResult<void>> {
   try {
-    const { error } = await getAdminClient().auth.updateUser({ email: newEmail })
-    if (error !== null) return err('validation', EMAIL_UPDATE_FAILED)
+    const { data, error } = await getAdminClient().functions.invoke('send-email-change', {
+      body: { new_email: newEmail, lang },
+    })
+    if (error !== null || typeof data !== 'object' || data === null || data.ok !== true) {
+      return err('validation', EMAIL_UPDATE_FAILED)
+    }
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)
@@ -158,12 +165,27 @@ export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminRes
  */
 export async function requestPasswordReset(
   email: string,
-  redirectTo: string,
+  lang: 'sv' | 'en',
 ): Promise<AdminResult<void>> {
-  const supabase = getAdminClient()
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    const { error } = await getAdminClient().functions.invoke('send-recovery-email', {
+      body: { email, lang },
+    })
     if (error !== null) return err('network', NETWORK_ERROR)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
+/** Verify the branded recovery token and establish the short-lived password-reset session. */
+export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'recovery',
+    })
+    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)

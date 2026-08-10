@@ -48,7 +48,7 @@ export function SettingsView(props: SettingsViewProps): JSX.Element {
     }
 
     setEmailStatus({ kind: 'submitting' })
-    const result = await requestOwnEmailChange(email)
+    const result = await requestOwnEmailChange(email, props.lang)
     if (!result.ok) {
       setEmailStatus({ kind: 'error', message: result.error.message })
       return

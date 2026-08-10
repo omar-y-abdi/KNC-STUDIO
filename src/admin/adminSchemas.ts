@@ -123,6 +123,33 @@ export const siteSettingRow = z.object({
 export type SiteSettingRowT = z.infer<typeof siteSettingRow>
 export const siteSettingRows = z.array(siteSettingRow)
 
+// --- email_templates -----------------------------------------------------------------------------
+
+export const emailTemplateName = z.enum([
+  'customer_confirmation',
+  'barber_confirmation',
+  'customer_cancellation',
+  'barber_cancellation',
+  'customer_reminder',
+  'auth_recovery',
+  'auth_email_change',
+])
+
+export const emailTemplateRow = z.object({
+  template: emailTemplateName,
+  lang,
+  subject: z.string(),
+  preheader: z.string(),
+  title: z.string(),
+  intro: z.string(),
+  section_title: z.string().nullable(),
+  note: z.string(),
+  cta_label: z.string(),
+  contact_lead: z.string().nullable(),
+})
+export type EmailTemplateRowT = z.infer<typeof emailTemplateRow>
+export const emailTemplateRows = z.array(emailTemplateRow)
+
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
 export const barberPhotoRowT = z.object({
