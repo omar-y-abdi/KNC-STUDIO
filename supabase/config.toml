@@ -250,15 +250,15 @@ host = "smtp.resend.com"
 port = 465
 user = "resend"
 pass = "env(RESEND_API_KEY)"
-admin_email = "auth@bladeblendstudio.se"
+admin_email = "booking@mail.bladeblendstudio.se"
 sender_name = "Blade & Blend Studio"
 
 [auth.email.template.recovery]
-subject = "Återställ ditt lösenord – Blade & Blend Studio"
+subject = "Återställ lösenord"
 content_path = "./supabase/templates/recovery.html"
 
 [auth.email.template.email_change]
-subject = "Bekräfta din nya e-postadress – Blade & Blend Studio"
+subject = "Bekräfta ny e-postadress"
 content_path = "./supabase/templates/email-change.html"
 
 # Uncomment to customize notification email template
@@ -408,6 +408,14 @@ deno_version = 2
 [functions.send-confirmation]
 enabled = true
 verify_jwt = false
+
+[functions.send-recovery-email]
+enabled = true
+verify_jwt = false
+
+[functions.send-email-change]
+enabled = true
+verify_jwt = true
 
 # submit-booking: the PUBLIC booking gateway — invoked by the browser (anon) cross-origin, so it does
 # NOT receive a Supabase user JWT -> verify_jwt = false. It is CORS-enabled and self-protects with

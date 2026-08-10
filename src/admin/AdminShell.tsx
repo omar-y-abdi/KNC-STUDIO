@@ -31,6 +31,7 @@ import { ProfileView } from './views/ProfileView'
 import { SiteView } from './views/SiteView'
 import { AboutView } from './views/AboutView'
 import { SettingsView } from './views/SettingsView'
+import { MailView } from './views/MailView'
 import { useBarbers } from './useBarbers'
 import type { AdminBarberId, AdminProfile } from './types'
 
@@ -54,6 +55,7 @@ type Tab =
   | 'site'
   | 'about'
   | 'settings'
+  | 'mail'
 
 interface TabDef {
   readonly id: Tab
@@ -77,6 +79,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
     { id: 'site', label: t.tabSite, ownerOnly: true },
     { id: 'about', label: t.tabAbout, ownerOnly: true },
+    { id: 'mail', label: t.tabMail, ownerOnly: true },
     { id: 'settings', label: t.tabSettings, ownerOnly: false },
   ]
 
@@ -195,6 +198,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         return <AboutView dark={props.dark} lang={props.lang} s={s} />
       case 'settings':
         return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
+      case 'mail':
+        return <MailView lang={props.lang} s={s} />
     }
   }
 

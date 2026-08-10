@@ -18,6 +18,25 @@ export interface AdminStrings {
   readonly tabSite: string
   readonly tabProfile: string
   readonly tabSettings: string
+  readonly tabMail: string
+  // Mail (owner-only transactional email copy)
+  readonly mailTitle: string
+  readonly mailLead: string
+  readonly mailLoading: string
+  readonly mailPlaceholderHelp: string
+  readonly mailSwedish: string
+  readonly mailEnglish: string
+  readonly mailSubject: string
+  readonly mailPreheader: string
+  readonly mailHeading: string
+  readonly mailIntro: string
+  readonly mailSectionTitle: string
+  readonly mailNote: string
+  readonly mailButton: string
+  readonly mailContact: string
+  readonly mailSave: string
+  readonly mailSaving: string
+  readonly mailSaved: string
   // Settings (authenticated owner/barber account)
   readonly settingsTitle: string
   readonly settingsLead: string
@@ -447,6 +466,25 @@ const SV: AdminStrings = {
   tabSite: 'Startsida',
   tabProfile: 'Profil',
   tabSettings: 'Inställningar',
+  tabMail: 'Mejl',
+  mailTitle: 'Mejlmallar',
+  mailLead:
+    'Redigera all fast text som kunder och barberare ser. Varumärket, kontaktuppgifterna och bokningens faktiska uppgifter är låsta.',
+  mailLoading: 'Laddar mejlmallar …',
+  mailPlaceholderHelp: 'Dynamiska värden',
+  mailSwedish: 'Svenska',
+  mailEnglish: 'Engelska',
+  mailSubject: 'Ämnesrad',
+  mailPreheader: 'Förhandsvisning i inkorgen',
+  mailHeading: 'Huvudrubrik',
+  mailIntro: 'Inledning',
+  mailSectionTitle: 'Rubrik ovanför bokningsuppgifterna',
+  mailNote: 'Information under bokningsuppgifterna',
+  mailButton: 'Knapptext',
+  mailContact: 'Text före telefonnumret',
+  mailSave: 'Spara mall',
+  mailSaving: 'Sparar …',
+  mailSaved: 'Sparat',
   settingsTitle: 'Inställningar',
   settingsLead: 'Hantera inloggningsuppgifterna för ditt konto.',
   settingsEmailTitle: 'E‑post',
@@ -841,6 +879,25 @@ const EN: AdminStrings = {
   tabSite: 'Home page',
   tabProfile: 'Profile',
   tabSettings: 'Settings',
+  tabMail: 'Mail',
+  mailTitle: 'Email templates',
+  mailLead:
+    'Edit all fixed copy customers and barbers see. Brand, contact details, and actual booking data remain locked.',
+  mailLoading: 'Loading email templates …',
+  mailPlaceholderHelp: 'Dynamic values',
+  mailSwedish: 'Swedish',
+  mailEnglish: 'English',
+  mailSubject: 'Subject',
+  mailPreheader: 'Inbox preview',
+  mailHeading: 'Main heading',
+  mailIntro: 'Introduction',
+  mailSectionTitle: 'Heading above booking details',
+  mailNote: 'Information below booking details',
+  mailButton: 'Button label',
+  mailContact: 'Copy before phone number',
+  mailSave: 'Save template',
+  mailSaving: 'Saving …',
+  mailSaved: 'Saved',
   settingsTitle: 'Settings',
   settingsLead: 'Manage your account sign-in details.',
   settingsEmailTitle: 'Email',

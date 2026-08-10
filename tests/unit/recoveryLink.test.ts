@@ -3,7 +3,8 @@ import { parseRecoveryLink } from '../../src/admin/recoveryLink'
 
 describe('parseRecoveryLink', () => {
   it('parses implicit-flow recovery tokens from the hash', () => {
-    const hash = '#access_token=AT123&refresh_token=RT456&expires_in=3600&token_type=bearer&type=recovery'
+    const hash =
+      '#access_token=AT123&refresh_token=RT456&expires_in=3600&token_type=bearer&type=recovery'
     expect(parseRecoveryLink(hash, '')).toEqual({
       kind: 'tokens',
       accessToken: 'AT123',
@@ -21,11 +22,28 @@ describe('parseRecoveryLink', () => {
   })
 
   it('parses a PKCE code from the query string', () => {
-    expect(parseRecoveryLink('', '?code=PKCE_CODE_789')).toEqual({ kind: 'code', code: 'PKCE_CODE_789' })
+    expect(parseRecoveryLink('', '?code=PKCE_CODE_789')).toEqual({
+      kind: 'code',
+      code: 'PKCE_CODE_789',
+    })
+  })
+
+  it('parses a branded recovery token hash from the query string', () => {
+    expect(parseRecoveryLink('', '?token_hash=HASHED_TOKEN&type=recovery')).toEqual({
+      kind: 'token_hash',
+      tokenHash: 'HASHED_TOKEN',
+    })
+  })
+
+  it('does not accept a token hash for another auth action', () => {
+    expect(parseRecoveryLink('', '?token_hash=HASHED_TOKEN&type=email_change')).toEqual({
+      kind: 'none',
+    })
   })
 
   it('surfaces an expired-link error carried in the hash', () => {
-    const hash = '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
+    const hash =
+      '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
     const r = parseRecoveryLink(hash, '')
     expect(r.kind).toBe('error')
     if (r.kind === 'error') expect(r.message).toContain('expired')

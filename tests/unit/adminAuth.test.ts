@@ -5,10 +5,11 @@ const authMocks = vi.hoisted(() => ({
   updateUser: vi.fn(),
   verifyOtp: vi.fn(),
   signOut: vi.fn(),
+  invoke: vi.fn(),
 }))
 
 vi.mock('../../src/admin/adminClient', () => ({
-  getAdminClient: () => ({ auth: authMocks }),
+  getAdminClient: () => ({ auth: authMocks, functions: { invoke: authMocks.invoke } }),
 }))
 
 import {
@@ -23,6 +24,7 @@ describe('admin account settings auth', () => {
     authMocks.updateUser.mockReset()
     authMocks.verifyOtp.mockReset()
     authMocks.signOut.mockReset()
+    authMocks.invoke.mockReset()
   })
 
   it('verifies the current password, updates it and keeps the session', async () => {
@@ -60,21 +62,23 @@ describe('admin account settings auth', () => {
   })
 
   it('requests a confirmed email change', async () => {
-    authMocks.updateUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
+    authMocks.invoke.mockResolvedValue({ data: { ok: true }, error: null })
 
-    const result = await requestOwnEmailChange('new@example.com')
+    const result = await requestOwnEmailChange('new@example.com', 'sv')
 
     expect(result).toEqual({ ok: true, value: undefined })
-    expect(authMocks.updateUser).toHaveBeenCalledWith({ email: 'new@example.com' })
+    expect(authMocks.invoke).toHaveBeenCalledWith('send-email-change', {
+      body: { new_email: 'new@example.com', lang: 'sv' },
+    })
   })
 
   it('surfaces an email-change provider rejection', async () => {
-    authMocks.updateUser.mockResolvedValue({
-      data: { user: null },
-      error: { message: 'email already registered' },
+    authMocks.invoke.mockResolvedValue({
+      data: { ok: false, error: 'generate_failed' },
+      error: null,
     })
 
-    const result = await requestOwnEmailChange('taken@example.com')
+    const result = await requestOwnEmailChange('taken@example.com', 'en')
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('validation')

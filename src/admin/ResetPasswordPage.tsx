@@ -15,7 +15,12 @@ import { adminText } from '../i18n/adminStrings'
 import { AuthCard } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
 import { LangSwitch } from './chrome'
-import { establishRecoverySession, exchangeRecoveryCode, setNewPassword } from './auth'
+import {
+  establishRecoverySession,
+  exchangeRecoveryCode,
+  setNewPassword,
+  verifyRecoveryTokenHash,
+} from './auth'
 import { parseRecoveryLink } from './recoveryLink'
 import { validateNewPassword } from './passwordPolicy'
 import { useTheme } from './useTheme'
@@ -65,7 +70,9 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
           ? await establishRecoverySession(link.accessToken, link.refreshToken)
           : link.kind === 'code'
             ? await exchangeRecoveryCode(link.code)
-            : null
+            : link.kind === 'token_hash'
+              ? await verifyRecoveryTokenHash(link.tokenHash)
+              : null
       if (!active) return
       if (result !== null && result.ok) setPhase({ kind: 'ready' })
       else setPhase({ kind: 'invalid', message: t.resetPwInvalidLink })
@@ -125,7 +132,10 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
       <>
         {overlay}
         <AuthCard subtitle={t.resetPwSubtitle}>
-          <p role="alert" style={{ ...s.errorText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
+          <p
+            role="alert"
+            style={{ ...s.errorText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}
+          >
             {phase.message}
           </p>
           <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
@@ -141,7 +151,10 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
       <>
         {overlay}
         <AuthCard subtitle={t.resetPwSubtitle}>
-          <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
+          <p
+            role="status"
+            style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}
+          >
             {t.resetPwSuccess}
           </p>
           <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onDone}>
@@ -190,7 +203,11 @@ export function ResetPasswordPage(props: ResetPasswordPageProps): JSX.Element {
             />
           </div>
 
-          <div aria-live="assertive" role="alert" style={{ minHeight: '18px', marginBottom: '12px' }}>
+          <div
+            aria-live="assertive"
+            role="alert"
+            style={{ minHeight: '18px', marginBottom: '12px' }}
+          >
             {form.kind === 'error' ? <span style={s.errorText}>{form.message}</span> : null}
           </div>
 

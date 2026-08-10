@@ -13,6 +13,7 @@
 export type RecoveryLink =
   | { readonly kind: 'tokens'; readonly accessToken: string; readonly refreshToken: string }
   | { readonly kind: 'code'; readonly code: string }
+  | { readonly kind: 'token_hash'; readonly tokenHash: string }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'none' }
 
@@ -38,6 +39,10 @@ export function parseRecoveryLink(hash: string, search: string): RecoveryLink {
   }
 
   const q = toParams(search)
+  const tokenHash = q.get('token_hash')
+  if (tokenHash !== null && tokenHash.trim() !== '' && q.get('type') === 'recovery') {
+    return { kind: 'token_hash', tokenHash }
+  }
   const code = q.get('code')
   if (code !== null) return { kind: 'code', code }
   const queryError = q.get('error_description') ?? q.get('error')

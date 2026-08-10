@@ -29,11 +29,6 @@ type Status =
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'done' }
 
-/** Where Supabase should send the recovery link. Read at the edge (browser origin) + our route. */
-function resetRedirectUrl(): string {
-  return `${window.location.origin}/reset`
-}
-
 export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element {
   const { dark } = useTheme()
   const c = palette(dark)
@@ -52,7 +47,7 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
     e.preventDefault()
     if (status.kind === 'submitting') return
     setStatus({ kind: 'submitting' })
-    const result = await requestPasswordReset(email.trim(), resetRedirectUrl())
+    const result = await requestPasswordReset(email.trim(), props.lang)
     if (result.ok) {
       setStatus({ kind: 'done' })
       return
@@ -63,10 +58,17 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
   if (status.kind === 'done') {
     return (
       <AuthCard subtitle={t.forgotPwSubtitle}>
-        <p role="status" style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}>
+        <p
+          role="status"
+          style={{ ...s.successText, fontSize: '14px', margin: '0 0 18px', lineHeight: 1.5 }}
+        >
           {t.forgotPwSuccess}
         </p>
-        <button type="button" style={{ ...s.primaryBtn, width: '100%' }} onClick={props.onBackToSignIn}>
+        <button
+          type="button"
+          style={{ ...s.primaryBtn, width: '100%' }}
+          onClick={props.onBackToSignIn}
+        >
           {t.authToSignIn}
         </button>
       </AuthCard>
