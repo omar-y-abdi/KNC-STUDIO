@@ -5,7 +5,7 @@
 // Effects (UID from a timestamp, DTSTAMP "now") live here at the edge and are injected into the
 // pure `buildIcs`, so the ICS builder stays referentially transparent.
 
-import { BUSINESS } from '../../config'
+import { DEFAULT_BUSINESS } from '../../config'
 import { barberIndex } from '../barbers'
 import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
@@ -13,18 +13,16 @@ import { buildIcs, formatIcsLocal } from '../ics'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { packSlots } from '../slotPacking'
 import type { BlockedInterval } from '../slotPacking'
-
-/** Apple Maps directions URL for the studio. */
-const MAPS_HREF = BUSINESS.mapsHref
+import { formatBusinessAddress, type BusinessSettings } from '../../site/siteChrome'
 
 /** Human-readable location line for calendar entries. */
-function locationLine(): string {
-  return `${BUSINESS.name}, ${BUSINESS.street}, ${BUSINESS.postalCode} ${BUSINESS.city}`
+function locationLine(business: BusinessSettings): string {
+  return `${business.name}, ${formatBusinessAddress(business)}`
 }
 
-/** Event title: "Blade & Blend Studio – <service> (<barber>)". */
-function eventTitle(booking: Booking): string {
-  return `${BUSINESS.name} – ${booking.service.name} (${booking.barber.name})`
+/** Event title: "<business> – <service> (<barber>)". */
+function eventTitle(booking: Booking, business: BusinessSettings): string {
+  return `${business.name} – ${booking.service.name} (${booking.barber.name})`
 }
 
 /** Event description: localised "Appointment with <barber> · <price> kr". */
@@ -34,10 +32,10 @@ function eventDescription(booking: Booking): string {
 }
 
 /** Build the Google Calendar "render template" URL with every dynamic part encoded. */
-function googleCalHref(booking: Booking): string {
-  const text = encodeURIComponent(eventTitle(booking))
+function googleCalHref(booking: Booking, business: BusinessSettings): string {
+  const text = encodeURIComponent(eventTitle(booking, business))
   const dates = `${formatIcsLocal(booking.start)}/${formatIcsLocal(booking.end)}`
-  const location = encodeURIComponent(locationLine())
+  const location = encodeURIComponent(locationLine(business))
   const details = encodeURIComponent(eventDescription(booking))
   // `dates` is a FLOATING wall-clock string; without `ctz` Google pins it in the USER's calendar
   // timezone, shifting the event for a non-Stockholm visitor. The slot wall-clock is salon time.
@@ -45,26 +43,30 @@ function googleCalHref(booking: Booking): string {
 }
 
 /** Build the `data:text/calendar` href from an escaped ICS payload. */
-function icsHref(booking: Booking, uid: string, dtstamp: Date): string {
+function icsHref(booking: Booking, uid: string, dtstamp: Date, business: BusinessSettings): string {
   const ics = buildIcs({
     uid,
     dtstamp,
     start: booking.start,
     end: booking.end,
-    summary: eventTitle(booking),
-    location: locationLine(),
+    summary: eventTitle(booking, business),
+    location: locationLine(business),
     description: eventDescription(booking),
   })
   return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`
 }
 
 /** Derive all calendar/map links for a booking (effects — UID + now — at this edge). */
-export function buildLinks(booking: Booking, now: Date = new Date()): BookingLinks {
+export function buildLinks(
+  booking: Booking,
+  now: Date = new Date(),
+  business: BusinessSettings = DEFAULT_BUSINESS,
+): BookingLinks {
   const uid = `${now.getTime()}@bladeblendstudio`
   return {
-    icsHref: icsHref(booking, uid, now),
-    gcalHref: googleCalHref(booking),
-    mapsHref: MAPS_HREF,
+    icsHref: icsHref(booking, uid, now, business),
+    gcalHref: googleCalHref(booking, business),
+    mapsHref: business.mapsHref,
   }
 }
 
@@ -105,8 +107,8 @@ function mockBlocked(day: number, barberIdx: number): readonly BlockedInterval[]
  * so the offline/demo/visual baseline is stable and reproducible.
  */
 export const localCalendarAdapter: BookingPort = {
-  submit(booking: Booking): Promise<BookingResult> {
-    const links = buildLinks(booking)
+  submit(booking: Booking, business: BusinessSettings = DEFAULT_BUSINESS): Promise<BookingResult> {
+    const links = buildLinks(booking, new Date(), business)
     const result: BookingResult = { ok: true, booking, links }
     return Promise.resolve(result)
   },

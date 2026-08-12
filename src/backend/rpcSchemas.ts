@@ -166,8 +166,8 @@ export const siteContentRow = z.object({
 export type SiteContentRow = z.infer<typeof siteContentRow>
 
 export const siteSettingRow = z.object({
-  key: z.string(),
-  value: z.string(),
+  key: z.string().min(1).max(40),
+  value: z.string().max(500),
 })
 export type SiteSettingRow = z.infer<typeof siteSettingRow>
 

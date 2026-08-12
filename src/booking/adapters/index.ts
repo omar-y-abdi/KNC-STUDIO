@@ -8,13 +8,14 @@
 // main bundle, and with no env it is never loaded at all.
 
 import { isBackendConfigured } from '../../backend/config'
+import type { BusinessSettings } from '../../site/siteChrome'
 import type { Booking } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { localCalendarAdapter } from './localCalendar'
 
 const lazySupabaseBookingPort: BookingPort = {
-  submit: (booking: Booking) =>
-    import('./supabaseBooking').then((m) => m.supabaseBookingAdapter.submit(booking)),
+  submit: (booking: Booking, business?: BusinessSettings) =>
+    import('./supabaseBooking').then((m) => m.supabaseBookingAdapter.submit(booking, business)),
   availability: (params: AvailabilityParams) =>
     import('./supabaseBooking').then((m) => m.supabaseBookingAdapter.availability(params)),
 }

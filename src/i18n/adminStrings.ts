@@ -71,9 +71,23 @@ export interface AdminStrings {
   // Startsida (homepage chrome) view.
   readonly siteTextTitle: string
   readonly siteTextLead: string
+  readonly siteBusinessTitle: string
+  readonly siteBusinessLead: string
+  readonly siteFieldBusinessName: string
+  readonly siteFieldBusinessEmail: string
+  readonly siteFieldBusinessPhoneDisplay: string
+  readonly siteFieldBusinessPhoneTel: string
+  readonly siteFieldBusinessStreet: string
+  readonly siteFieldBusinessPostalCode: string
+  readonly siteFieldBusinessCity: string
+  readonly siteFieldBusinessMapsUrl: string
+  readonly siteFieldCancellationPolicyHours: string
+  readonly siteSeoTitle: string
+  readonly siteSeoLead: string
+  readonly siteFieldSeoTitle: string
+  readonly siteFieldSeoDescription: string
   readonly siteFieldKicker: string
   readonly siteFieldHours: string
-  readonly siteFieldAddr: string
   readonly siteBookingTextTitle: string
   readonly siteBookingTextLead: string
   readonly siteBookingDetailsGroup: string
@@ -519,9 +533,25 @@ const SV: AdminStrings = {
   siteTextTitle: 'Startsidans text',
   siteTextLead:
     'Redigera texten på startsidan. Tomt fält återgår till standardtexten. Loggan och knapptexterna ändras inte här.',
+  siteBusinessTitle: 'Företagsuppgifter',
+  siteBusinessLead:
+    'Visas på hemsidan, i bokningens kalenderlänkar och i strukturerad sökdata. Telefonnummer för länk ska vara siffror med valfritt + i början.',
+  siteFieldBusinessName: 'Företagsnamn',
+  siteFieldBusinessEmail: 'Kontaktadress för e-post',
+  siteFieldBusinessPhoneDisplay: 'Telefonnummer som visas',
+  siteFieldBusinessPhoneTel: 'Telefonnummer för ringlänk',
+  siteFieldBusinessStreet: 'Gatuadress',
+  siteFieldBusinessPostalCode: 'Postnummer',
+  siteFieldBusinessCity: 'Ort',
+  siteFieldBusinessMapsUrl: 'Kartlänk',
+  siteFieldCancellationPolicyHours: 'Avbokning senast (timmar före besöket)',
+  siteSeoTitle: 'SEO',
+  siteSeoLead:
+    'Titlar och beskrivningar uppdaterar sidans metadata när besökaren väljer språk. Håll titlar korta och beskrivningar tydliga.',
+  siteFieldSeoTitle: 'Sidtitel',
+  siteFieldSeoDescription: 'Metabeskrivning',
   siteFieldKicker: 'Underrubrik (t.ex. "BARBERSHOP · GÖTEBORG")',
   siteFieldHours: 'Öppettider',
-  siteFieldAddr: 'Adress',
   siteBookingTextTitle: 'Bokningens popuptexter',
   siteBookingTextLead:
     'Redigera alla synliga texter utom knappar. Barberare, Tid och Behandling används i båda rutorna. Behåll {email} och {phone} där kundens uppgifter ska visas.',
@@ -932,9 +962,25 @@ const EN: AdminStrings = {
   siteTextTitle: 'Home page text',
   siteTextLead:
     'Edit the text on the home page. An empty field falls back to the default. The logo and button labels are not changed here.',
+  siteBusinessTitle: 'Business details',
+  siteBusinessLead:
+    'Shown on the site, in booking calendar links, and in structured search data. The phone link value must contain digits with an optional leading +.',
+  siteFieldBusinessName: 'Business name',
+  siteFieldBusinessEmail: 'Contact email address',
+  siteFieldBusinessPhoneDisplay: 'Displayed phone number',
+  siteFieldBusinessPhoneTel: 'Phone number for call link',
+  siteFieldBusinessStreet: 'Street address',
+  siteFieldBusinessPostalCode: 'Postal code',
+  siteFieldBusinessCity: 'City',
+  siteFieldBusinessMapsUrl: 'Map URL',
+  siteFieldCancellationPolicyHours: 'Cancellation deadline (hours before appointment)',
+  siteSeoTitle: 'SEO',
+  siteSeoLead:
+    'Titles and descriptions update the page metadata when a visitor selects a language. Keep titles concise and descriptions clear.',
+  siteFieldSeoTitle: 'Page title',
+  siteFieldSeoDescription: 'Meta description',
   siteFieldKicker: 'Sub-heading (e.g. "BARBERSHOP · GOTHENBURG")',
   siteFieldHours: 'Opening hours',
-  siteFieldAddr: 'Address',
   siteBookingTextTitle: 'Booking pop-up text',
   siteBookingTextLead:
     'Edit every visible string except buttons. Barber, Time and Service are shared by both dialogs. Keep {email} and {phone} where the customer details should appear.',

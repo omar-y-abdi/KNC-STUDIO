@@ -1,5 +1,5 @@
-// `useSiteChrome` — owner-editable public copy + sizing as React state, refetched per language and
-// updated when the owner changes `site_content`.
+// `useSiteChrome` — owner-editable public copy, business identity, SEO, and sizing as React state,
+// refetched per language and updated when the owner changes `site_content` or `site_settings`.
 //
 // Under the MOCK (no backend): `DEFAULT_CHROME` is the immediate, stable value (no flash, no shift) —
 // the site renders from its i18n defaults + 1.0× scale exactly as before. Under a BACKEND: the same

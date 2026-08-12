@@ -4,6 +4,7 @@
 // `supabaseBookingAdapter` (the real backend).
 
 import type { Booking, BookingResult, BarberId } from './domain'
+import type { BusinessSettings } from '../site/siteChrome'
 
 /** Inputs for an availability query: which barber, which local day, and the chosen service length. */
 export interface AvailabilityParams {
@@ -16,8 +17,8 @@ export interface AvailabilityParams {
 }
 
 export interface BookingPort {
-  /** Submit a confirmed booking. Pure-local adapters resolve synchronously-wrapped. */
-  submit(booking: Booking): Promise<BookingResult>
+  /** Submit a confirmed booking and build links with the current public business settings. */
+  submit(booking: Booking, business?: BusinessSettings): Promise<BookingResult>
   /**
    * The AVAILABLE start times to render for `barberId` on `dateIso` given `durationMin` — ascending
    * `"HH:MM"` (e.g. `['09:00','09:30','10:30']`), duration-stepped and packed around existing

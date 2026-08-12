@@ -34,7 +34,7 @@ export const bookingSv: BookingStrings = {
   emailPh: 'namn@exempel.se',
   book: 'Boka tid',
   policy:
-    'Vid bokning accepterar du att avbokning måste ske senast 24 timmar före besöket. Sen avbokning eller utebliven tid ger Blade & Blend Studio rätt att debitera för den bokade tiden.',
+    'Vid bokning accepterar du att avbokning måste ske senast {hours} timmar före besöket. Sen avbokning eller utebliven tid ger {businessName} rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
   confirmSent:
     'En bokningsbekräftelse har skickats till {email}. Bokningen finns även under "Mina bokningar" via ditt telefonnummer.',
