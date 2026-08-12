@@ -1,6 +1,8 @@
-// The real (Supabase) CancellationPort adapter. `lookup` calls the `lookup_booking` RPC (matches the
+// The real (Supabase) CancellationPort adapter. `lookup` reaches `lookup_booking` through the
+// Turnstile- and rate-limit-protected public action gateway (matches the
 // caller's NEXT upcoming confirmed booking by PROVEN contact — wrong contact -> not_found, so no
-// enumeration of others); `cancel` calls `cancel_booking` (contact-guarded, idempotent).
+// enumeration of others); `cancel` reaches `cancel_booking` through the same gateway
+// (contact-guarded, idempotent).
 //
 // The looked-up booking carries only barber_id + service_name + price + start_at + contact
 // (no other PII). We map barber_id -> Barber via the LIVE roster (an owner-added DB barber must show
@@ -9,7 +11,7 @@
 // picked the slot in. Boundary discipline: parse every response; map failure to a localized error
 // string rather than throwing.
 
-import { getSupabase } from '../../backend/supabaseClient'
+import { invokePublicBookingAction } from '../../backend/publicBookingActions'
 import { bookingLookupResponse, parseWith } from '../../backend/rpcSchemas'
 import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
 import { BARBERS } from '../../booking/barbers'
@@ -41,10 +43,12 @@ export const supabaseCancellationAdapter: CancellationPort = {
   async lookup(params: CancelLookupParams): Promise<CancelLookupResult> {
     const notFound: CancelLookupResult = { ok: false, error: cancelStrings(params.lang).errLookup }
     try {
-      const { data, error } = await getSupabase().rpc('lookup_booking', {
-        p_contact: params.contact,
+      const { data, failed } = await invokePublicBookingAction({
+        action: 'lookup',
+        phone: params.contact,
+        turnstileToken: params.turnstileToken,
       })
-      if (error !== null) return notFound
+      if (failed) return notFound
 
       const parsed = parseWith(bookingLookupResponse, data)
       if (!parsed.ok || !parsed.value.ok) return notFound
@@ -68,16 +72,18 @@ export const supabaseCancellationAdapter: CancellationPort = {
     }
   },
 
-  async cancel(booking: CancelBooking): Promise<CancelResult> {
+  async cancel(booking: CancelBooking, turnstileToken: string): Promise<CancelResult> {
     // The dialog shows its OWN localized `t.errCancel` on failure (it ignores this field's content),
     // so this required error string is a neutral fallback — never user-displayed.
     const failed: CancelResult = { ok: false, error: 'cancel_failed' }
     try {
-      const { data, error } = await getSupabase().rpc('cancel_booking', {
-        p_booking_id: booking.id,
-        p_contact: booking.contact,
+      const { data, failed: invokeFailed } = await invokePublicBookingAction({
+        action: 'cancel',
+        bookingId: booking.id,
+        phone: booking.contact,
+        turnstileToken,
       })
-      if (error !== null) return failed
+      if (invokeFailed) return failed
 
       const parsed = parseWith(bookingLookupResponse, data)
       if (!parsed.ok || !parsed.value.ok) return failed

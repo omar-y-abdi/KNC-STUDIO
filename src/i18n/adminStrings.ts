@@ -347,8 +347,7 @@ export interface AdminStrings {
   readonly barbersIdError: string
   readonly barbersNameRequired: string
   readonly barbersEmailError: string
-  /** The "login created" note. KEEP the literal "123456" — only the surrounding copy is translated. */
-  readonly barbersDefaultPasswordNote: string
+  readonly barbersInviteSentNote: string
   // BarbersView — delete flow (type-the-id confirm + has-bookings purge confirm)
   readonly barbersDelete: string
   readonly barbersDeleteTitle: string
@@ -437,6 +436,8 @@ export interface AdminStrings {
   readonly forcedPwSubmit: string
   // ResetPasswordPage (`/reset` recovery landing)
   readonly resetPwSubtitle: string
+  readonly resetPwIntro: string
+  readonly resetPwContinue: string
   readonly resetPwInvalidLink: string
   readonly resetPwChecking: string
   readonly resetPwSuccess: string
@@ -444,6 +445,17 @@ export interface AdminStrings {
   readonly resetPwConfirmPassword: string
   readonly resetPwSaving: string
   readonly resetPwSubmit: string
+  // ResetPasswordPage (`/invite` staff invitation landing)
+  readonly invitePwSubtitle: string
+  readonly invitePwIntro: string
+  readonly invitePwContinue: string
+  readonly invitePwInvalidLink: string
+  readonly invitePwChecking: string
+  readonly invitePwSuccess: string
+  readonly invitePwNewPassword: string
+  readonly invitePwConfirmPassword: string
+  readonly invitePwSaving: string
+  readonly invitePwSubmit: string
   // EmailChangeConfirmPage (`/auth/confirm`)
   readonly emailChangeConfirmSubtitle: string
   readonly emailChangeConfirmIntro: string
@@ -768,8 +780,8 @@ const SV: AdminStrings = {
   barbersIdError: 'Id får bara innehålla a–z, 0–9 och bindestreck (max 32).',
   barbersNameRequired: 'Namn krävs.',
   barbersEmailError: 'Ange en giltig e-postadress.',
-  barbersDefaultPasswordNote:
-    'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+  barbersInviteSentNote:
+    'Inbjudan skickad. Barberaren skapar sitt personliga lösenord via länken i mejlet.',
   barbersDelete: 'Radera',
   barbersDeleteTitle: 'Radera barberare?',
   barbersDeleteBody:
@@ -848,6 +860,8 @@ const SV: AdminStrings = {
   forcedPwSaving: 'Sparar …',
   forcedPwSubmit: 'Byt lösenord',
   resetPwSubtitle: 'Återställ lösenord',
+  resetPwIntro: 'Fortsätt för att kontrollera länken och välja ett nytt lösenord.',
+  resetPwContinue: 'Fortsätt',
   resetPwInvalidLink:
     'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.',
   resetPwChecking: 'Kontrollerar länken …',
@@ -856,6 +870,16 @@ const SV: AdminStrings = {
   resetPwConfirmPassword: 'Bekräfta nytt lösenord',
   resetPwSaving: 'Sparar …',
   resetPwSubmit: 'Spara nytt lösenord',
+  invitePwSubtitle: 'Aktivera ditt konto',
+  invitePwIntro: 'Fortsätt för att kontrollera inbjudan och skapa ditt personliga lösenord.',
+  invitePwContinue: 'Öppna inbjudan',
+  invitePwInvalidLink: 'Inbjudan är ogiltig eller har gått ut. Be ägaren skicka en ny.',
+  invitePwChecking: 'Kontrollerar inbjudan …',
+  invitePwSuccess: 'Ditt konto är aktiverat. Logga in med ditt nya lösenord.',
+  invitePwNewPassword: 'Välj lösenord',
+  invitePwConfirmPassword: 'Bekräfta lösenord',
+  invitePwSaving: 'Aktiverar …',
+  invitePwSubmit: 'Aktivera konto',
   emailChangeConfirmSubtitle: 'Bekräfta ny e‑postadress',
   emailChangeConfirmIntro:
     'Bekräfta ändringen med knappen nedan. Din e‑postadress ändras direkt efter bekräftelsen.',
@@ -1182,8 +1206,8 @@ const EN: AdminStrings = {
   barbersIdError: 'Id may only contain a–z, 0–9 and hyphens (max 32).',
   barbersNameRequired: 'Name is required.',
   barbersEmailError: 'Enter a valid email address.',
-  barbersDefaultPasswordNote:
-    'Account created. Temporary password: 123456 — the barber changes it at first login.',
+  barbersInviteSentNote:
+    'Invitation sent. The barber creates a personal password through the email link.',
   barbersDelete: 'Delete',
   barbersDeleteTitle: 'Delete barber?',
   barbersDeleteBody:
@@ -1263,6 +1287,8 @@ const EN: AdminStrings = {
   forcedPwSaving: 'Saving …',
   forcedPwSubmit: 'Change password',
   resetPwSubtitle: 'Reset password',
+  resetPwIntro: 'Continue to verify the link and choose a new password.',
+  resetPwContinue: 'Continue',
   resetPwInvalidLink:
     'The reset link is invalid or has expired. Request a new one on the sign-in page.',
   resetPwChecking: 'Checking the link …',
@@ -1271,6 +1297,16 @@ const EN: AdminStrings = {
   resetPwConfirmPassword: 'Confirm new password',
   resetPwSaving: 'Saving …',
   resetPwSubmit: 'Save new password',
+  invitePwSubtitle: 'Activate your account',
+  invitePwIntro: 'Continue to verify the invitation and create your personal password.',
+  invitePwContinue: 'Open invitation',
+  invitePwInvalidLink: 'The invitation is invalid or has expired. Ask the owner for a new one.',
+  invitePwChecking: 'Checking the invitation …',
+  invitePwSuccess: 'Your account is active. Sign in with your new password.',
+  invitePwNewPassword: 'Choose password',
+  invitePwConfirmPassword: 'Confirm password',
+  invitePwSaving: 'Activating …',
+  invitePwSubmit: 'Activate account',
   emailChangeConfirmSubtitle: 'Confirm new email address',
   emailChangeConfirmIntro:
     'Confirm the change with the button below. Your email address changes immediately after confirmation.',

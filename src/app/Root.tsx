@@ -7,6 +7,7 @@
 //   `/`            -> the existing site (unchanged)
 //   `/login`       -> admin login (lazy)
 //   `/reset`       -> password-recovery landing (lazy)
+//   `/invite`      -> staff invitation landing (lazy)
 //   `/auth/confirm` -> email-change confirmation landing (lazy)
 //   `/admin` + sub -> the panel (lazy, gated)
 //   anything else  -> redirect to `/`
@@ -33,7 +34,7 @@ function AdminFallback(): JSX.Element {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
         fontSize: '14px',
         opacity: 0.6,
       }}
@@ -58,6 +59,12 @@ export function Root(): JSX.Element {
         </Route>
         {/* Password-recovery landing (the email link target). Lazy, same chunk as login. */}
         <Route path="/reset">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* Staff invitation landing. Token verification waits for an explicit button click. */}
+        <Route path="/invite">
           <Suspense fallback={<AdminFallback />}>
             <AdminEntry />
           </Suspense>

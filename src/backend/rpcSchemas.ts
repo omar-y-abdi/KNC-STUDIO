@@ -57,8 +57,7 @@ const cancelBookingShape = z.object({
   service_name: z.string(),
   price: z.number(),
   start_at: isoTimestamp,
-  // Email was removed; lookup/cancel are phone-only, so the echoed method is always 'sms'.
-  method: z.literal('sms'),
+  method: z.literal('email'),
   contact: z.string(),
 })
 

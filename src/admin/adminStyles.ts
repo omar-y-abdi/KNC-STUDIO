@@ -1,4 +1,4 @@
-// Style bundle for the admin panel. Reuses the booking flow's `Palette` (same SF Pro look, same
+// Style bundle for the admin panel. Reuses the booking flow's `Palette` (same Inter look, same
 // light/dark tokens) so the admin chrome matches the marketing site exactly, but lays out a
 // FUNCTIONAL admin surface: a sidebar/tab nav + content area, data tables, and forms. Pure style
 // objects — no effects, no rendered-output logic.
@@ -6,8 +6,8 @@
 import type { JSX } from 'preact'
 import type { Palette } from '../booking/bookingStyles'
 
-const FONT_TEXT = "'SF Pro Text',-apple-system,system-ui,sans-serif"
-const FONT_DISPLAY = "'SF Pro Display',-apple-system,system-ui,sans-serif"
+const FONT_TEXT = "'Inter Variable',-apple-system,system-ui,sans-serif"
+const FONT_DISPLAY = "'Inter Variable',-apple-system,system-ui,sans-serif"
 
 /** The full set of admin style objects, derived from the active palette + dark flag. */
 export interface AdminStyles {

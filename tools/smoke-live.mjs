@@ -8,7 +8,8 @@
 //   3. submit-booking email  — malformed email is rejected before the bot check.
 //   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
-//   5. lookup_booking RPC    — returns a JSON result for an unknown phone (not_found).
+//   5. public action gateway — rejects an empty Turnstile token (failed_challenge).
+//   6. lookup_booking RPC    — direct anonymous access is denied; only gateway service_role may call.
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
@@ -142,13 +143,28 @@ async function checkSubmitBookingTurnstileGate() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 5. lookup_booking for an unknown phone — expect HTTP 200 + a JSON result
-//    (the RPC returns { ok:false, error:"not_found" } when no booking matches).
-async function checkLookupBooking() {
+// 5. Phone-based actions are reachable only through the fail-closed Turnstile gateway.
+async function checkPublicActionGateway() {
+  const { status, json } = await postJson('/functions/v1/public-booking-actions', {
+    action: 'lookup',
+    phone: '0700000000',
+    turnstileToken: '',
+  })
+  const pass =
+    status === 200 &&
+    json !== null &&
+    typeof json === 'object' &&
+    json.ok === false &&
+    json.error === 'failed_challenge'
+  return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
+}
+
+// 6. The old direct Data API path must stay revoked for anon.
+async function checkDirectLookupDenied() {
   const { status, json } = await postJson('/rest/v1/rpc/lookup_booking', {
     p_contact: '0700000000',
   })
-  const pass = status === 200 && json !== null && json !== undefined
+  const pass = status === 401 || status === 403 || status === 404
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
@@ -160,7 +176,8 @@ const checks = [
     'submit-booking turnstile gate (empty token -> failed_challenge)',
     checkSubmitBookingTurnstileGate,
   ],
-  ['lookup_booking (0700000000 -> not_found json)', checkLookupBooking],
+  ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
+  ['direct lookup_booking RPC (anon -> denied)', checkDirectLookupDenied],
 ]
 
 async function main() {

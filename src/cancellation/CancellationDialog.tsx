@@ -16,6 +16,7 @@ import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { parsePhone } from '../booking/validation'
+import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
 import { cancelStrings } from '../i18n/index'
 import type { CancelBooking } from './domain'
@@ -52,6 +53,9 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   const [systemError, setSystemError] = useState<string | null>(null)
   const [busy, setBusy] = useState<boolean>(false)
   const [booking, setBooking] = useState<CancelBooking | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
+  const challengeRequired = turnstileConfigured
 
   // Move focus (and the on-screen keyboard) straight to the phone field when the lookup step shows.
   const contactInputRef = useRef<HTMLInputElement>(null)
@@ -65,7 +69,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     setPhone(e.currentTarget.value)
   }
 
-  const lookupDisabled = busy || phone.trim() === ''
+  const lookupDisabled = busy || phone.trim() === '' || (challengeRequired && turnstileToken === '')
 
   // Step 1 → 2: validate the phone, then look the booking up through the port.
   const onLookup = async (): Promise<void> => {
@@ -77,7 +81,11 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     setBusy(true)
     setSystemError(null)
     try {
-      const result = await port.lookup({ contact: parsed.value, lang })
+      const result = await port.lookup({
+        contact: parsed.value,
+        lang,
+        turnstileToken,
+      })
       if (result.ok) {
         setBooking(result.booking)
         setStep('confirm')
@@ -88,6 +96,10 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       setSystemError(t.errLookup)
     } finally {
       setBusy(false)
+      if (step === 'lookup') {
+        setTurnstileToken('')
+        setTurnstileNonce((nonce) => nonce + 1)
+      }
     }
   }
   const onLookupClick = (): void => {
@@ -97,6 +109,8 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   // Step 2 → 1: abort returns to the lookup step (keeps entered contact).
   const onAbort = (): void => {
     setSystemError(null)
+    setTurnstileToken('')
+    setTurnstileNonce((nonce) => nonce + 1)
     setStep('lookup')
   }
 
@@ -106,7 +120,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
     setBusy(true)
     setSystemError(null)
     try {
-      const result = await port.cancel(booking)
+      const result = await port.cancel(booking, turnstileToken)
       if (result.ok) {
         setStep('done')
       } else {
@@ -116,6 +130,8 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       setSystemError(t.errCancel)
     } finally {
       setBusy(false)
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
     }
   }
   const onConfirmCancelClick = (): void => {
@@ -168,7 +184,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       <div style={s.overlayHeaderStyle}>
         <span
           id="knc-cancel-title"
-          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+          style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.title}
         </span>
@@ -187,6 +203,8 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
                 {systemError}
               </p>
             ) : null}
+
+            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
 
             <button
               onClick={lookupDisabled ? undefined : onLookupClick}
@@ -235,6 +253,8 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
               </p>
             ) : null}
 
+            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+
             <div style="display:flex;gap:10px;margin-top:14px;">
               <button
                 onClick={onAbort}
@@ -256,8 +276,12 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
                 {t.abortBtn}
               </button>
               <button
-                onClick={busy ? undefined : onConfirmCancelClick}
-                disabled={busy}
+                onClick={
+                  busy || (challengeRequired && turnstileToken === '')
+                    ? undefined
+                    : onConfirmCancelClick
+                }
+                disabled={busy || (challengeRequired && turnstileToken === '')}
                 style={{
                   flex: 1,
                   padding: '12px',
@@ -268,8 +292,9 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
                   fontFamily: 'inherit',
                   fontSize: '15px',
                   fontWeight: 600,
-                  cursor: busy ? 'default' : 'pointer',
-                  opacity: busy ? 0.7 : 1,
+                  cursor:
+                    busy || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
+                  opacity: busy || (challengeRequired && turnstileToken === '') ? 0.7 : 1,
                 }}
               >
                 {busy ? t.cancelling : t.confirmBtn}
@@ -283,7 +308,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
             <div style={s.successCircleStyle}>
               <img src="/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
             </div>
-            <div style="font-family:'SF Pro Display';font-weight:600;font-size:20px;margin-bottom:6px;">
+            <div style="font-family:'Inter Variable';font-weight:600;font-size:20px;margin-bottom:6px;">
               {t.doneTitle}
             </div>
             <div style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto 18px;">

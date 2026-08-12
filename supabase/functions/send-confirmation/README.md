@@ -28,7 +28,7 @@ npx supabase secrets set \
 
 Verified sender domain must permit:
 
-- `Blade & Blend Studio <no-reply@bladeblendstudio.se>`
+- `Blade & Blend Studio <booking@mail.bladeblendstudio.se>`
 
 ## Deploy
 

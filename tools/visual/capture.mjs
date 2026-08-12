@@ -28,8 +28,9 @@ try {
           reducedMotion: 'reduce',
         })
         const page = await ctx.newPage()
-        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 })
+        await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
         await page.waitForSelector('#root > *', { timeout: 15000 })
+        await page.evaluate(() => globalThis.document.fonts.ready)
         if (lang === 'en') {
           await page.getByRole('button', { name: 'EN', exact: true }).first().click()
           await page.waitForTimeout(500)

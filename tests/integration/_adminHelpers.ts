@@ -219,7 +219,7 @@ export async function insertBookingRaw(
     const res = await client.query<{ id: string }>(
       `insert into public.bookings
          (barber_id, service_id, service_name, price, duration_min, start_at, end_at, customer_name, method, phone, lang)
-       values ($1,'h','Hårklippning',350,$2,$3,$4,'IT Customer','sms','0700000000','sv')
+       values ($1,'h','Hårklippning',350,$2,$3,$4,'IT Customer','phone','0700000000','sv')
        returning id`,
       [barberId, durationMin, startAt.toISOString(), end.toISOString()],
     )

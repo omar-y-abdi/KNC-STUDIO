@@ -12,6 +12,7 @@ export type EmailTemplateName =
   | 'customer_reminder'
   | 'auth_recovery'
   | 'auth_email_change'
+  | 'auth_invite'
 
 export interface EditableEmailTemplate {
   readonly template: EmailTemplateName

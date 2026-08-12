@@ -86,7 +86,7 @@ function toBooking(r: {
   start_at: string
   end_at: string
   customer_name: string
-  method: 'sms' | 'email' | 'walkin'
+  method: 'phone' | 'email' | 'walkin'
   phone: string | null
   email: string | null
   lang: 'sv' | 'en'

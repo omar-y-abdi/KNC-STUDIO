@@ -9,6 +9,7 @@ export type EmailTemplateName =
   | 'customer_reminder'
   | 'auth_recovery'
   | 'auth_email_change'
+  | 'auth_invite'
 
 export interface EmailTemplateCopy {
   readonly subject: string
@@ -202,6 +203,28 @@ const DEFAULTS: Record<EmailTemplateName, Record<EmailLanguage, EmailTemplateCop
       sectionTitle: null,
       note: 'The link is valid for 60 minutes and can only be used once. Ignore this email if you did not request the change.',
       ctaLabel: 'Confirm email address',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+  auth_invite: {
+    sv: {
+      subject: 'Din inbjudan till Blade & Blend Studio',
+      preheader: 'Skapa ditt personliga lösenord och aktivera kontot.',
+      title: 'Välkommen till teamet',
+      intro: 'Du har blivit inbjuden till barberarpanelen hos Blade & Blend Studio.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter och kan bara användas en gång.',
+      ctaLabel: 'Skapa mitt lösenord',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Your invitation to Blade & Blend Studio',
+      preheader: 'Create your personal password and activate the account.',
+      title: 'Welcome to the team',
+      intro: 'You have been invited to the barber panel at Blade & Blend Studio.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes and can only be used once.',
+      ctaLabel: 'Create my password',
       contactLead: 'Need help? Call us on',
     },
   },

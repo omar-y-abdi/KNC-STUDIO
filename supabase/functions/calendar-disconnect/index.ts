@@ -42,7 +42,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!jwt) return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
-  if (callerError || callerData.user === null) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (callerError || callerData.user === null)
+    return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: profile, error: profileError } = await service
     .from('profiles')
@@ -68,7 +69,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // is logged, not fatal.
   if (typeof token === 'string' && token !== '') {
     const revoked = await revokeToken(token)
-    if (!revoked) console.error(`calendar-disconnect: google revoke did not confirm for barber ${barberId}`)
+    if (!revoked)
+      console.error(`calendar-disconnect: google revoke did not confirm for barber ${barberId}`)
   }
 
   return json({ ok: true }, 200)

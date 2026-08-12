@@ -7,12 +7,12 @@ an iPhone barber uses the Google Calendar app too.
 
 Pieces:
 
-| Edge function | Trigger | verify_jwt | Auth |
-|---|---|---|---|
-| `calendar-oauth-start` | barber taps Koppla (app → invoke) | true | JWT → `profiles.barber_id` |
-| `calendar-oauth-callback` | Google redirect (top-level) | false | HMAC-signed `state` |
-| `calendar-sync` | bookings INSERT/UPDATE/DELETE webhook | false | `WEBHOOK_SECRET` header |
-| `calendar-disconnect` | barber taps Koppla loss (app → invoke) | true | JWT → `profiles.barber_id` |
+| Edge function             | Trigger                                | verify_jwt | Auth                       |
+| ------------------------- | -------------------------------------- | ---------- | -------------------------- |
+| `calendar-oauth-start`    | barber taps Koppla (app → invoke)      | true       | JWT → `profiles.barber_id` |
+| `calendar-oauth-callback` | Google redirect (top-level)            | false      | HMAC-signed `state`        |
+| `calendar-sync`           | bookings INSERT/UPDATE/DELETE webhook  | false      | `WEBHOOK_SECRET` header    |
+| `calendar-disconnect`     | barber taps Koppla loss (app → invoke) | true       | JWT → `profiles.barber_id` |
 
 The Google **refresh token is a credential**: it lives in `public.barber_calendar_tokens` (RLS on, no
 anon/authenticated policies) and is reachable only by `service_role` through the definer RPCs in
@@ -32,11 +32,11 @@ https://<PROJECT_REF>.supabase.co/functions/v1/calendar-oauth-callback
 origins are only needed for a browser token flow, which we don't use).
 
 **OAuth consent screen — scopes:** `openid`, `email`, and
-`https://www.googleapis.com/auth/calendar.events` (the last is a *sensitive* scope).
+`https://www.googleapis.com/auth/calendar.events` (the last is a _sensitive_ scope).
 
 **Publishing status — pick ONE (this is the only real dependency):**
 
-- **A — Internal (best, if you have a Google Workspace domain):** set User type = *Internal*. No
+- **A — Internal (best, if you have a Google Workspace domain):** set User type = _Internal_. No
   verification, refresh tokens never expire. Requires every barber to be a user in that Workspace.
 - **B — External / consumer Gmail:** to get durable tokens you must publish the app **In production**
   and pass Google verification for `calendar.events` (privacy-policy URL + brand review; days–weeks).
@@ -87,4 +87,4 @@ fail-closed: with no/incorrect `x-webhook-secret` it does nothing.
 - **Disconnect** revokes + deletes the token (credential) and stops future sync; events already in the
   barber's calendar and their booking→event mapping are kept, so a reconnect with the **same Google
   account** resumes without re-inserting duplicates (only bookings made while disconnected are added).
-  Reconnecting a *different* Google account may leave the old events behind on the old account.
+  Reconnecting a _different_ Google account may leave the old events behind on the old account.

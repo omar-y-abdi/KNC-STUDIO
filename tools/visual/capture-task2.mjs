@@ -22,7 +22,7 @@ async function fresh(browser, viewport, scheme) {
     reducedMotion: 'reduce',
   })
   const page = await ctx.newPage()
-  await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 })
+  await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForSelector('#root > *', { timeout: 15000 })
   await page.evaluate(() => globalThis.document.fonts.ready)
   await settle(page, 500)
@@ -33,7 +33,10 @@ async function fresh(browser, viewport, scheme) {
 async function reachServiceMenu(page) {
   await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
   await settle(page, 400)
-  await page.getByRole('button', { name: /Hassan|Victor|Salman/ }).first().click()
+  await page
+    .getByRole('button', { name: /Hassan|Victor|Salman/ })
+    .first()
+    .click()
   await settle(page, 400)
   const menuVisible = () =>
     page
@@ -56,7 +59,10 @@ async function reachServiceMenu(page) {
     // nothing bookable this month → advance a month and retry
     const next = page.locator('button', { has: page.locator('img[alt="next"]') })
     if (await next.count()) {
-      await next.first().click({ timeout: 700 }).catch(() => undefined)
+      await next
+        .first()
+        .click({ timeout: 700 })
+        .catch(() => undefined)
       await settle(page, 300)
     }
   }
@@ -108,7 +114,7 @@ async function gotoAboutHeading(page) {
 
 // shot id -> { devices, schemes, run(page) }
 const shots = {
-  'hero': {
+  hero: {
     devices: ['desktop', 'mobile'],
     schemes: ['light', 'dark'],
     run: async () => undefined, // just the landing hero
@@ -131,7 +137,7 @@ const shots = {
       await fillMyBookings(page)
     },
   },
-  'about': {
+  about: {
     devices: ['desktop'],
     schemes: ['light'],
     run: gotoAbout,

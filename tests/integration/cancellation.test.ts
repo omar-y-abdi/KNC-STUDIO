@@ -30,7 +30,7 @@ const HASSAN: Barber = BARBERS[0] ?? {
 const SEED_START_UTC = '2040-03-14T12:30:00.000Z'
 let haircutServiceId = ''
 
-/** Args for a future SMS booking for `phone` at the seed slot. */
+/** Args for a future email booking with `phone` as its self-service key. */
 function seedArgs(phone: string): CreateBookingArgs {
   return {
     barberId: HASSAN.id,

@@ -1,7 +1,7 @@
 // The "these customers were cancelled" popup (Task 3), shown after "Avboka kunder" completes. Same
 // framed-row aesthetic as the customer "Mina bokningar" dialog, but admin-side: each row shows the
 // customer, the appointment time, the service (duration + price), and a tappable phone number (tel:) so the barber can
-// reach them — there is NO automatic SMS/email (booking tracking is web-only). Read-only + a close.
+// reach them if staff need follow-up. Read-only + a close.
 
 import type { JSX } from 'preact'
 import { Dialog } from '../ui/Dialog'
@@ -42,7 +42,7 @@ export function CancelledCustomersDialog(props: CancelledCustomersDialogProps): 
     borderRadius: '16px',
     padding: '20px 22px',
     boxShadow: '0 24px 60px rgba(0,0,0,.4)',
-    fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
   }
 
   const onBackdropClick = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
@@ -62,7 +62,7 @@ export function CancelledCustomersDialog(props: CancelledCustomersDialogProps): 
       <h2
         id={TITLE_ID}
         style={{
-          fontFamily: "'SF Pro Display',-apple-system,system-ui,sans-serif",
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
           fontSize: '17px',
           fontWeight: 700,
           margin: '0 0 4px',

@@ -47,7 +47,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const clientId = Deno.env.get('GOOGLE_OAUTH_CLIENT_ID')
   const stateSecret = Deno.env.get('CALENDAR_STATE_SECRET')
   if (!supabaseUrl || !serviceKey || !clientId || !stateSecret) {
-    console.error('calendar-oauth-start: missing env (SUPABASE_*, GOOGLE_OAUTH_CLIENT_ID, CALENDAR_STATE_SECRET)')
+    console.error(
+      'calendar-oauth-start: missing env (SUPABASE_*, GOOGLE_OAUTH_CLIENT_ID, CALENDAR_STATE_SECRET)',
+    )
     return json({ ok: false, error: 'not_configured' }, 500)
   }
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
@@ -58,7 +60,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!jwt) return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
-  if (callerError || callerData.user === null) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (callerError || callerData.user === null)
+    return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: profile, error: profileError } = await service
     .from('profiles')

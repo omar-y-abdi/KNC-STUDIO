@@ -1,4 +1,5 @@
-// The real (Supabase) MyBookingsPort adapter. `listByPhone` calls the `list_bookings_by_phone` RPC
+// The real (Supabase) MyBookingsPort adapter. `listByPhone` reaches `list_bookings_by_phone` through
+// the Turnstile- and rate-limit-protected public action gateway
 // (every confirmed booking for the proven phone — past + future) and splits them into upcoming/past;
 // an empty result maps to `not_found`. `cancel` reuses the contact-guarded `cancel_booking` RPC (the
 // same one the Avbokning flow uses), so a customer can only cancel a booking they can prove is theirs.
@@ -7,7 +8,7 @@
 // rather than throwing. Barber identity resolves through the LIVE roster first (an owner-added DB
 // barber must show its own name), then the offline constants, then a minimal id-echoing stub.
 
-import { getSupabase } from '../../backend/supabaseClient'
+import { invokePublicBookingAction } from '../../backend/publicBookingActions'
 import {
   bookingLookupResponse,
   listBookingsByPhoneResponse,
@@ -39,10 +40,12 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
   async listByPhone(params: MyBookingsLookupParams): Promise<MyBookingsResult> {
     const system: MyBookingsResult = { ok: false, error: 'system' }
     try {
-      const { data, error } = await getSupabase().rpc('list_bookings_by_phone', {
-        p_contact: params.contact,
+      const { data, failed } = await invokePublicBookingAction({
+        action: 'list',
+        phone: params.contact,
+        turnstileToken: params.turnstileToken,
       })
-      if (error !== null) return system
+      if (failed) return system
 
       const parsed = parseWith(listBookingsByPhoneResponse, data)
       if (!parsed.ok) return system
@@ -71,14 +74,20 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
     }
   },
 
-  async cancel(booking: MyBooking, contact: string): Promise<MyCancelResult> {
+  async cancel(
+    booking: MyBooking,
+    contact: string,
+    turnstileToken: string,
+  ): Promise<MyCancelResult> {
     const failed: MyCancelResult = { ok: false, error: 'cancel_failed' }
     try {
-      const { data, error } = await getSupabase().rpc('cancel_booking', {
-        p_booking_id: booking.id,
-        p_contact: contact,
+      const { data, failed: invokeFailed } = await invokePublicBookingAction({
+        action: 'cancel',
+        bookingId: booking.id,
+        phone: contact,
+        turnstileToken,
       })
-      if (error !== null) return failed
+      if (invokeFailed) return failed
 
       const parsed = parseWith(bookingLookupResponse, data)
       if (!parsed.ok || !parsed.value.ok) return failed

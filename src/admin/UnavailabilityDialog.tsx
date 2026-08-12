@@ -52,7 +52,7 @@ export function UnavailabilityDialog(props: UnavailabilityDialogProps): JSX.Elem
     borderRadius: '16px',
     padding: '20px 22px',
     boxShadow: '0 24px 60px rgba(0,0,0,.4)',
-    fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
   }
 
   const onBackdropClick = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
@@ -80,7 +80,7 @@ export function UnavailabilityDialog(props: UnavailabilityDialogProps): JSX.Elem
       <h2
         id={TITLE_ID}
         style={{
-          fontFamily: "'SF Pro Display',-apple-system,system-ui,sans-serif",
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
           fontSize: '17px',
           fontWeight: 700,
           margin: '0 0 4px',

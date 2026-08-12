@@ -8,7 +8,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEvent,
+  googleEventId,
   GoogleHttpError,
+  insertEvent,
   isTransientGoogleError,
   revokeToken,
   signState,
@@ -96,6 +98,45 @@ describe('buildEvent', () => {
   })
 })
 
+describe('idempotent event insertion', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const bookingId = '4d3f88f7-5e08-4d03-abfa-9604816f5614'
+  const eventId = 'bbs4d3f88f75e084d03abfa9604816f5614'
+  const event = buildEvent({
+    service_name: 'Klippning',
+    customer_name: 'Omar',
+    phone: '0701234567',
+    start_at: '2026-07-24T12:00:00+00:00',
+    end_at: '2026-07-24T12:30:00+00:00',
+  })
+
+  it('derives a stable Google-compatible id from the booking UUID', () => {
+    expect(googleEventId(bookingId)).toBe(eventId)
+    expect(() => googleEventId('not-a-uuid')).toThrow('invalid booking id')
+  })
+
+  it('sends the stable id in the insert body', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: eventId }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({ id: eventId, summary: event.summary })
+  })
+
+  it('treats duplicate-id 409 as idempotent success', async () => {
+    vi.stubGlobal('fetch', async () => new Response('duplicate', { status: 409 }))
+    await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
+  })
+})
+
 describe('parseCalendarStatus', () => {
   it('parses a connected row', () => {
     expect(
@@ -131,7 +172,9 @@ describe('isTransientGoogleError', () => {
   })
   it('treats a Calendar-API cold-start 403 as transient, other 403s as permanent', () => {
     expect(
-      isTransientGoogleError(new GoogleHttpError(403, 'x', '{"error":{"status":"SERVICE_DISABLED"}}')),
+      isTransientGoogleError(
+        new GoogleHttpError(403, 'x', '{"error":{"status":"SERVICE_DISABLED"}}'),
+      ),
     ).toBe(true)
     expect(isTransientGoogleError(new GoogleHttpError(403, 'x', 'plain forbidden'))).toBe(false)
   })

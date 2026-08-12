@@ -192,6 +192,20 @@ export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminR
   }
 }
 
+/** Verify a branded staff invite token and establish its short-lived password-setup session. */
+export async function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'invite',
+    })
+    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
 /**
  * Establish a recovery session from the implicit-flow tokens carried in the `/reset` URL hash. The
  * admin client has `detectSessionInUrl: false`, so the page parses the URL (`recoveryLink.ts`) and
@@ -253,7 +267,7 @@ export async function setNewPassword(newPassword: string): Promise<AdminResult<v
  * Update the signed-in barber's password WITHOUT signing out. Used ONLY in the forced-change gate
  * (`ForcedPasswordChange`) so the barber proceeds into the panel immediately after picking a new
  * password. The voluntary change flow (`changePassword`) is different — it signs out by design.
- * `validateNewPassword` (with '123456' as current) should gate the input before calling this.
+ * `validateNewPassword` should gate the input before calling this.
  */
 export async function setOwnPasswordKeepSession(newPassword: string): Promise<AdminResult<void>> {
   try {

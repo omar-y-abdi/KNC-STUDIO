@@ -41,6 +41,16 @@ describe('parseRecoveryLink', () => {
     })
   })
 
+  it('parses only invite tokens when the invite route requests them', () => {
+    expect(parseRecoveryLink('', '?token_hash=INVITE_TOKEN&type=invite', 'invite')).toEqual({
+      kind: 'token_hash',
+      tokenHash: 'INVITE_TOKEN',
+    })
+    expect(parseRecoveryLink('', '?token_hash=RECOVERY_TOKEN&type=recovery', 'invite')).toEqual({
+      kind: 'none',
+    })
+  })
+
   it('surfaces an expired-link error carried in the hash', () => {
     const hash =
       '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'

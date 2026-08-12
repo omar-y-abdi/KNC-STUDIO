@@ -150,6 +150,18 @@ export interface GoogleEventBody {
   }
 }
 
+/** Stable Google event id for one booking. Google accepts base32hex characters; UUID hex digits
+ * satisfy that alphabet. Retries therefore target one event when Google committed an insert before
+ * its response or the local mapping was lost. */
+export function googleEventId(bookingId: string): string {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bookingId)
+  ) {
+    throw new Error('invalid booking id')
+  }
+  return `bbs${bookingId.replaceAll('-', '').toLowerCase()}`
+}
+
 /** Map a booking to the Google Calendar event body. Title = customer + service; the phone goes in the
  *  description so the barber can call from the event. A 30-min popup reminder fires before the slot. */
 export function buildEvent(b: BookingEventInput): GoogleEventBody {
@@ -290,23 +302,24 @@ export async function refreshAccessToken(
   })
   if (!res.ok) throw await httpError(res, 'google token refresh failed')
   const data = (await res.json()) as { access_token?: unknown }
-  if (typeof data.access_token !== 'string') throw new Error('google token refresh: no access_token')
+  if (typeof data.access_token !== 'string')
+    throw new Error('google token refresh: no access_token')
   return data.access_token
 }
 
 export async function insertEvent(
   accessToken: string,
   calendarId: string,
+  eventId: string,
   event: GoogleEventBody,
 ): Promise<string> {
-  const res = await fetch(
-    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-    },
-  )
+  const res = await fetch(`${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...event, id: eventId }),
+  })
+  // Booking-derived id makes duplicate-id 409 the desired existing event, not a random collision.
+  if (res.status === 409) return eventId
   if (!res.ok) throw await httpError(res, 'google event insert failed')
   const data = (await res.json()) as { id?: unknown }
   if (typeof data.id !== 'string') throw new Error('google event insert: no id')

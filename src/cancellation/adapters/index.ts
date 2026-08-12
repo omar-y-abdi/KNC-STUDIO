@@ -13,8 +13,10 @@ import { mockCancellationAdapter } from './mockCancellation'
 const lazySupabaseCancellationPort: CancellationPort = {
   lookup: (params: CancelLookupParams) =>
     import('./supabaseCancellation').then((m) => m.supabaseCancellationAdapter.lookup(params)),
-  cancel: (booking: CancelBooking) =>
-    import('./supabaseCancellation').then((m) => m.supabaseCancellationAdapter.cancel(booking)),
+  cancel: (booking: CancelBooking, turnstileToken: string) =>
+    import('./supabaseCancellation').then((m) =>
+      m.supabaseCancellationAdapter.cancel(booking, turnstileToken),
+    ),
 }
 
 export const defaultCancellationPort: CancellationPort = isBackendConfigured()

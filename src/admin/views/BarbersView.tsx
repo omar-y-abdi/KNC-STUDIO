@@ -1,7 +1,7 @@
 // Barbers view (OWNER only). Lists the roster (incl. inactive), with: toggle active, edit
 // name/ig/bios/role/sort, add a new barber, and provision a login account for an unlinked barber.
 // The "Skapa inloggning" inline form calls the `admin-create-barber` edge function; on success the
-// barber is optimistically marked as linked and sees the forced-change gate on first login. Every
+// barber is optimistically marked as linked after a single-use invitation is sent. Every
 // write is owner-only at the RLS layer.
 //
 // On narrow screens the list renders as stacked cards (no table); on wide screens as a compact
@@ -210,7 +210,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       return
     }
     setAccountBusy(true)
-    const result = await createBarberAccount(email, barberId)
+    const result = await createBarberAccount(email, barberId, lang)
     setAccountBusy(false)
     if (!result.ok) {
       setNotice({ kind: 'err', text: result.error.message })
@@ -222,7 +222,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     setAccountEmail('')
     setNotice({
       kind: 'ok',
-      text: t.barbersDefaultPasswordNote,
+      text: t.barbersInviteSentNote,
     })
   }
 

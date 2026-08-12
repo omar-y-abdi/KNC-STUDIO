@@ -133,6 +133,7 @@ export const emailTemplateName = z.enum([
   'customer_reminder',
   'auth_recovery',
   'auth_email_change',
+  'auth_invite',
 ])
 
 export const emailTemplateRow = z.object({
@@ -201,7 +202,7 @@ export const adminBookingRow = z.object({
   start_at: isoTimestamp,
   end_at: isoTimestamp,
   customer_name: z.string(),
-  method: z.enum(['sms', 'email', 'walkin']),
+  method: z.enum(['phone', 'email', 'walkin']),
   phone: z.string().nullable(),
   email: z.string().nullable(),
   lang,

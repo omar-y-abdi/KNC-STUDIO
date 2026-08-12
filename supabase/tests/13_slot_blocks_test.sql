@@ -98,18 +98,18 @@ select is(
 -- =============================================================================================
 select is(
   (select (public.create_booking(
-     'hassan','h','Hår',350,45,
+     'hassan','h',
      (date '2099-01-05' + time '12:45') at time zone 'Europe/Stockholm',
-     '0701119999','sv','Blocked Walkin'
+     '0701119999','blocked@example.test','sv','Blocked Walkin'
    ))->>'error'),
   'outside_hours', 'create_booking rejects a blocked slot (read/write agreement)'
 );
 -- ...and still accepts a slot outside the block on the same day.
 select is(
   (select (public.create_booking(
-     'hassan','h','Hår',350,45,
+     'hassan','h',
      (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
-     '0701119999','sv','Open Walkin'
+     '0701119999','open@example.test','sv','Open Walkin'
    ))->>'ok')::boolean,
   true, 'create_booking still accepts an unblocked slot on the same day'
 );

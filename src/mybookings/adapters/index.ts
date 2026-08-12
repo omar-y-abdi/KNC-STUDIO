@@ -13,9 +13,9 @@ import { mockMyBookingsAdapter } from './mockMyBookings'
 const lazySupabaseMyBookingsPort: MyBookingsPort = {
   listByPhone: (params: MyBookingsLookupParams) =>
     import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.listByPhone(params)),
-  cancel: (booking: MyBooking, contact: string) =>
+  cancel: (booking: MyBooking, contact: string, turnstileToken: string) =>
     import('./supabaseMyBookings').then((m) =>
-      m.supabaseMyBookingsAdapter.cancel(booking, contact),
+      m.supabaseMyBookingsAdapter.cancel(booking, contact, turnstileToken),
     ),
 }
 

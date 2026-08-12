@@ -87,7 +87,7 @@ export function AdminApp(): JSX.Element {
           justifyContent: 'center',
           background: c.bg,
           color: c.text,
-          fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
           fontSize: '14px',
           opacity: 0.7,
         }}

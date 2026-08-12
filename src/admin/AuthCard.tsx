@@ -41,7 +41,7 @@ export function AuthCard(props: AuthCardProps): JSX.Element {
     padding: '24px',
     background: c.bg,
     color: c.text,
-    fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
     WebkitFontSmoothing: 'antialiased',
   }
   const cardStyle: JSX.CSSProperties = {
@@ -54,7 +54,7 @@ export function AuthCard(props: AuthCardProps): JSX.Element {
     boxShadow: '0 24px 60px rgba(0,0,0,.18)',
   }
   const titleStyle: JSX.CSSProperties = {
-    fontFamily: "'SF Pro Display',-apple-system,system-ui,sans-serif",
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
     fontSize: '22px',
     fontWeight: 700,
     letterSpacing: '-0.3px',

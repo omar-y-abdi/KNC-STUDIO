@@ -142,7 +142,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         flexDirection: 'column',
         background: c.bg,
         color: c.text,
-        fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
         WebkitFontSmoothing: 'antialiased',
       }}
     >

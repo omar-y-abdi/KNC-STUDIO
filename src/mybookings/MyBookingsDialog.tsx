@@ -3,8 +3,8 @@
 // cancellation popups, so it matches the site everywhere it mounts.
 //
 // Two steps inside one Dialog:
-//   1. lookup — enter the phone the bookings were made with (skipped when the device already
-//      remembers a number: it auto-loads the list). Unknown number → red field + a notice; the SAME
+//   1. lookup — enter the phone the bookings were made with (prefilled when this device remembers
+//      a number). Unknown number → red field + a notice; the SAME
 //      number a second time escalates to "contact the salon".
 //   2. list — the customer's confirmed history: an always-visible "Kommande" section and a
 //      collapsible "Tidigare" section (starts collapsed). Each row is a framed toggle showing
@@ -21,6 +21,7 @@ import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { parsePhone } from '../booking/validation'
+import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
 import { myBookingsStrings } from '../i18n/index'
 import type { MyBooking, MyBookings } from './domain'
@@ -70,20 +71,20 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const [cancelBusy, setCancelBusy] = useState<boolean>(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
+  const challengeRequired = turnstileConfigured
 
   const contactInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (step === 'lookup') contactInputRef.current?.focus()
   }, [step])
 
-  // On open: if the device remembers a number, auto-load its list. A silent failure just leaves the
-  // (prefilled) lookup step visible — no scary "not found" for a number the customer didn't just type.
+  // Remembered phone only prefills the field. Every lookup still requires a fresh Turnstile token.
   useEffect(() => {
     const remembered = recalledPhone()
     if (remembered === null) return
     setPhone(remembered)
-    void runLookup(remembered, true)
-    // Runs once on mount — a one-shot recall of the remembered number.
   }, [])
 
   async function runLookup(raw: string, silent: boolean): Promise<void> {
@@ -96,7 +97,11 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setSystemError(null)
     setNotFound(null)
     try {
-      const result = await port.listByPhone({ contact: parsed.value, lang })
+      const result = await port.listByPhone({
+        contact: parsed.value,
+        lang,
+        turnstileToken,
+      })
       if (result.ok) {
         setBookings(result.bookings)
         setContact(parsed.value)
@@ -119,6 +124,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       if (!silent) setSystemError(t.errSystem)
     } finally {
       setBusy(false)
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
     }
   }
 
@@ -129,7 +136,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setPhone(e.currentTarget.value)
   }
 
-  const lookupDisabled = busy || phone.trim() === ''
+  const lookupDisabled = busy || phone.trim() === '' || (challengeRequired && turnstileToken === '')
   const onLookupClick = (): void => void runLookup(phone, false)
 
   // "Byt nummer" — back to the lookup step to check a different number (keeps the escalation memory).
@@ -138,6 +145,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setNotFound(null)
     setSystemError(null)
     setContactError(false)
+    setTurnstileToken('')
+    setTurnstileNonce((nonce) => nonce + 1)
   }
 
   const onBackdrop = (e: JSX.TargetedMouseEvent<HTMLDivElement>): void => {
@@ -154,7 +163,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setCancelBusy(true)
     setCancelError(null)
     try {
-      const result = await port.cancel(b, contact)
+      const result = await port.cancel(b, contact, turnstileToken)
       if (!result.ok) {
         setCancelError(t.errCancel)
         return
@@ -170,6 +179,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       setCancelError(t.errCancel)
     } finally {
       setCancelBusy(false)
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
     }
   }
 
@@ -266,12 +277,15 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                       {cancelError}
                     </p>
                   ) : null}
+                  <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
                   <div style="display:flex;gap:10px;">
                     <button
                       type="button"
                       onClick={() => {
                         setCancelFor(null)
                         setCancelError(null)
+                        setTurnstileToken('')
+                        setTurnstileNonce((nonce) => nonce + 1)
                       }}
                       disabled={cancelBusy}
                       style={{
@@ -292,8 +306,12 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                     </button>
                     <button
                       type="button"
-                      onClick={cancelBusy ? undefined : () => void onConfirmCancel(b)}
-                      disabled={cancelBusy}
+                      onClick={
+                        cancelBusy || (challengeRequired && turnstileToken === '')
+                          ? undefined
+                          : () => void onConfirmCancel(b)
+                      }
+                      disabled={cancelBusy || (challengeRequired && turnstileToken === '')}
                       style={{
                         flex: 1,
                         padding: '11px',
@@ -304,8 +322,12 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                         fontFamily: 'inherit',
                         fontSize: '14px',
                         fontWeight: 600,
-                        cursor: cancelBusy ? 'default' : 'pointer',
-                        opacity: cancelBusy ? 0.7 : 1,
+                        cursor:
+                          cancelBusy || (challengeRequired && turnstileToken === '')
+                            ? 'default'
+                            : 'pointer',
+                        opacity:
+                          cancelBusy || (challengeRequired && turnstileToken === '') ? 0.7 : 1,
                       }}
                     >
                       {cancelBusy ? t.cancelling : t.cancelConfirmYes}
@@ -318,6 +340,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                   onClick={() => {
                     setCancelFor(b.id)
                     setCancelError(null)
+                    setTurnstileToken('')
+                    setTurnstileNonce((nonce) => nonce + 1)
                   }}
                   style={{
                     marginTop: '2px',
@@ -407,7 +431,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       <div style={s.overlayHeaderStyle}>
         <span
           id="knc-mybookings-title"
-          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+          style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.title}
         </span>
@@ -434,6 +458,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                 {systemError}
               </p>
             ) : null}
+            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
             <button
               onClick={lookupDisabled ? undefined : onLookupClick}
               disabled={lookupDisabled}

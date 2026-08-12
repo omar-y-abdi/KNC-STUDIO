@@ -195,7 +195,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontFamily: "'SF Pro Display'",
+        fontFamily: "'Inter Variable'",
         fontWeight: 600,
         fontSize: '17px',
         background: sel ? c.accent : c.subtle,
@@ -499,7 +499,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       {showHeader ? (
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px 0 22px;">
           <div style="display:flex;align-items:baseline;gap:8px;">
-            <span style="font-family:'SF Pro Display';font-weight:700;letter-spacing:1.5px;font-size:15px;">
+            <span style="font-family:'Inter Variable';font-weight:700;letter-spacing:1.5px;font-size:15px;">
               BLADE & BLEND STUDIO
             </span>
             <span style="font-size:11px;opacity:.5;letter-spacing:.3px;">Göteborg</span>
@@ -519,7 +519,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <div>
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
             <span style={s.badgeStyle}>1</span>
-            <span style="font-family:'SF Pro Display';font-weight:600;font-size:18px;">
+            <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
               {t.chooseBarber}
             </span>
           </div>
@@ -548,7 +548,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
             <div style="flex:1 1 300px;max-width:344px;min-width:0;">
               <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
                 <span style={s.badgeStyle}>2</span>
-                <span style="font-family:'SF Pro Display';font-weight:600;font-size:18px;">
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseDate}
                 </span>
               </div>
@@ -564,7 +564,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   >
                     <img src="/icons/chevron.left.svg" alt="prev" style={s.navIconStyle} />
                   </button>
-                  <span style="font-family:'SF Pro Display';font-weight:600;font-size:15px;">
+                  <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
                     {monthLabelText}
                   </span>
                   <button
@@ -613,7 +613,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
             <div style="flex:1 1 250px;min-width:0;">
               <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
                 <span style={s.badgeStyle}>3</span>
-                <span style="font-family:'SF Pro Display';font-weight:600;font-size:18px;">
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseService}
                 </span>
               </div>
@@ -669,7 +669,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
             <div style="flex:1 1 220px;min-width:0;">
               <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
                 <span style={s.badgeStyle}>4</span>
-                <span style="font-family:'SF Pro Display';font-weight:600;font-size:18px;">
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseTime}
                 </span>
               </div>

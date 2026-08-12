@@ -17,6 +17,10 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
   switch (code) {
     case 'email_taken':
       return err('validation', 'E-posten används redan.')
+    case 'barber_linked':
+      return err('validation', 'Barberaren har redan ett kopplat konto.')
+    case 'invite_send_failed':
+      return err('network', 'Kontot kunde inte bjudas in. Försök igen.')
     case 'forbidden':
       return err('forbidden', 'Endast ägaren kan skapa konton.')
     case 'invalid_payload':
@@ -29,8 +33,8 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
 /**
  * Ask the `admin-create-barber` edge function to provision a Supabase auth login for an existing
  * barber. The owner's JWT is forwarded automatically by the admin client; the function validates
- * the role server-side. On success the barber receives a temporary password (123456) and the
- * `must_change_password` flag is set — the forced-change gate fires on their first login.
+ * the role server-side. On success the barber receives a single-use invitation to create a personal
+ * password. No shared credential is created or returned.
  *
  * Handles both supabase-js v2 behaviour variants:
  *   - Some versions return `{ data, error:null }` on 2xx and `{ data:null, error }` on non-2xx.
@@ -39,10 +43,11 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
 export async function createBarberAccount(
   email: string,
   barberId: string,
+  lang: 'sv' | 'en',
 ): Promise<AdminResult<void>> {
   try {
     const { data, error } = await getAdminClient().functions.invoke('admin-create-barber', {
-      body: { email, barber_id: barberId },
+      body: { email, barber_id: barberId, lang },
     })
 
     // Check the typed body first — some supabase-js versions return data even on non-2xx.

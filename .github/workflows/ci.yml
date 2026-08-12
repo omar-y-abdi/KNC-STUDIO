@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend and browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run deploy:dry-run
+      - name: Reject unlicensed legacy font artifacts
+        run: |
+          test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
+          ! rg -a -n 'Apple Inc\.|SF Pro|SF-Pro' dist
+      - run: npx playwright install --with-deps chromium
+      - name: Browser smoke
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/blade-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+          BASE=http://127.0.0.1:4173 OUT=/tmp/visual-candidate node tools/visual/capture.mjs
+          CANDIDATE=/tmp/visual-candidate DIFF=/tmp/visual-diff node tools/visual/compare.mjs
+
+  edge-functions:
+    name: Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Type-check every Edge Function entrypoint
+        run: |
+          while IFS= read -r file; do
+            deno check --no-lock --node-modules-dir=auto "$file"
+          done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+
+  database:
+    name: Database and integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Start local Supabase
+        run: npx supabase start
+      - name: pgTAP
+        run: npx supabase test db --local
+      - name: Adapter integration tests
+        run: npm run test:integration
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup

@@ -2,7 +2,7 @@
 //
 // Desktop mirrors the public DESKTOP chrome: the nav bar (pole logo + tracked BLADE & BLEND STUDIO wordmark,
 // linking home) with the site's original theme switch, then hero typography (tracked kicker,
-// SF Pro Display heading) over a booking-panel-style form card. No footer: staff don't need the
+// Inter Variable heading) over a booking-panel-style form card. No footer: staff don't need the
 // salon's address or opening hours to sign in.
 //
 // Mobile mirrors the public MOBILE hero instead: the warm panel surface fills the screen,
@@ -50,7 +50,7 @@ type Status =
 /** Which auth screen the `/login` route shows. Password changes live inside authenticated Settings. */
 type LoginView = 'signin' | 'forgot'
 
-const FONT_DISPLAY = "'SF Pro Display',-apple-system,system-ui,sans-serif"
+const FONT_DISPLAY = "'Inter Variable',-apple-system,system-ui,sans-serif"
 
 export function LoginPage(props: LoginPageProps): JSX.Element {
   const { dark, lang, toggleMode, setLang } = useTheme()
@@ -217,7 +217,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
           flexDirection: 'column',
           background: dark ? '#242427' : '#f4f3f0',
           color: shell.text,
-          fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
           WebkitFontSmoothing: 'antialiased',
         }}
       >
@@ -293,7 +293,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
         flexDirection: 'column',
         background: shell.bg,
         color: shell.text,
-        fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
         WebkitFontSmoothing: 'antialiased',
       }}
     >

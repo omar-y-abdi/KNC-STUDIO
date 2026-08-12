@@ -37,7 +37,7 @@ frontend variables.
 npx supabase login
 npx supabase link --project-ref <project-ref>
 npx supabase db push
-npx supabase functions deploy submit-booking send-confirmation --use-api
+npx supabase functions deploy submit-booking send-confirmation public-booking-actions --use-api
 ```
 
 Required Edge Function secrets:
@@ -47,6 +47,8 @@ npx supabase secrets set \
   RESEND_API_KEY=<active-resend-api-key> \
   TURNSTILE_SECRET=<turnstile-secret> \
   IP_SALT=<random-long-value> \
+  PUBLIC_ACTION_HASH_SALT=<different-random-long-value> \
+  PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se \
   BOOKING_WEBHOOK_SECRET=<random-long-value>
 ```
 
@@ -63,8 +65,7 @@ Do not commit their values.
 Verify `bladeblendstudio.se` in Resend and add every DNS record Resend provides through Cloudflare DNS.
 Production senders are:
 
-- booking email: `Blade & Blend Studio <no-reply@bladeblendstudio.se>`
-- Auth email: `Blade & Blend Studio <auth@bladeblendstudio.se>`
+- booking and Auth email: `Blade & Blend Studio <booking@mail.bladeblendstudio.se>`
 
 Validate an API key before installing it:
 
@@ -79,9 +80,9 @@ export RESEND_API_KEY=<active-resend-api-key>
 npx supabase config push --yes
 ```
 
-Public signup remains disabled. Owner creates barber accounts from admin. Initial password `123456`
-is temporary; first login requires a personal replacement. Password reset email uses Supabase Auth
-through Resend.
+Public signup remains disabled. Owner creates barber accounts from admin. Each barber receives a
+single-use invitation and sets a personal password before first login. Password reset email uses
+Supabase Auth through Resend.
 
 ## Verification
 
@@ -113,9 +114,9 @@ Production smoke test:
 
 ## Free-tier operations
 
-Supabase Free has no production backup guarantee. Export data manually before risky schema or content
-changes. Keep migrations in source control; database exports containing customer PII must be encrypted
-and access-restricted.
+Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an
+encrypted daily database artifact; setup and restore drills are documented in
+`docs/operations/BACKUP_RESTORE.md`. Keep migrations in source control. Never upload plaintext dumps.
 
 ## Mock fallback
 

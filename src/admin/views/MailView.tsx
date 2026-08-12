@@ -71,7 +71,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Reset password',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '—',
+    placeholders: '',
   },
   {
     id: 'auth_email_change',
@@ -80,6 +80,14 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     languages: ['sv', 'en'],
     hasSection: false,
     placeholders: '{new_email}',
+  },
+  {
+    id: 'auth_invite',
+    sv: 'Inbjudan · barberare',
+    en: 'Invitation · barber',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '',
   },
 ]
 
@@ -190,9 +198,11 @@ export function MailView(props: MailViewProps): JSX.Element {
               <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
                 {props.lang === 'sv' ? definition.sv : definition.en}
               </h3>
-              <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
-                {t.mailPlaceholderHelp}: <code>{definition.placeholders}</code>
-              </p>
+              {definition.placeholders === '' ? null : (
+                <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+                  {t.mailPlaceholderHelp}: <code>{definition.placeholders}</code>
+                </p>
+              )}
               <div
                 style={{
                   display: 'grid',

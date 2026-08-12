@@ -19,7 +19,7 @@ function booking(overrides: Partial<AdminBooking>): AdminBooking {
     startAt: new Date('2026-07-15T10:00:00.000Z'),
     endAt: new Date('2026-07-15T10:45:00.000Z'),
     customerName: 'Test Kund',
-    method: 'sms',
+    method: 'phone',
     phone: '+46700000000',
     email: null,
     lang: 'sv',
@@ -38,9 +38,21 @@ function ids(groups: readonly { readonly bookings: readonly AdminBooking[] }[]):
 
 describe('partitionSections — section routing', () => {
   it('routes cancelled → avbokade (even in the future), confirmed-future → kommande, confirmed-past → tidigare', () => {
-    const cancelledFuture = booking({ id: 'cf', status: 'cancelled', startAt: stockholmInstant(2026, 7, 25, 12, 0) })
-    const confirmedFuture = booking({ id: 'kf', status: 'confirmed', startAt: stockholmInstant(2026, 7, 25, 12, 0) })
-    const confirmedPast = booking({ id: 'tp', status: 'confirmed', startAt: stockholmInstant(2026, 7, 1, 12, 0) })
+    const cancelledFuture = booking({
+      id: 'cf',
+      status: 'cancelled',
+      startAt: stockholmInstant(2026, 7, 25, 12, 0),
+    })
+    const confirmedFuture = booking({
+      id: 'kf',
+      status: 'confirmed',
+      startAt: stockholmInstant(2026, 7, 25, 12, 0),
+    })
+    const confirmedPast = booking({
+      id: 'tp',
+      status: 'confirmed',
+      startAt: stockholmInstant(2026, 7, 1, 12, 0),
+    })
 
     const { kommande, avbokade, tidigare } = partitionSections(
       [cancelledFuture, confirmedFuture, confirmedPast],
@@ -120,9 +132,20 @@ describe('partitionSections — ordering within a section', () => {
   })
 
   it('orders avbokade groups descending and includes cancelled bookings regardless of time', () => {
-    const cancelledPast = booking({ id: 'cx-past', status: 'cancelled', startAt: stockholmInstant(2026, 7, 3, 12, 0) }) // week 27
-    const cancelledFuture = booking({ id: 'cx-future', status: 'cancelled', startAt: stockholmInstant(2026, 7, 25, 12, 0) }) // week 30
-    const { avbokade, kommande, tidigare } = partitionSections([cancelledPast, cancelledFuture], NOW)
+    const cancelledPast = booking({
+      id: 'cx-past',
+      status: 'cancelled',
+      startAt: stockholmInstant(2026, 7, 3, 12, 0),
+    }) // week 27
+    const cancelledFuture = booking({
+      id: 'cx-future',
+      status: 'cancelled',
+      startAt: stockholmInstant(2026, 7, 25, 12, 0),
+    }) // week 30
+    const { avbokade, kommande, tidigare } = partitionSections(
+      [cancelledPast, cancelledFuture],
+      NOW,
+    )
 
     expect(avbokade.map((g) => g.isoWeek)).toEqual([30, 27]) // descending: future week 30 before past week 27
     expect(kommande).toEqual([]) // cancelled never leaks into kommande…

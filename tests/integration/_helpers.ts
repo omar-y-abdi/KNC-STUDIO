@@ -220,7 +220,7 @@ export async function seedFinishedBooking(
        values ($1, 'h', 'Hårklippning', 350, 45,
           now() - make_interval(hours => $4::int),
           now() - make_interval(hours => $4::int) + interval '45 minutes',
-          $2, 'sms', $3, null, 'sv', 'confirmed')
+          $2, 'phone', $3, null, 'sv', 'confirmed')
        returning id`,
       [input.barberId ?? 'hassan', input.customerName, input.phone, offsetHours],
     )

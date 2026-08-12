@@ -17,6 +17,7 @@ import {
   buildEvent,
   decodeIdTokenEmail,
   exchangeCode,
+  googleEventId,
   insertEvent,
   refreshAccessToken,
   verifyState,
@@ -104,14 +105,15 @@ async function backfill(
     try {
       // Retry each insert independently — a thrown insert created nothing, so a retry can't duplicate.
       const eventId = await withGoogleRetry(
-        () => insertEvent(accessToken, calendarId, buildEvent(b)),
+        () => insertEvent(accessToken, calendarId, googleEventId(b.id), buildEvent(b)),
         { retries: 2, delayMs: 500 },
       )
-      await service.rpc('calendar_record_event', {
+      const { error: recordError } = await service.rpc('calendar_record_event', {
         p_booking_id: b.id,
         p_barber_id: barberId,
         p_google_event_id: eventId,
       })
+      if (recordError) throw new Error(`record_event: ${recordError.message}`)
     } catch (err) {
       await service.rpc('calendar_record_error', {
         p_barber_id: barberId,
@@ -147,14 +149,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // Verify the signed state — proves the flow started from our authenticated start and yields barber_id.
   const payload = await verifyState(state, stateSecret, STATE_MAX_AGE_SEC, Date.now())
-  if (payload === null) return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
+  if (payload === null)
+    return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
 
   const redirectUri = `${supabaseUrl}/functions/v1/calendar-oauth-callback`
   try {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri)
     if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
       // Should not happen with prompt=consent; without a refresh token we cannot sync unattended.
-      return done(payload.return_to, 'error', 'Fel', 'Google gav ingen refresh-token. Försök koppla igen.', 400)
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        'Google gav ingen refresh-token. Försök koppla igen.',
+        400,
+      )
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
 
@@ -167,7 +176,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (storeError) {
       console.error('calendar-oauth-callback: store_token failed:', storeError.message)
-      return done(payload.return_to, 'error', 'Fel', 'Kunde inte spara kopplingen. Försök igen.', 500)
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        'Kunde inte spara kopplingen. Försök igen.',
+        500,
+      )
     }
 
     // Backfill is best-effort — the connection is already saved, and calendar-sync catches up on the
@@ -187,6 +202,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   } catch (exchangeErr) {
     console.error('calendar-oauth-callback: exchange error:', exchangeErr)
-    return done(payload.return_to, 'error', 'Fel', 'Kunde inte slutföra kopplingen. Försök igen.', 502)
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kunde inte slutföra kopplingen. Försök igen.',
+      502,
+    )
   }
 })

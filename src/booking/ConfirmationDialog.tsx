@@ -53,7 +53,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         </div>
         <div
           id="knc-booked-title"
-          style="font-family:'SF Pro Display';font-weight:600;font-size:20px;margin-bottom:6px;"
+          style="font-family:'Inter Variable';font-weight:600;font-size:20px;margin-bottom:6px;"
         >
           {t.bookedTitle}
         </div>

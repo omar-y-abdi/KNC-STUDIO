@@ -7,6 +7,7 @@
 // a `ReviewError`. The rating is guarded into the 1..5 `Rating` union by the schema.
 
 import { getSupabase } from '../../../backend/supabaseClient'
+import { invokePublicBookingAction } from '../../../backend/publicBookingActions'
 import { createReviewResponse, parseWith, reviewRow } from '../../../backend/rpcSchemas'
 import type { Review, ReviewError, ReviewResult, ValidReview } from '../domain'
 import type { ReviewsPort } from '../port'
@@ -44,14 +45,16 @@ export const supabaseReviewsAdapter: ReviewsPort = {
     }
   },
 
-  async submit(review: ValidReview): Promise<ReviewResult> {
+  async submit(review: ValidReview, turnstileToken: string): Promise<ReviewResult> {
     try {
-      const { data, error } = await getSupabase().rpc('create_review', {
-        p_phone: review.phone,
-        p_rating: review.rating,
-        p_text: review.text,
+      const { data, failed } = await invokePublicBookingAction({
+        action: 'review',
+        phone: review.phone,
+        rating: review.rating,
+        text: review.text,
+        turnstileToken,
       })
-      if (error !== null) return reviewError('submit', SUBMIT_ERROR_MESSAGE)
+      if (failed) return reviewError('submit', SUBMIT_ERROR_MESSAGE)
 
       const parsed = parseWith(createReviewResponse, data)
       if (!parsed.ok) return reviewError('submit', SUBMIT_ERROR_MESSAGE)

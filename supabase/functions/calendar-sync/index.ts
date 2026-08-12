@@ -19,6 +19,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   buildEvent,
   deleteEvent,
+  googleEventId,
   insertEvent,
   patchEvent,
   refreshAccessToken,
@@ -33,7 +34,10 @@ interface WebhookEnvelope {
 }
 
 function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 function isNonEmptyString(v: unknown): v is string {
@@ -90,7 +94,10 @@ async function syncUpsert(
   if (s.status === 'cancelled') {
     if (isNonEmptyString(s.google_event_id)) {
       await deleteEvent(accessToken, s.calendar_id, s.google_event_id)
-      await service.rpc('calendar_forget_event', { p_booking_id: bookingId })
+      const { error: forgetError } = await service.rpc('calendar_forget_event', {
+        p_booking_id: bookingId,
+      })
+      if (forgetError) throw new Error(`forget_event: ${forgetError.message}`)
     }
     return { outcome: 'cancelled_removed', barberId: s.barber_id }
   }
@@ -101,12 +108,13 @@ async function syncUpsert(
     if (patched) return { outcome: 'patched', barberId: s.barber_id }
     // Google lost the event — re-insert and re-map.
   }
-  const eventId = await insertEvent(accessToken, s.calendar_id, event)
-  await service.rpc('calendar_record_event', {
+  const eventId = await insertEvent(accessToken, s.calendar_id, googleEventId(bookingId), event)
+  const { error: recordError } = await service.rpc('calendar_record_event', {
     p_booking_id: bookingId,
     p_barber_id: s.barber_id,
     p_google_event_id: eventId,
   })
+  if (recordError) throw new Error(`record_event: ${recordError.message}`)
   return { outcome: 'inserted', barberId: s.barber_id }
 }
 
@@ -118,9 +126,12 @@ async function syncDelete(
   clientId: string,
   clientSecret: string,
 ): Promise<{ outcome: string; barberId: string | null }> {
-  const { data, error } = await service.rpc('calendar_deletion_context', { p_booking_id: bookingId })
+  const { data, error } = await service.rpc('calendar_deletion_context', {
+    p_booking_id: bookingId,
+  })
   if (error) throw new Error(`deletion_context: ${error.message}`)
-  if (data === null || typeof data !== 'object') return { outcome: 'nothing_mapped', barberId: null }
+  if (data === null || typeof data !== 'object')
+    return { outcome: 'nothing_mapped', barberId: null }
   const d = data as Record<string, unknown>
   const eventId = d['google_event_id']
   const refreshToken = d['refresh_token']
@@ -130,7 +141,10 @@ async function syncDelete(
   }
   const accessToken = await refreshAccessToken(refreshToken, clientId, clientSecret)
   await deleteEvent(accessToken, calendarId, eventId)
-  await service.rpc('calendar_forget_event', { p_booking_id: bookingId })
+  const { error: forgetError } = await service.rpc('calendar_forget_event', {
+    p_booking_id: bookingId,
+  })
+  if (forgetError) throw new Error(`forget_event: ${forgetError.message}`)
   return { outcome: 'deleted', barberId: null }
 }
 

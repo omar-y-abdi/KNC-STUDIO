@@ -1,0 +1,68 @@
+name: Encrypted database backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: encrypted-database-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate backup configuration
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          test -n "$DATABASE_URL" || { echo 'Missing SUPABASE_DB_URL secret'; exit 1; }
+          test -n "$AGE_RECIPIENT" || { echo 'Missing BACKUP_AGE_RECIPIENT variable'; exit 1; }
+
+      - name: Create PostgreSQL 17 archive
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          docker run --rm \
+            -e DATABASE_URL \
+            -v "$RUNNER_TEMP/backup:/backup" \
+            postgres:17-alpine \
+            sh -eu -c 'pg_dump "$DATABASE_URL" \
+              --format=custom \
+              --compress=9 \
+              --no-owner \
+              --no-privileges \
+              --file=/backup/database.dump'
+
+      - name: Encrypt before artifact upload
+        env:
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes age
+          stamp="$(date -u +'%Y-%m-%dT%H-%M-%SZ')"
+          encrypted="$RUNNER_TEMP/backup/bladeblend-${stamp}.dump.age"
+          age --recipient "$AGE_RECIPIENT" \
+            --output "$encrypted" \
+            "$RUNNER_TEMP/backup/database.dump"
+          rm "$RUNNER_TEMP/backup/database.dump"
+          (cd "$(dirname "$encrypted")" && sha256sum "$(basename "$encrypted")" > "$(basename "$encrypted").sha256")
+          test -s "$encrypted"
+          echo "BACKUP_FILE=$encrypted" >> "$GITHUB_ENV"
+
+      - name: Upload encrypted archive only
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ github.run_id }}
+          path: |
+            ${{ env.BACKUP_FILE }}
+            ${{ env.BACKUP_FILE }}.sha256
+          if-no-files-found: error
+          retention-days: 30
