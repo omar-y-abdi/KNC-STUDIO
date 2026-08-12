@@ -461,6 +461,11 @@ verify_jwt = false
 enabled = true
 verify_jwt = true
 
+[functions.upload-image]
+enabled = true
+verify_jwt = true
+static_files = ["./functions/upload-image/magick.wasm"]
+
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local
 # Postgres container to be OOM-killed (exit 137) during `db reset` on this 8 GiB Docker host. It is
