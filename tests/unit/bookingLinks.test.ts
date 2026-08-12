@@ -3,6 +3,7 @@ import { buildLinks } from '../../src/booking/adapters/localCalendar'
 import { BARBERS } from '../../src/booking/barbers'
 import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
+import type { BusinessSettings } from '../../src/site/siteChrome'
 
 // buildLinks is the pure, client-side calendar/map link builder used by BOTH the mock and (on a
 // successful submit) the Supabase adapter — so the confirmation modal's .ics / Google Cal / maps
@@ -15,6 +16,21 @@ const HASSAN: Barber = BARBERS[0] ?? {
   ig: 'freebandzcuts',
 }
 const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
+const BUSINESS: BusinessSettings = {
+  name: 'Northside Barbers',
+  email: 'hello@northside.example',
+  phoneDisplay: '08-123 45 67',
+  phoneTel: '+4681234567',
+  street: 'Kungsgatan 1',
+  postalCode: '111 43',
+  city: 'Stockholm',
+  mapsHref: 'https://maps.example.com/northside',
+  cancellationPolicyHours: 24,
+  seo: {
+    sv: { title: 'Northside', description: 'Svensk SEO' },
+    en: { title: 'Northside', description: 'English SEO' },
+  },
+}
 
 function booking(): Booking {
   const start = new Date(2040, 2, 14, 13, 30)
@@ -37,14 +53,14 @@ describe('buildLinks', () => {
   const NOW = new Date(2040, 2, 1, 9, 0)
 
   it('builds an .ics data URL, a Google Calendar template URL and a maps URL', () => {
-    const links = buildLinks(booking(), NOW)
+    const links = buildLinks(booking(), NOW, BUSINESS)
     expect(links.icsHref.startsWith('data:text/calendar')).toBe(true)
     expect(links.gcalHref.startsWith('https://calendar.google.com/')).toBe(true)
-    expect(links.mapsHref.length).toBeGreaterThan(0)
+    expect(links.mapsHref).toBe(BUSINESS.mapsHref)
   })
 
   it('encodes the event into both the ICS payload and the Google Calendar template', () => {
-    const links = buildLinks(booking(), NOW)
+    const links = buildLinks(booking(), NOW, BUSINESS)
     // The Google template carries the render action + the encoded barber/service title, and pins
     // the floating wall-clock to the salon timezone (without ctz Google would use the user's).
     expect(links.gcalHref).toContain('action=TEMPLATE')
@@ -53,6 +69,8 @@ describe('buildLinks', () => {
     // The .ics payload is a real VCALENDAR with the event summary.
     const ics = decodeURIComponent(links.icsHref.replace('data:text/calendar;charset=utf-8,', ''))
     expect(ics).toContain('BEGIN:VCALENDAR')
+    expect(ics).toContain('Northside Barbers')
+    expect(ics).toContain('Kungsgatan 1')
     expect(ics).toContain('Hårklippning')
   })
 })

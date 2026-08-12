@@ -54,7 +54,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
   const onUpload = async (file: File): Promise<void> => {
     setBusy(true)
     setNotice(null)
-    const r = await uploadBarberPhoto(props.barberId, file, storagePath)
+    const r = await uploadBarberPhoto(props.barberId, file)
     setBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
     if (!r.ok) {

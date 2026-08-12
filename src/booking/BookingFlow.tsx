@@ -5,11 +5,12 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { BUSINESS, defaultClock } from '../config'
+import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
 import { appStrings, bookingStrings } from '../i18n/index'
 import type { BookingPopupTextKey } from '../site/siteChrome'
+import type { BusinessSettings } from '../site/siteChrome'
 import {
   cap,
   buildWeeks,
@@ -58,6 +59,8 @@ export interface BookingFlowProps {
   readonly onMyBookings?: () => void
   /** Owner-edited customer copy for the policy notice and confirmation title. */
   readonly popupText?: BookingPopupText
+  /** Current owner-managed business identity used by confirmation calendar/map links. */
+  readonly business?: BusinessSettings
 }
 
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
@@ -112,7 +115,17 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   }
 
   const lang: Lang = state.lang ?? props.defaultLang ?? 'sv'
-  const t: BookingStrings = { ...bookingStrings(lang), ...props.popupText }
+  const business = props.business ?? DEFAULT_BUSINESS
+  const defaultText = bookingStrings(lang)
+  const t: BookingStrings = {
+    ...defaultText,
+    policy: defaultText.policy
+      .split('{hours}')
+      .join(String(business.cancellationPolicyHours))
+      .split('{businessName}')
+      .join(business.name),
+    ...props.popupText,
+  }
   const dark = (props.mode ?? 'light') === 'dark'
   const showDirections = props.showDirections !== false
   const showHeader = props.showHeader !== false
@@ -391,7 +404,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
   const icsHref = result?.ok === true ? result.links.icsHref : '#'
   const gcalHref = result?.ok === true ? result.links.gcalHref : '#'
-  const mapsHref = result?.ok === true ? result.links.mapsHref : BUSINESS.mapsHref
+  const mapsHref = result?.ok === true ? result.links.mapsHref : business.mapsHref
 
   // Confirmation sentence — owner-editable template with live contact values inserted.
   let confirmSentLine = ''
@@ -460,7 +473,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       turnstileToken,
     }
     try {
-      const submitResult = await port.submit(booking)
+      const submitResult = await port.submit(booking, business)
       // The Turnstile token is single-use — force a fresh challenge for any subsequent attempt
       // (e.g. a slot_taken/rate_limited retry, where the popup stays open).
       setTurnstileNonce((n) => n + 1)

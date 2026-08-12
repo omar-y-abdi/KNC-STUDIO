@@ -11,12 +11,11 @@ import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
-import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HeroLockup } from '../ui/logos/HeroLockup'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { scalePx, type SizePreset } from '../site/siteChrome'
+import { scalePx, type BusinessSettings, type SizePreset } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
 
@@ -32,7 +31,7 @@ export interface MobileSiteProps {
   readonly view: View
   readonly mobMutedColor: string
   readonly mobBtnBgColor: string
-  readonly mapsHref: string
+  readonly business: BusinessSettings
   readonly chromeIconStyle: JSX.CSSProperties
   readonly themeToggle: JSX.Element
   readonly langToggle: JSX.Element
@@ -54,7 +53,7 @@ export interface MobileSiteProps {
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
-  const { c, tx, dark, mobMutedColor, mobBtnBgColor, mapsHref } = props
+  const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
   const view = props.view
   // In a section (booking or about) the panel is collapsed, content shows below, page scrolls.
   // On home the panel fills the screen and the page does NOT scroll (static, minimal hero).
@@ -207,7 +206,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             }}
           >
             <a
-              href={`tel:${BUSINESS.phoneTel}`}
+              href={`tel:${business.phoneTel}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -230,7 +229,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   filter: 'var(--mob-icon)',
                 }}
               />
-              {BUSINESS.phoneDisplay}
+              {business.phoneDisplay}
             </a>
             <div style="display:flex;align-items:center;gap:6px;flex:none;">
               {props.langToggle}
@@ -310,7 +309,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               </span>
             </div>
             <a
-              href={mapsHref}
+              href={business.mapsHref}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -347,6 +346,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               showHeader={false}
               onMyBookings={props.openMyBookings}
               popupText={props.bookingPopupText}
+              business={business}
             />
           ) : (
             <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />

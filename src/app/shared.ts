@@ -3,6 +3,7 @@
 
 import type { JSX } from 'preact'
 import type { Lang } from '../i18n/index'
+import type { BusinessSettings } from '../site/siteChrome'
 
 export type Mode = 'light' | 'dark'
 
@@ -79,7 +80,7 @@ export interface ShellProps {
   readonly lang: Lang
   readonly dark: boolean
   readonly c: ShellPalette
-  readonly mapsHref: string
+  readonly business: BusinessSettings
   readonly themeToggle: JSX.Element
   readonly langToggle: JSX.Element
   readonly chromeIconStyle: JSX.CSSProperties

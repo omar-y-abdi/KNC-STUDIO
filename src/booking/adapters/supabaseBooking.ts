@@ -16,12 +16,14 @@
 // an unavailable time.
 
 import { bookingStrings } from '../../i18n/index'
+import { DEFAULT_BUSINESS } from '../../config'
 import { getSupabase } from '../../backend/supabaseClient'
 import { availableSlotsResponse, createBookingResponse, parseWith } from '../../backend/rpcSchemas'
 import type { Booking, BookingError, BookingResult } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { localWallClockToStockholmIso } from '../stockholmTime'
 import { buildLinks } from './localCalendar'
+import type { BusinessSettings } from '../../site/siteChrome'
 
 /** A short, friendly submit error. The UI shows `t.errSubmit`; this keeps the domain error localized. */
 function submitError(booking: Booking): BookingError {
@@ -43,7 +45,10 @@ function bookingErrorFor(booking: Booking, code: string): BookingError {
 }
 
 export const supabaseBookingAdapter: BookingPort = {
-  async submit(booking: Booking): Promise<BookingResult> {
+  async submit(
+    booking: Booking,
+    business: BusinessSettings = DEFAULT_BUSINESS,
+  ): Promise<BookingResult> {
     try {
       // The browser no longer calls create_booking directly — it POSTs to the `submit-booking` edge
       // function (the gateway: Turnstile verification + IP/phone rate-limit, then create_booking via
@@ -75,7 +80,7 @@ export const supabaseBookingAdapter: BookingPort = {
         return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
 
       // Success — build the calendar/map links from the SAME builder the mock uses.
-      const links = buildLinks(booking)
+      const links = buildLinks(booking, new Date(), business)
       return { ok: true, booking, links }
     } catch {
       return { ok: false, error: submitError(booking) }

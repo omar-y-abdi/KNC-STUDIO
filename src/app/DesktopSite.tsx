@@ -4,7 +4,6 @@ import type { JSX } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
-import { BUSINESS } from '../config'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { DeskLockup } from '../ui/logos/DeskLockup'
 import type { AppStrings } from '../i18n/index'
@@ -32,7 +31,7 @@ export interface DesktopSiteProps extends ShellProps {
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
-  const { c, tx, mapsHref, view } = props
+  const { c, tx, business, view } = props
   // Hero stays put; each link toggles its own fold below it (same grid-rows animation for both).
   const booking = view === 'booking'
   const about = view === 'about'
@@ -151,16 +150,21 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <CornerMark height={30} />
         </h1>
         <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
-          <a href={mapsHref} target="_blank" rel="noopener noreferrer" style={props.findUsStyle}>
+          <a
+            href={business.mapsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={props.findUsStyle}
+          >
             <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
             {tx.findUs}
           </a>
           <a
-            href={`tel:${BUSINESS.phoneTel}`}
+            href={`tel:${business.phoneTel}`}
             style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
           >
             <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
-            {BUSINESS.phoneDisplay}
+            {business.phoneDisplay}
           </a>
           {props.langToggle}
           {props.themeToggle}
@@ -217,6 +221,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 showHeader={false}
                 onMyBookings={props.openMyBookings}
                 popupText={props.bookingPopupText}
+                business={business}
               />
             </div>
           </div>

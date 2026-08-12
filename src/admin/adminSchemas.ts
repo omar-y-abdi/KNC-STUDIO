@@ -117,8 +117,8 @@ export type SiteContentRowT = z.infer<typeof siteContentRow>
 export const siteContentRows = z.array(siteContentRow)
 
 export const siteSettingRow = z.object({
-  key: z.string(),
-  value: z.string(),
+  key: z.string().min(1).max(40),
+  value: z.string().max(500),
 })
 export type SiteSettingRowT = z.infer<typeof siteSettingRow>
 export const siteSettingRows = z.array(siteSettingRow)
@@ -159,6 +159,16 @@ export const barberPhotoRowT = z.object({
 })
 export type BarberPhotoRowT = z.infer<typeof barberPhotoRowT>
 
+export const uploadBarberPhotoResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('barber_photo'),
+    row: barberPhotoRowT,
+    path: z.string().min(1),
+    publicUrl: z.string().url(),
+  })
+  .refine((response) => response.path === response.row.storage_path)
+
 // --- about_content -------------------------------------------------------------------------------
 
 export const aboutRow = z.object({
@@ -188,6 +198,16 @@ export const galleryRow = z.object({
 })
 export type GalleryRow = z.infer<typeof galleryRow>
 export const galleryRows = z.array(galleryRow)
+
+export const uploadGalleryImageResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('gallery'),
+    row: galleryRow,
+    path: z.string().min(1),
+    publicUrl: z.string().url(),
+  })
+  .refine((response) => response.path === response.row.storage_path)
 
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to

@@ -5,6 +5,7 @@
 //   * BarbersPort returns the seeded ACTIVE roster, ordered; reflects an admin ADD and a HIDE.
 //   * AboutContentPort returns the seeded `about_content`; reflects an owner EDIT (per language).
 //   * GalleryPort returns rows with resolved public Storage URLs; empty when there are none.
+//   * SiteChromePort returns public `site_settings`; reflects owner business identity and SEO edits.
 //   * availability reflects a SCHEDULE (off-day ⇒ whole grid taken) AND a confirmed booking.
 //
 // Privileged setup/teardown uses the superuser (DB_URL) ONLY to write what RLS forbids anon (insert a
@@ -17,6 +18,7 @@ import { supabaseBarbersAdapter } from '../../src/booking/adapters/supabaseBarbe
 import { supabaseAboutContentAdapter } from '../../src/about/content/supabaseAboutContent'
 import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
+import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteChrome'
 import { asBarberId } from '../../src/booking/domain'
 import {
   adminBackendReady,
@@ -56,6 +58,21 @@ async function readAboutValue(
     const res = await client.query<{ value: string }>(
       'select value from public.about_content where key = $1 and lang = $2',
       [key, lang],
+    )
+    return res.rows[0]?.value ?? null
+  } finally {
+    await client.end()
+  }
+}
+
+/** Read one site setting via the superuser so the test can restore the exact prior value. */
+async function readSiteSetting(env: AdminStackEnv, key: string): Promise<string | null> {
+  const client = new Client({ connectionString: env.dbUrl })
+  await client.connect()
+  try {
+    const res = await client.query<{ value: string }>(
+      'select value from public.site_settings where key = $1',
+      [key],
     )
     return res.rows[0]?.value ?? null
   } finally {
@@ -170,6 +187,75 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
              on conflict (key, lang) do update set value = excluded.value`,
             [original],
           )
+        }
+      }
+    })
+  })
+
+  // --- SiteChromePort ---------------------------------------------------------------------------
+
+  describe('SiteChromePort.load', () => {
+    it('reflects owner-managed business identity and English SEO settings for anonymous clients', async () => {
+      const env = readAdminStackEnv()
+      expect(env).not.toBeNull()
+      if (!env) return
+
+      const marker = `it-public-${Date.now()}`
+      const changes: readonly (readonly [string, string])[] = [
+        ['business_name', `Northside ${marker}`],
+        ['business_email', `${marker}@example.com`],
+        ['business_phone_display', '08-123 45 67'],
+        ['business_phone_tel', '+4681234567'],
+        ['business_street', 'Kungsgatan 1'],
+        ['business_postal_code', '111 43'],
+        ['business_city', 'Stockholm'],
+        ['business_maps_href', `https://maps.example.com/${marker}`],
+        ['cancellation_policy_hours', '48'],
+        ['seo_title_en', `Northside ${marker} | Book online`],
+        ['seo_description_en', `English description for ${marker}`],
+      ]
+      const originals = new Map<string, string | null>()
+      for (const [key] of changes) originals.set(key, await readSiteSetting(env, key))
+
+      try {
+        for (const [key, value] of changes) {
+          await runSql(
+            env,
+            `insert into public.site_settings (key, value) values ($1, $2)
+             on conflict (key) do update set value = excluded.value`,
+            [key, value],
+          )
+        }
+
+        const chrome = await supabaseSiteChromeAdapter.load('en')
+        expect(chrome.business).toMatchObject({
+          name: `Northside ${marker}`,
+          email: `${marker}@example.com`,
+          phoneDisplay: '08-123 45 67',
+          phoneTel: '+4681234567',
+          street: 'Kungsgatan 1',
+          postalCode: '111 43',
+          city: 'Stockholm',
+          mapsHref: `https://maps.example.com/${marker}`,
+          cancellationPolicyHours: 48,
+        })
+        expect(chrome.business.seo.en).toEqual({
+          title: `Northside ${marker} | Book online`,
+          description: `English description for ${marker}`,
+        })
+      } finally {
+        for (const [key] of changes) {
+          const original = originals.get(key)
+          if (original === null || original === undefined) {
+            await runSql(env, 'delete from public.site_settings where key = $1', [key])
+          } else {
+            await runSql(
+              env,
+              `insert into public.site_settings (key, value) values ($1, $2)
+               on conflict (key) do update set value = excluded.value`,
+              [key, original],
+            )
+          }
         }
       }
     })

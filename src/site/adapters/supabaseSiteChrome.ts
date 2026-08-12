@@ -1,8 +1,8 @@
 // The real (Supabase) SiteChromePort adapter. `load` reads `site_content` (this language's editable
-// homepage + booking-popup strings) + `site_settings` (font-size presets) and assembles a
-// `SiteChrome`. Anon may select both (public-read RLS). Only known text keys are picked up; unknown
-// keys/malformed rows are ignored. Any transport error resolves to `DEFAULT_CHROME`, so the site
-// falls back to i18n defaults rather than crashing.
+// homepage + booking-popup strings) + `site_settings` (font sizes, business identity, SEO) and
+// assembles a `SiteChrome`. Anon may select both (public-read RLS). Only known text keys are picked
+// up; unknown/malformed rows are ignored. Any transport error resolves to `DEFAULT_CHROME`, so the
+// site falls back to shipped defaults rather than crashing.
 //
 // Boundary discipline: every row Zod-parsed; the scale tokens narrowed via `parseScale` (unknown →
 // 'md'), never trusted raw.
@@ -17,6 +17,7 @@ import {
   HOMEPAGE_SCALE_KEY,
   SITE_TEXT_KEYS,
   parseScale,
+  resolveBusinessSettings,
   type SiteChrome,
   type SiteTextKey,
 } from '../siteChrome'
@@ -50,6 +51,7 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
 
       return {
         text,
+        business: resolveBusinessSettings(new Map(Object.entries(settings))),
         homepageScale: parseScale(settings[HOMEPAGE_SCALE_KEY]),
         aboutScale: parseScale(settings[ABOUT_SCALE_KEY]),
       }
@@ -60,15 +62,17 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
 
   subscribe(lang: Lang, onChange: (chrome: SiteChrome) => void): () => void {
     const supabase = getSupabase()
+    const reload = (): void => {
+      void supabaseSiteChromeAdapter.load(lang).then(onChange)
+    }
     const channel = supabase
-      .channel(`site-content:${lang}`)
+      .channel(`site-chrome:${lang}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
-        () => {
-          void supabaseSiteChromeAdapter.load(lang).then(onChange)
-        },
+        reload,
       )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, reload)
       .subscribe()
 
     return () => {

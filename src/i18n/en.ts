@@ -34,7 +34,7 @@ export const bookingEn: BookingStrings = {
   emailPh: 'name@example.com',
   book: 'Book appointment',
   policy:
-    'By booking you agree that cancellations must be made at least 24 hours before the visit. Late cancellation or a no‑show entitles Blade & Blend Studio to charge for the booked time.',
+    'By booking you agree that cancellations must be made at least {hours} hours before the visit. Late cancellation or a no‑show entitles {businessName} to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
   confirmSent:
     'A booking confirmation has been sent to {email}. You can also find the booking under "My appointments" using your phone number.',
