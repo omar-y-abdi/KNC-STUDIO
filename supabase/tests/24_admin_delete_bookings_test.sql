@@ -33,13 +33,13 @@ insert into public.bookings
    customer_name, method, phone, email, lang, status, cancelled_at)
 values
   ('4b000000-0000-0000-0000-0000000000a1','abar','h','Hår',350,45,
-   '2020-05-01 09:00+00','2020-05-01 09:45+00','A Past','sms','0701110001',null,'sv','confirmed',null),
+   '2020-05-01 09:00+00','2020-05-01 09:45+00','A Past','phone','0701110001',null,'sv','confirmed',null),
   ('4b000000-0000-0000-0000-0000000000a2','abar','h','Hår',350,45,
-   '2099-05-01 09:00+00','2099-05-01 09:45+00','A Upcoming','sms','0701110002',null,'sv','confirmed',null),
+   '2099-05-01 09:00+00','2099-05-01 09:45+00','A Upcoming','phone','0701110002',null,'sv','confirmed',null),
   ('4b000000-0000-0000-0000-0000000000a3','abar','h','Hår',350,45,
-   '2020-06-01 09:00+00','2020-06-01 09:45+00','A Cancelled','sms','0701110003',null,'sv','cancelled','2020-05-15 10:00+00'),
+   '2020-06-01 09:00+00','2020-06-01 09:45+00','A Cancelled','phone','0701110003',null,'sv','cancelled','2020-05-15 10:00+00'),
   ('4b000000-0000-0000-0000-0000000000b1','bbar','h','Hår',350,45,
-   '2020-05-01 10:00+00','2020-05-01 10:45+00','B Past','sms','0701110004',null,'sv','confirmed',null);
+   '2020-05-01 10:00+00','2020-05-01 10:45+00','B Past','phone','0701110004',null,'sv','confirmed',null);
 
 insert into public.reviews (id, name, rating, text, booking_id, published) values
   ('4c000000-0000-0000-0000-000000000001','A P.',5,'Nice','4b000000-0000-0000-0000-0000000000a1',true);

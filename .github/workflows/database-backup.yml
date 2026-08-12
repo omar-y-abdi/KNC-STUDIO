@@ -17,6 +17,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned Supabase CLI
+        run: npm ci
+
       - name: Validate backup configuration
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -25,21 +37,26 @@ jobs:
           test -n "$DATABASE_URL" || { echo 'Missing SUPABASE_DB_URL secret'; exit 1; }
           test -n "$AGE_RECIPIENT" || { echo 'Missing BACKUP_AGE_RECIPIENT variable'; exit 1; }
 
-      - name: Create PostgreSQL 17 archive
+      - name: Create portable Supabase backup
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          mkdir -p "$RUNNER_TEMP/backup"
-          docker run --rm \
-            -e DATABASE_URL \
-            -v "$RUNNER_TEMP/backup:/backup" \
-            postgres:17-alpine \
-            sh -eu -c 'pg_dump "$DATABASE_URL" \
-              --format=custom \
-              --compress=9 \
-              --no-owner \
-              --no-privileges \
-              --file=/backup/database.dump'
+          plaintext="$RUNNER_TEMP/backup/plaintext"
+          mkdir -p "$plaintext"
+          npx supabase db dump --db-url "$DATABASE_URL" --file "$plaintext/schema.sql"
+          npx supabase db dump \
+            --db-url "$DATABASE_URL" \
+            --file "$plaintext/data.sql" \
+            --use-copy \
+            --data-only \
+            --exclude "storage.buckets_vectors" \
+            --exclude "storage.vector_indexes"
+          (cd "$plaintext" && sha256sum schema.sql data.sql > MANIFEST.sha256)
+          tar --create --gzip \
+            --file "$RUNNER_TEMP/backup/database.tar.gz" \
+            --directory "$plaintext" \
+            schema.sql data.sql MANIFEST.sha256
+          rm -rf "$plaintext"
 
       - name: Encrypt before artifact upload
         env:
@@ -48,11 +65,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes age
           stamp="$(date -u +'%Y-%m-%dT%H-%M-%SZ')"
-          encrypted="$RUNNER_TEMP/backup/bladeblend-${stamp}.dump.age"
+          encrypted="$RUNNER_TEMP/backup/bladeblend-${stamp}.tar.gz.age"
           age --recipient "$AGE_RECIPIENT" \
             --output "$encrypted" \
-            "$RUNNER_TEMP/backup/database.dump"
-          rm "$RUNNER_TEMP/backup/database.dump"
+            "$RUNNER_TEMP/backup/database.tar.gz"
+          rm "$RUNNER_TEMP/backup/database.tar.gz"
           (cd "$(dirname "$encrypted")" && sha256sum "$(basename "$encrypted")" > "$(basename "$encrypted").sha256")
           test -s "$encrypted"
           echo "BACKUP_FILE=$encrypted" >> "$GITHUB_ENV"

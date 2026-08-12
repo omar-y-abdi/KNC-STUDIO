@@ -10,6 +10,9 @@
 
 import { Client } from 'pg'
 
+/** Accepted by Cloudflare's official always-pass Turnstile test secret in local/CI stacks. */
+export const TURNSTILE_TEST_TOKEN = 'integration-test-token'
+
 /** The env the local stack provides (loaded by vitest.integration.config.ts from `supabase status`). */
 export interface StackEnv {
   readonly url: string
@@ -60,7 +63,9 @@ export async function withClient<T>(dbUrl: string, fn: (client: Client) => Promi
  */
 export async function truncateAll(dbUrl: string): Promise<void> {
   await withClient(dbUrl, (client) =>
-    client.query('truncate table public.bookings, public.reviews restart identity cascade'),
+    client.query(
+      'truncate table public.bookings, public.reviews, public.public_action_attempts restart identity cascade',
+    ),
   )
 }
 

@@ -30,10 +30,10 @@ select is(
   (select count(*)::int from public.available_slots('hassan', date '2020-01-06', 45)),
   0, 'a far-past working day returns no slots'
 );
--- A week from now every slot start is in the future: the full fitting grid (all 12 at 45 min).
+-- A week from now every slot start is in the future: full fixed 15-minute grid (34 at 45 min).
 select is(
   (select count(*)::int from public.available_slots('hassan', current_date + 7, 45)),
-  12, 'a future working day still returns the full fitting grid (no over-filtering)'
+  34, 'a future working day still returns the full fitting grid (no over-filtering)'
 );
 
 -- =============================================================================================
@@ -48,11 +48,11 @@ insert into public.bookings
 values
   ('hassan','h','Hår',350,45,
    now() - interval '2 hours', now() - interval '75 minutes',
-   ' ','sms','0707777771', null,'sv'),
+   ' ','phone','0707777771', null,'sv'),
   -- staggered earlier: same barber, so the slots must not overlap (bookings_no_overlap)
   ('hassan','h','Hår',350,45,
    now() - interval '4 hours', now() - interval '195 minutes',
-   pg_catalog.repeat('a', 78) || ' X','sms','0707777772', null,'sv');
+   pg_catalog.repeat('a', 78) || ' X','phone','0707777772', null,'sv');
 
 -- Whitespace-only name -> ok:true with the neutral fallback (was: check_violation -> raw 500).
 select set_config('test.r_blank',

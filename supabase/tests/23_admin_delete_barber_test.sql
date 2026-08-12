@@ -43,11 +43,11 @@ insert into public.bookings
    customer_name, method, phone, email, lang, status, cancelled_at)
 values
   ('3b000000-0000-0000-0000-0000000000a1','deltest','h','Hår',350,45,
-   '2099-05-01 09:00+00','2099-05-01 09:45+00','Upcoming Kund','sms','0701110001',null,'sv','confirmed',null),
+   '2099-05-01 09:00+00','2099-05-01 09:45+00','Upcoming Kund','phone','0701110001',null,'sv','confirmed',null),
   ('3b000000-0000-0000-0000-0000000000a2','deltest','h','Hår',350,45,
-   '2020-05-01 09:00+00','2020-05-01 09:45+00','Past Kund','sms','0701110002',null,'sv','confirmed',null),
+   '2020-05-01 09:00+00','2020-05-01 09:45+00','Past Kund','phone','0701110002',null,'sv','confirmed',null),
   ('3b000000-0000-0000-0000-0000000000a3','deltest','h','Hår',350,45,
-   '2020-06-01 09:00+00','2020-06-01 09:45+00','Cancelled Kund','sms','0701110003',null,'sv','cancelled','2020-05-15 10:00+00');
+   '2020-06-01 09:00+00','2020-06-01 09:45+00','Cancelled Kund','phone','0701110003',null,'sv','cancelled','2020-05-15 10:00+00');
 
 -- a review tied to the past booking (must survive the purge, detached to booking_id NULL)
 insert into public.reviews (id, name, rating, text, booking_id, published) values

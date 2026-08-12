@@ -49,9 +49,9 @@ insert into public.bookings
    customer_name, method, phone, email, lang)
 values
   ('hassan','h','Hår',350,45, now() + interval '5 days', now() + interval '5 days' + interval '45 minutes',
-   'Count One','sms','0706660000', null,'sv'),
+   'Count One','phone','0706660000', null,'sv'),
   ('hassan','h','Hår',350,45, now() + interval '6 days', now() + interval '6 days' + interval '45 minutes',
-   'Count Two','sms','0706660000', null,'sv');
+   'Count Two','phone','0706660000', null,'sv');
 select is(
   public.recent_booking_count_by_phone('0706660000', now() - interval '1 hour'),
   2, 'recent_booking_count_by_phone counts this phone''s recent bookings (2)'
@@ -76,7 +76,7 @@ with ins as (
      customer_name, method, phone, email, lang)
   values
     ('hassan','h','Hår',350,45, now() + interval '7 days', now() + interval '7 days' + interval '45 minutes',
-     'Test Person','sms','0705550000', null,'sv')
+     'Test Person','phone','0705550000', null,'sv')
   returning id
 )
 select set_config('test.cid', (select id::text from ins), true);

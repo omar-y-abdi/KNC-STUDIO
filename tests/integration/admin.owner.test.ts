@@ -39,7 +39,7 @@ import {
 
 /** A tiny valid 1x1 PNG (transparent), enough for a real Storage upload + public URL fetch. */
 const PNG_1x1_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWMAgv8AAQQBAP8H9UQAAAAASUVORK5CYII='
 
 function pngFile(name: string): File {
   const bin = atob(PNG_1x1_BASE64)

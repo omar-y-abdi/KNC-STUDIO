@@ -12,13 +12,13 @@ select plan(7);
 -- Phone B (0709999999): 1 upcoming CONFIRMED (isolation check).
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
-   customer_name, method, phone, email, lang, status)
+   customer_name, method, phone, email, lang, status, cancelled_at)
 values
-  ('hassan','h', 'Hår',        350, 45, now() + interval '3 days',  now() + interval '3 days'  + interval '45 minutes', 'A Upcoming1','sms','0701234567', null,'sv','confirmed'),
-  ('victor','hs','Hår + skägg',450, 60, now() + interval '10 days', now() + interval '10 days' + interval '60 minutes', 'A Upcoming2','sms','0701234567', null,'sv','confirmed'),
-  ('hassan','h', 'Hår',        350, 45, now() - interval '20 days', now() - interval '20 days' + interval '45 minutes', 'A Past',     'sms','0701234567', null,'sv','confirmed'),
-  ('hassan','h', 'Hår',        350, 45, now() + interval '5 days',  now() + interval '5 days'  + interval '45 minutes', 'A Cancelled','sms','0701234567', null,'sv','cancelled'),
-  ('victor','h', 'Hår',        350, 45, now() + interval '2 days',  now() + interval '2 days'  + interval '45 minutes', 'B Upcoming', 'sms','0709999999', null,'sv','confirmed');
+  ('hassan','h', 'Hår',        350, 45, now() + interval '3 days',  now() + interval '3 days'  + interval '45 minutes', 'A Upcoming1','phone','0701234567', null,'sv','confirmed',null),
+  ('victor','hs','Hår + skägg',450, 60, now() + interval '10 days', now() + interval '10 days' + interval '60 minutes', 'A Upcoming2','phone','0701234567', null,'sv','confirmed',null),
+  ('hassan','h', 'Hår',        350, 45, now() - interval '20 days', now() - interval '20 days' + interval '45 minutes', 'A Past',     'phone','0701234567', null,'sv','confirmed',null),
+  ('hassan','h', 'Hår',        350, 45, now() + interval '5 days',  now() + interval '5 days'  + interval '45 minutes', 'A Cancelled','phone','0701234567', null,'sv','cancelled',now()),
+  ('victor','h', 'Hår',        350, 45, now() + interval '2 days',  now() + interval '2 days'  + interval '45 minutes', 'B Upcoming', 'phone','0709999999', null,'sv','confirmed',null);
 
 -- ---- assertions ------------------------------------------------------------------------------
 select is(

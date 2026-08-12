@@ -11,6 +11,7 @@ import {
   backendReady,
   readStackEnv,
   seedFinishedBooking,
+  TURNSTILE_TEST_TOKEN,
   truncateAll,
   uniquePhone,
   uniqueReviewMarker,
@@ -30,11 +31,14 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     await seedFinishedBooking(env.dbUrl, { phone, customerName: 'Anna Andersson' })
 
     const marker = uniqueReviewMarker()
-    const submitted = await supabaseReviewsAdapter.submit({
-      phone: phone as Phone,
-      rating: 5,
-      text: `Great cut — ${marker}`,
-    })
+    const submitted = await supabaseReviewsAdapter.submit(
+      {
+        phone: phone as Phone,
+        rating: 5,
+        text: `Great cut — ${marker}`,
+      },
+      TURNSTILE_TEST_TOKEN,
+    )
     expect(submitted.ok).toBe(true)
     if (!submitted.ok) return
     // Name is DERIVED from the booking, not supplied by the reviewer.
@@ -47,11 +51,14 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     expect(found?.name).toBe('Anna A.')
 
     // The booking is now spent: a second review on the same finished booking is gated out.
-    const second = await supabaseReviewsAdapter.submit({
-      phone: phone as Phone,
-      rating: 4,
-      text: `again — ${marker}`,
-    })
+    const second = await supabaseReviewsAdapter.submit(
+      {
+        phone: phone as Phone,
+        rating: 4,
+        text: `again — ${marker}`,
+      },
+      TURNSTILE_TEST_TOKEN,
+    )
     expect(second.ok).toBe(false)
     if (!second.ok) expect(second.error.kind).toBe('no_booking')
   })
@@ -60,11 +67,14 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     const env = readStackEnv()
     if (!env) return
 
-    const result = await supabaseReviewsAdapter.submit({
-      phone: uniquePhone() as Phone,
-      rating: 5,
-      text: 'No booking, no review.',
-    })
+    const result = await supabaseReviewsAdapter.submit(
+      {
+        phone: uniquePhone() as Phone,
+        rating: 5,
+        text: 'No booking, no review.',
+      },
+      TURNSTILE_TEST_TOKEN,
+    )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('no_booking')
   })
@@ -78,16 +88,14 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     await seedFinishedBooking(env.dbUrl, { phone: olderPhone, customerName: 'Olle Olsson' })
     await seedFinishedBooking(env.dbUrl, { phone: newerPhone, customerName: 'Nina Nilsson' })
 
-    const first = await supabaseReviewsAdapter.submit({
-      phone: olderPhone as Phone,
-      rating: 4,
-      text: 'old',
-    })
-    const second = await supabaseReviewsAdapter.submit({
-      phone: newerPhone as Phone,
-      rating: 5,
-      text: 'new',
-    })
+    const first = await supabaseReviewsAdapter.submit(
+      { phone: olderPhone as Phone, rating: 4, text: 'old' },
+      TURNSTILE_TEST_TOKEN,
+    )
+    const second = await supabaseReviewsAdapter.submit(
+      { phone: newerPhone as Phone, rating: 5, text: 'new' },
+      TURNSTILE_TEST_TOKEN,
+    )
     expect(first.ok && second.ok).toBe(true)
 
     const list = await supabaseReviewsAdapter.list()

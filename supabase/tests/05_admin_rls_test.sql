@@ -39,11 +39,11 @@ insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
    customer_name, method, phone, email, lang)
 values
-  ('victor','h','Hår',350,45,'2099-04-01 09:00+00','2099-04-01 09:45+00','V Kund','sms','0701110001',null,'sv'),
-  ('salman','h','Hår',350,45,'2099-04-01 10:00+00','2099-04-01 10:45+00','S Kund','sms','0701110002',null,'sv');
+  ('victor','h','Hår',350,45,'2099-04-01 09:00+00','2099-04-01 09:45+00','V Kund','phone','0701110001',null,'sv'),
+  ('salman','h','Hår',350,45,'2099-04-01 10:00+00','2099-04-01 10:45+00','S Kund','phone','0701110002',null,'sv');
 
 -- =============================================================================================
--- ANON — public reads (active barbers/schedules/time_off/about/gallery); NO bookings/profiles;
+-- ANON — public reads active barbers/about/gallery; schedule internals return zero rows;
 -- no writes anywhere.
 -- =============================================================================================
 set local role anon;
@@ -56,13 +56,13 @@ select ok(
   (select count(*)::int from public.barbers) >= 3,
   'anon sees the active barbers (roster)'
 );
-select ok(
-  (select count(*)::int from public.barber_schedules) > 0,
-  'anon reads barber_schedules (needed for public availability)'
+select is(
+  (select count(*)::int from public.barber_schedules),
+  0, 'anon sees no raw schedules; available_slots exposes safe availability'
 );
-select lives_ok(
-  $$select count(*) from public.barber_time_off$$,
-  'anon reads barber_time_off (no PII, dates only)'
+select is(
+  (select count(*)::int from public.barber_time_off),
+  0, 'anon sees no raw time-off rows'
 );
 select ok(
   (select count(*)::int from public.about_content) = 14,

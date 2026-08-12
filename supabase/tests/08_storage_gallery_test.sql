@@ -1,16 +1,16 @@
 -- pgTAP — Storage `gallery` bucket + its RLS policies (ADMIN_SPEC §1.6 + §2 + §8).
 -- Behavioral Storage RLS (real uploads through the Storage API) cannot be exercised offline in
 -- pgTAP; here we assert the bucket contract and the policy PRESENCE/shape that enforce
--- public-read / owner-write, so the structural guarantees live inside the green test gate.
+-- public-read / gateway-upload, so the structural guarantees live inside the green test gate.
 --
 -- Enforcement model proven here:
 --   * public READ  : bucket.public = true  AND a SELECT policy on storage.objects scoped to
 --                    bucket_id='gallery' granted to anon + authenticated.
---   * owner WRITE  : INSERT/UPDATE/DELETE policies on storage.objects, each gated on
---                    bucket_id='gallery' AND public.is_owner() (granted to authenticated).
+--   * gateway WRITE: direct authenticated INSERT/UPDATE policies are absent; upload-image writes
+--                    validated WebP output through service_role. Owner DELETE remains available.
 
 begin;
-select plan(9);
+select plan(8);
 
 -- ---- bucket exists + is public --------------------------------------------------------------
 select is(
@@ -28,7 +28,7 @@ select is(
   true, 'RLS is enabled on storage.objects'
 );
 
--- ---- the four gallery policies exist, with the correct commands -----------------------------
+-- ---- public read and owner cleanup remain; direct client uploads are gone --------------------
 -- pg_policy.polcmd: 'r'=SELECT, 'a'=INSERT, 'w'=UPDATE, 'd'=DELETE, '*'=ALL.
 select is(
   (select polcmd::text from pg_policy
@@ -36,14 +36,14 @@ select is(
   'r', 'gallery_public_read is a SELECT policy (public read)'
 );
 select is(
-  (select polcmd::text from pg_policy
+  (select count(*)::int from pg_policy
      where polrelid='storage.objects'::regclass and polname='gallery_owner_insert'),
-  'a', 'gallery_owner_insert is an INSERT policy (owner write)'
+  0, 'gallery has no direct authenticated INSERT policy'
 );
 select is(
-  (select polcmd::text from pg_policy
+  (select count(*)::int from pg_policy
      where polrelid='storage.objects'::regclass and polname='gallery_owner_update'),
-  'w', 'gallery_owner_update is an UPDATE policy (owner write)'
+  0, 'gallery has no direct authenticated UPDATE policy'
 );
 select is(
   (select polcmd::text from pg_policy
@@ -51,19 +51,11 @@ select is(
   'd', 'gallery_owner_delete is a DELETE policy (owner write)'
 );
 
--- ---- the owner-write policies actually reference is_owner() (not a permissive stub) ----------
--- pg_get_expr renders the policy's USING/WITH CHECK expression; assert it mentions is_owner.
--- (We use ok(<expr> like ...) rather than pgTAP's like() matcher, whose overload resolution is
---  finicky with unknown-typed literals.)
+-- Owner cleanup stays gated, not permissive.
 select ok(
   (select pg_get_expr(polqual, polrelid) from pg_policy
      where polrelid='storage.objects'::regclass and polname='gallery_owner_delete') like '%is_owner%',
   'gallery_owner_delete USING is gated on public.is_owner()'
-);
-select ok(
-  (select pg_get_expr(polwithcheck, polrelid) from pg_policy
-     where polrelid='storage.objects'::regclass and polname='gallery_owner_insert') like '%is_owner%',
-  'gallery_owner_insert WITH CHECK is gated on public.is_owner()'
 );
 
 select * from finish();

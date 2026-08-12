@@ -32,13 +32,13 @@ insert into public.bookings
    customer_name, method, phone, email, lang, status, cancelled_at)
 values
   ('5b000000-0000-0000-0000-000000000001','purgeb','h','Hår',350,45,
-   '2020-01-01 09:00+00','2020-01-01 09:45+00','Past One','sms','0701110001',null,'sv','confirmed',null),
+   '2020-01-01 09:00+00','2020-01-01 09:45+00','Past One','phone','0701110001',null,'sv','confirmed',null),
   ('5b000000-0000-0000-0000-000000000002','purgeb','h','Hår',350,45,
-   '2020-01-01 11:00+00','2020-01-01 11:45+00','Cancelled','sms','0701110002',null,'sv','cancelled','2019-12-20 10:00+00'),
+   '2020-01-01 11:00+00','2020-01-01 11:45+00','Cancelled','phone','0701110002',null,'sv','cancelled','2019-12-20 10:00+00'),
   ('5b000000-0000-0000-0000-000000000003','purgeb','h','Hår',350,45,
-   '2099-01-01 09:00+00','2099-01-01 09:45+00','Upcoming','sms','0701110003',null,'sv','confirmed',null),
+   '2099-01-01 09:00+00','2099-01-01 09:45+00','Upcoming','phone','0701110003',null,'sv','confirmed',null),
   ('5b000000-0000-0000-0000-000000000004','purgeb','h','Hår',350,45,
-   '2020-01-02 09:00+00','2020-01-02 09:45+00','Past Two','sms','0701110004',null,'sv','confirmed',null);
+   '2020-01-02 09:00+00','2020-01-02 09:45+00','Past Two','phone','0701110004',null,'sv','confirmed',null);
 
 -- =============================================================================================
 -- anon has no EXECUTE grant (catalog check); barber -> forbidden (and nothing deleted).

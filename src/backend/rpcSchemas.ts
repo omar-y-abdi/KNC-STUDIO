@@ -57,7 +57,7 @@ const cancelBookingShape = z.object({
   service_name: z.string(),
   price: z.number(),
   start_at: isoTimestamp,
-  method: z.literal('email'),
+  method: z.enum(['phone', 'email']),
   contact: z.string(),
 })
 

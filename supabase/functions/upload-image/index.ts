@@ -223,9 +223,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const publicSupabaseUrl = Deno.env.get('PUBLIC_SUPABASE_URL') ?? supabaseUrl
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceKey) {
-    console.error('upload-image: missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !publicSupabaseUrl || !anonKey || !serviceKey) {
+    console.error('upload-image: missing Supabase runtime configuration')
     return json({ ok: false, error: 'not_configured' }, 500)
   }
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
@@ -240,11 +242,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
   if (jwt === '') return json({ ok: false, error: 'unauthorized' }, 401)
 
+  const caller = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: authHeader } },
+  })
+
   const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
   if (callerError !== null || callerData.user === null)
     return json({ ok: false, error: 'unauthorized' }, 401)
 
-  const { data: profile, error: profileError } = await service
+  const { data: profile, error: profileError } = await caller
     .from('profiles')
     .select('role, barber_id')
     .eq('id', callerData.user.id)
@@ -305,7 +312,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let previousPath: string | null = null
   if (upload.kind === 'barber_photo') {
-    const previous = await service
+    const previous = await caller
       .from('barber_photos')
       .select('storage_path')
       .eq('barber_id', upload.barberId)
@@ -330,7 +337,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   if (upload.kind === 'gallery') {
-    const inserted = await service
+    const inserted = await caller
       .from('gallery_images')
       .insert({
         kind: upload.galleryKind,
@@ -345,8 +352,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       await removeObject(bucket, path)
       return json({ ok: false, error: 'database_failed' }, 500)
     }
-    const publicUrl = service.storage.from(bucket).getPublicUrl(inserted.data.storage_path)
-      .data.publicUrl
+    const publicUrl = createClient(publicSupabaseUrl, anonKey)
+      .storage.from(bucket)
+      .getPublicUrl(inserted.data.storage_path).data.publicUrl
     return json(
       {
         ok: true,
@@ -359,7 +367,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   }
 
-  const upserted = await service
+  const upserted = await caller
     .from('barber_photos')
     .upsert({ barber_id: upload.barberId, storage_path: path }, { onConflict: 'barber_id' })
     .select('barber_id,storage_path')
@@ -373,8 +381,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (previousPath !== null && previousPath !== upserted.data.storage_path) {
     await removeObject(bucket, previousPath)
   }
-  const publicUrl = service.storage.from(bucket).getPublicUrl(upserted.data.storage_path)
-    .data.publicUrl
+  const publicUrl = createClient(publicSupabaseUrl, anonKey)
+    .storage.from(bucket)
+    .getPublicUrl(upserted.data.storage_path).data.publicUrl
   return json(
     {
       ok: true,

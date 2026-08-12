@@ -92,7 +92,7 @@ values (
   'hassan','h','Hår',350,90,
   (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '10:30') at time zone 'Europe/Stockholm',
-  'Booked 90','sms','0701119999',null,'sv'
+  'Booked 90','phone','0701119999',null,'sv'
 );
 -- Grid resumes at 10:30 (the booking end) and continues on the fixed 15-min ticks. 29 slots.
 select is(
@@ -125,7 +125,7 @@ values (
   'hassan','h','Hår',350,45,
   (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '09:45') at time zone 'Europe/Stockholm',
-  'Booked 45','sms','0701119999',null,'sv'
+  'Booked 45','phone','0701119999',null,'sv'
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
@@ -158,7 +158,7 @@ values (
   'hassan','h','Hår',350,90,
   (date '2099-01-05' + time '10:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '11:30') at time zone 'Europe/Stockholm',
-  'Booked mid','sms','0701119999',null,'sv'
+  'Booked mid','phone','0701119999',null,'sv'
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),

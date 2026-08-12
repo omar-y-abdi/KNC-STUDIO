@@ -23,7 +23,7 @@ insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
    customer_name, method, phone, email, lang)
   values ('hassan','h','Hår',350,45,'2099-04-01 09:00+00','2099-04-01 09:45+00',
-          'Secret Kund','sms','0709998877',null,'sv');
+          'Secret Kund','phone','0709998877',null,'sv');
 
 -- ---- drop to anon ---------------------------------------------------------------------------
 set local role anon;
@@ -38,7 +38,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-05-01 09:00+00','2099-05-01 09:45+00',
-            'Hack','sms','0701234567',null,'sv')$$,
+            'Hack','phone','0701234567',null,'sv')$$,
   '42501', null, 'anon cannot INSERT bookings'
 );
 select throws_ok(

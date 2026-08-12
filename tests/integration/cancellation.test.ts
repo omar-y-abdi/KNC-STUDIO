@@ -15,6 +15,7 @@ import {
   callCreateBooking,
   fetchActiveServiceId,
   readStackEnv,
+  TURNSTILE_TEST_TOKEN,
   truncateAll,
   uniquePhone,
 } from './_helpers'
@@ -64,7 +65,11 @@ describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', ()
     const created = await callCreateBooking(env.dbUrl, seedArgs(phone))
     expect(created.ok).toBe(true)
 
-    const found = await supabaseCancellationAdapter.lookup({ contact: phone, lang: 'sv' })
+    const found = await supabaseCancellationAdapter.lookup({
+      contact: phone,
+      turnstileToken: TURNSTILE_TEST_TOKEN,
+      lang: 'sv',
+    })
     expect(found.ok).toBe(true)
     if (!found.ok) return
     expect(found.booking.barber.id).toBe(HASSAN.id)
@@ -73,11 +78,15 @@ describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', ()
     // whenLabel mirrors buildDemoBooking's "Weekday D Month, HH:MM" — in Stockholm wall-clock.
     expect(found.booking.whenLabel).toContain(EXPECTED_WHEN_TIME)
 
-    const cancelled = await supabaseCancellationAdapter.cancel(found.booking)
+    const cancelled = await supabaseCancellationAdapter.cancel(found.booking, TURNSTILE_TEST_TOKEN)
     expect(cancelled.ok).toBe(true)
 
     // Idempotent: the booking is now cancelled → no longer found.
-    const again = await supabaseCancellationAdapter.lookup({ contact: phone, lang: 'sv' })
+    const again = await supabaseCancellationAdapter.lookup({
+      contact: phone,
+      turnstileToken: TURNSTILE_TEST_TOKEN,
+      lang: 'sv',
+    })
     expect(again.ok).toBe(false)
   })
 
@@ -91,7 +100,11 @@ describe.skipIf(!backendReady())('supabaseCancellationAdapter (integration)', ()
 
     // A different, non-matching phone must never surface the existing booking.
     const wrong = uniquePhone()
-    const result = await supabaseCancellationAdapter.lookup({ contact: wrong, lang: 'sv' })
+    const result = await supabaseCancellationAdapter.lookup({
+      contact: wrong,
+      turnstileToken: TURNSTILE_TEST_TOKEN,
+      lang: 'sv',
+    })
     expect(result.ok).toBe(false)
   })
 })
