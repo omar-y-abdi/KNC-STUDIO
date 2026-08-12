@@ -6,19 +6,65 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { BUSINESS } from '../config'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
 import { useSiteChrome } from '../site/useSiteChrome'
-import { resolveSiteText } from '../site/siteChrome'
+import { formatBusinessAddress, resolveSiteText, type BusinessSettings } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
 import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+
+function setMeta(selector: string, content: string): void {
+  document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
+}
+
+function updateDocumentMetadata(business: BusinessSettings, lang: Lang): void {
+  const seo = business.seo[lang]
+  document.documentElement.lang = lang
+  document.title = seo.title
+  setMeta('meta[name="description"]', seo.description)
+  setMeta('meta[property="og:site_name"]', business.name)
+  setMeta('meta[property="og:title"]', seo.title)
+  setMeta('meta[property="og:description"]', seo.description)
+  setMeta('meta[property="og:image:alt"]', business.name)
+  setMeta('meta[name="twitter:title"]', seo.title)
+  setMeta('meta[name="twitter:description"]', seo.description)
+
+  const canonical = document
+    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
+    ?.getAttribute('href')
+  const siteUrl = canonical?.startsWith('http')
+    ? canonical.replace(/\/$/, '')
+    : window.location.origin
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'HairSalon',
+    '@id': `${siteUrl}/#business`,
+    name: business.name,
+    url: `${siteUrl}/`,
+    image: `${siteUrl}/og-image.png`,
+    telephone: business.phoneTel,
+    email: business.email,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: business.street,
+      postalCode: business.postalCode,
+      addressLocality: business.city,
+      addressCountry: 'SE',
+    },
+    hasMap: business.mapsHref,
+    availableLanguage: ['sv', 'en'],
+  }
+  const structuredData = document.querySelector<HTMLScriptElement>('#business-json-ld')
+  if (structuredData !== null) {
+    structuredData.textContent = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
+  }
+}
 
 interface AppState {
   readonly mode: Mode
@@ -55,13 +101,19 @@ export function App(): JSX.Element {
   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
   const chrome = useSiteChrome(lang)
+  const business = chrome.business
   const txBase = appStrings(lang)
-  const siteText = resolveSiteText(chrome.text, lang)
+  const siteText = resolveSiteText(
+    chrome.text,
+    lang,
+    business.cancellationPolicyHours,
+    business.name,
+  )
   const tx: AppStrings = {
     ...txBase,
     kicker: siteText.kicker,
     hours: siteText.hours,
-    addr: siteText.addr,
+    addr: formatBusinessAddress(business),
   }
   const bookingPopupText: BookingPopupText = siteText
   const view = state.view
@@ -93,7 +145,10 @@ export function App(): JSX.Element {
     color: on ? (dark ? '#1c1c1e' : '#fff') : dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)',
   })
 
-  const mapsHref = BUSINESS.mapsHref
+  useEffect(() => {
+    updateDocumentMetadata(business, lang)
+  }, [business, lang])
+
   const setSv = (): void => setState({ lang: 'sv' })
   const setEn = (): void => setState({ lang: 'en' })
   const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
@@ -227,7 +282,7 @@ export function App(): JSX.Element {
           view={view}
           mobMutedColor={mobMutedColor}
           mobBtnBgColor={mobBtnBgColor}
-          mapsHref={mapsHref}
+          business={business}
           chromeIconStyle={chromeIconStyle}
           themeToggle={themeToggle}
           langToggle={langToggle}
@@ -253,7 +308,7 @@ export function App(): JSX.Element {
         lang={lang}
         dark={dark}
         c={c}
-        mapsHref={mapsHref}
+        business={business}
         themeToggle={themeToggle}
         langToggle={langToggle}
         chromeIconStyle={chromeIconStyle}

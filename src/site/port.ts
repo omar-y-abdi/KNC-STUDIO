@@ -1,7 +1,7 @@
 // The "backend-ready" seam for owner-editable public copy (Task 2 §2). A `SiteChromePort` loads the
-// homepage overlay, booking-popup text, and two font-size presets for one language. Public shells
-// depend on this interface only; implementations are the offline mock (defaults) and Supabase
-// (`site_content` + `site_settings`).
+// homepage overlay, booking-popup text, business identity, SEO, and font-size presets for one
+// language. Public shells depend on this interface only; implementations are the offline mock
+// (defaults) and Supabase (`site_content` + `site_settings`).
 
 import type { Lang } from '../i18n/index'
 import type { SiteChrome } from './siteChrome'

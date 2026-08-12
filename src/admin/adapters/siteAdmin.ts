@@ -1,26 +1,20 @@
 // Site-chrome admin adapter (owner-only writes). Reads/upserts the editable homepage text
-// (`site_content`, PK key+lang) and the font-size settings (`site_settings`, PK key). Mirrors
-// aboutAdmin exactly. Anon can read; only the owner may write (site_*_owner RLS).
+// (`site_content`, PK key+lang) and public business/SEO/font-size settings (`site_settings`, PK
+// key). Mirrors aboutAdmin exactly. Anon can read; only the owner may write (site_*_owner RLS).
 //
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
 import { parseWith, siteContentRows, siteSettingRows } from '../adminSchemas'
 import type { Lang } from '../../i18n/index'
-import type { AdminResult } from '../types'
+import type { AdminResult, AdminSiteContentCell, AdminSiteSetting } from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa startsidan.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
-export interface SiteContentCell {
-  readonly key: string
-  readonly lang: Lang
-  readonly value: string
-}
-
 /** Read every editable homepage cell (both languages). */
-export async function listSiteContent(): Promise<AdminResult<readonly SiteContentCell[]>> {
+export async function listSiteContent(): Promise<AdminResult<readonly AdminSiteContentCell[]>> {
   try {
     const { data, error } = await getAdminClient().from('site_content').select('key,lang,value')
     if (error !== null || data === null) return err('network', READ_ERROR)
@@ -39,8 +33,12 @@ export async function listSiteSettings(): Promise<AdminResult<ReadonlyMap<string
     if (error !== null || data === null) return err('network', READ_ERROR)
     const parsed = parseWith(siteSettingRows, data)
     if (!parsed.ok) return err('malformed', READ_ERROR)
+    const settings: readonly AdminSiteSetting[] = parsed.value.map((r) => ({
+      key: r.key,
+      value: r.value,
+    }))
     const map = new Map<string, string>()
-    for (const r of parsed.value) map.set(r.key, r.value)
+    for (const setting of settings) map.set(setting.key, setting.value)
     return ok(map)
   } catch {
     return err('network', READ_ERROR)
@@ -52,7 +50,7 @@ export async function saveSiteContent(
   key: string,
   lang: Lang,
   value: string,
-): Promise<AdminResult<SiteContentCell>> {
+): Promise<AdminResult<AdminSiteContentCell>> {
   try {
     const { data, error } = await getAdminClient()
       .from('site_content')

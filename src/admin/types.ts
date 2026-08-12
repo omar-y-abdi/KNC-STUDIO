@@ -168,6 +168,19 @@ export interface AboutRow {
   readonly value: string
 }
 
+/** One owner-editable public copy cell, matching `site_content`'s composite key. */
+export interface AdminSiteContentCell {
+  readonly key: string
+  readonly lang: Lang
+  readonly value: string
+}
+
+/** One non-localized owner-editable public setting, matching `site_settings`. */
+export interface AdminSiteSetting {
+  readonly key: string
+  readonly value: string
+}
+
 /** A gallery image row + its resolved public URL (for previews). */
 export type GalleryKind = 'salon' | 'cuts'
 
