@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(15);
 
 select has_table('public', 'public_action_attempts', 'public action ledger exists');
 select is(
@@ -8,6 +8,12 @@ select is(
    where n.nspname = 'public' and c.relname = 'public_action_attempts'),
   true,
   'public action ledger has RLS enabled'
+);
+select has_index(
+  'public',
+  'public_action_attempts',
+  'public_action_attempts_created_at_idx',
+  'public action ledger cleanup has a time-first index'
 );
 
 select is(

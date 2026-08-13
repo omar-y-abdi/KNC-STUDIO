@@ -337,6 +337,7 @@ export interface AdminStrings {
   readonly barbersHide: string
   readonly barbersActivate: string
   readonly barbersCreateLogin: string
+  readonly barbersResendInvite: string
   // BarbersView — edit/new form field labels
   readonly barbersFieldName: string
   readonly barbersFieldInstagram: string
@@ -352,6 +353,7 @@ export interface AdminStrings {
   readonly barbersSaving: string
   readonly barbersCreate: string
   readonly barbersCreating: string
+  readonly barbersResending: string
   readonly barbersCancel: string
   // BarbersView — notices + validation
   readonly barbersUpdatedOk: string
@@ -789,6 +791,7 @@ const SV: AdminStrings = {
   barbersHide: 'Dölj',
   barbersActivate: 'Aktivera',
   barbersCreateLogin: 'Skapa inloggning',
+  barbersResendInvite: 'Skicka ny inbjudan',
   barbersFieldName: 'Namn',
   barbersFieldInstagram: 'Instagram',
   barbersFieldRoleSv: 'Roll (SV)',
@@ -802,6 +805,7 @@ const SV: AdminStrings = {
   barbersSaving: 'Sparar …',
   barbersCreate: 'Skapa',
   barbersCreating: 'Skapar …',
+  barbersResending: 'Skickar …',
   barbersCancel: 'Avbryt',
   barbersUpdatedOk: 'Barberaren uppdaterad.',
   barbersHiddenOk: 'Barberaren dold.',
@@ -1231,6 +1235,7 @@ const EN: AdminStrings = {
   barbersHide: 'Hide',
   barbersActivate: 'Activate',
   barbersCreateLogin: 'Create login',
+  barbersResendInvite: 'Send new invitation',
   barbersFieldName: 'Name',
   barbersFieldInstagram: 'Instagram',
   barbersFieldRoleSv: 'Role (SV)',
@@ -1244,6 +1249,7 @@ const EN: AdminStrings = {
   barbersSaving: 'Saving …',
   barbersCreate: 'Create',
   barbersCreating: 'Creating …',
+  barbersResending: 'Sending …',
   barbersCancel: 'Cancel',
   barbersUpdatedOk: 'Barber updated.',
   barbersHiddenOk: 'Barber hidden.',

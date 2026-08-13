@@ -111,9 +111,7 @@ function parseBody(raw: unknown): ParsedAction | null {
 
 function clientIp(req: Request): string {
   const cloudflare = req.headers.get('cf-connecting-ip')?.trim()
-  if (cloudflare) return cloudflare
-  const forwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-  return forwarded || 'unknown'
+  return cloudflare || 'unknown'
 }
 
 async function sha256(value: string): Promise<string> {

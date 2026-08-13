@@ -18,6 +18,7 @@ import { supabaseBarbersAdapter } from '../../src/booking/adapters/supabaseBarbe
 import { supabaseAboutContentAdapter } from '../../src/about/content/supabaseAboutContent'
 import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
+import { stockholmInstant } from '../../src/booking/stockholmTime'
 import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteChrome'
 import { asBarberId } from '../../src/booking/domain'
 import {
@@ -372,9 +373,7 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
 
       const dateIso = '2040-03-14'
       const time = '13:30'
-      const [y, m, d] = dateIso.split('-').map(Number)
-      const [hh, mm] = time.split(':').map(Number)
-      const start = new Date(y ?? 0, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0)
+      const start = stockholmInstant(2040, 3, 14, 13, 30)
       await insertBookingRaw(env, 'hassan', start, 45)
 
       const available = await supabaseBookingAdapter.availability({

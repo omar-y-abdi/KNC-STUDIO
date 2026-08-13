@@ -4,8 +4,8 @@
 //   { email, barber_id, lang }; this function:
 //   1. validates that the caller holds an owner JWT (fail-closed),
 //   2. validates the body (email shape + barber_id exists in public.barbers),
-//   3. generates a single-use Supabase invite link via service-role,
-//   4. links the invited user to the barber profile,
+//   3. generates a single-use Supabase invite link via service-role (or refreshes an expired invite),
+//   4. links a new invited user to the barber profile,
 //   5. sends the branded, owner-editable invitation through Resend, and
 //   6. returns { ok:true } (no credentials or invite token in the response).
 //
@@ -168,7 +168,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.error('admin-create-barber: profile precheck failed:', linked.error.message)
     return json({ ok: false, error: 'create_failed' }, 500)
   }
-  if (linked.data !== null) return json({ ok: false, error: 'barber_linked' }, 409)
+  let isNewAccount = linked.data === null
+
+  if (linked.data !== null) {
+    const existing = await service.auth.admin.getUserById(linked.data.id)
+    if (existing.error || existing.data.user === null) {
+      console.error(
+        'admin-create-barber: linked auth user lookup failed:',
+        existing.error?.message ?? 'missing user',
+      )
+      return json({ ok: false, error: 'create_failed' }, 500)
+    }
+    if (
+      typeof existing.data.user.email_confirmed_at === 'string' &&
+      existing.data.user.email_confirmed_at !== ''
+    ) {
+      return json({ ok: false, error: 'account_active' }, 409)
+    }
+    if (existing.data.user.email?.toLowerCase() !== email) {
+      return json({ ok: false, error: 'email_mismatch' }, 409)
+    }
+    isNewAccount = false
+  }
 
   // generateLink(type=invite) creates an unconfirmed Auth user without assigning a shared password.
   // The link itself points at our domain; `/invite` verifies the token only after an explicit click.
@@ -194,28 +215,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const newUserId = generated.data.user.id
 
+  if (linked.data !== null && newUserId !== linked.data.id) {
+    console.error('admin-create-barber: refreshed invite resolved to a different auth user')
+    return json({ ok: false, error: 'create_failed' }, 500)
+  }
+
   // --- LINK: insert profiles row -----------------------------------------------------------
   //
   // The invite acceptance page creates the first password before login, so no forced-password flag
   // is needed. On any later failure, remove both rows so the owner can retry with a fresh invite.
-  const { error: insertError } = await service.from('profiles').insert({
-    id: newUserId,
-    role: 'barber',
-    barber_id,
-    must_change_password: false,
-  })
+  if (isNewAccount) {
+    const { error: insertError } = await service.from('profiles').insert({
+      id: newUserId,
+      role: 'barber',
+      barber_id,
+      must_change_password: false,
+    })
 
-  if (insertError) {
-    console.error('admin-create-barber: profiles insert failed:', insertError.message)
-    // Best-effort cleanup — do not propagate this error (the real error is the insert failure).
-    const { error: deleteError } = await service.auth.admin.deleteUser(newUserId)
-    if (deleteError) {
-      console.error(
-        `admin-create-barber: ORPHAN WARNING — auth user ${newUserId} created but profile insert failed and cleanup also failed:`,
-        deleteError.message,
-      )
+    if (insertError) {
+      console.error('admin-create-barber: profiles insert failed:', insertError.message)
+      // Best-effort cleanup — do not propagate this error (the real error is the insert failure).
+      const { error: deleteError } = await service.auth.admin.deleteUser(newUserId)
+      if (deleteError) {
+        console.error('admin-create-barber: auth cleanup failed after profile insert failure')
+      }
+      return json({ ok: false, error: 'link_failed' }, 500)
     }
-    return json({ ok: false, error: 'link_failed' }, 500)
   }
 
   try {
@@ -230,13 +255,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       'admin-create-barber: invite delivery failed:',
       error instanceof Error ? error.message : 'unknown',
     )
-    const profileCleanup = await service.from('profiles').delete().eq('id', newUserId)
-    if (profileCleanup.error) {
-      console.error('admin-create-barber: profile cleanup failed:', profileCleanup.error.message)
-    }
-    const authCleanup = await service.auth.admin.deleteUser(newUserId)
-    if (authCleanup.error) {
-      console.error('admin-create-barber: auth cleanup failed:', authCleanup.error.message)
+    if (isNewAccount) {
+      const profileCleanup = await service.from('profiles').delete().eq('id', newUserId)
+      if (profileCleanup.error) {
+        console.error('admin-create-barber: profile cleanup failed:', profileCleanup.error.message)
+      }
+      const authCleanup = await service.auth.admin.deleteUser(newUserId)
+      if (authCleanup.error) {
+        console.error('admin-create-barber: auth cleanup failed:', authCleanup.error.message)
+      }
     }
     return json({ ok: false, error: 'invite_send_failed' }, 502)
   }

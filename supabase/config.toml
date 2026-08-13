@@ -230,15 +230,15 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Keep email provider enabled for existing staff login and password reset. Global [auth]
-# enable_signup=false still blocks public account creation; owner provisioning uses service_role.
+# Keep email login enabled for existing staff. Global [auth].enable_signup=false blocks public account
+# creation; owner provisioning still runs through the service-role function.
 enable_signup = true
 # Only the new email address must confirm an email change.
 double_confirm_changes = false
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = true
-# If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+# Require the current password at the Auth server, not only in the Settings UI.
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.

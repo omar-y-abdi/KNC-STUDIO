@@ -6,21 +6,21 @@
 -- both functions is verified separately via curl.)
 
 begin;
-select plan(15);
+select plan(20);
 
--- booking_attempts: gateway-only ledger. service_role has EXACTLY the DML the edge fn performs; the
--- public Data API roles get nothing (RLS enabled, no policy, no grant).
+-- booking_attempts: gateway-only ledger. The definer RPC owns access; Data API roles, including the
+-- Edge Function's service_role, cannot read or mutate the ledger directly.
 select ok(
-  pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'select'),
-  'service_role can SELECT booking_attempts (windowed count)'
+  not pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'select'),
+  'service_role cannot SELECT booking_attempts directly'
 );
 select ok(
-  pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'insert'),
-  'service_role can INSERT booking_attempts (record attempt)'
+  not pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'insert'),
+  'service_role cannot INSERT booking_attempts directly'
 );
 select ok(
-  pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'delete'),
-  'service_role can DELETE booking_attempts (opportunistic prune)'
+  not pg_catalog.has_table_privilege('service_role', 'public.booking_attempts', 'delete'),
+  'service_role cannot DELETE booking_attempts directly'
 );
 select ok(
   not pg_catalog.has_table_privilege('anon', 'public.booking_attempts', 'select'),
@@ -43,6 +43,29 @@ select ok(
   'anon canNOT execute recent_booking_count_by_phone'
 );
 
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role',
+    'public.create_booking_with_limits(text,text,timestamptz,text,text,text,text,text,integer,integer,integer,integer)',
+    'execute'
+  ),
+  'service_role can execute atomic booking gateway'
+);
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon',
+    'public.create_booking_with_limits(text,text,timestamptz,text,text,text,text,text,integer,integer,integer,integer)',
+    'execute'
+  ),
+  'anon cannot execute atomic booking gateway'
+);
+select has_index(
+  'public',
+  'booking_attempts',
+  'booking_attempts_created_at_idx',
+  'booking attempt cleanup has a time-first index'
+);
+
 -- Functional: it counts only the given phone's bookings within the window.
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
@@ -56,6 +79,36 @@ select is(
   public.recent_booking_count_by_phone('0706660000', now() - interval '1 hour'),
   2, 'recent_booking_count_by_phone counts this phone''s recent bookings (2)'
 );
+
+select set_config(
+  'test.victor_service',
+  (select id::text from public.services where barber_id = 'victor' and active order by sort_order limit 1),
+  true
+);
+set local role service_role;
+select is(
+  public.create_booking_with_limits(
+    'victor',
+    current_setting('test.victor_service'),
+    timestamptz '2040-03-14T12:30:00Z',
+    '0707770000', 'atomic-one@example.test', 'sv', 'Atomic One', repeat('a', 64),
+    600, 86400, 1, 5
+  )->>'ok',
+  'true',
+  'atomic gateway accepts first request within limits'
+);
+select is(
+  public.create_booking_with_limits(
+    'victor',
+    current_setting('test.victor_service'),
+    timestamptz '2040-03-14T13:30:00Z',
+    '0707770001', 'atomic-two@example.test', 'sv', 'Atomic Two', repeat('a', 64),
+    600, 86400, 1, 5
+  )->>'error',
+  'rate_limited',
+  'atomic gateway rejects second request at the IP limit'
+);
+reset role;
 
 -- booking_confirmation_details: the email webhook read, service_role-only (bookings stays RPC-gated
 -- PII — service_role has no direct SELECT on it). Returns recipient/content fields and authoritative status.
@@ -101,7 +154,7 @@ select ok(
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public'
       and c.relname = 'bookings'
-      and t.tgname = 'booking_cancellation_on_update'
+      and t.tgname = 'booking_email_delivery_on_status_change'
       and not t.tgisinternal
   ),
   'confirmed to cancelled updates queue cancellation email'

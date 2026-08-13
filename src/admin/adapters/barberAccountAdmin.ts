@@ -19,6 +19,10 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
       return err('validation', 'E-posten används redan.')
     case 'barber_linked':
       return err('validation', 'Barberaren har redan ett kopplat konto.')
+    case 'account_active':
+      return err('validation', 'Kontot är redan aktiverat.')
+    case 'email_mismatch':
+      return err('validation', 'Ange e-postadressen som är kopplad till kontot.')
     case 'invite_send_failed':
       return err('network', 'Kontot kunde inte bjudas in. Försök igen.')
     case 'forbidden':

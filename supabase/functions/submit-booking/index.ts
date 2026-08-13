@@ -2,10 +2,9 @@
 //
 // The browser (anon) no longer calls create_booking directly. It POSTs here. This function:
 //   1. verifies a Cloudflare Turnstile token server-side (fail-closed),
-//   2. throttles per client IP (hashed) over a short window,
-//   3. limits per phone over a day,
-//   4. records the attempt + opportunistically prunes old rows, then
-//   5. calls create_booking via service_role; the database derives name, price, and duration from
+//   2. hashes the trusted platform client IP, then
+//   3. atomically rate-limits IP + phone and calls create_booking through one service-role RPC;
+//      the database derives name, price, and duration from
 //      the active services row rather than trusting browser-supplied commercial data.
 //
 // Invocation: browser -> this function (verify_jwt = false; see supabase/config.toml). It is CORS-
@@ -35,10 +34,9 @@ const corsHeaders: Record<string, string> = {
 // GENEROUS, coarse limits — tunable; Turnstile is the real bot gate. These must NOT false-positive on
 // shared CGNAT / salon Wi-Fi (many people behind one IP) or a parent booking self + 2 kids in a row.
 const MAX_PER_IP = 10 // max accepted attempts per IP hash within IP_WINDOW_MS
-const IP_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
+const IP_WINDOW_SECONDS = 10 * 60 // 10 minutes
 const MAX_PER_PHONE = 5 // max bookings per phone within PHONE_WINDOW_MS
-const PHONE_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
-const ATTEMPT_TTL_MS = 60 * 60 * 1000 // prune booking_attempts rows older than 1 hour
+const PHONE_WINDOW_SECONDS = 24 * 60 * 60 // 24 hours
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
@@ -127,15 +125,10 @@ async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-// Best-effort client IP. x-forwarded-for is a comma-list (client first); cf-connecting-ip is a single
-// value. Falls back to "unknown" so the hash is still deterministic (one shared bucket) rather than null.
+// Supabase's edge gateway attaches cf-connecting-ip. Caller-controlled forwarding headers are ignored;
+// missing platform metadata falls back to one shared "unknown" bucket rather than bypassing limits.
 function clientIp(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for')
-  if (xff) {
-    const first = xff.split(',')[0]?.trim()
-    if (first) return first
-  }
-  return req.headers.get('cf-connecting-ip') ?? 'unknown'
+  return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
 }
 
 // Turnstile siteverify. Configuration is checked before this helper; missing/invalid tokens and
@@ -202,41 +195,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // 2. IP hash.
     const ipHash = await sha256Hex(ip + ipSalt)
 
-    // 3. Per-IP throttle: count accepted attempts for this hash within the window.
-    const ipSince = new Date(Date.now() - IP_WINDOW_MS).toISOString()
-    const ipCount = await supabase
-      .from('booking_attempts')
-      .select('id', { count: 'exact', head: true })
-      .eq('ip_hash', ipHash)
-      .gte('created_at', ipSince)
-    if (ipCount.error) throw ipCount.error
-    if ((ipCount.count ?? 0) >= MAX_PER_IP) {
-      return json({ ok: false, error: 'rate_limited' }, 200)
-    }
-
-    // 4. Per-phone limit: count bookings for this phone within the 24h window. bookings is PII and
-    //    RPC-gated (the gateway has no direct SELECT on it), so we count via a definer RPC that returns
-    //    just an integer — keeping the "bookings only via RPC" boundary intact.
-    const phoneSince = new Date(Date.now() - PHONE_WINDOW_MS).toISOString()
-    const phoneCount = await supabase.rpc('recent_booking_count_by_phone', {
-      p_phone: booking.phone,
-      p_since: phoneSince,
-    })
-    if (phoneCount.error) throw phoneCount.error
-    if ((phoneCount.data ?? 0) >= MAX_PER_PHONE) {
-      return json({ ok: false, error: 'rate_limited' }, 200)
-    }
-
-    // 5. Record this attempt, then opportunistically prune rows older than the TTL. The prune is
-    //    best-effort: a failure to prune must not fail the booking, so we log and continue.
-    const inserted = await supabase.from('booking_attempts').insert({ ip_hash: ipHash })
-    if (inserted.error) throw inserted.error
-    const pruneBefore = new Date(Date.now() - ATTEMPT_TTL_MS).toISOString()
-    const pruned = await supabase.from('booking_attempts').delete().lt('created_at', pruneBefore)
-    if (pruned.error) console.error('submit-booking: attempt prune failed:', pruned.error)
-
-    // 6. Create the booking via the schedule-enforcing RPC (service_role). Return its Result verbatim.
-    const rpc = await supabase.rpc('create_booking', {
+    // 3. One database transaction locks both rate-limit keys, checks both windows, records the
+    //    attempt, and creates the booking. Concurrent requests cannot all pass stale counts.
+    const rpc = await supabase.rpc('create_booking_with_limits', {
       p_barber_id: booking.barberId,
       p_service_id: booking.serviceId,
       p_start_at: booking.startAt,
@@ -244,10 +205,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_email: booking.email,
       p_lang: booking.lang,
       p_customer_name: booking.customerName,
+      p_ip_hash: ipHash,
+      p_ip_window_secs: IP_WINDOW_SECONDS,
+      p_phone_window_secs: PHONE_WINDOW_SECONDS,
+      p_ip_limit: MAX_PER_IP,
+      p_phone_limit: MAX_PER_PHONE,
     })
     if (rpc.error) throw rpc.error
 
-    // create_booking always returns a JSONB Result ({ok:true,...} | {ok:false,error}); pass it through.
+    // The RPC returns the same booking Result plus rate_limited; pass it through unchanged.
     return json(rpc.data, 200)
   } catch (err) {
     console.error('submit-booking: unhandled error:', err)

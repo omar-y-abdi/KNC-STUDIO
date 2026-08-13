@@ -5,7 +5,7 @@
 // originated from our authenticated start AND carries the barber id to store the token against.
 //
 // Flow: verify state -> exchange code for a refresh token (server-side, with the client secret) ->
-// store the token for the barber -> backfill all their confirmed bookings into Google Calendar ->
+// store the token for the barber -> backfill future confirmed bookings into Google Calendar ->
 // render a small success page. The refresh token is written ONLY through the service_role definer RPC
 // and never leaves the server.
 //
@@ -66,7 +66,7 @@ interface BackfillBooking extends BookingEventInput {
   readonly google_event_id: string | null
 }
 
-/** Push every confirmed booking that is not already mapped into the barber's calendar. Best-effort:
+/** Push every future confirmed booking that is not already mapped into the barber's calendar. Best-effort:
  *  a per-booking failure is recorded and skipped so one bad row never aborts the whole backfill. */
 async function backfill(
   service: SupabaseClient,
@@ -185,8 +185,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       )
     }
 
-    // Backfill is best-effort — the connection is already saved, and calendar-sync catches up on the
-    // next booking change even if this hits Google rate limits.
+    // Backfill is best-effort — the connection is already saved. Any per-booking failure is recorded
+    // and surfaced in the calendar settings panel.
     try {
       await backfill(service, payload.barber_id, clientId, clientSecret)
     } catch (backfillErr) {

@@ -353,7 +353,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
     </div>
   )
 
-  /** Inline "Skapa inloggning" form — email input + submit/cancel. Same border style as edit form. */
+  /** Inline account form — creates a login or refreshes an expired invitation. */
   const renderAccountForm = (barberId: AdminBarberId): JSX.Element => (
     <div
       style={{
@@ -382,7 +382,13 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           onClick={() => void submitCreateAccount(barberId)}
           disabled={accountBusy}
         >
-          {accountBusy ? t.barbersCreating : t.barbersCreate}
+          {accountBusy
+            ? linked.has(barberId)
+              ? t.barbersResending
+              : t.barbersCreating
+            : linked.has(barberId)
+              ? t.barbersResendInvite
+              : t.barbersCreate}
         </button>
         <button
           type="button"
@@ -455,15 +461,13 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                   >
                     {b.active ? t.barbersHide : t.barbersActivate}
                   </button>
-                  {!linked.has(b.id) ? (
-                    <button
-                      type="button"
-                      style={s.ghostBtn}
-                      onClick={() => toggleAccountForm(b.id)}
-                    >
-                      {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
-                    </button>
-                  ) : null}
+                  <button type="button" style={s.ghostBtn} onClick={() => toggleAccountForm(b.id)}>
+                    {accountFormId === b.id
+                      ? t.barbersClose
+                      : linked.has(b.id)
+                        ? t.barbersResendInvite
+                        : t.barbersCreateLogin}
+                  </button>
                   <button
                     type="button"
                     style={s.dangerBtn}
@@ -620,31 +624,31 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                           <br />
                           <code style={{ fontSize: '11.5px', opacity: 0.55 }}>{b.id}</code>
                         </td>
+                        <td style={s.td}>{b.ig === '' ? null : '@' + b.ig}</td>
                         <td style={s.td}>
-                          {b.ig === '' ? <span style={s.mutedText}>—</span> : '@' + b.ig}
-                        </td>
-                        <td style={s.td}>
-                          {linked.has(b.id) ? (
-                            <span style={s.pill}>{t.barbersStatusLinked}</span>
-                          ) : (
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                flexWrap: 'wrap',
-                              }}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <span style={s.pill}>
+                              {linked.has(b.id) ? t.barbersStatusLinked : t.barbersStatusUnlinked}
+                            </span>
+                            <button
+                              type="button"
+                              style={s.ghostBtn}
+                              onClick={() => toggleAccountForm(b.id)}
                             >
-                              <span style={s.pill}>{t.barbersStatusUnlinked}</span>
-                              <button
-                                type="button"
-                                style={s.ghostBtn}
-                                onClick={() => toggleAccountForm(b.id)}
-                              >
-                                {accountFormId === b.id ? t.barbersClose : t.barbersCreateLogin}
-                              </button>
-                            </div>
-                          )}
+                              {accountFormId === b.id
+                                ? t.barbersClose
+                                : linked.has(b.id)
+                                  ? t.barbersResendInvite
+                                  : t.barbersCreateLogin}
+                            </button>
+                          </div>
                         </td>
                         <td style={s.td}>
                           <span style={s.pill}>

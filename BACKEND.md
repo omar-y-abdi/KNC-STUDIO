@@ -37,7 +37,7 @@ frontend variables.
 npx supabase login
 npx supabase link --project-ref <project-ref>
 npx supabase db push
-npx supabase functions deploy submit-booking send-confirmation public-booking-actions --use-api
+npx supabase functions deploy --use-api
 ```
 
 Required Edge Function secrets:
@@ -49,13 +49,13 @@ npx supabase secrets set \
   IP_SALT=<random-long-value> \
   PUBLIC_ACTION_HASH_SALT=<different-random-long-value> \
   PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se \
-  BOOKING_WEBHOOK_SECRET=<random-long-value>
+  WEBHOOK_SECRET=<random-long-value>
 ```
 
 Database Vault must contain:
 
 - `booking_confirmation_url` = `https://<project-ref>.functions.supabase.co/send-confirmation`
-- `booking_webhook_secret` = same value as `BOOKING_WEBHOOK_SECRET`
+- `booking_webhook_secret` = same value as `WEBHOOK_SECRET`
 
 Create or rotate these through Supabase SQL Editor with `vault.create_secret` / `vault.update_secret`.
 Do not commit their values.

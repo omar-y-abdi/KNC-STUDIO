@@ -14,7 +14,7 @@
 -- catalog (has_function_privilege / pg_class.relrowsecurity / pg_policies).
 
 begin;
-select plan(30);
+select plan(32);
 
 -- ---- Tables: RLS on, no policies (service_role-only) ------------------------------------------
 select ok(
@@ -93,6 +93,43 @@ select ok(has_function_privilege('authenticated', 'public.calendar_connection_st
   'authenticated can execute calendar_connection_status (self-scoped to their own row)');
 select ok(not has_function_privilege('anon', 'public.calendar_connection_status()', 'EXECUTE'),
   'anon cannot execute calendar_connection_status');
+
+insert into public.barbers (id, name)
+values ('calendar-test', 'Calendar Test');
+
+insert into public.barber_calendar_tokens (barber_id, refresh_token)
+values ('calendar-test', 'test-refresh-token');
+
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang)
+values
+  ('26000000-0000-0000-0000-000000000001', 'calendar-test', 'past', 'Past', 100, 30,
+   '2001-01-01 09:00+00', '2001-01-01 09:30+00',
+   'Past Customer', 'email', null, 'past@example.com', 'sv'),
+  ('26000000-0000-0000-0000-000000000002', 'calendar-test', 'future', 'Future', 100, 30,
+   '2099-01-01 09:00+00', '2099-01-01 09:30+00',
+   'Future Customer', 'email', null, 'future@example.com', 'sv');
+
+select is(
+  (select pg_catalog.count(*)::integer
+   from pg_catalog.jsonb_array_elements(
+     public.calendar_backfill_source('calendar-test')->'bookings'
+   ) booking
+   where booking->>'id' = '26000000-0000-0000-0000-000000000001'),
+  0,
+  'calendar backfill excludes completed bookings'
+);
+
+select is(
+  (select pg_catalog.count(*)::integer
+   from pg_catalog.jsonb_array_elements(
+     public.calendar_backfill_source('calendar-test')->'bookings'
+   ) booking
+   where booking->>'id' = '26000000-0000-0000-0000-000000000002'),
+  1,
+  'calendar backfill includes future confirmed bookings'
+);
 
 select * from finish();
 rollback;

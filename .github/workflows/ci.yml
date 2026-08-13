@@ -34,7 +34,7 @@ jobs:
       - name: Reject unlicensed legacy font artifacts
         run: |
           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
-          ! rg -a -n 'Apple Inc\.|SF Pro|SF-Pro' dist
+          ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
       - run: npx playwright install --with-deps chromium
       - name: Browser smoke
         run: |
@@ -47,7 +47,7 @@ jobs:
           done
           BASE_URL=http://127.0.0.1:4173 npm run test:e2e
           BASE=http://127.0.0.1:4173 OUT=/tmp/visual-candidate node tools/visual/capture.mjs
-          CANDIDATE=/tmp/visual-candidate DIFF=/tmp/visual-diff node tools/visual/compare.mjs
+          BASELINE=tools/visual/baseline-linux CANDIDATE=/tmp/visual-candidate DIFF=/tmp/visual-diff node tools/visual/compare.mjs
 
   edge-functions:
     name: Edge Functions

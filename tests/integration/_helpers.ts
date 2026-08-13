@@ -202,6 +202,36 @@ export async function callCreateBooking(
   })
 }
 
+export async function callCreateBookingWithLimits(
+  dbUrl: string,
+  args: CreateBookingArgs,
+  ipHash: string,
+  phoneLimit: number,
+): Promise<CreateBookingRpcResult> {
+  return withClient(dbUrl, async (client) => {
+    await client.query('set role service_role')
+    const res = await client.query<{ result: CreateBookingRpcResult }>(
+      `select public.create_booking_with_limits(
+         $1,$2,$3::timestamptz,$4,$5,$6,$7,$8,600,86400,100,$9
+       ) as result`,
+      [
+        args.barberId,
+        args.serviceId,
+        args.startAt,
+        args.phone,
+        args.email,
+        args.lang,
+        args.customerName,
+        ipHash,
+        phoneLimit,
+      ],
+    )
+    const row = res.rows[0]
+    if (row === undefined) throw new Error('create_booking_with_limits returned no row')
+    return row.result
+  })
+}
+
 /**
  * INSERT a FINISHED, confirmed booking directly (as the superuser owner) — start + end both in the
  * past — so its phone is eligible to leave exactly one review (the create_review gate requires a
