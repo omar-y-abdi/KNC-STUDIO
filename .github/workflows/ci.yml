@@ -66,7 +66,7 @@ jobs:
       - name: Type-check every Edge Function entrypoint
         run: |
           while IFS= read -r file; do
-            deno check --no-lock --node-modules-dir=auto "$file"
+            deno check --no-lock --node-modules-dir=manual "$file"
           done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
 
   database:
