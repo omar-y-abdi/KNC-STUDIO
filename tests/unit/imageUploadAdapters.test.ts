@@ -6,8 +6,8 @@ vi.mock('../../src/admin/adminClient', () => ({
   getAdminClient: () => ({ functions: { invoke } }),
 }))
 
-import { uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
-import { uploadImage } from '../../src/admin/adapters/galleryAdmin'
+import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
+import { deleteImage, uploadImage } from '../../src/admin/adapters/galleryAdmin'
 
 function imageFile(): File {
   return new File(['image'], 'portrait.jpg', { type: 'image/jpeg' })
@@ -116,6 +116,46 @@ describe('image upload adapters', () => {
     expect(result).toEqual({
       ok: false,
       error: { kind: 'malformed', message: 'Kunde inte ladda upp bilden. Försök igen.' },
+    })
+  })
+
+  it('deletes gallery metadata and bytes through the durable gateway', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, pending: true }, error: null })
+    const image = {
+      id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+      kind: 'cuts' as const,
+      storagePath: 'cuts/4d3f88f7.webp',
+      alt: 'Cut',
+      sortOrder: 0,
+      url: 'https://example.invalid/image.webp',
+    }
+
+    const result = await deleteImage(image)
+
+    expect(result).toEqual({ ok: true, value: { pending: true } })
+    expect(invoke).toHaveBeenCalledWith('upload-image', {
+      body: {
+        action: 'delete',
+        kind: 'gallery',
+        id: image.id,
+        storagePath: image.storagePath,
+      },
+    })
+  })
+
+  it('deletes barber photos through the same durable gateway', async () => {
+    invoke.mockResolvedValue({ data: { ok: true, pending: false }, error: null })
+
+    const result = await removeBarberPhoto('hassan', 'hassan/photo.webp')
+
+    expect(result).toEqual({ ok: true, value: { pending: false } })
+    expect(invoke).toHaveBeenCalledWith('upload-image', {
+      body: {
+        action: 'delete',
+        kind: 'barber_photo',
+        barberId: 'hassan',
+        storagePath: 'hassan/photo.webp',
+      },
     })
   })
 })

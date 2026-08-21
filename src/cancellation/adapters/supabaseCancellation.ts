@@ -19,7 +19,6 @@ import { formatWhenLabel } from '../../booking/calendar'
 import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
-import { cancelStrings } from '../../i18n/index'
 import type { CancelBooking, CancelLookupResult, CancelResult } from '../domain'
 import type { CancellationPort, CancelLookupParams } from '../port'
 
@@ -41,17 +40,18 @@ async function barberFromId(id: string): Promise<Barber> {
 
 export const supabaseCancellationAdapter: CancellationPort = {
   async lookup(params: CancelLookupParams): Promise<CancelLookupResult> {
-    const notFound: CancelLookupResult = { ok: false, error: cancelStrings(params.lang).errLookup }
+    const system: CancelLookupResult = { ok: false, error: 'system' }
     try {
       const { data, failed } = await invokePublicBookingAction({
         action: 'lookup',
         phone: params.contact,
         turnstileToken: params.turnstileToken,
       })
-      if (failed) return notFound
+      if (failed) return system
 
       const parsed = parseWith(bookingLookupResponse, data)
-      if (!parsed.ok || !parsed.value.ok) return notFound
+      if (!parsed.ok) return system
+      if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
 
       const b = parsed.value.booking
       const start = new Date(b.start_at)
@@ -68,14 +68,14 @@ export const supabaseCancellationAdapter: CancellationPort = {
       }
       return { ok: true, booking }
     } catch {
-      return notFound
+      return system
     }
   },
 
   async cancel(booking: CancelBooking, turnstileToken: string): Promise<CancelResult> {
     // The dialog shows its OWN localized `t.errCancel` on failure (it ignores this field's content),
     // so this required error string is a neutral fallback — never user-displayed.
-    const failed: CancelResult = { ok: false, error: 'cancel_failed' }
+    const failed: CancelResult = { ok: false, error: 'system' }
     try {
       const { data, failed: invokeFailed } = await invokePublicBookingAction({
         action: 'cancel',
@@ -86,7 +86,8 @@ export const supabaseCancellationAdapter: CancellationPort = {
       if (invokeFailed) return failed
 
       const parsed = parseWith(bookingLookupResponse, data)
-      if (!parsed.ok || !parsed.value.ok) return failed
+      if (!parsed.ok) return failed
+      if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
       return { ok: true, booking }
     } catch {
       return failed

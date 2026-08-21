@@ -1,4 +1,4 @@
-name: Encrypted database backup
+name: Encrypted production backup
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: encrypted-database-backup
+  group: encrypted-production-backup
   cancel-in-progress: false
 
 permissions:
@@ -15,13 +15,13 @@ permissions:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -32,17 +32,40 @@ jobs:
       - name: Validate backup configuration
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_STORAGE_SECRET_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_KEY }}
           AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: |
           test -n "$DATABASE_URL" || { echo 'Missing SUPABASE_DB_URL secret'; exit 1; }
+          test -n "$SUPABASE_URL" || { echo 'Missing SUPABASE_URL repository variable'; exit 1; }
+          test -n "$SUPABASE_STORAGE_SECRET_KEY" || { echo 'Missing SUPABASE_STORAGE_SECRET_KEY secret'; exit 1; }
           test -n "$AGE_RECIPIENT" || { echo 'Missing BACKUP_AGE_RECIPIENT variable'; exit 1; }
+          case "$SUPABASE_URL" in https://*) ;; *) echo 'SUPABASE_URL must use HTTPS'; exit 1;; esac
 
-      - name: Create portable Supabase backup
+      - name: Install backup tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes age
+
+      - name: Create encrypted portable Supabase backup
         env:
           DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_STORAGE_SECRET_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_KEY }}
+          REQUIRED_STORAGE_BUCKETS: gallery,barber-photos
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
         run: |
-          plaintext="$RUNNER_TEMP/backup/plaintext"
+          backup_root="$RUNNER_TEMP/backup"
+          plaintext="$backup_root/plaintext"
+          archive="$backup_root/database-and-storage.tar.gz"
+          rm -rf "$backup_root"
           mkdir -p "$plaintext"
+          cleanup() {
+            rm -rf "$plaintext"
+            rm -f "$archive"
+          }
+          trap cleanup EXIT
+
           npx supabase db dump --db-url "$DATABASE_URL" --file "$plaintext/schema.sql"
           npx supabase db dump \
             --db-url "$DATABASE_URL" \
@@ -51,33 +74,40 @@ jobs:
             --data-only \
             --exclude "storage.buckets_vectors" \
             --exclude "storage.vector_indexes"
-          (cd "$plaintext" && sha256sum schema.sql data.sql > MANIFEST.sha256)
-          tar --create --gzip \
-            --file "$RUNNER_TEMP/backup/database.tar.gz" \
-            --directory "$plaintext" \
-            schema.sql data.sql MANIFEST.sha256
-          rm -rf "$plaintext"
+          npx supabase db dump \
+            --db-url "$DATABASE_URL" \
+            --file "$plaintext/history_data.sql" \
+            --use-copy \
+            --data-only \
+            --schema supabase_migrations
+          bash tools/backup/storage-backup.sh --output "$plaintext/storage"
 
-      - name: Encrypt before artifact upload
-        env:
-          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes age
+          (
+            cd "$plaintext"
+            find . -type f -not -name MANIFEST.sha256 -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > MANIFEST.sha256
+          )
+          bash tools/backup/verify-backup-tree.sh "$plaintext"
+          tar --create --gzip \
+            --file "$archive" \
+            --directory "$plaintext" \
+            .
+          rm -rf "$plaintext"
           stamp="$(date -u +'%Y-%m-%dT%H-%M-%SZ')"
-          encrypted="$RUNNER_TEMP/backup/bladeblend-${stamp}.tar.gz.age"
+          encrypted="$backup_root/bladeblend-${stamp}.tar.gz.age"
           age --recipient "$AGE_RECIPIENT" \
             --output "$encrypted" \
-            "$RUNNER_TEMP/backup/database.tar.gz"
-          rm "$RUNNER_TEMP/backup/database.tar.gz"
+            "$archive"
+          rm -f "$archive"
           (cd "$(dirname "$encrypted")" && sha256sum "$(basename "$encrypted")" > "$(basename "$encrypted").sha256")
           test -s "$encrypted"
           echo "BACKUP_FILE=$encrypted" >> "$GITHUB_ENV"
 
       - name: Upload encrypted archive only
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: database-backup-${{ github.run_id }}
+          name: production-backup-${{ github.run_id }}
           path: |
             ${{ env.BACKUP_FILE }}
             ${{ env.BACKUP_FILE }}.sha256

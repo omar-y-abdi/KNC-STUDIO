@@ -78,7 +78,10 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
     }
     setStoragePath(null)
     setUrl(null)
-    setNotice({ kind: 'ok', text: t.profileRemovedOk })
+    setNotice({
+      kind: 'ok',
+      text: r.value.pending ? t.profileRemovalPending : t.profileRemovedOk,
+    })
   }
 
   return (

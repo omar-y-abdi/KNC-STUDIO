@@ -47,12 +47,19 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
 
   const status = cal.status
   const connected = status?.connected === true
+  const disconnectPending = status?.disconnectPending === true
+  const repairRequired = status?.repairRequired === true
 
   return (
     <div style={box}>
       {connected
         ? heading('✓ ' + t.calendarConnected, status?.googleEmail ?? null)
-        : heading('Google Calendar', t.calendarHint)}
+        : disconnectPending
+          ? heading(
+              t.calendarDisconnecting,
+              repairRequired ? t.calendarRepairHint : t.calendarDisconnectPending,
+            )
+          : heading('Google Calendar', t.calendarHint)}
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
         {connected ? (
@@ -79,7 +86,16 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
               {cal.busy ? t.calendarDisconnecting : t.calendarDisconnect}
             </button>
           </>
-        ) : (
+        ) : disconnectPending && repairRequired ? (
+          <button
+            type="button"
+            style={{ ...s.primaryBtn, opacity: cal.busy ? 0.6 : 1 }}
+            disabled={cal.busy}
+            onClick={() => void cal.connect()}
+          >
+            {cal.busy ? t.calendarConnecting : t.calendarRepairAccess}
+          </button>
+        ) : disconnectPending ? null : (
           <button
             type="button"
             style={{ ...s.primaryBtn, opacity: cal.busy ? 0.6 : 1 }}

@@ -121,6 +121,10 @@ export interface AboutStrings {
   reviewErrRating: string
   /** Shown when the phone has no finished, not-yet-reviewed confirmed booking. */
   reviewErrNoBooking: string
+  reviewErrInvalid: string
+  reviewErrChallenge: string
+  reviewErrRateLimited: string
+  reviewErrSubmit: string
   /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
   ratingValueLabel: string
   /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */
@@ -144,6 +148,8 @@ export interface MyBookingsStrings {
   notFoundEscalated: string
   /** Network/parse failure (retry, no escalation). */
   errSystem: string
+  errChallenge: string
+  errRateLimited: string
   /** List step. */
   upcomingTitle: string
   pastTitle: string
@@ -180,6 +186,9 @@ export interface CancelStrings {
   lookingUp: string
   errPhone: string
   errLookup: string
+  errSystem: string
+  errChallenge: string
+  errRateLimited: string
   /** Step 2 — the looked-up booking + confirm/abort. */
   foundLead: string
   fBarber: string

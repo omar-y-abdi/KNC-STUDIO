@@ -6,10 +6,40 @@ vi.mock('../../src/admin/adminClient', () => ({
   getAdminClient: () => ({ functions: { invoke } }),
 }))
 
-import { createBarberAccount } from '../../src/admin/adapters/barberAccountAdmin'
+import {
+  createBarberAccount,
+  setBarberAccountAccess,
+} from '../../src/admin/adapters/barberAccountAdmin'
 
 beforeEach(() => {
   invoke.mockReset()
+})
+
+describe('setBarberAccountAccess', () => {
+  it('maps a secure disable result including Auth synchronization state', async () => {
+    invoke.mockResolvedValue({
+      data: { ok: true, account_enabled: false, auth_sync_pending: true },
+      error: null,
+    })
+
+    const result = await setBarberAccountAccess('hassan', false)
+
+    expect(result).toEqual({
+      ok: true,
+      value: { enabled: false, authSyncPending: true },
+    })
+    expect(invoke).toHaveBeenCalledWith('admin-manage-barber', {
+      body: { action: 'set_access', barber_id: 'hassan', enabled: false },
+    })
+  })
+
+  it('fails closed when a linked account is missing', async () => {
+    invoke.mockResolvedValue({ data: { ok: false, error: 'not_linked' }, error: null })
+
+    const result = await setBarberAccountAccess('hassan', true)
+
+    expect(result).toMatchObject({ ok: false, error: { kind: 'not_found' } })
+  })
 })
 
 describe('createBarberAccount', () => {

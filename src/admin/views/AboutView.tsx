@@ -282,7 +282,10 @@ function GalleryManager(props: {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: t.aboutGalleryDeletedOk })
+    setNotice({
+      kind: 'ok',
+      text: result.value.pending ? t.aboutGalleryDeletionPending : t.aboutGalleryDeletedOk,
+    })
     setImages((prev) => prev.filter((i) => i.id !== target.id))
   }
 

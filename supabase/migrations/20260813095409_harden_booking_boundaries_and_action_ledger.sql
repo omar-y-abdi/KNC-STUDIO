@@ -55,6 +55,10 @@ begin
     return pg_catalog.jsonb_build_object('ok', false, 'error', 'invalid');
   end if;
 
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('availability:' || p_barber_id, 0)
+  );
+
   if not exists (
     select 1
     from public.barber_schedules s
@@ -125,10 +129,10 @@ $$;
 
 revoke execute on function public.create_booking(
   text, text, timestamptz, text, text, text, text
-) from public, anon, authenticated;
+) from public, authenticated;
 grant execute on function public.create_booking(
   text, text, timestamptz, text, text, text, text
-) to service_role;
+) to anon, service_role;
 
 create or replace function public.available_slots(
   p_barber_id    text,
@@ -266,8 +270,8 @@ begin
 end;
 $$;
 
-revoke execute on function public.cancel_booking(uuid, text) from public, anon, authenticated;
-grant execute on function public.cancel_booking(uuid, text) to service_role;
+revoke execute on function public.cancel_booking(uuid, text) from public, authenticated;
+grant execute on function public.cancel_booking(uuid, text) to anon, service_role;
 
 create index if not exists public_action_attempts_created_at_idx
 on public.public_action_attempts (created_at);

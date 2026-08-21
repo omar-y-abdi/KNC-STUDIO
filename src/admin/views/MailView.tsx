@@ -31,7 +31,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Booking confirmation · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
   },
   {
     id: 'barber_confirmation',
@@ -39,7 +39,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'New booking · barber',
     languages: ['sv'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}, {booking_date}, {booking_time}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
   },
   {
     id: 'customer_cancellation',
@@ -47,7 +47,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Cancellation · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}',
   },
   {
     id: 'barber_cancellation',
@@ -55,7 +55,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Cancellation · barber',
     languages: ['sv'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}, {booking_date}, {booking_time}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
   },
   {
     id: 'customer_reminder',
@@ -63,7 +63,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: '24h reminder · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
   },
   {
     id: 'auth_recovery',
@@ -71,7 +71,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Reset password',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '',
+    placeholders: '{business_name}',
   },
   {
     id: 'auth_email_change',
@@ -79,7 +79,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Confirm new email',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '{new_email}',
+    placeholders: '{business_name}, {new_email}',
   },
   {
     id: 'auth_invite',
@@ -87,7 +87,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Invitation · barber',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '',
+    placeholders: '{business_name}',
   },
 ]
 

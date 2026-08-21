@@ -443,6 +443,10 @@ verify_jwt = false
 enabled = true
 verify_jwt = true
 
+[functions.admin-manage-barber]
+enabled = true
+verify_jwt = true
+
 # calendar-oauth-start: called BY an authenticated barber FROM the admin panel to get the Google
 # consent URL. Holds a valid Supabase JWT -> verify_jwt = true. Also validates the JWT internally
 # (auth.getUser) and requires a linked barber (profiles.role = 'barber') before doing any work.
@@ -475,6 +479,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 static_files = ["./functions/upload-image/magick.wasm"]
+
+[functions.external-cleanup]
+enabled = true
+verify_jwt = false
 
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local

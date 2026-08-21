@@ -1,6 +1,6 @@
 // The real (Supabase) ReviewsPort adapter. `list` reads PUBLISHED reviews directly (allowed by the
-// `reviews_select_published` RLS policy) newest-first; `submit` goes through the `create_review`
-// SECURITY DEFINER RPC (the only write path — direct insert is denied to anon).
+// `reviews_select_published` RLS policy) newest-first; `submit` goes through the protected public
+// action Edge gateway (the only browser write path — direct insert/RPC access is denied to anon).
 //
 // Boundary discipline: every row / RPC response is Zod-parsed. A malformed review row is DROPPED
 // (rather than crashing the list); a submit failure (transport / malformed / `{ok:false}`) maps to
@@ -18,6 +18,8 @@ const SUBMIT_ERROR_MESSAGE = 'Kunde inte skicka recensionen. Försök igen.'
 const NO_BOOKING_MESSAGE = 'Vi hittade ingen avslutad bokning för det numret.'
 /** The server rejected the review shape (phone / rating / text). */
 const INVALID_MESSAGE = 'Recensionen kunde inte valideras.'
+const CHALLENGE_MESSAGE = 'Verifieringen misslyckades. Försök igen.'
+const RATE_LIMITED_MESSAGE = 'För många försök. Vänta en stund och försök igen.'
 
 function reviewError(kind: ReviewError['kind'], message: string): ReviewResult {
   return { ok: false, error: { kind, message } }
@@ -59,10 +61,16 @@ export const supabaseReviewsAdapter: ReviewsPort = {
       const parsed = parseWith(createReviewResponse, data)
       if (!parsed.ok) return reviewError('submit', SUBMIT_ERROR_MESSAGE)
       if (!parsed.value.ok) {
-        // Map the server's gate outcome to a domain error the form can localize.
-        return parsed.value.error === 'no_booking'
-          ? reviewError('no_booking', NO_BOOKING_MESSAGE)
-          : reviewError('invalid', INVALID_MESSAGE)
+        switch (parsed.value.error) {
+          case 'no_booking':
+            return reviewError('no_booking', NO_BOOKING_MESSAGE)
+          case 'invalid':
+            return reviewError('invalid', INVALID_MESSAGE)
+          case 'failed_challenge':
+            return reviewError('challenge', CHALLENGE_MESSAGE)
+          case 'rate_limited':
+            return reviewError('rate_limited', RATE_LIMITED_MESSAGE)
+        }
       }
       return { ok: true, review: parsed.value.review }
     } catch {

@@ -1,0 +1,115 @@
+# Public booking gateway rollout
+
+This release removes anonymous browser access to contact-keyed booking RPCs. Deploy in the order
+below. Never run the contract migration before the switched Worker has passed live gateway checks.
+
+## Preconditions
+
+- PR validation and encrypted backup workflow are green.
+- `npx supabase migration list --linked` shows no remote migration after `20260812112939`.
+- Edge Function secrets are present, including `TURNSTILE_SECRET`, `IP_SALT`,
+  `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, and `WEBHOOK_SECRET`.
+- Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
+  `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
+  dispatchers read the same value from Vault key `booking_webhook_secret`.
+- Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
+  variable in `wrangler.jsonc`.
+- `PROJECT_REF`, `DATABASE_URL`, and production frontend build variables are available in the
+  operator shell. Never write secret values to this repository.
+
+## 1. Expand
+
+Create a temporary Supabase worktree containing every pending migration except the final contract.
+This keeps the source tree untouched and prevents an accidental all-at-once `db push`.
+
+```bash
+export PROJECT_REF='<project-ref>'
+stage_root="$(mktemp -d)"
+trap 'rm -rf "$stage_root"' EXIT
+mkdir -p "$stage_root/supabase"
+rsync -a --exclude '.temp' supabase/ "$stage_root/supabase/"
+rm "$stage_root/supabase/migrations/20260813123853_contract_public_booking_gateway.sql"
+
+npx supabase link --project-ref "$PROJECT_REF" --workdir "$stage_root"
+npx supabase db push --linked --dry-run --workdir "$stage_root"
+npx supabase db push --linked --yes --workdir "$stage_root"
+```
+
+Expected final migration in this phase: `20260813123852_expand_public_booking_gateway.sql`.
+Anonymous legacy RPCs and service-role gateway RPCs must both remain executable:
+
+```bash
+npx supabase test db --db-url "$DATABASE_URL" \
+  tools/release/expand_public_booking_gateway_test.sql
+```
+
+## 2. Deploy Edge Functions
+
+Deploy all functions because this migration set also changes email, Calendar, image cleanup, and
+staff-account side effects. Do not use `--prune` during this rollout.
+
+```bash
+npx supabase functions deploy --project-ref "$PROJECT_REF" --use-api
+npx supabase functions list --project-ref "$PROJECT_REF"
+```
+
+Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
+`external-cleanup`, `admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed.
+
+## 3. Switch frontend
+
+Build with production `VITE_` values. Ensure Cloudflare can render current CMS metadata before
+traffic switches:
+
+```bash
+printf '%s' "$VITE_SUPABASE_ANON_KEY" | npx wrangler secret put SUPABASE_ANON_KEY
+npm run deploy
+```
+
+The deployed frontend must contain no direct calls to legacy customer-action RPCs:
+
+```bash
+! grep -R -E "\\.rpc\\([^)]*(lookup_booking|list_bookings_by_phone|cancel_booking|create_review)" dist
+```
+
+## 4. Verify coexistence
+
+Run live gateway smoke checks while legacy RPC access is still available:
+
+```bash
+SUPABASE_URL="https://${PROJECT_REF}.supabase.co" \
+SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+node tools/smoke-live.mjs
+
+curl -fsS https://bladeblendstudio.se/ | grep -F 'business-json-ld'
+curl -fsS https://bladeblendstudio.se/llms.txt | grep -F '# Blade & Blend Studio'
+```
+
+Then manually verify one real Turnstile-protected lookup, list, cancellation, and review rejection or
+success through the production UI. Confirm customer cancellation and Calendar cleanup jobs drain.
+
+## 5. Contract
+
+The root project must now report only the contract migration as pending:
+
+```bash
+npx supabase db push --linked --dry-run
+```
+
+If anything except `20260813123853_contract_public_booking_gateway.sql` appears, stop. Otherwise:
+
+```bash
+npx supabase db push --linked --yes
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/34_public_booking_gateway_contract_test.sql
+```
+
+Re-run `tools/smoke-live.mjs` after contract. Gateway requests must still work; direct anonymous RPC
+execution must now fail. Record deployment commit, migration list, function list, Worker version,
+smoke results, and UTC completion time in operations records.
+
+## Rollback boundary
+
+Before contract, roll back only frontend or Edge deployment; legacy RPC clients still work. After
+contract, restore frontend/Edge first. Regranting direct anonymous RPC access is an emergency-only
+security rollback and must be time-boxed, documented, and followed by the contract migration again.

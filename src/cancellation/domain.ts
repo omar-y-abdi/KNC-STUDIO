@@ -26,9 +26,15 @@ export interface CancelBooking {
 /** Result of looking up a booking by contact (phone). */
 export type CancelLookupResult =
   | { readonly ok: true; readonly booking: CancelBooking }
-  | { readonly ok: false; readonly error: string }
+  | {
+      readonly ok: false
+      readonly error: 'not_found' | 'failed_challenge' | 'rate_limited' | 'system'
+    }
 
 /** Result of cancelling a looked-up booking. */
 export type CancelResult =
   | { readonly ok: true; readonly booking: CancelBooking }
-  | { readonly ok: false; readonly error: string }
+  | {
+      readonly ok: false
+      readonly error: 'not_found' | 'failed_challenge' | 'rate_limited' | 'system'
+    }

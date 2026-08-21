@@ -10,10 +10,10 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
+const { rpc, invoke } = vi.hoisted(() => ({ rpc: vi.fn(), invoke: vi.fn() }))
 
 vi.mock('../../src/admin/adminClient', () => ({
-  getAdminClient: () => ({ rpc }),
+  getAdminClient: () => ({ rpc, functions: { invoke } }),
 }))
 
 import { deleteBarber } from '../../src/admin/adapters/barbersAdmin'
@@ -21,23 +21,26 @@ import { deleteBookings, purgeHistory } from '../../src/admin/adapters/bookingsA
 
 beforeEach(() => {
   rpc.mockReset()
+  invoke.mockReset()
 })
 
 describe('deleteBarber', () => {
   it('maps {ok:true, deleted_bookings} to the ok outcome and calls the RPC with purge=true', async () => {
-    rpc.mockResolvedValue({ data: { ok: true, deleted_bookings: 3 }, error: null })
+    invoke.mockResolvedValue({
+      data: { ok: true, deleted_bookings: 3, auth_cleanup_pending: false },
+      error: null,
+    })
 
     const res = await deleteBarber('mario', true)
 
-    expect(res).toEqual({ kind: 'ok', deletedBookings: 3 })
-    expect(rpc).toHaveBeenCalledWith('admin_delete_barber', {
-      p_barber_id: 'mario',
-      p_purge_bookings: true,
+    expect(res).toEqual({ kind: 'ok', deletedBookings: 3, authCleanupPending: false })
+    expect(invoke).toHaveBeenCalledWith('admin-manage-barber', {
+      body: { action: 'delete', barber_id: 'mario', purge_bookings: true },
     })
   })
 
   it('maps the has_bookings refusal to a structured outcome carrying the counts (purge=false)', async () => {
-    rpc.mockResolvedValue({
+    invoke.mockResolvedValue({
       data: { ok: false, error: 'has_bookings', count: 5, past: 4, upcoming: 1 },
       error: null,
     })
@@ -45,14 +48,25 @@ describe('deleteBarber', () => {
     const res = await deleteBarber('luca', false)
 
     expect(res).toEqual({ kind: 'has_bookings', count: 5, past: 4, upcoming: 1 })
-    expect(rpc).toHaveBeenCalledWith('admin_delete_barber', {
-      p_barber_id: 'luca',
-      p_purge_bookings: false,
+    expect(invoke).toHaveBeenCalledWith('admin-manage-barber', {
+      body: { action: 'delete', barber_id: 'luca', purge_bookings: false },
+    })
+  })
+
+  it('maps durable external cleanup before barber deletion', async () => {
+    invoke.mockResolvedValue({
+      data: { ok: false, error: 'external_cleanup_pending', calendar_events: 3 },
+      error: null,
+    })
+
+    await expect(deleteBarber('mario', true)).resolves.toEqual({
+      kind: 'external_cleanup_pending',
+      calendarEvents: 3,
     })
   })
 
   it('maps error:forbidden to a localized forbidden error', async () => {
-    rpc.mockResolvedValue({ data: { ok: false, error: 'forbidden' }, error: null })
+    invoke.mockResolvedValue({ data: { ok: false, error: 'forbidden' }, error: null })
 
     const res = await deleteBarber('mario', true)
 
@@ -63,7 +77,7 @@ describe('deleteBarber', () => {
   })
 
   it('maps error:not_found to a localized not_found error', async () => {
-    rpc.mockResolvedValue({ data: { ok: false, error: 'not_found' }, error: null })
+    invoke.mockResolvedValue({ data: { ok: false, error: 'not_found' }, error: null })
 
     const res = await deleteBarber('ghost', true)
 
@@ -74,7 +88,7 @@ describe('deleteBarber', () => {
   })
 
   it('maps a transport error to a network error outcome', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'connection reset' } })
+    invoke.mockResolvedValue({ data: null, error: { message: 'connection reset' } })
 
     const res = await deleteBarber('mario', true)
 
@@ -82,7 +96,7 @@ describe('deleteBarber', () => {
   })
 
   it('maps a malformed payload to a malformed error outcome (fail closed)', async () => {
-    rpc.mockResolvedValue({ data: { ok: true }, error: null }) // missing deleted_bookings
+    invoke.mockResolvedValue({ data: { ok: true }, error: null }) // missing deleted_bookings
 
     const res = await deleteBarber('mario', true)
 
@@ -90,11 +104,22 @@ describe('deleteBarber', () => {
   })
 
   it('collapses an rpc rejection to a network error outcome (never throws)', async () => {
-    rpc.mockRejectedValue(new Error('boom'))
+    invoke.mockRejectedValue(new Error('boom'))
 
     const res = await deleteBarber('mario', true)
 
     expect(res).toMatchObject({ kind: 'error', error: { kind: 'network' } })
+  })
+
+  it('maps future confirmed bookings to a non-purgeable outcome', async () => {
+    invoke.mockResolvedValue({
+      data: { ok: false, error: 'has_upcoming', count: 4, past: 2, upcoming: 2 },
+      error: null,
+    })
+
+    const res = await deleteBarber('mario', true)
+
+    expect(res).toEqual({ kind: 'has_upcoming', count: 4, past: 2, upcoming: 2 })
   })
 })
 

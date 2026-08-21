@@ -34,8 +34,15 @@ export interface MyBookings {
  */
 export type MyBookingsResult =
   | { readonly ok: true; readonly bookings: MyBookings }
-  | { readonly ok: false; readonly error: 'not_found' | 'system' }
+  | {
+      readonly ok: false
+      readonly error: 'not_found' | 'failed_challenge' | 'rate_limited' | 'system'
+    }
 
 /** Result of cancelling one upcoming booking. */
 export type MyCancelResult =
-  { readonly ok: true; readonly id: string } | { readonly ok: false; readonly error: string }
+  | { readonly ok: true; readonly id: string }
+  | {
+      readonly ok: false
+      readonly error: 'not_found' | 'failed_challenge' | 'rate_limited' | 'system'
+    }

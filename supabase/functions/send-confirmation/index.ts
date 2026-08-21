@@ -1,10 +1,12 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEmailMessage,
   defaultEmailTemplate,
+  loadEmailBusiness,
   loadEmailTemplate,
   sendViaResend,
   type EmailDetailRow,
+  type EmailBusiness,
   type EmailMessage,
   type EmailTemplateName,
 } from '../_shared/email.ts'
@@ -182,13 +184,14 @@ function formatWhen(booking: BookingRow): { readonly date: string; readonly time
   return { date, time }
 }
 
-function variables(booking: BookingRow): Readonly<Record<string, string>> {
+function variables(booking: BookingRow, business: EmailBusiness): Readonly<Record<string, string>> {
   const when = formatWhen(booking)
   return {
     customer_name: booking.customerName,
     barber_name: booking.barberName,
     booking_date: when.date,
     booking_time: when.time,
+    cancellation_hours: String(business.cancellationPolicyHours),
   }
 }
 
@@ -227,6 +230,7 @@ async function message(
   to: string,
   templateName: EmailTemplateName,
   rows: readonly EmailDetailRow[],
+  business: EmailBusiness,
   adminLink = false,
 ): Promise<EmailMessage> {
   const client = serviceClient()
@@ -239,24 +243,30 @@ async function message(
     to,
     lang,
     copy,
-    variables: variables(booking),
+    variables: variables(booking, business),
     rows,
     ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se',
+    business,
   })
 }
 
 async function buildMessages(
   event: BookingEmailEvent,
   booking: BookingRow,
+  business: EmailBusiness,
 ): Promise<readonly { kind: DeliveryKind; message: EmailMessage }[]> {
   const candidates: Array<Promise<{ kind: DeliveryKind; message: EmailMessage }> | null> =
     event === 'booking_confirmed'
       ? [
           booking.email === null
             ? null
-            : message(booking, booking.email, 'customer_confirmation', customerRows(booking)).then(
-                (message) => ({ kind: 'customer', message }),
-              ),
+            : message(
+                booking,
+                booking.email,
+                'customer_confirmation',
+                customerRows(booking),
+                business,
+              ).then((message) => ({ kind: 'customer', message })),
           booking.barberEmail === null
             ? null
             : message(
@@ -264,6 +274,7 @@ async function buildMessages(
                 booking.barberEmail,
                 'barber_confirmation',
                 barberRows(booking),
+                business,
                 true,
               ).then((message) => ({ kind: 'barber', message })),
         ]
@@ -276,6 +287,7 @@ async function buildMessages(
                   booking.email,
                   'customer_cancellation',
                   customerRows(booking),
+                  business,
                 ).then((message) => ({ kind: 'customer', message })),
             booking.barberEmail === null
               ? null
@@ -284,15 +296,20 @@ async function buildMessages(
                   booking.barberEmail,
                   'barber_cancellation',
                   barberRows(booking),
+                  business,
                   true,
                 ).then((message) => ({ kind: 'barber', message })),
           ]
         : [
             booking.email === null
               ? null
-              : message(booking, booking.email, 'customer_reminder', customerRows(booking)).then(
-                  (message) => ({ kind: 'customer', message }),
-                ),
+              : message(
+                  booking,
+                  booking.email,
+                  'customer_reminder',
+                  customerRows(booking),
+                  business,
+                ).then((message) => ({ kind: 'customer', message })),
           ]
   return Promise.all(
     candidates.filter(
@@ -351,7 +368,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let messages: readonly { kind: DeliveryKind; message: EmailMessage }[]
   try {
-    messages = await buildMessages(event, booking)
+    const client = serviceClient()
+    if (client === null) throw new Error('service client unavailable')
+    const business = await loadEmailBusiness(client)
+    messages = await buildMessages(event, booking, business)
   } catch {
     if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'message_build_failed')
     console.error('send-confirmation message build failed', {

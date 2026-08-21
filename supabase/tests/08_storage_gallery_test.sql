@@ -7,7 +7,7 @@
 --   * public READ  : bucket.public = true  AND a SELECT policy on storage.objects scoped to
 --                    bucket_id='gallery' granted to anon + authenticated.
 --   * gateway WRITE: direct authenticated INSERT/UPDATE policies are absent; upload-image writes
---                    validated WebP output through service_role. Owner DELETE remains available.
+--                    validated WebP output and durable deletion through service_role.
 
 begin;
 select plan(8);
@@ -28,7 +28,7 @@ select is(
   true, 'RLS is enabled on storage.objects'
 );
 
--- ---- public read and owner cleanup remain; direct client uploads are gone --------------------
+-- ---- public read remains; every direct client write path is gone -----------------------------
 -- pg_policy.polcmd: 'r'=SELECT, 'a'=INSERT, 'w'=UPDATE, 'd'=DELETE, '*'=ALL.
 select is(
   (select polcmd::text from pg_policy
@@ -46,16 +46,15 @@ select is(
   0, 'gallery has no direct authenticated UPDATE policy'
 );
 select is(
-  (select polcmd::text from pg_policy
+  (select count(*)::int from pg_policy
      where polrelid='storage.objects'::regclass and polname='gallery_owner_delete'),
-  'd', 'gallery_owner_delete is a DELETE policy (owner write)'
+  0, 'gallery has no direct authenticated DELETE policy'
 );
 
--- Owner cleanup stays gated, not permissive.
 select ok(
-  (select pg_get_expr(polqual, polrelid) from pg_policy
-     where polrelid='storage.objects'::regclass and polname='gallery_owner_delete') like '%is_owner%',
-  'gallery_owner_delete USING is gated on public.is_owner()'
+  has_function_privilege(
+    'service_role', 'public.internal_delete_gallery_image(uuid,text)', 'EXECUTE'),
+  'service-role image gateway owns durable gallery cleanup'
 );
 
 select * from finish();

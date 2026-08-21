@@ -23,8 +23,13 @@
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildEmailMessage, loadEmailTemplate, sendViaResend } from '../_shared/email.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  buildEmailMessage,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  sendViaResend,
+} from '../_shared/email.ts'
 
 // --- CORS -------------------------------------------------------------------------------------
 // The admin panel (Cloudflare) and this function (Supabase) are different origins. The Authorization
@@ -125,13 +130,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Read the caller's role from profiles (DB-authoritative; do not trust JWT claims for role).
   const { data: profileData, error: profileError } = await service
     .from('profiles')
-    .select('role')
+    .select('role,account_enabled')
     .eq('id', callerId)
     .single()
   if (profileError || profileData === null) {
     return json({ ok: false, error: 'unauthorized' }, 401)
   }
-  if (profileData.role !== 'owner') {
+  if (profileData.role !== 'owner' || profileData.account_enabled !== true) {
     return json({ ok: false, error: 'forbidden' }, 403)
   }
 
@@ -238,6 +243,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const { error: deleteError } = await service.auth.admin.deleteUser(newUserId)
       if (deleteError) {
         console.error('admin-create-barber: auth cleanup failed after profile insert failure')
+        const queued = await service.rpc('internal_queue_auth_user_delete', {
+          p_user_id: newUserId,
+        })
+        if (queued.error) {
+          console.error('admin-create-barber: durable auth cleanup queue failed')
+        }
       }
       return json({ ok: false, error: 'link_failed' }, 500)
     }
@@ -246,8 +257,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     const tokenHash = generated.data.properties.hashed_token
     const copy = await loadEmailTemplate(service, 'auth_invite', lang)
+    const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/invite?token_hash=${encodeURIComponent(tokenHash)}&type=invite`
-    const message = buildEmailMessage({ to: email, lang, copy, ctaHref: link })
+    const message = buildEmailMessage({ to: email, lang, copy, ctaHref: link, business })
     await sendViaResend(message, resendKey, `auth-invite/${tokenHash.slice(0, 48)}`)
     return json({ ok: true }, 200)
   } catch (error) {
@@ -263,6 +275,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const authCleanup = await service.auth.admin.deleteUser(newUserId)
       if (authCleanup.error) {
         console.error('admin-create-barber: auth cleanup failed:', authCleanup.error.message)
+        const queued = await service.rpc('internal_queue_auth_user_delete', {
+          p_user_id: newUserId,
+        })
+        if (queued.error) {
+          console.error('admin-create-barber: durable auth cleanup queue failed')
+        }
       }
     }
     return json({ ok: false, error: 'invite_send_failed' }, 502)

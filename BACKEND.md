@@ -33,12 +33,10 @@ frontend variables.
 
 ## Apply backend changes
 
-```bash
-npx supabase login
-npx supabase link --project-ref <project-ref>
-npx supabase db push
-npx supabase functions deploy --use-api
-```
+Do not apply this launch release with one unrestricted `db push`. Follow the expand → Edge deploy →
+frontend switch → verify → contract procedure in
+`docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`. It keeps the currently deployed frontend working
+until protected gateways have been verified.
 
 Required Edge Function secrets:
 
@@ -49,16 +47,28 @@ npx supabase secrets set \
   IP_SALT=<random-long-value> \
   PUBLIC_ACTION_HASH_SALT=<different-random-long-value> \
   PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se \
+  PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co \
+  GOOGLE_OAUTH_CLIENT_ID=<google-client-id> \
+  GOOGLE_OAUTH_CLIENT_SECRET=<google-client-secret> \
+  CALENDAR_STATE_SECRET=<different-random-long-value> \
   WEBHOOK_SECRET=<random-long-value>
 ```
 
 Database Vault must contain:
 
 - `booking_confirmation_url` = `https://<project-ref>.functions.supabase.co/send-confirmation`
+- `external_cleanup_url` = `https://<project-ref>.functions.supabase.co/external-cleanup`
 - `booking_webhook_secret` = same value as `WEBHOOK_SECRET`
 
 Create or rotate these through Supabase SQL Editor with `vault.create_secret` / `vault.update_secret`.
 Do not commit their values.
+
+Cloudflare Worker also needs `SUPABASE_ANON_KEY` as a secret so initial HTML, JSON-LD, and
+`/llms.txt` use current public CMS data:
+
+```bash
+printf '%s' '<public-anon-key>' | npx wrangler secret put SUPABASE_ANON_KEY
+```
 
 ## Resend
 

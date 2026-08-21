@@ -18,7 +18,7 @@
 //
 // Run locally: npx supabase functions serve submit-booking --no-verify-jwt --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 
 // --- CORS -------------------------------------------------------------------------------------
 

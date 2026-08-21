@@ -82,7 +82,7 @@ export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
   intro:
-    'Blade & Blend Studio är en barbershop på Geijersgatan i Göteborg. Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
+    'Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',
@@ -118,6 +118,10 @@ export const aboutSv: AboutStrings = {
   reviewErrRating: 'Välj ett betyg',
   reviewErrNoBooking:
     'Vi hittade ingen genomförd bokning på det numret. Du kan lämna ett omdöme efter ditt besök.',
+  reviewErrInvalid: 'Omdömet kunde inte valideras. Kontrollera uppgifterna och försök igen.',
+  reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
+  reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
+  reviewErrSubmit: 'Omdömet kunde inte skickas. Försök igen.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',
@@ -135,6 +139,8 @@ export const myBookingsSv: MyBookingsStrings = {
   notFoundEscalated:
     'Fortfarande inga bokningar kopplade till det numret. Kontakta salongen så hjälper vi dig.',
   errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
+  errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
+  errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   upcomingTitle: 'Kommande',
   pastTitle: 'Tidigare',
   upcomingEmpty: 'Du har inga kommande bokningar.',
@@ -164,6 +170,9 @@ export const cancelSv: CancelStrings = {
   lookingUp: 'Hämtar …',
   errPhone: 'Ogiltigt telefonnummer',
   errLookup: 'Kunde inte hämta bokningen. Försök igen.',
+  errSystem: 'Kunde inte hämta bokningen. Försök igen.',
+  errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
+  errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   foundLead: 'Vi hittade din bokning',
   fBarber: 'Barberare',
   fWhen: 'Tid',

@@ -19,6 +19,7 @@ import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import { readWeek, saveWeek } from '../adapters/schedulesAdmin'
+import { addSlotBlock } from '../adapters/slotBlocksAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
   DEFAULT_END_MIN,
@@ -38,6 +39,7 @@ import { ScheduleDayGrid } from './ScheduleDayGrid'
 import { listBookings } from '../adapters/bookingsAdmin'
 import { orphansInRange, orphansOnDate, orphansUnderWeek } from '../scheduleConflicts'
 import { ConflictHost, useUnavailabilityConflict } from '../useUnavailabilityConflict'
+import type { AvailabilityMutationOutcome, SlotBlock } from '../types'
 import type {
   AdminBarberId,
   AdminBooking,
@@ -55,6 +57,8 @@ export interface ScheduleViewProps {
   readonly barberId: AdminBarberId
   /** Display name, for the heading ("Schema · Victor"). */
   readonly barberName: string
+  /** Prevent shell navigation while an autosave is pending, invalid, or failed. */
+  readonly onPersistenceStateChange: (blocked: boolean) => void
 }
 
 /** Auto-save status of the week editor (one aria-live line renders it). */
@@ -104,27 +108,93 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   // after cancellations — it also flows to the day grid so its display refreshes.
   const [bookings, setBookings] = useState<readonly AdminBooking[]>([])
   const [bookingsNonce, setBookingsNonce] = useState(0)
+  const [blocksNonce, setBlocksNonce] = useState(0)
+  const [dayGridBlocked, setDayGridBlocked] = useState(false)
   const conflict = useUnavailabilityConflict(() => setBookingsNonce((n) => n + 1))
+
+  useEffect(() => {
+    const blocked =
+      weekSave.kind === 'saving' ||
+      weekSave.kind === 'invalid' ||
+      weekSave.kind === 'error' ||
+      conflict.pending !== null ||
+      conflict.busy ||
+      offBusy ||
+      offDeleteBusy ||
+      dayGridBlocked
+    props.onPersistenceStateChange(blocked)
+    return () => props.onPersistenceStateChange(false)
+  }, [
+    conflict.busy,
+    conflict.pending,
+    dayGridBlocked,
+    offBusy,
+    offDeleteBusy,
+    props.onPersistenceStateChange,
+    weekSave.kind,
+  ])
 
   // Auto-save plumbing: a debounce timer + a generation counter so a stale response (or a save for
   // a previously-selected barber) can never clobber newer state.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveGen = useRef(0)
-  const pendingSave = useRef<WeekSchedule | null>(null)
+  const pendingSave = useRef<{
+    readonly week: WeekSchedule
+    readonly allowExistingBookings: boolean
+  } | null>(null)
+  const persistedWeek = useRef<WeekSchedule>(defaultWeek())
   /** Bumped on every barber load; lets a late fetch tell whether its barber is still the current one. */
   const barberGen = useRef(0)
 
-  const doSave = async (barberId: AdminBarberId, next: WeekSchedule): Promise<void> => {
+  const loadConflictBookings = async (
+    bookingIds: readonly string[],
+  ): Promise<readonly AdminBooking[] | null> => {
+    const now = defaultClock()
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const fresh = await listBookings(props.barberId, midnight.toISOString())
+    if (!fresh.ok) return null
+    setBookings(fresh.value)
+    const wanted = new Set(bookingIds)
+    return fresh.value.filter((booking) => wanted.has(booking.id) && booking.status === 'confirmed')
+  }
+
+  const doSave = async (
+    barberId: AdminBarberId,
+    next: WeekSchedule,
+    allowExistingBookings = false,
+  ): Promise<void> => {
     const gen = ++saveGen.current
     pendingSave.current = null
     setWeekSave({ kind: 'saving' })
-    const result = await saveWeek(barberId, next)
+    const result = await saveWeek(barberId, next, allowExistingBookings)
     if (gen !== saveGen.current) return // superseded by a newer edit/save
-    if (result.ok) setWeekSave({ kind: 'saved' })
-    else setWeekSave({ kind: 'error', message: result.error.message })
+    if (result.kind === 'ok') {
+      persistedWeek.current = next
+      setWeekSave({ kind: 'saved' })
+      return
+    }
+    if (result.kind === 'error') {
+      setWeekSave({ kind: 'error', message: result.error.message })
+      return
+    }
+
+    const orphans = await loadConflictBookings(result.bookingIds)
+    if (gen !== saveGen.current) return
+    if (orphans === null) {
+      setWeekSave({ kind: 'error', message: t.scheduleGridSaveError })
+      return
+    }
+    await conflict.request({
+      orphans,
+      applyChange: () => doSave(barberId, next, true),
+      revert: () => {
+        setWeek(persistedWeek.current)
+        setWeekSave({ kind: 'saved' })
+      },
+    })
   }
 
-  const commitWeek = (next: WeekSchedule): void => {
+  const commitWeek = (next: WeekSchedule, allowExistingBookings = false): void => {
     setWeek(next)
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveGen.current++ // invalidate any in-flight save; this edit supersedes it
@@ -134,11 +204,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       return
     }
     setWeekSave({ kind: 'saving' })
-    pendingSave.current = next
+    pendingSave.current = { week: next, allowExistingBookings }
     const barberId = props.barberId
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null
-      void doSave(barberId, next)
+      void doSave(barberId, next, allowExistingBookings)
     }, SAVE_DEBOUNCE_MS)
   }
 
@@ -153,7 +223,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       if (orphans.length > 0) {
         void conflict.request({
           orphans,
-          applyChange: async () => commitWeek(next),
+          applyChange: async () => commitWeek(next, true),
           revert: noRevert,
         })
         return
@@ -162,8 +232,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     commitWeek(next)
   }
 
-  // Load week + time-off + upcoming bookings whenever the target barber changes; flush any pending save
-  // for the PREVIOUS barber first so a quick barber-switch never drops an edit. Bookings are part of this
+  // Load week + time-off + upcoming bookings whenever the target barber changes. AdminShell blocks a
+  // switch while persistence/conflict work is unresolved and keys this view by barber. Bookings are part of this
   // gate (cleared up front, refetched here) — NOT a separate ungated fetch — so the editor is never
   // interactive with another barber's, or a not-yet-loaded, bookings list. Otherwise a block/toggle in
   // that window would test the conflict against the wrong (or empty) set: cancel the wrong barber's
@@ -185,8 +255,10 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         listBookings(props.barberId, midnight.toISOString()),
       ])
       if (!active) return
-      if (wk.ok) setWeek(wk.value)
-      else setLoadError(wk.error.message)
+      if (wk.ok) {
+        setWeek(wk.value)
+        persistedWeek.current = wk.value
+      } else setLoadError(wk.error.message)
       if (off.ok) setTimeOff(off.value)
       // Bookings MUST fail closed. Without them the conflict check silently sees zero orphans and every
       // unavailability change applies unwarned — stranding the customers this feature exists to protect
@@ -201,19 +273,16 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
   }, [props.barberId])
 
-  // Flush a pending (debounced) save on unmount/barber-switch instead of dropping it.
+  // Cancel a pending debounce on unmount/barber-switch. AdminShell blocks navigation while a valid
+  // edit is pending, and an invalid week is intentionally never persisted.
   useEffect(() => {
-    const barberId = props.barberId
     return () => {
       if (saveTimer.current !== null) {
         clearTimeout(saveTimer.current)
         saveTimer.current = null
       }
       const pending = pendingSave.current
-      if (pending !== null) {
-        pendingSave.current = null
-        void saveWeek(barberId, pending)
-      }
+      if (pending !== null) pendingSave.current = null
     }
   }, [props.barberId])
 
@@ -255,16 +324,44 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const applyAllDays = (): void => mutate(sameTimeAllDays(week, bulkStart, bulkEnd))
 
   // Shared time-off writers (the Ledighet form AND the day grid's whole-day toggle land here).
-  const addOff = async (startDate: string, endDate: string, reason: string): Promise<boolean> => {
-    const result = await addTimeOff(props.barberId, startDate, endDate, reason)
-    if (!result.ok) {
-      setOffMsg({ kind: 'err', text: result.error.message })
-      return false
-    }
-    setTimeOff((prev) =>
-      [...prev, result.value].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+  const addOff = async (
+    startDate: string,
+    endDate: string,
+    reason: string,
+    allowExistingBookings = false,
+    onApplied?: () => void,
+  ): Promise<'applied' | 'deferred' | 'error'> => {
+    const result = await addTimeOff(
+      props.barberId,
+      startDate,
+      endDate,
+      reason,
+      allowExistingBookings,
     )
-    return true
+    if (result.kind === 'ok') {
+      setTimeOff((prev) =>
+        [...prev, result.value].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+      )
+      onApplied?.()
+      return 'applied'
+    }
+    if (result.kind === 'error') {
+      setOffMsg({ kind: 'err', text: result.error.message })
+      return 'error'
+    }
+
+    const orphans = await loadConflictBookings(result.bookingIds)
+    if (orphans === null) {
+      setOffMsg({ kind: 'err', text: t.scheduleGridSaveError })
+      return 'error'
+    }
+    return conflict.request({
+      orphans,
+      applyChange: async () => {
+        await addOff(startDate, endDate, reason, true, onApplied)
+      },
+      revert: noRevert,
+    })
   }
   const removeOff = async (id: string): Promise<boolean> => {
     const result = await deleteTimeOff(id)
@@ -274,21 +371,6 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
     setTimeOff((prev) => prev.filter((t) => t.id !== id))
     return true
-  }
-
-  const commitTimeOff = async (
-    startDate: string,
-    endDate: string,
-    reason: string,
-  ): Promise<void> => {
-    setOffBusy(true)
-    setOffMsg(null)
-    const ok = await addOff(startDate, endDate, reason)
-    setOffBusy(false)
-    if (ok) {
-      setOffReason('')
-      setOffMsg({ kind: 'ok', text: t.scheduleTimeOffAdded })
-    }
   }
 
   // Trigger C — adding ledighet. If confirmed bookings fall inside the range, the conflict dialog
@@ -303,9 +385,26 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     const end = offEnd
     const reason = offReason.trim()
     const orphans = orphansInRange(bookings, start, end).filter((b) => b.startAt.getTime() >= now)
+    if (orphans.length === 0) {
+      setOffBusy(true)
+      setOffMsg(null)
+      await addOff(start, end, reason, false, () => {
+        setOffReason('')
+        setOffMsg({ kind: 'ok', text: t.scheduleTimeOffAdded })
+      })
+      setOffBusy(false)
+      return
+    }
     await conflict.request({
       orphans,
-      applyChange: () => commitTimeOff(start, end, reason),
+      applyChange: async () => {
+        setOffBusy(true)
+        await addOff(start, end, reason, true, () => {
+          setOffReason('')
+          setOffMsg({ kind: 'ok', text: t.scheduleTimeOffAdded })
+        })
+        setOffBusy(false)
+      },
       revert: noRevert,
     })
   }
@@ -316,15 +415,42 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const onBlockDay = async (dateIso: string): Promise<boolean> => {
     const now = defaultClock().getTime()
     const orphans = orphansOnDate(bookings, dateIso).filter((b) => b.startAt.getTime() >= now)
-    if (orphans.length === 0) return addOff(dateIso, dateIso, '')
+    if (orphans.length === 0) return (await addOff(dateIso, dateIso, '')) !== 'error'
     void conflict.request({
       orphans,
       applyChange: async () => {
-        await addOff(dateIso, dateIso, '')
+        await addOff(dateIso, dateIso, '', true)
       },
       revert: noRevert,
     })
     return true
+  }
+
+  const onBlockSlot = async (
+    dateIso: string,
+    startMin: number,
+    endMin: number,
+  ): Promise<AvailabilityMutationOutcome<SlotBlock>> => {
+    const result = await addSlotBlock(props.barberId, dateIso, startMin, endMin)
+    if (result.kind !== 'booking_conflict') return result
+
+    const orphans = await loadConflictBookings(result.bookingIds)
+    if (orphans === null) {
+      return {
+        kind: 'error',
+        error: { kind: 'network', message: t.scheduleGridSaveError },
+      }
+    }
+    await conflict.request({
+      orphans,
+      applyChange: async () => {
+        const applied = await addSlotBlock(props.barberId, dateIso, startMin, endMin, true)
+        if (applied.kind === 'ok') setBlocksNonce((nonce) => nonce + 1)
+        else if (applied.kind === 'error') setOffMsg({ kind: 'err', text: applied.error.message })
+      },
+      revert: noRevert,
+    })
+    return result
   }
 
   const onDeleteTimeOff = async (): Promise<void> => {
@@ -403,7 +529,10 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         week={week}
         timeOff={timeOff}
         bookings={bookings}
+        blocksNonce={blocksNonce}
+        onPersistenceStateChange={setDayGridBlocked}
         onBookingsChanged={() => setBookingsNonce((n) => n + 1)}
+        onBlockSlot={onBlockSlot}
         onBlockDay={onBlockDay}
         onOpenDay={(id) => removeOff(id)}
       />

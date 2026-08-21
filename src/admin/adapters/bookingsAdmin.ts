@@ -68,6 +68,9 @@ export async function createManualBooking(
     if (!parsed.value.ok) {
       if (parsed.value.error === 'forbidden') return err('forbidden', 'Du saknar behörighet.')
       if (parsed.value.error === 'slot_taken') return err('validation', 'Tiden är redan bokad.')
+      if (parsed.value.error === 'outside_hours') {
+        return err('validation', 'Tiden ligger utanför arbetstid eller är blockerad.')
+      }
       return err('validation', 'Kontrollera uppgifterna och försök igen.')
     }
     return ok(true)

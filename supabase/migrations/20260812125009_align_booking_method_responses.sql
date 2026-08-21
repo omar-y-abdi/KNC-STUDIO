@@ -72,7 +72,7 @@ begin
 end;
 $$;
 
-revoke execute on function public.lookup_booking(text) from public, anon, authenticated;
-revoke execute on function public.cancel_booking(uuid, text) from public, anon, authenticated;
-grant execute on function public.lookup_booking(text) to service_role;
-grant execute on function public.cancel_booking(uuid, text) to service_role;
+revoke execute on function public.lookup_booking(text) from public, authenticated;
+revoke execute on function public.cancel_booking(uuid, text) from public, authenticated;
+grant execute on function public.lookup_booking(text) to anon, service_role;
+grant execute on function public.cancel_booking(uuid, text) to anon, service_role;

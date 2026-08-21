@@ -11,8 +11,8 @@
 //
 // Run locally: npx supabase functions serve calendar-oauth-callback --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEvent,
   decodeIdTokenEmail,
@@ -152,6 +152,39 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (payload === null)
     return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
 
+  const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+  const profile = await service
+    .from('profiles')
+    .select('id')
+    .eq('role', 'barber')
+    .eq('barber_id', payload.barber_id)
+    .eq('account_enabled', true)
+    .maybeSingle()
+  if (profile.error !== null || profile.data === null) {
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kontot saknar åtkomst. Logga in igen eller kontakta administratören.',
+      403,
+    )
+  }
+
+  const existingToken = await service
+    .from('barber_calendar_tokens')
+    .select('disconnect_requested_at')
+    .eq('barber_id', payload.barber_id)
+    .maybeSingle()
+  if (existingToken.error !== null) {
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kunde inte kontrollera kalenderkopplingen. Försök igen.',
+      500,
+    )
+  }
+
   const redirectUri = `${supabaseUrl}/functions/v1/calendar-oauth-callback`
   try {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri)
@@ -167,8 +200,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
 
-    const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-    const { error: storeError } = await service.rpc('calendar_store_token', {
+    const { data: storeData, error: storeError } = await service.rpc('calendar_store_token', {
       p_barber_id: payload.barber_id,
       p_refresh_token: tokens.refresh_token,
       p_google_email: email,
@@ -182,6 +214,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
         'Fel',
         'Kunde inte spara kopplingen. Försök igen.',
         500,
+      )
+    }
+
+    if (
+      typeof storeData !== 'object' ||
+      storeData === null ||
+      (storeData as Record<string, unknown>)['ok'] !== true
+    ) {
+      const error =
+        typeof storeData === 'object' && storeData !== null
+          ? (storeData as Record<string, unknown>)['error']
+          : null
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        error === 'account_mismatch'
+          ? 'Välj samma Google-konto som den tidigare kalenderkopplingen.'
+          : 'Kunde inte spara kopplingen. Försök igen.',
+        error === 'account_mismatch' ? 409 : 500,
+      )
+    }
+
+    if ((storeData as Record<string, unknown>)['cleanup_pending'] === true) {
+      return done(
+        payload.return_to,
+        'connected',
+        'Google-åtkomst återställd',
+        'Kalenderhändelserna tas nu bort säkert. Kopplingen stängs automatiskt efteråt.',
+        200,
       )
     }
 

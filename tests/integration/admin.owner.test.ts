@@ -200,7 +200,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     if (!week.ok) return
     const edited = setDayHours(week.value, 1, 720, 900) // 12:00–15:00
     const saved = await saveWeek(OTHER_BARBER_ID, edited)
-    expect(saved.ok).toBe(true)
+    expect(saved.kind).toBe('ok')
 
     const after = await availableSlotsFor(OTHER_BARBER_ID, date, 45)
     expect(after.ok).toBe(true)
@@ -216,7 +216,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
   it('available_slots is empty on a time-off day', async () => {
     const date = '2030-08-19' // Monday (working by default)
     const block = await addTimeOff(OTHER_BARBER_ID, date, date, 'IT off')
-    expect(block.ok).toBe(true)
+    expect(block.kind).toBe('ok')
 
     const slots = await availableSlotsFor(OTHER_BARBER_ID, date, 45)
     expect(slots.ok).toBe(true)

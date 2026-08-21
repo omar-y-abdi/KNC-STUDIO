@@ -6,7 +6,16 @@ import { err, ok } from '../../types'
 import type { CalendarSyncPort } from '../port'
 
 export const mockCalendarSyncPort: CalendarSyncPort = {
-  status: () => Promise.resolve(ok({ connected: false, googleEmail: null, lastSyncError: null })),
+  status: () =>
+    Promise.resolve(
+      ok({
+        connected: false,
+        disconnectPending: false,
+        repairRequired: false,
+        googleEmail: null,
+        lastSyncError: null,
+      }),
+    ),
   connectUrl: () =>
     Promise.resolve(err('network', 'Kalenderkoppling kräver en konfigurerad backend.')),
   disconnect: () => Promise.resolve(ok(undefined)),

@@ -82,7 +82,7 @@ export const aboutEn: AboutStrings = {
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',
   intro:
-    'Blade & Blend Studio is a barbershop on Geijersgatan in Gothenburg. We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
+    'We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
   galleryTitle: 'Inside the shop',
   galleryAlt: 'Photo from the salon (placeholder)',
   stylistsTitle: 'The barbers',
@@ -118,6 +118,10 @@ export const aboutEn: AboutStrings = {
   reviewErrRating: 'Please choose a rating',
   reviewErrNoBooking:
     'We found no completed booking for that number. You can leave a review after your visit.',
+  reviewErrInvalid: 'The review could not be validated. Check your details and try again.',
+  reviewErrChallenge: 'Verification failed. Reload the check and try again.',
+  reviewErrRateLimited: 'Too many attempts. Wait a moment before trying again.',
+  reviewErrSubmit: 'The review could not be submitted. Please try again.',
   ratingValueLabel: 'Rating: {n} of 5',
   ratingStarLabel: '{n} stars',
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
@@ -135,6 +139,8 @@ export const myBookingsEn: MyBookingsStrings = {
   notFoundEscalated:
     'Still no bookings linked to that number. Please contact the salon and we’ll help you.',
   errSystem: 'Could not load your appointments. Please try again.',
+  errChallenge: 'Verification failed. Reload the check and try again.',
+  errRateLimited: 'Too many attempts. Wait a moment before trying again.',
   upcomingTitle: 'Upcoming',
   pastTitle: 'Past',
   upcomingEmpty: 'You have no upcoming appointments.',
@@ -164,6 +170,9 @@ export const cancelEn: CancelStrings = {
   lookingUp: 'Looking up …',
   errPhone: 'Invalid phone number',
   errLookup: 'Could not find the booking. Please try again.',
+  errSystem: 'Could not load the booking. Please try again.',
+  errChallenge: 'Verification failed. Reload the check and try again.',
+  errRateLimited: 'Too many attempts. Wait a moment before trying again.',
   foundLead: 'We found your booking',
   fBarber: 'Barber',
   fWhen: 'Time',

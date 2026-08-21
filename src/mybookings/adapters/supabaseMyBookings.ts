@@ -1,8 +1,8 @@
 // The real (Supabase) MyBookingsPort adapter. `listByPhone` reaches `list_bookings_by_phone` through
 // the Turnstile- and rate-limit-protected public action gateway
 // (every confirmed booking for the proven phone — past + future) and splits them into upcoming/past;
-// an empty result maps to `not_found`. `cancel` reuses the contact-guarded `cancel_booking` RPC (the
-// same one the Avbokning flow uses), so a customer can only cancel a booking they can prove is theirs.
+// an empty result maps to `not_found`. `cancel` uses the same gateway's contact-guarded cancellation
+// action as the Avbokning flow, so a customer can only cancel a booking they can prove is theirs.
 //
 // Boundary discipline: parse every response with the Zod schema; map any failure to a domain error
 // rather than throwing. Barber identity resolves through the LIVE roster first (an owner-added DB
@@ -49,6 +49,7 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
 
       const parsed = parseWith(listBookingsByPhoneResponse, data)
       if (!parsed.ok) return system
+      if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
       const rows = parsed.value.bookings
       if (rows.length === 0) return { ok: false, error: 'not_found' }
 
@@ -79,7 +80,7 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
     contact: string,
     turnstileToken: string,
   ): Promise<MyCancelResult> {
-    const failed: MyCancelResult = { ok: false, error: 'cancel_failed' }
+    const failed: MyCancelResult = { ok: false, error: 'system' }
     try {
       const { data, failed: invokeFailed } = await invokePublicBookingAction({
         action: 'cancel',
@@ -90,7 +91,8 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       if (invokeFailed) return failed
 
       const parsed = parseWith(bookingLookupResponse, data)
-      if (!parsed.ok || !parsed.value.ok) return failed
+      if (!parsed.ok) return failed
+      if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
       return { ok: true, id: booking.id }
     } catch {
       return failed

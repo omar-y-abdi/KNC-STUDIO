@@ -14,11 +14,11 @@
 import type { JSX } from 'preact'
 import { Fragment } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
-import { createBarberAccount } from '../adapters/barberAccountAdmin'
+import { createBarberAccount, setBarberAccountAccess } from '../adapters/barberAccountAdmin'
 import {
+  barberAccountStates,
   createBarber,
   deleteBarber,
-  linkedBarberIds,
   listBarbers,
   setBarberActive,
   updateBarber,
@@ -28,6 +28,7 @@ import { TypeToConfirmDialog } from '../TypeToConfirmDialog'
 import { useNarrow } from '../chrome'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
+import type { BarberAccountState } from '../types'
 import type { AdminBarber, AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 export interface BarbersViewProps {
@@ -76,7 +77,6 @@ interface PurgeConfirm {
   readonly barber: AdminBarber
   readonly count: number
   readonly past: number
-  readonly upcoming: number
 }
 
 export function BarbersView(props: BarbersViewProps): JSX.Element {
@@ -84,7 +84,9 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const t = adminText(lang)
   const narrow = useNarrow()
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
-  const [linked, setLinked] = useState<ReadonlySet<AdminBarberId>>(new Set())
+  const [accounts, setAccounts] = useState<ReadonlyMap<AdminBarberId, BarberAccountState>>(
+    new Map(),
+  )
   const [editingId, setEditingId] = useState<AdminBarberId | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [adding, setAdding] = useState(false)
@@ -103,10 +105,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   const reload = async (): Promise<void> => {
-    const [rosterRes, linkedRes] = await Promise.all([listBarbers(), linkedBarberIds()])
+    const [rosterRes, accountRes] = await Promise.all([listBarbers(), barberAccountStates()])
     if (rosterRes.ok) setLoad({ kind: 'ready', barbers: rosterRes.value })
     else setLoad({ kind: 'error', message: rosterRes.error.message })
-    if (linkedRes.ok) setLinked(linkedRes.value)
+    if (accountRes.ok) setAccounts(accountRes.value)
   }
 
   // Initial load (once). `reload` is stable enough for this view's lifetime; an empty dep array is
@@ -216,13 +218,38 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    // Optimistic: mark this barber as linked for the rest of the session.
-    setLinked(new Set([...linked, barberId]))
+    const next = new Map(accounts)
+    next.set(barberId, 'enabled')
+    setAccounts(next)
     setAccountFormId(null)
     setAccountEmail('')
     setNotice({
       kind: 'ok',
       text: t.barbersInviteSentNote,
+    })
+  }
+
+  const toggleAccountAccess = async (barberId: AdminBarberId): Promise<void> => {
+    const current = accounts.get(barberId)
+    if (current === undefined) return
+    const enabled = current === 'disabled'
+    setAccountBusy(true)
+    const result = await setBarberAccountAccess(barberId, enabled)
+    setAccountBusy(false)
+    if (!result.ok) {
+      setNotice({ kind: 'err', text: result.error.message })
+      return
+    }
+    const next = new Map(accounts)
+    next.set(barberId, result.value.enabled ? 'enabled' : 'disabled')
+    setAccounts(next)
+    setNotice({
+      kind: result.value.authSyncPending ? 'err' : 'ok',
+      text: result.value.authSyncPending
+        ? t.barbersAuthSyncPending
+        : result.value.enabled
+          ? t.barbersAccessEnabledOk
+          : t.barbersAccessDisabledOk,
     })
   }
 
@@ -243,7 +270,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
       case 'ok':
         setDeleteTarget(null)
         setPurgeTarget(null)
-        setNotice({ kind: 'ok', text: t.barbersDeletedOk })
+        setNotice({
+          kind: outcome.authCleanupPending ? 'err' : 'ok',
+          text: outcome.authCleanupPending ? t.barbersAuthCleanupPending : t.barbersDeletedOk,
+        })
         await reload()
         props.onRosterChanged()
         return
@@ -254,7 +284,22 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           barber,
           count: outcome.count,
           past: outcome.past,
-          upcoming: outcome.upcoming,
+        })
+        return
+      case 'has_upcoming':
+        setDeleteTarget(null)
+        setPurgeTarget(null)
+        setNotice({
+          kind: 'err',
+          text: t.barbersDeleteUpcomingBlocked.replace('{upcoming}', String(outcome.upcoming)),
+        })
+        return
+      case 'external_cleanup_pending':
+        setDeleteTarget(null)
+        setPurgeTarget(null)
+        setNotice({
+          kind: 'err',
+          text: t.barbersExternalCleanupPending.replace('{count}', String(outcome.calendarEvents)),
         })
         return
       case 'error':
@@ -383,10 +428,10 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           disabled={accountBusy}
         >
           {accountBusy
-            ? linked.has(barberId)
+            ? accounts.has(barberId)
               ? t.barbersResending
               : t.barbersCreating
-            : linked.has(barberId)
+            : accounts.has(barberId)
               ? t.barbersResendInvite
               : t.barbersCreate}
         </button>
@@ -434,7 +479,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                 {/* Status pills */}
                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                   <span style={s.pill}>
-                    {linked.has(b.id) ? t.barbersStatusLinked : t.barbersStatusUnlinked}
+                    {accounts.get(b.id) === 'enabled'
+                      ? t.barbersStatusLinked
+                      : accounts.get(b.id) === 'disabled'
+                        ? t.barbersStatusAccessDisabled
+                        : t.barbersStatusUnlinked}
                   </span>
                   <span style={s.pill}>
                     {b.active ? t.barbersStatusActive : t.barbersStatusHidden}
@@ -464,10 +513,22 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                   <button type="button" style={s.ghostBtn} onClick={() => toggleAccountForm(b.id)}>
                     {accountFormId === b.id
                       ? t.barbersClose
-                      : linked.has(b.id)
+                      : accounts.has(b.id)
                         ? t.barbersResendInvite
                         : t.barbersCreateLogin}
                   </button>
+                  {accounts.has(b.id) ? (
+                    <button
+                      type="button"
+                      style={accounts.get(b.id) === 'enabled' ? s.dangerBtn : s.ghostBtn}
+                      onClick={() => void toggleAccountAccess(b.id)}
+                      disabled={accountBusy}
+                    >
+                      {accounts.get(b.id) === 'enabled'
+                        ? t.barbersDisableAccess
+                        : t.barbersEnableAccess}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     style={s.dangerBtn}
@@ -635,7 +696,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                             }}
                           >
                             <span style={s.pill}>
-                              {linked.has(b.id) ? t.barbersStatusLinked : t.barbersStatusUnlinked}
+                              {accounts.get(b.id) === 'enabled'
+                                ? t.barbersStatusLinked
+                                : accounts.get(b.id) === 'disabled'
+                                  ? t.barbersStatusAccessDisabled
+                                  : t.barbersStatusUnlinked}
                             </span>
                             <button
                               type="button"
@@ -644,10 +709,22 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
                             >
                               {accountFormId === b.id
                                 ? t.barbersClose
-                                : linked.has(b.id)
+                                : accounts.has(b.id)
                                   ? t.barbersResendInvite
                                   : t.barbersCreateLogin}
                             </button>
+                            {accounts.has(b.id) ? (
+                              <button
+                                type="button"
+                                style={accounts.get(b.id) === 'enabled' ? s.dangerBtn : s.ghostBtn}
+                                onClick={() => void toggleAccountAccess(b.id)}
+                                disabled={accountBusy}
+                              >
+                                {accounts.get(b.id) === 'enabled'
+                                  ? t.barbersDisableAccess
+                                  : t.barbersEnableAccess}
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                         <td style={s.td}>
@@ -728,8 +805,7 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           title={t.barbersDeleteTitle}
           body={t.barbersDeleteBookingsBody
             .replace('{count}', String(purgeTarget.count))
-            .replace('{past}', String(purgeTarget.past))
-            .replace('{upcoming}', String(purgeTarget.upcoming))}
+            .replace('{past}', String(purgeTarget.past))}
           confirmLabel={t.barbersDeleteBookingsConfirm}
           cancelLabel={t.barbersDeleteBookingsCancel}
           danger

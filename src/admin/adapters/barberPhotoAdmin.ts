@@ -1,5 +1,10 @@
 import { getAdminClient } from '../adminClient'
-import { barberPhotoRowT, parseWith, uploadBarberPhotoResponse } from '../adminSchemas'
+import {
+  barberPhotoRowT,
+  imageDeleteResponse,
+  parseWith,
+  uploadBarberPhotoResponse,
+} from '../adminSchemas'
 import type { AdminBarberId, AdminResult } from '../types'
 import { err, ok } from '../types'
 
@@ -69,16 +74,15 @@ export async function uploadBarberPhoto(
 export async function removeBarberPhoto(
   barberId: AdminBarberId,
   storagePath: string,
-): Promise<AdminResult<true>> {
-  const supabase = getAdminClient()
+): Promise<AdminResult<{ readonly pending: boolean }>> {
   try {
-    const { error } = await supabase.from('barber_photos').delete().eq('barber_id', barberId)
-    if (error !== null) {
-      if (error.code === '42501') return err('forbidden', FORBIDDEN)
-      return err('network', DELETE_ERROR)
-    }
-    await supabase.storage.from(BUCKET).remove([storagePath])
-    return ok(true)
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', {
+      body: { action: 'delete', kind: 'barber_photo', barberId, storagePath },
+    })
+    if (error !== null && data === null) return err('network', DELETE_ERROR)
+    const parsed = parseWith(imageDeleteResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    return ok({ pending: parsed.value.pending })
   } catch {
     return err('network', DELETE_ERROR)
   }

@@ -9,6 +9,8 @@ import type { AdminResult } from '../types'
 /** The barber's connection state — a boolean + email + last-sync info. NEVER the refresh token. */
 export interface CalendarStatus {
   readonly connected: boolean
+  readonly disconnectPending: boolean
+  readonly repairRequired: boolean
   readonly googleEmail: string | null
   readonly lastSyncError: string | null
 }
@@ -18,6 +20,6 @@ export interface CalendarSyncPort {
   status(): Promise<AdminResult<CalendarStatus>>
   /** The Google consent URL to navigate to (top-level) to start a connect. */
   connectUrl(): Promise<AdminResult<string>>
-  /** Unlink the signed-in barber's calendar (revokes + forgets the token server-side). */
+  /** Start durable event cleanup and unlink the signed-in barber's calendar. */
   disconnect(): Promise<AdminResult<void>>
 }

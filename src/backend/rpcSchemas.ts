@@ -62,7 +62,10 @@ const cancelBookingShape = z.object({
 })
 
 const bookingLookupOk = z.object({ ok: z.literal(true), booking: cancelBookingShape })
-const bookingLookupErr = z.object({ ok: z.literal(false), error: z.literal('not_found') })
+const bookingLookupErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['not_found', 'failed_challenge', 'rate_limited']),
+})
 
 export const bookingLookupResponse = z.discriminatedUnion('ok', [bookingLookupOk, bookingLookupErr])
 export type BookingLookupResponse = z.infer<typeof bookingLookupResponse>
@@ -82,10 +85,18 @@ const myBookingRow = z.object({
   start_at: isoTimestamp,
 })
 
-export const listBookingsByPhoneResponse = z.object({
+const listBookingsByPhoneOk = z.object({
   ok: z.literal(true),
   bookings: z.array(myBookingRow),
 })
+const listBookingsByPhoneErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['failed_challenge', 'rate_limited']),
+})
+export const listBookingsByPhoneResponse = z.discriminatedUnion('ok', [
+  listBookingsByPhoneOk,
+  listBookingsByPhoneErr,
+])
 export type ListBookingsByPhoneResponse = z.infer<typeof listBookingsByPhoneResponse>
 
 // --- create_review -------------------------------------------------------------------------------
@@ -99,11 +110,11 @@ const createReviewOk = z.object({
     text: z.string(),
   }),
 })
-// `invalid` = bad rating/text/phone shape; `no_booking` = the phone has no finished, not-yet-reviewed
-// confirmed booking (the review gate — one review per finished haircut).
+// `invalid` = bad rating/text/phone shape; `no_booking` = no eligible finished booking. Gateway-only
+// challenge/rate-limit outcomes are part of the same HTTP-200 response union.
 const createReviewErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['invalid', 'no_booking']),
+  error: z.enum(['invalid', 'no_booking', 'failed_challenge', 'rate_limited']),
 })
 
 export const createReviewResponse = z.discriminatedUnion('ok', [createReviewOk, createReviewErr])
@@ -169,6 +180,23 @@ export const siteSettingRow = z.object({
   value: z.string().max(500),
 })
 export type SiteSettingRow = z.infer<typeof siteSettingRow>
+
+export const publicBusinessDiscoveryResponse = z.object({
+  settings: z.record(z.string()),
+  barbers: z.array(z.object({ id: z.string(), name: z.string() })),
+  services: z.array(
+    z.object({ id: z.string(), barber_id: z.string(), price: z.number().int().nonnegative() }),
+  ),
+  schedules: z.array(
+    z.object({
+      barber_id: z.string(),
+      weekday: z.number().int().min(0).max(6),
+      start_min: z.number().int().min(0).max(1439),
+      end_min: z.number().int().min(1).max(1440),
+    }),
+  ),
+})
+export type PublicBusinessDiscoveryResponse = z.infer<typeof publicBusinessDiscoveryResponse>
 
 // --- public barber_photos row (Task 2 §3) --------------------------------------------------------
 // One barber's profile-photo path (anon may read; the adapter resolves it to a public Storage URL).

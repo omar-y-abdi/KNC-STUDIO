@@ -1,6 +1,7 @@
 -- pgTAP — RLS on the admin tables + bookings admin reads, by ROLE (ADMIN_SPEC §2 + §8).
 -- The security spine: a barber must NOT reach another barber's data; anon must NOT reach
--- bookings/profiles; owner has full access. permission-denied = 42501.
+-- bookings/profiles; owner mutations use guarded RPCs where cross-system invariants require them.
+-- permission-denied = 42501.
 --
 -- Technique: seed auth.users + profiles (as the owner/superuser), then simulate each caller with
 --   set local role authenticated;
@@ -11,7 +12,7 @@
 -- their custom GUCs).
 
 begin;
-select plan(47);
+select plan(48);
 
 -- RLS is enabled on every new table.
 select is((select relrowsecurity from pg_class where oid='public.barbers'::regclass),          true, 'RLS on barbers');
@@ -142,58 +143,54 @@ select is(
   'victor', 'victor''s own profile resolves to barber_id victor'
 );
 
--- schedules: victor updates his OWN row (UPDATE filtered by USING; affected count proves it).
-select lives_ok(
+-- Availability writes are RPC-only so validation and booking-conflict checks share one transaction.
+select throws_ok(
   $$update public.barber_schedules set start_min = 600 where barber_id = 'victor' and weekday = 1$$,
-  'victor CAN update his own schedule'
+  '42501', null, 'victor CANNOT bypass the schedule mutation RPC'
 );
 select is(
   (select start_min from public.barber_schedules where barber_id='victor' and weekday=1),
-  600::smallint, 'victor''s schedule update persisted'
+  540::smallint, 'the blocked direct schedule update changed nothing'
 );
 
--- victor's UPDATE of salman's schedule must affect ZERO rows (USING hides them -> no-op, not
--- error). A data-modifying CTE must be top-level, so we run it as one and stash the affected-row
--- count in a transaction-local GUC, then assert on it.
-with upd as (
-  update public.barber_schedules set start_min = 999
-  where barber_id = 'salman' and weekday = 1
-  returning 1
-)
-select set_config('test.salman_rows', (select count(*)::int from upd)::text, true);
-select is(
-  current_setting('test.salman_rows'),
-  '0', 'victor''s UPDATE of salman''s schedule affects 0 rows (cannot touch others)'
+select set_config(
+  'test.week',
+  jsonb_build_array(
+    jsonb_build_object('weekday',0,'working',false,'start_min',540,'end_min',1080),
+    jsonb_build_object('weekday',1,'working',true, 'start_min',600,'end_min',960),
+    jsonb_build_object('weekday',2,'working',true, 'start_min',540,'end_min',1080),
+    jsonb_build_object('weekday',3,'working',true, 'start_min',540,'end_min',1080),
+    jsonb_build_object('weekday',4,'working',true, 'start_min',540,'end_min',1080),
+    jsonb_build_object('weekday',5,'working',true, 'start_min',540,'end_min',1080),
+    jsonb_build_object('weekday',6,'working',true, 'start_min',540,'end_min',1080)
+  )::text,
+  true
 );
--- prove salman's schedule is actually unchanged.
+select is(
+  public.admin_save_barber_week('victor', current_setting('test.week')::jsonb) ->> 'ok',
+  'true', 'victor CAN save his own schedule through the guarded RPC'
+);
+select is(
+  (select start_min from public.barber_schedules where barber_id='victor' and weekday=1),
+  600::smallint, 'victor''s guarded schedule update persisted'
+);
+
+select is(
+  public.admin_save_barber_week('salman', current_setting('test.week')::jsonb) ->> 'error',
+  'forbidden', 'victor CANNOT save another barber''s schedule through the RPC'
+);
 select is(
   (select start_min from public.barber_schedules where barber_id='salman' and weekday=1),
-  540::smallint, 'salman''s schedule is unchanged by victor'
+  540::smallint, 'salman''s schedule remains unchanged by victor'
 );
 
--- victor INSERTing a schedule row for salman is rejected by the WITH CHECK (42501).
-select throws_ok(
-  $$insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
-    values ('salman', 0, true, 540, 1080)$$,
-  '42501', null, 'victor CANNOT insert a schedule row for salman (WITH CHECK)'
+select is(
+  public.admin_add_time_off('victor','2099-12-24','2099-12-26','') ->> 'ok',
+  'true', 'victor CAN add his own time off through the guarded RPC'
 );
--- victor CAN insert his own (weekday 0 not yet present after seed? seed has 0..6, so update path).
--- Use a fresh insert on a deleted own row to prove the own-insert policy works.
-select lives_ok(
-  $$delete from public.barber_schedules where barber_id='victor' and weekday=0;
-    insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
-    values ('victor', 0, true, 540, 1080)$$,
-  'victor CAN insert his own schedule row'
-);
-
--- time_off: victor manages his own; cannot create salman's.
-select lives_ok(
-  $$insert into public.barber_time_off (barber_id, start_date, end_date) values ('victor','2099-12-24','2099-12-26')$$,
-  'victor CAN insert his own time off'
-);
-select throws_ok(
-  $$insert into public.barber_time_off (barber_id, start_date, end_date) values ('salman','2099-12-24','2099-12-26')$$,
-  '42501', null, 'victor CANNOT insert time off for salman (WITH CHECK)'
+select is(
+  public.admin_add_time_off('salman','2099-12-24','2099-12-26','') ->> 'error',
+  'forbidden', 'victor CANNOT add time off for salman through the RPC'
 );
 
 -- owner-only tables: a barber cannot write them. NB the failure SHAPE differs by command:
@@ -225,7 +222,7 @@ select throws_ok(
 reset role;
 
 -- =============================================================================================
--- OWNER — full read/write.
+-- OWNER — full reads; direct writes only where no guarded transactional gateway is required.
 -- =============================================================================================
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub','10000000-0000-0000-0000-000000000001')::text, true);
@@ -246,29 +243,33 @@ select lives_ok(
   $$update public.barbers set name = 'Victor Updated' where id = 'victor'$$,
   'owner CAN update any barber'
 );
-select lives_ok(
-  $$update public.barber_schedules set start_min = 480 where barber_id = 'salman' and weekday = 1$$,
-  'owner CAN update any barber''s schedule'
+select is(
+  public.admin_save_barber_week('salman', current_setting('test.week')::jsonb) ->> 'ok',
+  'true', 'owner CAN update any barber''s schedule through the guarded RPC'
 );
-select lives_ok(
-  $$insert into public.barber_time_off (barber_id, start_date, end_date) values ('salman','2099-11-01','2099-11-02')$$,
-  'owner CAN insert time off for any barber'
+select is(
+  public.admin_add_time_off('salman','2099-11-01','2099-11-02','') ->> 'ok',
+  'true', 'owner CAN insert time off for any barber through the guarded RPC'
 );
 select lives_ok(
   $$update public.about_content set value = 'Owner edit' where key='intro' and lang='sv'$$,
   'owner CAN edit about_content'
 );
-select lives_ok(
+select throws_ok(
   $$insert into public.gallery_images (kind, storage_path, alt) values ('cuts','gallery/cuts/x.jpg','x')$$,
-  'owner CAN insert gallery_images'
+  '42501', null, 'owner CANNOT bypass the validated image gateway'
 );
 select lives_ok(
   $$insert into public.barbers (id, name, sort_order) values ('new-barber','Newbie',5)$$,
   'owner CAN insert a new barber'
 );
-select lives_ok(
+select throws_ok(
   $$delete from public.barbers where id = 'new-barber'$$,
-  'owner CAN delete a barber'
+  '42501', null, 'owner CANNOT bypass guarded barber deletion'
+);
+select is(
+  public.admin_delete_barber('new-barber') ->> 'ok',
+  'true', 'owner CAN delete a barber through the guarded RPC'
 );
 
 reset role;

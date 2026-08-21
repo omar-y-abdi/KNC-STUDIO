@@ -26,6 +26,7 @@ export const profileRow = z.object({
   role: z.enum(['owner', 'barber']),
   barber_id: z.string().nullable(),
   must_change_password: z.boolean(),
+  account_enabled: z.boolean(),
 })
 export type ProfileRow = z.infer<typeof profileRow>
 
@@ -67,6 +68,21 @@ export const scheduleRow = z.object({
 export type ScheduleRow = z.infer<typeof scheduleRow>
 export const scheduleRows = z.array(scheduleRow)
 
+const availabilityMutationConflict = z.object({
+  ok: z.literal(false),
+  error: z.literal('booking_conflict'),
+  booking_ids: z.array(z.string().uuid()),
+})
+const availabilityMutationDenied = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const saveWeekResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+
 // --- barber_time_off -----------------------------------------------------------------------------
 
 export const timeOffRow = z.object({
@@ -78,6 +94,11 @@ export const timeOffRow = z.object({
 })
 export type TimeOffRow = z.infer<typeof timeOffRow>
 export const timeOffRows = z.array(timeOffRow)
+export const addTimeOffResponse = z.union([
+  z.object({ ok: z.literal(true), row: timeOffRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
 
 // --- barber_slot_blocks --------------------------------------------------------------------------
 
@@ -90,6 +111,11 @@ export const slotBlockRow = z.object({
 })
 export type SlotBlockRow = z.infer<typeof slotBlockRow>
 export const slotBlockRows = z.array(slotBlockRow)
+export const addSlotBlockResponse = z.union([
+  z.object({ ok: z.literal(true), row: slotBlockRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
 
 // --- services (admin CRUD) -----------------------------------------------------------------------
 // A per-barber service-menu row (owner=all, barber=own). Maps to `AdminService` in types.ts.
@@ -209,6 +235,11 @@ export const uploadGalleryImageResponse = z
   })
   .refine((response) => response.path === response.row.storage_path)
 
+export const imageDeleteResponse = z.object({
+  ok: z.literal(true),
+  pending: z.boolean(),
+})
+
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to
 // the owning barber; nullable phone/email per the method.
@@ -232,12 +263,12 @@ export type AdminBookingRow = z.infer<typeof adminBookingRow>
 export const adminBookingRows = z.array(adminBookingRow)
 
 // --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------
-// {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'invalid'|'slot_taken'}
+// {ok:true, booking:{...}} | typed authorization/availability/validation error.
 
 const adminCreateOk = z.object({ ok: z.literal(true) })
 const adminCreateErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['forbidden', 'invalid', 'slot_taken']),
+  error: z.enum(['forbidden', 'invalid', 'slot_taken', 'outside_hours']),
 })
 export const adminCreateBookingResponse = z.discriminatedUnion('ok', [
   adminCreateOk,
@@ -277,6 +308,7 @@ export type AdminCancelResponse = z.infer<typeof adminCancelResponse>
 const deleteBarberOk = z.object({
   ok: z.literal(true),
   deleted_bookings: z.number().int().nonnegative(),
+  auth_cleanup_pending: z.boolean(),
 })
 const deleteBarberHasBookings = z.object({
   ok: z.literal(false),
@@ -289,9 +321,23 @@ const deleteBarberDenied = z.object({
   ok: z.literal(false),
   error: z.enum(['forbidden', 'not_found']),
 })
+const deleteBarberHasUpcoming = z.object({
+  ok: z.literal(false),
+  error: z.literal('has_upcoming'),
+  count: z.number().int().nonnegative(),
+  past: z.number().int().nonnegative(),
+  upcoming: z.number().int().positive(),
+})
+const deleteBarberExternalCleanup = z.object({
+  ok: z.literal(false),
+  error: z.literal('external_cleanup_pending'),
+  calendar_events: z.number().int().nonnegative(),
+})
 export const adminDeleteBarberResponse = z.union([
   deleteBarberOk,
   deleteBarberHasBookings,
+  deleteBarberHasUpcoming,
+  deleteBarberExternalCleanup,
   deleteBarberDenied,
 ])
 export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>

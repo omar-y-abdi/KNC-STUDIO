@@ -56,6 +56,15 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = turnstileConfigured
+  const actionError = (
+    error: 'not_found' | 'failed_challenge' | 'rate_limited' | 'system',
+    fallback: string,
+  ): string => {
+    if (error === 'failed_challenge') return t.errChallenge
+    if (error === 'rate_limited') return t.errRateLimited
+    if (error === 'system') return t.errSystem
+    return fallback
+  }
 
   // Move focus (and the on-screen keyboard) straight to the phone field when the lookup step shows.
   const contactInputRef = useRef<HTMLInputElement>(null)
@@ -90,7 +99,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
         setBooking(result.booking)
         setStep('confirm')
       } else {
-        setSystemError(t.errLookup)
+        setSystemError(actionError(result.error, t.errLookup))
       }
     } catch {
       setSystemError(t.errLookup)
@@ -124,7 +133,7 @@ export function CancellationDialog(props: CancellationDialogProps): JSX.Element 
       if (result.ok) {
         setStep('done')
       } else {
-        setSystemError(t.errCancel)
+        setSystemError(actionError(result.error, t.errCancel))
       }
     } catch {
       setSystemError(t.errCancel)

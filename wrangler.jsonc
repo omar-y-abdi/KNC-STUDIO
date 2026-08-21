@@ -18,6 +18,9 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "SUPABASE_URL": "https://soktgawvexeumqvtyhda.supabase.co",
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

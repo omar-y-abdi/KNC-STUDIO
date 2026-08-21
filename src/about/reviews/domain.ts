@@ -41,10 +41,11 @@ export interface ValidReview {
 /**
  * Domain error for submitting a review. `invalid` = the server rejected the shape; `no_booking` =
  * the phone has no finished, not-yet-reviewed confirmed booking (the review gate — one review per
- * finished haircut); `submit` = a transport / unexpected failure.
+ * finished haircut); `challenge` / `rate_limited` = gateway controls; `submit` = transport or
+ * unexpected failure.
  */
 export interface ReviewError {
-  readonly kind: 'invalid' | 'no_booking' | 'submit'
+  readonly kind: 'invalid' | 'no_booking' | 'challenge' | 'rate_limited' | 'submit'
   readonly message: string
 }
 

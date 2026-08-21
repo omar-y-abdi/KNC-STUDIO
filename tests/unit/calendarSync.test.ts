@@ -84,7 +84,8 @@ describe('buildEvent', () => {
     const e = buildEvent(base)
     expect(e.summary).toBe('Omar — Skägg & puts')
     expect(e.description).toContain('Kund: Omar')
-    expect(e.description).toContain('Telefon: 0701234567')
+    expect(e.description).not.toContain('0701234567')
+    expect(e.description).not.toContain('Telefon')
     expect(e.description).toContain('Tjänst: Skägg & puts')
     expect(e.start).toEqual({ dateTime: base.start_at, timeZone: 'Europe/Stockholm' })
     expect(e.end).toEqual({ dateTime: base.end_at, timeZone: 'Europe/Stockholm' })
@@ -92,7 +93,7 @@ describe('buildEvent', () => {
     expect(e.reminders.overrides[0]).toEqual({ method: 'popup', minutes: 30 })
   })
 
-  it('omits the phone line when phone is null', () => {
+  it('never includes contact details in the event', () => {
     const e = buildEvent({ ...base, phone: null })
     expect(e.description).not.toContain('Telefon')
   })
@@ -129,6 +130,7 @@ describe('idempotent event insertion', () => {
     await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
     expect(JSON.parse(String(init.body))).toMatchObject({ id: eventId, summary: event.summary })
+    expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 
   it('treats duplicate-id 409 as idempotent success', async () => {
@@ -141,19 +143,53 @@ describe('parseCalendarStatus', () => {
   it('parses a connected row', () => {
     expect(
       parseCalendarStatus({ connected: true, google_email: 'a@b.se', last_sync_error: null }),
-    ).toEqual({ connected: true, googleEmail: 'a@b.se', lastSyncError: null })
+    ).toEqual({
+      connected: true,
+      disconnectPending: false,
+      repairRequired: false,
+      googleEmail: 'a@b.se',
+      lastSyncError: null,
+    })
   })
 
   it('defaults to disconnected on junk', () => {
     expect(parseCalendarStatus(null)).toEqual({
       connected: false,
+      disconnectPending: false,
+      repairRequired: false,
       googleEmail: null,
       lastSyncError: null,
     })
     expect(parseCalendarStatus({ connected: 'yes' })).toEqual({
       connected: false,
+      disconnectPending: false,
+      repairRequired: false,
       googleEmail: null,
       lastSyncError: null,
+    })
+  })
+
+  it('parses durable disconnect state', () => {
+    expect(parseCalendarStatus({ connected: false, disconnect_pending: true })).toMatchObject({
+      connected: false,
+      disconnectPending: true,
+      repairRequired: false,
+    })
+  })
+
+  it('parses a disconnect that requires same-account reauthorization', () => {
+    expect(
+      parseCalendarStatus({
+        connected: false,
+        disconnect_pending: true,
+        repair_required: true,
+        google_email: 'barber@example.test',
+      }),
+    ).toMatchObject({
+      connected: false,
+      disconnectPending: true,
+      repairRequired: true,
+      googleEmail: 'barber@example.test',
     })
   })
 
@@ -253,8 +289,13 @@ describe('revokeToken', () => {
     expect(await revokeToken('tok')).toBe(true)
   })
 
-  it('returns false on a non-2xx', async () => {
+  it('treats an already-invalid token as the desired idempotent state', async () => {
     vi.stubGlobal('fetch', async () => new Response('bad', { status: 400 }))
+    expect(await revokeToken('tok')).toBe(true)
+  })
+
+  it('returns false on a retryable server failure', async () => {
+    vi.stubGlobal('fetch', async () => new Response('bad', { status: 503 }))
     expect(await revokeToken('tok')).toBe(false)
   })
 

@@ -10,8 +10,9 @@
     "packageJson": {
       "dependencies": [
         "npm:@eslint/js@^9.39.4",
+        "npm:@imagemagick/magick-wasm@0.0.42",
         "npm:@preact/preset-vite@^2.10.5",
-        "npm:@supabase/supabase-js@^2.108.2",
+        "npm:@supabase/supabase-js@2.112.2",
         "npm:@types/node@^24.12.3",
         "npm:@types/pg@^8.20.0",
         "npm:@vitest/coverage-v8@^4.1.9",
@@ -24,7 +25,7 @@
         "npm:pngjs@7",
         "npm:preact@^10.29.1",
         "npm:prettier@^3.8.4",
-        "npm:supabase@^2.107.0",
+        "npm:supabase@2.114.0",
         "npm:terser@^5.48.0",
         "npm:typescript-eslint@^8.61.1",
         "npm:typescript@~6.0.2",

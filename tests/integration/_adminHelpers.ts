@@ -111,8 +111,9 @@ async function upsertProfile(
 ): Promise<void> {
   await withClient(env.dbUrl, (client) =>
     client.query(
-      `insert into public.profiles (id, role, barber_id) values ($1, $2, $3)
-       on conflict (id) do update set role = excluded.role, barber_id = excluded.barber_id`,
+      `insert into public.profiles (id, role, barber_id, account_enabled) values ($1, $2, $3, true)
+       on conflict (id) do update
+       set role = excluded.role, barber_id = excluded.barber_id, account_enabled = true`,
       [userId, role, barberId],
     ),
   )

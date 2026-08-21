@@ -12,7 +12,8 @@ import type { BookingPopupText } from '../booking/BookingFlow'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
 import { useSiteChrome } from '../site/useSiteChrome'
-import { formatBusinessAddress, resolveSiteText, type BusinessSettings } from '../site/siteChrome'
+import { buildBusinessStructuredData } from '../site/business'
+import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
@@ -23,7 +24,8 @@ function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
 }
 
-function updateDocumentMetadata(business: BusinessSettings, lang: Lang): void {
+export function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
+  const business = chrome.business
   const seo = business.seo[lang]
   document.documentElement.lang = lang
   document.title = seo.title
@@ -41,25 +43,7 @@ function updateDocumentMetadata(business: BusinessSettings, lang: Lang): void {
   const siteUrl = canonical?.startsWith('http')
     ? canonical.replace(/\/$/, '')
     : window.location.origin
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'HairSalon',
-    '@id': `${siteUrl}/#business`,
-    name: business.name,
-    url: `${siteUrl}/`,
-    image: `${siteUrl}/og-image.png`,
-    telephone: business.phoneTel,
-    email: business.email,
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: business.street,
-      postalCode: business.postalCode,
-      addressLocality: business.city,
-      addressCountry: 'SE',
-    },
-    hasMap: business.mapsHref,
-    availableLanguage: ['sv', 'en'],
-  }
+  const jsonLd = buildBusinessStructuredData(business, chrome.facts, siteUrl)
   const structuredData = document.querySelector<HTMLScriptElement>('#business-json-ld')
   if (structuredData !== null) {
     structuredData.textContent = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
@@ -146,8 +130,8 @@ export function App(): JSX.Element {
   })
 
   useEffect(() => {
-    updateDocumentMetadata(business, lang)
-  }, [business, lang])
+    updateDocumentMetadata(chrome, lang)
+  }, [chrome, lang])
 
   const setSv = (): void => setState({ lang: 'sv' })
   const setEn = (): void => setState({ lang: 'en' })

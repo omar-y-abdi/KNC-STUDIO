@@ -8,7 +8,11 @@
 // 'md'), never trusted raw.
 
 import { getSupabase } from '../../backend/supabaseClient'
-import { parseWith, siteContentRow, siteSettingRow } from '../../backend/rpcSchemas'
+import {
+  parseWith,
+  publicBusinessDiscoveryResponse,
+  siteContentRow,
+} from '../../backend/rpcSchemas'
 import type { Lang } from '../../i18n/index'
 import type { SiteChromePort } from '../port'
 import {
@@ -28,11 +32,13 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
   async load(lang: Lang): Promise<SiteChrome> {
     try {
       const supabase = getSupabase()
-      const [contentRes, settingsRes] = await Promise.all([
+      const [contentRes, discoveryRes] = await Promise.all([
         supabase.from('site_content').select('key,lang,value').eq('lang', lang),
-        supabase.from('site_settings').select('key,value'),
+        supabase.rpc('public_business_discovery'),
       ])
-      if (contentRes.error !== null || settingsRes.error !== null) return DEFAULT_CHROME
+      if (contentRes.error !== null || discoveryRes.error !== null) return DEFAULT_CHROME
+      const discovery = parseWith(publicBusinessDiscoveryResponse, discoveryRes.data)
+      if (!discovery.ok) return DEFAULT_CHROME
 
       // Collect only the known text keys — the result is a valid SiteText (present-or-absent keys).
       const text: Partial<Record<SiteTextKey, string>> = {}
@@ -43,15 +49,25 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
         }
       }
 
-      const settings: Record<string, string> = {}
-      for (const raw of settingsRes.data ?? []) {
-        const parsed = parseWith(siteSettingRow, raw)
-        if (parsed.ok) settings[parsed.value.key] = parsed.value.value
-      }
+      const settings = discovery.value.settings
 
       return {
         text,
         business: resolveBusinessSettings(new Map(Object.entries(settings))),
+        facts: {
+          barbers: discovery.value.barbers,
+          services: discovery.value.services.map((service) => ({
+            id: service.id,
+            barberId: service.barber_id,
+            price: service.price,
+          })),
+          schedules: discovery.value.schedules.map((schedule) => ({
+            barberId: schedule.barber_id,
+            weekday: schedule.weekday,
+            startMin: schedule.start_min,
+            endMin: schedule.end_min,
+          })),
+        },
         homepageScale: parseScale(settings[HOMEPAGE_SCALE_KEY]),
         aboutScale: parseScale(settings[ABOUT_SCALE_KEY]),
       }
@@ -73,6 +89,9 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
         reload,
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barber_schedules' }, reload)
       .subscribe()
 
     return () => {

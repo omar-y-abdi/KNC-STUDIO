@@ -74,6 +74,15 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = turnstileConfigured
+  const actionError = (
+    error: 'failed_challenge' | 'rate_limited' | 'system',
+    fallback: string,
+  ): string => {
+    if (error === 'failed_challenge') return t.errChallenge
+    if (error === 'rate_limited') return t.errRateLimited
+    if (error === 'system') return t.errSystem
+    return fallback
+  }
 
   const contactInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -118,7 +127,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
           setNotFound(next.level)
         }
       } else if (!silent) {
-        setSystemError(t.errSystem)
+        setSystemError(actionError(result.error, t.errSystem))
       }
     } catch {
       if (!silent) setSystemError(t.errSystem)
@@ -165,7 +174,9 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     try {
       const result = await port.cancel(b, contact, turnstileToken)
       if (!result.ok) {
-        setCancelError(t.errCancel)
+        setCancelError(
+          result.error === 'not_found' ? t.errCancel : actionError(result.error, t.errCancel),
+        )
         return
       }
       // Drop the cancelled booking from the upcoming list; surface a brief confirmation note.

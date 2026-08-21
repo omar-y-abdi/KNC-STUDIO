@@ -28,6 +28,8 @@ export interface AdminProfile {
   readonly mustChangePassword: boolean
 }
 
+export type BarberAccountState = 'enabled' | 'disabled'
+
 /** A barber row as the admin manages it (the full roster row, incl. inactive for the owner). */
 export interface AdminBarber {
   readonly id: AdminBarberId
@@ -112,6 +114,11 @@ export interface DaySchedule {
  * (`noUncheckedIndexedAccess`) rather than relying on a fixed-length tuple.
  */
 export type WeekSchedule = readonly DaySchedule[]
+
+export type AvailabilityMutationOutcome<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'booking_conflict'; readonly bookingIds: readonly string[] }
+  | { readonly kind: 'error'; readonly error: AdminError }
 
 /** A time-off block (inclusive date range), matching `barber_time_off`. */
 export interface TimeOff {
@@ -224,11 +231,22 @@ export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T
  * the exact counts. Authorization, transport and parse failures collapse to `error` (an `AdminError`).
  */
 export type DeleteBarberOutcome =
-  | { readonly kind: 'ok'; readonly deletedBookings: number }
+  | {
+      readonly kind: 'ok'
+      readonly deletedBookings: number
+      readonly authCleanupPending: boolean
+    }
   | {
       readonly kind: 'has_bookings'
       readonly count: number
       readonly past: number
       readonly upcoming: number
     }
+  | {
+      readonly kind: 'has_upcoming'
+      readonly count: number
+      readonly past: number
+      readonly upcoming: number
+    }
+  | { readonly kind: 'external_cleanup_pending'; readonly calendarEvents: number }
   | { readonly kind: 'error'; readonly error: AdminError }

@@ -7,7 +7,11 @@ vi.mock('../../src/backend/supabaseClient', () => ({
 }))
 
 import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
-import { bookingLookupResponse, parseWith } from '../../src/backend/rpcSchemas'
+import {
+  bookingLookupResponse,
+  listBookingsByPhoneResponse,
+  parseWith,
+} from '../../src/backend/rpcSchemas'
 
 beforeEach(() => invoke.mockReset())
 
@@ -46,6 +50,14 @@ describe('public booking action gateway client', () => {
     })
     expect(invoke).toHaveBeenCalledWith('public-booking-actions', { body: payload })
   })
+
+  it.each(['failed_challenge', 'rate_limited'] as const)(
+    'accepts gateway error %s for every lookup/list consumer',
+    (error) => {
+      expect(parseWith(bookingLookupResponse, { ok: false, error }).ok).toBe(true)
+      expect(parseWith(listBookingsByPhoneResponse, { ok: false, error }).ok).toBe(true)
+    },
+  )
 
   it('fails closed on function and transport errors', async () => {
     invoke.mockResolvedValueOnce({ data: null, error: new Error('denied') })

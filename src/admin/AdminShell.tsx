@@ -16,7 +16,7 @@
 // buttons (keyboard-operable); the active tab is `aria-current`.
 
 import type { JSX } from 'preact'
-import { useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
@@ -87,6 +87,18 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   // Schedule first: managing today's availability is the barber's most frequent task.
   const [tab, setTab] = useState<Tab>('schedule')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [scheduleBlocked, setScheduleBlocked] = useState(false)
+  const navigationLocked = tab === 'schedule' && scheduleBlocked
+
+  useEffect(() => {
+    if (!navigationLocked) return
+    const preventLeave = (event: BeforeUnloadEvent): void => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', preventLeave)
+    return () => window.removeEventListener('beforeunload', preventLeave)
+  }, [navigationLocked])
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
@@ -135,11 +147,13 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           </section>
         ) : (
           <ScheduleView
+            key={effectiveBarberId}
             dark={props.dark}
             lang={props.lang}
             s={s}
             barberId={effectiveBarberId}
             barberName={effectiveBarberName}
+            onPersistenceStateChange={setScheduleBlocked}
           />
         )
       case 'services':
@@ -210,9 +224,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         key={def.id}
         type="button"
         onClick={() => {
+          if (navigationLocked && !active) return
           setTab(def.id)
           setMobileMenuOpen(false)
         }}
+        disabled={navigationLocked && !active}
         aria-current={active ? 'page' : undefined}
         style={{
           textAlign: 'left',
@@ -222,11 +238,11 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           fontFamily: 'inherit',
           fontSize: '14px',
           fontWeight: active ? 700 : 500,
-          cursor: 'pointer',
+          cursor: navigationLocked && !active ? 'not-allowed' : 'pointer',
           whiteSpace: 'nowrap',
           background: active ? c.subtle : 'transparent',
           color: c.text,
-          opacity: active ? 1 : 0.78,
+          opacity: navigationLocked && !active ? 0.4 : active ? 1 : 0.78,
         }}
       >
         {def.label}
@@ -285,6 +301,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           style={{ ...s.ghostBtn, marginTop: '12px' }}
           class="knc-admin-signout-bottom"
           onClick={props.onSignOut}
+          disabled={navigationLocked}
         >
           {t.signOut}
         </button>
@@ -308,6 +325,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
                 value={effectiveBarberId ?? ''}
                 onChange={(e) => setActingBarberId(e.currentTarget.value)}
                 aria-label={t.ariaSelectBarber}
+                disabled={navigationLocked}
               >
                 {barbers.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -328,6 +346,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
               style={s.ghostBtn}
               class="knc-admin-signout-top"
               onClick={props.onSignOut}
+              disabled={navigationLocked}
             >
               {t.signOut}
             </button>

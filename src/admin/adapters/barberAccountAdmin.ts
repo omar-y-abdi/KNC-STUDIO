@@ -11,6 +11,12 @@ import type { AdminResult } from '../types'
 import { err, ok } from '../types'
 
 const GENERIC_ERROR = 'Kunde inte skapa kontot. Försök igen.'
+const ACCESS_ERROR = 'Kunde inte ändra kontoåtkomsten. Försök igen.'
+
+export interface BarberAccessResult {
+  readonly enabled: boolean
+  readonly authSyncPending: boolean
+}
 
 /** Map an edge function error code to a Swedish `AdminResult<void>` error. */
 function mapErrorCode(code: string | undefined): AdminResult<void> {
@@ -31,6 +37,57 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
       return err('validation', 'Ogiltig e-post eller barberare.')
     default:
       return err('network', GENERIC_ERROR)
+  }
+}
+
+function mapAccessError(code: string | undefined): AdminResult<BarberAccessResult> {
+  switch (code) {
+    case 'not_linked':
+      return err('not_found', 'Barberaren saknar ett kopplat konto.')
+    case 'forbidden':
+      return err('forbidden', 'Endast ägaren kan ändra kontoåtkomst.')
+    case 'invalid_payload':
+      return err('validation', 'Ogiltig barberare.')
+    default:
+      return err('network', ACCESS_ERROR)
+  }
+}
+
+export async function setBarberAccountAccess(
+  barberId: string,
+  enabled: boolean,
+): Promise<AdminResult<BarberAccessResult>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
+      body: { action: 'set_access', barber_id: barberId, enabled },
+    })
+
+    let payload: unknown = data
+    if (payload === null && error !== null) {
+      try {
+        const response = (error as unknown as { context?: Response }).context
+        if (response === undefined) return err('network', ACCESS_ERROR)
+        payload = await response.json()
+      } catch {
+        return err('network', ACCESS_ERROR)
+      }
+    }
+    if (typeof payload !== 'object' || payload === null) return err('network', ACCESS_ERROR)
+    const row = payload as Record<string, unknown>
+    if (row['ok'] === false) return mapAccessError(row['error'] as string | undefined)
+    if (
+      row['ok'] !== true ||
+      typeof row['account_enabled'] !== 'boolean' ||
+      typeof row['auth_sync_pending'] !== 'boolean'
+    ) {
+      return err('malformed', ACCESS_ERROR)
+    }
+    return ok({
+      enabled: row['account_enabled'],
+      authSyncPending: row['auth_sync_pending'],
+    })
+  } catch {
+    return err('network', ACCESS_ERROR)
   }
 }
 

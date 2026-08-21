@@ -8,17 +8,16 @@
 //
 //   INSERT           -> insert event, map booking -> event id
 //   UPDATE confirmed -> patch the mapped event (re-insert if Google lost it)
-//   UPDATE cancelled -> delete the mapped event, forget the mapping
-//   DELETE           -> delete the mapped event (row already gone), forget the mapping
+//   UPDATE cancelled -> durable database outbox owns event deletion
+//   DELETE           -> durable database outbox owns event deletion
 //   (barber not connected -> no-op)
 //
 // Run locally: npx supabase functions serve calendar-sync --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEvent,
-  deleteEvent,
   googleEventId,
   insertEvent,
   patchEvent,
@@ -85,22 +84,16 @@ async function syncUpsert(
   if (data === null || typeof data !== 'object') return { outcome: 'booking_gone', barberId: null }
   const s = data as unknown as SyncSource
 
+  // Cancellation deletion is already committed with the booking change by the durable outbox
+  // trigger. Never race that retryable worker with a second direct Google deletion path.
+  if (s.status === 'cancelled') {
+    return { outcome: 'deletion_queued', barberId: s.barber_id }
+  }
+
   // Barber has not connected a calendar -> nothing to do.
   if (!isNonEmptyString(s.refresh_token)) return { outcome: 'not_connected', barberId: s.barber_id }
 
   const accessToken = await refreshAccessToken(s.refresh_token, clientId, clientSecret)
-
-  // A cancelled booking should not occupy the calendar: remove any mapped event.
-  if (s.status === 'cancelled') {
-    if (isNonEmptyString(s.google_event_id)) {
-      await deleteEvent(accessToken, s.calendar_id, s.google_event_id)
-      const { error: forgetError } = await service.rpc('calendar_forget_event', {
-        p_booking_id: bookingId,
-      })
-      if (forgetError) throw new Error(`forget_event: ${forgetError.message}`)
-    }
-    return { outcome: 'cancelled_removed', barberId: s.barber_id }
-  }
 
   const event = buildEvent(s)
   if (isNonEmptyString(s.google_event_id)) {
@@ -116,36 +109,6 @@ async function syncUpsert(
   })
   if (recordError) throw new Error(`record_event: ${recordError.message}`)
   return { outcome: 'inserted', barberId: s.barber_id }
-}
-
-/** Handle DELETE: the booking row is gone, so read the mapping + credentials, delete the Google event,
- *  and forget the mapping. */
-async function syncDelete(
-  service: SupabaseClient,
-  bookingId: string,
-  clientId: string,
-  clientSecret: string,
-): Promise<{ outcome: string; barberId: string | null }> {
-  const { data, error } = await service.rpc('calendar_deletion_context', {
-    p_booking_id: bookingId,
-  })
-  if (error) throw new Error(`deletion_context: ${error.message}`)
-  if (data === null || typeof data !== 'object')
-    return { outcome: 'nothing_mapped', barberId: null }
-  const d = data as Record<string, unknown>
-  const eventId = d['google_event_id']
-  const refreshToken = d['refresh_token']
-  const calendarId = typeof d['calendar_id'] === 'string' ? d['calendar_id'] : 'primary'
-  if (!isNonEmptyString(eventId) || !isNonEmptyString(refreshToken)) {
-    return { outcome: 'nothing_mapped', barberId: null }
-  }
-  const accessToken = await refreshAccessToken(refreshToken, clientId, clientSecret)
-  await deleteEvent(accessToken, calendarId, eventId)
-  const { error: forgetError } = await service.rpc('calendar_forget_event', {
-    p_booking_id: bookingId,
-  })
-  if (forgetError) throw new Error(`forget_event: ${forgetError.message}`)
-  return { outcome: 'deleted', barberId: null }
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -181,7 +144,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     const result =
       parsed.op === 'DELETE'
-        ? await syncDelete(service, parsed.id, clientId, clientSecret)
+        ? { outcome: 'deletion_queued', barberId: null }
         : await syncUpsert(service, parsed.id, clientId, clientSecret)
     console.log(`calendar-sync: ${parsed.op} booking ${parsed.id} -> ${result.outcome}`)
     return json({ ok: true, outcome: result.outcome }, 200)

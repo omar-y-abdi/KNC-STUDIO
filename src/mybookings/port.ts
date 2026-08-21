@@ -1,8 +1,7 @@
 // The "Mina bokningar" seam. A `MyBookingsPort` lists a phone's confirmed bookings (split
 // upcoming/past) and cancels one upcoming booking. The dialog depends on this interface only; the
 // concrete implementations are `mockMyBookingsAdapter` (offline demo data) and
-// `supabaseMyBookingsAdapter` (the real backend gateway to `list_bookings_by_phone` +
-// `cancel_booking`).
+// `supabaseMyBookingsAdapter` (the real protected Edge gateway for listing + cancelling).
 
 import type { Lang } from '../i18n/index'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from './domain'

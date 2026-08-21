@@ -11,7 +11,7 @@
 // only the consent URL. Run locally:
 //   npx supabase functions serve calendar-oauth-start --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { buildAuthUrl, signState } from '../_shared/calendar.ts'
 
 const corsHeaders: Record<string, string> = {
@@ -65,14 +65,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const { data: profile, error: profileError } = await service
     .from('profiles')
-    .select('role, barber_id')
+    .select('role, barber_id, account_enabled')
     .eq('id', callerData.user.id)
     .single()
   if (profileError || profile === null) return json({ ok: false, error: 'unauthorized' }, 401)
 
   // Only a linked barber connects a personal calendar. An owner (no barber_id) is refused — consent
   // requires the barber's own Google login, which the owner cannot perform on their behalf.
-  const barberId = profile.role === 'barber' ? profile.barber_id : null
+  const barberId =
+    profile.role === 'barber' && profile.account_enabled === true ? profile.barber_id : null
   if (typeof barberId !== 'string' || barberId === '') {
     return json({ ok: false, error: 'forbidden' }, 403)
   }

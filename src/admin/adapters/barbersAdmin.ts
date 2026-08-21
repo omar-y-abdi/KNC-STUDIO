@@ -25,6 +25,7 @@ import type {
   AdminBarberId,
   AdminError,
   AdminResult,
+  BarberAccountState,
   BarberEdit,
   DeleteBarberOutcome,
   NewBarber,
@@ -175,19 +176,43 @@ export async function deleteBarber(
   purgeBookings: boolean,
 ): Promise<DeleteBarberOutcome> {
   try {
-    const { data, error } = await getAdminClient().rpc('admin_delete_barber', {
-      p_barber_id: id,
-      p_purge_bookings: purgeBookings,
+    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
+      body: {
+        action: 'delete',
+        barber_id: id,
+        purge_bookings: purgeBookings,
+      },
     })
-    if (error !== null) return deleteBarberError('network', WRITE_ERROR)
+    let payload: unknown = data
+    if (payload === null && error !== null) {
+      try {
+        const response = (error as unknown as { context?: Response }).context
+        if (response === undefined) return deleteBarberError('network', WRITE_ERROR)
+        payload = await response.json()
+      } catch {
+        return deleteBarberError('network', WRITE_ERROR)
+      }
+    }
 
-    const parsed = parseWith(adminDeleteBarberResponse, data)
+    const parsed = parseWith(adminDeleteBarberResponse, payload)
     if (!parsed.ok) return deleteBarberError('malformed', WRITE_ERROR)
 
     const r = parsed.value
-    if (r.ok) return { kind: 'ok', deletedBookings: r.deleted_bookings }
+    if (r.ok) {
+      return {
+        kind: 'ok',
+        deletedBookings: r.deleted_bookings,
+        authCleanupPending: r.auth_cleanup_pending,
+      }
+    }
     if (r.error === 'has_bookings') {
       return { kind: 'has_bookings', count: r.count, past: r.past, upcoming: r.upcoming }
+    }
+    if (r.error === 'has_upcoming') {
+      return { kind: 'has_upcoming', count: r.count, past: r.past, upcoming: r.upcoming }
+    }
+    if (r.error === 'external_cleanup_pending') {
+      return { kind: 'external_cleanup_pending', calendarEvents: r.calendar_events }
     }
     if (r.error === 'forbidden') {
       return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
@@ -204,19 +229,23 @@ export async function deleteBarber(
  * read-only in the Barberare screen ("Inloggning kopplad"). Per v1 the email itself is managed in
  * the dashboard; we show the linked STATE here.
  */
-export async function linkedBarberIds(): Promise<AdminResult<ReadonlySet<AdminBarberId>>> {
+export async function barberAccountStates(): Promise<
+  AdminResult<ReadonlyMap<AdminBarberId, BarberAccountState>>
+> {
   try {
     const { data, error } = await getAdminClient()
       .from('profiles')
-      .select('role, barber_id, must_change_password')
+      .select('role, barber_id, must_change_password, account_enabled')
     if (error !== null || data === null) return err('network', READ_ERROR)
 
-    const linked = new Set<AdminBarberId>()
+    const accounts = new Map<AdminBarberId, BarberAccountState>()
     for (const raw of data) {
       const parsed = parseWith(profileRow, raw)
-      if (parsed.ok && parsed.value.barber_id !== null) linked.add(parsed.value.barber_id)
+      if (parsed.ok && parsed.value.barber_id !== null) {
+        accounts.set(parsed.value.barber_id, parsed.value.account_enabled ? 'enabled' : 'disabled')
+      }
     }
-    return ok(linked)
+    return ok(accounts)
   } catch {
     return err('network', READ_ERROR)
   }

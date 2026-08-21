@@ -120,6 +120,21 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const [turnstileNonce, setTurnstileNonce] = useState(0)
   const challengeRequired = turnstileConfigured
 
+  const submitErrorText = (error: ReviewError): string => {
+    switch (error.kind) {
+      case 'no_booking':
+        return tx.reviewErrNoBooking
+      case 'invalid':
+        return tx.reviewErrInvalid
+      case 'challenge':
+        return tx.reviewErrChallenge
+      case 'rate_limited':
+        return tx.reviewErrRateLimited
+      case 'submit':
+        return tx.reviewErrSubmit
+    }
+  }
+
   const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     setThanks(false)
     setSubmitError(null)
@@ -478,7 +493,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
           {submitError !== null ? (
             <p role="alert" style={s.submitErrorStyle}>
-              {submitError.kind === 'no_booking' ? tx.reviewErrNoBooking : tx.reviewErrPhone}
+              {submitErrorText(submitError)}
             </p>
           ) : null}
 

@@ -118,13 +118,13 @@ $$;
 
 revoke execute on function public.create_booking(
   text, text, timestamptz, text, text, text, text
-) from public, anon, authenticated;
+) from public, authenticated;
 grant execute on function public.create_booking(
   text, text, timestamptz, text, text, text, text
-) to service_role;
+) to anon, service_role;
 
--- Public customer self-service is routed through one Edge Function. Raw phone numbers remain the
--- booking key, but anonymous browsers can no longer call privileged RPCs directly.
+-- Public customer self-service is moving behind one Edge Function. Legacy anonymous RPC access
+-- remains during the expand/deploy/switch window and is removed only by the contract migration.
 create table public.public_action_attempts (
   id         bigint generated always as identity primary key,
   action     text not null check (action in ('lookup', 'list', 'cancel', 'review')),
@@ -221,12 +221,12 @@ create unique index if not exists profiles_one_account_per_barber_idx
 on public.profiles (barber_id)
 where barber_id is not null;
 
-revoke execute on function public.lookup_booking(text) from public, anon, authenticated;
-revoke execute on function public.list_bookings_by_phone(text) from public, anon, authenticated;
-revoke execute on function public.cancel_booking(uuid, text) from public, anon, authenticated;
-revoke execute on function public.create_review(text, integer, text) from public, anon, authenticated;
+revoke execute on function public.lookup_booking(text) from public, authenticated;
+revoke execute on function public.list_bookings_by_phone(text) from public, authenticated;
+revoke execute on function public.cancel_booking(uuid, text) from public, authenticated;
+revoke execute on function public.create_review(text, integer, text) from public, authenticated;
 
-grant execute on function public.lookup_booking(text) to service_role;
-grant execute on function public.list_bookings_by_phone(text) to service_role;
-grant execute on function public.cancel_booking(uuid, text) to service_role;
-grant execute on function public.create_review(text, integer, text) to service_role;
+grant execute on function public.lookup_booking(text) to anon, service_role;
+grant execute on function public.list_bookings_by_phone(text) to anon, service_role;
+grant execute on function public.cancel_booking(uuid, text) to anon, service_role;
+grant execute on function public.create_review(text, integer, text) to anon, service_role;

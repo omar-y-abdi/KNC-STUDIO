@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   Gravity,
   ImageMagick,
@@ -6,6 +6,12 @@ import {
   MagickGeometry,
   initializeImageMagick,
 } from 'npm:@imagemagick/magick-wasm@0.0.42'
+import {
+  executeExternalAction,
+  ExternalActionError,
+  parseExternalAction,
+  type ExternalActionService,
+} from '../_shared/externalActions.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
 const MAX_OUTPUT_BYTES = 512000
@@ -39,6 +45,20 @@ type UploadRequest =
       readonly kind: 'barber_photo'
       readonly file: File
       readonly barberId: string
+    }
+
+type DeleteRequest =
+  | {
+      readonly action: 'delete'
+      readonly kind: 'gallery'
+      readonly id: string
+      readonly storagePath: string
+    }
+  | {
+      readonly action: 'delete'
+      readonly kind: 'barber_photo'
+      readonly barberId: string
+      readonly storagePath: string
     }
 
 class ImageValidationError extends Error {
@@ -111,6 +131,34 @@ function parseUpload(form: FormData): UploadRequest | null {
     return { kind, file, barberId }
   }
 
+  return null
+}
+
+function parseDelete(value: unknown): DeleteRequest | null {
+  if (typeof value !== 'object' || value === null) return null
+  const body = value as Record<string, unknown>
+  if (body.action !== 'delete' || typeof body.storagePath !== 'string') return null
+  if (body.storagePath.length < 1 || body.storagePath.length > 300) return null
+  if (
+    body.kind === 'gallery' &&
+    typeof body.id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)
+  ) {
+    return { action: body.action, kind: body.kind, id: body.id, storagePath: body.storagePath }
+  }
+  if (
+    body.kind === 'barber_photo' &&
+    typeof body.barberId === 'string' &&
+    BARBER_ID.test(body.barberId) &&
+    body.storagePath.startsWith(`${body.barberId}/`)
+  ) {
+    return {
+      action: body.action,
+      kind: body.kind,
+      barberId: body.barberId,
+      storagePath: body.storagePath,
+    }
+  }
   return null
 }
 
@@ -210,12 +258,34 @@ function isGalleryRow(value: unknown): value is {
   )
 }
 
-function isBarberPhotoRow(
-  value: unknown,
-): value is { readonly barber_id: string; readonly storage_path: string } {
+function isDeletion(value: unknown): value is {
+  readonly ok: true
+  readonly bucket: 'gallery' | 'barber-photos'
+  readonly path: string
+  readonly deletion_id: string
+} {
   if (typeof value !== 'object' || value === null) return false
   const row = value as Record<string, unknown>
-  return typeof row.barber_id === 'string' && typeof row.storage_path === 'string'
+  return (
+    row.ok === true &&
+    (row.bucket === 'gallery' || row.bucket === 'barber-photos') &&
+    typeof row.path === 'string' &&
+    typeof row.deletion_id === 'string'
+  )
+}
+
+function isReplacement(value: unknown): value is {
+  readonly ok: true
+  readonly previous_path: string | null
+  readonly deletion_id: string | null
+} {
+  if (typeof value !== 'object' || value === null) return false
+  const row = value as Record<string, unknown>
+  return (
+    row.ok === true &&
+    (row.previous_path === null || typeof row.previous_path === 'string') &&
+    (row.deletion_id === null || typeof row.deletion_id === 'string')
+  )
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -231,11 +301,69 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'not_configured' }, 500)
   }
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-  const removeObject = async (bucket: 'gallery' | 'barber-photos', path: string): Promise<void> => {
+  const removeObject = async (
+    bucket: 'gallery' | 'barber-photos',
+    path: string,
+    deletionId: string | null = null,
+  ): Promise<boolean> => {
+    if (deletionId !== null) {
+      const claimed = await service.rpc('claim_external_action', { p_id: deletionId })
+      if (claimed.error !== null || claimed.data === null) {
+        console.error('upload-image: failed to claim external deletion action', claimed.error?.code)
+        return false
+      }
+      const action = parseExternalAction(claimed.data)
+      if (
+        action === null ||
+        action.action_type !== 'storage_object_delete' ||
+        action.bucket !== bucket ||
+        action.path !== path
+      ) {
+        console.error('upload-image: invalid external deletion action context')
+        return false
+      }
+      try {
+        await executeExternalAction(action, service as unknown as ExternalActionService, {
+          googleClientId: undefined,
+          googleClientSecret: undefined,
+        })
+      } catch (externalError) {
+        const code =
+          externalError instanceof ExternalActionError
+            ? externalError.code
+            : 'external_action_failed'
+        console.error(
+          `upload-image: failed to remove ${bucket} object`,
+          externalError instanceof Error ? externalError.message : 'unknown',
+        )
+        await service.rpc('fail_external_action', {
+          p_id: action.id,
+          p_dispatch_token: action.dispatch_token,
+          p_error_code: code,
+        })
+        return false
+      }
+      const completed = await service.rpc('complete_external_action', {
+        p_id: action.id,
+        p_dispatch_token: action.dispatch_token,
+      })
+      if (completed.error !== null || completed.data !== true) {
+        console.error('upload-image: failed to complete external deletion action')
+        return false
+      }
+      return true
+    }
+
     const { error } = await service.storage.from(bucket).remove([path])
     if (error !== null) {
-      console.error(`upload-image: failed to remove ${bucket} object after rollback`, error.message)
+      console.error(`upload-image: failed to remove ${bucket} object`, error.message)
+      await service.rpc('internal_queue_storage_deletion', {
+        p_bucket: bucket,
+        p_object_path: path,
+      })
+      return false
     }
+    return true
   }
 
   const authHeader = req.headers.get('authorization') ?? ''
@@ -253,16 +381,63 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const { data: profile, error: profileError } = await caller
     .from('profiles')
-    .select('role, barber_id')
+    .select('role, barber_id, account_enabled')
     .eq('id', callerData.user.id)
     .single()
   if (profileError !== null || profile === null)
     return json({ ok: false, error: 'unauthorized' }, 401)
-  if (profile.role !== 'owner' && profile.role !== 'barber') {
+  if (profile.account_enabled !== true || (profile.role !== 'owner' && profile.role !== 'barber')) {
     return json({ ok: false, error: 'unauthorized' }, 401)
   }
 
-  if (!req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
+  const contentType = req.headers.get('content-type')?.toLowerCase() ?? ''
+  if (contentType.startsWith('application/json')) {
+    let rawDelete: unknown
+    try {
+      rawDelete = await req.json()
+    } catch {
+      return json({ ok: false, error: 'invalid_payload' }, 400)
+    }
+    const deletion = parseDelete(rawDelete)
+    if (deletion === null) return json({ ok: false, error: 'invalid_payload' }, 400)
+    if (deletion.kind === 'gallery' && profile.role !== 'owner') {
+      return json({ ok: false, error: 'forbidden' }, 403)
+    }
+    if (
+      deletion.kind === 'barber_photo' &&
+      profile.role !== 'owner' &&
+      profile.barber_id !== deletion.barberId
+    ) {
+      return json({ ok: false, error: 'forbidden' }, 403)
+    }
+
+    const queued =
+      deletion.kind === 'gallery'
+        ? await service.rpc('internal_delete_gallery_image', {
+            p_id: deletion.id,
+            p_expected_path: deletion.storagePath,
+          })
+        : await service.rpc('internal_delete_barber_photo', {
+            p_barber_id: deletion.barberId,
+            p_expected_path: deletion.storagePath,
+          })
+    if (queued.error !== null) {
+      console.error('upload-image: deletion transaction failed', queued.error.code)
+      return json({ ok: false, error: 'database_failed' }, 500)
+    }
+    if (!isDeletion(queued.data)) {
+      return json({ ok: false, error: 'not_found' }, 404)
+    }
+
+    const removed = await removeObject(
+      queued.data.bucket,
+      queued.data.path,
+      queued.data.deletion_id,
+    )
+    return json({ ok: true, pending: !removed }, removed ? 200 : 202)
+  }
+
+  if (!contentType.startsWith('multipart/form-data')) {
     return json({ ok: false, error: 'invalid_multipart' }, 400)
   }
 
@@ -337,16 +512,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   if (upload.kind === 'gallery') {
-    const inserted = await caller
-      .from('gallery_images')
-      .insert({
-        kind: upload.galleryKind,
-        storage_path: path,
-        alt: upload.alt,
-        sort_order: upload.sortOrder,
-      })
-      .select('id,kind,storage_path,alt,sort_order')
-      .single()
+    const inserted = await service.rpc('internal_insert_gallery_image', {
+      p_kind: upload.galleryKind,
+      p_storage_path: path,
+      p_alt: upload.alt,
+      p_sort_order: upload.sortOrder,
+    })
     if (inserted.error !== null || !isGalleryRow(inserted.data)) {
       console.error('upload-image: gallery row insert failed', inserted.error?.message)
       await removeObject(bucket, path)
@@ -367,30 +538,41 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   }
 
-  const upserted = await caller
-    .from('barber_photos')
-    .upsert({ barber_id: upload.barberId, storage_path: path }, { onConflict: 'barber_id' })
-    .select('barber_id,storage_path')
-    .single()
-  if (upserted.error !== null || !isBarberPhotoRow(upserted.data)) {
-    console.error('upload-image: barber photo upsert failed', upserted.error?.message)
+  const replaced = await service.rpc('internal_replace_barber_photo', {
+    p_barber_id: upload.barberId,
+    p_expected_path: previousPath,
+    p_new_path: path,
+  })
+  if (replaced.error !== null || !isReplacement(replaced.data)) {
+    console.error('upload-image: barber photo replace failed', replaced.error?.code)
     await removeObject(bucket, path)
-    return json({ ok: false, error: 'database_failed' }, 500)
+    const response =
+      typeof replaced.data === 'object' &&
+      replaced.data !== null &&
+      (replaced.data as Record<string, unknown>).error === 'conflict'
+        ? { status: 409, error: 'conflict' }
+        : { status: 500, error: 'database_failed' }
+    return json({ ok: false, error: response.error }, response.status)
   }
 
-  if (previousPath !== null && previousPath !== upserted.data.storage_path) {
-    await removeObject(bucket, previousPath)
+  let cleanupPending = false
+  if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
+    cleanupPending = !(await removeObject(
+      bucket,
+      replaced.data.previous_path,
+      replaced.data.deletion_id,
+    ))
   }
-  const publicUrl = createClient(publicSupabaseUrl, anonKey)
-    .storage.from(bucket)
-    .getPublicUrl(upserted.data.storage_path).data.publicUrl
+  const publicUrl = createClient(publicSupabaseUrl, anonKey).storage.from(bucket).getPublicUrl(path)
+    .data.publicUrl
   return json(
     {
       ok: true,
       kind: 'barber_photo',
-      row: upserted.data,
-      path: upserted.data.storage_path,
+      row: { barber_id: upload.barberId, storage_path: path },
+      path,
       publicUrl,
+      cleanupPending,
     },
     200,
   )
