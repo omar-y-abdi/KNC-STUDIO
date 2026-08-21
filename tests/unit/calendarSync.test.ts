@@ -5,6 +5,7 @@
 // The shared module uses only Web-standard globals (crypto.subtle, TextEncoder/atob), so it imports
 // cleanly in Node/vitest as well as in the Deno edge runtime.
 
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEvent,
@@ -96,6 +97,26 @@ describe('buildEvent', () => {
   it('never includes contact details in the event', () => {
     const e = buildEvent({ ...base, phone: null })
     expect(e.description).not.toContain('Telefon')
+  })
+})
+
+describe('public Calendar privacy disclosure', () => {
+  const privacy = readFileSync(
+    new URL('../../public/privacy.html', import.meta.url),
+    'utf8',
+  ).replace(/\s+/g, ' ')
+
+  it('matches minimized event content and durable disconnect cleanup', () => {
+    expect(privacy).toContain('kundens namn, behandling och bokad tid')
+    expect(privacy).toContain("customer's name, service, and appointment time")
+    expect(privacy).toContain('Telefonnummer och e-post skrivs inte till Google Calendar')
+    expect(privacy).toContain(
+      'Phone numbers and email addresses are not written to Google Calendar',
+    )
+    expect(privacy).toContain('refresh token behålls endast under')
+    expect(privacy).toContain('refresh token is retained only during this')
+    expect(privacy).not.toContain('Kalenderhändelser som redan skapats ligger kvar')
+    expect(privacy).not.toContain('Calendar events already created remain')
   })
 })
 

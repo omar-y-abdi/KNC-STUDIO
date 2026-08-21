@@ -229,6 +229,8 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
         }
 
         const chrome = await supabaseSiteChromeAdapter.load('en')
+        expect(chrome).not.toBeNull()
+        if (chrome === null) throw new Error('site chrome did not resolve')
         expect(chrome.business).toMatchObject({
           name: `Northside ${marker}`,
           email: `${marker}@example.com`,

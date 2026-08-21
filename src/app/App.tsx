@@ -11,7 +11,7 @@ import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
-import { useSiteChrome } from '../site/useSiteChrome'
+import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
@@ -84,7 +84,10 @@ export function App(): JSX.Element {
   const lang = state.lang
   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
-  const chrome = useSiteChrome(lang)
+  const { chrome, metadataReady } = useSiteChrome(lang)
+  const [initialStructuredData] = useState<string | null>(
+    () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
+  )
   const business = chrome.business
   const txBase = appStrings(lang)
   const siteText = resolveSiteText(
@@ -130,8 +133,10 @@ export function App(): JSX.Element {
   })
 
   useEffect(() => {
-    updateDocumentMetadata(chrome, lang)
-  }, [chrome, lang])
+    if (canReplaceDocumentMetadata(metadataReady, initialStructuredData)) {
+      updateDocumentMetadata(chrome, lang)
+    }
+  }, [chrome, initialStructuredData, lang, metadataReady])
 
   const setSv = (): void => setState({ lang: 'sv' })
   const setEn = (): void => setState({ lang: 'en' })

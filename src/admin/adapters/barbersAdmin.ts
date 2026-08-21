@@ -166,10 +166,11 @@ function deleteBarberError(kind: AdminError['kind'], message: string): DeleteBar
 /**
  * Delete a barber via the `admin_delete_barber` RPC (owner-only; RLS + the SECURITY DEFINER RPC are
  * the whole boundary). With `purgeBookings=false` the RPC REFUSES while the barber still has bookings
- * and returns the counts (total/past/upcoming) so the UI can confirm a purge; with `true` it deletes
- * those bookings too and reports how many. Returns a structured `DeleteBarberOutcome` (not an
- * `AdminResult`) so the caller branches on the `has_bookings` confirmation without a stringly error;
- * authorization, transport and parse failures collapse to the `error` variant.
+ * and returns the counts (total/past/upcoming) so the UI can confirm a purge. A purge may delete only
+ * historical/cancelled bookings; future confirmed bookings always return `has_upcoming` and must be
+ * cancelled or moved first. Returns a structured `DeleteBarberOutcome` (not an `AdminResult`) so the
+ * caller branches on confirmations without a stringly error; authorization, transport and parse
+ * failures collapse to the `error` variant.
  */
 export async function deleteBarber(
   id: AdminBarberId,

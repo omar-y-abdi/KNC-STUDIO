@@ -88,7 +88,7 @@
       <!-- ===================== SVENSKA ===================== -->
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 24 juli 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 21 augusti 2026</p>
 
       <p>
         Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information
@@ -140,10 +140,11 @@
 
       <h2>Lagringstid och radering</h2>
       <p>
-        När barberaren trycker "Koppla loss" återkallas token hos Google och raderas från vår
-        databas omedelbart. Kalenderhändelser som redan skapats ligger kvar i barberarens egen
-        Google Calendar (det är barberarens riktiga bokningar) och kan raderas av barberaren själv
-        när som helst.
+        När barberaren trycker "Koppla loss" stoppas nya synkningar omedelbart. Tjänsten tar
+        därefter bort kalenderhändelser som den själv har skapat. Googles refresh token behålls
+        endast under denna rensning, återkallas hos Google och raderas från vår databas när
+        rensningen har lyckats. Om Google-behörigheten redan har återkallats måste barberaren
+        återansluta samma Google-konto för att rensningen ska kunna slutföras.
       </p>
 
       <h2>Google Limited Use</h2>
@@ -166,7 +167,7 @@
       <!-- ===================== ENGLISH ===================== -->
       <p class="lang">English</p>
       <h1>Privacy Policy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Last updated 24 July 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Last updated 21 August 2026</p>
 
       <p>
         This policy describes how Blade &amp; Blend Studio ("we", "the service") handles information
@@ -221,9 +222,11 @@
 
       <h2>Retention and deletion</h2>
       <p>
-        When the barber taps "Disconnect", the token is revoked at Google and deleted from our
-        database immediately. Calendar events already created remain in the barber's own Google
-        Calendar (they are the barber's real bookings) and can be deleted by the barber at any time.
+        When the barber taps "Disconnect", new synchronization stops immediately. The service then
+        deletes Calendar events it created. Google's refresh token is retained only during this
+        cleanup, revoked at Google, and deleted from our database after cleanup succeeds. If Google
+        access was already revoked, the barber must reconnect the same Google account so cleanup can
+        finish.
       </p>
 
       <h2>Google Limited Use</h2>
