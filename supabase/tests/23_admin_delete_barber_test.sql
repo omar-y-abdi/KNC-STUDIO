@@ -12,7 +12,7 @@
 -- (bypasses RLS) for setup + verification.
 --
 begin;
-select plan(27);
+select plan(28);
 
 -- ---- barbers ---------------------------------------------------------------------------------
 insert into public.barbers (id, name) values
@@ -68,6 +68,13 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.barbers', 'DELETE'),
   'barber rows cannot bypass guarded deletion through direct table access'
+);
+select ok(
+  pg_catalog.strpos(
+    pg_catalog.pg_get_functiondef('public.admin_delete_barber(text,boolean)'::regprocedure),
+    'hashtextextended(''availability:'' || p_barber_id, 0)'
+  ) > 0,
+  'barber deletion shares the booking and availability transaction lock'
 );
 
 -- =============================================================================================

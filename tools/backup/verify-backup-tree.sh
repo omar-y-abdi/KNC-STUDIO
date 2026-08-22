@@ -9,7 +9,7 @@ die() {
   exit 1
 }
 
-for command_name in awk cmp find grep jq mktemp sed sha256sum sort tr wc; do
+for command_name in awk cmp comm find grep jq mktemp sed sha256sum sort tr wc; do
   command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
 done
 
@@ -19,6 +19,7 @@ required_files=(
   history_data.sql
   storage/buckets.json
   storage/objects.ndjson
+  storage/references.ndjson
   storage/inventory.json
   MANIFEST.sha256
 )
@@ -85,6 +86,21 @@ find "$input/storage/objects" -type f -print \
 LC_ALL=C sort -o "$temporary_directory/referenced-objects" "$temporary_directory/referenced-objects"
 cmp --silent "$temporary_directory/actual-objects" "$temporary_directory/referenced-objects" \
   || die 'Storage byte files and object manifest differ'
+
+jq -e -s '
+  all(.[];
+    (.bucket == "gallery" or .bucket == "barber-photos")
+    and (.name | type == "string" and length > 0 and length <= 300)
+  )
+' "$input/storage/references.ndjson" >/dev/null || die 'invalid database Storage reference snapshot'
+jq -r '[.bucket, .name] | @tsv' "$input/storage/references.ndjson" \
+  | LC_ALL=C sort -u > "$temporary_directory/database-references"
+jq -r '[.bucket, .name] | @tsv' "$input/storage/objects.ndjson" \
+  | LC_ALL=C sort -u > "$temporary_directory/storage-inventory"
+comm -23 "$temporary_directory/database-references" "$temporary_directory/storage-inventory" \
+  > "$temporary_directory/missing-references"
+[[ ! -s "$temporary_directory/missing-references" ]] \
+  || die 'database references Storage objects absent from backup bytes'
 
 expected_bucket_count="$(jq -r '.bucket_count' "$input/storage/inventory.json")"
 actual_bucket_count="$(jq 'length' "$input/storage/buckets.json")"

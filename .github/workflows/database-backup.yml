@@ -45,7 +45,7 @@ jobs:
       - name: Install backup tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes age
+          sudo apt-get install --yes age postgresql-client
 
       - name: Create encrypted portable Supabase backup
         env:
@@ -58,14 +58,18 @@ jobs:
           backup_root="$RUNNER_TEMP/backup"
           plaintext="$backup_root/plaintext"
           archive="$backup_root/database-and-storage.tar.gz"
+          references_before="$backup_root/storage-references-before.ndjson"
+          references_after="$backup_root/storage-references-after.ndjson"
           rm -rf "$backup_root"
           mkdir -p "$plaintext"
           cleanup() {
             rm -rf "$plaintext"
             rm -f "$archive"
+            rm -f "$references_before" "$references_after"
           }
           trap cleanup EXIT
 
+          bash tools/backup/capture-storage-references.sh --output "$references_before"
           npx supabase db dump --db-url "$DATABASE_URL" --file "$plaintext/schema.sql"
           npx supabase db dump \
             --db-url "$DATABASE_URL" \
@@ -81,6 +85,10 @@ jobs:
             --data-only \
             --schema supabase_migrations
           bash tools/backup/storage-backup.sh --output "$plaintext/storage"
+          bash tools/backup/capture-storage-references.sh --output "$references_after"
+          cmp --silent "$references_before" "$references_after" \
+            || { echo 'Database Storage references changed during backup; retry after writes settle'; exit 1; }
+          mv "$references_before" "$plaintext/storage/references.ndjson"
 
           (
             cd "$plaintext"

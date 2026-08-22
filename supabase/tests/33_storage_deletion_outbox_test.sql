@@ -1,5 +1,5 @@
 begin;
-select plan(71);
+select plan(84);
 
 select ok(not has_table_privilege('anon', 'public.external_action_jobs', 'SELECT'),
   'anon cannot inspect external action jobs');
@@ -19,6 +19,12 @@ select ok(has_function_privilege('service_role', 'public.internal_queue_storage_
   'service role can durably queue emergency Storage cleanup');
 select ok(not has_function_privilege('authenticated', 'public.internal_queue_storage_deletion(text,text)', 'EXECUTE'),
   'authenticated cannot queue arbitrary Storage cleanup');
+select ok(not has_function_privilege('anon', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'anon cannot invoke orphaned Storage reconciliation');
+select ok(not has_function_privilege('authenticated', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'authenticated cannot invoke orphaned Storage reconciliation');
+select ok(not has_function_privilege('service_role', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'service role cannot invoke scheduler-owned orphaned Storage reconciliation');
 select ok(not has_table_privilege('authenticated', 'public.gallery_images', 'INSERT'),
   'authenticated cannot bypass gallery upload gateway');
 select ok(not has_table_privilege('authenticated', 'public.gallery_images', 'UPDATE'),
@@ -138,6 +144,72 @@ select is(public.complete_external_action(
 reset role;
 select is((select count(*)::int from public.external_action_jobs where id=current_setting('test.storage_job')::uuid), 0,
   'completed action leaves no queue row');
+
+insert into public.barbers (id, name) values ('storage-reconciler', 'Storage Reconciler');
+insert into storage.objects (bucket_id, name, created_at) values
+  ('gallery', 'salon/orphan-old.webp', pg_catalog.now() - interval '31 minutes'),
+  ('barber-photos', 'storage-reconciler/orphan-old.webp', pg_catalog.now() - interval '31 minutes'),
+  ('gallery', 'salon/orphan-fresh.webp', pg_catalog.now()),
+  ('gallery', 'salon/referenced.webp', pg_catalog.now() - interval '31 minutes'),
+  ('barber-photos', 'storage-reconciler/referenced.webp', pg_catalog.now() - interval '31 minutes');
+insert into public.gallery_images (kind, storage_path, alt)
+values ('salon', 'salon/referenced.webp', 'Referenced');
+insert into public.barber_photos (barber_id, storage_path)
+values ('storage-reconciler', 'storage-reconciler/referenced.webp');
+
+select is(public.queue_orphaned_storage_objects(), 2,
+  'reconciler queues every old unreferenced managed object');
+select is((select count(*)::int from public.external_action_jobs
+  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-old.webp'), 1,
+  'old gallery orphan receives durable deletion intent');
+select is((select count(*)::int from public.external_action_jobs
+  where action_type='storage_object_delete'
+    and dedupe_key='barber-photos:storage-reconciler/orphan-old.webp'), 1,
+  'old barber-photo orphan receives durable deletion intent');
+select is((select count(*)::int from public.external_action_jobs
+  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-fresh.webp'), 0,
+  'fresh upload receives reconciliation grace period');
+select is((select count(*)::int from public.external_action_jobs
+  where action_type='storage_object_delete'
+    and dedupe_key in (
+      'gallery:salon/referenced.webp',
+      'barber-photos:storage-reconciler/referenced.webp'
+    )), 0, 'referenced Storage objects are never queued');
+
+select set_config('test.orphan_job', (select id::text from public.external_action_jobs
+  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-old.webp'), true);
+set local role service_role;
+select set_config('test.orphan_claim', public.claim_external_action(
+  current_setting('test.orphan_job')::uuid
+)::text, true);
+reset role;
+select is(public.queue_orphaned_storage_objects(), 0,
+  'reconciliation leaves existing pending and dispatching intents untouched');
+select is((select dispatch_token::text from public.external_action_jobs
+  where id=current_setting('test.orphan_job')::uuid),
+  current_setting('test.orphan_claim')::jsonb ->> 'dispatch_token',
+  'reconciliation never invalidates an in-flight worker token');
+
+insert into storage.objects (bucket_id, name, created_at)
+values ('gallery', 'salon/adopted-before-dispatch.webp', pg_catalog.now() - interval '31 minutes');
+select is(public.queue_orphaned_storage_objects(), 1,
+  'newly observed orphan receives one durable deletion intent');
+insert into public.gallery_images (kind, storage_path, alt)
+values ('salon', 'salon/adopted-before-dispatch.webp', 'Adopted');
+select set_config('test.adopted_job', (select id::text from public.external_action_jobs
+  where action_type='storage_object_delete'
+    and dedupe_key='gallery:salon/adopted-before-dispatch.webp'), true);
+set local role service_role;
+select set_config('test.adopted_claim', public.claim_external_action(
+  current_setting('test.adopted_job')::uuid
+)::text, true);
+select is((current_setting('test.adopted_claim')::jsonb) ->> 'superseded', 'true',
+  'dispatch rechecks metadata and suppresses deletion when object became referenced');
+select is(public.complete_external_action(
+  current_setting('test.adopted_job')::uuid,
+  (current_setting('test.adopted_claim')::jsonb ->> 'dispatch_token')::uuid
+), true, 'superseded Storage deletion completes without deleting referenced bytes');
+reset role;
 
 insert into public.barbers (id, name) values ('calendar-outbox', 'Calendar Outbox');
 insert into public.barber_calendar_tokens (barber_id, refresh_token, google_email)

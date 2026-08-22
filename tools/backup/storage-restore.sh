@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_directory/storage-auth.sh"
+
 usage() {
   cat <<'EOF'
 Usage: storage-restore.sh --input <storage-directory> [--verify-only] [--allow-existing-buckets]
@@ -94,6 +97,8 @@ done
 
 : "${SUPABASE_URL:?SUPABASE_URL is required}"
 : "${SUPABASE_STORAGE_SECRET_KEY:?SUPABASE_STORAGE_SECRET_KEY is required}"
+storage_configure_auth_headers "$SUPABASE_STORAGE_SECRET_KEY" \
+  || die 'SUPABASE_STORAGE_SECRET_KEY must be an sb_secret key or legacy service_role JWT'
 
 case "$SUPABASE_URL" in
   https://*|http://localhost:*|http://127.0.0.1:*|http://[::1]:*) ;;
@@ -118,8 +123,7 @@ storage_request() {
     --retry 3 \
     --retry-delay 1 \
     --retry-all-errors \
-    --header "apikey: $SUPABASE_STORAGE_SECRET_KEY" \
-    --header "Authorization: Bearer $SUPABASE_STORAGE_SECRET_KEY" \
+    "${STORAGE_AUTH_HEADERS[@]}" \
     "$@"
 }
 
@@ -139,8 +143,7 @@ ensure_bucket() {
     --location \
     --output "$response" \
     --write-out '%{http_code}' \
-    --header "apikey: $SUPABASE_STORAGE_SECRET_KEY" \
-    --header "Authorization: Bearer $SUPABASE_STORAGE_SECRET_KEY" \
+    "${STORAGE_AUTH_HEADERS[@]}" \
     "$storage_url/bucket/$(urlencode "$bucket_id")")" || die "could not inspect target bucket $bucket_id"
 
   case "$status" in

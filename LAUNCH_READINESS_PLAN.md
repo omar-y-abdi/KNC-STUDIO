@@ -1,6 +1,6 @@
 # Blade & Blend Studio — launch readiness
 
-**Statusdatum:** 2026-08-12
+**Statusdatum:** 2026-08-22
 
 **Syfte:** verifierad handoff och körordning inför produktionssättning
 
@@ -36,6 +36,10 @@ inte lösas enbart i repot.
 ### Auth och personal
 
 - Admin skapar barberarkonto via unik e-postinbjudan; gemensamt `123456` används inte.
+- Publik rosterstatus och kontoåtkomst är separata. Inaktiverad kontoåtkomst stoppar ett redan
+  utfärdat JWT i databasens behörighetskontroller och synkas hållbart till Supabase Auth.
+- Permanent barberarradering blockeras av pågående eller framtida bekräftade bokningar och väntar på
+  Calendar- och Auth-rensning via samma hållbara outbox.
 - Admin och barberare har **Inställningar/Settings** för e-post- och lösenordsbyte.
 - E-postbyte bekräftas på nya adressen.
 - Lösenordsbyte kräver nuvarande lösenord.
@@ -71,21 +75,24 @@ inte lösas enbart i repot.
 - CI kör format, lint, typer, unit tests, build, Cloudflare dry-run, browser smoke,
   visual regression, Edge Function-check, pgTAP och adapterintegration.
 - Produktionsberoenden har noll kända npm-sårbarheter.
-- Krypterad daglig databasbackup använder Supabase CLI-filter, `age`, intern checksumma och
-  30 dagars artifact-retention.
+- Krypterad daglig databas- och Storage-backup omfattar migrationshistorik, samtliga standardbuckets,
+  faktiska objektbytes, databasreferenser, `age`, SHA-256 och 30 dagars artifact-retention.
+- Backupen accepterar både moderna `sb_secret_`-nycklar och legacy `service_role`-JWT utan att skicka
+  moderna API-nycklar felaktigt som bearer-token.
+- Public booking deployas med explicit expand → Edge → frontend → verify → contract-körordning.
 - Restore-runbook finns i `docs/operations/BACKUP_RESTORE.md`.
 - Raw `pg_dump` används inte eftersom Supabase-managed scheman annars ger restore-fel.
 
-## Verifiering 2026-08-12
+## Verifiering 2026-08-22
 
 | Gate                      | Resultat                                                           |
 | ------------------------- | ------------------------------------------------------------------ |
 | Prettier                  | Godkänd                                                            |
 | ESLint                    | Godkänd                                                            |
 | TypeScript                | Godkänd                                                            |
-| Unit tests                | 35 filer, 264 tester                                               |
-| pgTAP                     | 33 filer, 413 assertions                                           |
-| Adapterintegration        | 6 filer, 38 tester                                                 |
+| Unit tests                | Hela Vitest-sviten godkänd                                         |
+| pgTAP                     | Hela databassviten godkänd                                         |
+| Adapterintegration        | Hela integrationssviten godkänd                                    |
 | Edge Functions            | Alla entrypoints klarar Deno type-check                            |
 | Produktionsbuild          | Godkänd                                                            |
 | Cloudflare deploy dry-run | Godkänd                                                            |
@@ -93,6 +100,7 @@ inte lösas enbart i repot.
 | Visual regression         | 8 av 8 vyer godkända                                               |
 | npm audit production      | 0 sårbarheter                                                      |
 | Backupkryptering          | Encrypt/decrypt round-trip godkänd                                 |
+| Storage byte round-trip   | Upload, export, delete, restore och SHA-256-verifiering godkänd    |
 | Restore drill             | Ny tom lokal Supabase-instans; samtliga kontrollräkningar matchade |
 | Supabase advisors         | 0 errors                                                           |
 
@@ -105,7 +113,8 @@ täcks av pgTAP och ska inte ändras utan nya regressionstester.
 - [ ] Registrera företaget och fyll i juridiskt namn, organisationsnummer, integritetspolicy,
       villkor och avbokningspolicy.
 - [ ] Rensa testbarberare, testbokningar och testrecensioner från produktionsprojektet.
-- [ ] Kör samtliga migrationer mot produktion och deploya samtliga Edge Functions.
+- [ ] Följ `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` exakt: expand, Edge Functions,
+      frontend, live verifiering och först därefter contract. Kör inte ett obegränsat `db push`.
 - [ ] Sätt och verifiera produktionssecrets för Resend, Turnstile, Google OAuth, hash-salt och
       cron-anrop. Inga secrets får ligga i GitHub-loggar eller repot.
 - [ ] Verifiera Supabase Auth Site URL, redirect allowlist, signup-policy, custom SMTP och
@@ -114,10 +123,9 @@ täcks av pgTAP och ska inte ändras utan nya regressionstester.
       Gmail, iCloud och Outlook från `booking@mail.bladeblendstudio.se`.
 - [ ] Slutför Google OAuth branding-verifiering och testa Calendar connect/disconnect/sync med
       riktig barberare.
-- [ ] Lägg GitHub secret `SUPABASE_DB_URL` och variable `BACKUP_AGE_RECIPIENT`; kör backup-workflow
-      manuellt och spara offline-nyckeln på två säkra platser.
-- [ ] Exportera Supabase Storage-object bytes separat. Databasbackupen innehåller metadata men inte
-      bildfilerna.
+- [ ] Lägg GitHub secrets `SUPABASE_DB_URL` och `SUPABASE_STORAGE_SECRET_KEY`, variables
+      `SUPABASE_URL` och `BACKUP_AGE_RECIPIENT`; kör backup-workflow manuellt, verifiera objektantal
+      och spara offline-nyckeln på två säkra platser.
 - [ ] Verifiera Cloudflare DNS, TLS, DNSSEC, canonical redirect, Turnstile-domän och cache efter sista
       deployment.
 - [ ] Kontrollera att produktionssidan är indexerbar medan eventuell staging fortsätter vara
@@ -129,10 +137,10 @@ täcks av pgTAP och ska inte ändras utan nya regressionstester.
 
 1. Skapa eller välj rent Supabase-produktionsprojekt.
 2. Konfigurera Auth, SMTP, redirect-URL:er och secrets.
-3. Kör `npx supabase db push` och deploya Edge Functions.
-4. Konfigurera Cron för bokningspåminnelser och verifiera leveransloggar.
-5. Deploya Cloudflare och verifiera DNS/TLS/DNSSEC/Turnstile.
-6. Kör GitHub-workflow **Encrypted database backup** manuellt.
+3. Genomför expand → Edge → frontend → verify → contract enligt public booking-runbooken.
+4. Verifiera att outbox- och påminnelse-Cron-jobb finns och att leveransloggar dräneras.
+5. Verifiera Cloudflare DNS/TLS/DNSSEC/Turnstile efter frontend-switch.
+6. Kör GitHub-workflow **Encrypted production backup** manuellt.
 7. Lägg in riktig verksamhetscopy via admin-CMS.
 8. Kör full produktions-smoke med en markerad testbokning.
 9. Radera smoke-data och öppna för trafik först när samtliga grindar är markerade.
@@ -147,10 +155,12 @@ täcks av pgTAP och ska inte ändras utan nya regressionstester.
   risk.
 - SPF, DKIM och DMARC förbättrar leveransbarhet men kan inte garantera att varje mottagare undviker
   skräppost.
-- Storage-object bytes kräver separat export tills automatiserad objektbackup införs.
+- Databas och Storage saknar gemensam transaktion. Workflowen aborterar vid ändrade bildreferenser
+  eller Storage-inventory, men första produktionsbackupen ska ändå köras i ett lugnt fönster.
 
 ## Go-live-kriterium
 
 Go-live är godkänd först när alla externa lanseringsgrindar är klara, en produktionsbokning har
 skapat korrekta kund- och barberarmejl, avbokning har bekräftats till båda, Calendar-eventet har
-synkats, backup-artifacten har skapats och inga personuppgifter förekommer i loggar.
+synkats, backup-artifacten har skapats, Storage-bytes har verifierats och inga personuppgifter
+förekommer i loggar.

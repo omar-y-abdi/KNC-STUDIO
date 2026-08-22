@@ -16,6 +16,10 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
 5. Resend emails customer and linked barber. Phone remains required for **Mina bokningar**, cancellation,
    and review eligibility; SMS is not used.
 
+Storage, Calendar, and Auth side effects use one durable `external_action_jobs` outbox. Cron retries
+failed actions, preserves Calendar event identifiers until Google deletion succeeds, and reconciles
+managed Storage bytes left unreferenced for 30 minutes after a failed upload compensation path.
+
 ## Public frontend configuration
 
 Only public values use the `VITE_` prefix:
@@ -125,7 +129,7 @@ Production smoke test:
 ## Free-tier operations
 
 Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an
-encrypted daily database artifact; setup and restore drills are documented in
+encrypted daily database-and-Storage artifact with migration lineage and byte verification; setup and restore drills are documented in
 `docs/operations/BACKUP_RESTORE.md`. Keep migrations in source control. Never upload plaintext dumps.
 
 ## Mock fallback

@@ -155,6 +155,23 @@ begin
   end if;
 
   if v_job.action_type = 'storage_object_delete' then
+    if (v_job.payload->>'bucket' = 'gallery' and exists (
+      select 1
+      from public.gallery_images g
+      where g.storage_path = v_job.payload->>'path'
+    )) or (v_job.payload->>'bucket' = 'barber-photos' and exists (
+      select 1
+      from public.barber_photos p
+      where p.storage_path = v_job.payload->>'path'
+    )) then
+      return pg_catalog.jsonb_build_object(
+        'id', v_job.id,
+        'dispatch_token', v_job.dispatch_token,
+        'action_type', v_job.action_type,
+        'superseded', true
+      );
+    end if;
+
     return pg_catalog.jsonb_build_object(
       'id', v_job.id,
       'dispatch_token', v_job.dispatch_token,
@@ -386,6 +403,61 @@ grant execute on function public.complete_external_action(uuid, uuid) to service
 grant execute on function public.fail_external_action(uuid, uuid, text) to service_role;
 grant execute on function public.block_external_action(uuid, uuid, text) to service_role;
 
+-- Upload compensation is best-effort at request time. Reconcile old, unreferenced bytes into the
+-- same durable outbox so a simultaneous Storage/API failure cannot create a permanent orphan.
+-- Existing jobs are left untouched; this avoids invalidating an in-flight dispatch token.
+create or replace function public.queue_orphaned_storage_objects()
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_object record;
+  v_queued integer := 0;
+begin
+  for v_object in
+    select o.bucket_id, o.name
+    from storage.objects o
+    where o.bucket_id in ('gallery', 'barber-photos')
+      and o.created_at < pg_catalog.now() - interval '30 minutes'
+      and not exists (
+        select 1
+        from public.external_action_jobs j
+        where j.action_type = 'storage_object_delete'
+          and j.dedupe_key = o.bucket_id || ':' || o.name
+      )
+      and (
+        (o.bucket_id = 'gallery' and not exists (
+          select 1
+          from public.gallery_images g
+          where g.storage_path = o.name
+        ))
+        or
+        (o.bucket_id = 'barber-photos' and not exists (
+          select 1
+          from public.barber_photos p
+          where p.storage_path = o.name
+        ))
+      )
+    order by o.created_at, o.id
+    limit 100
+  loop
+    perform public.queue_external_action(
+      'storage_object_delete',
+      v_object.bucket_id || ':' || v_object.name,
+      pg_catalog.jsonb_build_object('bucket', v_object.bucket_id, 'path', v_object.name)
+    );
+    v_queued := v_queued + 1;
+  end loop;
+
+  return v_queued;
+end;
+$$;
+
+revoke execute on function public.queue_orphaned_storage_objects()
+  from public, anon, authenticated, service_role;
+
 create or replace function public.queue_due_external_actions()
 returns integer
 language plpgsql
@@ -399,6 +471,12 @@ declare
   v_dispatch_token uuid;
   v_queued integer := 0;
 begin
+  begin
+    perform public.queue_orphaned_storage_objects();
+  exception when others then
+    raise warning 'orphaned Storage reconciliation failed';
+  end;
+
   select ds.decrypted_secret into v_url
   from vault.decrypted_secrets ds
   where ds.name = 'external_cleanup_url';
@@ -1113,6 +1191,14 @@ begin
   if not public.is_owner() then
     return pg_catalog.jsonb_build_object('ok', false, 'error', 'forbidden');
   end if;
+
+  if p_barber_id is null then
+    return pg_catalog.jsonb_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('availability:' || p_barber_id, 0)
+  );
 
   perform 1 from public.barbers b where b.id = p_barber_id;
   if not found then

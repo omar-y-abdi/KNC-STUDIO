@@ -14,14 +14,17 @@ The encrypted bundle contains:
 - `storage/buckets.json`, dynamically inventoried from every current standard bucket;
 - `storage/objects.ndjson`, containing every object path, byte size, SHA-256 checksum, and content
   metadata;
+- `storage/references.ndjson`, containing database references to business-owned Storage objects;
 - `storage/objects/*.bin`, the actual object bytes; and
 - `storage/inventory.json` plus `MANIFEST.sha256`.
 
 `gallery` and `barber-photos` are required. Any future standard bucket is discovered and included
 automatically. A non-standard bucket fails the backup rather than being silently omitted.
 Storage inventory is captured before and after object download; any object, metadata, or timestamp
-change aborts the backup. Database and Storage do not share one transaction, so schedule the first
-production backup during a quiet window and repeat immediately after any maintenance import.
+change aborts the backup. Database image references are captured before the SQL dump and after the
+Storage export. Any changed reference or reference without captured bytes aborts the backup. Database
+and Storage still do not share one transaction, so schedule the first production backup during a quiet
+window and repeat immediately after any maintenance import.
 
 Database dumps include application schema, database data, and Auth users. This project defines no
 custom PostgreSQL roles; Supabase-managed roles come from the target project and are not restored.
@@ -45,8 +48,9 @@ or other third-party dashboards.
 4. Add repository variable `SUPABASE_URL` with the production project URL, for example
    `https://PROJECT_REF.supabase.co`.
 5. Add repository secret `SUPABASE_STORAGE_SECRET_KEY` with the production project's current
-   Supabase secret key. This key bypasses Storage RLS and must never be exposed to browser code or
-   workflow output.
+   `sb_secret_...` key. A legacy `service_role` JWT remains compatible during migration. New secret
+   keys are sent only as `apikey`; they are not JWTs and must not be sent as bearer tokens. Either key
+   bypasses Storage RLS and must never be exposed to browser code or workflow output.
 6. Add repository variable `BACKUP_AGE_RECIPIENT` using the public `age1...` value printed in step 1.
 7. Run **Encrypted production backup** manually once. Confirm artifact contains only `.tar.gz.age`
    and `.sha256` files. Check the job log reports both required buckets and expected object count,
@@ -85,7 +89,7 @@ psql \
 psql \
   --single-transaction \
   --variable ON_ERROR_STOP=1 \
-  --command 'TRUNCATE supabase_migrations.schema_migrations, supabase_migrations.seed_files' \
+  --file tools/backup/prepare-migration-history.sql \
   --file /tmp/bladeblend-restore/history_data.sql \
   --dbname "$NEW_SUPABASE_DATABASE_URL"
 

@@ -1,13 +1,40 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const roots: string[] = []
 
-function command(command: string, args: readonly string[], cwd?: string): string {
-  return execFileSync(command, args, { cwd, encoding: 'utf8' })
+function command(
+  command: string,
+  args: readonly string[],
+  cwd?: string,
+  env?: Readonly<NodeJS.ProcessEnv>,
+): string {
+  return execFileSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    env: env === undefined ? process.env : { ...process.env, ...env },
+  })
+}
+
+function refreshManifest(root: string): void {
+  const files = command('find', ['.', '-type', 'f', '-not', '-name', 'MANIFEST.sha256'], root)
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .sort()
+  const manifest = files.map((file) => command('sha256sum', [file], root)).join('')
+  writeFileSync(join(root, 'MANIFEST.sha256'), manifest)
 }
 
 function fixture(): string {
@@ -46,6 +73,10 @@ function fixture(): string {
     })}\n`,
   )
   writeFileSync(
+    join(root, 'storage', 'references.ndjson'),
+    `${JSON.stringify({ bucket: 'gallery', name: 'salon/image.webp' })}\n`,
+  )
+  writeFileSync(
     join(root, 'storage', 'inventory.json'),
     JSON.stringify({
       format: 'bladeblend-storage-backup-v1',
@@ -54,12 +85,7 @@ function fixture(): string {
       total_bytes: bytes.length,
     }),
   )
-  const files = command('find', ['.', '-type', 'f', '-not', '-name', 'MANIFEST.sha256'], root)
-    .trim()
-    .split('\n')
-    .sort()
-  const manifest = files.map((file) => command('sha256sum', [file], root)).join('')
-  writeFileSync(join(root, 'MANIFEST.sha256'), manifest)
+  refreshManifest(root)
   return root
 }
 
@@ -100,11 +126,137 @@ describe('backup archive contract', () => {
     ).toThrow()
   })
 
+  it('fails closed when database metadata references uncaptured Storage bytes', () => {
+    const root = fixture()
+    writeFileSync(
+      join(root, 'storage', 'references.ndjson'),
+      `${JSON.stringify({ bucket: 'gallery', name: 'salon/missing.webp' })}\n`,
+    )
+    refreshManifest(root)
+
+    expect(() =>
+      command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
+    ).toThrow()
+  })
+
   it('fails closed when archive tree contains a symbolic link', () => {
     const root = fixture()
     symlinkSync('schema.sql', join(root, 'schema-link.sql'))
     expect(() =>
       command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
     ).toThrow()
+  })
+})
+
+describe('Storage backup authentication', () => {
+  function headers(key: string): readonly string[] {
+    return command(
+      'bash',
+      [
+        '-c',
+        'source "$1"; storage_configure_auth_headers "$2" || exit 1; printf "%s\\n" "${STORAGE_AUTH_HEADERS[@]}"',
+        'storage-auth-test',
+        'tools/backup/storage-auth.sh',
+        key,
+      ],
+      process.cwd(),
+    )
+      .trim()
+      .split('\n')
+  }
+
+  it('sends current secret keys only through the apikey header', () => {
+    expect(headers('sb_secret_example_12345678')).toEqual([
+      '--header',
+      'apikey: sb_secret_example_12345678',
+    ])
+  })
+
+  it('keeps bearer authorization only for legacy service-role JWTs', () => {
+    expect(headers('eyJheader.eyJpayload.signature')).toEqual([
+      '--header',
+      'apikey: eyJheader.eyJpayload.signature',
+      '--header',
+      'Authorization: Bearer eyJheader.eyJpayload.signature',
+    ])
+  })
+
+  it('rejects unknown secret formats', () => {
+    expect(() => headers('not-a-supabase-secret')).toThrow()
+  })
+})
+
+describe('database Storage reference snapshot', () => {
+  function fakePsqlRoot(output: string): {
+    readonly root: string
+    readonly env: NodeJS.ProcessEnv
+  } {
+    const root = mkdtempSync(join(tmpdir(), 'backup-reference-'))
+    roots.push(root)
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const psql = join(bin, 'psql')
+    writeFileSync(psql, '#!/usr/bin/env bash\nprintf "%s\\n" "$FAKE_PSQL_OUTPUT"\n')
+    chmodSync(psql, 0o755)
+    return {
+      root,
+      env: {
+        DATABASE_URL: 'postgresql://backup.invalid/database',
+        FAKE_PSQL_OUTPUT: output,
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+      },
+    }
+  }
+
+  it('captures a deterministic database reference set', () => {
+    const fixture = fakePsqlRoot(
+      [
+        JSON.stringify({ bucket: 'gallery', name: 'salon/b.webp' }),
+        JSON.stringify({ bucket: 'barber-photos', name: 'ada/a.webp' }),
+      ].join('\n'),
+    )
+    const output = join(fixture.root, 'references.ndjson')
+
+    command(
+      'bash',
+      ['tools/backup/capture-storage-references.sh', '--output', output],
+      process.cwd(),
+      fixture.env,
+    )
+
+    expect(readFileSync(output, 'utf8').trim().split('\n')).toEqual([
+      JSON.stringify({ bucket: 'barber-photos', name: 'ada/a.webp' }),
+      JSON.stringify({ bucket: 'gallery', name: 'salon/b.webp' }),
+    ])
+  })
+
+  it('fails closed on malformed database reference output', () => {
+    const fixture = fakePsqlRoot(JSON.stringify({ bucket: 'private', name: 'secret.bin' }))
+    expect(() =>
+      command(
+        'bash',
+        [
+          'tools/backup/capture-storage-references.sh',
+          '--output',
+          join(fixture.root, 'references.ndjson'),
+        ],
+        process.cwd(),
+        fixture.env,
+      ),
+    ).toThrow()
+  })
+})
+
+describe('migration history restore contract', () => {
+  it('bootstraps a brand-new target before loading history data', () => {
+    const sql = readFileSync('tools/backup/prepare-migration-history.sql', 'utf8')
+
+    expect(sql).toContain('create schema if not exists supabase_migrations authorization postgres;')
+    expect(sql).toContain('create table if not exists supabase_migrations.schema_migrations')
+    expect(sql).toContain('version text primary key')
+    expect(sql).toContain('statements text[]')
+    expect(sql).toContain('create table if not exists supabase_migrations.seed_files')
+    expect(sql).toContain('path text primary key')
+    expect(sql).toContain('truncate table')
   })
 })

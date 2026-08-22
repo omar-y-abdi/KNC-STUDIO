@@ -108,3 +108,10 @@ set subject = 'Your invitation to {business_name}',
 where template = 'auth_invite' and lang = 'en'
   and subject = 'Your invitation to Blade & Blend Studio'
   and intro = 'You have been invited to the barber panel at Blade & Blend Studio.';
+
+-- Supabase's project defaults grant every table privilege to API roles. RLS does not protect
+-- TRUNCATE, while REFERENCES and TRIGGER are never required by browser or service-role clients.
+revoke truncate, references, trigger on all tables in schema public
+  from public, anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke truncate, references, trigger on tables from public, anon, authenticated, service_role;
