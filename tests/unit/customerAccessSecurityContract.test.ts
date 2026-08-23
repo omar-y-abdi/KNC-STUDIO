@@ -25,11 +25,22 @@ describe('customer booking access links', () => {
     })
   })
 
-  it('sends new links in fragments and moves email work off response timing', () => {
-    const source = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
-    expect(source).toContain('`${SITE_URL}/#booking_access=${code}`')
-    expect(source).not.toContain('`${SITE_URL}/?booking_access=${code}`')
-    expect(source).toContain('edgeRuntime.waitUntil(')
-    expect(source).not.toContain('await sendAccessEmail(')
+  it('sends fragment links through the durable external-action worker', () => {
+    const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
+    const worker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
+    const migration = readFileSync(
+      'supabase/migrations/20260823174500_close_launch_review_findings.sql',
+      'utf8',
+    )
+
+    expect(worker).toContain(
+      'ctaHref: `https://bladeblendstudio.se/#booking_access=${action.access_code}`',
+    )
+    expect(worker).not.toContain('?booking_access=${action.access_code}')
+    expect(gateway).toContain("service.rpc('create_customer_booking_access_request'")
+    expect(gateway).toContain('p_access_code: code')
+    expect(gateway).not.toContain('edgeRuntime.waitUntil(')
+    expect(gateway).not.toContain('sendAccessEmail(')
+    expect(migration).toContain("'customer_access_email_send'")
   })
 })
