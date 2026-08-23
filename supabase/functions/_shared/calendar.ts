@@ -21,10 +21,9 @@ function googleRequestSignal(): AbortSignal {
   return AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS)
 }
 
-/** Scopes: calendar.events is the sensitive one (needs Google verification for production tokens);
+/** Scopes: calendar.events.owned is the sensitive one (needs Google verification for production tokens);
  *  openid+email are non-sensitive and only used to show "connected as <email>" in the panel. */
-export const OAUTH_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events'
-
+export const OAUTH_SCOPE = 'openid email https://www.googleapis.com/auth/calendar.events.owned'
 /** All appointment times render in the salon's wall-clock, regardless of the barber's device tz. */
 export const SALON_TZ = 'Europe/Stockholm'
 
