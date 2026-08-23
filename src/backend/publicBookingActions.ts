@@ -18,6 +18,7 @@ export type PublicBookingActionPayload =
   | {
       readonly action: 'review'
       readonly phone: string
+      readonly accessToken: string
       readonly rating: number
       readonly text: string
       readonly turnstileToken: string

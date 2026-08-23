@@ -1,11 +1,4 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import {
-  buildEmailMessage,
-  defaultEmailTemplate,
-  loadEmailBusiness,
-  loadEmailTemplate,
-  sendViaResend,
-} from '../_shared/email.ts'
 
 type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review'
 type Language = 'sv' | 'en'
@@ -35,12 +28,6 @@ const LIMITS: Readonly<Record<'request_access' | 'review', Limit>> = {
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
-const SITE_URL = 'https://bladeblendstudio.se'
-const edgeRuntime = (
-  globalThis as typeof globalThis & {
-    readonly EdgeRuntime: { waitUntil<T>(promise: Promise<T>): Promise<T> }
-  }
-).EdgeRuntime
 
 function allowedOrigins(): readonly string[] {
   const configured = Deno.env.get('PUBLIC_SITE_ORIGINS')
@@ -141,12 +128,14 @@ function parseBody(raw: unknown): ParsedAction | null {
       : { action: body.action, phone, email, lang, turnstileToken: body.turnstileToken }
   }
 
+  if (!opaqueToken(body.accessToken)) return null
   if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
     return null
   if (typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 1000) return null
   return {
     action: body.action,
     phone,
+    accessToken: body.accessToken,
     rating: Number(body.rating),
     text: body.text,
     turnstileToken: body.turnstileToken,
@@ -217,24 +206,11 @@ async function consumeLimit(
   return data === true ? 'ok' : 'rate_limited'
 }
 
-async function sendAccessEmail(
-  service: ReturnType<typeof serviceClient>,
-  email: string,
-  lang: Language,
-  code: string,
-): Promise<void> {
-  const apiKey = Deno.env.get('RESEND_API_KEY')
-  if (!apiKey) throw new Error('RESEND_API_KEY missing')
-  const business = await loadEmailBusiness(service)
-  const copy = await loadEmailTemplate(service, 'customer_booking_access', lang)
-  const message = buildEmailMessage({
-    to: email,
-    lang,
-    copy: copy ?? defaultEmailTemplate('customer_booking_access', lang),
-    ctaHref: `${SITE_URL}/#booking_access=${code}`,
-    business,
-  })
-  await sendViaResend(message, apiKey, `customer-booking-access/${await sha256(code)}`)
+function scopePhone(value: unknown): string | null {
+  const row = Array.isArray(value) ? value[0] : value
+  if (typeof row !== 'object' || row === null) return null
+  const phone = (row as Record<string, unknown>).phone
+  return typeof phone === 'string' && /^07[0-9]{8}$/.test(phone) ? phone : null
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -297,36 +273,44 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret))) {
     return json(req, { ok: false, error: 'failed_challenge' })
   }
+
+  let sessionHash: string | null = null
+  if (parsed.action === 'review') {
+    sessionHash = await sha256(parsed.accessToken ?? '')
+    const scope = await service.rpc('customer_booking_access_scope', {
+      p_session_hash: sessionHash,
+    })
+    if (scope.error) {
+      console.error('public-booking-actions: review access lookup failed', scope.error.code)
+      return json(req, { ok: false, error: 'system' }, 500)
+    }
+    if (scopePhone(scope.data) !== phone) {
+      return json(req, { ok: false, error: 'no_booking' })
+    }
+  }
+
   const limited = await consumeLimit(service, parsed.action, phone, ip, hashSalt)
   if (limited === 'system') return json(req, { ok: false, error: 'system' }, 500)
   if (limited === 'rate_limited') return json(req, { ok: false, error: 'rate_limited' })
 
   if (parsed.action === 'request_access') {
     const code = createOpaqueToken()
-    const { data, error } = await service.rpc('create_customer_booking_access_request', {
+    const { error } = await service.rpc('create_customer_booking_access_request', {
       p_phone: phone,
       p_email: parsed.email,
       p_token_hash: await sha256(code),
+      p_access_code: code,
+      p_lang: parsed.lang,
     })
     if (error) {
       console.error('public-booking-actions: access request RPC failed', error.code)
       return json(req, { ok: false, error: 'system' }, 500)
     }
-    const accessEmailTask =
-      data === true
-        ? Promise.resolve().then(() =>
-            sendAccessEmail(service, parsed.email ?? '', parsed.lang ?? 'sv', code),
-          )
-        : Promise.resolve()
-    edgeRuntime.waitUntil(
-      accessEmailTask.catch(() => {
-        console.error('public-booking-actions: access email failed')
-      }),
-    )
     return json(req, { ok: true })
   }
 
-  const result = await service.rpc('create_review', {
+  const result = await service.rpc('create_review_with_access', {
+    p_session_hash: sessionHash,
     p_phone: phone,
     p_rating: parsed.rating,
     p_text: parsed.text,

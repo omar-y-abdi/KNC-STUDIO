@@ -1,11 +1,28 @@
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
+  buildEvent,
   deleteEvent,
+  GoogleHttpError,
+  googleEventId,
+  insertEvent,
   isGoogleAuthorizationError,
+  isTransientGoogleError,
+  patchEvent,
   refreshAccessToken,
   revokeToken,
 } from './calendar.ts'
+import {
+  buildEmailMessage,
+  defaultEmailTemplate,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  resendDeliveryFailureCode,
+  sendViaResend,
+} from './email.ts'
 
 export type StorageBucket = 'gallery' | 'barber-photos'
+
+type Language = 'sv' | 'en'
 
 interface DispatchBase {
   readonly id: string
@@ -13,13 +30,24 @@ interface DispatchBase {
 }
 
 export type ExternalAction =
-  | (DispatchBase & {
-      readonly action_type: 'superseded'
-    })
+  | (DispatchBase & { readonly action_type: 'superseded' })
   | (DispatchBase & {
       readonly action_type: 'storage_object_delete'
       readonly bucket: StorageBucket
       readonly path: string
+    })
+  | (DispatchBase & {
+      readonly action_type: 'calendar_event_sync'
+      readonly booking_id: string
+      readonly barber_id: string
+      readonly service_name: string
+      readonly customer_name: string
+      readonly phone: string | null
+      readonly start_at: string
+      readonly end_at: string
+      readonly refresh_token: string
+      readonly calendar_id: string
+      readonly google_event_id: string | null
     })
   | (DispatchBase & {
       readonly action_type: 'calendar_event_delete'
@@ -36,15 +64,18 @@ export type ExternalAction =
       readonly ready: boolean
     })
   | (DispatchBase & {
+      readonly action_type: 'customer_access_email_send'
+      readonly email: string
+      readonly lang: Language
+      readonly access_code: string
+    })
+  | (DispatchBase & {
       readonly action_type: 'auth_user_access_sync'
       readonly user_id: string
       readonly account_enabled: boolean
       readonly version: number
     })
-  | (DispatchBase & {
-      readonly action_type: 'auth_user_delete'
-      readonly user_id: string
-    })
+  | (DispatchBase & { readonly action_type: 'auth_user_delete'; readonly user_id: string })
 
 export interface ExternalActionService {
   readonly storage: {
@@ -79,6 +110,7 @@ interface AuthAdminError {
 export interface ExternalActionRuntime {
   readonly googleClientId: string | undefined
   readonly googleClientSecret: string | undefined
+  readonly resendApiKey?: string | undefined
 }
 
 export class ExternalActionError extends Error {
@@ -104,6 +136,10 @@ function isUuid(value: unknown): value is string {
   )
 }
 
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
 function dispatchBase(row: Record<string, unknown>): DispatchBase | null {
   return isUuid(row.id) && isUuid(row.dispatch_token)
     ? { id: row.id, dispatch_token: row.dispatch_token }
@@ -120,23 +156,47 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
   if (
     value.action_type === 'storage_object_delete' &&
     (value.bucket === 'gallery' || value.bucket === 'barber-photos') &&
-    typeof value.path === 'string' &&
-    value.path.length > 0
+    nonEmpty(value.path)
   ) {
     return { ...base, action_type: value.action_type, bucket: value.bucket, path: value.path }
   }
 
   if (
+    value.action_type === 'calendar_event_sync' &&
+    isUuid(value.booking_id) &&
+    nonEmpty(value.barber_id) &&
+    nonEmpty(value.service_name) &&
+    nonEmpty(value.customer_name) &&
+    (value.phone === null || typeof value.phone === 'string') &&
+    nonEmpty(value.start_at) &&
+    nonEmpty(value.end_at) &&
+    nonEmpty(value.refresh_token) &&
+    nonEmpty(value.calendar_id) &&
+    (value.google_event_id === null || typeof value.google_event_id === 'string')
+  ) {
+    return {
+      ...base,
+      action_type: value.action_type,
+      booking_id: value.booking_id,
+      barber_id: value.barber_id,
+      service_name: value.service_name,
+      customer_name: value.customer_name,
+      phone: value.phone,
+      start_at: value.start_at,
+      end_at: value.end_at,
+      refresh_token: value.refresh_token,
+      calendar_id: value.calendar_id,
+      google_event_id: value.google_event_id,
+    }
+  }
+
+  if (
     value.action_type === 'calendar_event_delete' &&
     isUuid(value.booking_id) &&
-    typeof value.barber_id === 'string' &&
-    value.barber_id.length > 0 &&
-    typeof value.google_event_id === 'string' &&
-    value.google_event_id.length > 0 &&
-    typeof value.refresh_token === 'string' &&
-    value.refresh_token.length > 0 &&
-    typeof value.calendar_id === 'string' &&
-    value.calendar_id.length > 0
+    nonEmpty(value.barber_id) &&
+    nonEmpty(value.google_event_id) &&
+    nonEmpty(value.refresh_token) &&
+    nonEmpty(value.calendar_id)
   ) {
     return {
       ...base,
@@ -146,6 +206,22 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       google_event_id: value.google_event_id,
       refresh_token: value.refresh_token,
       calendar_id: value.calendar_id,
+    }
+  }
+
+  if (
+    value.action_type === 'customer_access_email_send' &&
+    nonEmpty(value.email) &&
+    (value.lang === 'sv' || value.lang === 'en') &&
+    typeof value.access_code === 'string' &&
+    /^[0-9a-f]{64}$/i.test(value.access_code)
+  ) {
+    return {
+      ...base,
+      action_type: value.action_type,
+      email: value.email,
+      lang: value.lang,
+      access_code: value.access_code,
     }
   }
 
@@ -168,10 +244,8 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
 
   if (
     value.action_type === 'calendar_disconnect' &&
-    typeof value.barber_id === 'string' &&
-    value.barber_id.length > 0 &&
-    typeof value.refresh_token === 'string' &&
-    value.refresh_token.length > 0 &&
+    nonEmpty(value.barber_id) &&
+    nonEmpty(value.refresh_token) &&
     typeof value.ready === 'boolean'
   ) {
     return {
@@ -194,6 +268,24 @@ function authUserAlreadyMissing(error: AuthAdminError): boolean {
   return error.status === 404 || error.code === 'user_not_found'
 }
 
+async function recordCalendarEvent(
+  action: Extract<ExternalAction, { action_type: 'calendar_event_sync' }>,
+  service: ExternalActionService,
+  googleEventIdValue: string,
+): Promise<void> {
+  const recorded = await service.rpc('calendar_record_event', {
+    p_booking_id: action.booking_id,
+    p_barber_id: action.barber_id,
+    p_google_event_id: googleEventIdValue,
+  })
+  if (recorded.error !== null) {
+    throw new ExternalActionError(
+      'calendar_record_failed',
+      recorded.error.message ?? 'Calendar mapping write failed',
+    )
+  }
+}
+
 export async function executeExternalAction(
   action: ExternalAction,
   service: ExternalActionService,
@@ -206,6 +298,51 @@ export async function executeExternalAction(
       const removed = await service.storage.from(action.bucket).remove([action.path])
       if (removed.error !== null) {
         throw new ExternalActionError('storage_failed', removed.error.message)
+      }
+      return
+    }
+    case 'calendar_event_sync': {
+      if (!runtime.googleClientId || !runtime.googleClientSecret) {
+        throw new ExternalActionError('not_configured', 'Google OAuth runtime is not configured')
+      }
+      try {
+        const accessToken = await refreshAccessToken(
+          action.refresh_token,
+          runtime.googleClientId,
+          runtime.googleClientSecret,
+        )
+        const event = buildEvent(action)
+        if (action.google_event_id !== null) {
+          const patched = await patchEvent(
+            accessToken,
+            action.calendar_id,
+            action.google_event_id,
+            event,
+          )
+          if (patched) {
+            await recordCalendarEvent(action, service, action.google_event_id)
+            return
+          }
+        }
+        const eventId = await insertEvent(
+          accessToken,
+          action.calendar_id,
+          googleEventId(action.booking_id),
+          event,
+        )
+        await recordCalendarEvent(action, service, eventId)
+      } catch (error) {
+        if (error instanceof ExternalActionError) throw error
+        const authorizationRequired = isGoogleAuthorizationError(error)
+        const retryable =
+          authorizationRequired || error instanceof GoogleHttpError
+            ? !authorizationRequired && isTransientGoogleError(error)
+            : true
+        throw new ExternalActionError(
+          authorizationRequired ? 'calendar_authorization_required' : 'calendar_sync_failed',
+          error instanceof Error ? error.message : 'Calendar synchronization failed',
+          retryable,
+        )
       }
       return
     }
@@ -256,6 +393,32 @@ export async function executeExternalAction(
         throw new ExternalActionError(
           'calendar_disconnect_failed',
           deleted.error.message ?? 'Calendar token cleanup failed',
+        )
+      }
+      return
+    }
+    case 'customer_access_email_send': {
+      if (!runtime.resendApiKey) {
+        throw new ExternalActionError('not_configured', 'Resend runtime is not configured')
+      }
+      try {
+        const emailClient = service as unknown as SupabaseClient
+        const business = await loadEmailBusiness(emailClient)
+        const copy = await loadEmailTemplate(emailClient, 'customer_booking_access', action.lang)
+        const message = buildEmailMessage({
+          to: action.email,
+          lang: action.lang,
+          copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
+          ctaHref: `https://bladeblendstudio.se/#booking_access=${action.access_code}`,
+          business,
+        })
+        await sendViaResend(message, runtime.resendApiKey, `customer-booking-access/${action.id}`)
+      } catch (error) {
+        const failureCode = resendDeliveryFailureCode(error)
+        throw new ExternalActionError(
+          failureCode,
+          error instanceof Error ? error.message : 'Customer access email failed',
+          failureCode !== 'send_failed_permanent',
         )
       }
       return
