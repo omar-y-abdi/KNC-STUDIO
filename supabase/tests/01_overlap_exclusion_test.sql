@@ -11,7 +11,7 @@ select lives_ok(
        customer_name, method, phone, email, lang)
     values ('hassan','hs','Hår & Skägg',450,60,
             '2099-03-01 09:00+00','2099-03-01 10:00+00',
-            'Anchor','sms','0701112233',null,'sv')$$,
+            'Anchor','phone','0701112233',null,'sv')$$,
   'anchor booking (hassan 09:00–10:00) inserts'
 );
 
@@ -22,7 +22,7 @@ select throws_ok(
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,
             '2099-03-01 09:30+00','2099-03-01 10:30+00',
-            'Overlap','sms','0702223344',null,'sv')$$,
+            'Overlap','phone','0702223344',null,'sv')$$,
   '23P01', null, 'overlapping confirmed booking (same barber) rejected'
 );
 
@@ -34,7 +34,7 @@ select lives_ok(
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,60,
             '2099-03-01 10:00+00','2099-03-01 11:00+00',
-            'Adjacent','sms','0703334455',null,'sv')$$,
+            'Adjacent','phone','0703334455',null,'sv')$$,
   'adjacent (10:00–11:00) booking for same barber inserts'
 );
 
@@ -45,7 +45,7 @@ select lives_ok(
        customer_name, method, phone, email, lang)
     values ('victor','hs','Hår & Skägg',450,60,
             '2099-03-01 09:00+00','2099-03-01 10:00+00',
-            'OtherBarber','sms','0704445566',null,'sv')$$,
+            'OtherBarber','phone','0704445566',null,'sv')$$,
   'same time, different barber inserts'
 );
 
@@ -64,7 +64,7 @@ select lives_ok(
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,
             '2099-03-01 09:30+00','2099-03-01 10:00+00',
-            'AfterCancel','sms','0705556677',null,'sv')$$,
+            'AfterCancel','phone','0705556677',null,'sv')$$,
   'after cancelling, an overlapping slot can be re-booked (slot freed)'
 );
 

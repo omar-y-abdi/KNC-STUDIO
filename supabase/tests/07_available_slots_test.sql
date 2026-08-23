@@ -92,7 +92,7 @@ values (
   'hassan','h','Hår',350,90,
   (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '10:30') at time zone 'Europe/Stockholm',
-  'Booked 90','sms','0701119999',null,'sv'
+  'Booked 90','phone','0701119999',null,'sv'
 );
 -- Grid resumes at 10:30 (the booking end) and continues on the fixed 15-min ticks. 29 slots.
 select is(
@@ -110,6 +110,12 @@ select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:15'),
   0, '10:15 is absent — [10:15,10:45) still overlaps the booking [540,630), so the tick does NOT fit'
 );
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
+);
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
 
@@ -125,7 +131,7 @@ values (
   'hassan','h','Hår',350,45,
   (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '09:45') at time zone 'Europe/Stockholm',
-  'Booked 45','sms','0701119999',null,'sv'
+  'Booked 45','phone','0701119999',null,'sv'
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
@@ -141,6 +147,12 @@ select is(
 select is(
   (select pg_catalog.min(s) from public.available_slots('hassan', date '2099-01-05', 30) s),
   '09:45', 'the first free 30-min tick is 09:45 (the booking end); 09:00/09:15/09:30 overlap and drop out'
+);
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
@@ -158,7 +170,7 @@ values (
   'hassan','h','Hår',350,90,
   (date '2099-01-05' + time '10:00') at time zone 'Europe/Stockholm',
   (date '2099-01-05' + time '11:30') at time zone 'Europe/Stockholm',
-  'Booked mid','sms','0701119999',null,'sv'
+  'Booked mid','phone','0701119999',null,'sv'
 );
 select is(
   (select pg_catalog.array_agg(s order by s) from public.available_slots('hassan', date '2099-01-05', 30) s),
@@ -182,6 +194,12 @@ select is(
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:00'),
   0, '10:00 (the booked start) is absent'
+);
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';

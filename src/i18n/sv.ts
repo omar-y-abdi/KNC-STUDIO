@@ -3,7 +3,6 @@ import type {
   AppStrings,
   BookingStrings,
   CalendarLabels,
-  CancelStrings,
   MyBookingsStrings,
 } from './index'
 
@@ -37,7 +36,7 @@ export const bookingSv: BookingStrings = {
     'Vid bokning accepterar du att avbokning måste ske senast {hours} timmar före besöket. Sen avbokning eller utebliven tid ger {businessName} rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
   confirmSent:
-    'En bokningsbekräftelse har skickats till {email}. Bokningen finns även under "Mina bokningar" via ditt telefonnummer.',
+    'En bokningsbekräftelse har skickats till {email}. Hantera bokningen via en säker länk under "Mina bokningar".',
   addToCal: 'Lägg till i kalender',
   calApple: 'Apple Kalender',
   calGoogle: 'Google Kalender',
@@ -82,7 +81,7 @@ export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
   intro:
-    'Blade & Blend Studio är en barbershop på Geijersgatan i Göteborg. Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
+    'Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',
@@ -118,6 +117,10 @@ export const aboutSv: AboutStrings = {
   reviewErrRating: 'Välj ett betyg',
   reviewErrNoBooking:
     'Vi hittade ingen genomförd bokning på det numret. Du kan lämna ett omdöme efter ditt besök.',
+  reviewErrInvalid: 'Omdömet kunde inte valideras. Kontrollera uppgifterna och försök igen.',
+  reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
+  reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
+  reviewErrSubmit: 'Omdömet kunde inte skickas. Försök igen.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',
@@ -125,20 +128,25 @@ export const aboutSv: AboutStrings = {
 
 export const myBookingsSv: MyBookingsStrings = {
   title: 'Mina bokningar',
-  lookupLead: 'Ange numret du bokade med, så visar vi dina tider.',
+  lookupLead: 'Ange telefonnummer och e-post från bokningen. Vi skickar en säker engångslänk.',
   phone: 'Telefon',
   phonePh: '07X XXX XX XX',
-  lookupBtn: 'Visa mina bokningar',
-  lookingUp: 'Hämtar …',
+  email: 'E-post',
+  emailPh: 'namn@exempel.se',
+  lookupBtn: 'Skicka säker länk',
+  lookingUp: 'Skickar …',
   errPhone: 'Ogiltigt telefonnummer',
-  notFoundFirst: 'Vi hittade inga bokningar på det numret. Kontrollera numret och försök igen.',
-  notFoundEscalated:
-    'Fortfarande inga bokningar kopplade till det numret. Kontakta salongen så hjälper vi dig.',
+  errEmail: 'Ogiltig e-postadress',
+  accessSent:
+    'Om uppgifterna stämmer skickar vi en säker länk till din e-post. Länken gäller i 15 minuter.',
+  errAccess: 'Länken är ogiltig eller har gått ut. Begär en ny säker länk.',
   errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
+  errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
+  errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   upcomingTitle: 'Kommande',
   pastTitle: 'Tidigare',
   upcomingEmpty: 'Du har inga kommande bokningar.',
-  changeNumber: 'Byt nummer',
+  changeNumber: 'Använd andra uppgifter',
   fBarber: 'Barberare',
   fService: 'Behandling',
   fDuration: 'Längd',
@@ -154,29 +162,6 @@ export const myBookingsSv: MyBookingsStrings = {
   ariaClose: 'Stäng',
   ariaExpandRow: 'Visa detaljer',
   ariaExpandPast: 'Visa tidigare bokningar',
-}
-
-export const cancelSv: CancelStrings = {
-  title: 'Avbokning',
-  phone: 'Telefon',
-  phonePh: '07X XXX XX XX',
-  lookupBtn: 'Avboka tid',
-  lookingUp: 'Hämtar …',
-  errPhone: 'Ogiltigt telefonnummer',
-  errLookup: 'Kunde inte hämta bokningen. Försök igen.',
-  foundLead: 'Vi hittade din bokning',
-  fBarber: 'Barberare',
-  fWhen: 'Tid',
-  fService: 'Behandling',
-  confirmQuestion: 'Vill du avboka den här tiden?',
-  confirmBtn: 'Avboka',
-  abortBtn: 'Avbryt',
-  cancelling: 'Avbokar …',
-  errCancel: 'Något gick fel vid avbokningen. Försök igen.',
-  doneTitle: 'Din tid är avbokad',
-  doneVia: 'Bokningen är borttagen från Mina bokningar.',
-  doneBtn: 'Stäng',
-  ariaClose: 'Stäng',
 }
 
 export const labelsSv: CalendarLabels = {

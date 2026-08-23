@@ -71,7 +71,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — barber role (integrati
     // Edit Monday to 10:00–16:00 and save.
     const edited: WeekSchedule = setDayHours(read.value, 1, 600, 960)
     const saved = await saveWeek(BARBER_LINK_ID, edited)
-    expect(saved.ok).toBe(true)
+    expect(saved.kind).toBe('ok')
 
     // Confirm it persisted (read back via the superuser, authority-independent).
     const raw = await readScheduleRaw(env, BARBER_LINK_ID)
@@ -85,8 +85,8 @@ describe.skipIf(!adminBackendReady())('admin adapters — barber role (integrati
     if (env === null) return
 
     const added = await addTimeOff(BARBER_LINK_ID, '2030-07-01', '2030-07-07', 'Semester')
-    expect(added.ok).toBe(true)
-    if (!added.ok) return
+    expect(added.kind).toBe('ok')
+    if (added.kind !== 'ok') return
     expect(added.value.barberId).toBe(BARBER_LINK_ID)
 
     const list = await listTimeOff(BARBER_LINK_ID)
@@ -138,7 +138,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — barber role (integrati
       endMin: 1200,
     })) as unknown as WeekSchedule
     const attempt = await saveWeek(OTHER_BARBER_ID, malicious)
-    expect(attempt.ok).toBe(false)
+    expect(attempt.kind).toBe('error')
 
     // THE assertion: the other barber's schedule is byte-for-byte unchanged.
     const after = await readScheduleRaw(env, OTHER_BARBER_ID)
@@ -153,8 +153,8 @@ describe.skipIf(!adminBackendReady())('admin adapters — barber role (integrati
     if (env === null) return
 
     const attempt = await addTimeOff(OTHER_BARBER_ID, '2030-09-01', '2030-09-02', 'hack')
-    expect(attempt.ok).toBe(false)
-    if (attempt.ok) return
+    expect(attempt.kind).toBe('error')
+    if (attempt.kind !== 'error') return
     expect(attempt.error.kind).toBe('forbidden')
 
     // No row landed for the other barber.

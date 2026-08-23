@@ -68,6 +68,9 @@ export async function createManualBooking(
     if (!parsed.value.ok) {
       if (parsed.value.error === 'forbidden') return err('forbidden', 'Du saknar behörighet.')
       if (parsed.value.error === 'slot_taken') return err('validation', 'Tiden är redan bokad.')
+      if (parsed.value.error === 'outside_hours') {
+        return err('validation', 'Tiden ligger utanför arbetstid eller är blockerad.')
+      }
       return err('validation', 'Kontrollera uppgifterna och försök igen.')
     }
     return ok(true)
@@ -86,7 +89,7 @@ function toBooking(r: {
   start_at: string
   end_at: string
   customer_name: string
-  method: 'sms' | 'email' | 'walkin'
+  method: 'phone' | 'email' | 'walkin'
   phone: string | null
   email: string | null
   lang: 'sv' | 'en'
@@ -186,6 +189,9 @@ export async function deleteBookings(ids: readonly string[]): Promise<AdminResul
       if (parsed.value.error === 'has_upcoming') {
         return err('validation', 'Kommande bokningar kan inte raderas.')
       }
+      if (parsed.value.error === 'delivery_pending') {
+        return err('validation', 'Bokningen har mejl som måste levereras eller hanteras först.')
+      }
       return err('validation', 'Inga bokningar valda.')
     }
     return ok(parsed.value.count)
@@ -205,7 +211,11 @@ export async function purgeHistory(): Promise<AdminResult<number>> {
 
     const parsed = parseWith(adminPurgeHistoryResponse, data)
     if (!parsed.ok) return err('malformed', PURGE_ERROR)
-    if (!parsed.value.ok) return err('forbidden', 'Bara ägaren kan tömma all historik.')
+    if (!parsed.value.ok) {
+      return parsed.value.error === 'delivery_pending'
+        ? err('validation', 'Historiken innehåller mejl som måste levereras eller hanteras först.')
+        : err('forbidden', 'Bara ägaren kan tömma all historik.')
+    }
     return ok(parsed.value.count)
   } catch {
     return err('network', PURGE_ERROR)

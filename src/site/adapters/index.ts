@@ -10,7 +10,7 @@ import type { SiteChrome } from '../siteChrome'
 import { mockSiteChromeAdapter } from './mockSiteChrome'
 
 const lazySupabaseSiteChromePort: SiteChromePort = {
-  load: (lang: Lang): Promise<SiteChrome> =>
+  load: (lang: Lang): Promise<SiteChrome | null> =>
     import('./supabaseSiteChrome').then((m) => m.supabaseSiteChromeAdapter.load(lang)),
   subscribe: (lang, onChange) => {
     let unsubscribe = (): void => undefined

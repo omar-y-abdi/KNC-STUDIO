@@ -26,6 +26,7 @@ export const profileRow = z.object({
   role: z.enum(['owner', 'barber']),
   barber_id: z.string().nullable(),
   must_change_password: z.boolean(),
+  account_enabled: z.boolean(),
 })
 export type ProfileRow = z.infer<typeof profileRow>
 
@@ -67,6 +68,21 @@ export const scheduleRow = z.object({
 export type ScheduleRow = z.infer<typeof scheduleRow>
 export const scheduleRows = z.array(scheduleRow)
 
+const availabilityMutationConflict = z.object({
+  ok: z.literal(false),
+  error: z.literal('booking_conflict'),
+  booking_ids: z.array(z.string().uuid()),
+})
+const availabilityMutationDenied = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const saveWeekResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+
 // --- barber_time_off -----------------------------------------------------------------------------
 
 export const timeOffRow = z.object({
@@ -78,6 +94,11 @@ export const timeOffRow = z.object({
 })
 export type TimeOffRow = z.infer<typeof timeOffRow>
 export const timeOffRows = z.array(timeOffRow)
+export const addTimeOffResponse = z.union([
+  z.object({ ok: z.literal(true), row: timeOffRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
 
 // --- barber_slot_blocks --------------------------------------------------------------------------
 
@@ -90,6 +111,11 @@ export const slotBlockRow = z.object({
 })
 export type SlotBlockRow = z.infer<typeof slotBlockRow>
 export const slotBlockRows = z.array(slotBlockRow)
+export const addSlotBlockResponse = z.union([
+  z.object({ ok: z.literal(true), row: slotBlockRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
 
 // --- services (admin CRUD) -----------------------------------------------------------------------
 // A per-barber service-menu row (owner=all, barber=own). Maps to `AdminService` in types.ts.
@@ -131,8 +157,10 @@ export const emailTemplateName = z.enum([
   'customer_cancellation',
   'barber_cancellation',
   'customer_reminder',
+  'customer_booking_access',
   'auth_recovery',
   'auth_email_change',
+  'auth_invite',
 ])
 
 export const emailTemplateRow = z.object({
@@ -149,6 +177,26 @@ export const emailTemplateRow = z.object({
 })
 export type EmailTemplateRowT = z.infer<typeof emailTemplateRow>
 export const emailTemplateRows = z.array(emailTemplateRow)
+
+export const failedBookingEmailDeliveryRow = z.object({
+  id: z.string().uuid(),
+  booking_id: z.string().uuid(),
+  event: z.enum(['booking_confirmed', 'booking_cancelled']),
+  attempt_count: z.number().int().nonnegative(),
+  last_error_code: z
+    .enum([
+      'not_configured',
+      'send_failed',
+      'send_failed_transient',
+      'send_failed_permanent',
+      'message_build_failed',
+    ])
+    .nullable(),
+  failed_at: isoTimestamp.nullable(),
+})
+export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)
+export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
+export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
@@ -208,6 +256,11 @@ export const uploadGalleryImageResponse = z
   })
   .refine((response) => response.path === response.row.storage_path)
 
+export const imageDeleteResponse = z.object({
+  ok: z.literal(true),
+  pending: z.boolean(),
+})
+
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to
 // the owning barber; nullable phone/email per the method.
@@ -221,7 +274,7 @@ export const adminBookingRow = z.object({
   start_at: isoTimestamp,
   end_at: isoTimestamp,
   customer_name: z.string(),
-  method: z.enum(['sms', 'email', 'walkin']),
+  method: z.enum(['phone', 'email', 'walkin']),
   phone: z.string().nullable(),
   email: z.string().nullable(),
   lang,
@@ -231,12 +284,12 @@ export type AdminBookingRow = z.infer<typeof adminBookingRow>
 export const adminBookingRows = z.array(adminBookingRow)
 
 // --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------
-// {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'invalid'|'slot_taken'}
+// {ok:true, booking:{...}} | typed authorization/availability/validation error.
 
 const adminCreateOk = z.object({ ok: z.literal(true) })
 const adminCreateErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['forbidden', 'invalid', 'slot_taken']),
+  error: z.enum(['forbidden', 'invalid', 'slot_taken', 'outside_hours']),
 })
 export const adminCreateBookingResponse = z.discriminatedUnion('ok', [
   adminCreateOk,
@@ -276,6 +329,7 @@ export type AdminCancelResponse = z.infer<typeof adminCancelResponse>
 const deleteBarberOk = z.object({
   ok: z.literal(true),
   deleted_bookings: z.number().int().nonnegative(),
+  auth_cleanup_pending: z.boolean(),
 })
 const deleteBarberHasBookings = z.object({
   ok: z.literal(false),
@@ -288,9 +342,28 @@ const deleteBarberDenied = z.object({
   ok: z.literal(false),
   error: z.enum(['forbidden', 'not_found']),
 })
+const deleteBarberHasUpcoming = z.object({
+  ok: z.literal(false),
+  error: z.literal('has_upcoming'),
+  count: z.number().int().nonnegative(),
+  past: z.number().int().nonnegative(),
+  upcoming: z.number().int().positive(),
+})
+const deleteBarberExternalCleanup = z.object({
+  ok: z.literal(false),
+  error: z.literal('external_cleanup_pending'),
+  calendar_events: z.number().int().nonnegative(),
+})
+const deleteBarberDeliveryPending = z.object({
+  ok: z.literal(false),
+  error: z.literal('delivery_pending'),
+})
 export const adminDeleteBarberResponse = z.union([
   deleteBarberOk,
   deleteBarberHasBookings,
+  deleteBarberHasUpcoming,
+  deleteBarberExternalCleanup,
+  deleteBarberDeliveryPending,
   deleteBarberDenied,
 ])
 export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>
@@ -299,14 +372,14 @@ export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse
 // Bulk hard delete of bookings by id (owner any barber; a barber only their own). Intended for
 // past/cancelled rows: REFUSES (`has_upcoming`) if any id is still a live upcoming appointment, and
 // rejects an empty selection (`empty`). Reports how many rows were deleted.
-// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'}
+// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'|'delivery_pending'}
 const deleteBookingsOk = z.object({
   ok: z.literal(true),
   count: z.number().int().nonnegative(),
 })
 const deleteBookingsErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['empty', 'forbidden', 'has_upcoming']),
+  error: z.enum(['empty', 'forbidden', 'has_upcoming', 'delivery_pending']),
 })
 export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
   deleteBookingsOk,
@@ -316,14 +389,14 @@ export type AdminDeleteBookingsResponse = z.infer<typeof adminDeleteBookingsResp
 
 // --- admin_purge_history RPC ---------------------------------------------------------------------
 // Owner-only: delete ALL past/cancelled history in one shot, reporting the row count removed.
-// {ok:true, count:n} | {ok:false, error:'forbidden'}
+// {ok:true, count:n} | {ok:false, error:'forbidden'|'delivery_pending'}
 const purgeHistoryOk = z.object({
   ok: z.literal(true),
   count: z.number().int().nonnegative(),
 })
 const purgeHistoryErr = z.object({
   ok: z.literal(false),
-  error: z.literal('forbidden'),
+  error: z.enum(['forbidden', 'delivery_pending']),
 })
 export const adminPurgeHistoryResponse = z.discriminatedUnion('ok', [
   purgeHistoryOk,

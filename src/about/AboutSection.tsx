@@ -11,6 +11,7 @@
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
+import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
 import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
@@ -115,6 +116,24 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const [thanks, setThanks] = useState<boolean>(false)
   const [submitError, setSubmitError] = useState<ReviewError | null>(null)
   const [submitting, setSubmitting] = useState<boolean>(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
+  const challengeRequired = turnstileConfigured
+
+  const submitErrorText = (error: ReviewError): string => {
+    switch (error.kind) {
+      case 'no_booking':
+        return tx.reviewErrNoBooking
+      case 'invalid':
+        return tx.reviewErrInvalid
+      case 'challenge':
+        return tx.reviewErrChallenge
+      case 'rate_limited':
+        return tx.reviewErrRateLimited
+      case 'submit':
+        return tx.reviewErrSubmit
+    }
+  }
 
   const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     setThanks(false)
@@ -145,7 +164,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     }
     setSubmitting(true)
     try {
-      const result = await port.submit(parsed.value)
+      const result = await port.submit(parsed.value, turnstileToken)
       if (result.ok) {
         setReviews((prev) => [result.review, ...prev])
         setDraft(emptyReviewDraft)
@@ -158,6 +177,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
       }
     } finally {
       setSubmitting(false)
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
     }
   }
   const onSubmitClick = (): void => {
@@ -168,7 +189,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const sectionStyle: JSX.CSSProperties = {
     background: c.bg,
     color: c.text,
-    fontFamily: "'SF Pro Text',-apple-system,system-ui,sans-serif",
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
     WebkitFontSmoothing: 'antialiased',
     borderTop: '.5px solid ' + c.line,
     // `scroll-margin-top` keeps the heading clear of the top once we smooth-scroll to it.
@@ -200,7 +221,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     marginBottom: '12px',
   }
   const headingStyle: JSX.CSSProperties = {
-    fontFamily: "'SF Pro Display'",
+    fontFamily: "'Inter Variable'",
     fontWeight: 600,
     fontSize: scalePx(34, scale) + 'px',
     letterSpacing: '-0.8px',
@@ -215,7 +236,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     margin: '0 0 8px',
   }
   const blockTitleStyle: JSX.CSSProperties = {
-    fontFamily: "'SF Pro Display'",
+    fontFamily: "'Inter Variable'",
     fontWeight: 600,
     fontSize: '20px',
     letterSpacing: '-0.3px',
@@ -412,7 +433,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
         {/* Leave a review */}
         <div style={formCardStyle}>
-          <span style={{ fontFamily: "'SF Pro Display'", fontWeight: 600, fontSize: '16px' }}>
+          <span style={{ fontFamily: "'Inter Variable'", fontWeight: 600, fontSize: '16px' }}>
             {tx.reviewSubmit}
           </span>
 
@@ -472,7 +493,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
           {submitError !== null ? (
             <p role="alert" style={s.submitErrorStyle}>
-              {submitError.kind === 'no_booking' ? tx.reviewErrNoBooking : tx.reviewErrPhone}
+              {submitErrorText(submitError)}
             </p>
           ) : null}
 
@@ -485,14 +506,19 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             </p>
           ) : null}
 
+          <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+
           <button
             type="button"
-            onClick={submitting ? undefined : onSubmitClick}
-            disabled={submitting}
+            onClick={
+              submitting || (challengeRequired && turnstileToken === '') ? undefined : onSubmitClick
+            }
+            disabled={submitting || (challengeRequired && turnstileToken === '')}
             style={{
               ...s.bookBtnStyle,
-              opacity: submitting ? 0.5 : 1,
-              cursor: submitting ? 'default' : 'pointer',
+              opacity: submitting || (challengeRequired && turnstileToken === '') ? 0.5 : 1,
+              cursor:
+                submitting || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
             }}
           >
             {tx.reviewSubmit}

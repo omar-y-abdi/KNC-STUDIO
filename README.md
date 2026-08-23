@@ -40,6 +40,7 @@ npm run preview    # serve the built dist/ locally
 ## Architecture
 
 Effects live at the edges; the domain stays pure and referentially transparent.
+[CODEBASE-MAP.md](CODEBASE-MAP.md) is the complete architectural index of the repo.
 
 ```
 src/

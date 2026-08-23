@@ -163,8 +163,12 @@ site_url = "https://bladeblendstudio.se"
 additional_redirect_urls = [
   "https://bladeblendstudio.se/reset",
   "https://www.bladeblendstudio.se/reset",
+  "https://bladeblendstudio.se/invite",
+  "https://www.bladeblendstudio.se/invite",
   "http://localhost:5173/reset",
-  "http://127.0.0.1:5173/reset"
+  "http://127.0.0.1:5173/reset",
+  "http://localhost:5173/invite",
+  "http://127.0.0.1:5173/invite"
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -187,10 +191,10 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 12
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
-password_requirements = ""
+password_requirements = "lower_upper_letters_digits_symbols"
 
 # Configure passkey sign-ins.
 # [auth.passkey]
@@ -226,15 +230,15 @@ web3 = 30
 # secret = ""
 
 [auth.email]
-# Keep email provider enabled for existing staff login and password reset. Global [auth]
-# enable_signup=false still blocks public account creation; owner provisioning uses service_role.
+# Keep email login enabled for existing staff. Global [auth].enable_signup=false blocks public account
+# creation; owner provisioning still runs through the service-role function.
 enable_signup = true
 # Only the new email address must confirm an email change.
 double_confirm_changes = false
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = true
-# If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+# Require the current password at the Auth server, not only in the Settings UI.
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
@@ -425,11 +429,21 @@ verify_jwt = true
 enabled = true
 verify_jwt = false
 
+# Phone-keyed customer self-service gateway. Turnstile + hash-only rate limits are enforced inside
+# the function before any privileged lookup, cancellation, or review RPC is called.
+[functions.public-booking-actions]
+enabled = true
+verify_jwt = false
+
 # admin-create-barber: called BY the authenticated owner FROM the admin panel (browser -> Supabase).
 # The caller always holds a valid Supabase auth JWT -> verify_jwt = true lets the gateway reject
 # invalid/expired tokens before this function runs. The function ALSO calls auth.getUser(jwt)
 # internally (defense-in-depth) and checks profiles.role = 'owner' before doing any work.
 [functions.admin-create-barber]
+enabled = true
+verify_jwt = true
+
+[functions.admin-manage-barber]
 enabled = true
 verify_jwt = true
 
@@ -465,6 +479,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 static_files = ["./functions/upload-image/magick.wasm"]
+
+[functions.external-cleanup]
+enabled = true
+verify_jwt = false
 
 [analytics]
 # Disabled locally: the analytics stack (Logflare + Vector) is memory-hungry and caused the local

@@ -12,8 +12,10 @@ import { mockReviewsAdapter } from './mockReviews'
 
 const lazySupabaseReviewsPort: ReviewsPort = {
   list: () => import('./supabaseReviews').then((m) => m.supabaseReviewsAdapter.list()),
-  submit: (review: ValidReview) =>
-    import('./supabaseReviews').then((m) => m.supabaseReviewsAdapter.submit(review)),
+  submit: (review: ValidReview, turnstileToken: string) =>
+    import('./supabaseReviews').then((m) =>
+      m.supabaseReviewsAdapter.submit(review, turnstileToken),
+    ),
 }
 
 export const defaultReviewsPort: ReviewsPort = isBackendConfigured()

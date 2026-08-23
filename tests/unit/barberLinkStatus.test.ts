@@ -1,4 +1,4 @@
-// Regression: linkedBarberIds must request every column required by profileRow. Returning a
+// Regression: barberAccountStates must request every column required by profileRow. Returning a
 // narrower PostgREST shape makes Zod reject each linked profile and the UI falsely shows
 // "Ej kopplad" after reload even though the profile link exists.
 
@@ -10,7 +10,7 @@ vi.mock('../../src/admin/adminClient', () => ({
   getAdminClient: () => ({ from }),
 }))
 
-import { linkedBarberIds } from '../../src/admin/adapters/barbersAdmin'
+import { barberAccountStates } from '../../src/admin/adapters/barbersAdmin'
 
 beforeEach(() => {
   from.mockReset()
@@ -18,12 +18,13 @@ beforeEach(() => {
   from.mockReturnValue({ select })
 })
 
-describe('linkedBarberIds', () => {
+describe('barberAccountStates', () => {
   it('keeps linked profiles after parsing the selected PostgREST shape', async () => {
     const profile: Record<string, unknown> = {
       role: 'barber',
       barber_id: 'k',
       must_change_password: true,
+      account_enabled: false,
     }
     select.mockImplementation((columns: string) => {
       const selected = columns.split(',').map((column) => column.trim())
@@ -33,10 +34,10 @@ describe('linkedBarberIds', () => {
       })
     })
 
-    const result = await linkedBarberIds()
+    const result = await barberAccountStates()
 
     expect(from).toHaveBeenCalledWith('profiles')
-    expect(select).toHaveBeenCalledWith('role, barber_id, must_change_password')
-    expect(result).toEqual({ ok: true, value: new Set(['k']) })
+    expect(select).toHaveBeenCalledWith('role, barber_id, must_change_password, account_enabled')
+    expect(result).toEqual({ ok: true, value: new Map([['k', 'disabled']]) })
   })
 })

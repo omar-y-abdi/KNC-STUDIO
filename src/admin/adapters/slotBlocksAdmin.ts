@@ -6,8 +6,8 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { parseWith, slotBlockRow, slotBlockRows } from '../adminSchemas'
-import type { AdminBarberId, AdminResult, SlotBlock } from '../types'
+import { addSlotBlockResponse, parseWith, slotBlockRows } from '../adminSchemas'
+import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, SlotBlock } from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa blockerade tider.'
@@ -63,23 +63,42 @@ export async function addSlotBlock(
   dateIso: string,
   startMin: number,
   endMin: number,
-): Promise<AdminResult<SlotBlock>> {
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<SlotBlock>> {
   try {
-    const { data, error } = await getAdminClient()
-      .from('barber_slot_blocks')
-      .insert({ barber_id: barberId, block_date: dateIso, start_min: startMin, end_min: endMin })
-      .select(COLUMNS)
-      .single()
-    if (error !== null || data === null) {
-      if (error?.code === '42501') return err('forbidden', 'Du kan bara blockera egna tider.')
-      if (error?.code === '23505') return err('validation', 'Tiden är redan blockerad.')
-      return err('network', WRITE_ERROR)
+    const { data, error } = await getAdminClient().rpc('admin_add_slot_block', {
+      p_barber_id: barberId,
+      p_block_date: dateIso,
+      p_start_min: startMin,
+      p_end_min: endMin,
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) {
+      return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
     }
-    const parsed = parseWith(slotBlockRow, data)
-    if (!parsed.ok) return err('malformed', WRITE_ERROR)
-    return ok(toSlotBlock(parsed.value))
+    const parsed = parseWith(addSlotBlockResponse, data)
+    if (!parsed.ok) {
+      return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    }
+    if (parsed.value.ok) return { kind: 'ok', value: toSlotBlock(parsed.value.row) }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
+    }
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara blockera egna tider.' },
+      }
+    }
+    if (parsed.value.error === 'duplicate') {
+      return {
+        kind: 'error',
+        error: { kind: 'validation', message: 'Tiden är redan blockerad.' },
+      }
+    }
+    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
   } catch {
-    return err('network', WRITE_ERROR)
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
   }
 }
 

@@ -1,19 +1,22 @@
 // The real (Supabase) SiteChromePort adapter. `load` reads `site_content` (this language's editable
 // homepage + booking-popup strings) + `site_settings` (font sizes, business identity, SEO) and
 // assembles a `SiteChrome`. Anon may select both (public-read RLS). Only known text keys are picked
-// up; unknown/malformed rows are ignored. Any transport error resolves to `DEFAULT_CHROME`, so the
-// site falls back to shipped defaults rather than crashing.
+// up; unknown/malformed rows are ignored. Transport or discovery errors resolve to `null`, allowing
+// hydration to keep complete metadata rendered by the Worker instead of replacing it with defaults.
 //
 // Boundary discipline: every row Zod-parsed; the scale tokens narrowed via `parseScale` (unknown →
 // 'md'), never trusted raw.
 
 import { getSupabase } from '../../backend/supabaseClient'
-import { parseWith, siteContentRow, siteSettingRow } from '../../backend/rpcSchemas'
+import {
+  parseWith,
+  publicBusinessDiscoveryResponse,
+  siteContentRow,
+} from '../../backend/rpcSchemas'
 import type { Lang } from '../../i18n/index'
 import type { SiteChromePort } from '../port'
 import {
   ABOUT_SCALE_KEY,
-  DEFAULT_CHROME,
   HOMEPAGE_SCALE_KEY,
   SITE_TEXT_KEYS,
   parseScale,
@@ -25,14 +28,16 @@ import {
 const TEXT_KEYS: ReadonlySet<string> = new Set(SITE_TEXT_KEYS)
 
 export const supabaseSiteChromeAdapter: SiteChromePort = {
-  async load(lang: Lang): Promise<SiteChrome> {
+  async load(lang: Lang): Promise<SiteChrome | null> {
     try {
       const supabase = getSupabase()
-      const [contentRes, settingsRes] = await Promise.all([
+      const [contentRes, discoveryRes] = await Promise.all([
         supabase.from('site_content').select('key,lang,value').eq('lang', lang),
-        supabase.from('site_settings').select('key,value'),
+        supabase.rpc('public_business_discovery'),
       ])
-      if (contentRes.error !== null || settingsRes.error !== null) return DEFAULT_CHROME
+      if (contentRes.error !== null || discoveryRes.error !== null) return null
+      const discovery = parseWith(publicBusinessDiscoveryResponse, discoveryRes.data)
+      if (!discovery.ok) return null
 
       // Collect only the known text keys — the result is a valid SiteText (present-or-absent keys).
       const text: Partial<Record<SiteTextKey, string>> = {}
@@ -43,27 +48,39 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
         }
       }
 
-      const settings: Record<string, string> = {}
-      for (const raw of settingsRes.data ?? []) {
-        const parsed = parseWith(siteSettingRow, raw)
-        if (parsed.ok) settings[parsed.value.key] = parsed.value.value
-      }
+      const settings = discovery.value.settings
 
       return {
         text,
         business: resolveBusinessSettings(new Map(Object.entries(settings))),
+        facts: {
+          barbers: discovery.value.barbers,
+          services: discovery.value.services.map((service) => ({
+            id: service.id,
+            barberId: service.barber_id,
+            price: service.price,
+          })),
+          schedules: discovery.value.schedules.map((schedule) => ({
+            barberId: schedule.barber_id,
+            weekday: schedule.weekday,
+            startMin: schedule.start_min,
+            endMin: schedule.end_min,
+          })),
+        },
         homepageScale: parseScale(settings[HOMEPAGE_SCALE_KEY]),
         aboutScale: parseScale(settings[ABOUT_SCALE_KEY]),
       }
     } catch {
-      return DEFAULT_CHROME
+      return null
     }
   },
 
   subscribe(lang: Lang, onChange: (chrome: SiteChrome) => void): () => void {
     const supabase = getSupabase()
     const reload = (): void => {
-      void supabaseSiteChromeAdapter.load(lang).then(onChange)
+      void supabaseSiteChromeAdapter.load(lang).then((next) => {
+        if (next !== null) onChange(next)
+      })
     }
     const channel = supabase
       .channel(`site-chrome:${lang}`)
@@ -73,6 +90,9 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
         reload,
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, reload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barber_schedules' }, reload)
       .subscribe()
 
     return () => {

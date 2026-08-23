@@ -15,6 +15,11 @@ const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3'
+const GOOGLE_REQUEST_TIMEOUT_MS = 20_000
+
+function googleRequestSignal(): AbortSignal {
+  return AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS)
+}
 
 /** Scopes: calendar.events.owned is the sensitive one (needs Google verification for production tokens);
  *  openid+email are non-sensitive and only used to show "connected as <email>" in the panel. */
@@ -52,7 +57,7 @@ async function hmacSha256(secret: string, message: string): Promise<Uint8Array> 
   return new Uint8Array(sig)
 }
 
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   let diff = 0
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
@@ -149,13 +154,24 @@ export interface GoogleEventBody {
   }
 }
 
-/** Map a booking to the Google Calendar event body. Title = customer + service; the phone goes in the
- *  description so the barber can call from the event. A 30-min popup reminder fires before the slot. */
+/** Stable Google event id for one booking. Google accepts base32hex characters; UUID hex digits
+ * satisfy that alphabet. Retries therefore target one event when Google committed an insert before
+ * its response or the local mapping was lost. */
+export function googleEventId(bookingId: string): string {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bookingId)
+  ) {
+    throw new Error('invalid booking id')
+  }
+  return `bbs${bookingId.replaceAll('-', '').toLowerCase()}`
+}
+
+/** Map a booking to the Google Calendar event body. Customer name and service identify the visit;
+ * contact details stay inside the booking system. A 30-min popup reminder fires before the slot. */
 export function buildEvent(b: BookingEventInput): GoogleEventBody {
-  const phoneLine = b.phone !== null && b.phone !== '' ? `\nTelefon: ${b.phone}` : ''
   return {
     summary: `${b.customer_name} — ${b.service_name}`,
-    description: `Kund: ${b.customer_name}${phoneLine}\nTjänst: ${b.service_name}`,
+    description: `Kund: ${b.customer_name}\nTjänst: ${b.service_name}`,
     start: { dateTime: b.start_at, timeZone: SALON_TZ },
     end: { dateTime: b.end_at, timeZone: SALON_TZ },
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] },
@@ -220,6 +236,17 @@ export function isTransientGoogleError(err: unknown): boolean {
   )
 }
 
+/** A user must reauthorize when Google rejects the stored grant. Mappings remain durable until the
+ * same account grants access again; transient failures keep normal automatic retries. */
+export function isGoogleAuthorizationError(err: unknown): boolean {
+  if (!(err instanceof GoogleHttpError) || isTransientGoogleError(err)) return false
+  return (
+    err.status === 401 ||
+    err.status === 403 ||
+    (err.status === 400 && /invalid_grant/i.test(err.body))
+  )
+}
+
 export interface RetryOptions {
   readonly retries: number
   readonly delayMs: number
@@ -260,6 +287,7 @@ export async function exchangeCode(
   const res = await fetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    signal: googleRequestSignal(),
     body: new URLSearchParams({
       code,
       client_id: clientId,
@@ -280,6 +308,7 @@ export async function refreshAccessToken(
   const res = await fetch(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    signal: googleRequestSignal(),
     body: new URLSearchParams({
       refresh_token: refreshToken,
       client_id: clientId,
@@ -289,23 +318,25 @@ export async function refreshAccessToken(
   })
   if (!res.ok) throw await httpError(res, 'google token refresh failed')
   const data = (await res.json()) as { access_token?: unknown }
-  if (typeof data.access_token !== 'string') throw new Error('google token refresh: no access_token')
+  if (typeof data.access_token !== 'string')
+    throw new Error('google token refresh: no access_token')
   return data.access_token
 }
 
 export async function insertEvent(
   accessToken: string,
   calendarId: string,
+  eventId: string,
   event: GoogleEventBody,
 ): Promise<string> {
-  const res = await fetch(
-    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-    },
-  )
+  const res = await fetch(`${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...event, id: eventId }),
+    signal: googleRequestSignal(),
+  })
+  // Booking-derived id makes duplicate-id 409 the desired existing event, not a random collision.
+  if (res.status === 409) return eventId
   if (!res.ok) throw await httpError(res, 'google event insert failed')
   const data = (await res.json()) as { id?: unknown }
   if (typeof data.id !== 'string') throw new Error('google event insert: no id')
@@ -326,6 +357,7 @@ export async function patchEvent(
       method: 'PATCH',
       headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
       body: JSON.stringify(event),
+      signal: googleRequestSignal(),
     },
   )
   if (res.status === 404 || res.status === 410) return false
@@ -340,25 +372,28 @@ export async function deleteEvent(
 ): Promise<void> {
   const res = await fetch(
     `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
-    { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: googleRequestSignal(),
+    },
   )
   // Success (204) or already gone (404/410) are both the desired end-state.
   if (res.ok || res.status === 404 || res.status === 410) return
   throw await httpError(res, 'google event delete failed')
 }
 
-/** Best-effort revoke of a refresh token at disconnect. Returns true on a 2xx (Google removed the
- *  grant — which is what frees the barber's Google "third-party access" entry), false otherwise
- *  (already-invalid token, or network). The caller LOGS a false but never fails the disconnect: the
- *  local token row is deleted regardless. */
+/** Revoke a refresh token. Google's 400 means token is already invalid/revoked, which is also the
+ * desired idempotent end state. Network and server failures remain retryable. */
 export async function revokeToken(token: string): Promise<boolean> {
   try {
     const res = await fetch(`${GOOGLE_REVOKE_URL}?token=${encodeURIComponent(token)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      signal: googleRequestSignal(),
     })
-    return res.ok
+    return res.ok || res.status === 400
   } catch {
-    return false // revoke is best-effort; disconnect still succeeds
+    return false
   }
 }

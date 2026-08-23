@@ -158,19 +158,43 @@ describe('packSlots — now-filter for today (candidate valid iff t > nowMin)', 
 describe('packSlots — degenerate inputs return no slots', () => {
   it('closeMin <= openMin → []', () => {
     expect(
-      packSlots({ openMin: 600, closeMin: 600, durationMin: 30, blocked: NO_BLOCKS, nowMin: FUTURE }),
+      packSlots({
+        openMin: 600,
+        closeMin: 600,
+        durationMin: 30,
+        blocked: NO_BLOCKS,
+        nowMin: FUTURE,
+      }),
     ).toEqual([])
     expect(
-      packSlots({ openMin: 700, closeMin: 600, durationMin: 30, blocked: NO_BLOCKS, nowMin: FUTURE }),
+      packSlots({
+        openMin: 700,
+        closeMin: 600,
+        durationMin: 30,
+        blocked: NO_BLOCKS,
+        nowMin: FUTURE,
+      }),
     ).toEqual([])
   })
 
   it('durationMin <= 0 → []', () => {
     expect(
-      packSlots({ openMin: OPEN, closeMin: CLOSE, durationMin: 0, blocked: NO_BLOCKS, nowMin: FUTURE }),
+      packSlots({
+        openMin: OPEN,
+        closeMin: CLOSE,
+        durationMin: 0,
+        blocked: NO_BLOCKS,
+        nowMin: FUTURE,
+      }),
     ).toEqual([])
     expect(
-      packSlots({ openMin: OPEN, closeMin: CLOSE, durationMin: -30, blocked: NO_BLOCKS, nowMin: FUTURE }),
+      packSlots({
+        openMin: OPEN,
+        closeMin: CLOSE,
+        durationMin: -30,
+        blocked: NO_BLOCKS,
+        nowMin: FUTURE,
+      }),
     ).toEqual([])
   })
 })

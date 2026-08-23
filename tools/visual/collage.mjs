@@ -12,9 +12,21 @@ const uri = (file) => `data:image/png;base64,${readFileSync(`${SHOTS}/${file}`).
 
 // [file, tag, caption]
 const WEB = [
-  ['hero__desktop-light.png', 'Task 1', '"Boka tid" + "Mina bokningar" sida vid sida på startsidan'],
-  ['booking-services__desktop-light.png', '§1', 'Bokning — barberarens egen, redigerbara tjänstemeny'],
-  ['mybookings-list__desktop-light.png', 'Task 1', 'Mina bokningar — kommande + tidigare (ihopfällt)'],
+  [
+    'hero__desktop-light.png',
+    'Task 1',
+    '"Boka tid" + "Mina bokningar" sida vid sida på startsidan',
+  ],
+  [
+    'booking-services__desktop-light.png',
+    '§1',
+    'Bokning — barberarens egen, redigerbara tjänstemeny',
+  ],
+  [
+    'mybookings-list__desktop-light.png',
+    'Task 1',
+    'Mina bokningar — kommande + tidigare (ihopfällt)',
+  ],
   ['about__desktop-light.png', '§3', 'Om oss — platshållare (före foto)'],
   ['about-photo__desktop-light.png', '§3', 'Om oss — med uppladdat barberarfoto'],
   ['home-xl__desktop-light.png', '§2', 'Startsida — admin-satt fontstorlek (xl)'],
@@ -40,7 +52,7 @@ const page = (title, sub, cols, items, cardMax) => `
 <!doctype html><html><head><meta charset="utf-8"/><style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #efece6; color: #1a1a1a; font-family: -apple-system,'SF Pro Text',system-ui,sans-serif;
+  body { background: #efece6; color: #1a1a1a; font-family: 'Inter Variable',-apple-system,system-ui,sans-serif;
          padding: 52px 48px 60px; }
   header { text-align: center; margin-bottom: 40px; }
   h1 { font-family: 'Playfair Display',Georgia,'Times New Roman',serif; font-weight: 600; font-size: 40px;
@@ -66,10 +78,17 @@ const page = (title, sub, cols, items, cardMax) => `
 const browser = await chromium.launch()
 try {
   for (const [name, width, html] of [
-    ['collage-web', 1680, page('Kundvyn — webb', 'Task 1 · §1 tjänster · §2 fontstorlek · §3 foto', 2, WEB, 780)],
+    [
+      'collage-web',
+      1680,
+      page('Kundvyn — webb', 'Task 1 · §1 tjänster · §2 fontstorlek · §3 foto', 2, WEB, 780),
+    ],
     ['collage-mobile', 1360, page('Kundvyn — mobil', 'Task 1 · §1 · §2 · §3', 3, MOBILE, 400)],
   ]) {
-    const ctx = await browser.newContext({ viewport: { width, height: 1200 }, deviceScaleFactor: 2 })
+    const ctx = await browser.newContext({
+      viewport: { width, height: 1200 },
+      deviceScaleFactor: 2,
+    })
     const p = await ctx.newPage()
     await p.setContent(html, { waitUntil: 'networkidle' })
     await p.evaluate(() => globalThis.document.fonts.ready)

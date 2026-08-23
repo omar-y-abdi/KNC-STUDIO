@@ -24,7 +24,13 @@ export interface UseCalendarSync extends CalendarSyncState {
 }
 
 const INITIAL: CalendarSyncState = { loading: true, status: null, error: null, busy: false }
-const DISCONNECTED: CalendarStatus = { connected: false, googleEmail: null, lastSyncError: null }
+const DISCONNECTING: CalendarStatus = {
+  connected: false,
+  disconnectPending: true,
+  repairRequired: false,
+  googleEmail: null,
+  lastSyncError: null,
+}
 
 export function useCalendarSync(port: CalendarSyncPort = defaultCalendarSyncPort): UseCalendarSync {
   const [state, setState] = useState<CalendarSyncState>(INITIAL)
@@ -72,7 +78,7 @@ export function useCalendarSync(port: CalendarSyncPort = defaultCalendarSyncPort
       setState((prev) => ({ ...prev, busy: false, error: res.error.message }))
       return
     }
-    setState({ loading: false, status: DISCONNECTED, error: null, busy: false })
+    setState({ loading: false, status: DISCONNECTING, error: null, busy: false })
   }
 
   return { ...state, connect, disconnect, refresh: load }

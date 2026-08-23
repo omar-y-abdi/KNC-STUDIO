@@ -121,6 +121,10 @@ export interface AboutStrings {
   reviewErrRating: string
   /** Shown when the phone has no finished, not-yet-reviewed confirmed booking. */
   reviewErrNoBooking: string
+  reviewErrInvalid: string
+  reviewErrChallenge: string
+  reviewErrRateLimited: string
+  reviewErrSubmit: string
   /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
   ratingValueLabel: string
   /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */
@@ -131,19 +135,22 @@ export interface AboutStrings {
 /** Strings for the "Mina bokningar" / My-appointments self-service dialog flow. */
 export interface MyBookingsStrings {
   title: string
-  /** Lookup step — enter the phone the bookings were made with. */
+  /** Lookup step - request a secure email link using booking contact details. */
   lookupLead: string
   phone: string
   phonePh: string
+  email: string
+  emailPh: string
   lookupBtn: string
   lookingUp: string
   errPhone: string
-  /** First unknown-number failure (red field + retry). */
-  notFoundFirst: string
-  /** Same number a second time — escalate to contacting the salon. */
-  notFoundEscalated: string
-  /** Network/parse failure (retry, no escalation). */
+  errEmail: string
+  accessSent: string
+  errAccess: string
+  /** Network/parse failure. */
   errSystem: string
+  errChallenge: string
+  errRateLimited: string
   /** List step. */
   upcomingTitle: string
   pastTitle: string
@@ -170,33 +177,6 @@ export interface MyBookingsStrings {
   ariaExpandPast: string
 }
 
-/** Strings for the "Avbokning" / cancellation dialog flow. */
-export interface CancelStrings {
-  title: string
-  /** Step 1 — enter the phone the booking was made with (email was removed; phone-only). */
-  phone: string
-  phonePh: string
-  lookupBtn: string
-  lookingUp: string
-  errPhone: string
-  errLookup: string
-  /** Step 2 — the looked-up booking + confirm/abort. */
-  foundLead: string
-  fBarber: string
-  fWhen: string
-  fService: string
-  confirmQuestion: string
-  confirmBtn: string
-  abortBtn: string
-  cancelling: string
-  errCancel: string
-  /** Step 3 — cancelled confirmation. */
-  doneTitle: string
-  doneVia: string
-  doneBtn: string
-  ariaClose: string
-}
-
 /** Weekday / month / weekday-header label tables, indexed by `Date.getDay()` / month index. */
 export interface CalendarLabels {
   weekdays: readonly string[]
@@ -204,14 +184,13 @@ export interface CalendarLabels {
   headers: readonly string[]
 }
 
-import { aboutSv, appSv, bookingSv, cancelSv, labelsSv, myBookingsSv } from './sv'
-import { aboutEn, appEn, bookingEn, cancelEn, labelsEn, myBookingsEn } from './en'
+import { aboutSv, appSv, bookingSv, labelsSv, myBookingsSv } from './sv'
+import { aboutEn, appEn, bookingEn, labelsEn, myBookingsEn } from './en'
 
 const BOOKING: Readonly<Record<Lang, BookingStrings>> = { sv: bookingSv, en: bookingEn }
 const APP: Readonly<Record<Lang, AppStrings>> = { sv: appSv, en: appEn }
 const LABELS: Readonly<Record<Lang, CalendarLabels>> = { sv: labelsSv, en: labelsEn }
 const ABOUT: Readonly<Record<Lang, AboutStrings>> = { sv: aboutSv, en: aboutEn }
-const CANCEL: Readonly<Record<Lang, CancelStrings>> = { sv: cancelSv, en: cancelEn }
 const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
   sv: myBookingsSv,
   en: myBookingsEn,
@@ -221,5 +200,4 @@ export const bookingStrings = (lang: Lang): BookingStrings => BOOKING[lang]
 export const appStrings = (lang: Lang): AppStrings => APP[lang]
 export const calendarLabels = (lang: Lang): CalendarLabels => LABELS[lang]
 export const aboutStrings = (lang: Lang): AboutStrings => ABOUT[lang]
-export const cancelStrings = (lang: Lang): CancelStrings => CANCEL[lang]
 export const myBookingsStrings = (lang: Lang): MyBookingsStrings => MY_BOOKINGS[lang]

@@ -22,8 +22,8 @@ select lives_ok(
     values
       ('hassan','h','Hår',350,45,
        '2099-01-01 09:00+00','2099-01-01 09:45+00',
-       'Test Kund','sms','0701234567',null,'sv')$$,
-  'valid sms booking inserts'
+       'Test Kund','phone','0701234567',null,'sv')$$,
+  'valid phone booking inserts'
 );
 
 select lives_ok(
@@ -43,7 +43,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('nope','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','0701234567',null,'sv')$$,
+            'X','phone','0701234567',null,'sv')$$,
   -- Was a CHECK (23514) in 0001; migration 0009 replaced the hardcoded barber list with a FK to
   -- public.barbers, so an unknown barber now raises foreign_key_violation (23503). Still rejected.
   '23503', null, 'barber_id ''nope'' rejected (now by the FK to barbers)'
@@ -63,7 +63,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:45+00','2099-02-01 09:00+00',
-            'X','sms','0701234567',null,'sv')$$,
+            'X','phone','0701234567',null,'sv')$$,
   '23514', null, 'end_at <= start_at rejected (bookings_time_order)'
 );
 
@@ -72,7 +72,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:00+00',
-            'X','sms','0701234567',null,'sv')$$,
+            'X','phone','0701234567',null,'sv')$$,
   '23514', null, 'end_at == start_at rejected (range must be non-empty)'
 );
 
@@ -81,7 +81,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms',null,null,'sv')$$,
+            'X','phone',null,null,'sv')$$,
   '23514', null, 'sms with NULL phone rejected (bookings_contact_matches_method)'
 );
 
@@ -99,7 +99,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang, status, cancelled_at)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','0701234567',null,'sv','cancelled',null)$$,
+            'X','phone','0701234567',null,'sv','cancelled',null)$$,
   '23514', null, 'cancelled status with NULL cancelled_at rejected (bookings_cancel_consistency)'
 );
 
@@ -108,7 +108,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','070123',null,'sv')$$,
+            'X','phone','070123',null,'sv')$$,
   '23514', null, 'phone failing ^07[0-9]{8}$ rejected'
 );
 
@@ -117,7 +117,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',-1,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','0701234567',null,'sv')$$,
+            'X','phone','0701234567',null,'sv')$$,
   '23514', null, 'negative price rejected'
 );
 
@@ -126,7 +126,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,0,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','0701234567',null,'sv')$$,
+            'X','phone','0701234567',null,'sv')$$,
   '23514', null, 'duration_min = 0 rejected'
 );
 
@@ -135,7 +135,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            '','sms','0701234567',null,'sv')$$,
+            '','phone','0701234567',null,'sv')$$,
   '23514', null, 'empty customer_name rejected'
 );
 
@@ -144,7 +144,7 @@ select throws_ok(
       (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
        customer_name, method, phone, email, lang)
     values ('hassan','h','Hår',350,45,'2099-02-01 09:00+00','2099-02-01 09:45+00',
-            'X','sms','0701234567',null,'de')$$,
+            'X','phone','0701234567',null,'de')$$,
   '23514', null, 'lang ''de'' rejected'
 );
 

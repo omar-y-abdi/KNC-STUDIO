@@ -1,8 +1,8 @@
-// The real (Supabase) BookingPort adapter. `submit` calls the `create_booking` RPC; `availability`
-// calls the schedule-aware `available_slots` RPC and returns its AVAILABLE start times VERBATIM (the
-// ascending `"HH:MM"` list the UI renders as selectable chips). Links for a successful submit are
-// built with the EXACT same `buildLinks` the mock uses, so the confirmation modal (.ics + Google Cal
-// + maps) is identical regardless of backend.
+// The real (Supabase) BookingPort adapter. `submit` invokes the protected `submit-booking` Edge
+// gateway; `availability` calls the schedule-aware `available_slots` RPC and returns its AVAILABLE
+// start times VERBATIM (the ascending `"HH:MM"` list the UI renders as selectable chips). Links for a
+// successful submit are built with the EXACT same `buildLinks` the mock uses, so the confirmation
+// modal (.ics + Google Cal + maps) is identical regardless of backend.
 //
 // `available_slots(p_barber_id, p_date, p_duration_min)` is schedule-aware: it returns NOTHING when
 // the barber is off that weekday or on time-off, and otherwise the AVAILABLE start times on a fixed

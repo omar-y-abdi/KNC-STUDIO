@@ -7,8 +7,8 @@ import type { Lang } from '../i18n/index'
 import type { SiteChrome } from './siteChrome'
 
 export interface SiteChromePort {
-  /** The homepage chrome for `lang`. Resolves to `DEFAULT_CHROME` under the mock. */
-  load(lang: Lang): Promise<SiteChrome>
+  /** The homepage chrome for `lang`, or `null` when backend data is unavailable or malformed. */
+  load(lang: Lang): Promise<SiteChrome | null>
   /** Subscribe an open public page to owner edits. Omitted by static/offline adapters. */
   subscribe?(lang: Lang, onChange: (chrome: SiteChrome) => void): () => void
 }

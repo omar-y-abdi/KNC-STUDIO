@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Integritetspolicy — Blade &amp; Blend Studio</title>
     <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://bladeblendstudio.se/privacy" />
     <style>
       :root {
         color-scheme: light dark;
@@ -30,7 +31,7 @@
         margin: 0;
         background: var(--bg);
         color: var(--fg);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
       }
@@ -87,13 +88,14 @@
       <!-- ===================== SVENSKA ===================== -->
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 24 juli 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 23 augusti 2026</p>
 
       <p>
-        Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information när
-        en barberare frivilligt kopplar sitt Google-konto för att spegla sina bokningar till Google
-        Calendar. Endast barberare hos studion använder denna koppling — den är aldrig påtvingad, och
-        kunder berörs inte av den.
+        Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information
+        när en barberare frivilligt kopplar sitt Google-konto för att spegla sina bokningar till
+        Google Calendar. Endast barberare hos studion använder kopplingen och den är aldrig
+        påtvingad. För en synkad bokning skrivs kundens namn, behandling och bokad tid till den
+        tilldelade barberarens kalender. Telefonnummer och e-post skrivs inte till Google Calendar.
       </p>
 
       <h2>Bokningsformulär och bot-skydd (Cloudflare Turnstile)</h2>
@@ -102,9 +104,12 @@
         Turnstile. Verifieringen körs osynligt i bakgrunden när du skickar en bokning — det finns
         ingen ruta att bocka i och ingen pusselutmaning. För detta kan Cloudflare behandla teknisk
         information om din enhet och webbläsare för att avgöra om förfrågan sannolikt kommer från en
-        människa. Turnstile använder inte denna information för att spåra dig mellan webbplatser eller
-        för annonsering. Cloudflares behandling beskrivs i
-        <a href="https://www.cloudflare.com/turnstile-privacy-policy/" target="_blank" rel="noopener noreferrer"
+        människa. Turnstile använder inte denna information för att spåra dig mellan webbplatser
+        eller för annonsering. Cloudflares behandling beskrivs i
+        <a
+          href="https://www.cloudflare.com/turnstile-privacy-policy/"
+          target="_blank"
+          rel="noopener noreferrer"
           >Cloudflares Turnstile Privacy Addendum</a
         >.
       </p>
@@ -113,38 +118,44 @@
       <p>När en barberare väljer att koppla sitt Google-konto begär vi följande behörigheter:</p>
       <ul>
         <li>
-          <strong>Google Calendar-händelser</strong> (<code>calendar.events</code>) — för att skapa,
-          uppdatera och ta bort kalenderhändelser som motsvarar barberarens bokningar. Vi läser eller
-          rör aldrig andra händelser i kalendern än de vi själva skapat för bokningar.
+          <strong>Google Calendar-händelser i barberarens egna kalendrar</strong>
+          (<code>calendar.events.owned</code>) — för att skapa, uppdatera och ta bort
+          kalenderhändelser som motsvarar barberarens bokningar. Vi läser eller rör aldrig andra
+          händelser i kalendern än de vi själva skapat för bokningar.
         </li>
         <li>
           <strong>E-postadress och grundläggande konto-id</strong> (<code>openid</code>,
-          <code>email</code>) — enbart för att visa "kopplad som &lt;din e-post&gt;" i adminpanelen så
-          att barberaren ser vilket konto som är anslutet.
+          <code>email</code>) — enbart för att visa "kopplad som &lt;din e-post&gt;" i adminpanelen
+          så att barberaren ser vilket konto som är anslutet.
         </li>
       </ul>
 
       <h2>Hur data lagras och skyddas</h2>
       <p>
         Kopplingen sparar en <em>refresh token</em> från Google. Den lagras krypterad i vila hos vår
-        databasleverantör (Supabase), är åtkomlig endast av tjänstens server (aldrig av webbläsaren eller
-        någon annan barberare), och används enbart för att synka bokningar till just den barberarens
-        kalender. Vi säljer aldrig data och delar den aldrig med tredje part för annonsering eller andra
-        ändamål.
+        databasleverantör (Supabase), är åtkomlig endast av tjänstens server (aldrig av webbläsaren
+        eller någon annan barberare), och används enbart för att synka bokningar till just den
+        barberarens kalender. Vi säljer aldrig data och delar den aldrig med tredje part för
+        annonsering eller andra ändamål.
       </p>
 
       <h2>Lagringstid och radering</h2>
       <p>
-        När barberaren trycker "Koppla loss" återkallas token hos Google och raderas från vår databas
-        omedelbart. Kalenderhändelser som redan skapats ligger kvar i barberarens egen Google Calendar
-        (det är barberarens riktiga bokningar) och kan raderas av barberaren själv när som helst.
+        När barberaren trycker "Koppla loss" stoppas nya synkningar omedelbart. Tjänsten tar
+        därefter bort kalenderhändelser som den själv har skapat. Googles refresh token behålls
+        endast under denna rensning, återkallas hos Google och raderas från vår databas när
+        rensningen har lyckats. Om Google-behörigheten redan har återkallats måste barberaren
+        återansluta samma Google-konto för att rensningen ska kunna slutföras.
       </p>
 
       <h2>Google Limited Use</h2>
       <p>
         Blade &amp; Blend Studios användning och överföring av information som mottagits från Google
         API:er följer
-        <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer"
+        <a
+          href="https://developers.google.com/terms/api-services-user-data-policy"
+          target="_blank"
+          rel="noopener noreferrer"
           >Google API Services User Data Policy</a
         >, inklusive kraven på begränsad användning (Limited Use).
       </p>
@@ -157,63 +168,77 @@
       <!-- ===================== ENGLISH ===================== -->
       <p class="lang">English</p>
       <h1>Privacy Policy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Last updated 24 July 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Last updated 23 August 2026</p>
 
       <p>
-        This policy describes how Blade &amp; Blend Studio ("we", "the service") handles information when
-        a barber voluntarily connects their Google account to mirror their bookings into Google Calendar.
-        Only the studio's barbers use this connection — it is never mandatory, and customers are not
-        affected by it.
+        This policy describes how Blade &amp; Blend Studio ("we", "the service") handles information
+        when a barber voluntarily connects their Google account to mirror their bookings into Google
+        Calendar. Only the studio's barbers use this connection and it is never mandatory. For a
+        synced booking, the customer's name, service, and appointment time are written to the
+        assigned barber's calendar. Phone numbers and email addresses are not written to Google
+        Calendar.
       </p>
 
       <h2>Booking form and bot protection (Cloudflare Turnstile)</h2>
       <p>
         The public booking form is protected against automated spam and abuse with Cloudflare
-        Turnstile. The verification runs invisibly in the background when you submit a booking — there
-        is no checkbox to tick and no puzzle challenge. To do this, Cloudflare may process technical
-        information about your device and browser to determine whether the request is likely to come
-        from a human. Turnstile does not use this information to track you across sites or for
-        advertising. Cloudflare's processing is described in
-        <a href="https://www.cloudflare.com/turnstile-privacy-policy/" target="_blank" rel="noopener noreferrer"
+        Turnstile. The verification runs invisibly in the background when you submit a booking —
+        there is no checkbox to tick and no puzzle challenge. To do this, Cloudflare may process
+        technical information about your device and browser to determine whether the request is
+        likely to come from a human. Turnstile does not use this information to track you across
+        sites or for advertising. Cloudflare's processing is described in
+        <a
+          href="https://www.cloudflare.com/turnstile-privacy-policy/"
+          target="_blank"
+          rel="noopener noreferrer"
           >Cloudflare's Turnstile Privacy Addendum</a
         >.
       </p>
 
       <h2>Google data we access</h2>
-      <p>When a barber chooses to connect their Google account, we request the following permissions:</p>
+      <p>
+        When a barber chooses to connect their Google account, we request the following permissions:
+      </p>
       <ul>
         <li>
-          <strong>Google Calendar events</strong> (<code>calendar.events</code>) — to create, update, and
-          delete calendar events that correspond to the barber's bookings. We never read or touch calendar
-          events other than the booking events we ourselves created.
+          <strong>Google Calendar events on calendars owned by the barber</strong>
+          (<code>calendar.events.owned</code>) — to create, update, and delete calendar events that
+          correspond to the barber's bookings. We never read or touch calendar events other than the
+          booking events we ourselves created.
         </li>
         <li>
-          <strong>Email address and basic account id</strong> (<code>openid</code>, <code>email</code>) —
-          solely to display "connected as &lt;your email&gt;" in the admin panel so the barber can see
-          which account is linked.
+          <strong>Email address and basic account id</strong> (<code>openid</code>,
+          <code>email</code>) — solely to display "connected as &lt;your email&gt;" in the admin
+          panel so the barber can see which account is linked.
         </li>
       </ul>
 
       <h2>How data is stored and protected</h2>
       <p>
         The connection stores a Google <em>refresh token</em>. It is held encrypted at rest by our
-        database provider (Supabase), is accessible only by the service's server (never by the browser or
-        any other barber), and is used solely to sync bookings into that barber's own calendar. We never
-        sell data and never share it with third parties for advertising or any other purpose.
+        database provider (Supabase), is accessible only by the service's server (never by the
+        browser or any other barber), and is used solely to sync bookings into that barber's own
+        calendar. We never sell data and never share it with third parties for advertising or any
+        other purpose.
       </p>
 
       <h2>Retention and deletion</h2>
       <p>
-        When the barber taps "Disconnect", the token is revoked at Google and deleted from our database
-        immediately. Calendar events already created remain in the barber's own Google Calendar (they are
-        the barber's real bookings) and can be deleted by the barber at any time.
+        When the barber taps "Disconnect", new synchronization stops immediately. The service then
+        deletes Calendar events it created. Google's refresh token is retained only during this
+        cleanup, revoked at Google, and deleted from our database after cleanup succeeds. If Google
+        access was already revoked, the barber must reconnect the same Google account so cleanup can
+        finish.
       </p>
 
       <h2>Google Limited Use</h2>
       <p>
-        Blade &amp; Blend Studio's use and transfer of information received from Google APIs will adhere to
-        the
-        <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer"
+        Blade &amp; Blend Studio's use and transfer of information received from Google APIs will
+        adhere to the
+        <a
+          href="https://developers.google.com/terms/api-services-user-data-policy"
+          target="_blank"
+          rel="noopener noreferrer"
           >Google API Services User Data Policy</a
         >, including the Limited Use requirements.
       </p>

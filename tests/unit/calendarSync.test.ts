@@ -5,13 +5,18 @@
 // The shared module uses only Web-standard globals (crypto.subtle, TextEncoder/atob), so it imports
 // cleanly in Node/vitest as well as in the Deno edge runtime.
 
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEvent,
+  googleEventId,
   GoogleHttpError,
+  insertEvent,
   isTransientGoogleError,
+  OAUTH_SCOPE,
   revokeToken,
   signState,
+  timingSafeEqual,
   verifyState,
   withGoogleRetry,
 } from '../../supabase/functions/_shared/calendar'
@@ -22,6 +27,12 @@ const NOW_MS = 1_700_000_000_000
 const NOW_SEC = NOW_MS / 1000
 
 describe('signState / verifyState', () => {
+  it('compares equal-length webhook secrets without early mismatch exits', () => {
+    expect(timingSafeEqual('same-secret', 'same-secret')).toBe(true)
+    expect(timingSafeEqual('same-secret', 'same-Secret')).toBe(false)
+    expect(timingSafeEqual('same-secret', 'short')).toBe(false)
+  })
+
   it('round-trips a valid payload', async () => {
     const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
     const payload = await verifyState(token, SECRET, 600, NOW_MS)
@@ -82,7 +93,8 @@ describe('buildEvent', () => {
     const e = buildEvent(base)
     expect(e.summary).toBe('Omar — Skägg & puts')
     expect(e.description).toContain('Kund: Omar')
-    expect(e.description).toContain('Telefon: 0701234567')
+    expect(e.description).not.toContain('0701234567')
+    expect(e.description).not.toContain('Telefon')
     expect(e.description).toContain('Tjänst: Skägg & puts')
     expect(e.start).toEqual({ dateTime: base.start_at, timeZone: 'Europe/Stockholm' })
     expect(e.end).toEqual({ dateTime: base.end_at, timeZone: 'Europe/Stockholm' })
@@ -90,9 +102,81 @@ describe('buildEvent', () => {
     expect(e.reminders.overrides[0]).toEqual({ method: 'popup', minutes: 30 })
   })
 
-  it('omits the phone line when phone is null', () => {
+  it('never includes contact details in the event', () => {
     const e = buildEvent({ ...base, phone: null })
     expect(e.description).not.toContain('Telefon')
+  })
+})
+
+describe('public Calendar privacy disclosure', () => {
+  const privacy = readFileSync(
+    new URL('../../public/privacy.html', import.meta.url),
+    'utf8',
+  ).replace(/\s+/g, ' ')
+  const setup = readFileSync(
+    new URL('../../supabase/functions/calendar-sync/README.md', import.meta.url),
+    'utf8',
+  )
+
+  it('matches minimized event content and durable disconnect cleanup', () => {
+    expect(privacy).toContain('kundens namn, behandling och bokad tid')
+    expect(privacy).toContain("customer's name, service, and appointment time")
+    expect(privacy).toContain('Telefonnummer och e-post skrivs inte till Google Calendar')
+    expect(privacy).toContain(
+      'Phone numbers and email addresses are not written to Google Calendar',
+    )
+    expect(privacy).toContain('refresh token behålls endast under')
+    expect(privacy).toContain('refresh token is retained only during this')
+    expect(privacy).not.toContain('Kalenderhändelser som redan skapats ligger kvar')
+    expect(privacy).not.toContain('Calendar events already created remain')
+  })
+
+  it('documents the exact production scope used by the OAuth redirect', () => {
+    expect(OAUTH_SCOPE).toContain('https://www.googleapis.com/auth/calendar.events.owned')
+    expect(setup).toContain('https://www.googleapis.com/auth/calendar.events.owned')
+    expect(privacy).toContain('<code>calendar.events.owned</code>')
+    expect(setup).not.toContain('https://www.googleapis.com/auth/calendar.events`')
+    expect(privacy).not.toContain('<code>calendar.events</code>')
+  })
+})
+
+describe('idempotent event insertion', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const bookingId = '4d3f88f7-5e08-4d03-abfa-9604816f5614'
+  const eventId = 'bbs4d3f88f75e084d03abfa9604816f5614'
+  const event = buildEvent({
+    service_name: 'Klippning',
+    customer_name: 'Omar',
+    phone: '0701234567',
+    start_at: '2026-07-24T12:00:00+00:00',
+    end_at: '2026-07-24T12:30:00+00:00',
+  })
+
+  it('derives a stable Google-compatible id from the booking UUID', () => {
+    expect(googleEventId(bookingId)).toBe(eventId)
+    expect(() => googleEventId('not-a-uuid')).toThrow('invalid booking id')
+  })
+
+  it('sends the stable id in the insert body', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: eventId }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({ id: eventId, summary: event.summary })
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('treats duplicate-id 409 as idempotent success', async () => {
+    vi.stubGlobal('fetch', async () => new Response('duplicate', { status: 409 }))
+    await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
   })
 })
 
@@ -100,19 +184,53 @@ describe('parseCalendarStatus', () => {
   it('parses a connected row', () => {
     expect(
       parseCalendarStatus({ connected: true, google_email: 'a@b.se', last_sync_error: null }),
-    ).toEqual({ connected: true, googleEmail: 'a@b.se', lastSyncError: null })
+    ).toEqual({
+      connected: true,
+      disconnectPending: false,
+      repairRequired: false,
+      googleEmail: 'a@b.se',
+      lastSyncError: null,
+    })
   })
 
   it('defaults to disconnected on junk', () => {
     expect(parseCalendarStatus(null)).toEqual({
       connected: false,
+      disconnectPending: false,
+      repairRequired: false,
       googleEmail: null,
       lastSyncError: null,
     })
     expect(parseCalendarStatus({ connected: 'yes' })).toEqual({
       connected: false,
+      disconnectPending: false,
+      repairRequired: false,
       googleEmail: null,
       lastSyncError: null,
+    })
+  })
+
+  it('parses durable disconnect state', () => {
+    expect(parseCalendarStatus({ connected: false, disconnect_pending: true })).toMatchObject({
+      connected: false,
+      disconnectPending: true,
+      repairRequired: false,
+    })
+  })
+
+  it('parses a disconnect that requires same-account reauthorization', () => {
+    expect(
+      parseCalendarStatus({
+        connected: false,
+        disconnect_pending: true,
+        repair_required: true,
+        google_email: 'barber@example.test',
+      }),
+    ).toMatchObject({
+      connected: false,
+      disconnectPending: true,
+      repairRequired: true,
+      googleEmail: 'barber@example.test',
     })
   })
 
@@ -131,7 +249,9 @@ describe('isTransientGoogleError', () => {
   })
   it('treats a Calendar-API cold-start 403 as transient, other 403s as permanent', () => {
     expect(
-      isTransientGoogleError(new GoogleHttpError(403, 'x', '{"error":{"status":"SERVICE_DISABLED"}}')),
+      isTransientGoogleError(
+        new GoogleHttpError(403, 'x', '{"error":{"status":"SERVICE_DISABLED"}}'),
+      ),
     ).toBe(true)
     expect(isTransientGoogleError(new GoogleHttpError(403, 'x', 'plain forbidden'))).toBe(false)
   })
@@ -210,8 +330,13 @@ describe('revokeToken', () => {
     expect(await revokeToken('tok')).toBe(true)
   })
 
-  it('returns false on a non-2xx', async () => {
+  it('treats an already-invalid token as the desired idempotent state', async () => {
     vi.stubGlobal('fetch', async () => new Response('bad', { status: 400 }))
+    expect(await revokeToken('tok')).toBe(true)
+  })
+
+  it('returns false on a retryable server failure', async () => {
+    vi.stubGlobal('fetch', async () => new Response('bad', { status: 503 }))
     expect(await revokeToken('tok')).toBe(false)
   })
 

@@ -5,8 +5,8 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { parseWith, timeOffRow, timeOffRows } from '../adminSchemas'
-import type { AdminBarberId, AdminResult, TimeOff } from '../types'
+import { addTimeOffResponse, parseWith, timeOffRows } from '../adminSchemas'
+import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, TimeOff } from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa ledighet.'
@@ -55,24 +55,35 @@ export async function addTimeOff(
   startDate: string,
   endDate: string,
   reason: string,
-): Promise<AdminResult<TimeOff>> {
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<TimeOff>> {
   try {
-    const { data, error } = await getAdminClient()
-      .from('barber_time_off')
-      .insert({ barber_id: barberId, start_date: startDate, end_date: endDate, reason })
-      .select('id,barber_id,start_date,end_date,reason')
-      .single()
-    if (error !== null || data === null) {
-      if (error?.code === '42501') return err('forbidden', 'Du kan bara lägga till egen ledighet.')
-      if (error?.code === '23514')
-        return err('validation', 'Slutdatum måste vara efter startdatum.')
-      return err('network', WRITE_ERROR)
+    const { data, error } = await getAdminClient().rpc('admin_add_time_off', {
+      p_barber_id: barberId,
+      p_start_date: startDate,
+      p_end_date: endDate,
+      p_reason: reason,
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    const parsed = parseWith(addTimeOffResponse, data)
+    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (parsed.value.ok) return { kind: 'ok', value: toTimeOff(parsed.value.row) }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
-    const parsed = parseWith(timeOffRow, data)
-    if (!parsed.ok) return err('malformed', WRITE_ERROR)
-    return ok(toTimeOff(parsed.value))
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara lägga till egen ledighet.' },
+      }
+    }
+    return {
+      kind: 'error',
+      error: { kind: 'validation', message: 'Slutdatum måste vara efter startdatum.' },
+    }
   } catch {
-    return err('network', WRITE_ERROR)
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
   }
 }
 

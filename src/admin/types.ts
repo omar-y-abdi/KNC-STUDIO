@@ -23,10 +23,12 @@ export interface AdminProfile {
   readonly role: AdminRole
   /** The barber this account acts as (null for an owner). */
   readonly barberId: AdminBarberId | null
-  /** True when the owner just provisioned this account — the barber must pick a new password
-   *  before reaching the panel. Cleared by `set_own_password_changed()` after the change. */
+  /** Legacy compatibility gate for accounts provisioned before single-use invitations.
+   * Cleared by `set_own_password_changed()` after the change. */
   readonly mustChangePassword: boolean
 }
+
+export type BarberAccountState = 'enabled' | 'disabled'
 
 /** A barber row as the admin manages it (the full roster row, incl. inactive for the owner). */
 export interface AdminBarber {
@@ -113,6 +115,11 @@ export interface DaySchedule {
  */
 export type WeekSchedule = readonly DaySchedule[]
 
+export type AvailabilityMutationOutcome<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'booking_conflict'; readonly bookingIds: readonly string[] }
+  | { readonly kind: 'error'; readonly error: AdminError }
+
 /** A time-off block (inclusive date range), matching `barber_time_off`. */
 export interface TimeOff {
   readonly id: string
@@ -151,7 +158,7 @@ export interface AdminBooking {
   /** Appointment end instant. */
   readonly endAt: Date
   readonly customerName: string
-  readonly method: 'sms' | 'email' | 'walkin'
+  readonly method: 'phone' | 'email' | 'walkin'
   readonly phone: string | null
   readonly email: string | null
   readonly lang: Lang
@@ -224,11 +231,23 @@ export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T
  * the exact counts. Authorization, transport and parse failures collapse to `error` (an `AdminError`).
  */
 export type DeleteBarberOutcome =
-  | { readonly kind: 'ok'; readonly deletedBookings: number }
+  | {
+      readonly kind: 'ok'
+      readonly deletedBookings: number
+      readonly authCleanupPending: boolean
+    }
   | {
       readonly kind: 'has_bookings'
       readonly count: number
       readonly past: number
       readonly upcoming: number
     }
+  | {
+      readonly kind: 'has_upcoming'
+      readonly count: number
+      readonly past: number
+      readonly upcoming: number
+    }
+  | { readonly kind: 'external_cleanup_pending'; readonly calendarEvents: number }
+  | { readonly kind: 'delivery_pending' }
   | { readonly kind: 'error'; readonly error: AdminError }

@@ -2,15 +2,21 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
+import { ConfirmDialog } from '../ConfirmDialog'
 import {
+  discardFailedBookingEmailDelivery,
+  listFailedBookingEmailDeliveries,
   listEmailTemplates,
+  retryFailedBookingEmailDelivery,
   saveEmailTemplate,
   type EditableEmailTemplate,
   type EmailTemplateName,
+  type FailedBookingEmailDelivery,
 } from '../adapters/emailTemplatesAdmin'
 import type { AdminStylesBundle } from './viewTypes'
 
 interface MailViewProps {
+  readonly dark: boolean
   readonly lang: Lang
   readonly s: AdminStylesBundle
 }
@@ -31,7 +37,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Booking confirmation · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
   },
   {
     id: 'barber_confirmation',
@@ -39,7 +45,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'New booking · barber',
     languages: ['sv'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}, {booking_date}, {booking_time}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
   },
   {
     id: 'customer_cancellation',
@@ -47,7 +53,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Cancellation · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}',
   },
   {
     id: 'barber_cancellation',
@@ -55,7 +61,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Cancellation · barber',
     languages: ['sv'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}, {booking_date}, {booking_time}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
   },
   {
     id: 'customer_reminder',
@@ -63,7 +69,15 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: '24h reminder · customer',
     languages: ['sv', 'en'],
     hasSection: true,
-    placeholders: '{customer_name}, {barber_name}',
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
+  },
+  {
+    id: 'customer_booking_access',
+    sv: 'Säker länk · kund',
+    en: 'Secure link · customer',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '',
   },
   {
     id: 'auth_recovery',
@@ -71,7 +85,7 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Reset password',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '—',
+    placeholders: '{business_name}',
   },
   {
     id: 'auth_email_change',
@@ -79,7 +93,15 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     en: 'Confirm new email',
     languages: ['sv', 'en'],
     hasSection: false,
-    placeholders: '{new_email}',
+    placeholders: '{business_name}, {new_email}',
+  },
+  {
+    id: 'auth_invite',
+    sv: 'Inbjudan · barberare',
+    en: 'Invitation · barber',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '{business_name}',
   },
 ]
 
@@ -94,14 +116,26 @@ export function MailView(props: MailViewProps): JSX.Element {
   const [saving, setSaving] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<{ key: string; message: string } | null>(null)
+  const [failedDeliveries, setFailedDeliveries] = useState<readonly FailedBookingEmailDelivery[]>(
+    [],
+  )
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [retryingDelivery, setRetryingDelivery] = useState<string | null>(null)
+  const [discardingDelivery, setDiscardingDelivery] = useState<string | null>(null)
+  const [discardTarget, setDiscardTarget] = useState<FailedBookingEmailDelivery | null>(null)
 
   useEffect(() => {
     let active = true
     void (async () => {
-      const result = await listEmailTemplates()
+      const [result, failedResult] = await Promise.all([
+        listEmailTemplates(),
+        listFailedBookingEmailDeliveries(),
+      ])
       if (!active) return
       if (!result.ok) setLoadError(result.error.message)
       else setRows(new Map(result.value.map((row) => [rowKey(row.template, row.lang), row])))
+      if (!failedResult.ok) setDeliveryError(failedResult.error.message)
+      else setFailedDeliveries(failedResult.value)
       setLoaded(true)
     })()
     return () => {
@@ -141,6 +175,31 @@ export function MailView(props: MailViewProps): JSX.Element {
     }
     setRows((previous) => new Map(previous).set(key, result.value))
     setSaved(key)
+  }
+
+  const retryDelivery = async (id: string): Promise<void> => {
+    setRetryingDelivery(id)
+    setDeliveryError(null)
+    const result = await retryFailedBookingEmailDelivery(id)
+    setRetryingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
+  }
+
+  const discardDelivery = async (id: string): Promise<void> => {
+    setDiscardingDelivery(id)
+    setDeliveryError(null)
+    const result = await discardFailedBookingEmailDelivery(id)
+    setDiscardingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
+    setDiscardTarget(null)
   }
 
   const field = (
@@ -185,14 +244,96 @@ export function MailView(props: MailViewProps): JSX.Element {
         <div style={s.emptyState}>{t.mailLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', marginTop: '24px' }}>
+          <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+            <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+              {props.lang === 'sv' ? 'Misslyckade mejlleveranser' : 'Failed email deliveries'}
+            </h3>
+            <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+              {props.lang === 'sv'
+                ? 'Misslyckade mejl stoppas efter fem tillfälliga fel eller direkt vid permanenta leverans- och konfigurationsfel. Försök igen eller markera leveransen som hanterad.'
+                : 'Emails stop after five transient failures or immediately on permanent delivery and configuration errors. Retry or mark the delivery handled.'}
+            </p>
+            {deliveryError !== null ? <p style={s.errorText}>{deliveryError}</p> : null}
+            {failedDeliveries.length === 0 ? (
+              <p style={{ ...s.mutedText, margin: 0 }}>
+                {props.lang === 'sv'
+                  ? 'Inga misslyckade mejlleveranser.'
+                  : 'No failed email deliveries.'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {failedDeliveries.map((delivery) => (
+                  <div
+                    key={delivery.id}
+                    style={{
+                      border: s.input.border,
+                      borderRadius: '13px',
+                      padding: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '14px',
+                    }}
+                  >
+                    <span style={{ ...s.mutedText, margin: 0 }}>
+                      {delivery.event} · {delivery.errorCode ?? 'unknown'} · {delivery.attemptCount}{' '}
+                      {props.lang === 'sv' ? 'försök' : 'attempts'}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.primaryBtn,
+                          opacity: retryingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => void retryDelivery(delivery.id)}
+                      >
+                        {retryingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Försöker …'
+                            : 'Retrying …'
+                          : props.lang === 'sv'
+                            ? 'Försök igen'
+                            : 'Retry'}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.ghostBtn,
+                          opacity: discardingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => setDiscardTarget(delivery)}
+                      >
+                        {discardingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Hanterar …'
+                            : 'Handling …'
+                          : props.lang === 'sv'
+                            ? 'Markera hanterad'
+                            : 'Mark handled'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
           {DEFINITIONS.map((definition) => (
             <article key={definition.id} style={{ borderTop: s.card.border, paddingTop: '22px' }}>
               <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
                 {props.lang === 'sv' ? definition.sv : definition.en}
               </h3>
-              <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
-                {t.mailPlaceholderHelp}: <code>{definition.placeholders}</code>
-              </p>
+              {definition.placeholders === '' ? null : (
+                <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+                  {t.mailPlaceholderHelp}: <code>{definition.placeholders}</code>
+                </p>
+              )}
               <div
                 style={{
                   display: 'grid',
@@ -252,6 +393,25 @@ export function MailView(props: MailViewProps): JSX.Element {
             </article>
           ))}
         </div>
+      )}
+      {discardTarget === null ? null : (
+        <ConfirmDialog
+          dark={props.dark}
+          title={props.lang === 'sv' ? 'Markera mejlet som hanterat?' : 'Mark email handled?'}
+          body={
+            props.lang === 'sv'
+              ? `Leveransen för bokning ${discardTarget.bookingId} kommer inte att skickas igen. Bokningen kan därefter raderas.`
+              : `Delivery for booking ${discardTarget.bookingId} will not be retried. The booking can then be deleted.`
+          }
+          confirmLabel={props.lang === 'sv' ? 'Markera hanterad' : 'Mark handled'}
+          cancelLabel={props.lang === 'sv' ? 'Avbryt' : 'Cancel'}
+          danger={true}
+          busy={discardingDelivery === discardTarget.id}
+          onConfirm={() => void discardDelivery(discardTarget.id)}
+          onClose={() => {
+            if (discardingDelivery === null) setDiscardTarget(null)
+          }}
+        />
       )}
     </section>
   )

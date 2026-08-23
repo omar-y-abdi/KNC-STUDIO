@@ -1,5 +1,10 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildEmailMessage, loadEmailTemplate, sendViaResend } from '../_shared/email.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  buildEmailMessage,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  sendViaResend,
+} from '../_shared/email.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +37,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const caller = jwt ? await service.auth.getUser(jwt) : null
   if (caller === null || caller.error || caller.data.user === null || !caller.data.user.email) {
     return json({ ok: false, error: 'unauthorized' }, 401)
+  }
+  const profile = await service
+    .from('profiles')
+    .select('account_enabled')
+    .eq('id', caller.data.user.id)
+    .single()
+  if (profile.error !== null || profile.data?.account_enabled !== true) {
+    return json({ ok: false, error: 'forbidden' }, 403)
   }
   let raw: unknown
   try {
@@ -67,6 +80,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   try {
     const copy = await loadEmailTemplate(service, 'auth_email_change', lang)
+    const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/auth/confirm?token_hash=${encodeURIComponent(generated.data.properties.hashed_token)}&type=email_change`
     const message = buildEmailMessage({
       to: newEmail,
@@ -74,6 +88,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       copy,
       variables: { new_email: newEmail },
       ctaHref: link,
+      business,
     })
     await sendViaResend(
       message,

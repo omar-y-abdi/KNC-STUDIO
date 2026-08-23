@@ -87,7 +87,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       <div style={s.overlayHeaderStyle}>
         <span
           id="knc-details-title"
-          style="font-family:'SF Pro Display';font-weight:600;font-size:17px;"
+          style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.yourDetails}
         </span>

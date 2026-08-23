@@ -1,5 +1,10 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildEmailMessage, loadEmailTemplate, sendViaResend } from '../_shared/email.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  buildEmailMessage,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  sendViaResend,
+} from '../_shared/email.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -53,8 +58,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (generated.error) return json({ ok: true })
   try {
     const copy = await loadEmailTemplate(service, 'auth_recovery', lang)
+    const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/reset?token_hash=${encodeURIComponent(generated.data.properties.hashed_token)}&type=recovery`
-    const message = buildEmailMessage({ to: email, lang, copy, ctaHref: link })
+    const message = buildEmailMessage({ to: email, lang, copy, ctaHref: link, business })
     await sendViaResend(
       message,
       resendKey,

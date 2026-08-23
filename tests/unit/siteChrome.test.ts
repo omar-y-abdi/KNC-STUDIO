@@ -13,6 +13,7 @@ import {
   textOrDefault,
   SIZE_PRESETS,
 } from '../../src/site/siteChrome'
+import { canReplaceDocumentMetadata, resolveSiteChromeSnapshot } from '../../src/site/useSiteChrome'
 
 describe('parseScale', () => {
   it('passes through the four valid presets', () => {
@@ -175,6 +176,39 @@ describe('business settings', () => {
     expect(parseCancellationPolicyHours('169')).toBe(
       DEFAULT_CHROME.business.cancellationPolicyHours,
     )
+  })
+})
+
+describe('hydration metadata readiness', () => {
+  it('preserves Worker metadata until backend business data resolves', () => {
+    expect(resolveSiteChromeSnapshot({}, 'sv', false)).toEqual({
+      chrome: DEFAULT_CHROME,
+      metadataReady: false,
+    })
+  })
+
+  it('allows metadata updates for resolved backend data and offline defaults', () => {
+    const loaded = { ...DEFAULT_CHROME, text: { kicker: 'Loaded' } }
+    expect(resolveSiteChromeSnapshot({ en: loaded }, 'en', false)).toEqual({
+      chrome: loaded,
+      metadataReady: true,
+    })
+    expect(resolveSiteChromeSnapshot({}, 'sv', true)).toEqual({
+      chrome: DEFAULT_CHROME,
+      metadataReady: true,
+    })
+  })
+
+  it('preserves complete Worker JSON-LD but repairs empty static metadata immediately', () => {
+    const complete = JSON.stringify({
+      '@type': 'HairSalon',
+      name: 'Current Studio',
+      address: { streetAddress: 'Current Street 7' },
+    })
+    expect(canReplaceDocumentMetadata(false, complete)).toBe(false)
+    expect(canReplaceDocumentMetadata(false, '{}')).toBe(true)
+    expect(canReplaceDocumentMetadata(false, 'malformed')).toBe(true)
+    expect(canReplaceDocumentMetadata(true, complete)).toBe(true)
   })
 })
 

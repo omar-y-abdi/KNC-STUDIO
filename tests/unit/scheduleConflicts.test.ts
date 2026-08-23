@@ -21,7 +21,7 @@ const bk = (over: Partial<AdminBooking> & { startAt: Date }): AdminBooking => ({
   durationMin: 45,
   endAt: new Date(over.startAt.getTime() + 45 * 60000),
   customerName: 'Test Testsson',
-  method: 'sms',
+  method: 'phone',
   phone: '0700000000',
   email: null,
   lang: 'sv',
@@ -47,7 +47,9 @@ describe('allowedUnder', () => {
   })
   it('rejects when the appointment END spills past the narrowed closing time', () => {
     // 12:00 + 45 = 12:45, hours narrowed to 09:00–12:00 (540–720) → does not fit.
-    expect(allowedUnder(week({ 2: { endMin: 720 } }), stockholmWallClockDate(tue12), 45)).toBe(false)
+    expect(allowedUnder(week({ 2: { endMin: 720 } }), stockholmWallClockDate(tue12), 45)).toBe(
+      false,
+    )
   })
   it('rejects when the start is before the narrowed opening time', () => {
     expect(allowedUnder(week({ 2: { startMin: 780 } }), stockholmWallClockDate(tue12), 45)).toBe(
@@ -104,14 +106,14 @@ describe('orphansUnderWeek (trigger B — veckoschema change)', () => {
   const now = at('2026-07-01T00:00:00+02:00')
 
   it('flags a booking when its weekday is turned off', () => {
-    expect(orphansUnderWeek([bk({ startAt: tue12 })], week({ 2: { working: false } }), now)).toHaveLength(
-      1,
-    )
+    expect(
+      orphansUnderWeek([bk({ startAt: tue12 })], week({ 2: { working: false } }), now),
+    ).toHaveLength(1)
   })
   it('flags a booking that falls outside narrowed hours', () => {
-    expect(orphansUnderWeek([bk({ startAt: tue12 })], week({ 2: { endMin: 720 } }), now)).toHaveLength(
-      1,
-    )
+    expect(
+      orphansUnderWeek([bk({ startAt: tue12 })], week({ 2: { endMin: 720 } }), now),
+    ).toHaveLength(1)
   })
   it('does NOT flag a booking that still fits', () => {
     expect(orphansUnderWeek([bk({ startAt: tue12 })], week(), now)).toHaveLength(0)

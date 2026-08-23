@@ -1,19 +1,25 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEmailMessage,
+  deliverEmailBatch,
   defaultEmailTemplate,
+  loadEmailBusiness,
   loadEmailTemplate,
   sendViaResend,
   type EmailDetailRow,
+  type EmailBusiness,
   type EmailMessage,
   type EmailTemplateName,
 } from '../_shared/email.ts'
+import { timingSafeEqual } from '../_shared/calendar.ts'
 
 interface WebhookEnvelope {
   readonly record?: unknown
   readonly event?: unknown
 }
 type BookingEmailEvent = 'booking_confirmed' | 'booking_cancelled' | 'booking_reminder'
+type DeliveryStatus = 'delivered' | 'skipped' | 'superseded'
+type DeliveryKind = 'customer' | 'barber'
 interface BookingRow {
   readonly id: string
   readonly email: string | null
@@ -29,14 +35,27 @@ interface BookingRow {
   readonly status: 'confirmed' | 'cancelled'
 }
 type RequestResult =
-  | { readonly ok: true; readonly id: string; readonly event: BookingEmailEvent }
+  | {
+      readonly ok: true
+      readonly id: string | null
+      readonly event: BookingEmailEvent | null
+      readonly deliveryId: string | null
+    }
   | { readonly ok: false; readonly error: string }
+interface DeliveryJob {
+  readonly bookingId: string
+  readonly event: Exclude<BookingEmailEvent, 'booking_reminder'>
+  readonly sentKinds: readonly DeliveryKind[]
+}
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 function nullableString(value: unknown): string | null {
   return nonEmpty(value) ? value : null
+}
+function isDeliveryKind(value: unknown): value is DeliveryKind {
+  return value === 'customer' || value === 'barber'
 }
 function parseRequest(raw: unknown): RequestResult {
   if (typeof raw !== 'object' || raw === null)
@@ -46,6 +65,9 @@ function parseRequest(raw: unknown): RequestResult {
   if (typeof candidate !== 'object' || candidate === null)
     return { ok: false, error: 'missing record' }
   const record = candidate as Record<string, unknown>
+  if (nonEmpty(record.delivery_id)) {
+    return { ok: true, id: null, event: null, deliveryId: record.delivery_id }
+  }
   if (!nonEmpty(record.id)) return { ok: false, error: 'id is required' }
   const event = record.event ?? envelope.event ?? 'booking_confirmed'
   if (
@@ -55,7 +77,7 @@ function parseRequest(raw: unknown): RequestResult {
   ) {
     return { ok: false, error: 'invalid event' }
   }
-  return { ok: true, id: record.id, event }
+  return { ok: true, id: record.id, event, deliveryId: null }
 }
 
 function serviceClient() {
@@ -98,6 +120,49 @@ async function fetchBooking(id: string): Promise<BookingRow | null> {
   }
 }
 
+async function fetchDelivery(id: string): Promise<DeliveryJob | null | 'unavailable'> {
+  const client = serviceClient()
+  if (client === null) return 'unavailable'
+  const { data, error } = await client.rpc('booking_email_delivery_for_dispatch', { p_id: id })
+  if (error) return 'unavailable'
+  if (typeof data !== 'object' || data === null) return null
+  const row = data as Record<string, unknown>
+  if (!nonEmpty(row.booking_id) || !Array.isArray(row.sent_kinds)) return null
+  if (row.event !== 'booking_confirmed' && row.event !== 'booking_cancelled') return null
+  if (!row.sent_kinds.every(isDeliveryKind)) return null
+  return { bookingId: row.booking_id, event: row.event, sentKinds: row.sent_kinds }
+}
+
+async function completeDelivery(id: string, status: DeliveryStatus): Promise<boolean> {
+  const client = serviceClient()
+  if (client === null) return false
+  const { data, error } = await client.rpc('complete_booking_email_delivery', {
+    p_id: id,
+    p_status: status,
+  })
+  return error === null && data === true
+}
+
+async function failDelivery(
+  id: string,
+  errorCode:
+    'not_configured' | 'message_build_failed' | 'send_failed_transient' | 'send_failed_permanent',
+) {
+  const client = serviceClient()
+  if (client === null) return
+  await client.rpc('fail_booking_email_delivery', { p_id: id, p_error_code: errorCode })
+}
+
+async function markDeliveryRecipient(id: string, kind: DeliveryKind): Promise<boolean> {
+  const client = serviceClient()
+  if (client === null) return false
+  const { data, error } = await client.rpc('mark_booking_email_delivery_recipient', {
+    p_id: id,
+    p_kind: kind,
+  })
+  return error === null && data === true
+}
+
 async function markReminder(id: string): Promise<boolean> {
   const client = serviceClient()
   if (client === null) return false
@@ -122,13 +187,14 @@ function formatWhen(booking: BookingRow): { readonly date: string; readonly time
   return { date, time }
 }
 
-function variables(booking: BookingRow): Readonly<Record<string, string>> {
+function variables(booking: BookingRow, business: EmailBusiness): Readonly<Record<string, string>> {
   const when = formatWhen(booking)
   return {
     customer_name: booking.customerName,
     barber_name: booking.barberName,
     booking_date: when.date,
     booking_time: when.time,
+    cancellation_hours: String(business.cancellationPolicyHours),
   }
 }
 
@@ -167,6 +233,7 @@ async function message(
   to: string,
   templateName: EmailTemplateName,
   rows: readonly EmailDetailRow[],
+  business: EmailBusiness,
   adminLink = false,
 ): Promise<EmailMessage> {
   const client = serviceClient()
@@ -179,24 +246,30 @@ async function message(
     to,
     lang,
     copy,
-    variables: variables(booking),
+    variables: variables(booking, business),
     rows,
     ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se',
+    business,
   })
 }
 
 async function buildMessages(
   event: BookingEmailEvent,
   booking: BookingRow,
-): Promise<readonly { kind: string; message: EmailMessage }[]> {
-  const candidates: Array<Promise<{ kind: string; message: EmailMessage }> | null> =
+  business: EmailBusiness,
+): Promise<readonly { kind: DeliveryKind; message: EmailMessage }[]> {
+  const candidates: Array<Promise<{ kind: DeliveryKind; message: EmailMessage }> | null> =
     event === 'booking_confirmed'
       ? [
           booking.email === null
             ? null
-            : message(booking, booking.email, 'customer_confirmation', customerRows(booking)).then(
-                (message) => ({ kind: 'customer', message }),
-              ),
+            : message(
+                booking,
+                booking.email,
+                'customer_confirmation',
+                customerRows(booking),
+                business,
+              ).then((message) => ({ kind: 'customer', message })),
           booking.barberEmail === null
             ? null
             : message(
@@ -204,6 +277,7 @@ async function buildMessages(
                 booking.barberEmail,
                 'barber_confirmation',
                 barberRows(booking),
+                business,
                 true,
               ).then((message) => ({ kind: 'barber', message })),
         ]
@@ -216,6 +290,7 @@ async function buildMessages(
                   booking.email,
                   'customer_cancellation',
                   customerRows(booking),
+                  business,
                 ).then((message) => ({ kind: 'customer', message })),
             booking.barberEmail === null
               ? null
@@ -224,19 +299,24 @@ async function buildMessages(
                   booking.barberEmail,
                   'barber_cancellation',
                   barberRows(booking),
+                  business,
                   true,
                 ).then((message) => ({ kind: 'barber', message })),
           ]
         : [
             booking.email === null
               ? null
-              : message(booking, booking.email, 'customer_reminder', customerRows(booking)).then(
-                  (message) => ({ kind: 'customer', message }),
-                ),
+              : message(
+                  booking,
+                  booking.email,
+                  'customer_reminder',
+                  customerRows(booking),
+                  business,
+                ).then((message) => ({ kind: 'customer', message })),
           ]
   return Promise.all(
     candidates.filter(
-      (candidate): candidate is Promise<{ kind: string; message: EmailMessage }> =>
+      (candidate): candidate is Promise<{ kind: DeliveryKind; message: EmailMessage }> =>
         candidate !== null,
     ),
   )
@@ -251,9 +331,9 @@ function json(body: unknown, status: number): Response {
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
-  const secret = Deno.env.get('BOOKING_WEBHOOK_SECRET')
+  const secret = Deno.env.get('WEBHOOK_SECRET')
   if (!secret) return json({ ok: false, error: 'not_configured' }, 503)
-  if (req.headers.get('x-webhook-secret') !== secret)
+  if (!timingSafeEqual(req.headers.get('x-webhook-secret') ?? '', secret))
     return json({ ok: false, error: 'unauthorized' }, 401)
   let raw: unknown
   try {
@@ -263,34 +343,103 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const parsed = parseRequest(raw)
   if (!parsed.ok) return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
-  const booking = await fetchBooking(parsed.id)
+  if (serviceClient() === null) return json({ ok: false, error: 'not_configured' }, 503)
+
+  let bookingId = parsed.id
+  let event = parsed.event
+  let delivery: DeliveryJob | null = null
+  if (parsed.deliveryId !== null) {
+    const fetchedDelivery = await fetchDelivery(parsed.deliveryId)
+    if (fetchedDelivery === 'unavailable')
+      return json({ ok: false, error: 'delivery_unavailable' }, 503)
+    if (fetchedDelivery === null) return json({ ok: true, skipped: 'delivery_not_pending' }, 200)
+    delivery = fetchedDelivery
+    bookingId = delivery.bookingId
+    event = delivery.event
+  }
+  if (bookingId === null || event === null)
+    return json({ ok: false, error: 'invalid_payload' }, 400)
+
+  const booking = await fetchBooking(bookingId)
   if (booking === null) return json({ ok: false, error: 'booking_not_found' }, 404)
-  const expected = parsed.event === 'booking_cancelled' ? 'cancelled' : 'confirmed'
-  if (booking.status !== expected) return json({ ok: true, skipped: 'state_changed' }, 200)
-  const messages = await buildMessages(parsed.event, booking)
+  const expected = event === 'booking_cancelled' ? 'cancelled' : 'confirmed'
+  if (booking.status !== expected) {
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'superseded')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
+    return json({ ok: true, skipped: 'state_changed' }, 200)
+  }
+
+  let messages: readonly { kind: DeliveryKind; message: EmailMessage }[]
+  try {
+    const client = serviceClient()
+    if (client === null) throw new Error('service client unavailable')
+    const business = await loadEmailBusiness(client)
+    messages = await buildMessages(event, booking, business)
+  } catch {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'message_build_failed')
+    console.error('send-confirmation message build failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'message_build_failed' }, 502)
+  }
   if (messages.length === 0) {
-    if (parsed.event === 'booking_reminder' && !(await markReminder(booking.id))) {
+    if (event === 'booking_reminder' && !(await markReminder(booking.id))) {
       return json({ ok: false, error: 'reminder_mark_failed' }, 502)
     }
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'skipped')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
     return json({ ok: true, skipped: 'no_recipients' }, 200)
   }
+  const messagesToSend =
+    delivery === null
+      ? messages
+      : messages.filter((entry) => !delivery.sentKinds.includes(entry.kind))
+  if (messagesToSend.length === 0) {
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
+    return json({ ok: true, event, sent: [] }, 200)
+  }
   const apiKey = Deno.env.get('RESEND_API_KEY')
-  if (!apiKey) return json({ ok: true, skipped: 'no_resend_configured' }, 200)
+  if (!apiKey) {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'not_configured')
+    return json({ ok: false, error: 'not_configured' }, 503)
+  }
+  const scope =
+    event === 'booking_confirmed'
+      ? 'booking-confirmation'
+      : event === 'booking_cancelled'
+        ? 'booking-cancellation'
+        : 'booking-reminder'
+  const batch = await deliverEmailBatch(
+    messagesToSend,
+    (entry) => sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`),
+    (entry) =>
+      parsed.deliveryId === null
+        ? Promise.resolve(true)
+        : markDeliveryRecipient(parsed.deliveryId, entry.kind),
+  )
+  if (batch.failureCode !== null) {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, batch.failureCode)
+    console.error('send-confirmation delivery failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'send_failed' }, 502)
+  }
+
   try {
-    const scope =
-      parsed.event === 'booking_confirmed'
-        ? 'booking-confirmation'
-        : parsed.event === 'booking_cancelled'
-          ? 'booking-cancellation'
-          : 'booking-reminder'
-    for (const entry of messages)
-      await sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`)
-    if (parsed.event === 'booking_reminder' && !(await markReminder(booking.id)))
+    if (event === 'booking_reminder' && !(await markReminder(booking.id)))
       throw new Error('reminder mark failed')
-    return json({ ok: true, event: parsed.event, sent: messages.map((entry) => entry.kind) }, 200)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : 'unknown provider error'
-    console.error(`send-confirmation: ${parsed.event} failed for ${booking.id}: ${detail}`)
-    return json({ ok: false, error: 'send_failed', detail }, 502)
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
+      throw new Error('delivery update failed')
+    return json({ ok: true, event, sent: batch.sent }, 200)
+  } catch {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'send_failed_transient')
+    console.error('send-confirmation delivery failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'send_failed' }, 502)
   }
 })

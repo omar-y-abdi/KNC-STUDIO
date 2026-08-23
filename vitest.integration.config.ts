@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config'
-import { loadStackEnv } from './tests/integration/loadStackEnv'
+import { loadStackEnv } from './tests/integration/loadStackEnv.ts'
 
 // Integration tests run the REAL adapters against the RUNNING local Supabase stack. This config
 // loads the stack's env (URL + keys) at load time by shelling out to `supabase status -o env`, then

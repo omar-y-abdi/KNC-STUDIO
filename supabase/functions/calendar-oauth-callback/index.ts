@@ -5,18 +5,19 @@
 // originated from our authenticated start AND carries the barber id to store the token against.
 //
 // Flow: verify state -> exchange code for a refresh token (server-side, with the client secret) ->
-// store the token for the barber -> backfill all their confirmed bookings into Google Calendar ->
+// store the token for the barber -> backfill future confirmed bookings into Google Calendar ->
 // render a small success page. The refresh token is written ONLY through the service_role definer RPC
 // and never leaves the server.
 //
 // Run locally: npx supabase functions serve calendar-oauth-callback --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEvent,
   decodeIdTokenEmail,
   exchangeCode,
+  googleEventId,
   insertEvent,
   refreshAccessToken,
   verifyState,
@@ -65,7 +66,7 @@ interface BackfillBooking extends BookingEventInput {
   readonly google_event_id: string | null
 }
 
-/** Push every confirmed booking that is not already mapped into the barber's calendar. Best-effort:
+/** Push every future confirmed booking that is not already mapped into the barber's calendar. Best-effort:
  *  a per-booking failure is recorded and skipped so one bad row never aborts the whole backfill. */
 async function backfill(
   service: SupabaseClient,
@@ -104,14 +105,15 @@ async function backfill(
     try {
       // Retry each insert independently — a thrown insert created nothing, so a retry can't duplicate.
       const eventId = await withGoogleRetry(
-        () => insertEvent(accessToken, calendarId, buildEvent(b)),
+        () => insertEvent(accessToken, calendarId, googleEventId(b.id), buildEvent(b)),
         { retries: 2, delayMs: 500 },
       )
-      await service.rpc('calendar_record_event', {
+      const { error: recordError } = await service.rpc('calendar_record_event', {
         p_booking_id: b.id,
         p_barber_id: barberId,
         p_google_event_id: eventId,
       })
+      if (recordError) throw new Error(`record_event: ${recordError.message}`)
     } catch (err) {
       await service.rpc('calendar_record_error', {
         p_barber_id: barberId,
@@ -147,19 +149,58 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // Verify the signed state — proves the flow started from our authenticated start and yields barber_id.
   const payload = await verifyState(state, stateSecret, STATE_MAX_AGE_SEC, Date.now())
-  if (payload === null) return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
+  if (payload === null)
+    return html(page('Fel', 'Ogiltig eller utgången länk. Försök igen.', undefined), 400)
+
+  const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+  const profile = await service
+    .from('profiles')
+    .select('id')
+    .eq('role', 'barber')
+    .eq('barber_id', payload.barber_id)
+    .eq('account_enabled', true)
+    .maybeSingle()
+  if (profile.error !== null || profile.data === null) {
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kontot saknar åtkomst. Logga in igen eller kontakta administratören.',
+      403,
+    )
+  }
+
+  const existingToken = await service
+    .from('barber_calendar_tokens')
+    .select('disconnect_requested_at')
+    .eq('barber_id', payload.barber_id)
+    .maybeSingle()
+  if (existingToken.error !== null) {
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kunde inte kontrollera kalenderkopplingen. Försök igen.',
+      500,
+    )
+  }
 
   const redirectUri = `${supabaseUrl}/functions/v1/calendar-oauth-callback`
   try {
     const tokens = await exchangeCode(code, clientId, clientSecret, redirectUri)
     if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
       // Should not happen with prompt=consent; without a refresh token we cannot sync unattended.
-      return done(payload.return_to, 'error', 'Fel', 'Google gav ingen refresh-token. Försök koppla igen.', 400)
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        'Google gav ingen refresh-token. Försök koppla igen.',
+        400,
+      )
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
 
-    const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-    const { error: storeError } = await service.rpc('calendar_store_token', {
+    const { data: storeData, error: storeError } = await service.rpc('calendar_store_token', {
       p_barber_id: payload.barber_id,
       p_refresh_token: tokens.refresh_token,
       p_google_email: email,
@@ -167,11 +208,47 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (storeError) {
       console.error('calendar-oauth-callback: store_token failed:', storeError.message)
-      return done(payload.return_to, 'error', 'Fel', 'Kunde inte spara kopplingen. Försök igen.', 500)
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        'Kunde inte spara kopplingen. Försök igen.',
+        500,
+      )
     }
 
-    // Backfill is best-effort — the connection is already saved, and calendar-sync catches up on the
-    // next booking change even if this hits Google rate limits.
+    if (
+      typeof storeData !== 'object' ||
+      storeData === null ||
+      (storeData as Record<string, unknown>)['ok'] !== true
+    ) {
+      const error =
+        typeof storeData === 'object' && storeData !== null
+          ? (storeData as Record<string, unknown>)['error']
+          : null
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        error === 'account_mismatch'
+          ? 'Välj samma Google-konto som den tidigare kalenderkopplingen.'
+          : 'Kunde inte spara kopplingen. Försök igen.',
+        error === 'account_mismatch' ? 409 : 500,
+      )
+    }
+
+    if ((storeData as Record<string, unknown>)['cleanup_pending'] === true) {
+      return done(
+        payload.return_to,
+        'connected',
+        'Google-åtkomst återställd',
+        'Kalenderhändelserna tas nu bort säkert. Kopplingen stängs automatiskt efteråt.',
+        200,
+      )
+    }
+
+    // Backfill is best-effort — the connection is already saved. Any per-booking failure is recorded
+    // and surfaced in the calendar settings panel.
     try {
       await backfill(service, payload.barber_id, clientId, clientSecret)
     } catch (backfillErr) {
@@ -187,6 +264,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   } catch (exchangeErr) {
     console.error('calendar-oauth-callback: exchange error:', exchangeErr)
-    return done(payload.return_to, 'error', 'Fel', 'Kunde inte slutföra kopplingen. Försök igen.', 502)
+    return done(
+      payload.return_to,
+      'error',
+      'Fel',
+      'Kunde inte slutföra kopplingen. Försök igen.',
+      502,
+    )
   }
 })

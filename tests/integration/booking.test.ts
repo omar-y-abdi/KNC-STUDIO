@@ -16,12 +16,14 @@ import type { CreateBookingArgs } from './_helpers'
 import {
   backendReady,
   callCreateBooking,
+  callCreateBookingWithLimits,
   fetchActiveServiceId,
   fetchPersistedBookingByPhone,
   fetchPersistedStartAtByPhone,
   readStackEnv,
   truncateAll,
   uniquePhone,
+  withClient,
 } from './_helpers'
 
 const HASSAN: Barber = BARBERS[0] ?? {
@@ -144,6 +146,63 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     const second = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
     expect(second.ok).toBe(false)
     if (!second.ok) expect(second.error).toBe('slot_taken')
+  })
+
+  it('10 concurrent attempts for one slot persist exactly one booking', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const attempts = Array.from({ length: 10 }, () =>
+      callCreateBooking(env.dbUrl, validArgs(uniquePhone())),
+    )
+    const results = await Promise.all(attempts)
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(results.filter((result) => !result.ok && result.error === 'slot_taken')).toHaveLength(9)
+
+    const persisted = await withClient(env.dbUrl, async (client) => {
+      const result = await client.query<{ count: string }>(
+        `select count(*)::text as count
+         from public.bookings
+         where barber_id = $1 and start_at = $2::timestamptz and status = 'confirmed'`,
+        [HASSAN.id, VALID_START_UTC],
+      )
+      return Number(result.rows[0]?.count ?? '0')
+    })
+    expect(persisted).toBe(1)
+  })
+
+  it('10 concurrent slots for one phone atomically respect the phone limit', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const phone = uniquePhone()
+    const starts = [
+      '2040-03-14T08:00:00.000Z',
+      '2040-03-14T08:45:00.000Z',
+      '2040-03-14T09:30:00.000Z',
+      '2040-03-14T10:15:00.000Z',
+      '2040-03-14T11:00:00.000Z',
+      '2040-03-14T11:45:00.000Z',
+      '2040-03-14T12:30:00.000Z',
+      '2040-03-14T13:15:00.000Z',
+      '2040-03-14T14:00:00.000Z',
+      '2040-03-14T14:45:00.000Z',
+    ]
+    const attempts = starts.map((startAt, index) =>
+      callCreateBookingWithLimits(
+        env.dbUrl,
+        { ...validArgs(phone), startAt },
+        index.toString(16).padStart(64, '0'),
+        5,
+      ),
+    )
+    const results = await Promise.all(attempts)
+
+    expect(results.filter((result) => result.ok)).toHaveLength(5)
+    expect(results.filter((result) => !result.ok && result.error === 'rate_limited')).toHaveLength(
+      5,
+    )
   })
 
   it('a slot outside the barber working hours → outside_hours (server-side schedule gate)', async () => {

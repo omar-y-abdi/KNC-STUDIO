@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aboutStrings, appStrings, bookingStrings, cancelStrings } from '../../src/i18n/index'
+import { aboutStrings, appStrings, bookingStrings, myBookingsStrings } from '../../src/i18n/index'
 
 describe('i18n sv/en parity', () => {
   it('booking strings have identical key sets', () => {
@@ -16,8 +16,10 @@ describe('i18n sv/en parity', () => {
       Object.keys(aboutStrings('en').stylists).sort(),
     )
   })
-  it('cancel strings have identical key sets', () => {
-    expect(Object.keys(cancelStrings('sv')).sort()).toEqual(Object.keys(cancelStrings('en')).sort())
+  it('my-bookings strings have identical key sets', () => {
+    expect(Object.keys(myBookingsStrings('sv')).sort()).toEqual(
+      Object.keys(myBookingsStrings('en')).sort(),
+    )
   })
   it('no empty string values', () => {
     for (const table of [
@@ -31,7 +33,7 @@ describe('i18n sv/en parity', () => {
       }
     }
   })
-  it('no empty string values in about/cancel tables (flat + nested stylist copy)', () => {
+  it('no empty string values in about/my-bookings tables (flat + nested stylist copy)', () => {
     for (const lang of ['sv', 'en'] as const) {
       const about = aboutStrings(lang)
       for (const [k, v] of Object.entries(about)) {
@@ -41,8 +43,9 @@ describe('i18n sv/en parity', () => {
         expect(copy.role.length, `stylist ${id} role`).toBeGreaterThan(0)
         expect(copy.bio.length, `stylist ${id} bio`).toBeGreaterThan(0)
       }
-      for (const [k, v] of Object.entries(cancelStrings(lang))) {
-        expect(v.length, `cancel.${k}`).toBeGreaterThan(0)
+      for (const [k, v] of Object.entries(myBookingsStrings(lang))) {
+        if (k === 'atSep') continue
+        expect(v.length, `myBookings.${k}`).toBeGreaterThan(0)
       }
     }
   })

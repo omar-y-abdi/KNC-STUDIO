@@ -1,32 +1,32 @@
 // The offline (mock) MyBookingsPort adapter: no network, NOTHING PERSISTED.
 //
-//  - `listByPhone()` returns the deterministic demo history (`buildDemoMyBookings`) split into
-//    upcoming/past around the injected clock — for EVERY validly-formatted number except a reserved
-//    sentinel, which returns `not_found` so the "unknown number" + escalation states are demoable
-//    offline.
+//  - `requestAccess()` and `exchangeAccess()` issue a deterministic opaque session. `list()` returns
+//    deterministic demo history (`buildDemoMyBookings`) split around the injected clock.
 //  - `cancel()` always resolves `ok`, echoing the id. No state is mutated; a reload forgets it.
 //
-// The clock is injected (default: env-selected `defaultClock`), mirroring the mock cancellation
-// adapter, so under VITE_CLOCK=fixed the split is deterministic and the adapter is unit-testable.
+// The clock is injected (default: env-selected `defaultClock`) so the split remains unit-testable.
 
 import { defaultClock } from '../../config'
 import type { Clock } from '../../config'
-import { normalizePhone } from '../../booking/validation'
 import { buildDemoMyBookings } from '../demoMyBookings'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
 import { splitByTime } from '../format'
-import type { MyBookingsLookupParams, MyBookingsPort } from '../port'
-
-/** A reserved demo number that returns "no bookings" so the not-found + escalation states can be
- * exercised offline; every other validly-formatted number returns the demo history. */
-const DEMO_UNKNOWN = '0700000000'
+import type {
+  MyBookingsAccessExchangeResult,
+  MyBookingsAccessRequestResult,
+  MyBookingsListParams,
+  MyBookingsPort,
+} from '../port'
 
 export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookingsPort {
   return {
-    listByPhone(params: MyBookingsLookupParams): Promise<MyBookingsResult> {
-      if (normalizePhone(params.contact) === DEMO_UNKNOWN) {
-        return Promise.resolve({ ok: false, error: 'not_found' })
-      }
+    requestAccess(): Promise<MyBookingsAccessRequestResult> {
+      return Promise.resolve({ ok: true })
+    },
+    exchangeAccess(): Promise<MyBookingsAccessExchangeResult> {
+      return Promise.resolve({ ok: true, accessToken: 'mock-customer-access' })
+    },
+    list(params: MyBookingsListParams): Promise<MyBookingsResult> {
       const all = buildDemoMyBookings(clock(), params.lang)
       return Promise.resolve({ ok: true, bookings: splitByTime(all, clock()) })
     },

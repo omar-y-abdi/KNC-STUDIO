@@ -8,5 +8,7 @@ import { ResetPasswordPage } from './ResetPasswordPage'
 
 export function ResetPasswordRoute(): JSX.Element {
   const [, navigate] = useLocation()
-  return <ResetPasswordPage onDone={() => navigate('/login', { replace: true })} />
+  return (
+    <ResetPasswordPage linkType="recovery" onDone={() => navigate('/login', { replace: true })} />
+  )
 }

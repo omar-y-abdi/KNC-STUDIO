@@ -9,9 +9,14 @@
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
 import { getAdminClient } from '../adminClient'
-import { availableSlotsResponse, parseWith, scheduleRows } from '../adminSchemas'
+import { availableSlotsResponse, parseWith, saveWeekResponse, scheduleRows } from '../adminSchemas'
 import { toWeekSchedule } from '../time'
-import type { AdminBarberId, AdminResult, WeekSchedule } from '../types'
+import type {
+  AdminBarberId,
+  AdminResult,
+  AvailabilityMutationOutcome,
+  WeekSchedule,
+} from '../types'
 import { err, ok } from '../types'
 
 const READ_ERROR = 'Kunde inte läsa schemat.'
@@ -49,7 +54,8 @@ export async function readWeek(barberId: AdminBarberId): Promise<AdminResult<Wee
 export async function saveWeek(
   barberId: AdminBarberId,
   week: WeekSchedule,
-): Promise<AdminResult<WeekSchedule>> {
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<WeekSchedule>> {
   const rows = week.map((d) => ({
     barber_id: barberId,
     weekday: d.weekday,
@@ -58,16 +64,32 @@ export async function saveWeek(
     end_min: d.endMin,
   }))
   try {
-    const { error } = await getAdminClient()
-      .from('barber_schedules')
-      .upsert(rows, { onConflict: 'barber_id,weekday' })
-    if (error !== null) {
-      if (error.code === '42501') return err('forbidden', 'Du kan bara ändra ditt eget schema.')
-      return err('network', WRITE_ERROR)
+    const { data, error } = await getAdminClient().rpc('admin_save_barber_week', {
+      p_barber_id: barberId,
+      p_week: rows.map((row) => ({
+        weekday: row.weekday,
+        working: row.working,
+        start_min: row.start_min,
+        end_min: row.end_min,
+      })),
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    const parsed = parseWith(saveWeekResponse, data)
+    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (parsed.value.ok) return { kind: 'ok', value: week }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
     }
-    return ok(week)
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara ändra ditt eget schema.' },
+      }
+    }
+    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
   } catch {
-    return err('network', WRITE_ERROR)
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
   }
 }
 

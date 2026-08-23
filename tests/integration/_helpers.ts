@@ -10,6 +10,9 @@
 
 import { Client } from 'pg'
 
+/** Accepted by Cloudflare's official always-pass Turnstile test secret in local/CI stacks. */
+export const TURNSTILE_TEST_TOKEN = 'integration-test-token'
+
 /** The env the local stack provides (loaded by vitest.integration.config.ts from `supabase status`). */
 export interface StackEnv {
   readonly url: string
@@ -60,7 +63,9 @@ export async function withClient<T>(dbUrl: string, fn: (client: Client) => Promi
  */
 export async function truncateAll(dbUrl: string): Promise<void> {
   await withClient(dbUrl, (client) =>
-    client.query('truncate table public.bookings, public.reviews restart identity cascade'),
+    client.query(
+      'truncate table public.bookings, public.reviews, public.public_action_attempts restart identity cascade',
+    ),
   )
 }
 
@@ -197,6 +202,36 @@ export async function callCreateBooking(
   })
 }
 
+export async function callCreateBookingWithLimits(
+  dbUrl: string,
+  args: CreateBookingArgs,
+  ipHash: string,
+  phoneLimit: number,
+): Promise<CreateBookingRpcResult> {
+  return withClient(dbUrl, async (client) => {
+    await client.query('set role service_role')
+    const res = await client.query<{ result: CreateBookingRpcResult }>(
+      `select public.create_booking_with_limits(
+         $1,$2,$3::timestamptz,$4,$5,$6,$7,$8,600,86400,100,$9
+       ) as result`,
+      [
+        args.barberId,
+        args.serviceId,
+        args.startAt,
+        args.phone,
+        args.email,
+        args.lang,
+        args.customerName,
+        ipHash,
+        phoneLimit,
+      ],
+    )
+    const row = res.rows[0]
+    if (row === undefined) throw new Error('create_booking_with_limits returned no row')
+    return row.result
+  })
+}
+
 /**
  * INSERT a FINISHED, confirmed booking directly (as the superuser owner) — start + end both in the
  * past — so its phone is eligible to leave exactly one review (the create_review gate requires a
@@ -220,7 +255,7 @@ export async function seedFinishedBooking(
        values ($1, 'h', 'Hårklippning', 350, 45,
           now() - make_interval(hours => $4::int),
           now() - make_interval(hours => $4::int) + interval '45 minutes',
-          $2, 'sms', $3, null, 'sv', 'confirmed')
+          $2, 'phone', $3, null, 'sv', 'confirmed')
        returning id`,
       [input.barberId ?? 'hassan', input.customerName, input.phone, offsetHours],
     )

@@ -35,13 +35,13 @@ insert into public.bookings
 values
   ('hassan','h','Hår',350,45,
    now() - interval '2 hours', now() - interval '75 minutes',
-   'Hassan Ahmed','sms','0709999999', null,'sv'),
+   'Hassan Ahmed','phone','0709999999', null,'sv'),
   ('hassan','h','Hår',350,45,
    now() - interval '3 hours', now() - interval '135 minutes',
-   'Madonna','sms','0708888888', null,'sv');
+   'Madonna','phone','0708888888', null,'sv');
 
 -- =============================================================================================
--- create_booking signature: only the 9-arg version exists; the old 11-arg is dropped.
+-- create_booking signature: only the current 7-arg server-authoritative version exists.
 -- =============================================================================================
 select is(
   (select count(*)::int from pg_catalog.pg_proc
@@ -54,18 +54,18 @@ select is(
   (select count(*)::int from pg_catalog.pg_proc
      where proname = 'create_booking'
        and pronamespace = 'public'::regnamespace
-       and pronargs = 9),
-  1, 'exactly one 9-arg create_booking exists'
+       and pronargs = 7),
+  1, 'exactly one 7-arg create_booking exists'
 );
 -- Gateway-only privilege (also asserted in 03; kept here so this file is self-contained on the change).
 select ok(
   not pg_catalog.has_function_privilege(
-    'anon', 'public.create_booking(text, text, text, int, int, timestamptz, text, text, text)', 'execute'),
+    'anon', 'public.create_booking(text, text, timestamptz, text, text, text, text)', 'execute'),
   'anon canNOT execute create_booking (gateway-only)'
 );
 select ok(
   pg_catalog.has_function_privilege(
-    'service_role', 'public.create_booking(text, text, text, int, int, timestamptz, text, text, text)', 'execute'),
+    'service_role', 'public.create_booking(text, text, timestamptz, text, text, text, text)', 'execute'),
   'service_role CAN execute create_booking'
 );
 
@@ -79,7 +79,7 @@ select is(
 -- =============================================================================================
 -- lookup_booking / cancel_booking are phone-only: email no longer matches.
 -- =============================================================================================
-set local role anon;
+set local role service_role;
 
 select is(
   public.lookup_booking('mejl@example.com') ->> 'error',
@@ -99,9 +99,9 @@ select is(
 );
 
 -- =============================================================================================
--- create_review — phone-gated (PLAN §2). Runs as anon (the public About form's credential).
+-- create_review is phone-gated and called by the public gateway as service_role.
 -- =============================================================================================
-set local role anon;
+set local role service_role;
 
 -- No finished booking for this phone -> no_booking (the anti-spam gate; a bot with no cut gets nothing).
 select is(

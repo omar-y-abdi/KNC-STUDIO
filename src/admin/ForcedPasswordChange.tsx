@@ -1,9 +1,8 @@
 // Forced first-login password change for provisioned barber accounts. Shown by `AdminApp` when
 // `profile.mustChangePassword` is true — it BLOCKS the panel until the barber picks a new
-// password. The owner provisioned the account with the temporary password '123456'; this screen
-// validates that the barber does not keep it.
+// password. This remains as a compatibility gate for accounts provisioned by the legacy flow.
 //
-// Flow: new + confirm inputs → `validateNewPassword(next, confirm, '123456')` (blocks the default)
+// Flow: new + confirm inputs → `validateNewPassword(next, confirm)`
 //   → `setOwnPasswordKeepSession(next)` (keeps session — barber lands in the panel, not /login)
 //   → `clearMustChangePassword()` (clears the flag via the SECURITY DEFINER RPC)
 //   → `props.onDone()` (parent flips the gate to `authed`).
@@ -54,8 +53,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
     e.preventDefault()
     if (status.kind === 'submitting') return
 
-    // Validate: '123456' as current — the barber must not keep the provisioned default.
-    const check = validateNewPassword(next, confirm, '123456')
+    const check = validateNewPassword(next, confirm)
     if (!check.ok) {
       setStatus({ kind: 'error', message: check.reason })
       return

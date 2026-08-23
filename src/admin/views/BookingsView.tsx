@@ -326,7 +326,6 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {rows.map((b) => {
         const cancelled = b.status === 'cancelled'
-        const contact = b.method === 'sms' ? b.phone : b.email
         return (
           <div
             key={b.id}
@@ -386,29 +385,38 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                 marginTop: '3px',
               }}
             >
-              {b.method === 'sms' && contact !== null ? (
-                <a
-                  href={`tel:${contact}`}
-                  style={{
-                    ...s.ghostBtn,
-                    padding: '7px 13px',
-                    fontSize: '13px',
-                    textDecoration: 'none',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <img
-                    src="/icons/phone.svg"
-                    alt=""
-                    style={{ width: '13px', height: '13px', filter: c.iconF, opacity: 0.7 }}
-                  />
-                  {contact}
-                </a>
-              ) : (
-                <span style={s.mutedText}>{contact ?? '—'}</span>
-              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 0 }}>
+                {b.phone !== null ? (
+                  <a
+                    href={`tel:${b.phone}`}
+                    style={{
+                      ...s.ghostBtn,
+                      padding: '7px 13px',
+                      fontSize: '13px',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <img
+                      src="/icons/phone.svg"
+                      alt=""
+                      style={{ width: '13px', height: '13px', filter: c.iconF, opacity: 0.7 }}
+                    />
+                    {b.phone}
+                  </a>
+                ) : null}
+                {b.email !== null ? (
+                  <a
+                    href={`mailto:${b.email}`}
+                    style={{ ...s.mutedText, color: c.text, overflowWrap: 'anywhere' }}
+                  >
+                    {b.email}
+                  </a>
+                ) : null}
+                {b.phone === null && b.email === null ? <span style={s.mutedText}>—</span> : null}
+              </div>
               {cancelled || !cancellable ? null : (
                 <button
                   type="button"
@@ -444,7 +452,6 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
           </thead>
           <tbody>
             {rows.map((b) => {
-              const contact = b.method === 'sms' ? (b.phone ?? '—') : (b.email ?? '—')
               const cancelled = b.status === 'cancelled'
               return (
                 <tr key={b.id}>
@@ -457,7 +464,21 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
                     {b.serviceName}
                     <span style={s.mutedText}> · {b.durationMin} min</span>
                   </td>
-                  <td style={s.td}>{contact}</td>
+                  <td style={s.td}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      {b.phone !== null ? (
+                        <a href={`tel:${b.phone}`} style={{ color: 'inherit' }}>
+                          {b.phone}
+                        </a>
+                      ) : null}
+                      {b.email !== null ? (
+                        <a href={`mailto:${b.email}`} style={{ color: 'inherit' }}>
+                          {b.email}
+                        </a>
+                      ) : null}
+                      {b.phone === null && b.email === null ? '—' : null}
+                    </div>
+                  </td>
                   <td style={s.td}>
                     <span style={{ ...s.pill, color: cancelled ? s.errorText.color : undefined }}>
                       {cancelled ? t.bookingsStatusCancelled : t.bookingsStatusConfirmed}

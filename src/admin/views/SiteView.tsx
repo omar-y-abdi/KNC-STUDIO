@@ -183,6 +183,9 @@ export function SiteView(props: SiteViewProps): JSX.Element {
       setErrorFor({ key, message: result.error.message })
       return
     }
+    setSettings((previous) =>
+      previous.get(key) === value ? new Map(previous).set(key, result.value) : previous,
+    )
     setSavedKey(key)
   }
 
@@ -334,7 +337,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     {
       key: BUSINESS_SETTING_KEYS.seo[seoLang].title,
       label: t.siteFieldSeoTitle,
-      maxLength: 160,
+      maxLength: 120,
     },
     {
       key: BUSINESS_SETTING_KEYS.seo[seoLang].description,

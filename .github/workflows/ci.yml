@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend and browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run deploy:dry-run
+      - name: Reject unlicensed legacy font artifacts
+        run: |
+          test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
+          ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
+      - run: npx playwright install --with-deps chromium
+      - name: Browser smoke
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/blade-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4173/ >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+          BASE=http://127.0.0.1:4173 OUT=/tmp/visual-candidate node tools/visual/capture.mjs
+          BASELINE=tools/visual/baseline-linux CANDIDATE=/tmp/visual-candidate DIFF=/tmp/visual-diff node tools/visual/compare.mjs
+
+  edge-functions:
+    name: Edge Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: v2.9.5
+      - run: npm ci
+      - name: Type-check every Edge Function entrypoint
+        run: |
+          while IFS= read -r file; do
+            deno check --frozen --node-modules-dir=manual "$file"
+          done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+
+  database:
+    name: Database and integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Configure local Edge Function test secrets
+        run: |
+          cat > supabase/functions/.env <<'EOF'
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173
+          PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+          EOF
+      - name: Start local Supabase
+        run: npx supabase start
+      - name: Public booking rollout compatibility
+        run: bash tools/release/test-public-booking-stages.sh
+      - name: pgTAP
+        run: npx supabase test db --local
+      - name: Adapter integration tests
+        run: npm run test:integration
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup

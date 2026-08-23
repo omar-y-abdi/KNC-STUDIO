@@ -16,6 +16,10 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
 5. Resend emails customer and linked barber. Phone remains required for **Mina bokningar**, cancellation,
    and review eligibility; SMS is not used.
 
+Storage, Calendar, and Auth side effects use one durable `external_action_jobs` outbox. Cron retries
+failed actions, preserves Calendar event identifiers until Google deletion succeeds, and reconciles
+managed Storage bytes left unreferenced for 30 minutes after a failed upload compensation path.
+
 ## Public frontend configuration
 
 Only public values use the `VITE_` prefix:
@@ -33,12 +37,10 @@ frontend variables.
 
 ## Apply backend changes
 
-```bash
-npx supabase login
-npx supabase link --project-ref <project-ref>
-npx supabase db push
-npx supabase functions deploy submit-booking send-confirmation --use-api
-```
+Do not apply this launch release with one unrestricted `db push`. Follow the expand → Edge deploy →
+frontend switch → verify → contract procedure in
+`docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`. It keeps the currently deployed frontend working
+until protected gateways have been verified.
 
 Required Edge Function secrets:
 
@@ -47,24 +49,37 @@ npx supabase secrets set \
   RESEND_API_KEY=<active-resend-api-key> \
   TURNSTILE_SECRET=<turnstile-secret> \
   IP_SALT=<random-long-value> \
-  BOOKING_WEBHOOK_SECRET=<random-long-value>
+  PUBLIC_ACTION_HASH_SALT=<different-random-long-value> \
+  PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se \
+  PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co \
+  GOOGLE_OAUTH_CLIENT_ID=<google-client-id> \
+  GOOGLE_OAUTH_CLIENT_SECRET=<google-client-secret> \
+  CALENDAR_STATE_SECRET=<different-random-long-value> \
+  WEBHOOK_SECRET=<random-long-value>
 ```
 
 Database Vault must contain:
 
 - `booking_confirmation_url` = `https://<project-ref>.functions.supabase.co/send-confirmation`
-- `booking_webhook_secret` = same value as `BOOKING_WEBHOOK_SECRET`
+- `external_cleanup_url` = `https://<project-ref>.functions.supabase.co/external-cleanup`
+- `booking_webhook_secret` = same value as `WEBHOOK_SECRET`
 
 Create or rotate these through Supabase SQL Editor with `vault.create_secret` / `vault.update_secret`.
 Do not commit their values.
+
+Cloudflare Worker also needs `SUPABASE_ANON_KEY` as a secret so initial HTML, JSON-LD, and
+`/llms.txt` use current public CMS data:
+
+```bash
+printf '%s' '<public-anon-key>' | npx wrangler secret put SUPABASE_ANON_KEY
+```
 
 ## Resend
 
 Verify `bladeblendstudio.se` in Resend and add every DNS record Resend provides through Cloudflare DNS.
 Production senders are:
 
-- booking email: `Blade & Blend Studio <no-reply@bladeblendstudio.se>`
-- Auth email: `Blade & Blend Studio <auth@bladeblendstudio.se>`
+- booking and Auth email: `Blade & Blend Studio <booking@mail.bladeblendstudio.se>`
 
 Validate an API key before installing it:
 
@@ -79,9 +94,9 @@ export RESEND_API_KEY=<active-resend-api-key>
 npx supabase config push --yes
 ```
 
-Public signup remains disabled. Owner creates barber accounts from admin. Initial password `123456`
-is temporary; first login requires a personal replacement. Password reset email uses Supabase Auth
-through Resend.
+Public signup remains disabled. Owner creates barber accounts from admin. Each barber receives a
+single-use invitation and sets a personal password before first login. Password reset email uses
+Supabase Auth through Resend.
 
 ## Verification
 
@@ -113,9 +128,9 @@ Production smoke test:
 
 ## Free-tier operations
 
-Supabase Free has no production backup guarantee. Export data manually before risky schema or content
-changes. Keep migrations in source control; database exports containing customer PII must be encrypted
-and access-restricted.
+Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an
+encrypted daily database-and-Storage artifact with migration lineage and byte verification; setup and restore drills are documented in
+`docs/operations/BACKUP_RESTORE.md`. Keep migrations in source control. Never upload plaintext dumps.
 
 ## Mock fallback
 

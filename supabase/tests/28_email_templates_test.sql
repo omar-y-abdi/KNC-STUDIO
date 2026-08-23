@@ -1,7 +1,7 @@
 begin;
-select plan(8);
+select plan(9);
 
-select is((select count(*)::int from public.email_templates), 12, 'all email template variants are seeded');
+select is((select count(*)::int from public.email_templates), 16, 'all email template variants are seeded');
 select is(
   (select subject from public.email_templates where template = 'customer_confirmation' and lang = 'sv'),
   'Bokningsbekräftelse', 'customer confirmation subject is clean'
@@ -26,6 +26,10 @@ select ok(
 select ok(
   pg_catalog.has_function_privilege('service_role', 'public.email_template_for_delivery(text,text)', 'execute'),
   'service role can call delivery RPC'
+);
+select is(
+  (select cta_label from public.email_templates where template = 'auth_invite' and lang = 'sv'),
+  'Skapa mitt lösenord', 'staff invite copy is owner-editable and seeded'
 );
 select throws_ok(
   $$ insert into public.email_templates (template, lang, subject, preheader, title, intro, note, cta_label)

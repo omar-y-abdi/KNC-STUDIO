@@ -198,7 +198,9 @@ function AboutTextEditor(props: {
                           {savingKey === ck ? t.aboutSaving : t.aboutSave}
                         </button>
                         <span aria-live="polite">
-                          {savedKey === ck ? <span style={s.successText}>{t.aboutSaved}</span> : null}
+                          {savedKey === ck ? (
+                            <span style={s.successText}>{t.aboutSaved}</span>
+                          ) : null}
                           {errorFor?.key === ck ? (
                             <span style={s.errorText}>{errorFor.message}</span>
                           ) : null}
@@ -280,7 +282,10 @@ function GalleryManager(props: {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setNotice({ kind: 'ok', text: t.aboutGalleryDeletedOk })
+    setNotice({
+      kind: 'ok',
+      text: result.value.pending ? t.aboutGalleryDeletionPending : t.aboutGalleryDeletedOk,
+    })
     setImages((prev) => prev.filter((i) => i.id !== target.id))
   }
 

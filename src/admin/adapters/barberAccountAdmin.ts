@@ -11,12 +11,26 @@ import type { AdminResult } from '../types'
 import { err, ok } from '../types'
 
 const GENERIC_ERROR = 'Kunde inte skapa kontot. Försök igen.'
+const ACCESS_ERROR = 'Kunde inte ändra kontoåtkomsten. Försök igen.'
+
+export interface BarberAccessResult {
+  readonly enabled: boolean
+  readonly authSyncPending: boolean
+}
 
 /** Map an edge function error code to a Swedish `AdminResult<void>` error. */
 function mapErrorCode(code: string | undefined): AdminResult<void> {
   switch (code) {
     case 'email_taken':
       return err('validation', 'E-posten används redan.')
+    case 'barber_linked':
+      return err('validation', 'Barberaren har redan ett kopplat konto.')
+    case 'account_active':
+      return err('validation', 'Kontot är redan aktiverat.')
+    case 'email_mismatch':
+      return err('validation', 'Ange e-postadressen som är kopplad till kontot.')
+    case 'invite_send_failed':
+      return err('network', 'Kontot kunde inte bjudas in. Försök igen.')
     case 'forbidden':
       return err('forbidden', 'Endast ägaren kan skapa konton.')
     case 'invalid_payload':
@@ -26,11 +40,62 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
   }
 }
 
+function mapAccessError(code: string | undefined): AdminResult<BarberAccessResult> {
+  switch (code) {
+    case 'not_linked':
+      return err('not_found', 'Barberaren saknar ett kopplat konto.')
+    case 'forbidden':
+      return err('forbidden', 'Endast ägaren kan ändra kontoåtkomst.')
+    case 'invalid_payload':
+      return err('validation', 'Ogiltig barberare.')
+    default:
+      return err('network', ACCESS_ERROR)
+  }
+}
+
+export async function setBarberAccountAccess(
+  barberId: string,
+  enabled: boolean,
+): Promise<AdminResult<BarberAccessResult>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
+      body: { action: 'set_access', barber_id: barberId, enabled },
+    })
+
+    let payload: unknown = data
+    if (payload === null && error !== null) {
+      try {
+        const response = (error as unknown as { context?: Response }).context
+        if (response === undefined) return err('network', ACCESS_ERROR)
+        payload = await response.json()
+      } catch {
+        return err('network', ACCESS_ERROR)
+      }
+    }
+    if (typeof payload !== 'object' || payload === null) return err('network', ACCESS_ERROR)
+    const row = payload as Record<string, unknown>
+    if (row['ok'] === false) return mapAccessError(row['error'] as string | undefined)
+    if (
+      row['ok'] !== true ||
+      typeof row['account_enabled'] !== 'boolean' ||
+      typeof row['auth_sync_pending'] !== 'boolean'
+    ) {
+      return err('malformed', ACCESS_ERROR)
+    }
+    return ok({
+      enabled: row['account_enabled'],
+      authSyncPending: row['auth_sync_pending'],
+    })
+  } catch {
+    return err('network', ACCESS_ERROR)
+  }
+}
+
 /**
  * Ask the `admin-create-barber` edge function to provision a Supabase auth login for an existing
  * barber. The owner's JWT is forwarded automatically by the admin client; the function validates
- * the role server-side. On success the barber receives a temporary password (123456) and the
- * `must_change_password` flag is set — the forced-change gate fires on their first login.
+ * the role server-side. On success the barber receives a single-use invitation to create a personal
+ * password. No shared credential is created or returned.
  *
  * Handles both supabase-js v2 behaviour variants:
  *   - Some versions return `{ data, error:null }` on 2xx and `{ data:null, error }` on non-2xx.
@@ -39,10 +104,11 @@ function mapErrorCode(code: string | undefined): AdminResult<void> {
 export async function createBarberAccount(
   email: string,
   barberId: string,
+  lang: 'sv' | 'en',
 ): Promise<AdminResult<void>> {
   try {
     const { data, error } = await getAdminClient().functions.invoke('admin-create-barber', {
-      body: { email, barber_id: barberId },
+      body: { email, barber_id: barberId, lang },
     })
 
     // Check the typed body first — some supabase-js versions return data even on non-2xx.

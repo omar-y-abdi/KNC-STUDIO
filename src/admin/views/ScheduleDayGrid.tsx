@@ -22,7 +22,7 @@ import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { createManualBooking } from '../adapters/bookingsAdmin'
 import { listServices } from '../adapters/servicesAdmin'
 import { ReserveDialog, type ReserveFields } from '../ReserveDialog'
-import { addSlotBlock, deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
+import { deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
 import { QUARTER_LEN_MIN, dayHours, timeOffCovering, toDateIso, upcomingDates } from '../time'
 import type { DayBooking, DaySlot, HourGroup, SlotState } from '../time'
@@ -35,6 +35,7 @@ import type {
   TimeOff,
   WeekSchedule,
 } from './viewTypes'
+import type { AvailabilityMutationOutcome } from '../types'
 
 /** How many days the picker strip offers (today + ~2 weeks — the text-booking horizon). */
 const STRIP_DAYS = 14
@@ -53,8 +54,16 @@ export interface ScheduleDayGridProps {
    * with the parent's, and an unavailability change would then be checked against a stale set.
    */
   readonly bookings: readonly AdminBooking[]
+  readonly blocksNonce: number
+  /** Lock shell navigation while grid writes remain unresolved. */
+  readonly onPersistenceStateChange: (blocked: boolean) => void
   /** Tell the parent its bookings are out of date (a reservation was created here) so it refetches. */
   readonly onBookingsChanged: () => void
+  readonly onBlockSlot: (
+    dateIso: string,
+    startMin: number,
+    endMin: number,
+  ) => Promise<AvailabilityMutationOutcome<SlotBlock>>
   /** Block the whole day (parent inserts a single-day time-off row and updates its list). */
   readonly onBlockDay: (dateIso: string) => Promise<boolean>
   /** Reopen a day blocked by a SINGLE-DAY time-off row (parent deletes it + updates its list). */
@@ -85,6 +94,12 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   // menu, or a load failure) → the dialog falls back to a generic 45-min reservation with no picker.
   const [services, setServices] = useState<readonly AdminService[]>([])
 
+  useEffect(() => {
+    const blocked = busyQuarters.length > 0 || dayBusy || reserveBusy
+    props.onPersistenceStateChange(blocked)
+    return () => props.onPersistenceStateChange(false)
+  }, [busyQuarters.length, dayBusy, props.onPersistenceStateChange, reserveBusy])
+
   // Blocks are per-date; bookings come from the parent (per-barber, filtered per day below).
   useEffect(() => {
     let active = true
@@ -98,7 +113,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId, dateIso])
+  }, [props.barberId, dateIso, props.blocksNonce])
 
   // Active services for the reserve picker — per barber, independent of the selected date.
   useEffect(() => {
@@ -136,12 +151,13 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   }
 
   const blockQuarter = async (startMin: number): Promise<boolean> => {
-    const r = await addSlotBlock(props.barberId, dateIso, startMin, startMin + QUARTER_LEN_MIN)
-    if (r.ok) {
+    const r = await props.onBlockSlot(dateIso, startMin, startMin + QUARTER_LEN_MIN)
+    if (r.kind === 'ok') {
       const created = r.value
       setBlocks((prev) => [...(prev ?? []), created])
       return true
     }
+    if (r.kind === 'booking_conflict') return true
     setError(r.error.message)
     return false
   }

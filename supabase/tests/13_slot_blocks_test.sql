@@ -19,6 +19,12 @@ delete from public.barber_schedules where barber_id = 'hassan';
 insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
 values ('hassan', 1, true, 540, 1080);
 
+select set_config(
+  'test.hassan_service',
+  (select id::text from public.services where barber_id = 'hassan' and active order by sort_order limit 1),
+  true
+);
+
 -- =============================================================================================
 -- SCHEMA: window order + duplicate guard.
 -- =============================================================================================
@@ -40,7 +46,7 @@ select throws_ok(
 -- =============================================================================================
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45)),
-  11, 'a 10:30 block removes exactly one 45-min slot (12 -> 11)'
+  29, 'a 10:30-11:15 block removes five overlapping 45-min grid starts (34 -> 29)'
 );
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45) s where s = '10:30'),
@@ -60,14 +66,14 @@ select is(
 -- this fixture, so prove date-scoping on the SAME weekday one week later instead.
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-12', 45)),
-  12, 'the block is date-scoped: the next Monday still has all 12 slots'
+  34, 'the block is date-scoped: the next Monday still has all 34 slots'
 );
 
 -- Deleting the row reopens the slot.
 delete from public.barber_slot_blocks where barber_id='hassan' and block_date='2099-01-05';
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45)),
-  12, 'deleting the block restores the full 12-slot set'
+  34, 'deleting the block restores the full 34-slot set'
 );
 
 -- A 15-MIN QUARTER block (the panel's write unit): 10:30–10:45 kills the 45-min 10:30 slot it
@@ -84,13 +90,13 @@ select is(
 );
 delete from public.barber_slot_blocks where barber_id='hassan' and block_date='2099-01-05';
 
--- A RANGE block (12:00–15:00) removes every slot whose window it overlaps:
--- 12:00, 12:45, 13:30, 14:15 all start inside it -> 8 left.
+-- A RANGE block (12:00–15:00) removes all 45-minute grid windows that overlap it, including
+-- 11:30 and 11:45 because those services extend into the block.
 insert into public.barber_slot_blocks (barber_id, block_date, start_min, end_min)
 values ('hassan','2099-01-05',720,900);
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 45)),
-  8, 'a 12:00-15:00 range block removes the four slots it covers'
+  20, 'a 12:00-15:00 range block leaves 20 non-overlapping grid starts'
 );
 
 -- =============================================================================================
@@ -98,18 +104,18 @@ select is(
 -- =============================================================================================
 select is(
   (select (public.create_booking(
-     'hassan','h','Hår',350,45,
+     'hassan',current_setting('test.hassan_service'),
      (date '2099-01-05' + time '12:45') at time zone 'Europe/Stockholm',
-     '0701119999','sv','Blocked Walkin'
+     '0701119999','blocked@example.test','sv','Blocked Walkin'
    ))->>'error'),
   'outside_hours', 'create_booking rejects a blocked slot (read/write agreement)'
 );
 -- ...and still accepts a slot outside the block on the same day.
 select is(
   (select (public.create_booking(
-     'hassan','h','Hår',350,45,
+     'hassan',current_setting('test.hassan_service'),
      (date '2099-01-05' + time '09:00') at time zone 'Europe/Stockholm',
-     '0701119999','sv','Open Walkin'
+     '0701119999','open@example.test','sv','Open Walkin'
    ))->>'ok')::boolean,
   true, 'create_booking still accepts an unblocked slot on the same day'
 );

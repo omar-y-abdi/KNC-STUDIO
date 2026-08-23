@@ -64,6 +64,7 @@ export interface AdminStrings {
   readonly profileNoPhoto: string
   readonly profileUploadedOk: string
   readonly profileRemovedOk: string
+  readonly profileRemovalPending: string
   readonly profileLoading: string
   readonly profileError: string
   readonly profileDeleteTitle: string
@@ -152,6 +153,9 @@ export interface AdminStrings {
   readonly calendarConnected: string
   readonly calendarDisconnect: string
   readonly calendarDisconnecting: string
+  readonly calendarDisconnectPending: string
+  readonly calendarRepairAccess: string
+  readonly calendarRepairHint: string
   readonly calendarHint: string
   readonly calendarLoading: string
   readonly calendarSyncErrorPrefix: string
@@ -329,6 +333,7 @@ export interface AdminStrings {
   // BarbersView — status pills
   readonly barbersStatusLinked: string
   readonly barbersStatusUnlinked: string
+  readonly barbersStatusAccessDisabled: string
   readonly barbersStatusActive: string
   readonly barbersStatusHidden: string
   // BarbersView — row/card action buttons
@@ -337,6 +342,9 @@ export interface AdminStrings {
   readonly barbersHide: string
   readonly barbersActivate: string
   readonly barbersCreateLogin: string
+  readonly barbersResendInvite: string
+  readonly barbersDisableAccess: string
+  readonly barbersEnableAccess: string
   // BarbersView — edit/new form field labels
   readonly barbersFieldName: string
   readonly barbersFieldInstagram: string
@@ -352,6 +360,7 @@ export interface AdminStrings {
   readonly barbersSaving: string
   readonly barbersCreate: string
   readonly barbersCreating: string
+  readonly barbersResending: string
   readonly barbersCancel: string
   // BarbersView — notices + validation
   readonly barbersUpdatedOk: string
@@ -361,8 +370,10 @@ export interface AdminStrings {
   readonly barbersIdError: string
   readonly barbersNameRequired: string
   readonly barbersEmailError: string
-  /** The "login created" note. KEEP the literal "123456" — only the surrounding copy is translated. */
-  readonly barbersDefaultPasswordNote: string
+  readonly barbersInviteSentNote: string
+  readonly barbersAccessDisabledOk: string
+  readonly barbersAccessEnabledOk: string
+  readonly barbersAuthSyncPending: string
   // BarbersView — delete flow (type-the-id confirm + has-bookings purge confirm)
   readonly barbersDelete: string
   readonly barbersDeleteTitle: string
@@ -375,6 +386,10 @@ export interface AdminStrings {
   readonly barbersDeleteBookingsConfirm: string
   readonly barbersDeleteBookingsCancel: string
   readonly barbersDeletedOk: string
+  readonly barbersDeleteUpcomingBlocked: string
+  readonly barbersAuthCleanupPending: string
+  readonly barbersExternalCleanupPending: string
+  readonly barbersDeliveryPending: string
   // AboutView — text editor headings + controls
   readonly aboutTextTitle: string
   readonly aboutTextLead: string
@@ -403,6 +418,7 @@ export interface AdminStrings {
   readonly aboutGalleryEmpty: string
   readonly aboutGalleryUploadedOk: string
   readonly aboutGalleryDeletedOk: string
+  readonly aboutGalleryDeletionPending: string
   readonly aboutGalleryRemove: string
   readonly aboutGalleryDeleteTitle: string
   readonly aboutGalleryDeleteBody: string
@@ -451,6 +467,8 @@ export interface AdminStrings {
   readonly forcedPwSubmit: string
   // ResetPasswordPage (`/reset` recovery landing)
   readonly resetPwSubtitle: string
+  readonly resetPwIntro: string
+  readonly resetPwContinue: string
   readonly resetPwInvalidLink: string
   readonly resetPwChecking: string
   readonly resetPwSuccess: string
@@ -458,6 +476,17 @@ export interface AdminStrings {
   readonly resetPwConfirmPassword: string
   readonly resetPwSaving: string
   readonly resetPwSubmit: string
+  // ResetPasswordPage (`/invite` staff invitation landing)
+  readonly invitePwSubtitle: string
+  readonly invitePwIntro: string
+  readonly invitePwContinue: string
+  readonly invitePwInvalidLink: string
+  readonly invitePwChecking: string
+  readonly invitePwSuccess: string
+  readonly invitePwNewPassword: string
+  readonly invitePwConfirmPassword: string
+  readonly invitePwSaving: string
+  readonly invitePwSubmit: string
   // EmailChangeConfirmPage (`/auth/confirm`)
   readonly emailChangeConfirmSubtitle: string
   readonly emailChangeConfirmIntro: string
@@ -526,6 +555,7 @@ const SV: AdminStrings = {
   profileNoPhoto: 'Ingen bild uppladdad ännu.',
   profileUploadedOk: 'Bilden är uppladdad.',
   profileRemovedOk: 'Bilden är borttagen.',
+  profileRemovalPending: 'Bilden är dold. Lagringsrensning försöks igen automatiskt.',
   profileLoading: 'Laddar profil …',
   profileError: 'Kunde inte spara. Försök igen.',
   profileDeleteTitle: 'Ta bort profilbild?',
@@ -615,6 +645,10 @@ const SV: AdminStrings = {
   calendarConnected: 'Kalender kopplad',
   calendarDisconnect: 'Koppla loss',
   calendarDisconnecting: 'Kopplar loss…',
+  calendarDisconnectPending: 'Bokningar tas bort säkert innan Google-kopplingen stängs.',
+  calendarRepairAccess: 'Återställ Google-åtkomst',
+  calendarRepairHint:
+    'Google-åtkomsten har upphört. Koppla samma konto igen så att kalenderhändelserna kan tas bort.',
   calendarHint: 'Få dina bokningar direkt i Google Calendar-appen (iPhone + Android).',
   calendarLoading: 'Laddar kalenderstatus…',
   calendarSyncErrorPrefix: 'Senaste synk misslyckades:',
@@ -758,7 +792,7 @@ const SV: AdminStrings = {
   unavailClose: 'Stäng',
   barbersTitle: 'Barberare',
   barbersLead:
-    'Lägg till, redigera och dölj barberare. Klicka på "Skapa inloggning" för en ej kopplad barberare för att ge dem ett inloggningskonto.',
+    'Hantera publik synlighet och personalåtkomst separat. Döljning påverkar kundbokning; kontoåtkomst styr inloggning.',
   barbersAddNew: '+ Ny barberare',
   barbersNewHeading: 'Ny barberare',
   barbersLoading: 'Laddar barberare …',
@@ -768,15 +802,19 @@ const SV: AdminStrings = {
   barbersColLogin: 'Inloggning',
   barbersColStatus: 'Status',
   barbersColAction: 'Åtgärd',
-  barbersStatusLinked: 'Inloggning kopplad',
+  barbersStatusLinked: 'Inloggning aktiv',
   barbersStatusUnlinked: 'Ej kopplad',
-  barbersStatusActive: 'Aktiv',
-  barbersStatusHidden: 'Dold',
+  barbersStatusAccessDisabled: 'Åtkomst avstängd',
+  barbersStatusActive: 'Synlig för kunder',
+  barbersStatusHidden: 'Dold för kunder',
   barbersEdit: 'Redigera',
   barbersClose: 'Stäng',
-  barbersHide: 'Dölj',
-  barbersActivate: 'Aktivera',
+  barbersHide: 'Dölj för kunder',
+  barbersActivate: 'Visa för kunder',
   barbersCreateLogin: 'Skapa inloggning',
+  barbersResendInvite: 'Skicka ny inbjudan',
+  barbersDisableAccess: 'Stäng av åtkomst',
+  barbersEnableAccess: 'Aktivera åtkomst',
   barbersFieldName: 'Namn',
   barbersFieldInstagram: 'Instagram',
   barbersFieldRoleSv: 'Roll (SV)',
@@ -790,6 +828,7 @@ const SV: AdminStrings = {
   barbersSaving: 'Sparar …',
   barbersCreate: 'Skapa',
   barbersCreating: 'Skapar …',
+  barbersResending: 'Skickar …',
   barbersCancel: 'Avbryt',
   barbersUpdatedOk: 'Barberaren uppdaterad.',
   barbersHiddenOk: 'Barberaren dold.',
@@ -798,8 +837,12 @@ const SV: AdminStrings = {
   barbersIdError: 'Id får bara innehålla a–z, 0–9 och bindestreck (max 32).',
   barbersNameRequired: 'Namn krävs.',
   barbersEmailError: 'Ange en giltig e-postadress.',
-  barbersDefaultPasswordNote:
-    'Konto skapat. Tillfälligt lösenord: 123456 — barberaren byter det vid första inloggningen.',
+  barbersInviteSentNote:
+    'Inbjudan skickad. Barberaren skapar sitt personliga lösenord via länken i mejlet.',
+  barbersAccessDisabledOk: 'Kontoåtkomsten avstängd.',
+  barbersAccessEnabledOk: 'Kontoåtkomsten aktiverad.',
+  barbersAuthSyncPending:
+    'Databasåtkomsten är spärrad. Auth-spärren kunde inte synkas och behöver försökas igen.',
   barbersDelete: 'Radera',
   barbersDeleteTitle: 'Radera barberare?',
   barbersDeleteBody:
@@ -807,10 +850,18 @@ const SV: AdminStrings = {
   barbersDeleteConfirm: 'Radera',
   barbersDeleteCancel: 'Avbryt',
   barbersDeleteBookingsBody:
-    'Barberaren har {count} bokningar ({past} tidigare, {upcoming} kommande). Radera dem också?',
-  barbersDeleteBookingsConfirm: 'Radera allt',
+    'Barberaren har {count} historiska eller avbokade bokningar ({past} totalt). Radera historiken också?',
+  barbersDeleteBookingsConfirm: 'Radera historik',
   barbersDeleteBookingsCancel: 'Avbryt',
   barbersDeletedOk: 'Barberaren raderad.',
+  barbersDeleteUpcomingBlocked:
+    'Barberaren har {upcoming} pågående eller kommande bokningar. Avboka eller flytta dem innan permanent radering.',
+  barbersAuthCleanupPending:
+    'Barberaren raderades och saknar dataåtkomst, men Auth-kontot kunde inte städas automatiskt.',
+  barbersExternalCleanupPending:
+    'Google Calendar rensas säkert i bakgrunden ({count} händelser). Försök radera barberaren igen om en stund.',
+  barbersDeliveryPending:
+    'Barberaren har bokningsmejl som måste levereras eller hanteras under Mejl innan radering.',
   aboutTextTitle: 'Om oss · text',
   aboutTextLead: 'Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.',
   aboutLoading: 'Laddar innehåll …',
@@ -836,6 +887,7 @@ const SV: AdminStrings = {
   aboutGalleryEmpty: 'Inga bilder ännu.',
   aboutGalleryUploadedOk: 'Bild uppladdad.',
   aboutGalleryDeletedOk: 'Bild borttagen.',
+  aboutGalleryDeletionPending: 'Bilden är dold. Lagringsrensning försöks igen automatiskt.',
   aboutGalleryRemove: 'Ta bort',
   aboutGalleryDeleteTitle: 'Ta bort bilden?',
   aboutGalleryDeleteBody: 'Bilden tas bort från galleriet och lagringen. Detta går inte att ångra.',
@@ -878,6 +930,8 @@ const SV: AdminStrings = {
   forcedPwSaving: 'Sparar …',
   forcedPwSubmit: 'Byt lösenord',
   resetPwSubtitle: 'Återställ lösenord',
+  resetPwIntro: 'Fortsätt för att kontrollera länken och välja ett nytt lösenord.',
+  resetPwContinue: 'Fortsätt',
   resetPwInvalidLink:
     'Återställningslänken är ogiltig eller har gått ut. Begär en ny på inloggningssidan.',
   resetPwChecking: 'Kontrollerar länken …',
@@ -886,6 +940,16 @@ const SV: AdminStrings = {
   resetPwConfirmPassword: 'Bekräfta nytt lösenord',
   resetPwSaving: 'Sparar …',
   resetPwSubmit: 'Spara nytt lösenord',
+  invitePwSubtitle: 'Aktivera ditt konto',
+  invitePwIntro: 'Fortsätt för att kontrollera inbjudan och skapa ditt personliga lösenord.',
+  invitePwContinue: 'Öppna inbjudan',
+  invitePwInvalidLink: 'Inbjudan är ogiltig eller har gått ut. Be ägaren skicka en ny.',
+  invitePwChecking: 'Kontrollerar inbjudan …',
+  invitePwSuccess: 'Ditt konto är aktiverat. Logga in med ditt nya lösenord.',
+  invitePwNewPassword: 'Välj lösenord',
+  invitePwConfirmPassword: 'Bekräfta lösenord',
+  invitePwSaving: 'Aktiverar …',
+  invitePwSubmit: 'Aktivera konto',
   emailChangeConfirmSubtitle: 'Bekräfta ny e‑postadress',
   emailChangeConfirmIntro:
     'Bekräfta ändringen med knappen nedan. Din e‑postadress ändras direkt efter bekräftelsen.',
@@ -955,6 +1019,7 @@ const EN: AdminStrings = {
   profileNoPhoto: 'No photo uploaded yet.',
   profileUploadedOk: 'The photo is uploaded.',
   profileRemovedOk: 'The photo is removed.',
+  profileRemovalPending: 'The photo is hidden. Storage cleanup will retry automatically.',
   profileLoading: 'Loading profile …',
   profileError: 'Could not save. Please try again.',
   profileDeleteTitle: 'Remove profile photo?',
@@ -1045,6 +1110,10 @@ const EN: AdminStrings = {
   calendarConnected: 'Calendar connected',
   calendarDisconnect: 'Disconnect',
   calendarDisconnecting: 'Disconnecting…',
+  calendarDisconnectPending: 'Bookings are removed safely before the Google connection closes.',
+  calendarRepairAccess: 'Restore Google access',
+  calendarRepairHint:
+    'Google access has expired. Reconnect the same account so its calendar events can be removed.',
   calendarHint: 'Get your bookings straight into the Google Calendar app (iPhone + Android).',
   calendarLoading: 'Loading calendar status…',
   calendarSyncErrorPrefix: 'Last sync failed:',
@@ -1188,7 +1257,7 @@ const EN: AdminStrings = {
   unavailClose: 'Close',
   barbersTitle: 'Barbers',
   barbersLead:
-    'Add, edit and hide barbers. Click "Create login" for an unlinked barber to give them a login account.',
+    'Manage public visibility and staff access separately. Hiding affects customer booking; account access controls sign-in.',
   barbersAddNew: '+ New barber',
   barbersNewHeading: 'New barber',
   barbersLoading: 'Loading barbers …',
@@ -1198,15 +1267,19 @@ const EN: AdminStrings = {
   barbersColLogin: 'Login',
   barbersColStatus: 'Status',
   barbersColAction: 'Action',
-  barbersStatusLinked: 'Login linked',
+  barbersStatusLinked: 'Login active',
   barbersStatusUnlinked: 'Not linked',
-  barbersStatusActive: 'Active',
-  barbersStatusHidden: 'Hidden',
+  barbersStatusAccessDisabled: 'Access disabled',
+  barbersStatusActive: 'Visible to customers',
+  barbersStatusHidden: 'Hidden from customers',
   barbersEdit: 'Edit',
   barbersClose: 'Close',
-  barbersHide: 'Hide',
-  barbersActivate: 'Activate',
+  barbersHide: 'Hide from customers',
+  barbersActivate: 'Show to customers',
   barbersCreateLogin: 'Create login',
+  barbersResendInvite: 'Send new invitation',
+  barbersDisableAccess: 'Disable access',
+  barbersEnableAccess: 'Enable access',
   barbersFieldName: 'Name',
   barbersFieldInstagram: 'Instagram',
   barbersFieldRoleSv: 'Role (SV)',
@@ -1220,6 +1293,7 @@ const EN: AdminStrings = {
   barbersSaving: 'Saving …',
   barbersCreate: 'Create',
   barbersCreating: 'Creating …',
+  barbersResending: 'Sending …',
   barbersCancel: 'Cancel',
   barbersUpdatedOk: 'Barber updated.',
   barbersHiddenOk: 'Barber hidden.',
@@ -1228,8 +1302,12 @@ const EN: AdminStrings = {
   barbersIdError: 'Id may only contain a–z, 0–9 and hyphens (max 32).',
   barbersNameRequired: 'Name is required.',
   barbersEmailError: 'Enter a valid email address.',
-  barbersDefaultPasswordNote:
-    'Account created. Temporary password: 123456 — the barber changes it at first login.',
+  barbersInviteSentNote:
+    'Invitation sent. The barber creates a personal password through the email link.',
+  barbersAccessDisabledOk: 'Account access disabled.',
+  barbersAccessEnabledOk: 'Account access enabled.',
+  barbersAuthSyncPending:
+    'Database access is blocked. Auth blocking could not be synchronized and must be retried.',
   barbersDelete: 'Delete',
   barbersDeleteTitle: 'Delete barber?',
   barbersDeleteBody:
@@ -1237,10 +1315,18 @@ const EN: AdminStrings = {
   barbersDeleteConfirm: 'Delete',
   barbersDeleteCancel: 'Cancel',
   barbersDeleteBookingsBody:
-    'This barber has {count} bookings ({past} past, {upcoming} upcoming). Delete them too?',
-  barbersDeleteBookingsConfirm: 'Delete all',
+    'This barber has {count} historical or cancelled bookings ({past} total). Delete the history too?',
+  barbersDeleteBookingsConfirm: 'Delete history',
   barbersDeleteBookingsCancel: 'Cancel',
   barbersDeletedOk: 'Barber deleted.',
+  barbersDeleteUpcomingBlocked:
+    'This barber has {upcoming} active or upcoming bookings. Cancel or move them before permanent deletion.',
+  barbersAuthCleanupPending:
+    'The barber was deleted and has no data access, but the Auth account could not be cleaned automatically.',
+  barbersExternalCleanupPending:
+    'Google Calendar is being cleaned safely in the background ({count} events). Try deleting the barber again shortly.',
+  barbersDeliveryPending:
+    'This barber has booking emails that must be delivered or handled under Mail before deletion.',
   aboutTextTitle: 'About us · text',
   aboutTextLead: 'Edit the section texts in Swedish and English. Each field is saved separately.',
   aboutLoading: 'Loading content …',
@@ -1266,6 +1352,7 @@ const EN: AdminStrings = {
   aboutGalleryEmpty: 'No images yet.',
   aboutGalleryUploadedOk: 'Image uploaded.',
   aboutGalleryDeletedOk: 'Image removed.',
+  aboutGalleryDeletionPending: 'The image is hidden. Storage cleanup will retry automatically.',
   aboutGalleryRemove: 'Remove',
   aboutGalleryDeleteTitle: 'Remove image?',
   aboutGalleryDeleteBody:
@@ -1309,6 +1396,8 @@ const EN: AdminStrings = {
   forcedPwSaving: 'Saving …',
   forcedPwSubmit: 'Change password',
   resetPwSubtitle: 'Reset password',
+  resetPwIntro: 'Continue to verify the link and choose a new password.',
+  resetPwContinue: 'Continue',
   resetPwInvalidLink:
     'The reset link is invalid or has expired. Request a new one on the sign-in page.',
   resetPwChecking: 'Checking the link …',
@@ -1317,6 +1406,16 @@ const EN: AdminStrings = {
   resetPwConfirmPassword: 'Confirm new password',
   resetPwSaving: 'Saving …',
   resetPwSubmit: 'Save new password',
+  invitePwSubtitle: 'Activate your account',
+  invitePwIntro: 'Continue to verify the invitation and create your personal password.',
+  invitePwContinue: 'Open invitation',
+  invitePwInvalidLink: 'The invitation is invalid or has expired. Ask the owner for a new one.',
+  invitePwChecking: 'Checking the invitation …',
+  invitePwSuccess: 'Your account is active. Sign in with your new password.',
+  invitePwNewPassword: 'Choose password',
+  invitePwConfirmPassword: 'Confirm password',
+  invitePwSaving: 'Activating …',
+  invitePwSubmit: 'Activate account',
   emailChangeConfirmSubtitle: 'Confirm new email address',
   emailChangeConfirmIntro:
     'Confirm the change with the button below. Your email address changes immediately after confirmation.',

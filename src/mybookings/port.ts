@@ -1,21 +1,29 @@
-// The "Mina bokningar" seam. A `MyBookingsPort` lists a phone's confirmed bookings (split
-// upcoming/past) and cancels one upcoming booking. The dialog depends on this interface only; the
-// concrete implementations are `mockMyBookingsAdapter` (offline demo data) and
-// `supabaseMyBookingsAdapter` (the real backend: `list_bookings_by_phone` + `cancel_booking`).
-
 import type { Lang } from '../i18n/index'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from './domain'
 
-/** Validated lookup params — the contact is already format-checked (`parsePhone`) by the caller. */
-export interface MyBookingsLookupParams {
-  readonly contact: string
-  /** UI language — the row labels are built in this language. */
+export interface MyBookingsAccessRequestParams {
+  readonly phone: string
+  readonly email: string
+  readonly lang: Lang
+  readonly turnstileToken: string
+}
+
+export type MyBookingsAccessRequestResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: 'failed_challenge' | 'rate_limited' | 'system' }
+
+export type MyBookingsAccessExchangeResult =
+  | { readonly ok: true; readonly accessToken: string }
+  | { readonly ok: false; readonly error: 'invalid' | 'system' }
+
+export interface MyBookingsListParams {
+  readonly accessToken: string
   readonly lang: Lang
 }
 
 export interface MyBookingsPort {
-  /** List a phone's confirmed bookings, split upcoming/past. `not_found` if the phone has none. */
-  listByPhone(params: MyBookingsLookupParams): Promise<MyBookingsResult>
-  /** Cancel one upcoming booking, guarded by the proven `contact` (phone). */
-  cancel(booking: MyBooking, contact: string): Promise<MyCancelResult>
+  requestAccess(params: MyBookingsAccessRequestParams): Promise<MyBookingsAccessRequestResult>
+  exchangeAccess(accessCode: string): Promise<MyBookingsAccessExchangeResult>
+  list(params: MyBookingsListParams): Promise<MyBookingsResult>
+  cancel(booking: MyBooking, accessToken: string): Promise<MyCancelResult>
 }

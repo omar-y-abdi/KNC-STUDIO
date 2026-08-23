@@ -8,106 +8,61 @@
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-    <title>Blade &amp; Blend Studio – Barbershop i Göteborg | Boka tid online</title>
+    <title id="business-title">Boka tid online</title>
     <meta
+      id="business-description"
       name="description"
-      content="Blade &amp; Blend Studio – barbershop på Geijersgatan 10 i Göteborg. Boka tid online hos Hassan, Victor eller Salman. Öppet mån–lör 09–18, klippning från 200 kr."
+      content="Välj barberare, behandling och tid och boka online."
     />
     <link rel="canonical" href="%VITE_SITE_URL%/" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
 
-    <!-- Preload the hero/display weights to avoid first-paint font swap. -->
     <link
       rel="preload"
       as="font"
       type="font/woff2"
-      href="/fonts/SF-Pro-Display-Bold.woff2"
+      href="/fonts/InterVariable-Latin.woff2"
       crossorigin
     />
     <link
       rel="preload"
       as="font"
       type="font/woff2"
-      href="/fonts/SF-Pro-Text-Regular.woff2"
-      crossorigin
-    />
-    <!-- Brand-mark serif (Playfair) — preload so the logo paints without a block-period delay. -->
-    <link
-      rel="preload"
-      as="font"
-      type="font/woff2"
-      href="/fonts/PlayfairDisplay-Bold.woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      as="font"
-      type="font/woff2"
-      href="/fonts/PlayfairDisplay-Regular.woff2"
+      href="/fonts/PlayfairDisplay-Latin-700.woff2"
       crossorigin
     />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Blade &amp; Blend Studio" />
-    <meta property="og:title" content="Blade &amp; Blend Studio – Barbershop i Göteborg" />
+    <meta id="business-og-site-name" property="og:site_name" content="Onlinebokning" />
+    <meta id="business-og-title" property="og:title" content="Boka tid online" />
     <meta
+      id="business-og-description"
       property="og:description"
-      content="Boka tid online hos Hassan, Victor eller Salman. Geijersgatan 10, Göteborg. Öppet mån–lör 09–18."
+      content="Välj barberare, behandling och tid och boka online."
     />
     <meta property="og:url" content="%VITE_SITE_URL%/" />
     <meta property="og:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Blade &amp; Blend Studio – barbershop i Göteborg" />
+    <meta id="business-og-image-alt" property="og:image:alt" content="Onlinebokning" />
     <meta property="og:locale" content="sv_SE" />
     <meta property="og:locale:alternate" content="en_US" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Blade &amp; Blend Studio – Barbershop i Göteborg" />
+    <meta id="business-twitter-title" name="twitter:title" content="Boka tid online" />
     <meta
+      id="business-twitter-description"
       name="twitter:description"
-      content="Boka tid online. Geijersgatan 10, Göteborg. Öppet mån–lör 09–18."
+      content="Välj barberare, behandling och tid och boka online."
     />
     <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
 
     <!-- Structured data: HairSalon (LocalBusiness) -->
     <script id="business-json-ld" type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "HairSalon",
-        "@id": "%VITE_SITE_URL%/#business",
-        "name": "Blade & Blend Studio",
-        "url": "%VITE_SITE_URL%/",
-        "image": "%VITE_SITE_URL%/og-image.png",
-        "telephone": "+46793043671",
-        "priceRange": "200–450 kr",
-        "currenciesAccepted": "SEK",
-        "address": {
-          "@type": "PostalAddress",
-          "streetAddress": "Geijersgatan 10",
-          "postalCode": "411 34",
-          "addressLocality": "Göteborg",
-          "addressCountry": "SE"
-        },
-        "hasMap": "https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg",
-        "openingHoursSpecification": [
-          {
-            "@type": "OpeningHoursSpecification",
-            "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-            "opens": "09:00",
-            "closes": "18:00"
-          }
-        ],
-        "availableLanguage": ["sv", "en"],
-        "employee": [
-          { "@type": "Person", "name": "Hassan" },
-          { "@type": "Person", "name": "Victor" },
-          { "@type": "Person", "name": "Salman" }
-        ]
-      }
+      {}
     </script>
   </head>
   <body>

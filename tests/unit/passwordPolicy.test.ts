@@ -10,28 +10,42 @@ describe('validateNewPassword', () => {
   })
 
   it('accepts a password exactly at the minimum length', () => {
-    const min = 'a'.repeat(MIN_PASSWORD_LENGTH)
+    const min = 'Aa1!' + 'a'.repeat(MIN_PASSWORD_LENGTH - 4)
     expect(validateNewPassword(min, min)).toEqual({ ok: true })
   })
 
+  it('requires lowercase, uppercase, digit, symbol, and no whitespace', () => {
+    for (const weak of [
+      'STRONGPASSWORD1!',
+      'strongpassword1!',
+      'StrongPassword!',
+      'StrongPassword1',
+      'Strong Pass1!',
+    ]) {
+      expect(validateNewPassword(weak, weak).ok).toBe(false)
+    }
+  })
+
   it('rejects when confirmation does not match', () => {
-    const r = validateNewPassword('secret123', 'secret124')
+    const r = validateNewPassword('StrongPass1!', 'StrongPass2!')
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toBe('Lösenorden matchar inte.')
   })
 
   it('rejects when the new password equals the current one', () => {
-    const r = validateNewPassword('samePass1', 'samePass1', 'samePass1')
+    const r = validateNewPassword('SamePassword1!', 'SamePassword1!', 'SamePassword1!')
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain('skilja sig')
   })
 
   it('accepts a valid change that differs from the current password', () => {
-    expect(validateNewPassword('newPass99', 'newPass99', 'oldPass11')).toEqual({ ok: true })
+    expect(validateNewPassword('NewPassword99!', 'NewPassword99!', 'OldPassword11!')).toEqual({
+      ok: true,
+    })
   })
 
   it('ignores the current-password check when current is omitted (recovery flow)', () => {
-    expect(validateNewPassword('freshPass1', 'freshPass1')).toEqual({ ok: true })
+    expect(validateNewPassword('FreshPassword1!', 'FreshPassword1!')).toEqual({ ok: true })
   })
 
   it('checks length before the match check (short + mismatched => length reason)', () => {

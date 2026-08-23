@@ -65,13 +65,17 @@ export async function saveSiteContent(
 }
 
 /** Upsert one site setting (owner-only). */
-export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<null>> {
+export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<string>> {
   try {
-    const { error } = await getAdminClient()
+    const { data, error } = await getAdminClient()
       .from('site_settings')
       .upsert({ key, value }, { onConflict: 'key' })
-    if (error !== null) return mapWriteError(error)
-    return ok(null)
+      .select('key,value')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+    return data.key === key && typeof data.value === 'string'
+      ? ok(data.value)
+      : err('malformed', WRITE_ERROR)
   } catch {
     return err('network', WRITE_ERROR)
   }
@@ -79,6 +83,8 @@ export async function saveSiteSetting(key: string, value: string): Promise<Admin
 
 function mapWriteError(error: { code?: string } | null): AdminResult<never> {
   if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra startsidan.')
-  if (error?.code === '23514') return err('validation', 'Texten är för lång.')
+  if (error?.code === '23514' || error?.code === '22023') {
+    return err('validation', 'Kontrollera att inställningen har ett giltigt format.')
+  }
   return err('network', WRITE_ERROR)
 }

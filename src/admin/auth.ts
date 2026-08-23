@@ -17,6 +17,7 @@ const NETWORK_ERROR = 'Kunde inte nå servern. Försök igen.'
 const BAD_CREDENTIALS = 'Fel e‑post eller lösenord.'
 /** Authenticated but no linked profile (owner forgot to create the `profiles` row). */
 const NO_PROFILE = 'Ditt konto saknar en roll. Kontakta ägaren.'
+const ACCOUNT_DISABLED = 'Kontot är avstängt. Kontakta ägaren.'
 /** A recovery link that is missing, malformed, or expired (server rejected the session). */
 const RECOVERY_LINK_INVALID = 'Återställningslänken är ogiltig eller har gått ut. Begär en ny.'
 /** The password update itself failed (e.g. server-side policy) after the input passed local checks. */
@@ -36,7 +37,9 @@ export async function signIn(email: string, password: string): Promise<AdminResu
   try {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error !== null || data.user === null) return err('auth', BAD_CREDENTIALS)
-    return resolveProfile(data.user.id, data.user.email ?? email)
+    const profile = await resolveProfile(data.user.id, data.user.email ?? email)
+    if (!profile.ok && profile.error.kind !== 'network') await supabase.auth.signOut()
+    return profile
   } catch {
     return err('network', NETWORK_ERROR)
   }
@@ -53,7 +56,9 @@ export async function getActiveProfile(): Promise<AdminResult<AdminProfile>> {
     if (error !== null) return err('network', NETWORK_ERROR)
     const session = data.session
     if (session === null) return err('not_found', 'No active session')
-    return resolveProfile(session.user.id, session.user.email ?? '')
+    const profile = await resolveProfile(session.user.id, session.user.email ?? '')
+    if (!profile.ok && profile.error.kind !== 'network') await supabase.auth.signOut()
+    return profile
   } catch {
     return err('network', NETWORK_ERROR)
   }
@@ -65,7 +70,7 @@ async function resolveProfile(userId: string, email: string): Promise<AdminResul
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('role, barber_id, must_change_password')
+      .select('role, barber_id, must_change_password, account_enabled')
       .eq('id', userId)
       .maybeSingle()
     if (error !== null) return err('network', NETWORK_ERROR)
@@ -73,6 +78,7 @@ async function resolveProfile(userId: string, email: string): Promise<AdminResul
 
     const parsed = parseWith(profileRow, data)
     if (!parsed.ok) return err('malformed', NO_PROFILE)
+    if (!parsed.value.account_enabled) return err('forbidden', ACCOUNT_DISABLED)
 
     return ok<AdminProfile>({
       userId,
@@ -192,6 +198,20 @@ export async function verifyRecoveryTokenHash(tokenHash: string): Promise<AdminR
   }
 }
 
+/** Verify a branded staff invite token and establish its short-lived password-setup session. */
+export async function verifyInviteTokenHash(tokenHash: string): Promise<AdminResult<void>> {
+  try {
+    const { error } = await getAdminClient().auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'invite',
+    })
+    if (error !== null) return err('auth', RECOVERY_LINK_INVALID)
+    return ok(undefined)
+  } catch {
+    return err('network', NETWORK_ERROR)
+  }
+}
+
 /**
  * Establish a recovery session from the implicit-flow tokens carried in the `/reset` URL hash. The
  * admin client has `detectSessionInUrl: false`, so the page parses the URL (`recoveryLink.ts`) and
@@ -253,7 +273,7 @@ export async function setNewPassword(newPassword: string): Promise<AdminResult<v
  * Update the signed-in barber's password WITHOUT signing out. Used ONLY in the forced-change gate
  * (`ForcedPasswordChange`) so the barber proceeds into the panel immediately after picking a new
  * password. The voluntary change flow (`changePassword`) is different — it signs out by design.
- * `validateNewPassword` (with '123456' as current) should gate the input before calling this.
+ * `validateNewPassword` should gate the input before calling this.
  */
 export async function setOwnPasswordKeepSession(newPassword: string): Promise<AdminResult<void>> {
   try {

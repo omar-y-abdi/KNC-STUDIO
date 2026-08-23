@@ -2,15 +2,12 @@
 // panel with the barber's JWT (verify_jwt = true). Identity is DB-derived (auth.getUser + profiles);
 // a barber can only disconnect THEIR OWN calendar.
 //
-// Effect: delete_token returns the stored refresh token (so we can best-effort revoke it at Google),
-// then removes the token row + the barber's event mappings. Existing events already pushed into the
-// barber's calendar are left in place (they are real past/future bookings); a future reconnect
-// re-backfills from scratch.
+// Effect: atomically marks disconnect pending and queues durable deletion for every mapped event.
+// Background cleanup revokes the Google grant and removes the token only after mappings drain.
 //
 // Run locally: npx supabase functions serve calendar-disconnect --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { revokeToken } from '../_shared/calendar.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -42,34 +39,34 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!jwt) return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
-  if (callerError || callerData.user === null) return json({ ok: false, error: 'unauthorized' }, 401)
+  if (callerError || callerData.user === null)
+    return json({ ok: false, error: 'unauthorized' }, 401)
 
   const { data: profile, error: profileError } = await service
     .from('profiles')
-    .select('role, barber_id')
+    .select('role, barber_id, account_enabled')
     .eq('id', callerData.user.id)
     .single()
   if (profileError || profile === null) return json({ ok: false, error: 'unauthorized' }, 401)
 
-  const barberId = profile.role === 'barber' ? profile.barber_id : null
+  const barberId =
+    profile.role === 'barber' && profile.account_enabled === true ? profile.barber_id : null
   if (typeof barberId !== 'string' || barberId === '') {
     return json({ ok: false, error: 'forbidden' }, 403)
   }
 
-  const { data: token, error: deleteError } = await service.rpc('calendar_delete_token', {
+  const { data: result, error: prepareError } = await service.rpc('prepare_calendar_disconnect', {
     p_barber_id: barberId,
   })
-  if (deleteError) {
-    console.error('calendar-disconnect: delete_token failed:', deleteError.message)
+  if (prepareError) {
+    console.error('calendar-disconnect: prepare failed:', prepareError.message)
     return json({ ok: false, error: 'disconnect_failed' }, 500)
   }
-  // Best-effort revoke at Google (this is what removes the app from the barber's "third-party access"
-  // and frees an unverified-app user slot). The token row is already gone regardless; a failed revoke
-  // is logged, not fatal.
-  if (typeof token === 'string' && token !== '') {
-    const revoked = await revokeToken(token)
-    if (!revoked) console.error(`calendar-disconnect: google revoke did not confirm for barber ${barberId}`)
+
+  if (typeof result !== 'object' || result === null || result['ok'] !== true) {
+    console.error('calendar-disconnect: invalid prepare result')
+    return json({ ok: false, error: 'disconnect_failed' }, 500)
   }
 
-  return json({ ok: true }, 200)
+  return json({ ok: true, pending: result['pending'] === true }, 200)
 })

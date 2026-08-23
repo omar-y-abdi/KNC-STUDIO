@@ -1,7 +1,5 @@
-// Domain ADTs for the "Mina bokningar" (My appointments) self-service flow. Mirrors the cancellation
-// domain's shape — branded-ish Result unions, a pre-formatted display label so the dialog stays
-// presentation-only — but returns the customer's FULL confirmed history split into upcoming/past
-// rather than a single appointment.
+// Domain ADTs for the "Mina bokningar" (My appointments) self-service flow. The dialog receives
+// pre-formatted rows and only renders the customer history issued to its email-scoped session.
 
 import type { Barber } from '../booking/domain'
 
@@ -27,15 +25,13 @@ export interface MyBookings {
 }
 
 /**
- * Result of listing a phone's bookings.
- *  - `not_found`: the phone has no confirmed bookings (unknown/never-booked number).
- *  - `system`: a network/parse failure (distinct from not_found so the dialog can message + retry
- *    without the "contact the salon" escalation, which is reserved for a genuinely unknown number).
+ * Result of listing email-scoped customer bookings.
  */
 export type MyBookingsResult =
   | { readonly ok: true; readonly bookings: MyBookings }
-  | { readonly ok: false; readonly error: 'not_found' | 'system' }
+  | { readonly ok: false; readonly error: 'access_denied' | 'system' }
 
 /** Result of cancelling one upcoming booking. */
 export type MyCancelResult =
-  { readonly ok: true; readonly id: string } | { readonly ok: false; readonly error: string }
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly error: 'access_denied' | 'not_found' | 'system' }

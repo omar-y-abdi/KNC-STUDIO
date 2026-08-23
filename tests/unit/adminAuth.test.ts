@@ -6,16 +6,25 @@ const authMocks = vi.hoisted(() => ({
   verifyOtp: vi.fn(),
   signOut: vi.fn(),
   invoke: vi.fn(),
+  from: vi.fn(),
+  select: vi.fn(),
+  eq: vi.fn(),
+  maybeSingle: vi.fn(),
 }))
 
 vi.mock('../../src/admin/adminClient', () => ({
-  getAdminClient: () => ({ auth: authMocks, functions: { invoke: authMocks.invoke } }),
+  getAdminClient: () => ({
+    auth: authMocks,
+    functions: { invoke: authMocks.invoke },
+    from: authMocks.from,
+  }),
 }))
 
 import {
   changeOwnPassword,
   confirmOwnEmailChange,
   requestOwnEmailChange,
+  signIn,
 } from '../../src/admin/auth'
 
 describe('admin account settings auth', () => {
@@ -25,6 +34,13 @@ describe('admin account settings auth', () => {
     authMocks.verifyOtp.mockReset()
     authMocks.signOut.mockReset()
     authMocks.invoke.mockReset()
+    authMocks.from.mockReset()
+    authMocks.select.mockReset()
+    authMocks.eq.mockReset()
+    authMocks.maybeSingle.mockReset()
+    authMocks.from.mockReturnValue({ select: authMocks.select })
+    authMocks.select.mockReturnValue({ eq: authMocks.eq })
+    authMocks.eq.mockReturnValue({ maybeSingle: authMocks.maybeSingle })
   })
 
   it('verifies the current password, updates it and keeps the session', async () => {
@@ -106,5 +122,33 @@ describe('admin account settings auth', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('auth')
+  })
+
+  it('clears a newly issued session when the staff account is disabled', async () => {
+    authMocks.signInWithPassword.mockResolvedValue({
+      data: { user: { id: 'user-1', email: 'staff@example.com' } },
+      error: null,
+    })
+    authMocks.maybeSingle.mockResolvedValue({
+      data: {
+        role: 'barber',
+        barber_id: 'hassan',
+        must_change_password: false,
+        account_enabled: false,
+      },
+      error: null,
+    })
+    authMocks.signOut.mockResolvedValue({ error: null })
+
+    const result = await signIn('staff@example.com', 'password')
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'forbidden', message: 'Kontot är avstängt. Kontakta ägaren.' },
+    })
+    expect(authMocks.signOut).toHaveBeenCalledOnce()
+    expect(authMocks.select).toHaveBeenCalledWith(
+      'role, barber_id, must_change_password, account_enabled',
+    )
   })
 })
