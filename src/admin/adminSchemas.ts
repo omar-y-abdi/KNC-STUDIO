@@ -183,7 +183,15 @@ export const failedBookingEmailDeliveryRow = z.object({
   booking_id: z.string().uuid(),
   event: z.enum(['booking_confirmed', 'booking_cancelled']),
   attempt_count: z.number().int().nonnegative(),
-  last_error_code: z.enum(['not_configured', 'send_failed', 'message_build_failed']).nullable(),
+  last_error_code: z
+    .enum([
+      'not_configured',
+      'send_failed',
+      'send_failed_transient',
+      'send_failed_permanent',
+      'message_build_failed',
+    ])
+    .nullable(),
   failed_at: isoTimestamp.nullable(),
 })
 export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)

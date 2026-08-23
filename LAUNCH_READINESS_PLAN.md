@@ -121,8 +121,10 @@ täcks av pgTAP och ska inte ändras utan nya regressionstester.
       e-postmallar i dashboard.
 - [ ] Verifiera Resend DKIM, SPF och DMARC för `mail.bladeblendstudio.se`; skicka seed-tester till
       Gmail, iCloud och Outlook från `booking@mail.bladeblendstudio.se`.
-- [ ] Slutför Google OAuth branding-verifiering och testa Calendar connect/disconnect/sync med
-      riktig barberare.
+- [ ] I Google Cloud: ersätt `calendar.events` med exakt
+      `https://www.googleapis.com/auth/calendar.events.owned`, slutför OAuth branding-verifiering
+      och återanslut alla barberare med befintliga bredare Calendar-tokens. Testa sedan
+      connect/disconnect/sync med riktig barberare.
 - [ ] Lägg GitHub secrets `SUPABASE_DB_URL` och `SUPABASE_STORAGE_SECRET_KEY`, variables
       `SUPABASE_URL` och `BACKUP_AGE_RECIPIENT`; kör backup-workflow manuellt, verifiera objektantal
       och spara offline-nyckeln på två säkra platser.

@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(36);
 
 select has_table('public', 'booking_email_delivery_jobs', 'booking email delivery job table exists');
 select ok(
@@ -281,6 +281,27 @@ select is(
      and event = 'booking_cancelled'),
   'delivered',
   'completed cancellation does not remain eligible for retry'
+);
+
+update public.booking_email_delivery_jobs
+set status = 'dispatching', attempt_count = 1, last_attempt_at = pg_catalog.now()
+where booking_id = '30000000-0000-0000-0000-000000000001'
+  and event = 'booking_cancelled';
+select ok(
+  public.fail_booking_email_delivery(
+    (select id from public.booking_email_delivery_jobs
+     where booking_id = '30000000-0000-0000-0000-000000000001'
+       and event = 'booking_cancelled'),
+    'send_failed_permanent'
+  ),
+  'permanent provider failure is accepted by the delivery contract'
+);
+select is(
+  (select status from public.booking_email_delivery_jobs
+   where booking_id = '30000000-0000-0000-0000-000000000001'
+     and event = 'booking_cancelled'),
+  'failed',
+  'permanent provider failure becomes terminal without consuming retry attempts'
 );
 
 select * from finish();

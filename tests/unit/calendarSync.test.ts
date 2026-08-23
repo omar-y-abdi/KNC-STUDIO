@@ -13,6 +13,7 @@ import {
   GoogleHttpError,
   insertEvent,
   isTransientGoogleError,
+  OAUTH_SCOPE,
   revokeToken,
   signState,
   timingSafeEqual,
@@ -112,6 +113,10 @@ describe('public Calendar privacy disclosure', () => {
     new URL('../../public/privacy.html', import.meta.url),
     'utf8',
   ).replace(/\s+/g, ' ')
+  const setup = readFileSync(
+    new URL('../../supabase/functions/calendar-sync/README.md', import.meta.url),
+    'utf8',
+  )
 
   it('matches minimized event content and durable disconnect cleanup', () => {
     expect(privacy).toContain('kundens namn, behandling och bokad tid')
@@ -124,6 +129,14 @@ describe('public Calendar privacy disclosure', () => {
     expect(privacy).toContain('refresh token is retained only during this')
     expect(privacy).not.toContain('Kalenderhändelser som redan skapats ligger kvar')
     expect(privacy).not.toContain('Calendar events already created remain')
+  })
+
+  it('documents the exact production scope used by the OAuth redirect', () => {
+    expect(OAUTH_SCOPE).toContain('https://www.googleapis.com/auth/calendar.events.owned')
+    expect(setup).toContain('https://www.googleapis.com/auth/calendar.events.owned')
+    expect(privacy).toContain('<code>calendar.events.owned</code>')
+    expect(setup).not.toContain('https://www.googleapis.com/auth/calendar.events`')
+    expect(privacy).not.toContain('<code>calendar.events</code>')
   })
 })
 

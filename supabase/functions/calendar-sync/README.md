@@ -32,14 +32,16 @@ https://<PROJECT_REF>.supabase.co/functions/v1/calendar-oauth-callback
 origins are only needed for a browser token flow, which we don't use).
 
 **OAuth consent screen — scopes:** `openid`, `email`, and
-`https://www.googleapis.com/auth/calendar.events` (the last is a _sensitive_ scope).
+`https://www.googleapis.com/auth/calendar.events.owned` (the last is a _sensitive_ scope). This
+limits the connection to calendars owned by the barber.
 
 **Publishing status — pick ONE (this is the only real dependency):**
 
 - **A — Internal (best, if you have a Google Workspace domain):** set User type = _Internal_. No
   verification, refresh tokens never expire. Requires every barber to be a user in that Workspace.
 - **B — External / consumer Gmail:** to get durable tokens you must publish the app **In production**
-  and pass Google verification for `calendar.events` (privacy-policy URL + brand review; days–weeks).
+  and pass Google verification for `calendar.events.owned` (privacy-policy URL + brand review;
+  days–weeks).
   In **Testing** status everything works immediately, BUT **refresh tokens expire after 7 days** — a
   barber would have to re-tap Koppla kalender weekly. Fine for a pilot, not for production.
 

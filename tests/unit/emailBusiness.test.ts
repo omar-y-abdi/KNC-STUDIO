@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEmailMessage,
   defaultEmailTemplate,
   loadEmailBusiness,
+  ResendDeliveryError,
+  resendDeliveryFailureCode,
+  sendViaResend,
 } from '../../supabase/functions/_shared/email'
 
 function discoveryClient(settings: Record<string, string>) {
@@ -94,5 +97,66 @@ describe('transactional email business data', () => {
       expect(source).not.toContain('079-304')
       expect(source).not.toContain('tel:+46793043671')
     }
+  })
+})
+
+describe('Resend delivery failure classification', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const message = {
+    to: 'customer@example.com',
+    from: 'Studio <booking@mail.example.com>',
+    replyTo: 'contact@example.com',
+    subject: 'Booking confirmation',
+    text: 'Booking confirmation',
+    html: '<p>Booking confirmation</p>',
+  }
+
+  async function failure(status: number, name?: string): Promise<unknown> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ name, message: 'provider rejected request' }), { status }),
+      ),
+    )
+    try {
+      await sendViaResend(message, 're_test', 'booking-confirmation/customer/test')
+      throw new Error('expected Resend request to fail')
+    } catch (error) {
+      return error
+    }
+  }
+
+  it('fails terminally for invalid requests and retryably for provider outages', async () => {
+    const invalid = await failure(422, 'invalid_from_address')
+    const rateLimited = await failure(429, 'rate_limit_exceeded')
+    const unavailable = await failure(503, 'internal_server_error')
+
+    expect(invalid).toBeInstanceOf(ResendDeliveryError)
+    expect(resendDeliveryFailureCode(invalid)).toBe('send_failed_permanent')
+    expect(resendDeliveryFailureCode(rateLimited)).toBe('send_failed_transient')
+    expect(resendDeliveryFailureCode(unavailable)).toBe('send_failed_transient')
+  })
+
+  it('retries only the safe concurrent-idempotency response', async () => {
+    const concurrent = await failure(409, 'concurrent_idempotent_requests')
+    const conflicting = await failure(409, 'invalid_idempotent_request')
+
+    expect(resendDeliveryFailureCode(concurrent)).toBe('send_failed_transient')
+    expect(resendDeliveryFailureCode(conflicting)).toBe('send_failed_permanent')
+  })
+
+  it('retries transport failures', async () => {
+    const transportError = new Error('network unavailable')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(transportError)),
+    )
+
+    await expect(
+      sendViaResend(message, 're_test', 'booking-confirmation/customer/test'),
+    ).rejects.toBe(transportError)
+    expect(resendDeliveryFailureCode(transportError)).toBe('send_failed_transient')
   })
 })

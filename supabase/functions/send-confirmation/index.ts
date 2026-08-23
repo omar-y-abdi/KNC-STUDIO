@@ -4,6 +4,7 @@ import {
   defaultEmailTemplate,
   loadEmailBusiness,
   loadEmailTemplate,
+  resendDeliveryFailureCode,
   sendViaResend,
   type EmailDetailRow,
   type EmailBusiness,
@@ -144,7 +145,8 @@ async function completeDelivery(id: string, status: DeliveryStatus): Promise<boo
 
 async function failDelivery(
   id: string,
-  errorCode: 'not_configured' | 'send_failed' | 'message_build_failed',
+  errorCode:
+    'not_configured' | 'message_build_failed' | 'send_failed_transient' | 'send_failed_permanent',
 ) {
   const client = serviceClient()
   if (client === null) return
@@ -423,8 +425,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
       throw new Error('delivery update failed')
     return json({ ok: true, event, sent: messagesToSend.map((entry) => entry.kind) }, 200)
-  } catch {
-    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'send_failed')
+  } catch (error) {
+    if (parsed.deliveryId !== null)
+      await failDelivery(parsed.deliveryId, resendDeliveryFailureCode(error))
     console.error('send-confirmation delivery failed', {
       event,
       queued: parsed.deliveryId !== null,

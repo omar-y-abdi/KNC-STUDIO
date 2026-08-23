@@ -38,7 +38,13 @@ export interface FailedBookingEmailDelivery {
   readonly bookingId: string
   readonly event: 'booking_confirmed' | 'booking_cancelled'
   readonly attemptCount: number
-  readonly errorCode: 'not_configured' | 'send_failed' | 'message_build_failed' | null
+  readonly errorCode:
+    | 'not_configured'
+    | 'send_failed'
+    | 'send_failed_transient'
+    | 'send_failed_permanent'
+    | 'message_build_failed'
+    | null
   readonly failedAt: string | null
 }
 

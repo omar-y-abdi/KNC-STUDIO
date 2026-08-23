@@ -37,6 +37,20 @@ export interface EmailMessage {
   readonly html: string
 }
 
+export type ResendFailureKind = 'transient' | 'permanent'
+
+export class ResendDeliveryError extends Error {
+  readonly kind: ResendFailureKind
+  readonly status: number
+
+  constructor(kind: ResendFailureKind, status: number, message: string) {
+    super(message)
+    this.name = 'ResendDeliveryError'
+    this.kind = kind
+    this.status = status
+  }
+}
+
 interface EmailBuildInput {
   readonly to: string
   readonly lang: EmailLanguage
@@ -447,11 +461,35 @@ export async function sendViaResend(
   })
   if (response.ok) return
   const payload: unknown = await response.json().catch(() => null)
+  const providerCode =
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as Record<string, unknown>).name === 'string'
+      ? String((payload as Record<string, unknown>).name)
+      : null
   const providerMessage =
     typeof payload === 'object' &&
     payload !== null &&
     typeof (payload as Record<string, unknown>).message === 'string'
       ? String((payload as Record<string, unknown>).message)
       : 'unknown provider error'
-  throw new Error(`Resend API returned ${response.status}: ${providerMessage.slice(0, 240)}`)
+  const retryable =
+    response.status === 408 ||
+    response.status === 425 ||
+    response.status === 429 ||
+    response.status >= 500 ||
+    (response.status === 409 && providerCode === 'concurrent_idempotent_requests')
+  throw new ResendDeliveryError(
+    retryable ? 'transient' : 'permanent',
+    response.status,
+    `Resend API returned ${response.status}: ${providerMessage.slice(0, 240)}`,
+  )
+}
+
+export function resendDeliveryFailureCode(
+  error: unknown,
+): 'send_failed_transient' | 'send_failed_permanent' {
+  return error instanceof ResendDeliveryError && error.kind === 'permanent'
+    ? 'send_failed_permanent'
+    : 'send_failed_transient'
 }
