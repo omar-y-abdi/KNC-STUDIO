@@ -115,16 +115,26 @@ temporary_directory="$(mktemp -d)"
 trap 'rm -rf "$temporary_directory"' EXIT
 
 storage_request() {
-  curl \
+  local response_headers
+  response_headers="$(mktemp "$temporary_directory/headers.XXXXXX")"
+  if ! curl \
     --fail \
     --silent \
     --show-error \
-    --location \
     --retry 3 \
     --retry-delay 1 \
     --retry-all-errors \
+    --dump-header "$response_headers" \
     "${STORAGE_AUTH_HEADERS[@]}" \
-    "$@"
+    "$@"; then
+    rm -f "$response_headers"
+    return 1
+  fi
+  if ! storage_require_no_redirect "$response_headers"; then
+    rm -f "$response_headers"
+    return 1
+  fi
+  rm -f "$response_headers"
 }
 
 normalized_bucket() {
@@ -133,18 +143,21 @@ normalized_bucket() {
 
 ensure_bucket() {
   local bucket="$1"
-  local bucket_id response status expected actual create_payload
+  local bucket_id response status response_headers expected actual create_payload
 
   bucket_id="$(jq -r '.id' <<<"$bucket")"
   response="$temporary_directory/bucket-${bucket_id}.json"
+  response_headers="$(mktemp "$temporary_directory/headers.XXXXXX")"
   status="$(curl \
     --silent \
     --show-error \
-    --location \
+    --dump-header "$response_headers" \
     --output "$response" \
     --write-out '%{http_code}' \
     "${STORAGE_AUTH_HEADERS[@]}" \
     "$storage_url/bucket/$(urlencode "$bucket_id")")" || die "could not inspect target bucket $bucket_id"
+  storage_require_no_redirect "$response_headers" || die "redirect refused while inspecting target bucket $bucket_id"
+  rm -f "$response_headers"
 
   case "$status" in
     200)

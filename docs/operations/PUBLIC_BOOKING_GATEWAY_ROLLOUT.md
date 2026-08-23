@@ -8,7 +8,7 @@ below. Never run the contract migration before the switched Worker has passed li
 - PR validation and encrypted backup workflow are green.
 - `npx supabase migration list --linked` shows no remote migration after `20260812112939`.
 - Edge Function secrets are present, including `TURNSTILE_SECRET`, `IP_SALT`,
-  `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, and `WEBHOOK_SECRET`.
+  `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, `RESEND_API_KEY`, and `WEBHOOK_SECRET`.
 - Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
   `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
   dispatchers read the same value from Vault key `booking_webhook_secret`.
@@ -36,7 +36,9 @@ npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
 Expected final migration in this phase: `20260813123852_expand_public_booking_gateway.sql`.
-Anonymous legacy RPCs and service-role gateway RPCs must both remain executable:
+`20260813123851_review_hardening.sql` is part of this phase and adds the email-scoped customer access
+session before expand. Do not omit it. Anonymous legacy RPCs and both new and legacy service-role
+gateway RPCs must remain executable:
 
 ```bash
 npx supabase test db --db-url "$DATABASE_URL" \
@@ -46,10 +48,18 @@ npx supabase test db --db-url "$DATABASE_URL" \
 ## 2. Deploy Edge Functions
 
 Deploy all functions because this migration set also changes email, Calendar, image cleanup, and
-staff-account side effects. Do not use `--prune` during this rollout.
+staff-account side effects. Do not use `--prune` during this rollout. `upload-image` carries a
+static WASM asset, so deploy it with local Docker bundling rather than `--use-api`.
 
 ```bash
-npx supabase functions deploy --project-ref "$PROJECT_REF" --use-api
+for function in \
+  admin-create-barber admin-manage-barber \
+  calendar-disconnect calendar-oauth-callback calendar-oauth-start calendar-sync \
+  external-cleanup public-booking-actions send-confirmation send-email-change \
+  send-recovery-email submit-booking; do
+  npx supabase functions deploy "$function" --project-ref "$PROJECT_REF" --use-api
+done
+npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
 npx supabase functions list --project-ref "$PROJECT_REF"
 ```
 
@@ -66,7 +76,8 @@ printf '%s' "$VITE_SUPABASE_ANON_KEY" | npx wrangler secret put SUPABASE_ANON_KE
 npm run deploy
 ```
 
-The deployed frontend must contain no direct calls to legacy customer-action RPCs:
+The deployed frontend must contain no direct calls to legacy customer-action RPCs. Customer history
+and cancellation must call `public-booking-actions` with an opaque access token only:
 
 ```bash
 ! grep -R -E "\\.rpc\\([^)]*(lookup_booking|list_bookings_by_phone|cancel_booking|create_review)" dist
@@ -85,8 +96,11 @@ curl -fsS https://bladeblendstudio.se/ | grep -F 'business-json-ld'
 curl -fsS https://bladeblendstudio.se/llms.txt | grep -F '# Blade & Blend Studio'
 ```
 
-Then manually verify one real Turnstile-protected lookup, list, cancellation, and review rejection or
-success through the production UI. Confirm customer cancellation and Calendar cleanup jobs drain.
+Then manually verify one real Turnstile-protected **secure-link request** using an exact booking phone
+and email, follow the one-time email link, load that customer's booking history, and cancel an eligible
+booking. Verify a second booking sharing the phone but using a different email is not shown or
+cancellable. Also verify review rejection or success through the production UI. Confirm customer
+cancellation and Calendar cleanup jobs drain.
 
 ## 5. Contract
 

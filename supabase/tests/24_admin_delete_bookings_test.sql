@@ -14,7 +14,7 @@
 -- `supabase test db` to verify. anon lockout is asserted against the catalog (has_function_privilege).
 
 begin;
-select plan(17);
+select plan(20);
 
 -- ---- barbers + identities --------------------------------------------------------------------
 insert into public.barbers (id, name) values ('abar','A Barber'), ('bbar','B Barber');
@@ -43,6 +43,17 @@ values
 
 insert into public.reviews (id, name, rating, text, booking_id, published) values
   ('4c000000-0000-0000-0000-000000000001','A P.',5,'Nice','4b000000-0000-0000-0000-0000000000a1',true);
+
+-- These existing history rows exercise deletion authorization, not delivery recovery. Mark their
+-- insert-generated jobs terminally delivered so the delivery guard does not mask each assertion.
+update public.booking_email_delivery_jobs
+set status = 'delivered', completed_at = pg_catalog.now()
+where booking_id in (
+  '4b000000-0000-0000-0000-0000000000a1',
+  '4b000000-0000-0000-0000-0000000000a2',
+  '4b000000-0000-0000-0000-0000000000a3',
+  '4b000000-0000-0000-0000-0000000000b1'
+);
 
 -- =============================================================================================
 -- empty / null selection -> empty (checked before authz; run as the owner).
@@ -136,6 +147,30 @@ select is((select count(*)::int from public.bookings where id = '4b000000-0000-0
   'the other barber''s past booking is deleted by the owner');
 select is((select count(*)::int from public.bookings where id = '4b000000-0000-0000-0000-0000000000a3'), 0,
   'the cancelled booking is deleted by the owner');
+
+-- A pending transactional email must survive with its booking. Deleting the booking would cascade
+-- the durable job and make customer/barber delivery impossible.
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('4b000000-0000-0000-0000-0000000000c1', 'abar', 'h', 'Hår', 350, 45,
+   '2020-07-01 09:00+00', '2020-07-01 09:45+00',
+   'Pending Delivery', 'email', '0701110005', 'pending@example.test', 'sv', 'confirmed');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub','40000000-0000-0000-0000-000000000001')::text, true);
+select is(
+  public.admin_delete_bookings(array['4b000000-0000-0000-0000-0000000000c1']::uuid[]) ->> 'error',
+  'delivery_pending',
+  'owner cannot delete booking while its transactional email is pending'
+);
+reset role;
+select is((select count(*)::int from public.bookings where id = '4b000000-0000-0000-0000-0000000000c1'), 1,
+  'booking remains while delivery is pending');
+select is((select count(*)::int from public.booking_email_delivery_jobs
+           where booking_id = '4b000000-0000-0000-0000-0000000000c1' and status = 'pending'), 1,
+  'durable delivery job remains recoverable with its booking');
 
 select * from finish();
 rollback;

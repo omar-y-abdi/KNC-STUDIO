@@ -9,7 +9,7 @@ Actions artifact for 30 days.
 
 The encrypted bundle contains:
 
-- `schema.sql` and `data.sql` for application data;
+- `schema.sql` and `data.sql` for application data and Auth users, excluding Storage metadata;
 - `history_data.sql` for `supabase_migrations` lineage;
 - `storage/buckets.json`, dynamically inventoried from every current standard bucket;
 - `storage/objects.ndjson`, containing every object path, byte size, SHA-256 checksum, and content
@@ -26,9 +26,11 @@ Storage export. Any changed reference or reference without captured bytes aborts
 and Storage still do not share one transaction, so schedule the first production backup during a quiet
 window and repeat immediately after any maintenance import.
 
-Database dumps include application schema, database data, and Auth users. This project defines no
-custom PostgreSQL roles; Supabase-managed roles come from the target project and are not restored.
-The Storage export covers object bytes and bucket configuration, not project secrets, Auth
+Database dumps include application schema, application data, and Auth users, but deliberately exclude
+`storage.buckets` and `storage.objects`. `storage/buckets.json`, `storage/objects.ndjson`, and the
+checksummed object bytes are the single authoritative Storage restore source. This project defines no
+custom PostgreSQL roles; Supabase-managed roles come from the target project and are not restored. The
+Storage export covers object bytes and bucket configuration, not project secrets, Auth
 configuration, Edge Function secrets, Google credentials, Resend configuration, Cloudflare settings,
 or other third-party dashboards.
 
@@ -96,17 +98,13 @@ psql \
 export SUPABASE_URL='https://NEW_PROJECT_REF.supabase.co'
 export SUPABASE_STORAGE_SECRET_KEY='new-project-secret-key'
 
-# Database restore can recreate Storage metadata first. This explicit flag is safe only for this
-# brand-new target and lets the script reconcile those bucket records before writing object bytes.
 bash tools/backup/storage-restore.sh \
-  --input /tmp/bladeblend-restore/storage \
-  --allow-existing-buckets
+  --input /tmp/bladeblend-restore/storage
 
 # Downloads every restored object again, checks every SHA-256 and byte count, and proves target
 # inventory has no missing or extra object relative to the encrypted backup.
 bash tools/backup/storage-restore.sh \
   --input /tmp/bladeblend-restore/storage \
-  --allow-existing-buckets \
   --verify-only
 
 unset SUPABASE_STORAGE_SECRET_KEY

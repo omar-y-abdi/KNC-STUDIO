@@ -189,6 +189,12 @@ export async function deleteBookings(ids: readonly string[]): Promise<AdminResul
       if (parsed.value.error === 'has_upcoming') {
         return err('validation', 'Kommande bokningar kan inte raderas.')
       }
+      if (parsed.value.error === 'delivery_pending') {
+        return err(
+          'validation',
+          'Vänta tills bokningsmejlet har skickats eller har markerats som misslyckat.',
+        )
+      }
       return err('validation', 'Inga bokningar valda.')
     }
     return ok(parsed.value.count)

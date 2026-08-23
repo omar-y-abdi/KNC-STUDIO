@@ -10,6 +10,7 @@ import {
   type EmailMessage,
   type EmailTemplateName,
 } from '../_shared/email.ts'
+import { timingSafeEqual } from '../_shared/calendar.ts'
 
 interface WebhookEnvelope {
   readonly record?: unknown
@@ -330,7 +331,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
   const secret = Deno.env.get('WEBHOOK_SECRET')
   if (!secret) return json({ ok: false, error: 'not_configured' }, 503)
-  if (req.headers.get('x-webhook-secret') !== secret)
+  if (!timingSafeEqual(req.headers.get('x-webhook-secret') ?? '', secret))
     return json({ ok: false, error: 'unauthorized' }, 401)
   let raw: unknown
   try {

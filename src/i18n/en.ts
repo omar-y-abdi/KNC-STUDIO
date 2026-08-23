@@ -3,7 +3,6 @@ import type {
   AppStrings,
   BookingStrings,
   CalendarLabels,
-  CancelStrings,
   MyBookingsStrings,
 } from './index'
 
@@ -37,7 +36,7 @@ export const bookingEn: BookingStrings = {
     'By booking you agree that cancellations must be made at least {hours} hours before the visit. Late cancellation or a no‑show entitles {businessName} to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
   confirmSent:
-    'A booking confirmation has been sent to {email}. You can also find the booking under "My appointments" using your phone number.',
+    'A booking confirmation has been sent to {email}. Manage the booking with a secure link under "My appointments".',
   addToCal: 'Add to calendar',
   calApple: 'Apple Calendar',
   calGoogle: 'Google Calendar',
@@ -129,22 +128,26 @@ export const aboutEn: AboutStrings = {
 
 export const myBookingsEn: MyBookingsStrings = {
   title: 'My appointments',
-  lookupLead: 'Enter the number you booked with and we’ll show your appointments.',
+  lookupLead:
+    'Enter the phone number and email from your booking. We will send a secure one-time link.',
   phone: 'Phone',
   phonePh: '07X XXX XX XX',
-  lookupBtn: 'Show my appointments',
-  lookingUp: 'Looking up …',
+  email: 'Email',
+  emailPh: 'name@example.com',
+  lookupBtn: 'Send secure link',
+  lookingUp: 'Sending …',
   errPhone: 'Invalid phone number',
-  notFoundFirst: 'We found no bookings for that number. Check the number and try again.',
-  notFoundEscalated:
-    'Still no bookings linked to that number. Please contact the salon and we’ll help you.',
+  errEmail: 'Invalid email address',
+  accessSent:
+    'If the details match, we will send a secure link to your email. The link is valid for 15 minutes.',
+  errAccess: 'This link is invalid or expired. Request a new secure link.',
   errSystem: 'Could not load your appointments. Please try again.',
   errChallenge: 'Verification failed. Reload the check and try again.',
   errRateLimited: 'Too many attempts. Wait a moment before trying again.',
   upcomingTitle: 'Upcoming',
   pastTitle: 'Past',
   upcomingEmpty: 'You have no upcoming appointments.',
-  changeNumber: 'Use another number',
+  changeNumber: 'Use different details',
   fBarber: 'Barber',
   fService: 'Service',
   fDuration: 'Duration',
@@ -160,32 +163,6 @@ export const myBookingsEn: MyBookingsStrings = {
   ariaClose: 'Close',
   ariaExpandRow: 'Show details',
   ariaExpandPast: 'Show past appointments',
-}
-
-export const cancelEn: CancelStrings = {
-  title: 'Cancel booking',
-  phone: 'Phone',
-  phonePh: '07X XXX XX XX',
-  lookupBtn: 'Cancel appointment',
-  lookingUp: 'Looking up …',
-  errPhone: 'Invalid phone number',
-  errLookup: 'Could not find the booking. Please try again.',
-  errSystem: 'Could not load the booking. Please try again.',
-  errChallenge: 'Verification failed. Reload the check and try again.',
-  errRateLimited: 'Too many attempts. Wait a moment before trying again.',
-  foundLead: 'We found your booking',
-  fBarber: 'Barber',
-  fWhen: 'Time',
-  fService: 'Service',
-  confirmQuestion: 'Do you want to cancel this appointment?',
-  confirmBtn: 'Cancel it',
-  abortBtn: 'Go back',
-  cancelling: 'Cancelling …',
-  errCancel: 'Something went wrong while cancelling. Please try again.',
-  doneTitle: 'Your appointment is cancelled',
-  doneVia: 'The appointment has been removed from My appointments.',
-  doneBtn: 'Close',
-  ariaClose: 'Close',
 }
 
 export const labelsEn: CalendarLabels = {

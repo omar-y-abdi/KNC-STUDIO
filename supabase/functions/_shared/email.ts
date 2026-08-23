@@ -7,6 +7,7 @@ export type EmailTemplateName =
   | 'customer_cancellation'
   | 'barber_cancellation'
   | 'customer_reminder'
+  | 'customer_booking_access'
   | 'auth_recovery'
   | 'auth_email_change'
   | 'auth_invite'
@@ -170,6 +171,28 @@ const DEFAULTS: Record<EmailTemplateName, Record<EmailLanguage, EmailTemplateCop
       contactLead: 'Questions? Call us on',
     },
   },
+  customer_booking_access: {
+    sv: {
+      subject: 'Öppna Mina bokningar',
+      preheader: 'Öppna din säkra länk till Mina bokningar.',
+      title: 'Öppna Mina bokningar',
+      intro: 'Använd länken för att se och hantera dina bokade tider.',
+      sectionTitle: null,
+      note: 'Länken gäller i 15 minuter och kan bara användas en gång.',
+      ctaLabel: 'Öppna Mina bokningar',
+      contactLead: 'Om du inte begärde länken kan du ignorera detta mejl.',
+    },
+    en: {
+      subject: 'Open My appointments',
+      preheader: 'Open your secure My appointments link.',
+      title: 'Open My appointments',
+      intro: 'Use the link to view and manage your booked appointments.',
+      sectionTitle: null,
+      note: 'The link is valid for 15 minutes and can only be used once.',
+      ctaLabel: 'Open My appointments',
+      contactLead: 'Ignore this email if you did not request the link.',
+    },
+  },
   auth_recovery: {
     sv: {
       subject: 'Återställ lösenord',
@@ -246,7 +269,7 @@ function httpUrl(value: unknown): value is string {
   if (!nonEmpty(value)) return false
   try {
     const parsed = new URL(value)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+    return parsed.protocol === 'https:'
   } catch {
     return false
   }

@@ -29,6 +29,7 @@ describe('review gateway response contract', () => {
     ['no_booking', 'no_booking'],
     ['failed_challenge', 'challenge'],
     ['rate_limited', 'rate_limited'],
+    ['system', 'submit'],
   ] as const)('accepts and maps %s intentionally', async (wireError, domainKind) => {
     const wire = { ok: false, error: wireError }
     expect(createReviewResponse.safeParse(wire).success).toBe(true)

@@ -120,7 +120,7 @@ function validTelephone(value: string, fallback: string): string {
 function validHttpUrl(value: string, fallback: string): string {
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? value : fallback
+    return url.protocol === 'https:' ? value : fallback
   } catch {
     return fallback
   }

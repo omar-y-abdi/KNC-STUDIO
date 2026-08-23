@@ -146,6 +146,10 @@ function escapeAttribute(value: string): string {
     .replaceAll('>', '&gt;')
 }
 
+function escapeElementText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
 function tagBounds(
   html: string,
   id: string,
@@ -157,7 +161,7 @@ function tagBounds(
   return start >= 0 && end >= 0 ? { start, end } : null
 }
 
-function replaceElementText(html: string, id: string, value: string): string {
+function replaceElementContent(html: string, id: string, value: string): string {
   const bounds = tagBounds(html, id)
   if (bounds === null) return html
   const openingTag = html.slice(bounds.start, bounds.end + 1)
@@ -166,6 +170,14 @@ function replaceElementText(html: string, id: string, value: string): string {
   const closingStart = html.indexOf(`</${tag}>`, bounds.end + 1)
   if (closingStart < 0) return html
   return `${html.slice(0, bounds.end + 1)}${value}${html.slice(closingStart)}`
+}
+
+function replaceElementText(html: string, id: string, value: string): string {
+  return replaceElementContent(html, id, escapeElementText(value))
+}
+
+function replaceJsonScript(html: string, id: string, value: unknown): string {
+  return replaceElementContent(html, id, JSON.stringify(value).replaceAll('<', '\\u003c'))
 }
 
 function replaceMetaContent(html: string, id: string, value: string): string {
@@ -179,11 +191,8 @@ function replaceMetaContent(html: string, id: string, value: string): string {
 export function renderHomepageMetadata(html: string, discovery: BusinessDiscovery): string {
   const { business, facts } = discovery
   const seo = business.seo.sv
-  const structured = JSON.stringify(buildBusinessStructuredData(business, facts, SITE_URL)).replace(
-    /</g,
-    '\\u003c',
-  )
-  let rendered = replaceElementText(html, 'business-title', escapeAttribute(seo.title))
+  const structured = buildBusinessStructuredData(business, facts, SITE_URL)
+  let rendered = replaceElementText(html, 'business-title', seo.title)
   rendered = replaceMetaContent(rendered, 'business-description', seo.description)
   rendered = replaceMetaContent(rendered, 'business-og-site-name', business.name)
   rendered = replaceMetaContent(rendered, 'business-og-title', seo.title)
@@ -191,7 +200,7 @@ export function renderHomepageMetadata(html: string, discovery: BusinessDiscover
   rendered = replaceMetaContent(rendered, 'business-og-image-alt', business.name)
   rendered = replaceMetaContent(rendered, 'business-twitter-title', seo.title)
   rendered = replaceMetaContent(rendered, 'business-twitter-description', seo.description)
-  return replaceElementText(rendered, 'business-json-ld', structured)
+  return replaceJsonScript(rendered, 'business-json-ld', structured)
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {

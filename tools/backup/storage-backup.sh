@@ -110,16 +110,26 @@ total_bytes=0
 object_index=0
 
 storage_request() {
-  curl \
+  local response_headers
+  response_headers="$(mktemp "$temporary_directory/headers.XXXXXX")"
+  if ! curl \
     --fail \
     --silent \
     --show-error \
-    --location \
     --retry 3 \
     --retry-delay 1 \
     --retry-all-errors \
+    --dump-header "$response_headers" \
     "${STORAGE_AUTH_HEADERS[@]}" \
-    "$@"
+    "$@"; then
+    rm -f "$response_headers"
+    return 1
+  fi
+  if ! storage_require_no_redirect "$response_headers"; then
+    rm -f "$response_headers"
+    return 1
+  fi
+  rm -f "$response_headers"
 }
 
 backup_object() {

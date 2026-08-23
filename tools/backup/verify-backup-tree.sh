@@ -31,8 +31,10 @@ find "$input" -type l -print -quit | grep -q . && die 'symbolic links are not pe
 grep -Fq 'CREATE TABLE IF NOT EXISTS "public"."bookings"' "$input/schema.sql" \
   || die 'application schema is absent'
 grep -Fq 'COPY "auth"."users"' "$input/data.sql" || die 'Auth users are absent'
-grep -Fq 'COPY "storage"."buckets"' "$input/data.sql" || die 'Storage bucket metadata is absent'
-grep -Fq 'COPY "storage"."objects"' "$input/data.sql" || die 'Storage object metadata is absent'
+grep -Fq 'COPY "storage"."buckets"' "$input/data.sql" \
+  && die 'Storage bucket metadata must be restored from the Storage archive only'
+grep -Fq 'COPY "storage"."objects"' "$input/data.sql" \
+  && die 'Storage object metadata must be restored from the Storage archive only'
 grep -Fq 'COPY "supabase_migrations"."schema_migrations"' "$input/history_data.sql" \
   || die 'migration history is absent'
 

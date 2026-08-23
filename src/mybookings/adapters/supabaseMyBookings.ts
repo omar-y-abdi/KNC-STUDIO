@@ -1,17 +1,9 @@
-// The real (Supabase) MyBookingsPort adapter. `listByPhone` reaches `list_bookings_by_phone` through
-// the Turnstile- and rate-limit-protected public action gateway
-// (every confirmed booking for the proven phone — past + future) and splits them into upcoming/past;
-// an empty result maps to `not_found`. `cancel` uses the same gateway's contact-guarded cancellation
-// action as the Avbokning flow, so a customer can only cancel a booking they can prove is theirs.
-//
-// Boundary discipline: parse every response with the Zod schema; map any failure to a domain error
-// rather than throwing. Barber identity resolves through the LIVE roster first (an owner-added DB
-// barber must show its own name), then the offline constants, then a minimal id-echoing stub.
-
 import { invokePublicBookingAction } from '../../backend/publicBookingActions'
 import {
-  bookingLookupResponse,
-  listBookingsByPhoneResponse,
+  customerAccessExchangeResponse,
+  customerAccessRequestResponse,
+  customerBookingCancelResponse,
+  listCustomerBookingsResponse,
   parseWith,
 } from '../../backend/rpcSchemas'
 import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
@@ -22,80 +14,109 @@ import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { myBookingsStrings } from '../../i18n/index'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
 import { formatRowLabel, splitByTime } from '../format'
-import type { MyBookingsLookupParams, MyBookingsPort } from '../port'
+import type {
+  MyBookingsAccessExchangeResult,
+  MyBookingsAccessRequestParams,
+  MyBookingsAccessRequestResult,
+  MyBookingsListParams,
+  MyBookingsPort,
+} from '../port'
 
-/** Resolve the booked barber's display identity: live roster → offline constants → id-echoing stub. */
 async function barberFromId(id: string): Promise<Barber> {
   try {
     const roster = await defaultBarbersPort.listActive()
-    const hit = roster.find((r) => r.barber.id === id)
+    const hit = roster.find((row) => row.barber.id === id)
     if (hit !== undefined) return hit.barber
   } catch {
-    // Roster unavailable — fall through to the offline constants.
+    // Fall through to shipped roster data.
   }
-  return BARBERS.find((b) => b.id === id) ?? { id: asBarberId(id), name: id, ig: '' }
+  return BARBERS.find((barber) => barber.id === id) ?? { id: asBarberId(id), name: id, ig: '' }
 }
 
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
-  async listByPhone(params: MyBookingsLookupParams): Promise<MyBookingsResult> {
-    const system: MyBookingsResult = { ok: false, error: 'system' }
+  async requestAccess(
+    params: MyBookingsAccessRequestParams,
+  ): Promise<MyBookingsAccessRequestResult> {
+    try {
+      const { data, failed } = await invokePublicBookingAction({
+        action: 'request_access',
+        phone: params.phone,
+        email: params.email,
+        lang: params.lang,
+        turnstileToken: params.turnstileToken,
+      })
+      if (failed) return { ok: false, error: 'system' }
+      const parsed = parseWith(customerAccessRequestResponse, data)
+      if (!parsed.ok) return { ok: false, error: 'system' }
+      return parsed.value
+    } catch {
+      return { ok: false, error: 'system' }
+    }
+  },
+
+  async exchangeAccess(accessCode: string): Promise<MyBookingsAccessExchangeResult> {
+    try {
+      const { data, failed } = await invokePublicBookingAction({
+        action: 'exchange_access',
+        accessCode,
+      })
+      if (failed) return { ok: false, error: 'system' }
+      const parsed = parseWith(customerAccessExchangeResponse, data)
+      if (!parsed.ok) return { ok: false, error: 'system' }
+      return parsed.value.ok
+        ? { ok: true, accessToken: parsed.value.access_token }
+        : { ok: false, error: parsed.value.error }
+    } catch {
+      return { ok: false, error: 'system' }
+    }
+  },
+
+  async list(params: MyBookingsListParams): Promise<MyBookingsResult> {
     try {
       const { data, failed } = await invokePublicBookingAction({
         action: 'list',
-        phone: params.contact,
-        turnstileToken: params.turnstileToken,
+        accessToken: params.accessToken,
       })
-      if (failed) return system
-
-      const parsed = parseWith(listBookingsByPhoneResponse, data)
-      if (!parsed.ok) return system
+      if (failed) return { ok: false, error: 'system' }
+      const parsed = parseWith(listCustomerBookingsResponse, data)
+      if (!parsed.ok) return { ok: false, error: 'system' }
       if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
-      const rows = parsed.value.bookings
-      if (rows.length === 0) return { ok: false, error: 'not_found' }
 
       const sep = myBookingsStrings(params.lang).atSep
-      const mapped: MyBooking[] = []
-      for (const r of rows) {
-        // `start` stays the real instant (split by real now); the LABEL is built in salon wall-clock
-        // — the timezone the customer picked the slot in — so a traveller sees the same time they booked.
-        const start = new Date(r.start_at)
-        mapped.push({
-          id: r.id,
-          barber: await barberFromId(r.barber_id),
-          serviceName: r.service_name,
-          price: r.price,
-          durationMin: r.duration_min,
+      const bookings: MyBooking[] = []
+      for (const row of parsed.value.bookings) {
+        const start = new Date(row.start_at)
+        bookings.push({
+          id: row.id,
+          barber: await barberFromId(row.barber_id),
+          serviceName: row.service_name,
+          price: row.price,
+          durationMin: row.duration_min,
           start,
           whenLabel: formatRowLabel(params.lang, stockholmWallClockDate(start), sep),
         })
       }
-      return { ok: true, bookings: splitByTime(mapped, new Date()) }
+      return { ok: true, bookings: splitByTime(bookings, new Date()) }
     } catch {
-      return system
+      return { ok: false, error: 'system' }
     }
   },
 
-  async cancel(
-    booking: MyBooking,
-    contact: string,
-    turnstileToken: string,
-  ): Promise<MyCancelResult> {
-    const failed: MyCancelResult = { ok: false, error: 'system' }
+  async cancel(booking: MyBooking, accessToken: string): Promise<MyCancelResult> {
     try {
-      const { data, failed: invokeFailed } = await invokePublicBookingAction({
+      const { data, failed } = await invokePublicBookingAction({
         action: 'cancel',
         bookingId: booking.id,
-        phone: contact,
-        turnstileToken,
+        accessToken,
       })
-      if (invokeFailed) return failed
-
-      const parsed = parseWith(bookingLookupResponse, data)
-      if (!parsed.ok) return failed
-      if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
-      return { ok: true, id: booking.id }
+      if (failed) return { ok: false, error: 'system' }
+      const parsed = parseWith(customerBookingCancelResponse, data)
+      if (!parsed.ok) return { ok: false, error: 'system' }
+      return parsed.value.ok
+        ? { ok: true, id: booking.id }
+        : { ok: false, error: parsed.value.error }
     } catch {
-      return failed
+      return { ok: false, error: 'system' }
     }
   },
 }

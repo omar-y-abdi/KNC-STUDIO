@@ -1,7 +1,7 @@
 begin;
 select plan(9);
 
-select is((select count(*)::int from public.email_templates), 14, 'all email template variants are seeded');
+select is((select count(*)::int from public.email_templates), 16, 'all email template variants are seeded');
 select is(
   (select subject from public.email_templates where template = 'customer_confirmation' and lang = 'sv'),
   'Bokningsbekräftelse', 'customer confirmation subject is clean'

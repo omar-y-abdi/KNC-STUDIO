@@ -3,10 +3,13 @@ import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import {
+  listFailedBookingEmailDeliveries,
   listEmailTemplates,
+  retryFailedBookingEmailDelivery,
   saveEmailTemplate,
   type EditableEmailTemplate,
   type EmailTemplateName,
+  type FailedBookingEmailDelivery,
 } from '../adapters/emailTemplatesAdmin'
 import type { AdminStylesBundle } from './viewTypes'
 
@@ -66,6 +69,14 @@ const DEFINITIONS: readonly TemplateDefinition[] = [
     placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
   },
   {
+    id: 'customer_booking_access',
+    sv: 'Säker länk · kund',
+    en: 'Secure link · customer',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '',
+  },
+  {
     id: 'auth_recovery',
     sv: 'Återställ lösenord',
     en: 'Reset password',
@@ -102,14 +113,24 @@ export function MailView(props: MailViewProps): JSX.Element {
   const [saving, setSaving] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<{ key: string; message: string } | null>(null)
+  const [failedDeliveries, setFailedDeliveries] = useState<readonly FailedBookingEmailDelivery[]>(
+    [],
+  )
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [retryingDelivery, setRetryingDelivery] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     void (async () => {
-      const result = await listEmailTemplates()
+      const [result, failedResult] = await Promise.all([
+        listEmailTemplates(),
+        listFailedBookingEmailDeliveries(),
+      ])
       if (!active) return
       if (!result.ok) setLoadError(result.error.message)
       else setRows(new Map(result.value.map((row) => [rowKey(row.template, row.lang), row])))
+      if (!failedResult.ok) setDeliveryError(failedResult.error.message)
+      else setFailedDeliveries(failedResult.value)
       setLoaded(true)
     })()
     return () => {
@@ -149,6 +170,18 @@ export function MailView(props: MailViewProps): JSX.Element {
     }
     setRows((previous) => new Map(previous).set(key, result.value))
     setSaved(key)
+  }
+
+  const retryDelivery = async (id: string): Promise<void> => {
+    setRetryingDelivery(id)
+    setDeliveryError(null)
+    const result = await retryFailedBookingEmailDelivery(id)
+    setRetryingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
   }
 
   const field = (
@@ -193,6 +226,63 @@ export function MailView(props: MailViewProps): JSX.Element {
         <div style={s.emptyState}>{t.mailLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', marginTop: '24px' }}>
+          <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+            <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+              {props.lang === 'sv' ? 'Misslyckade mejlleveranser' : 'Failed email deliveries'}
+            </h3>
+            <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+              {props.lang === 'sv'
+                ? 'Misslyckade mejl stoppas efter fem försök eller vid permanent konfigurationsfel. Du kan försöka igen manuellt.'
+                : 'Failed emails stop after five attempts or a permanent configuration error. You can retry them manually.'}
+            </p>
+            {deliveryError !== null ? <p style={s.errorText}>{deliveryError}</p> : null}
+            {failedDeliveries.length === 0 ? (
+              <p style={{ ...s.mutedText, margin: 0 }}>
+                {props.lang === 'sv'
+                  ? 'Inga misslyckade mejlleveranser.'
+                  : 'No failed email deliveries.'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {failedDeliveries.map((delivery) => (
+                  <div
+                    key={delivery.id}
+                    style={{
+                      border: s.input.border,
+                      borderRadius: '13px',
+                      padding: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '14px',
+                    }}
+                  >
+                    <span style={{ ...s.mutedText, margin: 0 }}>
+                      {delivery.event} · {delivery.errorCode ?? 'unknown'} · {delivery.attemptCount}{' '}
+                      {props.lang === 'sv' ? 'försök' : 'attempts'}
+                    </span>
+                    <button
+                      type="button"
+                      style={{
+                        ...s.primaryBtn,
+                        opacity: retryingDelivery === delivery.id ? 0.6 : 1,
+                      }}
+                      disabled={retryingDelivery === delivery.id}
+                      onClick={() => void retryDelivery(delivery.id)}
+                    >
+                      {retryingDelivery === delivery.id
+                        ? props.lang === 'sv'
+                          ? 'Försöker …'
+                          : 'Retrying …'
+                        : props.lang === 'sv'
+                          ? 'Försök igen'
+                          : 'Retry'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
           {DEFINITIONS.map((definition) => (
             <article key={definition.id} style={{ borderTop: s.card.border, paddingTop: '22px' }}>
               <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>

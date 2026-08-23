@@ -3,7 +3,7 @@
 -- audited about_content posture (anon read / owner write) and is covered structurally by 05_admin_rls.
 
 begin;
-select plan(6);
+select plan(10);
 
 select is((select count(*)::int from public.site_content), 2, 'site_content has bilingual confirmation defaults');
 select is((select count(*)::int from public.site_settings), 13, 'site_settings has shipped business and SEO defaults');
@@ -25,6 +25,27 @@ select is(
 select throws_ok(
   $$ insert into public.site_settings (key, value) values ('test_homepage_scale', 'md') $$,
   '23505', null, 'a duplicate settings key is rejected (primary key)');
+
+update public.site_settings set value = 'BOOKING@EXAMPLE.TEST' where key = 'business_email';
+select is(
+  (select value from public.site_settings where key = 'business_email'),
+  'booking@example.test',
+  'business email is normalized at the database write boundary'
+);
+update public.site_settings set value = '41134' where key = 'business_postal_code';
+select is(
+  (select value from public.site_settings where key = 'business_postal_code'),
+  '411 34',
+  'postal code is normalized at the database write boundary'
+);
+select throws_ok(
+  $$ update public.site_settings set value = 'http://maps.example.test' where key = 'business_maps_href' $$,
+  '22023', null, 'business maps URL must use HTTPS for website and email links'
+);
+select throws_ok(
+  $$ update public.site_settings set value = '0' where key = 'cancellation_policy_hours' $$,
+  '22023', null, 'cancellation policy must remain within the enforced business range'
+);
 
 select * from finish();
 rollback;

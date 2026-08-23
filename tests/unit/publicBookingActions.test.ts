@@ -8,38 +8,48 @@ vi.mock('../../src/backend/supabaseClient', () => ({
 
 import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
 import {
-  bookingLookupResponse,
-  listBookingsByPhoneResponse,
+  customerAccessExchangeResponse,
+  customerAccessRequestResponse,
+  customerBookingCancelResponse,
+  listCustomerBookingsResponse,
   parseWith,
 } from '../../src/backend/rpcSchemas'
 
 beforeEach(() => invoke.mockReset())
 
 describe('public booking action gateway client', () => {
-  it('accepts current email-delivery lookup rows and rejects legacy SMS semantics', () => {
-    const booking = {
-      id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
-      barber_id: 'hassan',
-      service_name: 'Hårklippning',
-      price: 350,
-      start_at: '2040-03-14T12:30:00.000Z',
-      method: 'email',
-      contact: '0701234567',
-    }
-    expect(parseWith(bookingLookupResponse, { ok: true, booking }).ok).toBe(true)
+  it('accepts every secure customer-access response contract', () => {
+    expect(parseWith(customerAccessRequestResponse, { ok: true }).ok).toBe(true)
     expect(
-      parseWith(bookingLookupResponse, {
+      parseWith(customerAccessExchangeResponse, {
         ok: true,
-        booking: { ...booking, method: 'sms' },
+        access_token: 'a'.repeat(64),
       }).ok,
-    ).toBe(false)
+    ).toBe(true)
+    expect(
+      parseWith(listCustomerBookingsResponse, {
+        ok: true,
+        bookings: [
+          {
+            id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+            barber_id: 'hassan',
+            service_name: 'Hårklippning',
+            price: 350,
+            duration_min: 45,
+            start_at: '2040-03-14T12:30:00.000Z',
+          },
+        ],
+      }).ok,
+    ).toBe(true)
+    expect(parseWith(customerBookingCancelResponse, { ok: true }).ok).toBe(true)
   })
 
   it('forwards protected action payloads unchanged', async () => {
     const payload = {
-      action: 'cancel' as const,
-      bookingId: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+      action: 'request_access' as const,
       phone: '0701234567',
+      email: 'customer@example.com',
+      lang: 'sv' as const,
       turnstileToken: 'challenge-token',
     }
     invoke.mockResolvedValue({ data: { ok: true }, error: null })
@@ -52,20 +62,27 @@ describe('public booking action gateway client', () => {
   })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(
-    'accepts gateway error %s for every lookup/list consumer',
+    'accepts gateway access-request error %s',
     (error) => {
-      expect(parseWith(bookingLookupResponse, { ok: false, error }).ok).toBe(true)
-      expect(parseWith(listBookingsByPhoneResponse, { ok: false, error }).ok).toBe(true)
+      expect(parseWith(customerAccessRequestResponse, { ok: false, error }).ok).toBe(true)
     },
   )
+
+  it.each(['invalid'] as const)('accepts gateway exchange error %s', (error) => {
+    expect(parseWith(customerAccessExchangeResponse, { ok: false, error }).ok).toBe(true)
+  })
+
+  it.each(['access_denied'] as const)('accepts gateway list and cancel error %s', (error) => {
+    expect(parseWith(listCustomerBookingsResponse, { ok: false, error }).ok).toBe(true)
+    expect(parseWith(customerBookingCancelResponse, { ok: false, error }).ok).toBe(true)
+  })
 
   it('fails closed on function and transport errors', async () => {
     invoke.mockResolvedValueOnce({ data: null, error: new Error('denied') })
     await expect(
       invokePublicBookingAction({
-        action: 'lookup',
-        phone: '0701234567',
-        turnstileToken: 'challenge-token',
+        action: 'exchange_access',
+        accessCode: 'a'.repeat(64),
       }),
     ).resolves.toEqual({ data: null, failed: true })
 
@@ -73,7 +90,17 @@ describe('public booking action gateway client', () => {
     await expect(
       invokePublicBookingAction({
         action: 'list',
+        accessToken: 'b'.repeat(64),
+      }),
+    ).resolves.toEqual({ data: null, failed: true })
+
+    invoke.mockRejectedValueOnce(new Error('offline'))
+    await expect(
+      invokePublicBookingAction({
+        action: 'request_access',
         phone: '0701234567',
+        email: 'customer@example.com',
+        lang: 'sv',
         turnstileToken: 'challenge-token',
       }),
     ).resolves.toEqual({ data: null, failed: true })

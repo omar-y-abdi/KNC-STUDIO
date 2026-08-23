@@ -1,12 +1,19 @@
 import { getSupabase } from './supabaseClient'
 
 export type PublicBookingActionPayload =
-  | { readonly action: 'lookup' | 'list'; readonly phone: string; readonly turnstileToken: string }
+  | {
+      readonly action: 'request_access'
+      readonly phone: string
+      readonly email: string
+      readonly lang: 'sv' | 'en'
+      readonly turnstileToken: string
+    }
+  | { readonly action: 'exchange_access'; readonly accessCode: string }
+  | { readonly action: 'list'; readonly accessToken: string }
   | {
       readonly action: 'cancel'
-      readonly phone: string
       readonly bookingId: string
-      readonly turnstileToken: string
+      readonly accessToken: string
     }
   | {
       readonly action: 'review'

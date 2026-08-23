@@ -1,14 +1,25 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  buildEmailMessage,
+  defaultEmailTemplate,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  sendViaResend,
+} from '../_shared/email.ts'
 
-type Action = 'lookup' | 'list' | 'cancel' | 'review'
+type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review'
+type Language = 'sv' | 'en'
 
 interface ParsedAction {
   readonly action: Action
-  readonly phone: string
+  readonly phone?: string
+  readonly email?: string
   readonly bookingId?: string
+  readonly accessToken?: string
   readonly rating?: number
   readonly text?: string
-  readonly turnstileToken: string
+  readonly turnstileToken?: string
+  readonly lang?: Language
 }
 
 interface Limit {
@@ -17,15 +28,14 @@ interface Limit {
   readonly perPhone: number
 }
 
-const LIMITS: Readonly<Record<Action, Limit>> = {
-  lookup: { windowSecs: 600, perIp: 12, perPhone: 8 },
-  list: { windowSecs: 600, perIp: 12, perPhone: 8 },
-  cancel: { windowSecs: 600, perIp: 6, perPhone: 3 },
+const LIMITS: Readonly<Record<'request_access' | 'review', Limit>> = {
+  request_access: { windowSecs: 600, perIp: 8, perPhone: 3 },
   review: { windowSecs: 86400, perIp: 5, perPhone: 2 },
 }
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
+const SITE_URL = 'https://bladeblendstudio.se'
 
 function allowedOrigins(): readonly string[] {
   const configured = Deno.env.get('PUBLIC_SITE_ORIGINS')
@@ -60,7 +70,13 @@ function json(req: Request, body: unknown, status = 200): Response {
 }
 
 function isAction(value: unknown): value is Action {
-  return value === 'lookup' || value === 'list' || value === 'cancel' || value === 'review'
+  return (
+    value === 'request_access' ||
+    value === 'exchange_access' ||
+    value === 'list' ||
+    value === 'cancel' ||
+    value === 'review'
+  )
 }
 
 function normalizePhone(value: unknown): string | null {
@@ -69,49 +85,79 @@ function normalizePhone(value: unknown): string | null {
   return /^07[0-9]{8}$/.test(phone) ? phone : null
 }
 
+function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const email = value.trim().toLowerCase()
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : null
+}
+
+function opaqueToken(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
+}
+
+function isBookingId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  )
+}
+
 function parseBody(raw: unknown): ParsedAction | null {
   if (typeof raw !== 'object' || raw === null) return null
   const body = raw as Record<string, unknown>
   if (!isAction(body.action)) return null
+
+  if (body.action === 'exchange_access') {
+    return opaqueToken(body.accessCode)
+      ? { action: body.action, accessToken: body.accessCode }
+      : null
+  }
+
+  if (body.action === 'list') {
+    return opaqueToken(body.accessToken)
+      ? { action: body.action, accessToken: body.accessToken }
+      : null
+  }
+
+  if (body.action === 'cancel') {
+    return opaqueToken(body.accessToken) && isBookingId(body.bookingId)
+      ? { action: body.action, accessToken: body.accessToken, bookingId: body.bookingId }
+      : null
+  }
+
   const phone = normalizePhone(body.phone)
   if (phone === null || typeof body.turnstileToken !== 'string') return null
 
-  if (body.action === 'cancel') {
-    if (
-      typeof body.bookingId !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        body.bookingId,
-      )
-    )
-      return null
-    return {
-      action: body.action,
-      phone,
-      bookingId: body.bookingId,
-      turnstileToken: body.turnstileToken,
-    }
+  if (body.action === 'request_access') {
+    const email = normalizeEmail(body.email)
+    const lang = body.lang === 'en' ? 'en' : body.lang === 'sv' ? 'sv' : null
+    return email === null || lang === null
+      ? null
+      : { action: body.action, phone, email, lang, turnstileToken: body.turnstileToken }
   }
 
-  if (body.action === 'review') {
-    if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
-      return null
-    if (typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 1000)
-      return null
-    return {
-      action: body.action,
-      phone,
-      rating: Number(body.rating),
-      text: body.text,
-      turnstileToken: body.turnstileToken,
-    }
+  if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
+    return null
+  if (typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 1000) return null
+  return {
+    action: body.action,
+    phone,
+    rating: Number(body.rating),
+    text: body.text,
+    turnstileToken: body.turnstileToken,
   }
-
-  return { action: body.action, phone, turnstileToken: body.turnstileToken }
 }
 
 function clientIp(req: Request): string {
   const cloudflare = req.headers.get('cf-connecting-ip')?.trim()
   return cloudflare || 'unknown'
+}
+
+function createOpaqueToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 async function sha256(value: string): Promise<string> {
@@ -133,6 +179,57 @@ async function verifyTurnstile(token: string, ip: string, secret: string): Promi
   } catch {
     return false
   }
+}
+
+function serviceClient(url: string, key: string) {
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+async function consumeLimit(
+  service: ReturnType<typeof serviceClient>,
+  action: 'request_access' | 'review',
+  phone: string,
+  ip: string,
+  hashSalt: string,
+): Promise<'ok' | 'rate_limited' | 'system'> {
+  const [ipHash, phoneHash] = await Promise.all([
+    sha256(`ip:${ip}:${hashSalt}`),
+    sha256(`phone:${phone}:${hashSalt}`),
+  ])
+  const limit = LIMITS[action]
+  const { data, error } = await service.rpc('consume_public_action_attempt', {
+    p_action: action,
+    p_ip_hash: ipHash,
+    p_phone_hash: phoneHash,
+    p_window_secs: limit.windowSecs,
+    p_ip_limit: limit.perIp,
+    p_phone_limit: limit.perPhone,
+  })
+  if (error) {
+    console.error('public-booking-actions: rate-limit RPC failed', error.code)
+    return 'system'
+  }
+  return data === true ? 'ok' : 'rate_limited'
+}
+
+async function sendAccessEmail(
+  service: ReturnType<typeof serviceClient>,
+  email: string,
+  lang: Language,
+  code: string,
+): Promise<void> {
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  if (!apiKey) throw new Error('RESEND_API_KEY missing')
+  const business = await loadEmailBusiness(service)
+  const copy = await loadEmailTemplate(service, 'customer_booking_access', lang)
+  const message = buildEmailMessage({
+    to: email,
+    lang,
+    copy: copy ?? defaultEmailTemplate('customer_booking_access', lang),
+    ctaHref: `${SITE_URL}/?booking_access=${code}`,
+    business,
+  })
+  await sendViaResend(message, apiKey, `customer-booking-access/${await sha256(code)}`)
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -158,64 +255,75 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const parsed = parseBody(raw)
   if (parsed === null) return json(req, { ok: false, error: 'invalid_payload' }, 400)
 
+  const service = serviceClient(supabaseUrl, serviceKey)
+  if (parsed.action === 'exchange_access') {
+    const accessToken = createOpaqueToken()
+    const { data, error } = await service.rpc('exchange_customer_booking_access', {
+      p_challenge_hash: await sha256(parsed.accessToken ?? ''),
+      p_session_hash: await sha256(accessToken),
+    })
+    if (error) {
+      console.error('public-booking-actions: access exchange RPC failed', error.code)
+      return json(req, { ok: false, error: 'system' }, 500)
+    }
+    return data === true
+      ? json(req, { ok: true, access_token: accessToken })
+      : json(req, { ok: false, error: 'invalid' })
+  }
+
+  if (parsed.action === 'list' || parsed.action === 'cancel') {
+    const accessHash = await sha256(parsed.accessToken ?? '')
+    const result =
+      parsed.action === 'list'
+        ? await service.rpc('list_customer_bookings_with_access', { p_session_hash: accessHash })
+        : await service.rpc('cancel_customer_booking_with_access', {
+            p_booking_id: parsed.bookingId,
+            p_session_hash: accessHash,
+          })
+    if (result.error) {
+      console.error(`public-booking-actions: ${parsed.action} access RPC failed`, result.error.code)
+      return json(req, { ok: false, error: 'system' }, 500)
+    }
+    return json(req, result.data)
+  }
+
+  const phone = parsed.phone ?? ''
   const ip = clientIp(req)
-  if (!(await verifyTurnstile(parsed.turnstileToken, ip, turnstileSecret))) {
+  if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret))) {
     return json(req, { ok: false, error: 'failed_challenge' })
   }
+  const limited = await consumeLimit(service, parsed.action, phone, ip, hashSalt)
+  if (limited === 'system') return json(req, { ok: false, error: 'system' }, 500)
+  if (limited === 'rate_limited') return json(req, { ok: false, error: 'rate_limited' })
 
-  const [ipHash, phoneHash] = await Promise.all([
-    sha256(`ip:${ip}:${hashSalt}`),
-    sha256(`phone:${parsed.phone}:${hashSalt}`),
-  ])
-  const service = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+  if (parsed.action === 'request_access') {
+    const code = createOpaqueToken()
+    const { data, error } = await service.rpc('create_customer_booking_access_request', {
+      p_phone: phone,
+      p_email: parsed.email,
+      p_token_hash: await sha256(code),
+    })
+    if (error) {
+      console.error('public-booking-actions: access request RPC failed', error.code)
+      return json(req, { ok: false, error: 'system' }, 500)
+    }
+    if (data === true) {
+      try {
+        await sendAccessEmail(service, parsed.email ?? '', parsed.lang ?? 'sv', code)
+      } catch {
+        console.error('public-booking-actions: access email failed')
+      }
+    }
+    return json(req, { ok: true })
+  }
+
+  const result = await service.rpc('create_review', {
+    p_phone: phone,
+    p_rating: parsed.rating,
+    p_text: parsed.text,
   })
-  const limit = LIMITS[parsed.action]
-  const { data: consumed, error: consumeError } = await service.rpc(
-    'consume_public_action_attempt',
-    {
-      p_action: parsed.action,
-      p_ip_hash: ipHash,
-      p_phone_hash: phoneHash,
-      p_window_secs: limit.windowSecs,
-      p_ip_limit: limit.perIp,
-      p_phone_limit: limit.perPhone,
-    },
-  )
-  if (consumeError) {
-    console.error('public-booking-actions: rate-limit RPC failed', consumeError.code)
-    return json(req, { ok: false, error: 'system' }, 500)
-  }
-  if (consumed !== true) return json(req, { ok: false, error: 'rate_limited' })
-
-  let result: { data: unknown; error: { code?: string } | null }
-  switch (parsed.action) {
-    case 'lookup':
-      result = await service.rpc('lookup_booking', { p_contact: parsed.phone })
-      break
-    case 'list':
-      result = await service.rpc('list_bookings_by_phone', { p_contact: parsed.phone })
-      break
-    case 'cancel':
-      result = await service.rpc('cancel_booking', {
-        p_booking_id: parsed.bookingId,
-        p_contact: parsed.phone,
-      })
-      break
-    case 'review':
-      result = await service.rpc('create_review', {
-        p_phone: parsed.phone,
-        p_rating: parsed.rating,
-        p_text: parsed.text,
-      })
-      break
-  }
-
   if (result.error) {
-    console.error(
-      `public-booking-actions: ${parsed.action} RPC failed`,
-      result.error.code ?? 'unknown',
-    )
+    console.error('public-booking-actions: review RPC failed', result.error.code)
     return json(req, { ok: false, error: 'system' }, 500)
   }
   return json(req, result.data)

@@ -21,6 +21,7 @@
     "test:e2e": "node tools/e2e/smoke.mjs"
   },
   "dependencies": {
+    "@imagemagick/magick-wasm": "0.0.42",
     "@supabase/supabase-js": "2.112.2",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
@@ -28,7 +29,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@imagemagick/magick-wasm": "0.0.42",
     "@preact/preset-vite": "^2.10.5",
     "@types/node": "^24.12.3",
     "@types/pg": "^8.20.0",

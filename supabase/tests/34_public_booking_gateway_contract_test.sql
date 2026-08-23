@@ -1,5 +1,5 @@
 begin;
-select plan(25);
+select plan(31);
 
 select ok(not has_function_privilege('anon', 'public.create_booking(text,text,timestamptz,text,text,text,text)', 'EXECUTE'),
   'contract: anon cannot create directly');
@@ -22,6 +22,22 @@ select ok(has_function_privilege('service_role', 'public.cancel_booking(uuid,tex
   'contract: action gateway retains cancel access');
 select ok(has_function_privilege('service_role', 'public.create_review(text,integer,text)', 'EXECUTE'),
   'contract: action gateway retains review access');
+select ok(has_function_privilege(
+  'service_role', 'public.create_customer_booking_access_request(text,text,text)', 'EXECUTE'),
+  'contract: action gateway can create email-scoped access links'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.exchange_customer_booking_access(text,text)', 'EXECUTE'),
+  'contract: action gateway can exchange one-time access links'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.list_customer_bookings_with_access(text)', 'EXECUTE'),
+  'contract: action gateway can list through an access session'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.cancel_customer_booking_with_access(uuid,text)', 'EXECUTE'),
+  'contract: action gateway can cancel through an access session'
+);
 
 select ok(not has_function_privilege('authenticated', 'public.create_booking(text,text,timestamptz,text,text,text,text)', 'EXECUTE'),
   'contract: authenticated cannot create directly');
@@ -33,6 +49,14 @@ select ok(not has_function_privilege('authenticated', 'public.cancel_booking(uui
   'contract: authenticated cannot cancel directly');
 select ok(not has_function_privilege('authenticated', 'public.create_review(text,integer,text)', 'EXECUTE'),
   'contract: authenticated cannot create reviews directly');
+select ok(not has_function_privilege(
+  'anon', 'public.list_customer_bookings_with_access(text)', 'EXECUTE'),
+  'contract: anonymous callers cannot use access-scoped booking RPCs directly'
+);
+select ok(not has_function_privilege(
+  'authenticated', 'public.list_customer_bookings_with_access(text)', 'EXECUTE'),
+  'contract: authenticated callers cannot use access-scoped booking RPCs directly'
+);
 
 set local role anon;
 select throws_ok(
@@ -77,7 +101,7 @@ select lives_ok(
   'contract: booking gateway database call still works'
 );
 select lives_ok(
-  $$select public.consume_public_action_attempt('lookup', repeat('e', 64), repeat('f', 64), 600, 12, 8)$$,
+  $$select public.consume_public_action_attempt('request_access', repeat('e', 64), repeat('f', 64), 600, 12, 8)$$,
   'contract: customer-action limiter database call still works'
 );
 select lives_ok(

@@ -192,4 +192,41 @@ describe('initial business metadata', () => {
     expect(text).toContain('250–475 kr')
     expect(text).not.toContain('Hassan')
   })
+
+  it('escapes hostile CMS text without corrupting JSON-LD facts', () => {
+    const hostile: BusinessSettings = {
+      ...business,
+      name: 'Studio </title><script>alert(1)</script>',
+      seo: {
+        sv: {
+          title: 'Book </title><img src=x onerror=alert(1)>',
+          description: 'Safe & current <description>',
+        },
+        en: business.seo.en,
+      },
+    }
+    const html = [
+      '<title id="business-title">old</title>',
+      '<meta id="business-description" content="old">',
+      '<meta id="business-og-site-name" content="old">',
+      '<meta id="business-og-title" content="old">',
+      '<meta id="business-og-description" content="old">',
+      '<meta id="business-og-image-alt" content="old">',
+      '<meta id="business-twitter-title" content="old">',
+      '<meta id="business-twitter-description" content="old">',
+      '<script id="business-json-ld" type="application/ld+json">{}</script>',
+    ].join('')
+
+    const rendered = renderHomepageMetadata(html, { business: hostile, facts })
+    const json = rendered.match(/business-json-ld[^>]*>([\s\S]*?)<\/script>/)?.[1]
+
+    expect(rendered).not.toContain('<img src=x onerror=alert(1)>')
+    expect(rendered).toContain('Book &lt;/title&gt;&lt;img src=x onerror=alert(1)&gt;')
+    expect(rendered).toContain('Safe &amp; current &lt;description&gt;')
+    expect(json).toBeDefined()
+    expect(JSON.parse(json ?? '')).toMatchObject({
+      name: hostile.name,
+      url: 'https://bladeblendstudio.se/',
+    })
+  })
 })

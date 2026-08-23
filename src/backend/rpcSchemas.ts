@@ -48,33 +48,32 @@ const createBookingErr = z.object({
 export const createBookingResponse = z.discriminatedUnion('ok', [createBookingOk, createBookingErr])
 export type CreateBookingResponse = z.infer<typeof createBookingResponse>
 
-// --- lookup_booking / cancel_booking -------------------------------------------------------------
-// Both return the SAME ok booking shape (echoing the proven contact) and the same not_found error.
+// --- customer booking access ---------------------------------------------------------------------
+// Customer history and cancellation require possession of a short-lived, one-time email link. The
+// browser exchanges that link for an opaque session token; the gateway hashes tokens before calling the
+// service-role-only RPCs.
 
-const cancelBookingShape = z.object({
-  id: z.string(),
-  barber_id: z.string(),
-  service_name: z.string(),
-  price: z.number(),
-  start_at: isoTimestamp,
-  method: z.enum(['phone', 'email']),
-  contact: z.string(),
-})
-
-const bookingLookupOk = z.object({ ok: z.literal(true), booking: cancelBookingShape })
-const bookingLookupErr = z.object({
+const customerAccessRequestOk = z.object({ ok: z.literal(true) })
+const customerAccessRequestErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['not_found', 'failed_challenge', 'rate_limited']),
+  error: z.enum(['failed_challenge', 'rate_limited']),
 })
+export const customerAccessRequestResponse = z.discriminatedUnion('ok', [
+  customerAccessRequestOk,
+  customerAccessRequestErr,
+])
 
-export const bookingLookupResponse = z.discriminatedUnion('ok', [bookingLookupOk, bookingLookupErr])
-export type BookingLookupResponse = z.infer<typeof bookingLookupResponse>
+const customerAccessExchangeOk = z.object({
+  ok: z.literal(true),
+  access_token: z.string().length(64),
+})
+const customerAccessExchangeErr = z.object({ ok: z.literal(false), error: z.literal('invalid') })
+export const customerAccessExchangeResponse = z.discriminatedUnion('ok', [
+  customerAccessExchangeOk,
+  customerAccessExchangeErr,
+])
 
-// --- list_bookings_by_phone (Mina bokningar) -----------------------------------------------------
-// The self-service history RPC. Enumerates EVERY confirmed booking for a proven phone (past +
-// future), so the adapter can split them into the upcoming/past sections. Always `{ ok: true }`; an
-// unknown phone returns an empty `bookings` array (the client treats empty as "not found"). Each row
-// carries just the display fields the dialog renders (barber via roster, service · price, when).
+// --- list_customer_bookings_with_access ----------------------------------------------------------
 
 const myBookingRow = z.object({
   id: z.string(),
@@ -85,19 +84,29 @@ const myBookingRow = z.object({
   start_at: isoTimestamp,
 })
 
-const listBookingsByPhoneOk = z.object({
+const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
   bookings: z.array(myBookingRow),
 })
-const listBookingsByPhoneErr = z.object({
+const listCustomerBookingsErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['failed_challenge', 'rate_limited']),
+  error: z.literal('access_denied'),
 })
-export const listBookingsByPhoneResponse = z.discriminatedUnion('ok', [
-  listBookingsByPhoneOk,
-  listBookingsByPhoneErr,
+export const listCustomerBookingsResponse = z.discriminatedUnion('ok', [
+  listCustomerBookingsOk,
+  listCustomerBookingsErr,
 ])
-export type ListBookingsByPhoneResponse = z.infer<typeof listBookingsByPhoneResponse>
+export type ListCustomerBookingsResponse = z.infer<typeof listCustomerBookingsResponse>
+
+const customerBookingCancelOk = z.object({ ok: z.literal(true) })
+const customerBookingCancelErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['access_denied', 'not_found']),
+})
+export const customerBookingCancelResponse = z.discriminatedUnion('ok', [
+  customerBookingCancelOk,
+  customerBookingCancelErr,
+])
 
 // --- create_review -------------------------------------------------------------------------------
 
@@ -114,7 +123,7 @@ const createReviewOk = z.object({
 // challenge/rate-limit outcomes are part of the same HTTP-200 response union.
 const createReviewErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['invalid', 'no_booking', 'failed_challenge', 'rate_limited']),
+  error: z.enum(['invalid', 'no_booking', 'failed_challenge', 'rate_limited', 'system']),
 })
 
 export const createReviewResponse = z.discriminatedUnion('ok', [createReviewOk, createReviewErr])

@@ -1,5 +1,5 @@
 begin;
-select plan(25);
+select plan(37);
 
 select ok(has_function_privilege('anon', 'public.create_booking(text,text,timestamptz,text,text,text,text)', 'EXECUTE'),
   'expand: deployed browser may create through legacy RPC');
@@ -22,6 +22,38 @@ select ok(has_function_privilege('service_role', 'public.cancel_booking(uuid,tex
   'expand: action gateway retains cancel access');
 select ok(has_function_privilege('service_role', 'public.create_review(text,integer,text)', 'EXECUTE'),
   'expand: action gateway retains review access');
+select ok(has_function_privilege(
+  'service_role', 'public.create_customer_booking_access_request(text,text,text)', 'EXECUTE'),
+  'expand: new gateway can create email-scoped access links'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.exchange_customer_booking_access(text,text)', 'EXECUTE'),
+  'expand: new gateway can exchange one-time access links'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.list_customer_bookings_with_access(text)', 'EXECUTE'),
+  'expand: new gateway can list through an access session'
+);
+select ok(has_function_privilege(
+  'service_role', 'public.cancel_customer_booking_with_access(uuid,text)', 'EXECUTE'),
+  'expand: new gateway can cancel through an access session'
+);
+select ok(not has_function_privilege(
+  'anon', 'public.create_customer_booking_access_request(text,text,text)', 'EXECUTE'),
+  'expand: anonymous callers cannot create access links directly'
+);
+select ok(not has_function_privilege(
+  'anon', 'public.exchange_customer_booking_access(text,text)', 'EXECUTE'),
+  'expand: anonymous callers cannot exchange access links directly'
+);
+select ok(not has_function_privilege(
+  'anon', 'public.list_customer_bookings_with_access(text)', 'EXECUTE'),
+  'expand: anonymous callers cannot list access-scoped bookings directly'
+);
+select ok(not has_function_privilege(
+  'anon', 'public.cancel_customer_booking_with_access(uuid,text)', 'EXECUTE'),
+  'expand: anonymous callers cannot cancel access-scoped bookings directly'
+);
 
 select ok(not has_function_privilege('authenticated', 'public.create_booking(text,text,timestamptz,text,text,text,text)', 'EXECUTE'),
   'expand: authenticated role gets no direct create path');
@@ -83,6 +115,26 @@ select lives_ok(
 select lives_ok(
   $$select public.lookup_booking('0700000000')$$,
   'expand: deployed customer-action gateway downstream call works'
+);
+select lives_ok(
+  $$select public.create_customer_booking_access_request(
+    '0700000000', 'missing@example.test', repeat('d', 64)
+  )$$,
+  'expand: new gateway access-link call works beside legacy browser RPCs'
+);
+select lives_ok(
+  $$select public.exchange_customer_booking_access(repeat('e', 64), repeat('f', 64))$$,
+  'expand: new gateway access-link exchange call works'
+);
+select lives_ok(
+  $$select public.list_customer_bookings_with_access(repeat('0', 64))$$,
+  'expand: new gateway scoped list call works'
+);
+select lives_ok(
+  $$select public.cancel_customer_booking_with_access(
+    '00000000-0000-0000-0000-000000000001'::uuid, repeat('1', 64)
+  )$$,
+  'expand: new gateway scoped cancellation call works'
 );
 
 select * from finish();

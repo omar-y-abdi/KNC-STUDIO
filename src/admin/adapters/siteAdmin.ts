@@ -79,6 +79,8 @@ export async function saveSiteSetting(key: string, value: string): Promise<Admin
 
 function mapWriteError(error: { code?: string } | null): AdminResult<never> {
   if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra startsidan.')
-  if (error?.code === '23514') return err('validation', 'Texten är för lång.')
+  if (error?.code === '23514' || error?.code === '22023') {
+    return err('validation', 'Kontrollera att inställningen har ett giltigt format.')
+  }
   return err('network', WRITE_ERROR)
 }

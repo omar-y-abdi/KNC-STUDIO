@@ -76,6 +76,8 @@ jobs:
             --file "$plaintext/data.sql" \
             --use-copy \
             --data-only \
+            --exclude "storage.buckets" \
+            --exclude "storage.objects" \
             --exclude "storage.buckets_vectors" \
             --exclude "storage.vector_indexes"
           npx supabase db dump \

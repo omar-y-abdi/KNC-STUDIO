@@ -18,6 +18,7 @@ describe('webhook secret contract', () => {
       const source = readFileSync(path, 'utf8')
       expect(source, path).toContain("Deno.env.get('WEBHOOK_SECRET')")
       expect(source, path).not.toContain('BOOKING_WEBHOOK_SECRET')
+      expect(source, path).toContain('timingSafeEqual')
     }
   })
 

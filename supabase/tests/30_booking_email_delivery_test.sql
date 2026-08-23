@@ -1,5 +1,5 @@
 begin;
-select plan(26);
+select plan(34);
 
 select has_table('public', 'booking_email_delivery_jobs', 'booking email delivery job table exists');
 select ok(
@@ -42,6 +42,16 @@ select ok(
   pg_catalog.has_function_privilege(
     'service_role', 'public.mark_booking_email_delivery_recipient(uuid,text)', 'execute'),
   'service role can persist a delivered recipient through the narrow RPC'
+);
+select ok(
+  pg_catalog.has_function_privilege(
+    'authenticated', 'public.admin_list_failed_booking_email_deliveries()', 'execute'),
+  'authenticated callers can use the owner-gated failed-delivery list'
+);
+select ok(
+  pg_catalog.has_function_privilege(
+    'authenticated', 'public.admin_retry_failed_booking_email_delivery(uuid)', 'execute'),
+  'authenticated callers can use the owner-gated failed-delivery retry'
 );
 select ok(
   not pg_catalog.has_function_privilege(
@@ -140,14 +150,14 @@ select ok(
        and event = 'booking_confirmed'),
     'not_configured'
   ),
-  'missing mail configuration requeues the delivery'
+  'missing mail configuration marks the delivery terminally failed'
 );
 select is(
   (select status from public.booking_email_delivery_jobs
    where booking_id = '30000000-0000-0000-0000-000000000001'
      and event = 'booking_confirmed'),
-  'pending',
-  'failed confirmation returns to pending state'
+  'failed',
+  'missing mail configuration does not retry indefinitely'
 );
 select is(
   (select last_error_code from public.booking_email_delivery_jobs
@@ -155,6 +165,72 @@ select is(
      and event = 'booking_confirmed'),
   'not_configured',
   'retry state stores only a safe error code'
+);
+select ok(
+  (select failed_at is not null from public.booking_email_delivery_jobs
+   where booking_id = '30000000-0000-0000-0000-000000000001'
+     and event = 'booking_confirmed'),
+  'terminal delivery failure records when operator action is required'
+);
+
+insert into auth.users (id, email)
+values ('30000000-0000-0000-0000-000000000099', 'owner@delivery.local');
+insert into public.profiles (id, role, barber_id)
+values ('30000000-0000-0000-0000-000000000099', 'owner', null);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '30000000-0000-0000-0000-000000000099')::text,
+  true
+);
+select is(
+  jsonb_array_length(public.admin_list_failed_booking_email_deliveries()),
+  1,
+  'owner sees terminal failed delivery in the recovery queue'
+);
+select is(
+  public.admin_retry_failed_booking_email_delivery(
+    (public.admin_list_failed_booking_email_deliveries()->0->>'id')::uuid
+  )->>'ok',
+  'true',
+  'owner can explicitly retry a terminal delivery failure'
+);
+reset role;
+select is(
+  (select status from public.booking_email_delivery_jobs
+   where booking_id = '30000000-0000-0000-0000-000000000001'
+     and event = 'booking_confirmed'),
+  'pending',
+  'manual retry returns the delivery to the dispatcher queue'
+);
+
+update public.booking_email_delivery_jobs
+set status = 'dispatching', attempt_count = 5, last_attempt_at = pg_catalog.now()
+where booking_id = '30000000-0000-0000-0000-000000000001'
+  and event = 'booking_confirmed';
+select set_config(
+  'test.confirmation_job_id',
+  (select id::text from public.booking_email_delivery_jobs
+   where booking_id = '30000000-0000-0000-0000-000000000001'
+     and event = 'booking_confirmed'),
+  true
+);
+set local role service_role;
+select ok(
+  public.fail_booking_email_delivery(
+    current_setting('test.confirmation_job_id')::uuid,
+    'send_failed'
+  ),
+  'fifth send failure reaches terminal failure'
+);
+reset role;
+select is(
+  (select status from public.booking_email_delivery_jobs
+   where booking_id = '30000000-0000-0000-0000-000000000001'
+     and event = 'booking_confirmed'),
+  'failed',
+  'fifth send failure no longer cycles indefinitely'
 );
 
 update public.bookings

@@ -157,6 +157,7 @@ export const emailTemplateName = z.enum([
   'customer_cancellation',
   'barber_cancellation',
   'customer_reminder',
+  'customer_booking_access',
   'auth_recovery',
   'auth_email_change',
   'auth_invite',
@@ -176,6 +177,17 @@ export const emailTemplateRow = z.object({
 })
 export type EmailTemplateRowT = z.infer<typeof emailTemplateRow>
 export const emailTemplateRows = z.array(emailTemplateRow)
+
+export const failedBookingEmailDeliveryRow = z.object({
+  id: z.string().uuid(),
+  booking_id: z.string().uuid(),
+  event: z.enum(['booking_confirmed', 'booking_cancelled']),
+  attempt_count: z.number().int().nonnegative(),
+  last_error_code: z.enum(['not_configured', 'send_failed', 'message_build_failed']).nullable(),
+  failed_at: isoTimestamp.nullable(),
+})
+export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)
+export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
@@ -346,14 +358,14 @@ export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse
 // Bulk hard delete of bookings by id (owner any barber; a barber only their own). Intended for
 // past/cancelled rows: REFUSES (`has_upcoming`) if any id is still a live upcoming appointment, and
 // rejects an empty selection (`empty`). Reports how many rows were deleted.
-// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'}
+// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'|'delivery_pending'}
 const deleteBookingsOk = z.object({
   ok: z.literal(true),
   count: z.number().int().nonnegative(),
 })
 const deleteBookingsErr = z.object({
   ok: z.literal(false),
-  error: z.enum(['empty', 'forbidden', 'has_upcoming']),
+  error: z.enum(['empty', 'forbidden', 'has_upcoming', 'delivery_pending']),
 })
 export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
   deleteBookingsOk,

@@ -1,5 +1,5 @@
 // Root component.
-// Owns state {mode, lang, view, cancelOpen}, the isMobile matchMedia switch, and the
+// Owns state {mode, lang, view, myBookingsOpen}, the isMobile matchMedia switch, and the
 // theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
 // bodies live in their own modules; the shared chrome (toggles, palette) is built here and
 // passed down so both layouts render identical controls.
@@ -9,8 +9,8 @@ import { useEffect, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { CancellationDialog } from '../cancellation/CancellationDialog'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
+import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
@@ -55,8 +55,6 @@ interface AppState {
   readonly lang: Lang
   /** The single active site state — home / booking / about (drives both layouts). */
   readonly view: View
-  /** Whether the "Avbokning" (cancellation) popup is open. Lives here alongside the view folds. */
-  readonly cancelOpen: boolean
   /** Whether the "Mina bokningar" (my-appointments) popup is open. */
   readonly myBookingsOpen: boolean
 }
@@ -67,17 +65,32 @@ export function App(): JSX.Element {
     mode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     lang: 'sv',
     view: 'home',
-    cancelOpen: false,
     myBookingsOpen: false,
   }))
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
+  const [bookingAccess, setBookingAccess] = useState<{
+    readonly token?: string
+    readonly failed?: boolean
+  }>({})
   useEffect(() => {
     const m = window.matchMedia(MOBILE_MQ)
     const h = (e: MediaQueryListEvent): void => setIsMobile(e.matches)
     m.addEventListener('change', h)
     return () => m.removeEventListener('change', h)
+  }, [])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const accessCode = url.searchParams.get('booking_access')
+    if (accessCode === null) return
+    url.searchParams.delete('booking_access')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
+      setBookingAccess(result.ok ? { token: result.accessToken } : { failed: true })
+      setState({ myBookingsOpen: true })
+    })
   }, [])
 
   const dark = state.mode === 'dark'
@@ -150,10 +163,14 @@ export function App(): JSX.Element {
   const openMobBooking = (): void => setState({ view: 'booking' })
   const openMobAbout = (): void => setState({ view: 'about' })
   const closeMobBooking = (): void => setState({ view: 'home' })
-  const openCancel = (): void => setState({ cancelOpen: true })
-  const closeCancel = (): void => setState({ cancelOpen: false })
-  const openMyBookings = (): void => setState({ myBookingsOpen: true })
-  const closeMyBookings = (): void => setState({ myBookingsOpen: false })
+  const openMyBookings = (): void => {
+    setBookingAccess({})
+    setState({ myBookingsOpen: true })
+  }
+  const closeMyBookings = (): void => {
+    setBookingAccess({})
+    setState({ myBookingsOpen: false })
+  }
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -252,11 +269,14 @@ export function App(): JSX.Element {
     </div>
   )
 
-  const cancelDialog = state.cancelOpen ? (
-    <CancellationDialog mode={state.mode} lang={lang} onClose={closeCancel} />
-  ) : null
   const myBookingsDialog = state.myBookingsOpen ? (
-    <MyBookingsDialog mode={state.mode} lang={lang} onClose={closeMyBookings} />
+    <MyBookingsDialog
+      mode={state.mode}
+      lang={lang}
+      onClose={closeMyBookings}
+      {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
+      {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
+    />
   ) : null
 
   if (isMobile) {
@@ -278,13 +298,12 @@ export function App(): JSX.Element {
           openMobBooking={openMobBooking}
           openMobAbout={openMobAbout}
           closeMobBooking={closeMobBooking}
-          openCancel={openCancel}
+          openCancel={openMyBookings}
           openMyBookings={openMyBookings}
           homepageScale={chrome.homepageScale}
           aboutScale={chrome.aboutScale}
           bookingPopupText={bookingPopupText}
         />
-        {cancelDialog}
         {myBookingsDialog}
       </>
     )
@@ -306,13 +325,12 @@ export function App(): JSX.Element {
         toggleDeskBooking={toggleDeskBooking}
         toggleDeskAbout={toggleDeskAbout}
         findUsStyle={findUsStyle}
-        openCancel={openCancel}
+        openCancel={openMyBookings}
         openMyBookings={openMyBookings}
         homepageScale={chrome.homepageScale}
         aboutScale={chrome.aboutScale}
         bookingPopupText={bookingPopupText}
       />
-      {cancelDialog}
       {myBookingsDialog}
     </>
   )

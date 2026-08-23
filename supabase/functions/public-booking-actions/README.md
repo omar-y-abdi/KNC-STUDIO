@@ -1,11 +1,13 @@
 # Public booking actions
 
-Customer self-service gateway for booking lookup, listing, cancellation, and reviews.
+Customer self-service gateway for booking history, cancellation, and reviews.
 
 ## Security boundary
 
-- Browser requests require a valid Cloudflare Turnstile token.
-- Direct anonymous execution of the underlying phone-based RPCs is revoked.
+- Secure-link requests and review submissions require a valid Cloudflare Turnstile token.
+- Booking history and cancellation require a short-lived, one-time link sent to the exact booking
+  email address. The gateway exchanges it for an opaque, email-scoped session token.
+- Direct anonymous execution of legacy phone-based RPCs is revoked only in rollout contract phase.
 - Rate-limit keys store salted SHA-256 hashes, never raw IP addresses or phone numbers.
 - Allowed browser origins default to `https://bladeblendstudio.se` and
   `https://www.bladeblendstudio.se`.

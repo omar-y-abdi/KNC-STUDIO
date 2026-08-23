@@ -15,6 +15,7 @@ import {
   isTransientGoogleError,
   revokeToken,
   signState,
+  timingSafeEqual,
   verifyState,
   withGoogleRetry,
 } from '../../supabase/functions/_shared/calendar'
@@ -25,6 +26,12 @@ const NOW_MS = 1_700_000_000_000
 const NOW_SEC = NOW_MS / 1000
 
 describe('signState / verifyState', () => {
+  it('compares equal-length webhook secrets without early mismatch exits', () => {
+    expect(timingSafeEqual('same-secret', 'same-secret')).toBe(true)
+    expect(timingSafeEqual('same-secret', 'same-Secret')).toBe(false)
+    expect(timingSafeEqual('same-secret', 'short')).toBe(false)
+  })
+
   it('round-trips a valid payload', async () => {
     const token = await signState({ barber_id: 'hassan', iat: NOW_SEC }, SECRET)
     const payload = await verifyState(token, SECRET, 600, NOW_MS)

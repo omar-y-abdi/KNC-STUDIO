@@ -22,6 +22,7 @@ import {
   insertEvent,
   patchEvent,
   refreshAccessToken,
+  timingSafeEqual,
 } from '../_shared/calendar.ts'
 
 type WebhookOp = 'INSERT' | 'UPDATE' | 'DELETE'
@@ -117,7 +118,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // Shared-secret gate — FAIL-CLOSED (the only auth on this server->server function).
   const webhookSecret = Deno.env.get('WEBHOOK_SECRET')
   if (!webhookSecret) return json({ ok: false, error: 'not_configured' }, 503)
-  if (req.headers.get('x-webhook-secret') !== webhookSecret) {
+  if (!timingSafeEqual(req.headers.get('x-webhook-secret') ?? '', webhookSecret)) {
     return json({ ok: false, error: 'unauthorized' }, 401)
   }
 

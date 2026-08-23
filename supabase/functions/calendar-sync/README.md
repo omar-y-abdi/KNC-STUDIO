@@ -1,7 +1,7 @@
 # Google Calendar-sync — setup
 
-Per-barber Google Calendar push. A barber taps **Koppla kalender** in "Mina bokningar"; their bookings
-(past + future) are pushed as events into their Google Calendar and kept in sync in near-real-time. The
+Per-barber Google Calendar push. A barber taps **Koppla kalender** in "Mina bokningar"; their future
+bookings are pushed as events into their Google Calendar and kept in sync in near-real-time. The
 Google Calendar app (iOS **and** Android) delivers the notification — Apple Calendar has no push API, so
 an iPhone barber uses the Google Calendar app too.
 
@@ -82,9 +82,9 @@ fail-closed: with no/incorrect `x-webhook-secret` it does nothing.
 - **Notification timing:** the event carries a 30-min popup reminder; the "new booking" ding depends on
   the barber enabling notifications in the Google Calendar app. A guaranteed instant push (web/PWA) can
   be added later.
-- **Backfill** runs inside the callback right after connect (all confirmed bookings). For a very large
-  history this could approach the function time limit; sync then catches up on the next change.
-- **Disconnect** revokes + deletes the token (credential) and stops future sync; events already in the
-  barber's calendar and their booking→event mapping are kept, so a reconnect with the **same Google
-  account** resumes without re-inserting duplicates (only bookings made while disconnected are added).
-  Reconnecting a _different_ Google account may leave the old events behind on the old account.
+- **Backfill** runs inside the callback right after connect for confirmed future bookings only. This
+  bounds the work and avoids creating historical calendar noise.
+- **Cancellation, hard deletion, and disconnect** queue external event deletions in the durable action
+  ledger. The mapping and event identifier remain until Google deletion succeeds, then credentials are
+  revoked and removed after a disconnect queue drains. A retryable failure cannot silently orphan a
+  Calendar event.

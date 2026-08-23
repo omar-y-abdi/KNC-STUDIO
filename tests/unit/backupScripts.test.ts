@@ -42,10 +42,7 @@ function fixture(): string {
   roots.push(root)
   mkdirSync(join(root, 'storage', 'objects'), { recursive: true })
   writeFileSync(join(root, 'schema.sql'), 'CREATE TABLE IF NOT EXISTS "public"."bookings" ();\n')
-  writeFileSync(
-    join(root, 'data.sql'),
-    'COPY "auth"."users" FROM stdin;\nCOPY "storage"."buckets" FROM stdin;\nCOPY "storage"."objects" FROM stdin;\n',
-  )
+  writeFileSync(join(root, 'data.sql'), 'COPY "auth"."users" FROM stdin;\n')
   writeFileSync(
     join(root, 'history_data.sql'),
     'COPY "supabase_migrations"."schema_migrations" FROM stdin;\n',
@@ -118,6 +115,16 @@ describe('backup archive contract', () => {
     ).toThrow()
   })
 
+  it('fails closed when SQL data includes Storage metadata', () => {
+    const root = fixture()
+    writeFileSync(join(root, 'data.sql'), 'COPY "storage"."objects" FROM stdin;\n')
+    refreshManifest(root)
+
+    expect(() =>
+      command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
+    ).toThrow()
+  })
+
   it('fails closed when unmanifested object bytes are present', () => {
     const root = fixture()
     writeFileSync(join(root, 'storage', 'objects', '00000001.bin'), 'unexpected')
@@ -183,6 +190,38 @@ describe('Storage backup authentication', () => {
 
   it('rejects unknown secret formats', () => {
     expect(() => headers('not-a-supabase-secret')).toThrow()
+  })
+
+  it('refuses redirects before credentials can be forwarded to another origin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'backup-redirect-'))
+    roots.push(root)
+    const headersPath = join(root, 'headers')
+    writeFileSync(headersPath, 'HTTP/1.1 302 Found\r\nLocation: https://other.invalid/\r\n')
+
+    expect(() =>
+      command(
+        'bash',
+        [
+          '-c',
+          'source "$1"; storage_require_no_redirect "$2"',
+          'storage-redirect-test',
+          'tools/backup/storage-auth.sh',
+          headersPath,
+        ],
+        process.cwd(),
+      ),
+    ).toThrow()
+  })
+
+  it('never enables curl redirect following on authenticated Storage requests', () => {
+    for (const path of [
+      'tools/backup/storage-backup.sh',
+      'tools/backup/storage-restore.sh',
+    ] as const) {
+      const source = readFileSync(path, 'utf8')
+      expect(source).not.toContain('--location')
+      expect(source).toContain('storage_require_no_redirect')
+    }
   })
 })
 

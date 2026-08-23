@@ -6,8 +6,16 @@ const fixedClock = (): Date => new Date(2026, 5, 19)
 const adapter = makeMockMyBookingsAdapter(fixedClock)
 
 describe('mockMyBookingsAdapter', () => {
-  it('lists a demo history split into upcoming + past for a known number', async () => {
-    const r = await adapter.listByPhone({ contact: '0701234567', lang: 'sv' })
+  it('issues access then lists a demo history split into upcoming + past', async () => {
+    await expect(
+      adapter.requestAccess({
+        phone: '0701234567',
+        email: 'customer@example.com',
+        lang: 'sv',
+        turnstileToken: 'test',
+      }),
+    ).resolves.toEqual({ ok: true })
+    const r = await adapter.list({ accessToken: 'mock-customer-access', lang: 'sv' })
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.bookings.upcoming).toHaveLength(3)
@@ -27,20 +35,21 @@ describe('mockMyBookingsAdapter', () => {
     }
   })
 
-  it('returns not_found for the reserved unknown demo number (normalising spaces)', async () => {
-    const r = await adapter.listByPhone({ contact: '070 000 00 00', lang: 'sv' })
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toBe('not_found')
+  it('exchanges a one-time access link for a scoped demo session', async () => {
+    await expect(adapter.exchangeAccess('a'.repeat(64))).resolves.toEqual({
+      ok: true,
+      accessToken: 'mock-customer-access',
+    })
   })
 
   it('cancel() resolves ok, echoing the id', async () => {
-    const r = await adapter.listByPhone({ contact: '0701234567', lang: 'en' })
+    const r = await adapter.list({ accessToken: 'mock-customer-access', lang: 'en' })
     expect(r.ok).toBe(true)
     if (r.ok) {
       const target = r.bookings.upcoming[0]
       expect(target).toBeDefined()
       if (target) {
-        const c = await adapter.cancel(target, '0701234567')
+        const c = await adapter.cancel(target, 'mock-customer-access')
         expect(c.ok).toBe(true)
         if (c.ok) expect(c.id).toBe(target.id)
       }

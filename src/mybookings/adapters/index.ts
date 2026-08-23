@@ -7,15 +7,21 @@
 
 import { isBackendConfigured } from '../../backend/config'
 import type { MyBooking } from '../domain'
-import type { MyBookingsLookupParams, MyBookingsPort } from '../port'
+import type { MyBookingsAccessRequestParams, MyBookingsListParams, MyBookingsPort } from '../port'
 import { mockMyBookingsAdapter } from './mockMyBookings'
 
 const lazySupabaseMyBookingsPort: MyBookingsPort = {
-  listByPhone: (params: MyBookingsLookupParams) =>
-    import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.listByPhone(params)),
-  cancel: (booking: MyBooking, contact: string, turnstileToken: string) =>
+  requestAccess: (params: MyBookingsAccessRequestParams) =>
+    import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.requestAccess(params)),
+  exchangeAccess: (accessCode: string) =>
     import('./supabaseMyBookings').then((m) =>
-      m.supabaseMyBookingsAdapter.cancel(booking, contact, turnstileToken),
+      m.supabaseMyBookingsAdapter.exchangeAccess(accessCode),
+    ),
+  list: (params: MyBookingsListParams) =>
+    import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.list(params)),
+  cancel: (booking: MyBooking, accessToken: string) =>
+    import('./supabaseMyBookings').then((m) =>
+      m.supabaseMyBookingsAdapter.cancel(booking, accessToken),
     ),
 }
 

@@ -70,6 +70,8 @@ export const supabaseReviewsAdapter: ReviewsPort = {
             return reviewError('challenge', CHALLENGE_MESSAGE)
           case 'rate_limited':
             return reviewError('rate_limited', RATE_LIMITED_MESSAGE)
+          case 'system':
+            return reviewError('submit', SUBMIT_ERROR_MESSAGE)
         }
       }
       return { ok: true, review: parsed.value.review }
