@@ -110,6 +110,12 @@ select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:15'),
   0, '10:15 is absent — [10:15,10:45) still overlaps the booking [540,630), so the tick does NOT fit'
 );
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
+);
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
 
@@ -141,6 +147,12 @@ select is(
 select is(
   (select pg_catalog.min(s) from public.available_slots('hassan', date '2099-01-05', 30) s),
   '09:45', 'the first free 30-min tick is 09:45 (the booking end); 09:00/09:15/09:30 overlap and drop out'
+);
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';
@@ -182,6 +194,12 @@ select is(
 select is(
   (select count(*)::int from public.available_slots('hassan', date '2099-01-05', 30) s where s = '10:00'),
   0, '10:00 (the booked start) is absent'
+);
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id='hassan'
+    and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05'
 );
 delete from public.bookings where barber_id='hassan'
   and (start_at at time zone 'Europe/Stockholm')::date = date '2099-01-05';

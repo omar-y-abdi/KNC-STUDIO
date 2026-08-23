@@ -36,6 +36,11 @@ const LIMITS: Readonly<Record<'request_access' | 'review', Limit>> = {
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
 const SITE_URL = 'https://bladeblendstudio.se'
+const edgeRuntime = (
+  globalThis as typeof globalThis & {
+    readonly EdgeRuntime: { waitUntil<T>(promise: Promise<T>): Promise<T> }
+  }
+).EdgeRuntime
 
 function allowedOrigins(): readonly string[] {
   const configured = Deno.env.get('PUBLIC_SITE_ORIGINS')
@@ -226,7 +231,7 @@ async function sendAccessEmail(
     to: email,
     lang,
     copy: copy ?? defaultEmailTemplate('customer_booking_access', lang),
-    ctaHref: `${SITE_URL}/?booking_access=${code}`,
+    ctaHref: `${SITE_URL}/#booking_access=${code}`,
     business,
   })
   await sendViaResend(message, apiKey, `customer-booking-access/${await sha256(code)}`)
@@ -307,13 +312,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error('public-booking-actions: access request RPC failed', error.code)
       return json(req, { ok: false, error: 'system' }, 500)
     }
-    if (data === true) {
-      try {
-        await sendAccessEmail(service, parsed.email ?? '', parsed.lang ?? 'sv', code)
-      } catch {
+    const accessEmailTask =
+      data === true
+        ? Promise.resolve().then(() =>
+            sendAccessEmail(service, parsed.email ?? '', parsed.lang ?? 'sv', code),
+          )
+        : Promise.resolve()
+    edgeRuntime.waitUntil(
+      accessEmailTask.catch(() => {
         console.error('public-booking-actions: access email failed')
-      }
-    }
+      }),
+    )
     return json(req, { ok: true })
   }
 

@@ -249,4 +249,5 @@ export type DeleteBarberOutcome =
       readonly upcoming: number
     }
   | { readonly kind: 'external_cleanup_pending'; readonly calendarEvents: number }
+  | { readonly kind: 'delivery_pending' }
   | { readonly kind: 'error'; readonly error: AdminError }

@@ -20,6 +20,7 @@ Set these before deployment:
 npx supabase secrets set \
   TURNSTILE_SECRET=<cloudflare-secret> \
   PUBLIC_ACTION_HASH_SALT=<random-long-value> \
+  RESEND_API_KEY=<active-resend-api-key> \
   PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se
 ```
 

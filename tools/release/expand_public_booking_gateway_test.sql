@@ -1,5 +1,5 @@
 begin;
-select plan(37);
+select plan(39);
 
 select ok(has_function_privilege('anon', 'public.create_booking(text,text,timestamptz,text,text,text,text)', 'EXECUTE'),
   'expand: deployed browser may create through legacy RPC');
@@ -109,7 +109,7 @@ select lives_ok(
   'expand: deployed booking gateway database call works'
 );
 select lives_ok(
-  $$select public.consume_public_action_attempt('lookup', repeat('b', 64), repeat('c', 64), 600, 12, 8)$$,
+  $$select public.consume_public_action_attempt('request_access', repeat('b', 64), repeat('c', 64), 600, 12, 8)$$,
   'expand: deployed customer-action limiter database call works'
 );
 select lives_ok(
@@ -135,6 +135,40 @@ select lives_ok(
     '00000000-0000-0000-0000-000000000001'::uuid, repeat('1', 64)
   )$$,
   'expand: new gateway scoped cancellation call works'
+);
+
+reset role;
+insert into public.barbers (id, name) values ('expand-mail', 'Expand Mail');
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang)
+values
+  ('52000000-0000-4000-8000-000000000001', 'expand-mail', 'service', 'Service', 300, 30,
+   '2099-01-01 09:00+00', '2099-01-01 09:30+00', 'Expand Mail', 'email', '0705200001',
+   'expand-mail@example.test', 'sv');
+update public.booking_email_delivery_jobs
+set status = 'dispatching', attempt_count = 1, last_attempt_at = pg_catalog.now()
+where booking_id = '52000000-0000-4000-8000-000000000001';
+select set_config(
+  'test.expand_mail_delivery_id',
+  (select id::text from public.booking_email_delivery_jobs
+   where booking_id = '52000000-0000-4000-8000-000000000001'),
+  true
+);
+set local role service_role;
+select ok(
+  public.fail_booking_email_delivery(
+    current_setting('test.expand_mail_delivery_id')::uuid,
+    'send_failed_permanent'
+  ),
+  'expand: deployed send-confirmation permanent failure code is accepted before contract'
+);
+reset role;
+select is(
+  (select status from public.booking_email_delivery_jobs
+   where booking_id = '52000000-0000-4000-8000-000000000001'),
+  'failed',
+  'expand: permanent email failures remain recoverable during mixed-version deployment'
 );
 
 select * from finish();

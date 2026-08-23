@@ -121,6 +121,15 @@ describe('deleteBarber', () => {
 
     expect(res).toEqual({ kind: 'has_upcoming', count: 4, past: 2, upcoming: 2 })
   })
+
+  it('maps unresolved delivery jobs to an operator-action outcome', async () => {
+    invoke.mockResolvedValue({
+      data: { ok: false, error: 'delivery_pending' },
+      error: null,
+    })
+
+    await expect(deleteBarber('mario', true)).resolves.toEqual({ kind: 'delivery_pending' })
+  })
 })
 
 describe('deleteBookings', () => {
@@ -152,6 +161,18 @@ describe('deleteBookings', () => {
     expect(res).toEqual({
       ok: false,
       error: { kind: 'validation', message: 'Kommande bokningar kan inte raderas.' },
+    })
+  })
+
+  it('maps unresolved email delivery to a validation AdminError', async () => {
+    rpc.mockResolvedValue({ data: { ok: false, error: 'delivery_pending' }, error: null })
+
+    await expect(deleteBookings(['a'])).resolves.toEqual({
+      ok: false,
+      error: {
+        kind: 'validation',
+        message: 'Bokningen har mejl som måste levereras eller hanteras först.',
+      },
     })
   })
 
@@ -201,6 +222,18 @@ describe('purgeHistory', () => {
     expect(res).toEqual({
       ok: false,
       error: { kind: 'forbidden', message: 'Bara ägaren kan tömma all historik.' },
+    })
+  })
+
+  it('maps unresolved email delivery to a validation AdminError', async () => {
+    rpc.mockResolvedValue({ data: { ok: false, error: 'delivery_pending' }, error: null })
+
+    await expect(purgeHistory()).resolves.toEqual({
+      ok: false,
+      error: {
+        kind: 'validation',
+        message: 'Historiken innehåller mejl som måste levereras eller hanteras först.',
+      },
     })
   })
 

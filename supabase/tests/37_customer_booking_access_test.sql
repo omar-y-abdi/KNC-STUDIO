@@ -1,5 +1,5 @@
 begin;
-select plan(19);
+select plan(20);
 
 select ok(
   not has_table_privilege('anon', 'public.customer_booking_access_challenges', 'select'),
@@ -70,6 +70,13 @@ select ok(
   ),
   'unknown email cannot create an access link'
 );
+reset role;
+select is(
+  (select pg_catalog.count(*) from public.customer_booking_access_challenges),
+  2::bigint,
+  'matching and non-matching requests perform the same challenge write workload'
+);
+set local role service_role;
 select ok(
   public.exchange_customer_booking_access(repeat('a', 64), repeat('c', 64)),
   'unused unexpired access link exchanges exactly once'

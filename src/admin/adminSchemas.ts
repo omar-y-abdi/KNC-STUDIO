@@ -196,6 +196,7 @@ export const failedBookingEmailDeliveryRow = z.object({
 })
 export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)
 export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
+export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
@@ -353,11 +354,16 @@ const deleteBarberExternalCleanup = z.object({
   error: z.literal('external_cleanup_pending'),
   calendar_events: z.number().int().nonnegative(),
 })
+const deleteBarberDeliveryPending = z.object({
+  ok: z.literal(false),
+  error: z.literal('delivery_pending'),
+})
 export const adminDeleteBarberResponse = z.union([
   deleteBarberOk,
   deleteBarberHasBookings,
   deleteBarberHasUpcoming,
   deleteBarberExternalCleanup,
+  deleteBarberDeliveryPending,
   deleteBarberDenied,
 ])
 export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>
@@ -383,14 +389,14 @@ export type AdminDeleteBookingsResponse = z.infer<typeof adminDeleteBookingsResp
 
 // --- admin_purge_history RPC ---------------------------------------------------------------------
 // Owner-only: delete ALL past/cancelled history in one shot, reporting the row count removed.
-// {ok:true, count:n} | {ok:false, error:'forbidden'}
+// {ok:true, count:n} | {ok:false, error:'forbidden'|'delivery_pending'}
 const purgeHistoryOk = z.object({
   ok: z.literal(true),
   count: z.number().int().nonnegative(),
 })
 const purgeHistoryErr = z.object({
   ok: z.literal(false),
-  error: z.literal('forbidden'),
+  error: z.enum(['forbidden', 'delivery_pending']),
 })
 export const adminPurgeHistoryResponse = z.discriminatedUnion('ok', [
   purgeHistoryOk,

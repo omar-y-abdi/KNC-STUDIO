@@ -267,6 +267,9 @@ values
    '0703300011', 'delete@example.test', 'sv', 'confirmed');
 insert into public.calendar_event_map (booking_id, barber_id, google_event_id)
 values ('33000000-0000-0000-0000-000000000011', 'calendar-outbox', 'google-event-11');
+update public.booking_email_delivery_jobs
+set status='delivered', completed_at=pg_catalog.now()
+where booking_id='33000000-0000-0000-0000-000000000011';
 delete from public.bookings where id='33000000-0000-0000-0000-000000000011';
 select is((select count(*)::int from public.calendar_event_map
   where booking_id='33000000-0000-0000-0000-000000000011'), 1,

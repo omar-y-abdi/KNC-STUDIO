@@ -12,13 +12,14 @@
 -- (bypasses RLS) for setup + verification.
 --
 begin;
-select plan(28);
+select plan(31);
 
 -- ---- barbers ---------------------------------------------------------------------------------
 insert into public.barbers (id, name) values
   ('deltest','Del Test'),
   ('delclean','Del Clean'),
-  ('delactive','Del Active');
+  ('delactive','Del Active'),
+  ('delmail','Del Mail');
 
 -- a CASCADE child of the barber (must vanish when the barber row is deleted)
 insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min) values
@@ -146,6 +147,13 @@ update public.bookings
 set status = 'cancelled', cancelled_at = pg_catalog.now()
 where id = '3b000000-0000-0000-0000-0000000000a1';
 
+-- This test's deltest deliveries are not under test; complete them before testing destructive purge.
+update public.booking_email_delivery_jobs
+set status = 'delivered', completed_at = pg_catalog.now()
+where booking_id in (
+  select id from public.bookings where barber_id = 'deltest'
+);
+
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub','30000000-0000-0000-0000-000000000001')::text, true);
 select is(public.admin_delete_barber('deltest', null) ->> 'error', 'has_bookings',
@@ -164,6 +172,25 @@ select is((current_setting('test.del2')::jsonb) ->> 'ok',               'true',
 select is((current_setting('test.del2')::jsonb) ->> 'deleted_bookings', '0',
   'a bookingless delete reports deleted_bookings = 0');
 reset role;
+
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('3b000000-0000-0000-0000-0000000000d1','delmail','h','Hår',350,45,
+   '2020-08-01 09:00+00','2020-08-01 09:45+00','Delivery Guard','email','0701110099',
+   'delete-barber@example.test','sv','confirmed');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub','30000000-0000-0000-0000-000000000001')::text, true);
+select is(public.admin_delete_barber('delmail', true) ->> 'error', 'delivery_pending',
+  'barber purge refuses to cascade an unresolved transactional email');
+reset role;
+select is((select count(*)::int from public.barbers where id='delmail'), 1,
+  'barber remains after delivery guard refusal');
+select is((select count(*)::int from public.booking_email_delivery_jobs
+  where booking_id='3b000000-0000-0000-0000-0000000000d1' and status='pending'), 1,
+  'barber purge keeps the recoverable delivery job');
 
 -- ---- final state (as the table owner, RLS-bypassing) ----------------------------------------
 select is((select count(*)::int from public.barbers where id in ('deltest','delclean')), 0,

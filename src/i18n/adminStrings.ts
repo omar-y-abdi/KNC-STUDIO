@@ -389,6 +389,7 @@ export interface AdminStrings {
   readonly barbersDeleteUpcomingBlocked: string
   readonly barbersAuthCleanupPending: string
   readonly barbersExternalCleanupPending: string
+  readonly barbersDeliveryPending: string
   // AboutView — text editor headings + controls
   readonly aboutTextTitle: string
   readonly aboutTextLead: string
@@ -859,6 +860,8 @@ const SV: AdminStrings = {
     'Barberaren raderades och saknar dataåtkomst, men Auth-kontot kunde inte städas automatiskt.',
   barbersExternalCleanupPending:
     'Google Calendar rensas säkert i bakgrunden ({count} händelser). Försök radera barberaren igen om en stund.',
+  barbersDeliveryPending:
+    'Barberaren har bokningsmejl som måste levereras eller hanteras under Mejl innan radering.',
   aboutTextTitle: 'Om oss · text',
   aboutTextLead: 'Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.',
   aboutLoading: 'Laddar innehåll …',
@@ -1322,6 +1325,8 @@ const EN: AdminStrings = {
     'The barber was deleted and has no data access, but the Auth account could not be cleaned automatically.',
   barbersExternalCleanupPending:
     'Google Calendar is being cleaned safely in the background ({count} events). Try deleting the barber again shortly.',
+  barbersDeliveryPending:
+    'This barber has booking emails that must be delivered or handled under Mail before deletion.',
   aboutTextTitle: 'About us · text',
   aboutTextLead: 'Edit the section texts in Swedish and English. Each field is saved separately.',
   aboutLoading: 'Loading content …',

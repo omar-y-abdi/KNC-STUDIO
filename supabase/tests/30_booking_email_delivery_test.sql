@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(41);
 
 select has_table('public', 'booking_email_delivery_jobs', 'booking email delivery job table exists');
 select ok(
@@ -54,6 +54,16 @@ select ok(
   'authenticated callers can use the owner-gated failed-delivery retry'
 );
 select ok(
+  pg_catalog.has_function_privilege(
+    'authenticated', 'public.admin_discard_failed_booking_email_delivery(uuid)', 'execute'),
+  'authenticated callers can use the owner-gated failed-delivery discard'
+);
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.admin_discard_failed_booking_email_delivery(uuid)', 'execute'),
+  'anon cannot acknowledge failed deliveries'
+);
+select ok(
   not pg_catalog.has_function_privilege(
     'anon', 'public.booking_email_delivery_for_dispatch(uuid)', 'execute'),
   'anon cannot read delivery jobs'
@@ -75,6 +85,13 @@ select ok(
 select ok(
   exists (select 1 from cron.job where jobname = 'booking-email-delivery-cleanup'),
   'terminal booking email delivery cleanup is scheduled'
+);
+select ok(
+  pg_catalog.strpos(
+    (select command from cron.job where jobname = 'booking-email-delivery-cleanup'),
+    'failed'
+  ) = 0,
+  'unreviewed failed deliveries never age out before explicit owner action'
 );
 select ok(
   exists (
@@ -231,6 +248,26 @@ select is(
      and event = 'booking_confirmed'),
   'failed',
   'fifth send failure no longer cycles indefinitely'
+);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '30000000-0000-0000-0000-000000000099')::text,
+  true
+);
+select is(
+  public.admin_discard_failed_booking_email_delivery(
+    current_setting('test.confirmation_job_id')::uuid
+  )->>'ok',
+  'true',
+  'owner can explicitly acknowledge a failed delivery that should not be retried'
+);
+reset role;
+select is(
+  (select status from public.booking_email_delivery_jobs
+   where id = current_setting('test.confirmation_job_id')::uuid),
+  'skipped',
+  'discarded delivery becomes terminal without silently deleting its audit row'
 );
 
 update public.bookings

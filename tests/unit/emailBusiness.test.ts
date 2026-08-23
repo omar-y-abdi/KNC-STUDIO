@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEmailMessage,
+  deliverEmailBatch,
   defaultEmailTemplate,
   loadEmailBusiness,
   ResendDeliveryError,
@@ -158,5 +159,56 @@ describe('Resend delivery failure classification', () => {
       sendViaResend(message, 're_test', 'booking-confirmation/customer/test'),
     ).rejects.toBe(transportError)
     expect(resendDeliveryFailureCode(transportError)).toBe('send_failed_transient')
+  })
+
+  it('continues to later recipients after a permanent recipient rejection', async () => {
+    const delivered: string[] = []
+    const persisted: string[] = []
+    const result = await deliverEmailBatch(
+      [{ kind: 'customer' }, { kind: 'barber' }],
+      async (entry) => {
+        delivered.push(entry.kind)
+        if (entry.kind === 'customer')
+          throw new ResendDeliveryError('permanent', 422, 'invalid customer address')
+      },
+      async (entry) => {
+        persisted.push(entry.kind)
+        return true
+      },
+    )
+
+    expect(delivered).toEqual(['customer', 'barber'])
+    expect(persisted).toEqual(['barber'])
+    expect(result).toEqual({ sent: ['barber'], failureCode: 'send_failed_permanent' })
+  })
+
+  it('keeps sending after a delivery-ledger write failure', async () => {
+    const delivered: string[] = []
+    const result = await deliverEmailBatch(
+      [{ kind: 'customer' }, { kind: 'barber' }],
+      async (entry) => {
+        delivered.push(entry.kind)
+      },
+      async (entry) => entry.kind === 'barber',
+    )
+
+    expect(delivered).toEqual(['customer', 'barber'])
+    expect(result).toEqual({ sent: ['barber'], failureCode: 'send_failed_transient' })
+  })
+
+  it('lets permanent failure dominate mixed batch failures', async () => {
+    const result = await deliverEmailBatch(
+      [{ kind: 'customer' }, { kind: 'barber' }],
+      async (entry) => {
+        throw new ResendDeliveryError(
+          entry.kind === 'customer' ? 'transient' : 'permanent',
+          entry.kind === 'customer' ? 503 : 422,
+          'provider failure',
+        )
+      },
+      async () => true,
+    )
+
+    expect(result).toEqual({ sent: [], failureCode: 'send_failed_permanent' })
   })
 })

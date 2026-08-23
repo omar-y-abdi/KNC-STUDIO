@@ -65,13 +65,17 @@ export async function saveSiteContent(
 }
 
 /** Upsert one site setting (owner-only). */
-export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<null>> {
+export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<string>> {
   try {
-    const { error } = await getAdminClient()
+    const { data, error } = await getAdminClient()
       .from('site_settings')
       .upsert({ key, value }, { onConflict: 'key' })
-    if (error !== null) return mapWriteError(error)
-    return ok(null)
+      .select('key,value')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+    return data.key === key && typeof data.value === 'string'
+      ? ok(data.value)
+      : err('malformed', WRITE_ERROR)
   } catch {
     return err('network', WRITE_ERROR)
   }

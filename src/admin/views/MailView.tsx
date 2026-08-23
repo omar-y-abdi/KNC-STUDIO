@@ -2,7 +2,9 @@ import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
+import { ConfirmDialog } from '../ConfirmDialog'
 import {
+  discardFailedBookingEmailDelivery,
   listFailedBookingEmailDeliveries,
   listEmailTemplates,
   retryFailedBookingEmailDelivery,
@@ -14,6 +16,7 @@ import {
 import type { AdminStylesBundle } from './viewTypes'
 
 interface MailViewProps {
+  readonly dark: boolean
   readonly lang: Lang
   readonly s: AdminStylesBundle
 }
@@ -118,6 +121,8 @@ export function MailView(props: MailViewProps): JSX.Element {
   )
   const [deliveryError, setDeliveryError] = useState<string | null>(null)
   const [retryingDelivery, setRetryingDelivery] = useState<string | null>(null)
+  const [discardingDelivery, setDiscardingDelivery] = useState<string | null>(null)
+  const [discardTarget, setDiscardTarget] = useState<FailedBookingEmailDelivery | null>(null)
 
   useEffect(() => {
     let active = true
@@ -184,6 +189,19 @@ export function MailView(props: MailViewProps): JSX.Element {
     setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
   }
 
+  const discardDelivery = async (id: string): Promise<void> => {
+    setDiscardingDelivery(id)
+    setDeliveryError(null)
+    const result = await discardFailedBookingEmailDelivery(id)
+    setDiscardingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
+    setDiscardTarget(null)
+  }
+
   const field = (
     row: EditableEmailTemplate,
     name: keyof Omit<EditableEmailTemplate, 'template' | 'lang'>,
@@ -232,8 +250,8 @@ export function MailView(props: MailViewProps): JSX.Element {
             </h3>
             <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
               {props.lang === 'sv'
-                ? 'Misslyckade mejl stoppas efter fem försök eller vid permanent konfigurationsfel. Du kan försöka igen manuellt.'
-                : 'Failed emails stop after five attempts or a permanent configuration error. You can retry them manually.'}
+                ? 'Misslyckade mejl stoppas efter fem tillfälliga fel eller direkt vid permanenta leverans- och konfigurationsfel. Försök igen eller markera leveransen som hanterad.'
+                : 'Emails stop after five transient failures or immediately on permanent delivery and configuration errors. Retry or mark the delivery handled.'}
             </p>
             {deliveryError !== null ? <p style={s.errorText}>{deliveryError}</p> : null}
             {failedDeliveries.length === 0 ? (
@@ -261,23 +279,46 @@ export function MailView(props: MailViewProps): JSX.Element {
                       {delivery.event} · {delivery.errorCode ?? 'unknown'} · {delivery.attemptCount}{' '}
                       {props.lang === 'sv' ? 'försök' : 'attempts'}
                     </span>
-                    <button
-                      type="button"
-                      style={{
-                        ...s.primaryBtn,
-                        opacity: retryingDelivery === delivery.id ? 0.6 : 1,
-                      }}
-                      disabled={retryingDelivery === delivery.id}
-                      onClick={() => void retryDelivery(delivery.id)}
-                    >
-                      {retryingDelivery === delivery.id
-                        ? props.lang === 'sv'
-                          ? 'Försöker …'
-                          : 'Retrying …'
-                        : props.lang === 'sv'
-                          ? 'Försök igen'
-                          : 'Retry'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.primaryBtn,
+                          opacity: retryingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => void retryDelivery(delivery.id)}
+                      >
+                        {retryingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Försöker …'
+                            : 'Retrying …'
+                          : props.lang === 'sv'
+                            ? 'Försök igen'
+                            : 'Retry'}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.ghostBtn,
+                          opacity: discardingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => setDiscardTarget(delivery)}
+                      >
+                        {discardingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Hanterar …'
+                            : 'Handling …'
+                          : props.lang === 'sv'
+                            ? 'Markera hanterad'
+                            : 'Mark handled'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -352,6 +393,25 @@ export function MailView(props: MailViewProps): JSX.Element {
             </article>
           ))}
         </div>
+      )}
+      {discardTarget === null ? null : (
+        <ConfirmDialog
+          dark={props.dark}
+          title={props.lang === 'sv' ? 'Markera mejlet som hanterat?' : 'Mark email handled?'}
+          body={
+            props.lang === 'sv'
+              ? `Leveransen för bokning ${discardTarget.bookingId} kommer inte att skickas igen. Bokningen kan därefter raderas.`
+              : `Delivery for booking ${discardTarget.bookingId} will not be retried. The booking can then be deleted.`
+          }
+          confirmLabel={props.lang === 'sv' ? 'Markera hanterad' : 'Mark handled'}
+          cancelLabel={props.lang === 'sv' ? 'Avbryt' : 'Cancel'}
+          danger={true}
+          busy={discardingDelivery === discardTarget.id}
+          onConfirm={() => void discardDelivery(discardTarget.id)}
+          onClose={() => {
+            if (discardingDelivery === null) setDiscardTarget(null)
+          }}
+        />
       )}
     </section>
   )

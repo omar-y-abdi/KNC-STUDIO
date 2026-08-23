@@ -190,10 +190,7 @@ export async function deleteBookings(ids: readonly string[]): Promise<AdminResul
         return err('validation', 'Kommande bokningar kan inte raderas.')
       }
       if (parsed.value.error === 'delivery_pending') {
-        return err(
-          'validation',
-          'Vänta tills bokningsmejlet har skickats eller har markerats som misslyckat.',
-        )
+        return err('validation', 'Bokningen har mejl som måste levereras eller hanteras först.')
       }
       return err('validation', 'Inga bokningar valda.')
     }
@@ -214,7 +211,11 @@ export async function purgeHistory(): Promise<AdminResult<number>> {
 
     const parsed = parseWith(adminPurgeHistoryResponse, data)
     if (!parsed.ok) return err('malformed', PURGE_ERROR)
-    if (!parsed.value.ok) return err('forbidden', 'Bara ägaren kan tömma all historik.')
+    if (!parsed.value.ok) {
+      return parsed.value.error === 'delivery_pending'
+        ? err('validation', 'Historiken innehåller mejl som måste levereras eller hanteras först.')
+        : err('forbidden', 'Bara ägaren kan tömma all historik.')
+    }
     return ok(parsed.value.count)
   } catch {
     return err('network', PURGE_ERROR)

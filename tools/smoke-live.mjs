@@ -9,7 +9,7 @@
 //   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
 //   5. public action gateway — rejects an empty Turnstile token (failed_challenge).
-//   6. lookup_booking RPC    — direct anonymous access is denied; only gateway service_role may call.
+//   6. lookup_booking RPC    — available during expand; denied after contract.
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
@@ -19,13 +19,21 @@
 // Usage:
 //   SUPABASE_URL=https://<ref>.supabase.co \
 //   SUPABASE_ANON_KEY=<anon-jwt> \
+//   PUBLIC_BOOKING_STAGE=expand|contract \
 //   node tools/smoke-live.mjs
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
+const PUBLIC_BOOKING_STAGE = process.env.PUBLIC_BOOKING_STAGE
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('FATAL: SUPABASE_URL and SUPABASE_ANON_KEY environment variables are required.')
+if (
+  !SUPABASE_URL ||
+  !SUPABASE_ANON_KEY ||
+  (PUBLIC_BOOKING_STAGE !== 'expand' && PUBLIC_BOOKING_STAGE !== 'contract')
+) {
+  console.error(
+    'FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, and PUBLIC_BOOKING_STAGE=expand|contract are required.',
+  )
   process.exit(1)
 }
 
@@ -143,11 +151,13 @@ async function checkSubmitBookingTurnstileGate() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 5. Phone-based actions are reachable only through the fail-closed Turnstile gateway.
+// 5. Secure-link requests are reachable only through the fail-closed Turnstile gateway.
 async function checkPublicActionGateway() {
   const { status, json } = await postJson('/functions/v1/public-booking-actions', {
-    action: 'lookup',
+    action: 'request_access',
     phone: '0700000000',
+    email: 'smoke@example.com',
+    lang: 'sv',
     turnstileToken: '',
   })
   const pass =
@@ -159,12 +169,15 @@ async function checkPublicActionGateway() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 6. The old direct Data API path must stay revoked for anon.
-async function checkDirectLookupDenied() {
+// 6. Legacy direct access coexists during expand, then disappears at contract.
+async function checkDirectLookupContract() {
   const { status, json } = await postJson('/rest/v1/rpc/lookup_booking', {
     p_contact: '0700000000',
   })
-  const pass = status === 401 || status === 403 || status === 404
+  const pass =
+    PUBLIC_BOOKING_STAGE === 'expand'
+      ? status === 200
+      : status === 401 || status === 403 || status === 404
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
@@ -177,7 +190,7 @@ const checks = [
     checkSubmitBookingTurnstileGate,
   ],
   ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
-  ['direct lookup_booking RPC (anon -> denied)', checkDirectLookupDenied],
+  [`direct lookup_booking RPC (anon -> ${PUBLIC_BOOKING_STAGE})`, checkDirectLookupContract],
 ]
 
 async function main() {

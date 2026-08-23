@@ -18,15 +18,18 @@ per booking and recipient, preventing duplicate email during delivery retries.
   network request is attempted
 - a job durably records every recipient that has sent; retries send only remaining recipients, even
   after Resend's 24-hour idempotency-key window expires
-- failed jobs retry with capped exponential backoff; a dispatcher invocation lost before reaching the
-  Edge Function is reclaimed after five minutes
-- missing Resend configuration returns `503` and requeues the job; it never reports a skipped success
+- one recipient rejection does not suppress remaining recipients; successful sends are persisted
+  before the job enters retry or owner review
+- transient failures retry with capped exponential backoff; permanent provider/configuration errors
+  stop immediately for explicit owner review; a dispatcher invocation lost before reaching the Edge
+  Function is reclaimed after five minutes
 - one-day reminders keep their existing durable `booking_reminders` retry ledger and use the same
   Resend idempotency keys
 
 The job ledger keeps only booking UUIDs, event/status, attempt timing, and short error codes. It does
-not store email addresses, phone numbers, message content, provider responses, or tokens. Terminal
-rows are retained for 90 days then removed by `booking-email-delivery-cleanup`.
+not store email addresses, phone numbers, message content, provider responses, or tokens. Failed rows
+remain until explicit owner retry or acknowledgement. Completed/skipped rows are retained for 90 days,
+then removed by `booking-email-delivery-cleanup`.
 
 ## Security
 
@@ -58,5 +61,5 @@ npx supabase functions deploy send-confirmation --use-api
 
 After deployment, create one test booking using a real test email. Verify one customer email and one
 linked-barber email, then remove test booking. In SQL Editor, confirm the related job reaches
-`delivered`; temporarily removing `RESEND_API_KEY` must leave a job `pending` with
-`last_error_code = 'not_configured'` instead of losing it.
+`delivered`; temporarily removing `RESEND_API_KEY` must leave a job `failed` with
+`last_error_code = 'not_configured'` in the owner recovery queue instead of retrying indefinitely.

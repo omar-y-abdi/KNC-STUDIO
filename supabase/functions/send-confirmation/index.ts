@@ -1,10 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEmailMessage,
+  deliverEmailBatch,
   defaultEmailTemplate,
   loadEmailBusiness,
   loadEmailTemplate,
-  resendDeliveryFailureCode,
   sendViaResend,
   type EmailDetailRow,
   type EmailBusiness,
@@ -405,29 +405,37 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'not_configured')
     return json({ ok: false, error: 'not_configured' }, 503)
   }
+  const scope =
+    event === 'booking_confirmed'
+      ? 'booking-confirmation'
+      : event === 'booking_cancelled'
+        ? 'booking-cancellation'
+        : 'booking-reminder'
+  const batch = await deliverEmailBatch(
+    messagesToSend,
+    (entry) => sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`),
+    (entry) =>
+      parsed.deliveryId === null
+        ? Promise.resolve(true)
+        : markDeliveryRecipient(parsed.deliveryId, entry.kind),
+  )
+  if (batch.failureCode !== null) {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, batch.failureCode)
+    console.error('send-confirmation delivery failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'send_failed' }, 502)
+  }
+
   try {
-    const scope =
-      event === 'booking_confirmed'
-        ? 'booking-confirmation'
-        : event === 'booking_cancelled'
-          ? 'booking-cancellation'
-          : 'booking-reminder'
-    for (const entry of messagesToSend) {
-      await sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`)
-      if (
-        parsed.deliveryId !== null &&
-        !(await markDeliveryRecipient(parsed.deliveryId, entry.kind))
-      )
-        throw new Error('recipient delivery update failed')
-    }
     if (event === 'booking_reminder' && !(await markReminder(booking.id)))
       throw new Error('reminder mark failed')
     if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
       throw new Error('delivery update failed')
-    return json({ ok: true, event, sent: messagesToSend.map((entry) => entry.kind) }, 200)
-  } catch (error) {
-    if (parsed.deliveryId !== null)
-      await failDelivery(parsed.deliveryId, resendDeliveryFailureCode(error))
+    return json({ ok: true, event, sent: batch.sent }, 200)
+  } catch {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'send_failed_transient')
     console.error('send-confirmation delivery failed', {
       event,
       queued: parsed.deliveryId !== null,

@@ -213,7 +213,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
       case 'settings':
         return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
       case 'mail':
-        return <MailView lang={props.lang} s={s} />
+        return <MailView dark={props.dark} lang={props.lang} s={s} />
     }
   }
 

@@ -49,6 +49,7 @@ set search_path = ''
 as $$
 declare
   v_email text;
+  v_has_booking boolean;
 begin
   v_email := pg_catalog.lower(pg_catalog.btrim(p_email));
   if p_phone !~ '^07[0-9]{8}$'
@@ -57,16 +58,16 @@ begin
     return false;
   end if;
 
-  if not exists (
+  select exists (
     select 1
     from public.bookings b
     where b.phone = p_phone
       and pg_catalog.lower(b.email) = v_email
       and b.status = 'confirmed'
-  ) then
-    return false;
-  end if;
+  ) into v_has_booking;
 
+  -- Keep valid and invalid requests on the same database path. The caller receives the same public
+  -- response either way; only a matching booking causes the server-held code to be emailed.
   update public.customer_booking_access_challenges c
   set used_at = pg_catalog.now()
   where c.phone = p_phone
@@ -76,7 +77,7 @@ begin
   insert into public.customer_booking_access_challenges (phone, email, token_hash, expires_at)
   values (p_phone, v_email, p_token_hash, pg_catalog.now() + interval '15 minutes');
 
-  return true;
+  return v_has_booking;
 end;
 $$;
 
@@ -473,9 +474,8 @@ select cron.schedule(
   'booking-email-delivery-cleanup',
   '17 3 * * *',
   $$delete from public.booking_email_delivery_jobs
-    where (status in ('delivered', 'skipped', 'superseded')
-             and completed_at < pg_catalog.now() - interval '90 days')
-       or (status = 'failed' and failed_at < pg_catalog.now() - interval '90 days')$$
+    where status in ('delivered', 'skipped', 'superseded')
+      and completed_at < pg_catalog.now() - interval '90 days'$$
 );
 
 create or replace function public.admin_delete_bookings(p_ids uuid[])

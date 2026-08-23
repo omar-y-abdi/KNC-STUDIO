@@ -3,6 +3,7 @@ import { getAdminClient } from '../adminClient'
 import {
   emailTemplateRows,
   failedBookingEmailDeliveryRows,
+  discardFailedBookingEmailDeliveryResponse,
   parseWith,
   retryFailedBookingEmailDeliveryResponse,
 } from '../adminSchemas'
@@ -166,6 +167,23 @@ export async function retryFailedBookingEmailDelivery(id: string): Promise<Admin
     )
     if (error !== null || data === null) return err('network', WRITE_ERROR)
     const parsed = parseWith(retryFailedBookingEmailDeliveryResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return parsed.value.ok
+      ? ok(true)
+      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function discardFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  try {
+    const { data, error } = await getAdminClient().rpc(
+      'admin_discard_failed_booking_email_delivery',
+      { p_id: id },
+    )
+    if (error !== null || data === null) return err('network', WRITE_ERROR)
+    const parsed = parseWith(discardFailedBookingEmailDeliveryResponse, data)
     if (!parsed.ok) return err('malformed', WRITE_ERROR)
     return parsed.value.ok
       ? ok(true)

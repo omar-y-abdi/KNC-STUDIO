@@ -215,6 +215,7 @@ export async function deleteBarber(
     if (r.error === 'external_cleanup_pending') {
       return { kind: 'external_cleanup_pending', calendarEvents: r.calendar_events }
     }
+    if (r.error === 'delivery_pending') return { kind: 'delivery_pending' }
     if (r.error === 'forbidden') {
       return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
     }

@@ -12,9 +12,12 @@
 -- `supabase test db` to verify. anon lockout is asserted against the catalog (has_function_privilege).
 
 begin;
-select plan(9);
+select plan(12);
 
 -- Deterministic slate: purge is global, so start from an empty bookings table (txn-local).
+update public.booking_email_delivery_jobs
+set status = 'delivered', completed_at = pg_catalog.now()
+where status in ('pending', 'dispatching', 'failed');
 delete from public.bookings;
 
 insert into public.barbers (id, name) values ('purgeb','Purge Barber');
@@ -39,6 +42,15 @@ values
    '2099-01-01 09:00+00','2099-01-01 09:45+00','Upcoming','phone','0701110003',null,'sv','confirmed',null),
   ('5b000000-0000-0000-0000-000000000004','purgeb','h','Hår',350,45,
    '2020-01-02 09:00+00','2020-01-02 09:45+00','Past Two','phone','0701110004',null,'sv','confirmed',null);
+
+update public.booking_email_delivery_jobs
+set status = 'delivered', completed_at = pg_catalog.now()
+where booking_id in (
+  '5b000000-0000-0000-0000-000000000001',
+  '5b000000-0000-0000-0000-000000000002',
+  '5b000000-0000-0000-0000-000000000003',
+  '5b000000-0000-0000-0000-000000000004'
+);
 
 -- =============================================================================================
 -- anon has no EXECUTE grant (catalog check); barber -> forbidden (and nothing deleted).
@@ -81,6 +93,25 @@ set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub','50000000-0000-0000-0000-000000000001')::text, true);
 select is(public.admin_purge_history() ->> 'count', '0', 'a second purge is a no-op (count=0)');
 reset role;
+
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('5b000000-0000-0000-0000-000000000005','purgeb','h','Hår',350,45,
+   '2020-01-03 09:00+00','2020-01-03 09:45+00','Pending Mail','email','0701110005',
+   'pending-purge@example.test','sv','confirmed');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub','50000000-0000-0000-0000-000000000001')::text, true);
+select is(public.admin_purge_history() ->> 'error', 'delivery_pending',
+  'purge refuses history containing an unresolved transactional email');
+reset role;
+select is((select count(*)::int from public.bookings where id='5b000000-0000-0000-0000-000000000005'), 1,
+  'blocked purge keeps the source booking');
+select is((select count(*)::int from public.booking_email_delivery_jobs
+  where booking_id='5b000000-0000-0000-0000-000000000005' and status='pending'), 1,
+  'blocked purge keeps the recoverable delivery job');
 
 select * from finish();
 rollback;

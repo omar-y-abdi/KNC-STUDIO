@@ -493,3 +493,51 @@ export function resendDeliveryFailureCode(
     ? 'send_failed_permanent'
     : 'send_failed_transient'
 }
+
+export type EmailDeliveryFailureCode = 'send_failed_transient' | 'send_failed_permanent'
+
+export interface EmailDeliveryBatchResult<Kind extends string> {
+  readonly sent: readonly Kind[]
+  readonly failureCode: EmailDeliveryFailureCode | null
+}
+
+function combineDeliveryFailure(
+  current: EmailDeliveryFailureCode | null,
+  next: EmailDeliveryFailureCode,
+): EmailDeliveryFailureCode {
+  return current === 'send_failed_permanent' || next === 'send_failed_permanent'
+    ? 'send_failed_permanent'
+    : 'send_failed_transient'
+}
+
+export async function deliverEmailBatch<Entry extends { readonly kind: string }>(
+  entries: readonly Entry[],
+  deliver: (entry: Entry) => Promise<void>,
+  persistDelivered: (entry: Entry) => Promise<boolean>,
+): Promise<EmailDeliveryBatchResult<Entry['kind']>> {
+  const sent: Entry['kind'][] = []
+  let failureCode: EmailDeliveryFailureCode | null = null
+
+  for (const entry of entries) {
+    try {
+      await deliver(entry)
+    } catch (error) {
+      failureCode = combineDeliveryFailure(failureCode, resendDeliveryFailureCode(error))
+      continue
+    }
+
+    try {
+      if (!(await persistDelivered(entry))) {
+        failureCode = combineDeliveryFailure(failureCode, 'send_failed_transient')
+        continue
+      }
+    } catch {
+      failureCode = combineDeliveryFailure(failureCode, 'send_failed_transient')
+      continue
+    }
+
+    sent.push(entry.kind)
+  }
+
+  return { sent, failureCode }
+}

@@ -10,6 +10,7 @@ import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
+import { consumeBookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
@@ -82,11 +83,9 @@ export function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    const url = new URL(window.location.href)
-    const accessCode = url.searchParams.get('booking_access')
+    const { code: accessCode, cleanPath } = consumeBookingAccessLink(window.location.href)
     if (accessCode === null) return
-    url.searchParams.delete('booking_access')
-    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    window.history.replaceState(window.history.state, '', cleanPath)
     void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
       setBookingAccess(result.ok ? { token: result.accessToken } : { failed: true })
       setState({ myBookingsOpen: true })

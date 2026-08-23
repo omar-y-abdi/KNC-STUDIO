@@ -35,10 +35,13 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-Expected final migration in this phase: `20260813123852_expand_public_booking_gateway.sql`.
-`20260813123851_review_hardening.sql` is part of this phase and adds the email-scoped customer access
-session before expand. Do not omit it. Anonymous legacy RPCs and both new and legacy service-role
-gateway RPCs must remain executable:
+Expected final migration in this phase: `20260823130000_classify_booking_email_delivery_failures.sql`
+or any later explicitly reviewed expand-safe migration added before release. The older
+`20260813123853_contract_public_booking_gateway.sql` is intentionally absent from remote history.
+`20260813123851_review_hardening.sql` adds the email-scoped customer access session; the later email
+classification migration accepts status codes emitted by the newly deployed `send-confirmation`.
+Do not omit either. Anonymous legacy RPCs and both new and legacy service-role gateway RPCs must
+remain executable:
 
 ```bash
 npx supabase test db --db-url "$DATABASE_URL" \
@@ -90,6 +93,7 @@ Run live gateway smoke checks while legacy RPC access is still available:
 ```bash
 SUPABASE_URL="https://${PROJECT_REF}.supabase.co" \
 SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+PUBLIC_BOOKING_STAGE=expand \
 node tools/smoke-live.mjs
 
 curl -fsS https://bladeblendstudio.se/ | grep -F 'business-json-ld'
@@ -104,23 +108,24 @@ cancellation and Calendar cleanup jobs drain.
 
 ## 5. Contract
 
-The root project must now report only the contract migration as pending:
+Because expand applied later-numbered compatibility migrations while intentionally omitting the
+contract, include older local migrations in this dry run:
 
 ```bash
-npx supabase db push --linked --dry-run
+npx supabase db push --linked --dry-run --include-all
 ```
 
 If anything except `20260813123853_contract_public_booking_gateway.sql` appears, stop. Otherwise:
 
 ```bash
-npx supabase db push --linked --yes
+npx supabase db push --linked --yes --include-all
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/34_public_booking_gateway_contract_test.sql
 ```
 
-Re-run `tools/smoke-live.mjs` after contract. Gateway requests must still work; direct anonymous RPC
-execution must now fail. Record deployment commit, migration list, function list, Worker version,
-smoke results, and UTC completion time in operations records.
+Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests
+must still work; direct anonymous RPC execution must now fail. Record deployment commit, migration
+list, function list, Worker version, smoke results, and UTC completion time in operations records.
 
 ## Rollback boundary
 

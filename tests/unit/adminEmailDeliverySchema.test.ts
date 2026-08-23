@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { failedBookingEmailDeliveryRow } from '../../src/admin/adminSchemas'
+import {
+  discardFailedBookingEmailDeliveryResponse,
+  failedBookingEmailDeliveryRow,
+} from '../../src/admin/adminSchemas'
 
 describe('failed booking email delivery admin contract', () => {
   const row = {
@@ -18,4 +21,9 @@ describe('failed booking email delivery admin contract', () => {
       )
     },
   )
+
+  it('accepts explicit owner discard results', () => {
+    expect(discardFailedBookingEmailDeliveryResponse.safeParse({ ok: true }).success).toBe(true)
+    expect(discardFailedBookingEmailDeliveryResponse.safeParse({ ok: false }).success).toBe(true)
+  })
 })

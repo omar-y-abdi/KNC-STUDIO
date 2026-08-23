@@ -14,7 +14,7 @@
 -- `supabase test db` to verify. anon lockout is asserted against the catalog (has_function_privilege).
 
 begin;
-select plan(20);
+select plan(24);
 
 -- ---- barbers + identities --------------------------------------------------------------------
 insert into public.barbers (id, name) values ('abar','A Barber'), ('bbar','B Barber');
@@ -171,6 +171,37 @@ select is((select count(*)::int from public.bookings where id = '4b000000-0000-0
 select is((select count(*)::int from public.booking_email_delivery_jobs
            where booking_id = '4b000000-0000-0000-0000-0000000000c1' and status = 'pending'), 1,
   'durable delivery job remains recoverable with its booking');
+
+-- Failed deliveries remain owner-reviewable. Hard deletion requires an explicit retry or discard.
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('4b000000-0000-0000-0000-0000000000c2', 'abar', 'h', 'Hår', 350, 45,
+   '2020-07-02 09:00+00', '2020-07-02 09:45+00',
+   'Failed Delivery', 'email', '0701110006', 'failed@example.test', 'sv', 'confirmed');
+update public.booking_email_delivery_jobs
+set status = 'failed', failed_at = pg_catalog.now(), last_error_code = 'send_failed_permanent'
+where booking_id = '4b000000-0000-0000-0000-0000000000c2';
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub','40000000-0000-0000-0000-000000000001')::text, true);
+select is(
+  public.admin_delete_bookings(array['4b000000-0000-0000-0000-0000000000c2']::uuid[]) ->> 'error',
+  'delivery_pending',
+  'owner cannot erase a failed delivery before explicitly handling it'
+);
+reset role;
+select is((select count(*)::int from public.bookings where id = '4b000000-0000-0000-0000-0000000000c2'), 1,
+  'booking remains while failed delivery awaits owner action');
+select is((select count(*)::int from public.booking_email_delivery_jobs
+           where booking_id = '4b000000-0000-0000-0000-0000000000c2' and status = 'failed'), 1,
+  'failed delivery remains visible in owner recovery queue');
+select throws_ok(
+  $$delete from public.bookings where id = '4b000000-0000-0000-0000-0000000000c2'$$,
+  '55000', 'booking_email_delivery_unresolved',
+  'database trigger blocks future hard-delete paths that forget the delivery guard'
+);
 
 select * from finish();
 rollback;

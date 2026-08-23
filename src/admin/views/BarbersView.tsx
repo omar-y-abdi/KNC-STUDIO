@@ -302,6 +302,11 @@ export function BarbersView(props: BarbersViewProps): JSX.Element {
           text: t.barbersExternalCleanupPending.replace('{count}', String(outcome.calendarEvents)),
         })
         return
+      case 'delivery_pending':
+        setDeleteTarget(null)
+        setPurgeTarget(null)
+        setNotice({ kind: 'err', text: t.barbersDeliveryPending })
+        return
       case 'error':
         // Close the dialogs so the notice (rendered behind the modal) is visible.
         setDeleteTarget(null)
