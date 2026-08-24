@@ -142,6 +142,14 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
 
   useEffect(() => {
     let frame: number | null = null
+    // Preserve a matching browser/session scroll snapshot until the restore effect can reach it.
+    // Writing the current initial `window.scrollY` here would overwrite the only reload evidence.
+    const initialScrollY = readAdminScroll(
+      window.history.state,
+      sessionStorage,
+      profile.userId,
+      tab,
+    )
     const capture = (): void => {
       if (frame !== null) return
       frame = window.requestAnimationFrame(() => {
@@ -151,7 +159,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     }
     const flush = (): void => persistScroll(tab)
     // Initialise an addressable history entry so reload and share preserve the active admin tab.
-    flush()
+    persistScroll(tab, initialScrollY)
     window.addEventListener('scroll', capture, { passive: true })
     window.addEventListener('pagehide', flush)
     return () => {
