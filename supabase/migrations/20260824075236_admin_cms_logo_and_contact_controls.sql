@@ -10,6 +10,79 @@ values
   ('homepage_logo_style', 'classic')
 on conflict (key) do nothing;
 
+-- These three new logo settings and intentionally blank contact values share the existing
+-- site-setting write trigger. Blank phone/map values mean "omit this contact method", not a
+-- malformed partial contact pair.
+create or replace function public.normalize_site_setting_value()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_value text := pg_catalog.btrim(new.value);
+begin
+  case new.key
+    when 'homepage_scale', 'about_scale', 'homepage_logo_scale' then
+      if v_value not in ('sm', 'md', 'lg', 'xl') then
+        raise exception using errcode = '22023', message = 'invalid scale setting';
+      end if;
+    when 'homepage_logo_style' then
+      if v_value not in ('classic', 'monochrome') then
+        raise exception using errcode = '22023', message = 'invalid homepage logo style';
+      end if;
+    when 'homepage_logo_path' then
+      if v_value <> ''
+         and v_value !~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$' then
+        raise exception using errcode = '22023', message = 'invalid homepage logo path';
+      end if;
+    when 'business_name', 'business_street', 'business_city' then
+      if char_length(v_value) not between 1 and 160 then
+        raise exception using errcode = '22023', message = 'invalid business text setting';
+      end if;
+    when 'business_email' then
+      v_value := pg_catalog.lower(v_value);
+      if v_value !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then
+        raise exception using errcode = '22023', message = 'invalid business email setting';
+      end if;
+    when 'business_phone_display' then
+      if v_value <> '' and char_length(v_value) not between 1 and 80 then
+        raise exception using errcode = '22023', message = 'invalid business phone display setting';
+      end if;
+    when 'business_phone_tel' then
+      v_value := pg_catalog.regexp_replace(v_value, '[[:space:]().-]', '', 'g');
+      if v_value <> '' and v_value !~ '^\+?[0-9]{3,20}$' then
+        raise exception using errcode = '22023', message = 'invalid business phone setting';
+      end if;
+    when 'business_postal_code' then
+      v_value := pg_catalog.regexp_replace(v_value, '[[:space:]]', '', 'g');
+      if v_value !~ '^[0-9]{5}$' then
+        raise exception using errcode = '22023', message = 'invalid business postal code setting';
+      end if;
+      v_value := pg_catalog.left(v_value, 3) || ' ' || pg_catalog.right(v_value, 2);
+    when 'business_maps_href' then
+      if v_value <> '' and v_value !~ '^https://[^[:space:]]+$' then
+        raise exception using errcode = '22023', message = 'invalid business maps URL setting';
+      end if;
+    when 'cancellation_policy_hours' then
+      if v_value !~ '^[0-9]{1,3}$' or v_value::integer not between 1 and 168 then
+        raise exception using errcode = '22023', message = 'invalid cancellation policy setting';
+      end if;
+    when 'seo_title_sv', 'seo_title_en' then
+      if char_length(v_value) not between 1 and 120 then
+        raise exception using errcode = '22023', message = 'invalid SEO title setting';
+      end if;
+    when 'seo_description_sv', 'seo_description_en' then
+      if char_length(v_value) not between 1 and 500 then
+        raise exception using errcode = '22023', message = 'invalid SEO description setting';
+      end if;
+  end case;
+
+  new.value := v_value;
+  return new;
+end;
+$$;
+
 create or replace function public.internal_replace_homepage_logo(
   p_expected_path text,
   p_new_path text
@@ -71,7 +144,8 @@ declare
   v_current_path text;
   v_job_id uuid;
 begin
-  if p_expected_path is null then
+  if p_expected_path is null
+     or p_expected_path !~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$' then
     return pg_catalog.jsonb_build_object('ok', false, 'error', 'invalid');
   end if;
 

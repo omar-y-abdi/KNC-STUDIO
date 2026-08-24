@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(16);
 
 select is(
   (select value from public.site_settings where key = 'homepage_logo_path'),
@@ -25,12 +25,30 @@ select ok(
   not has_function_privilege('authenticated', 'public.internal_remove_homepage_logo(text)', 'execute'),
   'authenticated browser cannot bypass upload gateway deletion RPC'
 );
+select lives_ok(
+  $$update public.site_settings
+    set value = ''
+    where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])$$,
+  'owner CMS may remove phone and maps contacts'
+);
+select is(
+  (select value from public.site_settings where key = 'business_phone_tel'),
+  '', 'blank phone link persists as an omitted contact method'
+);
+select is(
+  (select value from public.site_settings where key = 'business_maps_href'),
+  '', 'blank maps link persists as an omitted contact method'
+);
 set local role service_role;
 select is(
   public.internal_replace_homepage_logo(
     'salon/not-a-logo.webp', 'logo/123e4567-e89b-42d3-a456-426614174000.webp'
   ) ->> 'error',
   'invalid', 'replacement refuses arbitrary client-provided old-object paths'
+);
+select is(
+  public.internal_remove_homepage_logo('salon/not-a-logo.webp') ->> 'error',
+  'invalid', 'removal refuses arbitrary client-provided object paths'
 );
 reset role;
 
