@@ -23,9 +23,8 @@ describe('webhook secret contract', () => {
 
   it('keeps the booking-specific production secret compatible with WEBHOOK_SECRET', () => {
     const source = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
-    expect(source).toContain(
-      "Deno.env.get('BOOKING_WEBHOOK_SECRET') ?? Deno.env.get('WEBHOOK_SECRET')",
-    )
+    expect(source).toContain("Deno.env.get('BOOKING_WEBHOOK_SECRET')")
+    expect(source).toContain("bookingSecret ?? Deno.env.get('WEBHOOK_SECRET')")
     expect(source).toContain('timingSafeEqual')
   })
 
