@@ -36,23 +36,22 @@ describe('customer booking access links', () => {
     })
   })
 
-  it('sends fragment links through the durable external-action worker', () => {
+  it('sends permanent root links through the durable external-action worker', () => {
     const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
     const worker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
     const migration = readFileSync(
-      'supabase/migrations/20260823174500_close_launch_review_findings.sql',
+      'supabase/migrations/20260824075454_permanent_customer_booking_access.sql',
       'utf8',
     )
 
-    expect(worker).toContain(
-      'ctaHref: `https://bladeblendstudio.se/#booking_access=${action.access_code}`',
-    )
-    expect(worker).not.toContain('?booking_access=${action.access_code}')
-    expect(gateway).toContain("service.rpc('create_customer_booking_access_request'")
+    expect(worker).toContain('customerAccessUrl(action.access_code)')
+    expect(worker).not.toContain('#booking_access=${action.access_code}')
+    expect(gateway).toContain("service.rpc('rotate_customer_booking_access_token'")
     expect(gateway).toContain('p_access_code: code')
     expect(gateway).not.toContain('edgeRuntime.waitUntil(')
     expect(gateway).not.toContain('sendAccessEmail(')
     expect(migration).toContain("'customer_access_email_send'")
+    expect(migration).toContain('customer_booking_access_tokens')
   })
 
   it('uses permanent root links in access and booking-confirmation email paths', () => {

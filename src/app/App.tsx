@@ -83,9 +83,14 @@ export function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    const { code: accessCode, cleanPath } = consumeBookingAccessLink(window.location.href)
+    const { code: accessCode, cleanPath, direct } = consumeBookingAccessLink(window.location.href)
     if (accessCode === null) return
     window.history.replaceState(window.history.state, '', cleanPath)
+    if (direct) {
+      setBookingAccess({ token: accessCode })
+      setState({ myBookingsOpen: true })
+      return
+    }
     void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
       setBookingAccess(result.ok ? { token: result.accessToken } : { failed: true })
       setState({ myBookingsOpen: true })

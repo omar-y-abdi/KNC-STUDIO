@@ -32,6 +32,10 @@ function withoutTrailingSlash(pathname: string): string {
   return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 }
 
+export function customerAccessTokenFromPath(pathname: string): string | null {
+  return withoutTrailingSlash(pathname).match(/^\/([0-9a-f]{64})$/i)?.[1] ?? null
+}
+
 export function isPrivatePath(pathname: string): boolean {
   const path = withoutTrailingSlash(pathname)
   return (
@@ -247,6 +251,22 @@ export default {
     if (url.hostname === WWW_HOST) {
       url.hostname = CANONICAL_HOST
       return new Response(null, { status: 308, headers: { Location: url.toString() } })
+    }
+
+    const customerAccessToken = customerAccessTokenFromPath(pathname)
+    if (
+      customerAccessToken !== null &&
+      (request.method === 'GET' || request.method === 'HEAD')
+    ) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: `${url.origin}/#booking_token=${customerAccessToken}`,
+          'Cache-Control': 'no-store',
+          'Referrer-Policy': 'no-referrer',
+          'X-Robots-Tag': 'noindex, nofollow',
+        },
+      })
     }
 
     if (pathname === '/llms.txt' && request.method === 'GET') {

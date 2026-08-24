@@ -3,28 +3,27 @@
 // cancellation popups, so it matches the site everywhere it mounts.
 //
 // Three steps inside one Dialog:
-//   1. lookup - request a one-time email link using the phone and email from the booking.
+//   1. lookup - request a fresh permanent link using the email from the booking.
 //   2. sent - wait for the possession-proof link without disclosing whether data matched.
 //   3. list - the customer's confirmed history: an always-visible "Kommande" section and a
 //      collapsible "Tidigare" section (starts collapsed). Each row is a framed toggle showing
 //      "Weekday D Month kl HH:MM"; expanding it reveals barber · service · price · duration, and —
 //      for upcoming rows — a self-cancel with an inline "are you sure?" confirm.
 //
-// Effects go through the injectable MyBookingsPort. The phone is only a local convenience prefill;
-// server-side history and cancellation require an opaque session issued after email-link possession.
+// Effects go through the injectable MyBookingsPort. History and cancellation require possession of
+// the current high-entropy email-scoped token; requesting another link replaces the previous token.
 
 import type { JSX, Ref } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
-import { parseEmail, parsePhone } from '../booking/validation'
+import { parseEmail } from '../booking/validation'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
 import { myBookingsStrings } from '../i18n/index'
 import type { MyBooking, MyBookings } from './domain'
 import { defaultMyBookingsPort } from './adapters/index'
-import { recalledPhone, rememberPhone } from './deviceMemory'
 import type { MyBookingsPort } from './port'
 
 type Mode = 'light' | 'dark'
@@ -53,9 +52,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const port: MyBookingsPort = props.port ?? defaultMyBookingsPort
 
   const [step, setStep] = useState<Step>(props.accessToken === undefined ? 'lookup' : 'list')
-  const [phone, setPhone] = useState<string>('')
   const [email, setEmail] = useState<string>('')
-  const [phoneError, setPhoneError] = useState<boolean>(false)
   const [emailError, setEmailError] = useState<boolean>(false)
   const [systemError, setSystemError] = useState<string | null>(
     props.accessError === true ? t.errAccess : null,
@@ -84,17 +81,10 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     return fallback
   }
 
-  const phoneInputRef = useRef<HTMLInputElement>(null)
   const emailInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    if (step === 'lookup') phoneInputRef.current?.focus()
+    if (step === 'lookup') emailInputRef.current?.focus()
   }, [step])
-
-  useEffect(() => {
-    const remembered = recalledPhone()
-    if (remembered === null) return
-    setPhone(remembered)
-  }, [])
 
   async function loadBookings(token: string): Promise<void> {
     setBusy(true)
@@ -130,10 +120,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   }, [props.accessToken])
 
   async function requestAccess(): Promise<void> {
-    const parsedPhone = parsePhone(phone)
     const parsedEmail = parseEmail(email)
-    if (!parsedPhone.ok || !parsedEmail.ok) {
-      setPhoneError(!parsedPhone.ok)
+    if (!parsedEmail.ok) {
       setEmailError(!parsedEmail.ok)
       return
     }
@@ -141,13 +129,11 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setSystemError(null)
     try {
       const result = await port.requestAccess({
-        phone: parsedPhone.value,
         email: parsedEmail.value,
         lang,
         turnstileToken,
       })
       if (result.ok) {
-        rememberPhone(parsedPhone.value)
         setStep('sent')
       } else {
         setSystemError(actionError(result.error, t.errSystem))
@@ -161,12 +147,6 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     }
   }
 
-  const onPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
-    if (phoneError) setPhoneError(false)
-    setSystemError(null)
-    setPhone(e.currentTarget.value)
-  }
-
   const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
     if (emailError) setEmailError(false)
     setSystemError(null)
@@ -175,7 +155,6 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 
   const lookupDisabled =
     busy ||
-    phone.trim() === '' ||
     email.trim() === '' ||
     (challengeRequired && turnstileToken === '')
   const onLookupClick = (): void => void requestAccess()
@@ -183,7 +162,6 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const onChangeDetails = (): void => {
     setStep('lookup')
     setSystemError(null)
-    setPhoneError(false)
     setEmailError(false)
     setAccessToken(null)
     setTurnstileToken('')
@@ -229,7 +207,6 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 
   // --- shared bits ---------------------------------------------------------------------------------
 
-  const phoneNote = phoneError ? t.errPhone : null
   const emailNote = emailError ? t.errEmail : null
 
   const chevron = (open: boolean): JSX.Element => (
@@ -422,7 +399,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     </label>
   )
 
-  const changeNumberLink = (
+  const changeEmailLink = (
     <button
       type="button"
       onClick={onChangeDetails}
@@ -440,7 +417,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         padding: '4px 0',
       }}
     >
-      {t.changeNumber}
+      {t.changeEmail}
     </button>
   )
 
@@ -470,16 +447,6 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         {step === 'lookup' ? (
           <div>
             <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0;">{t.lookupLead}</p>
-            {contactField(
-              t.phone,
-              phone,
-              onPhone,
-              t.phonePh,
-              phoneNote,
-              phoneError,
-              phoneInputRef,
-              'tel',
-            )}
             {contactField(
               t.email,
               email,
@@ -517,7 +484,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
           <div style="display:flex;flex-direction:column;gap:16px;">
             <p style="font-size:13.5px;line-height:1.5;margin:0;">{t.accessSent}</p>
             <div style="display:flex;justify-content:center;padding-top:2px;">
-              {changeNumberLink}
+              {changeEmailLink}
             </div>
           </div>
         ) : null}
@@ -592,7 +559,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
             ) : null}
 
             <div style="display:flex;justify-content:center;padding-top:2px;">
-              {changeNumberLink}
+              {changeEmailLink}
             </div>
           </div>
         ) : null}

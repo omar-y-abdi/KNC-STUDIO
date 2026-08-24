@@ -86,6 +86,7 @@ const myBookingRow = z.object({
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  phone: z.string().regex(/^07[0-9]{8}$/),
   bookings: z.array(myBookingRow),
 })
 const listCustomerBookingsErr = z.object({

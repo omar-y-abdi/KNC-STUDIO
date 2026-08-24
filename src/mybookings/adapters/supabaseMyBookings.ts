@@ -13,6 +13,7 @@ import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { myBookingsStrings } from '../../i18n/index'
 import { forgetCustomerAccessToken, rememberCustomerAccessToken } from '../customerAccessSession'
+import { rememberPhone } from '../deviceMemory'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
 import { formatRowLabel, splitByTime } from '../format'
 import type {
@@ -41,7 +42,6 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
     try {
       const { data, failed } = await invokePublicBookingAction({
         action: 'request_access',
-        phone: params.phone,
         email: params.email,
         lang: params.lang,
         turnstileToken: params.turnstileToken,
@@ -85,6 +85,8 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
         if (parsed.value.error === 'access_denied') forgetCustomerAccessToken(params.accessToken)
         return { ok: false, error: parsed.value.error }
       }
+
+      rememberPhone(parsed.value.phone)
 
       const sep = myBookingsStrings(params.lang).atSep
       const bookings: MyBooking[] = []

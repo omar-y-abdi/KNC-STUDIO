@@ -34,7 +34,6 @@ import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyle
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
-import { rememberPhone } from '../mybookings/deviceMemory'
 import { pseudoClass } from '../ui/pseudo'
 
 type Mode = 'light' | 'dark'
@@ -483,9 +482,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         setSubmitError(submitResult.error.message)
         return
       }
-      // Remember this device's phone so the customer can open "Mina bokningar" later without
-      // re-typing it (best-effort; localStorage failures are swallowed inside rememberPhone).
-      rememberPhone(contact.value.phone)
       setResult(submitResult)
       setFieldErrors(NO_FIELD_ERRORS)
       setSubmitError(null)

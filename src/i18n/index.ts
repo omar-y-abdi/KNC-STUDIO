@@ -135,15 +135,12 @@ export interface AboutStrings {
 /** Strings for the "Mina bokningar" / My-appointments self-service dialog flow. */
 export interface MyBookingsStrings {
   title: string
-  /** Lookup step - request a secure email link using booking contact details. */
+  /** Lookup step - rotate and email the customer's permanent access link. */
   lookupLead: string
-  phone: string
-  phonePh: string
   email: string
   emailPh: string
   lookupBtn: string
   lookingUp: string
-  errPhone: string
   errEmail: string
   accessSent: string
   errAccess: string
@@ -155,8 +152,8 @@ export interface MyBookingsStrings {
   upcomingTitle: string
   pastTitle: string
   upcomingEmpty: string
-  /** Link back to the lookup step (check a different number). */
-  changeNumber: string
+  /** Link back to the lookup step (check a different email). */
+  changeEmail: string
   /** Expanded-row detail labels. */
   fBarber: string
   fService: string
