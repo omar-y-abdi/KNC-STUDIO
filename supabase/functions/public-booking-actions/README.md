@@ -5,15 +5,15 @@ Customer self-service gateway for secure booking access, cancellation, and revie
 ## Security boundary
 
 - Secure-link requests and review submissions require a valid Cloudflare Turnstile token and rate limits.
-- Booking history and cancellation require a short-lived, one-time link sent to the exact booking email address. The gateway exchanges it for an opaque session scoped to both booking phone and email.
+- Booking history and cancellation require the current permanent token sent to the exact booking email. Tokens are email-scoped, have no time expiry, and are replaced only by a fresh-link request. Legacy one-time fragment links remain exchangeable during migration.
 - Review submission requires that same live email-possession session. The submitted phone is only a scope cross-check; knowing a customer's phone number is not sufficient to publish a review.
 - Direct anonymous execution of legacy phone-based RPCs is revoked in the rollout contract phase.
-- Rate-limit keys store salted SHA-256 hashes, never raw IP addresses or phone numbers.
+- Rate-limit keys store salted SHA-256 hashes, never raw IP addresses, emails, or phone numbers.
 - Allowed browser origins default to `https://bladeblendstudio.se` and `https://www.bladeblendstudio.se`.
 
 ## Durable secure-link delivery
 
-A successful `request_access` response means the database has committed both the one-time challenge and a `customer_access_email_send` external-action job. The response no longer depends on `EdgeRuntime.waitUntil` or a best-effort send.
+A successful `request_access` response remains enumeration-safe. For a matching email, the database atomically rotates the permanent token and commits its `customer_access_email_send` external-action job. The response does not depend on `EdgeRuntime.waitUntil` or a best-effort send.
 
 The external-action worker resolves the matching challenge and booking server-side before exposing the destination email/code to the dispatch context. Transient Resend failures retry with the shared backoff/reclaim machinery. Permanent delivery errors are blocked and the stored access code is redacted; expired/used challenge jobs are cleaned up automatically.
 
@@ -29,4 +29,5 @@ npx supabase secrets set \
   PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se
 ```
 
-`RESEND_API_KEY` is consumed by `external-cleanup` for queued secure-link mail. `PUBLIC_SITE_ORIGINS` is optional unless another deployment origin must call the gateway.
+`RESEND_API_KEY` is consumed by `external-cleanup` for queued secure-link mail. Run
+`PROJECT_REF=<ref> npm run verify:production-secrets` before deployment; it verifies names only.
