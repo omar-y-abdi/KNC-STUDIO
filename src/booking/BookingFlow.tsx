@@ -253,8 +253,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       }
       const cellIso = iso(cell)
       const past = cell < todayMid
-      const closed = cell.getDay() === 0
-      const selectable = !past && !closed
+      const selectable = !past
       const selected = S.dateIso === cellIso
       let bg = 'transparent'
       let color = 'inherit'
@@ -265,8 +264,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         color = c.accentText
       } else if (!selectable) {
         cursor = 'default'
-        op = past ? 0.32 : 0.5
-        if (closed && !past) bg = c.subtle
+        op = 0.32
       }
       return {
         day: cell.getDate() as string | number,
