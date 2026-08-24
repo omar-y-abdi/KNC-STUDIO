@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(18);
 
 select is(
   (select value from public.site_settings where key = 'homepage_logo_path'),
@@ -25,12 +25,33 @@ select ok(
   not has_function_privilege('authenticated', 'public.internal_remove_homepage_logo(text)', 'execute'),
   'authenticated browser cannot bypass upload gateway deletion RPC'
 );
-select lives_ok(
-  $$update public.site_settings
-    set value = ''
-    where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])$$,
-  'owner CMS may remove phone and maps contacts'
+insert into public.profiles (id, role, barber_id)
+values ('39000000-0000-4000-8000-000000000001', 'owner', null);
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  pg_catalog.json_build_object('sub', '39000000-0000-4000-8000-000000000001')::text,
+  true
 );
+select is(
+  (with changed as (
+    update public.site_settings
+    set value = ''
+    where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])
+    returning key
+  ) select count(*)::integer from changed),
+  3, 'owner CMS may remove phone and maps contacts'
+);
+select is(
+  (with changed as (
+    update public.site_settings
+    set value = 'logo/223e4567-e89b-42d3-a456-426614174000.webp'
+    where key = 'homepage_logo_path'
+    returning key
+  ) select count(*)::integer from changed),
+  0, 'owner browser cannot bypass logo gateway storage lifecycle'
+);
+reset role;
 select is(
   (select value from public.site_settings where key = 'business_phone_tel'),
   '', 'blank phone link persists as an omitted contact method'

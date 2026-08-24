@@ -83,6 +83,22 @@ begin
 end;
 $$;
 
+-- Owners retain normal CMS writes, while logo path mutation stays behind the Edge gateway's
+-- processing, optimistic replacement, and durable cleanup transaction.
+drop policy if exists site_settings_insert_owner on public.site_settings;
+drop policy if exists site_settings_update_owner on public.site_settings;
+drop policy if exists site_settings_delete_owner on public.site_settings;
+create policy site_settings_insert_owner on public.site_settings
+  for insert to authenticated
+  with check (public.is_owner() and key <> 'homepage_logo_path');
+create policy site_settings_update_owner on public.site_settings
+  for update to authenticated
+  using (public.is_owner() and key <> 'homepage_logo_path')
+  with check (public.is_owner() and key <> 'homepage_logo_path');
+create policy site_settings_delete_owner on public.site_settings
+  for delete to authenticated
+  using (public.is_owner() and key <> 'homepage_logo_path');
+
 create or replace function public.internal_replace_homepage_logo(
   p_expected_path text,
   p_new_path text
