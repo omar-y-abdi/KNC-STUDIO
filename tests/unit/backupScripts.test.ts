@@ -252,6 +252,7 @@ describe('database Storage reference snapshot', () => {
       [
         JSON.stringify({ bucket: 'gallery', name: 'salon/b.webp' }),
         JSON.stringify({ bucket: 'barber-photos', name: 'ada/a.webp' }),
+        JSON.stringify({ bucket: 'gallery', name: 'logo/current.webp' }),
       ].join('\n'),
     )
     const output = join(fixture.root, 'references.ndjson')
@@ -265,8 +266,16 @@ describe('database Storage reference snapshot', () => {
 
     expect(readFileSync(output, 'utf8').trim().split('\n')).toEqual([
       JSON.stringify({ bucket: 'barber-photos', name: 'ada/a.webp' }),
+      JSON.stringify({ bucket: 'gallery', name: 'logo/current.webp' }),
       JSON.stringify({ bucket: 'gallery', name: 'salon/b.webp' }),
     ])
+  })
+
+  it('treats only a validated active homepage logo setting as a gallery reference', () => {
+    const source = readFileSync('tools/backup/capture-storage-references.sh', 'utf8')
+    expect(source).toContain("where s.key = 'homepage_logo_path'")
+    expect(source).toContain("select 'gallery'::text as bucket, s.value as storage_path")
+    expect(source).toContain("s.value ~ '^logo/")
   })
 
   it('fails closed on malformed database reference output', () => {

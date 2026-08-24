@@ -12,10 +12,15 @@ import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
-import { HeroLockup } from '../ui/logos/HeroLockup'
+import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { scalePx, type BusinessSettings, type SizePreset } from '../site/siteChrome'
+import {
+  scalePx,
+  type BusinessSettings,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
 
@@ -46,6 +51,8 @@ export interface MobileSiteProps {
   readonly openMyBookings: () => void
   /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
   readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
@@ -205,32 +212,36 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               transition: 'margin-top .6s ' + EASE,
             }}
           >
-            <a
-              href={`tel:${business.phoneTel}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                textDecoration: 'none',
-                color: 'var(--mob-text)',
-                fontSize: '12px',
-              }}
-            >
-              <img
-                src="/icons/phone.svg"
-                alt={tx.ariaCall}
+            {business.phoneTel === '' || business.phoneDisplay === '' ? (
+              <span />
+            ) : (
+              <a
+                href={`tel:${business.phoneTel}`}
                 style={{
-                  background: 'var(--mob-btn-bg)',
-                  width: '28px',
-                  height: '28px',
-                  padding: '7px',
-                  boxSizing: 'border-box',
-                  borderRadius: '50%',
-                  filter: 'var(--mob-icon)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontSize: '12px',
                 }}
-              />
-              {business.phoneDisplay}
-            </a>
+              >
+                <img
+                  src="/icons/phone.svg"
+                  alt={tx.ariaCall}
+                  style={{
+                    background: 'var(--mob-btn-bg)',
+                    width: '28px',
+                    height: '28px',
+                    padding: '7px',
+                    boxSizing: 'border-box',
+                    borderRadius: '50%',
+                    filter: 'var(--mob-icon)',
+                  }}
+                />
+                {business.phoneDisplay}
+              </a>
+            )}
             <div style="display:flex;align-items:center;gap:6px;flex:none;">
               {props.langToggle}
               {props.themeToggle}
@@ -255,7 +266,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
         <div style={heroExtrasStyle}>
           <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
-            <HeroLockup height={190} style={heroLockupStyle} />
+            <HomepageLogo
+              logo={props.homepageLogo}
+              layout="mobile"
+              height={190}
+              style={heroLockupStyle}
+            />
           </h1>
           <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
             {tx.book}
@@ -308,29 +324,31 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 {tx.addr}
               </span>
             </div>
-            <a
-              href={business.mapsHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                textDecoration: 'none',
-                color: 'var(--mob-text)',
-                fontWeight: 600,
-                fontSize: '13px',
-                border: '1.8px solid var(--mob-border)',
-                borderRadius: '999px',
-                padding: '6px 12px',
-                opacity: 0.92,
-                whiteSpace: 'nowrap',
-                flex: 'none',
-              }}
-            >
-              {tx.findUs}
-              <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
-            </a>
+            {business.mapsHref === '' ? null : (
+              <a
+                href={business.mapsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  border: '1.8px solid var(--mob-border)',
+                  borderRadius: '999px',
+                  padding: '6px 12px',
+                  opacity: 0.92,
+                  whiteSpace: 'nowrap',
+                  flex: 'none',
+                }}
+              >
+                {tx.findUs}
+                <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -347,6 +365,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               onMyBookings={props.openMyBookings}
               popupText={props.bookingPopupText}
               business={business}
+              showDirections={business.mapsHref !== ''}
             />
           ) : (
             <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />

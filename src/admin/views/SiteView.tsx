@@ -14,19 +14,32 @@ import {
   saveSiteSetting,
 } from '../adapters/siteAdmin'
 import {
+  homepageLogoPublicUrl,
+  removeHomepageLogo,
+  uploadHomepageLogo,
+} from '../adapters/homepageLogoAdmin'
+import { HomepageLogo } from '../../site/HomepageLogo'
+import {
   ABOUT_SCALE_KEY,
   BOOKING_CONFIRMATION_TEXT_KEYS,
   BOOKING_DETAILS_TEXT_KEYS,
   BUSINESS_SETTING_KEYS,
   DEFAULT_SITE_SETTINGS,
   HOMEPAGE_SCALE_KEY,
+  HOMEPAGE_LOGO_PATH_KEY,
+  HOMEPAGE_LOGO_SCALE_KEY,
+  HOMEPAGE_LOGO_STYLE_KEY,
   HOMEPAGE_TEXT_KEYS,
   SITE_TEXT_KEYS,
   SIZE_PRESETS,
   defaultSiteSettings,
   defaultSiteText,
   parseScale,
+  parseHomepageLogoPath,
+  parseHomepageLogoStyle,
   resolveBusinessSettings,
+  type HomepageLogo as HomepageLogoConfig,
+  type HomepageLogoStyle,
   type SizePreset,
   type SiteSettingKey,
   type SiteTextKey,
@@ -65,6 +78,17 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savedKey, setSavedKey] = useState<string | null>(null)
   const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null)
+  const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null)
+  const [logoBusy, setLogoBusy] = useState<'upload' | 'remove' | null>(null)
+  const [logoStatus, setLogoStatus] = useState<string | null>(null)
+
+  useEffect(
+    () => () => {
+      if (pendingLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(pendingLogoUrl)
+    },
+    [pendingLogoUrl],
+  )
 
   useEffect(() => {
     let active = true
@@ -189,8 +213,16 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     setSavedKey(key)
   }
 
-  const onScale = async (which: 'homepage' | 'about', value: SizePreset): Promise<void> => {
-    const key = which === 'homepage' ? HOMEPAGE_SCALE_KEY : ABOUT_SCALE_KEY
+  const onScale = async (
+    which: 'homepage' | 'about' | 'logo',
+    value: SizePreset,
+  ): Promise<void> => {
+    const key =
+      which === 'homepage'
+        ? HOMEPAGE_SCALE_KEY
+        : which === 'about'
+          ? ABOUT_SCALE_KEY
+          : HOMEPAGE_LOGO_SCALE_KEY
     setSettingValue(key, value)
     await saveSetting(key, value)
   }
@@ -223,9 +255,83 @@ export function SiteView(props: SiteViewProps): JSX.Element {
 
   const homepageScale = parseScale(settingValue(HOMEPAGE_SCALE_KEY))
   const aboutScale = parseScale(settingValue(ABOUT_SCALE_KEY))
+  const logoScale = parseScale(settingValue(HOMEPAGE_LOGO_SCALE_KEY))
+  const logoStyle = parseHomepageLogoStyle(settingValue(HOMEPAGE_LOGO_STYLE_KEY))
+  const logoPath = parseHomepageLogoPath(settingValue(HOMEPAGE_LOGO_PATH_KEY))
+  const logo: HomepageLogoConfig = {
+    path: logoPath,
+    url: pendingLogoUrl ?? (logoPath === null ? null : homepageLogoPublicUrl(logoPath)),
+    scale: logoScale,
+    style: logoStyle,
+  }
+
+  const selectLogo = (file: File | null): void => {
+    if (pendingLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(pendingLogoUrl)
+    setPendingLogo(file)
+    setPendingLogoUrl(file === null ? null : URL.createObjectURL(file))
+    setLogoStatus(
+      file === null
+        ? null
+        : props.lang === 'sv'
+          ? 'Förhandsvisning lokal. Spara för att publicera.'
+          : 'Preview is local. Save to publish.',
+    )
+  }
+
+  const saveLogo = async (): Promise<void> => {
+    if (pendingLogo === null) return
+    setLogoBusy('upload')
+    setLogoStatus(null)
+    const result = await uploadHomepageLogo(pendingLogo, logoPath ?? '')
+    setLogoBusy(null)
+    if (!result.ok) {
+      setLogoStatus(result.error.message)
+      return
+    }
+    setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, result.value.path))
+    setPendingLogo(null)
+    setPendingLogoUrl(result.value.url)
+    setLogoStatus(
+      result.value.cleanupPending
+        ? props.lang === 'sv'
+          ? 'Logotyp sparad. Tidigare fil rensas i bakgrunden.'
+          : 'Logo saved. Previous file will be cleaned up in the background.'
+        : props.lang === 'sv'
+          ? 'Logotyp sparad.'
+          : 'Logo saved.',
+    )
+  }
+
+  const deleteLogo = async (): Promise<void> => {
+    if (logoPath === null) return
+    setLogoBusy('remove')
+    setLogoStatus(null)
+    const result = await removeHomepageLogo(logoPath)
+    setLogoBusy(null)
+    if (!result.ok) {
+      setLogoStatus(result.error.message)
+      return
+    }
+    setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, ''))
+    selectLogo(null)
+    setLogoStatus(
+      result.value.pending
+        ? props.lang === 'sv'
+          ? 'Logotyp borttagen. Filen rensas i bakgrunden.'
+          : 'Logo removed. File cleanup continues in the background.'
+        : props.lang === 'sv'
+          ? 'Logotyp borttagen.'
+          : 'Logo removed.',
+    )
+  }
+
+  const setLogoStyle = async (style: HomepageLogoStyle): Promise<void> => {
+    setSettingValue(HOMEPAGE_LOGO_STYLE_KEY, style)
+    await saveSetting(HOMEPAGE_LOGO_STYLE_KEY, style)
+  }
 
   const scaleSelect = (
-    which: 'homepage' | 'about',
+    which: 'homepage' | 'about' | 'logo',
     label: string,
     value: SizePreset,
   ): JSX.Element => (
@@ -418,6 +524,235 @@ export function SiteView(props: SiteViewProps): JSX.Element {
 
   return (
     <>
+      <section style={s.card} aria-labelledby="site-logo-heading">
+        <h2 id="site-logo-heading" style={s.sectionTitle}>
+          {props.lang === 'sv' ? 'Startsidelogotyp' : 'Homepage logo'}
+        </h2>
+        <p style={s.sectionLead}>
+          {props.lang === 'sv'
+            ? 'Byt logotyp, skala den och förhandsvisa före publicering. Standard behåller nuvarande vektorlogotyp.'
+            : 'Replace, scale, and preview before publishing. Standard keeps the current vector lockup.'}
+        </p>
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))',
+                gap: '14px',
+                marginTop: '16px',
+              }}
+            >
+              <label>
+                <span style={s.label}>
+                  {props.lang === 'sv' ? 'Ersätt logotyp' : 'Replace logo'}
+                </span>
+                <input
+                  style={s.input}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
+                  onInput={(event) => selectLogo(event.currentTarget.files?.item(0) ?? null)}
+                />
+              </label>
+              {scaleSelect(
+                'logo',
+                props.lang === 'sv' ? 'Logotypstorlek' : 'Logo scale',
+                logoScale,
+              )}
+              {scaleSelect(
+                'homepage',
+                props.lang === 'sv' ? 'Text under logotyp' : 'Text below logo',
+                homepageScale,
+              )}
+              <label
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px' }}
+              >
+                <span style={s.label}>{props.lang === 'sv' ? 'Bildstil' : 'Image style'}</span>
+                <select
+                  style={s.select}
+                  value={logoStyle}
+                  disabled={savingKey === HOMEPAGE_LOGO_STYLE_KEY}
+                  onChange={(event) =>
+                    void setLogoStyle(parseHomepageLogoStyle(event.currentTarget.value))
+                  }
+                >
+                  <option value="classic">{props.lang === 'sv' ? 'Standard' : 'Standard'}</option>
+                  <option value="monochrome">
+                    {props.lang === 'sv' ? 'Monokrom' : 'Monochrome'}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '14px',
+              }}
+            >
+              <button
+                type="button"
+                style={{
+                  ...s.primaryBtn,
+                  opacity: pendingLogo === null || logoBusy !== null ? 0.6 : 1,
+                }}
+                disabled={pendingLogo === null || logoBusy !== null}
+                onClick={() => void saveLogo()}
+              >
+                {logoBusy === 'upload'
+                  ? props.lang === 'sv'
+                    ? 'Sparar …'
+                    : 'Saving …'
+                  : props.lang === 'sv'
+                    ? 'Spara logotyp'
+                    : 'Save logo'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={logoPath === null || logoBusy !== null}
+                onClick={() => void deleteLogo()}
+              >
+                {logoBusy === 'remove'
+                  ? props.lang === 'sv'
+                    ? 'Tar bort …'
+                    : 'Removing …'
+                  : props.lang === 'sv'
+                    ? 'Återställ standard'
+                    : 'Restore default'}
+              </button>
+              {logoStatus === null ? null : <span style={s.mutedText}>{logoStatus}</span>}
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))',
+                gap: '14px',
+                marginTop: '20px',
+              }}
+            >
+              <div>
+                <h3 style={{ ...s.label, fontSize: '13px' }}>
+                  {props.lang === 'sv' ? 'Fokuserad förhandsvisning' : 'Focused preview'}
+                </h3>
+                <div
+                  style={{
+                    minHeight: '245px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    border: s.input.border,
+                    borderRadius: '13px',
+                    background: props.dark ? '#242427' : '#f4f3f0',
+                    color: props.dark ? '#f5f5f7' : '#1c1c1e',
+                  }}
+                >
+                  <HomepageLogo logo={logo} layout="desktop" height={150} />
+                </div>
+              </div>
+              <div>
+                <h3 style={{ ...s.label, fontSize: '13px' }}>
+                  {props.lang === 'sv' ? 'Simulerad startsida' : 'Simulated homepage'}
+                </h3>
+                <div
+                  style={{
+                    height: '320px',
+                    overflowY: 'auto',
+                    border: s.input.border,
+                    borderRadius: '13px',
+                    background: props.dark ? '#1c1c1e' : '#ffffff',
+                    color: props.dark ? '#f5f5f7' : '#1c1c1e',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      borderBottom: props.dark
+                        ? '0.5px solid rgba(255,255,255,.1)'
+                        : '0.5px solid rgba(0,0,0,.08)',
+                      fontSize: '10px',
+                      letterSpacing: '1.1px',
+                    }}
+                  >
+                    <span>BLADE &amp; BLEND</span>
+                    <span>{props.lang === 'sv' ? 'BOKA TID' : 'BOOK'}</span>
+                  </div>
+                  <div style={{ padding: '34px 20px 28px', textAlign: 'center' }}>
+                    <div
+                      style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}
+                    >
+                      <HomepageLogo logo={logo} layout="mobile" height={86} />
+                    </div>
+                    <p style={{ margin: '0 0 16px', fontSize: '11px', opacity: 0.58 }}>
+                      {props.lang === 'sv' ? 'SHARPEN YOUR LOOK' : 'SHARPEN YOUR LOOK'}
+                    </p>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        borderRadius: '8px',
+                        padding: '9px 14px',
+                        background: props.dark ? '#f5f5f7' : '#1c1c1e',
+                        color: props.dark ? '#1c1c1e' : '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {props.lang === 'sv' ? 'Boka tid' : 'Book now'}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      padding: '28px 20px',
+                      borderTop: props.dark
+                        ? '0.5px solid rgba(255,255,255,.1)'
+                        : '0.5px solid rgba(0,0,0,.08)',
+                      background: props.dark ? '#242427' : '#f4f3f0',
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: '0 0 6px',
+                        fontSize: '10px',
+                        letterSpacing: '1px',
+                        opacity: 0.58,
+                      }}
+                    >
+                      {props.lang === 'sv' ? 'OM OSS' : 'ABOUT US'}
+                    </p>
+                    <h4
+                      style={{
+                        margin: '0 0 8px',
+                        fontFamily: "'Playfair Display',serif",
+                        fontSize: '20px',
+                      }}
+                    >
+                      {props.lang === 'sv'
+                        ? 'Din stil, vår precision.'
+                        : 'Your style, our precision.'}
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '12px', lineHeight: 1.55, opacity: 0.68 }}>
+                      {props.lang === 'sv'
+                        ? 'Bläddra i denna kompakta förhandsvisning innan du publicerar.'
+                        : 'Scroll this compact preview before publishing.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
       <section style={s.card} aria-labelledby="site-business-heading">
         <h2 id="site-business-heading" style={s.sectionTitle}>
           {t.siteBusinessTitle}

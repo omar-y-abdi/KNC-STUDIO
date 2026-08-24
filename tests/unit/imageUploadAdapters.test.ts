@@ -3,11 +3,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 
 vi.mock('../../src/admin/adminClient', () => ({
-  getAdminClient: () => ({ functions: { invoke } }),
+  getAdminClient: () => ({
+    functions: { invoke },
+    storage: {
+      from: () => ({
+        getPublicUrl: (path: string) => ({
+          data: {
+            publicUrl: `https://example.supabase.co/storage/v1/object/public/gallery/${path}`,
+          },
+        }),
+      }),
+    },
+  }),
 }))
 
 import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
 import { deleteImage, uploadImage } from '../../src/admin/adapters/galleryAdmin'
+import {
+  homepageLogoPublicUrl,
+  removeHomepageLogo,
+  uploadHomepageLogo,
+} from '../../src/admin/adapters/homepageLogoAdmin'
 
 function imageFile(): File {
   return new File(['image'], 'portrait.jpg', { type: 'image/jpeg' })
@@ -155,6 +171,50 @@ describe('image upload adapters', () => {
         kind: 'barber_photo',
         barberId: 'hassan',
         storagePath: 'hassan/photo.webp',
+      },
+    })
+  })
+
+  it('previews, uploads, and removes homepage logo only through the authenticated gateway', async () => {
+    invoke.mockResolvedValueOnce({
+      data: {
+        ok: true,
+        kind: 'site_logo',
+        path: 'logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        publicUrl:
+          'https://example.supabase.co/storage/v1/object/public/gallery/logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        cleanupPending: true,
+      },
+      error: null,
+    })
+    const upload = await uploadHomepageLogo(imageFile(), '')
+    expect(upload).toEqual({
+      ok: true,
+      value: {
+        path: 'logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        url: 'https://example.supabase.co/storage/v1/object/public/gallery/logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        cleanupPending: true,
+      },
+    })
+    const form = submittedForm()
+    expect(form.get('kind')).toBe('site_logo')
+    expect(form.get('expectedPath')).toBe('')
+    expect(homepageLogoPublicUrl('logo/current.webp')).toBe(
+      'https://example.supabase.co/storage/v1/object/public/gallery/logo/current.webp',
+    )
+
+    invoke.mockResolvedValueOnce({ data: { ok: true, pending: false }, error: null })
+    await expect(
+      removeHomepageLogo('logo/123e4567-e89b-42d3-a456-426614174000.webp'),
+    ).resolves.toEqual({
+      ok: true,
+      value: { pending: false },
+    })
+    expect(invoke).toHaveBeenLastCalledWith('upload-image', {
+      body: {
+        action: 'delete',
+        kind: 'site_logo',
+        storagePath: 'logo/123e4567-e89b-42d3-a456-426614174000.webp',
       },
     })
   })

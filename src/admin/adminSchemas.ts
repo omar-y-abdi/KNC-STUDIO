@@ -261,6 +261,16 @@ export const imageDeleteResponse = z.object({
   pending: z.boolean(),
 })
 
+export const uploadHomepageLogoResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('site_logo'),
+    path: z.string().regex(/^logo\/[0-9a-f-]{36}\.webp$/),
+    publicUrl: z.string().url(),
+    cleanupPending: z.boolean(),
+  })
+  .refine((response) => response.publicUrl.includes(`/gallery/${response.path}`))
+
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to
 // the owning barber; nullable phone/email per the method.

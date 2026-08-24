@@ -5,10 +5,14 @@ import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
-import { DeskLockup } from '../ui/logos/DeskLockup'
+import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { scalePx, type SizePreset } from '../site/siteChrome'
+import {
+  scalePx,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
 
@@ -24,6 +28,8 @@ export interface DesktopSiteProps extends ShellProps {
   readonly openMyBookings: () => void
   /** Owner-set font-size preset for the homepage editable text (kicker / hours / address). */
   readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
@@ -150,22 +156,26 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <CornerMark height={30} />
         </h1>
         <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
-          <a
-            href={business.mapsHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={props.findUsStyle}
-          >
-            <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
-            {tx.findUs}
-          </a>
-          <a
-            href={`tel:${business.phoneTel}`}
-            style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
-          >
-            <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
-            {business.phoneDisplay}
-          </a>
+          {business.mapsHref === '' ? null : (
+            <a
+              href={business.mapsHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={props.findUsStyle}
+            >
+              <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
+              {tx.findUs}
+            </a>
+          )}
+          {business.phoneTel === '' || business.phoneDisplay === '' ? null : (
+            <a
+              href={`tel:${business.phoneTel}`}
+              style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
+            >
+              <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
+              {business.phoneDisplay}
+            </a>
+          )}
           {props.langToggle}
           {props.themeToggle}
         </div>
@@ -174,7 +184,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style="text-align: center; padding: 74px 40px 60px; color: inherit">
           <div style={heroMarkStyle} aria-hidden="true">
-            <DeskLockup height={300} />
+            <HomepageLogo logo={props.homepageLogo} layout="desktop" height={300} />
           </div>
           <div
             style={{
@@ -222,6 +232,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 onMyBookings={props.openMyBookings}
                 popupText={props.bookingPopupText}
                 business={business}
+                showDirections={business.mapsHref !== ''}
               />
             </div>
           </div>

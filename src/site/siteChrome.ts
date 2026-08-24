@@ -26,6 +26,17 @@ export {
 
 /** The four allowed font-size presets, smallest → largest. */
 export type SizePreset = 'sm' | 'md' | 'lg' | 'xl'
+export type HomepageLogoStyle = 'classic' | 'monochrome'
+const HOMEPAGE_LOGO_PATH =
+  /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
+
+export interface HomepageLogo {
+  /** Null keeps the shipped vector lockup. A non-null URL is a public, processed gallery object. */
+  readonly url: string | null
+  readonly path: string | null
+  readonly scale: SizePreset
+  readonly style: HomepageLogoStyle
+}
 
 /** Preset → multiplier. Deliberately gentle (0.9…1.25) so even 'xl' cannot overflow the hero/cards. */
 const SCALE: Readonly<Record<SizePreset, number>> = { sm: 0.9, md: 1.0, lg: 1.12, xl: 1.25 }
@@ -36,6 +47,16 @@ export const SIZE_PRESETS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl']
 /** Narrow an arbitrary string to a `SizePreset`, defaulting to 'md' (1.0×) for anything unknown. */
 export function parseScale(value: string | null | undefined): SizePreset {
   return value === 'sm' || value === 'lg' || value === 'xl' ? value : 'md'
+}
+
+export function parseHomepageLogoStyle(value: string | null | undefined): HomepageLogoStyle {
+  return value === 'monochrome' ? 'monochrome' : 'classic'
+}
+
+/** Accept only server-generated public gallery logo paths; malformed CMS data falls back to vector. */
+export function parseHomepageLogoPath(value: string | null | undefined): string | null {
+  const path = value?.trim() ?? ''
+  return HOMEPAGE_LOGO_PATH.test(path) ? path : null
 }
 
 /** Scale a base px size by a preset, rounded to a whole px. `md` returns the base unchanged. */
@@ -137,6 +158,8 @@ export interface SiteChrome {
   readonly facts: BusinessDiscoveryFacts
   /** Scale for the homepage editable text (kicker / hours / business address). */
   readonly homepageScale: SizePreset
+  /** Owner-selected homepage logo replacement, bounded scale, and faithful image treatment. */
+  readonly homepageLogo: HomepageLogo
   /** Scale for the "Om oss" section's editorial copy (eyebrow / heading / intro). */
   readonly aboutScale: SizePreset
 }
@@ -147,16 +170,23 @@ export const DEFAULT_CHROME: SiteChrome = {
   business: DEFAULT_BUSINESS,
   facts: EMPTY_BUSINESS_FACTS,
   homepageScale: 'md',
+  homepageLogo: { path: null, url: null, scale: 'md', style: 'classic' },
   aboutScale: 'md',
 }
 
 /** The `site_settings` keys the two scales are stored under. */
 export const HOMEPAGE_SCALE_KEY = 'homepage_scale'
 export const ABOUT_SCALE_KEY = 'about_scale'
+export const HOMEPAGE_LOGO_PATH_KEY = 'homepage_logo_path'
+export const HOMEPAGE_LOGO_SCALE_KEY = 'homepage_logo_scale'
+export const HOMEPAGE_LOGO_STYLE_KEY = 'homepage_logo_style'
 
 export const SITE_SETTING_KEYS = [
   HOMEPAGE_SCALE_KEY,
   ABOUT_SCALE_KEY,
+  HOMEPAGE_LOGO_PATH_KEY,
+  HOMEPAGE_LOGO_SCALE_KEY,
+  HOMEPAGE_LOGO_STYLE_KEY,
   BUSINESS_SETTING_KEYS.name,
   BUSINESS_SETTING_KEYS.email,
   BUSINESS_SETTING_KEYS.phoneDisplay,
@@ -176,6 +206,9 @@ export type SiteSettingKey = (typeof SITE_SETTING_KEYS)[number]
 export const DEFAULT_SITE_SETTINGS: Readonly<Record<SiteSettingKey, string>> = {
   [HOMEPAGE_SCALE_KEY]: 'md',
   [ABOUT_SCALE_KEY]: 'md',
+  [HOMEPAGE_LOGO_PATH_KEY]: '',
+  [HOMEPAGE_LOGO_SCALE_KEY]: 'md',
+  [HOMEPAGE_LOGO_STYLE_KEY]: 'classic',
   [BUSINESS_SETTING_KEYS.name]: DEFAULT_BUSINESS.name,
   [BUSINESS_SETTING_KEYS.email]: DEFAULT_BUSINESS.email,
   [BUSINESS_SETTING_KEYS.phoneDisplay]: DEFAULT_BUSINESS.phoneDisplay,

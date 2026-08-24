@@ -19,6 +19,8 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
 Storage, Calendar, and Auth side effects use one durable `external_action_jobs` outbox. Cron retries
 failed actions, preserves Calendar event identifiers until Google deletion succeeds, and reconciles
 managed Storage bytes left unreferenced for 30 minutes after a failed upload compensation path.
+Homepage-logo replacement uses the same authenticated `upload-image` gateway, `site_settings` path
+swap, and durable gallery cleanup; raw image bytes and service credentials never enter browser config.
 
 ## Public frontend configuration
 

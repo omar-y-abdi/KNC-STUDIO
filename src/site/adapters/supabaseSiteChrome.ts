@@ -17,9 +17,14 @@ import type { Lang } from '../../i18n/index'
 import type { SiteChromePort } from '../port'
 import {
   ABOUT_SCALE_KEY,
+  HOMEPAGE_LOGO_PATH_KEY,
+  HOMEPAGE_LOGO_SCALE_KEY,
+  HOMEPAGE_LOGO_STYLE_KEY,
   HOMEPAGE_SCALE_KEY,
   SITE_TEXT_KEYS,
   parseScale,
+  parseHomepageLogoPath,
+  parseHomepageLogoStyle,
   resolveBusinessSettings,
   type SiteChrome,
   type SiteTextKey,
@@ -49,6 +54,7 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
       }
 
       const settings = discovery.value.settings
+      const logoPath = parseHomepageLogoPath(settings[HOMEPAGE_LOGO_PATH_KEY])
 
       return {
         text,
@@ -68,6 +74,15 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
           })),
         },
         homepageScale: parseScale(settings[HOMEPAGE_SCALE_KEY]),
+        homepageLogo: {
+          path: logoPath,
+          url:
+            logoPath === null
+              ? null
+              : supabase.storage.from('gallery').getPublicUrl(logoPath).data.publicUrl,
+          scale: parseScale(settings[HOMEPAGE_LOGO_SCALE_KEY]),
+          style: parseHomepageLogoStyle(settings[HOMEPAGE_LOGO_STYLE_KEY]),
+        },
         aboutScale: parseScale(settings[ABOUT_SCALE_KEY]),
       }
     } catch {

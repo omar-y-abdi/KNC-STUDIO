@@ -222,9 +222,9 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
     '',
     '## Current business information',
     `- Address: ${formatBusinessAddress(business)}, Sweden`,
-    `- Phone: ${business.phoneDisplay}`,
     `- Barbers: ${facts.barbers.map((barber) => barber.name).join(', ') || 'See booking page'}`,
   ]
+  if (business.phoneDisplay !== '') lines.splice(5, 0, `- Phone: ${business.phoneDisplay}`)
   const prices = priceRange(facts)
   if (prices !== null) lines.push(`- Active service price range: ${prices} SEK`)
   lines.push(
