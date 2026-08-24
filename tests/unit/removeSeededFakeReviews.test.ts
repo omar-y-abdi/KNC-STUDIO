@@ -5,6 +5,7 @@ const migration = readFileSync(
   'supabase/migrations/20260824080527_remove_seeded_fake_reviews.sql',
   'utf8',
 )
+const seed = readFileSync('supabase/seed.sql', 'utf8')
 
 describe('seeded testimonial removal migration', () => {
   it('targets only the three known unlinked, published seed rows', () => {
@@ -14,5 +15,9 @@ describe('seeded testimonial removal migration', () => {
     expect(migration).toContain("'Johan A.'")
     expect(migration).toContain("'Emir K.'")
     expect(migration).toContain("'Daniel M.'")
+  })
+
+  it('does not permit a local reset to recreate testimonials', () => {
+    expect(seed).not.toMatch(/insert\s+into\s+public\.reviews/i)
   })
 })

@@ -1,4 +1,5 @@
--- Remove only the three testimonial records formerly introduced by supabase/seed.sql. These rows
+-- Forward-only and intentionally irreversible: remove only the three testimonial records formerly
+-- introduced by supabase/seed.sql. These rows
 -- have no booking proof and must not remain visible as customer reviews. This data migration is
 -- deliberately narrow: genuine reviews, including any with a matching rating, are untouched.
 
