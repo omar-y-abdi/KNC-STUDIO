@@ -233,6 +233,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
+      serviceId: haircutServiceId,
     })
     expect(before).toContain(VALID_TIME)
 
@@ -243,6 +244,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
+      serviceId: haircutServiceId,
     })
     expect(after).not.toContain(VALID_TIME)
   })
@@ -260,5 +262,74 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       durationMin: 45,
     })
     expect(victorSlots).toContain(VALID_TIME)
+  })
+
+  it('enforces service weekdays and recurring breaks in live availability and create_booking', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const weekday = await withClient(env.dbUrl, async (client) => {
+      const result = await client.query<{ weekday: number }>(
+        `select extract(dow from $1::timestamptz at time zone 'Europe/Stockholm')::integer as weekday`,
+        [VALID_START_UTC],
+      )
+      return result.rows[0]?.weekday
+    })
+    expect(weekday).toBeTypeOf('number')
+    if (weekday === undefined) return
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        'update public.services set available_weekdays = array[$2]::smallint[] where id = $1::uuid',
+        [haircutServiceId, weekday],
+      )
+    })
+
+    const before = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(before).toContain(VALID_TIME)
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        `insert into public.barber_recurring_breaks (barber_id, weekday, start_min, end_min)
+         values ($1, $2, 810, 840)`,
+        [HASSAN.id, weekday],
+      )
+    })
+
+    const blocked = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(blocked).not.toContain(VALID_TIME)
+
+    const breakRejected = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(breakRejected.ok).toBe(false)
+    if (!breakRejected.ok) expect(breakRejected.error).toBe('outside_hours')
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        'update public.services set available_weekdays = array[$2]::smallint[] where id = $1::uuid',
+        [haircutServiceId, (weekday + 1) % 7],
+      )
+    })
+
+    const unavailableDay = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(unavailableDay).toEqual([])
+
+    const weekdayRejected = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(weekdayRejected.ok).toBe(false)
+    if (!weekdayRejected.ok) expect(weekdayRejected.error).toBe('outside_hours')
   })
 })

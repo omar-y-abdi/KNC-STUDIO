@@ -9,6 +9,7 @@
 import { getSupabase } from '../../backend/supabaseClient'
 import { parseWith, publicServiceRow } from '../../backend/rpcSchemas'
 import type { PublicServiceRow } from '../../backend/rpcSchemas'
+import { parseDateIso } from '../calendar'
 import type { BarberId, ServiceItem } from '../domain'
 import type { ServicesPort } from '../servicesPort'
 
@@ -18,13 +19,17 @@ function toService(r: PublicServiceRow): ServiceItem {
 }
 
 export const supabaseServicesAdapter: ServicesPort = {
-  async listForBarber(barberId: BarberId): Promise<readonly ServiceItem[]> {
+  async listForBarber(barberId: BarberId, dateIso: string): Promise<readonly ServiceItem[]> {
     try {
+      const parts = parseDateIso(dateIso)
+      if (parts === null) return []
+      const weekday = new Date(parts.year, parts.month - 1, parts.day).getDay()
       const { data, error } = await getSupabase()
         .from('services')
-        .select('id,barber_id,name,price,duration_min,active,sort_order')
+        .select('id,barber_id,name,price,duration_min,active,sort_order,available_weekdays')
         .eq('barber_id', barberId)
         .eq('active', true)
+        .contains('available_weekdays', [weekday])
         .order('sort_order', { ascending: true })
       if (error !== null || data === null) return []
 

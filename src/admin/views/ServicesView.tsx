@@ -8,6 +8,7 @@
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
+import { cap, weekdayLabel } from '../../booking/calendar'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import {
@@ -18,7 +19,7 @@ import {
 } from '../adapters/servicesAdmin'
 import { parseServiceRow } from '../serviceValidation'
 import { ConfirmDialog } from '../ConfirmDialog'
-import type { AdminService } from '../types'
+import type { AdminService, Weekday } from '../types'
 import type { AdminBarberId, AdminStylesBundle } from './viewTypes'
 
 /** A row's editable buffer — price/length as strings so a half-typed field never coerces to a number. */
@@ -29,7 +30,13 @@ interface EditRow {
   readonly durationMin: string
   readonly active: boolean
   readonly sortOrder: number
+  readonly availableWeekdays: readonly Weekday[]
+  /** UI-only: all weekdays is the default but can still be edited before Save. */
+  readonly specificDays: boolean
 }
+
+const WEEKDAY_ORDER: readonly Weekday[] = [1, 2, 3, 4, 5, 6, 0]
+const ALL_WEEKDAYS: readonly Weekday[] = [0, 1, 2, 3, 4, 5, 6]
 
 function toEdit(s: AdminService): EditRow {
   return {
@@ -39,6 +46,8 @@ function toEdit(s: AdminService): EditRow {
     durationMin: String(s.durationMin),
     active: s.active,
     sortOrder: s.sortOrder,
+    availableWeekdays: s.availableWeekdays,
+    specificDays: s.availableWeekdays.length !== ALL_WEEKDAYS.length,
   }
 }
 
@@ -66,6 +75,8 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
   const [nName, setNName] = useState('')
   const [nPrice, setNPrice] = useState('')
   const [nDur, setNDur] = useState('')
+  const [nSpecificDays, setNSpecificDays] = useState(false)
+  const [nAvailableWeekdays, setNAvailableWeekdays] = useState<readonly Weekday[]>(ALL_WEEKDAYS)
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
 
@@ -108,6 +119,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
       ...parsed,
       active: row.active,
       sortOrder: row.sortOrder,
+      availableWeekdays: row.availableWeekdays,
     })
     setBusyId(null)
     if (!r.ok) {
@@ -133,8 +145,18 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     setRowError(null)
     // a takes position j, b takes position index; sort_order is renumbered to the new index.
     const [ra, rb] = await Promise.all([
-      updateService(a.id, { ...pa, active: a.active, sortOrder: j }),
-      updateService(b.id, { ...pb, active: b.active, sortOrder: index }),
+      updateService(a.id, {
+        ...pa,
+        active: a.active,
+        sortOrder: j,
+        availableWeekdays: a.availableWeekdays,
+      }),
+      updateService(b.id, {
+        ...pb,
+        active: b.active,
+        sortOrder: index,
+        availableWeekdays: b.availableWeekdays,
+      }),
     ])
     setBusyId(null)
     if (!ra.ok || !rb.ok) {
@@ -171,7 +193,11 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     }
     setAddBusy(true)
     setAddError(null)
-    const r = await createService(props.barberId, { ...parsed, sortOrder: rows.length })
+    const r = await createService(props.barberId, {
+      ...parsed,
+      sortOrder: rows.length,
+      availableWeekdays: nAvailableWeekdays,
+    })
     setAddBusy(false)
     if (!r.ok) {
       setAddError(r.error.message)
@@ -181,6 +207,8 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     setNName('')
     setNPrice('')
     setNDur('')
+    setNSpecificDays(false)
+    setNAvailableWeekdays(ALL_WEEKDAYS)
   }
 
   const numInput = (value: string, onInput: (v: string) => void, width: string): JSX.Element => (
@@ -208,6 +236,40 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     >
       {glyph}
     </button>
+  )
+
+  const weekdayPicker = (
+    weekdays: readonly Weekday[],
+    onChange: (next: readonly Weekday[]) => void,
+  ): JSX.Element => (
+    <div
+      style={{ display: 'flex', flexWrap: 'wrap', gap: '7px 12px', padding: '4px 0 1px' }}
+      role="group"
+      aria-label={t.svcSpecificDays}
+    >
+      {WEEKDAY_ORDER.map((weekday) => {
+        const selected = weekdays.includes(weekday)
+        return (
+          <label key={weekday} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={selected && weekdays.length === 1}
+              onInput={(e) => {
+                if (e.currentTarget.checked) {
+                  onChange([...weekdays, weekday].sort((a, b) => a - b) as readonly Weekday[])
+                } else {
+                  onChange(weekdays.filter((item) => item !== weekday))
+                }
+              }}
+            />
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>
+              {cap(weekdayLabel(lang, weekday))}
+            </span>
+          </label>
+        )
+      })}
+    </div>
   )
 
   const serviceRow = (row: EditRow, index: number): JSX.Element => {
@@ -261,7 +323,36 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
             />
             <span style={{ fontSize: '13px', fontWeight: 600 }}>{t.svcActive}</span>
           </label>
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '7px',
+              paddingBottom: '9px',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={row.specificDays}
+              onInput={(e) =>
+                setField(row.id, {
+                  specificDays: e.currentTarget.checked,
+                  availableWeekdays: e.currentTarget.checked ? row.availableWeekdays : ALL_WEEKDAYS,
+                })
+              }
+            />
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>{t.svcSpecificDays}</span>
+          </label>
         </div>
+
+        {row.specificDays ? (
+          <div>
+            <span style={s.label}>{t.svcSpecificDaysLead}</span>
+            {weekdayPicker(row.availableWeekdays, (availableWeekdays) =>
+              setField(row.id, { availableWeekdays }),
+            )}
+          </div>
+        ) : null}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
           {iconBtn(t.svcMoveUp, busy || index === 0, () => void move(index, -1), '↑')}
@@ -365,6 +456,24 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                   '104px',
                 )}
               </label>
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  paddingBottom: '9px',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={nSpecificDays}
+                  onInput={(e) => {
+                    setNSpecificDays(e.currentTarget.checked)
+                    if (!e.currentTarget.checked) setNAvailableWeekdays(ALL_WEEKDAYS)
+                  }}
+                />
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>{t.svcSpecificDays}</span>
+              </label>
               <button
                 type="button"
                 style={{ ...s.primaryBtn, opacity: addBusy ? 0.6 : 1 }}
@@ -374,6 +483,12 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                 {addBusy ? t.svcAdding : t.svcAddBtn}
               </button>
             </div>
+            {nSpecificDays ? (
+              <div>
+                <span style={s.label}>{t.svcSpecificDaysLead}</span>
+                {weekdayPicker(nAvailableWeekdays, setNAvailableWeekdays)}
+              </div>
+            ) : null}
             <div aria-live="polite" style={{ minHeight: '18px' }}>
               {addError !== null ? <span style={s.errorText}>{addError}</span> : null}
             </div>

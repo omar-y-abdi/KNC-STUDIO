@@ -19,12 +19,18 @@ import { defaultClock } from '../../config'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import { readWeek, saveWeek } from '../adapters/schedulesAdmin'
+import {
+  addRecurringBreak,
+  deleteRecurringBreak,
+  listRecurringBreaks,
+} from '../adapters/recurringBreaksAdmin'
 import { addSlotBlock } from '../adapters/slotBlocksAdmin'
 import { addTimeOff, deleteTimeOff, listTimeOff } from '../adapters/timeOffAdmin'
 import {
   DEFAULT_END_MIN,
   DEFAULT_START_MIN,
   END_OPTIONS,
+  minutesToHHMM,
   START_OPTIONS,
   defaultWeek,
   sameTimeAllDays,
@@ -44,6 +50,7 @@ import type {
   AdminBarberId,
   AdminBooking,
   AdminStylesBundle,
+  RecurringBreak,
   TimeOff,
   Weekday,
   WeekSchedule,
@@ -102,6 +109,17 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   const [offMsg, setOffMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [pendingOff, setPendingOff] = useState<TimeOff | null>(null)
   const [offDeleteBusy, setOffDeleteBusy] = useState(false)
+  const [recurringBreaks, setRecurringBreaks] = useState<readonly RecurringBreak[]>([])
+  const [showRecurringBreakForm, setShowRecurringBreakForm] = useState(false)
+  const [recurringWeekday, setRecurringWeekday] = useState<Weekday>(1)
+  const [recurringStart, setRecurringStart] = useState(720)
+  const [recurringEnd, setRecurringEnd] = useState(780)
+  const [recurringBusy, setRecurringBusy] = useState(false)
+  const [recurringDeleteBusy, setRecurringDeleteBusy] = useState(false)
+  const [recurringMsg, setRecurringMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(
+    null,
+  )
+  const [pendingRecurringDelete, setPendingRecurringDelete] = useState<RecurringBreak | null>(null)
 
   // This barber's upcoming bookings, used to detect which confirmed bookings a proposed
   // unavailability would strand (block a day / change the week / add ledighet). A nonce refetches
@@ -121,6 +139,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       conflict.busy ||
       offBusy ||
       offDeleteBusy ||
+      recurringBusy ||
+      recurringDeleteBusy ||
       dayGridBlocked
     props.onPersistenceStateChange(blocked)
     return () => props.onPersistenceStateChange(false)
@@ -130,6 +150,8 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     dayGridBlocked,
     offBusy,
     offDeleteBusy,
+    recurringBusy,
+    recurringDeleteBusy,
     props.onPersistenceStateChange,
     weekSave.kind,
   ])
@@ -245,14 +267,17 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     setLoadError(null)
     setWeekSave({ kind: 'idle' })
     setOffMsg(null)
+    setRecurringMsg(null)
+    setRecurringBreaks([])
     setBookings([])
     const now = defaultClock()
     const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     void (async () => {
-      const [wk, off, bk] = await Promise.all([
+      const [wk, off, bk, recurring] = await Promise.all([
         readWeek(props.barberId),
         listTimeOff(props.barberId),
         listBookings(props.barberId, midnight.toISOString()),
+        listRecurringBreaks(props.barberId),
       ])
       if (!active) return
       if (wk.ok) {
@@ -260,6 +285,11 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         persistedWeek.current = wk.value
       } else setLoadError(wk.error.message)
       if (off.ok) setTimeOff(off.value)
+      else setLoadError(off.error.message)
+      if (recurring.ok) {
+        setRecurringBreaks(recurring.value)
+        setShowRecurringBreakForm(recurring.value.length > 0)
+      } else setLoadError(recurring.error.message)
       // Bookings MUST fail closed. Without them the conflict check silently sees zero orphans and every
       // unavailability change applies unwarned — stranding the customers this feature exists to protect
       // — and the grid would paint a booked day as free. So a failed read blocks the editor, exactly
@@ -371,6 +401,54 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
     }
     setTimeOff((prev) => prev.filter((t) => t.id !== id))
     return true
+  }
+
+  const addRecurring = async (allowExistingBookings = false): Promise<void> => {
+    setRecurringBusy(true)
+    setRecurringMsg(null)
+    const result = await addRecurringBreak(
+      props.barberId,
+      recurringWeekday,
+      recurringStart,
+      recurringEnd,
+      allowExistingBookings,
+    )
+    setRecurringBusy(false)
+    if (result.kind === 'ok') {
+      setRecurringBreaks((prev) =>
+        [...prev, result.value].sort((a, b) => a.weekday - b.weekday || a.startMin - b.startMin),
+      )
+      setRecurringMsg({ kind: 'ok', text: t.scheduleRecurringBreakAdded })
+      return
+    }
+    if (result.kind === 'error') {
+      setRecurringMsg({ kind: 'err', text: result.error.message })
+      return
+    }
+
+    const orphans = await loadConflictBookings(result.bookingIds)
+    if (orphans === null) {
+      setRecurringMsg({ kind: 'err', text: t.scheduleGridSaveError })
+      return
+    }
+    await conflict.request({
+      orphans,
+      applyChange: () => addRecurring(true),
+      revert: noRevert,
+    })
+  }
+
+  const removeRecurring = async (id: string): Promise<void> => {
+    setRecurringDeleteBusy(true)
+    const result = await deleteRecurringBreak(id)
+    setRecurringDeleteBusy(false)
+    setPendingRecurringDelete(null)
+    if (!result.ok) {
+      setRecurringMsg({ kind: 'err', text: result.error.message })
+      return
+    }
+    setRecurringBreaks((prev) => prev.filter((item) => item.id !== id))
+    setRecurringMsg({ kind: 'ok', text: t.scheduleRecurringBreakRemoved })
   }
 
   // Trigger C — adding ledighet. If confirmed bookings fall inside the range, the conflict dialog
@@ -708,6 +786,134 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
             )
           })}
         </div>
+
+        <div
+          style={{
+            border: s.card.border,
+            borderRadius: '12px',
+            padding: '12px 13px',
+            marginTop: '14px',
+          }}
+        >
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+            <input
+              type="checkbox"
+              checked={showRecurringBreakForm}
+              onInput={(e) => setShowRecurringBreakForm(e.currentTarget.checked)}
+            />
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>
+              {t.scheduleRecurringBreakToggle}
+            </span>
+          </label>
+          <p style={{ ...s.mutedText, fontSize: '12.5px', margin: '7px 0 0' }}>
+            {t.scheduleRecurringBreakLead}
+          </p>
+
+          {showRecurringBreakForm ? (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end',
+                gap: '10px 12px',
+                marginTop: '12px',
+              }}
+            >
+              <label>
+                <span style={s.label}>{t.scheduleRecurringBreakDay}</span>
+                <select
+                  style={s.select}
+                  value={recurringWeekday}
+                  onChange={(e) => setRecurringWeekday(Number(e.currentTarget.value) as Weekday)}
+                >
+                  {DISPLAY_ORDER.map((weekday) => (
+                    <option key={weekday} value={weekday}>
+                      {cap(weekdayLabel(lang, weekday))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span style={s.label}>{t.scheduleFrom}</span>
+                <select
+                  style={s.select}
+                  value={recurringStart}
+                  onChange={(e) => setRecurringStart(Number(e.currentTarget.value))}
+                >
+                  {START_OPTIONS.map((option) => (
+                    <option key={option.min} value={option.min}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span style={s.label}>{t.scheduleTo}</span>
+                <select
+                  style={s.select}
+                  value={recurringEnd}
+                  onChange={(e) => setRecurringEnd(Number(e.currentTarget.value))}
+                >
+                  {END_OPTIONS.map((option) => (
+                    <option key={option.min} value={option.min}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                style={{ ...s.ghostBtn, opacity: recurringBusy ? 0.6 : 1 }}
+                disabled={recurringBusy || recurringEnd <= recurringStart}
+                onClick={() => void addRecurring()}
+              >
+                {recurringBusy ? t.scheduleRecurringBreakAdding : t.scheduleRecurringBreakAdd}
+              </button>
+            </div>
+          ) : null}
+
+          <div aria-live="polite" style={{ minHeight: '18px', marginTop: '9px' }}>
+            {recurringMsg !== null ? (
+              <span style={recurringMsg.kind === 'ok' ? s.successText : s.errorText}>
+                {recurringMsg.text}
+              </span>
+            ) : null}
+          </div>
+
+          {recurringBreaks.length === 0 ? (
+            <span style={{ ...s.mutedText, fontSize: '12.5px' }}>
+              {t.scheduleRecurringBreakEmpty}
+            </span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginTop: '4px' }}>
+              {recurringBreaks.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    paddingTop: '7px',
+                    borderTop: s.card.border,
+                  }}
+                >
+                  <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                    {cap(weekdayLabel(lang, item.weekday))} · {minutesToHHMM(item.startMin)}–
+                    {minutesToHHMM(item.endMin)}
+                  </span>
+                  <button
+                    type="button"
+                    style={{ ...s.dangerBtn, padding: '6px 10px', fontSize: '12px' }}
+                    onClick={() => setPendingRecurringDelete(item)}
+                  >
+                    {t.scheduleRecurringBreakRemove}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
 
       {/* 3. Time off */}
@@ -864,6 +1070,24 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
           onConfirm={() => void onDeleteTimeOff()}
           onClose={() => {
             if (!offDeleteBusy) setPendingOff(null)
+          }}
+        />
+      ) : null}
+
+      {pendingRecurringDelete !== null ? (
+        <ConfirmDialog
+          dark={props.dark}
+          title={t.scheduleRecurringBreakDeleteTitle}
+          body={`${cap(weekdayLabel(lang, pendingRecurringDelete.weekday))} · ${minutesToHHMM(
+            pendingRecurringDelete.startMin,
+          )}–${minutesToHHMM(pendingRecurringDelete.endMin)}`}
+          confirmLabel={t.scheduleRecurringBreakRemove}
+          cancelLabel={t.scheduleRecurringBreakDeleteCancel}
+          danger
+          busy={recurringDeleteBusy}
+          onConfirm={() => void removeRecurring(pendingRecurringDelete.id)}
+          onClose={() => {
+            if (!recurringDeleteBusy) setPendingRecurringDelete(null)
           }}
         />
       ) : null}

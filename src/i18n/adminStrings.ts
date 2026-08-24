@@ -125,6 +125,8 @@ export interface AdminStrings {
   readonly svcColDuration: string
   readonly svcNamePh: string
   readonly svcActive: string
+  readonly svcSpecificDays: string
+  readonly svcSpecificDaysLead: string
   readonly svcInactiveTag: string
   readonly svcSave: string
   readonly svcSaving: string
@@ -239,6 +241,18 @@ export interface AdminStrings {
   readonly scheduleSaving: string
   readonly scheduleSaved: string
   readonly scheduleRetry: string
+  // ScheduleView — weekly recurring breaks
+  readonly scheduleRecurringBreakToggle: string
+  readonly scheduleRecurringBreakLead: string
+  readonly scheduleRecurringBreakDay: string
+  readonly scheduleRecurringBreakAdd: string
+  readonly scheduleRecurringBreakAdding: string
+  readonly scheduleRecurringBreakAdded: string
+  readonly scheduleRecurringBreakRemoved: string
+  readonly scheduleRecurringBreakEmpty: string
+  readonly scheduleRecurringBreakRemove: string
+  readonly scheduleRecurringBreakDeleteTitle: string
+  readonly scheduleRecurringBreakDeleteCancel: string
   // ScheduleView — time-off section
   readonly scheduleTimeOffHeading: string
   readonly scheduleTimeOffLead: string
@@ -620,6 +634,8 @@ const SV: AdminStrings = {
   svcColDuration: 'Längd (min)',
   svcNamePh: 'T.ex. Skinfade',
   svcActive: 'Aktiv',
+  svcSpecificDays: 'Specifika dagar',
+  svcSpecificDaysLead: 'Visa tjänsten för kunder dessa dagar:',
   svcInactiveTag: 'Dold för kunder',
   svcSave: 'Spara',
   svcSaving: 'Sparar …',
@@ -716,6 +732,18 @@ const SV: AdminStrings = {
   scheduleSaving: 'Sparar …',
   scheduleSaved: 'Sparat ✓',
   scheduleRetry: 'Försök igen',
+  scheduleRecurringBreakToggle: 'Återkommande paus',
+  scheduleRecurringBreakLead:
+    'Lås en tid varje vecka. Kunder kan inte boka tider som överlappar pausen.',
+  scheduleRecurringBreakDay: 'Dag',
+  scheduleRecurringBreakAdd: 'Lägg till paus',
+  scheduleRecurringBreakAdding: 'Lägger till …',
+  scheduleRecurringBreakAdded: 'Återkommande paus tillagd.',
+  scheduleRecurringBreakRemoved: 'Återkommande paus borttagen.',
+  scheduleRecurringBreakEmpty: 'Ingen återkommande paus inlagd.',
+  scheduleRecurringBreakRemove: 'Ta bort',
+  scheduleRecurringBreakDeleteTitle: 'Ta bort återkommande paus?',
+  scheduleRecurringBreakDeleteCancel: 'Avbryt',
   scheduleTimeOffHeading: 'Ledighet',
   scheduleTimeOffLead:
     'Blockera en dag eller en period (semester, ledig dag). Blockerade datum visas inte som bokningsbara.',
@@ -1085,6 +1113,8 @@ const EN: AdminStrings = {
   svcColDuration: 'Length (min)',
   svcNamePh: 'e.g. Skin fade',
   svcActive: 'Active',
+  svcSpecificDays: 'Specific day(s)',
+  svcSpecificDaysLead: 'Show this service to customers on:',
   svcInactiveTag: 'Hidden from customers',
   svcSave: 'Save',
   svcSaving: 'Saving …',
@@ -1181,6 +1211,18 @@ const EN: AdminStrings = {
   scheduleSaving: 'Saving …',
   scheduleSaved: 'Saved ✓',
   scheduleRetry: 'Try again',
+  scheduleRecurringBreakToggle: 'Recurring break',
+  scheduleRecurringBreakLead:
+    'Lock a time every week. Customers cannot book times that overlap this break.',
+  scheduleRecurringBreakDay: 'Day',
+  scheduleRecurringBreakAdd: 'Add break',
+  scheduleRecurringBreakAdding: 'Adding …',
+  scheduleRecurringBreakAdded: 'Recurring break added.',
+  scheduleRecurringBreakRemoved: 'Recurring break removed.',
+  scheduleRecurringBreakEmpty: 'No recurring breaks scheduled.',
+  scheduleRecurringBreakRemove: 'Remove',
+  scheduleRecurringBreakDeleteTitle: 'Remove recurring break?',
+  scheduleRecurringBreakDeleteCancel: 'Cancel',
   scheduleTimeOffHeading: 'Time off',
   scheduleTimeOffLead:
     'Block a day or a period (holiday, day off). Blocked dates will not be available for booking.',

@@ -10,8 +10,10 @@ import type { ServicesPort } from '../servicesPort'
 import { mockServicesAdapter } from './mockServices'
 
 const lazySupabaseServicesPort: ServicesPort = {
-  listForBarber: (barberId: BarberId): Promise<readonly ServiceItem[]> =>
-    import('./supabaseServices').then((m) => m.supabaseServicesAdapter.listForBarber(barberId)),
+  listForBarber: (barberId: BarberId, dateIso: string): Promise<readonly ServiceItem[]> =>
+    import('./supabaseServices').then((m) =>
+      m.supabaseServicesAdapter.listForBarber(barberId, dateIso),
+    ),
 }
 
 export const defaultServicesPort: ServicesPort = isBackendConfigured()

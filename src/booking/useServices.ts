@@ -1,10 +1,9 @@
-// `useServices` — the chosen barber's service menu as React state, refetched when the barber changes.
+// `useServices` — chosen barber's date-specific service menu, refetched with barber or date changes.
 //
 // Under the MOCK (no backend): the flat starter menu is the immediate value for any barber, so the
 // booking service step paints at once (no loading flash). Under a BACKEND: the selected barber's rows
 // are fetched (race-guarded — a stale response is dropped, exactly like the availability effect); an
-// empty result OR a transport error falls back to the starter menu, so the booking menu is never
-// empty (mirrors useRoster) — which also makes a code deploy safe ahead of the cloud migration.
+// an empty live result is a real business state, never a hard-coded fallback service menu.
 
 import { useEffect, useState } from 'preact/hooks'
 import type { BarberId, ServiceItem } from './domain'
@@ -26,6 +25,7 @@ export interface ServicesState {
  */
 export function useServices(
   barberId: BarberId | null,
+  dateIso: string | null,
   port: ServicesPort = defaultServicesPort,
 ): ServicesState {
   const [services, setServices] = useState<readonly ServiceItem[]>(
@@ -34,7 +34,10 @@ export function useServices(
   const [loading, setLoading] = useState<boolean>(false)
 
   useEffect(() => {
-    if (barberId === null) return
+    if (barberId === null || dateIso === null) {
+      if (!servicesAreMock) setServices([])
+      return
+    }
     // Mock: the starter menu is already correct for every barber; skip the fetch (no flash/shift).
     if (servicesAreMock) {
       setServices(MOCK_SERVICES)
@@ -43,24 +46,21 @@ export function useServices(
     let cancelled = false
     setLoading(true)
     void port
-      .listForBarber(barberId)
+      .listForBarber(barberId, dateIso)
       .then((rows) => {
         if (cancelled) return
-        // Fall back to the starter menu when a barber has no rows OR the table is unreachable (e.g.
-        // the migration hasn't been pushed to the cloud yet) — so the booking menu is NEVER empty,
-        // exactly like useRoster falling back to the constant roster. Keeps the deploy order safe.
-        setServices(rows.length > 0 ? rows : MOCK_SERVICES)
+        setServices(rows)
         setLoading(false)
       })
       .catch(() => {
         if (cancelled) return
-        setServices(MOCK_SERVICES)
+        setServices([])
         setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [barberId, port])
+  }, [barberId, dateIso, port])
 
   return { services, loading }
 }

@@ -64,7 +64,7 @@ export async function withClient<T>(dbUrl: string, fn: (client: Client) => Promi
 export async function truncateAll(dbUrl: string): Promise<void> {
   await withClient(dbUrl, (client) =>
     client.query(
-      'truncate table public.bookings, public.reviews, public.public_action_attempts restart identity cascade',
+      'truncate table public.bookings, public.reviews, public.public_action_attempts, public.barber_recurring_breaks restart identity cascade',
     ),
   )
 }

@@ -14,6 +14,8 @@ export interface AvailabilityParams {
   /** Selected service duration in minutes — the bookable start times step by this and pack tightly
    * around existing bookings/blocks. */
   readonly durationMin: number
+  /** Present in live booking calls so database enforces service-specific weekday rules. */
+  readonly serviceId?: string
 }
 
 export interface BookingPort {

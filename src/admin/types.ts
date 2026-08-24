@@ -76,6 +76,8 @@ export interface AdminService {
   readonly durationMin: number
   readonly active: boolean
   readonly sortOrder: number
+  /** JS getDay() values on which customers may book this service. */
+  readonly availableWeekdays: readonly Weekday[]
 }
 
 /** Fields set when creating a service (barber_id + id come from the call/DB). */
@@ -84,6 +86,8 @@ export interface NewService {
   readonly price: number
   readonly durationMin: number
   readonly sortOrder: number
+  /** Defaults to every day; a narrower set is chosen through Specific day(s). */
+  readonly availableWeekdays: readonly Weekday[]
 }
 
 /** Fields editable on an existing service (id is the immutable key). */
@@ -93,6 +97,7 @@ export interface ServiceEdit {
   readonly durationMin: number
   readonly active: boolean
   readonly sortOrder: number
+  readonly availableWeekdays: readonly Weekday[]
 }
 
 /** JS getDay() weekday: 0=Sun .. 6=Sat. */
@@ -143,6 +148,15 @@ export interface SlotBlock {
   /** Minutes from 00:00 (inclusive start of the blocked window). */
   readonly startMin: number
   /** Minutes from 00:00 (exclusive end of the blocked window). */
+  readonly endMin: number
+}
+
+/** A weekly locked period, evaluated on the salon-local weekday. */
+export interface RecurringBreak {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  readonly weekday: Weekday
+  readonly startMin: number
   readonly endMin: number
 }
 

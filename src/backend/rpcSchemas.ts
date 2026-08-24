@@ -171,6 +171,7 @@ export const publicServiceRow = z.object({
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
+  available_weekdays: z.array(z.number().int().min(0).max(6)).min(1),
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
 

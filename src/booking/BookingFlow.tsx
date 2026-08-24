@@ -138,15 +138,21 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const S = state
   // The chosen barber's flat service menu (per-barber, editable in the admin panel). Under the mock
   // this is the immediate starter menu; under a backend it is that barber's active `services` rows.
-  const { services: barberServices } = useServices(S.barberId, props.servicesPort)
+  const { services: barberServices } = useServices(S.barberId, S.dateIso, props.servicesPort)
 
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
   // AVAILABLE start times; the grid renders exactly those as chips. A `cancelled` flag drops stale
   // responses so fast re-selection can't show the wrong day's slots. On any failure we fail closed to
   // an empty list (the empty-state message shows; create_booking still validates the slot on submit).
   const serviceDur = S.service?.dur
+  const serviceId = S.service?.id
   useEffect(() => {
-    if (S.barberId === null || S.dateIso === null || serviceDur === undefined) {
+    if (
+      S.barberId === null ||
+      S.dateIso === null ||
+      serviceDur === undefined ||
+      serviceId === undefined
+    ) {
       setAvailableTimes([])
       setSlotsLoading(false)
       return
@@ -154,7 +160,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     let cancelled = false
     setSlotsLoading(true)
     void port
-      .availability({ barberId: S.barberId, dateIso: S.dateIso, durationMin: serviceDur })
+      .availability({
+        barberId: S.barberId,
+        dateIso: S.dateIso,
+        durationMin: serviceDur,
+        serviceId,
+      })
       .then((times) => {
         if (cancelled) return
         setAvailableTimes(times)
@@ -168,7 +179,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [port, S.barberId, S.dateIso, serviceDur])
+  }, [port, S.barberId, S.dateIso, serviceDur, serviceId])
 
   const c = palette(dark)
   const tab = makeTab(c)
