@@ -119,6 +119,9 @@ export const aboutSv: AboutStrings = {
   cutsTitle: 'Jobb vi gjort',
   cutsAlt: 'Kundklippning (platshållare)',
   reviewsTitle: 'Omdömen',
+  reviewsLoading: 'Hämtar publicerade omdömen …',
+  reviewsEmpty: 'Inga publicerade omdömen ännu.',
+  reviewsUnavailable: 'Omdömen kan inte hämtas just nu.',
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
@@ -137,6 +140,7 @@ export const aboutSv: AboutStrings = {
   reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   reviewErrSubmit: 'Omdömet kunde inte skickas. Försök igen.',
+  reviewErrUnavailable: 'Omdömen kan lämnas när bokningstjänsten är tillgänglig.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',

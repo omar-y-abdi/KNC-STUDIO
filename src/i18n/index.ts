@@ -123,6 +123,9 @@ export interface AboutStrings {
   /** Reviews block + form. The reviewer proves a finished booking by phone; the displayed name is
    * derived server-side from that booking ("Förnamn E."), so the form asks for the phone, not a name. */
   reviewsTitle: string
+  reviewsLoading: string
+  reviewsEmpty: string
+  reviewsUnavailable: string
   reviewPhone: string
   reviewPhonePh: string
   /** Helper line under the phone field explaining the gate + derived name. */
@@ -141,6 +144,7 @@ export interface AboutStrings {
   reviewErrChallenge: string
   reviewErrRateLimited: string
   reviewErrSubmit: string
+  reviewErrUnavailable: string
   /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
   ratingValueLabel: string
   /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */

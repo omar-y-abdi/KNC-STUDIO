@@ -1,12 +1,12 @@
 // "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
 // the desktop and mobile layouts. Minimal/editorial on desktop, M3 cards on mobile (it simply uses
 // the booking palette + 14px radii, so it reads native in both shells). All photos are tasteful
-// placeholders (PlaceholderPhoto); all bios/reviews copy is on-brand placeholder text from i18n.
+// placeholders (PlaceholderPhoto); bio copy comes from i18n/DB overlays while displayed reviews
+// come only from published review records.
 //
 // The review form goes through the injectable `ReviewsPort` (default: env-selected — Supabase when
-// configured, the mock otherwise). On a valid submit the new review is PREPENDED to the local list,
-// the form clears and a thank-you shows. Under the mock nothing is persisted — the list lives in
-// this component's state for the session only.
+// configured, an empty offline port otherwise). A valid server submission is prepended locally; the
+// fallback neither persists nor invents a review.
 
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
@@ -97,13 +97,22 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const salonPhotos = useGallery('salon', props.galleryPort)
   const cutPhotos = useGallery('cuts', props.galleryPort)
 
-  // Reviews list (seed from the port, then prepend new ones). Not persisted under the mock.
+  // Reviews list: server-published entries only. The offline fallback is intentionally empty.
   const [reviews, setReviews] = useState<readonly Review[]>([])
+  const [reviewsState, setReviewsState] = useState<'loading' | 'ready' | 'error'>('loading')
   useEffect(() => {
     let live = true
-    void port.list().then((seed) => {
-      if (live) setReviews(seed)
-    })
+    setReviewsState('loading')
+    void port
+      .list()
+      .then((published) => {
+        if (!live) return
+        setReviews(published)
+        setReviewsState('ready')
+      })
+      .catch(() => {
+        if (live) setReviewsState('error')
+      })
     return () => {
       live = false
     }
@@ -132,6 +141,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         return tx.reviewErrRateLimited
       case 'submit':
         return tx.reviewErrSubmit
+      case 'unavailable':
+        return tx.reviewErrUnavailable
     }
   }
 
@@ -407,28 +418,51 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
         <div style={reviewsWrapStyle}>
-          {reviews.map((r) => (
-            <div key={r.id} style={reviewCardStyle}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '10px',
-                }}
-              >
-                <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
-                <StarDisplay
-                  rating={r.rating}
-                  c={c}
-                  label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
-                />
-              </div>
-              <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
-                {r.text}
-              </p>
-            </div>
-          ))}
+          {reviewsState === 'loading' ? (
+            <p
+              aria-live="polite"
+              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+            >
+              {tx.reviewsLoading}
+            </p>
+          ) : null}
+          {reviewsState === 'error' ? (
+            <p
+              role="status"
+              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+            >
+              {tx.reviewsUnavailable}
+            </p>
+          ) : null}
+          {reviewsState === 'ready' && reviews.length === 0 ? (
+            <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+              {tx.reviewsEmpty}
+            </p>
+          ) : null}
+          {reviewsState === 'ready'
+            ? reviews.map((r) => (
+                <div key={r.id} style={reviewCardStyle}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
+                    <StarDisplay
+                      rating={r.rating}
+                      c={c}
+                      label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
+                    />
+                  </div>
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
+                    {r.text}
+                  </p>
+                </div>
+              ))
+            : null}
         </div>
 
         {/* Leave a review */}

@@ -119,6 +119,9 @@ export const aboutEn: AboutStrings = {
   cutsTitle: 'Work we’ve done',
   cutsAlt: 'Customer haircut (placeholder)',
   reviewsTitle: 'Reviews',
+  reviewsLoading: 'Loading published reviews …',
+  reviewsEmpty: 'No published reviews yet.',
+  reviewsUnavailable: 'Reviews cannot be loaded right now.',
   reviewPhone: 'Phone number',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
@@ -137,6 +140,7 @@ export const aboutEn: AboutStrings = {
   reviewErrChallenge: 'Verification failed. Reload the check and try again.',
   reviewErrRateLimited: 'Too many attempts. Wait a moment before trying again.',
   reviewErrSubmit: 'The review could not be submitted. Please try again.',
+  reviewErrUnavailable: 'Reviews can be submitted when the booking service is available.',
   ratingValueLabel: 'Rating: {n} of 5',
   ratingStarLabel: '{n} stars',
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',
