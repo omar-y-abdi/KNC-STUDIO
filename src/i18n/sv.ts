@@ -77,7 +77,6 @@ export const aboutSv: AboutStrings = {
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',
-  stylists: {},
   stylistAvatarAlt: 'Porträtt (platshållare)',
   cutsTitle: 'Jobb vi gjort',
   cutsAlt: 'Kundklippning (platshållare)',

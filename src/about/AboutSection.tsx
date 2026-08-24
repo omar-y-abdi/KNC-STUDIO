@@ -13,7 +13,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
-import type { AboutStrings, Lang, StylistCopy } from '../i18n/index'
+import type { AboutStrings, Lang } from '../i18n/index'
 import { aboutStrings } from '../i18n/index'
 import { scalePx, type SizePreset } from '../site/siteChrome'
 import { useRoster } from '../booking/useRoster'
@@ -305,9 +305,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
 
-  // Test adapters may supply fallback copy; production entries carry database copy.
-  const i18nStylists: Readonly<Record<string, StylistCopy>> = tx.stylists
-
   return (
     <section id={ABOUT_SECTION_ID} style={sectionStyle} aria-labelledby="om-oss-heading">
       <div style={innerStyle}>
@@ -336,7 +333,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         <div style={stylistGridStyle}>
           {roster.map((entry) => {
             const b = entry.barber
-            const copy = stylistCopyFor(entry, lang, i18nStylists)
+            const copy = stylistCopyFor(entry, lang)
             return (
               <div key={b.id} style={stylistCardStyle}>
                 {entry.photoUrl !== null ? (

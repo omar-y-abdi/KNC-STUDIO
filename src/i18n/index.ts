@@ -72,14 +72,6 @@ export interface AppStrings {
   cancelLink: string
 }
 
-/**
- * Optional stylist copy supplied by a test adapter. Production copy comes from the barber row.
- */
-export interface StylistCopy {
-  readonly role: string
-  readonly bio: string
-}
-
 /** Strings for the "Om oss" / About section. */
 export interface AboutStrings {
   /** Section eyebrow + heading + intro paragraph. */
@@ -91,7 +83,6 @@ export interface AboutStrings {
   galleryAlt: string
   /** Stylists block. */
   stylistsTitle: string
-  stylists: Readonly<Record<string, StylistCopy>>
   stylistAvatarAlt: string
   /** Customer-cuts gallery. */
   cutsTitle: string

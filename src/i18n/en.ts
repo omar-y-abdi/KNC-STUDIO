@@ -77,7 +77,6 @@ export const aboutEn: AboutStrings = {
   galleryTitle: 'Inside the shop',
   galleryAlt: 'Photo from the salon (placeholder)',
   stylistsTitle: 'The barbers',
-  stylists: {},
   stylistAvatarAlt: 'Portrait (placeholder)',
   cutsTitle: 'Work we’ve done',
   cutsAlt: 'Customer haircut (placeholder)',
