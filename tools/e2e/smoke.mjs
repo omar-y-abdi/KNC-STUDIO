@@ -42,10 +42,7 @@ async function verifyPublicPage(browser, viewport) {
     'language toggle did not activate English',
   )
   await page.getByRole('button', { name: 'Book appointment', exact: true }).first().click()
-  await page
-    .getByRole('button', { name: /Hassan|Victor|Salman/ })
-    .first()
-    .waitFor()
+  await page.getByTestId('booking-barber-option').first().waitFor()
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
   await context.close()

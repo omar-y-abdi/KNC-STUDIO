@@ -130,14 +130,13 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const showHeader = props.showHeader !== false
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
-  // The roster shown in step 1. Under the mock this is the constant `BARBERS` immediately (no flash);
-  // a configured backend replaces it with the active DB rows once they load (race-guarded in-hook).
-  const { roster } = useRoster(props.barbersPort)
+  const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
   const today = clock()
   const S = state
-  // The chosen barber's flat service menu (per-barber, editable in the admin panel). Under the mock
-  // this is the immediate starter menu; under a backend it is that barber's active `services` rows.
-  const { services: barberServices } = useServices(S.barberId, props.servicesPort)
+  const { services: barberServices, loading: servicesLoading } = useServices(
+    S.barberId,
+    props.servicesPort,
+  )
 
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
   // AVAILABLE start times; the grid renders exactly those as chips. A `cancelled` flag drops stale
@@ -532,9 +531,22 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               {t.chooseBarber}
             </span>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;">
-            {barbers.map((b) => (
-              <button key={b.id} onClick={b.onSelect} style={b.cardStyle}>
+          <div
+            data-testid="booking-barber-list"
+            style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;"
+          >
+            {rosterLoading ? <div style={s.timePlaceholderStyle}>{t.loadingBarbers}</div> : null}
+            {!rosterLoading && barbers.length === 0 ? (
+              <div style={s.timePlaceholderStyle}>{t.noBarbers}</div>
+            ) : null}
+            {!rosterLoading
+              ? barbers.map((b) => (
+              <button
+                key={b.id}
+                data-testid="booking-barber-option"
+                onClick={b.onSelect}
+                style={b.cardStyle}
+              >
                 <span style={b.avatarStyle}>{b.initial}</span>
                 <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;">
                   <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
@@ -548,7 +560,8 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   <img src="/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
                 ) : null}
               </button>
-            ))}
+                ))
+              : null}
           </div>
         </div>
 
@@ -642,6 +655,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                         {g.items.map((it, ii) => (
                           <button
                             key={ii}
+                            data-testid="booking-service-option"
                             onClick={it.onClick}
                             style={it.rowStyle}
                             class={pseudoClass('hover', it.rowHover)}
@@ -669,6 +683,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     </div>
                   ))}
                 </div>
+              ) : null}
+              {servicesReady && servicesLoading ? (
+                <div style={s.timePlaceholderStyle}>{t.loadingServices}</div>
+              ) : null}
+              {servicesReady && !servicesLoading && barberServices.length === 0 ? (
+                <div style={s.timePlaceholderStyle}>{t.noServices}</div>
               ) : null}
               {notServicesReady ? (
                 <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div>

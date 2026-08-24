@@ -6,9 +6,13 @@ export type Lang = 'sv' | 'en'
 /** Strings used by the booking flow. */
 export interface BookingStrings {
   chooseBarber: string
+  loadingBarbers: string
+  noBarbers: string
   chooseDate: string
   chooseTime: string
   chooseService: string
+  loadingServices: string
+  noServices: string
   pickDayForService: string
   pickServiceForTime: string
   /** Shown in the time column while real availability is loading from the backend. */
@@ -40,16 +44,6 @@ export interface BookingStrings {
   calGoogle: string
   directions: string
   newBooking: string
-  grpWedSat: string
-  grpMonTue: string
-  grpStudent: string
-  grpKids: string
-  noteStudent: string
-  sHairBeard: string
-  sHair: string
-  sBeard: string
-  sHairStudent: string
-  sKids: string
   min: string
   errName: string
   errPhone: string
@@ -79,16 +73,14 @@ export interface AppStrings {
 }
 
 /**
- * A placeholder stylist bio for the About section. `handle` is the IG handle (echoed from
- * `BARBERS`, kept here so the copy reads naturally per language); `bio` is on-brand placeholder
- * prose. Keyed by `BarberId` in `AboutStrings.stylists`.
+ * Optional stylist copy supplied by a test adapter. Production copy comes from the barber row.
  */
 export interface StylistCopy {
   readonly role: string
   readonly bio: string
 }
 
-/** Strings for the "Om oss" / About section (all placeholder copy — no real bios/photos exist). */
+/** Strings for the "Om oss" / About section. */
 export interface AboutStrings {
   /** Section eyebrow + heading + intro paragraph. */
   eyebrow: string
@@ -99,7 +91,7 @@ export interface AboutStrings {
   galleryAlt: string
   /** Stylists block. */
   stylistsTitle: string
-  stylists: Readonly<Record<'hassan' | 'victor' | 'salman', StylistCopy>>
+  stylists: Readonly<Record<string, StylistCopy>>
   stylistAvatarAlt: string
   /** Customer-cuts gallery. */
   cutsTitle: string

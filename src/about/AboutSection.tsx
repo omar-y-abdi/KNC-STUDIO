@@ -305,8 +305,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
 
-  // The i18n stylist table as a string-keyed view (so an open `BarberId` indexes it for the fallback
-  // copy when a roster entry carries no DB copy — i.e. under the mock).
+  // Test adapters may supply fallback copy; production entries carry database copy.
   const i18nStylists: Readonly<Record<string, StylistCopy>> = tx.stylists
 
   return (
@@ -332,8 +331,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           />
         </div>
 
-        {/* Stylists — driven by the roster (N barbers, not exactly 3). DB copy when present, i18n
-            fallback otherwise; the name/handle + optional role/bio markup is unchanged. */}
+        {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
         <div style={stylistGridStyle}>
           {roster.map((entry) => {

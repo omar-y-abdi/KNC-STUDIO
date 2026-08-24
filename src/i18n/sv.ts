@@ -10,9 +10,13 @@ import type {
 
 export const bookingSv: BookingStrings = {
   chooseBarber: 'Välj din barberare',
+  loadingBarbers: 'Laddar barberare …',
+  noBarbers: 'Inga barberare är tillgängliga för bokning just nu.',
   chooseDate: 'Välj en dag',
   chooseTime: 'Välj en tid',
   chooseService: 'Välj behandling',
+  loadingServices: 'Laddar behandlingar …',
+  noServices: 'Barberaren har inga aktiva behandlingar den valda dagen.',
   pickDayForService: 'Välj en dag i kalendern för att se behandlingar.',
   pickServiceForTime: 'Välj en behandling för att se lediga tider.',
   loadingTimes: 'Laddar tider …',
@@ -42,16 +46,6 @@ export const bookingSv: BookingStrings = {
   calGoogle: 'Google Kalender',
   directions: 'Vägbeskrivning till salongen',
   newBooking: 'Boka en ny tid',
-  grpWedSat: 'Herr · onsdag–lördag',
-  grpMonTue: 'Herr · måndag–tisdag',
-  grpStudent: 'Studentrabatt · onsdag',
-  grpKids: 'Barn upp till 12 år',
-  noteStudent: 'Endast onsdagar',
-  sHairBeard: 'Hårklippning + skägg',
-  sHair: 'Hårklippning',
-  sBeard: 'Skäggklippning',
-  sHairStudent: 'Hårklippning (student)',
-  sKids: 'Klippning, barn',
   min: 'min',
   errName: 'Namnet är för långt',
   errPhone: 'Ogiltigt telefonnummer',
@@ -75,8 +69,6 @@ export const appSv: AppStrings = {
   cancelLink: 'Avbokning',
 }
 
-// NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
-// reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
 export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
@@ -85,20 +77,7 @@ export const aboutSv: AboutStrings = {
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',
-  stylists: {
-    hassan: {
-      role: 'Barberare',
-      bio: 'Specialist på skinfades och precisa kanter. Hassan har saxen i handen sedan tonåren och gör jobbet med is i magen.',
-    },
-    victor: {
-      role: 'Barberare',
-      bio: 'Klassiska klippningar med modern touch. Victor lyssnar in vad du vill ha och levererar varje gång — skägg är hans signatur.',
-    },
-    salman: {
-      role: 'Barberare',
-      bio: 'Texturerat hår och rena övergångar. Salman tar gärna den extra minuten för att detaljen ska bli helt rätt.',
-    },
-  },
+  stylists: {},
   stylistAvatarAlt: 'Porträtt (platshållare)',
   cutsTitle: 'Jobb vi gjort',
   cutsAlt: 'Kundklippning (platshållare)',

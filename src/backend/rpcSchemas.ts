@@ -175,6 +175,12 @@ export const publicServiceRow = z.object({
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
 
+export const publicBookingCatalogResponse = z.object({
+  barbers: z.array(publicBarberRow.extend({ photo_path: z.string().nullable() })),
+  services: z.array(publicServiceRow),
+})
+export type PublicBookingCatalogResponse = z.infer<typeof publicBookingCatalogResponse>
+
 // --- public site_content / site_settings rows (Task 2 §2) ----------------------------------------
 // Editable homepage text (key,lang,value) + non-localized settings (key,value). anon may read both.
 

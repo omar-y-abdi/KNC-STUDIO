@@ -5,13 +5,16 @@ describe('database-owned public catalog', () => {
   it('never paints or restores named barbers from frontend constants', () => {
     const rosterHook = readFileSync('src/booking/useRoster.ts', 'utf8')
     const servicesHook = readFileSync('src/booking/useServices.ts', 'utf8')
-    const sourceRoster = readFileSync('src/booking/barbers.ts', 'utf8')
     const mockRoster = readFileSync('src/booking/adapters/mockBarbers.ts', 'utf8')
     const mockServices = readFileSync('src/booking/adapters/mockServices.ts', 'utf8')
+    const aboutSv = readFileSync('src/i18n/sv.ts', 'utf8')
+    const aboutEn = readFileSync('src/i18n/en.ts', 'utf8')
 
     expect(rosterHook).not.toContain('CONSTANT_ROSTER')
     expect(servicesHook).not.toContain('MOCK_SERVICES')
-    expect(`${sourceRoster}\n${mockRoster}`).not.toMatch(/Hassan|Victor|Salman|freebandzcuts/)
+    expect(`${mockRoster}\n${aboutSv}\n${aboutEn}`).not.toMatch(
+      /Hassan|Victor|Salman|freebandzcuts/,
+    )
     expect(mockServices).not.toMatch(/Hårklippning|Skäggklippning|Studentklippning/)
   })
 

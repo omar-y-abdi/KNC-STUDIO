@@ -33,17 +33,10 @@ async function fresh(browser, viewport, scheme) {
 async function reachServiceMenu(page) {
   await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
   await settle(page, 400)
-  await page
-    .getByRole('button', { name: /Hassan|Victor|Salman/ })
-    .first()
-    .click()
+  await page.getByTestId('booking-barber-option').first().click()
   await settle(page, 400)
   const menuVisible = () =>
-    page
-      .getByText('Hårklippning + skägg')
-      .first()
-      .isVisible()
-      .catch(() => false)
+    page.getByTestId('booking-service-option').first().isVisible().catch(() => false)
   const dayCells = page.locator('button', { hasText: /^\d{1,2}$/ })
   for (let attempt = 0; attempt < 2; attempt++) {
     const n = await dayCells.count()
@@ -66,7 +59,7 @@ async function reachServiceMenu(page) {
       await settle(page, 300)
     }
   }
-  await page.getByText('Hårklippning + skägg').first().waitFor({ timeout: 5000 })
+  await page.getByTestId('booking-service-option').first().waitFor({ timeout: 5000 })
 }
 
 async function openMyBookings(page) {

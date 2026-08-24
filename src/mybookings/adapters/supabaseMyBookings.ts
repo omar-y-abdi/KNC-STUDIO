@@ -7,7 +7,6 @@ import {
   parseWith,
 } from '../../backend/rpcSchemas'
 import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
-import { BARBERS } from '../../booking/barbers'
 import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
@@ -32,7 +31,7 @@ async function barberFromId(id: string): Promise<Barber> {
   } catch {
     // Fall through to shipped roster data.
   }
-  return BARBERS.find((barber) => barber.id === id) ?? { id: asBarberId(id), name: id, ig: '' }
+  return { id: asBarberId(id), name: id, ig: '' }
 }
 
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
