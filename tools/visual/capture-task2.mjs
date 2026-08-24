@@ -23,7 +23,7 @@ async function fresh(browser, viewport, scheme) {
   })
   const page = await ctx.newPage()
   await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
-  await page.waitForSelector('#root > *', { timeout: 15000 })
+  await page.waitForSelector('#root > :first-child', { timeout: 15000 })
   await page.evaluate(() => globalThis.document.fonts.ready)
   await settle(page, 500)
   return { ctx, page }

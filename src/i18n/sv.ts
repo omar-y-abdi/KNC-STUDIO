@@ -75,6 +75,22 @@ export const appSv: AppStrings = {
   cancelLink: 'Avbokning',
 }
 
+export const privacySv = {
+  title: 'Integritet och lagring',
+  lead: 'Vi använder inte analys- eller annonslagring. Du kan välja om vi får använda en förstapartscookie för att komma ihåg telefonnumret för Mina bokningar på den här enheten.',
+  privacyLink: 'Läs integritetspolicyn',
+  accept: 'Godkänn funktionell lagring',
+  reject: 'Avvisa valfri lagring',
+  preferences: 'Inställningar',
+  save: 'Spara val',
+  functionalTitle: 'Kom ihåg telefonnummer',
+  functionalLead:
+    'En förstapartscookie sparar endast numret som används för Mina bokningar på denna enhet.',
+  necessary: 'Nödvändig sessionslagring används bara när du öppnar en säker Mina bokningar-länk.',
+  manage: 'Integritet',
+  manageLabel: 'Hantera integritetsinställningar',
+}
+
 // NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
 // reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
 export const aboutSv: AboutStrings = {

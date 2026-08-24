@@ -192,8 +192,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
     WebkitFontSmoothing: 'antialiased',
     borderTop: '.5px solid ' + c.line,
-    // `scroll-margin-top` keeps the heading clear of the top once we smooth-scroll to it.
-    scrollMarginTop: '8px',
+    // Keeps the heading clear of the compact mobile panel and desktop sticky nav after a hero link.
+    scrollMarginTop: '112px',
   }
   const innerStyle: JSX.CSSProperties = {
     maxWidth: '1080px',

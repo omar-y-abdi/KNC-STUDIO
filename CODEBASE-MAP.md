@@ -47,6 +47,7 @@ Known drift: **§12**.
 | Deployment           | Live webhooks, Vault values, secrets, OAuth/DNS/domain/provider state are outside git and require operational verification.                                                                                                   |
 | Availability edits   | Time-off and slot-block records are add/delete, not in-place update. Preserve transactional add + RLS-scoped delete unless deliberately redesigning.                                                                          |
 | Browser integrations | `public/_headers` CSP is part of runtime architecture; new browser origins require CSP/header review.                                                                                                                         |
+| Browser privacy      | `src/site/storageConsent.ts` records an explicit first-party storage choice. Optional Mina bokningar phone memory is off until `functional`; no analytics or advertising storage is present.                                  |
 | Domain changes       | `VITE_SITE_URL` alone is not the canonical-origin migration surface; see §9.8.                                                                                                                                                |
 | Map upkeep           | Update this map when ownership, important paths, RPC contracts, triggers, grants, runtime/deployment topology, or test authority changes.                                                                                     |
 
@@ -85,13 +86,13 @@ Browser
 | Path                                    | Owns / contains                                                                                      |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `src/main.tsx`                          | Browser mount; renders `<Root />`.                                                                   |
-| `src/app/`                              | Public shell/router/layout: `Root.tsx`, `App.tsx`, desktop/mobile shells.                            |
+| `src/app/`                              | Public shell/router/layout: `Root.tsx`, `App.tsx`, desktop/mobile hero-to-About scroll shells and booking fold. |
 | `src/backend/`                          | Public backend seam: config, lazy public Supabase client, Zod wire schemas, public-action wrapper.   |
 | `src/booking/`                          | Booking domain/UI: wizard, validation, Stockholm time, ICS/calendar links, mock slot packing.        |
 | `src/booking/adapters/`                 | Booking/barber/service live Supabase vs local/mock adapters.                                         |
 | `src/mybookings/`                       | Customer secure-link request, appointment history/cancellation, formatting, device memory, adapters. |
 | `src/about/`                            | About CMS overlay, gallery, reviews/domain/gateway adapter.                                          |
-| `src/site/`                             | Site chrome/business facts, CMS, JSON-LD, realtime hydration.                                        |
+| `src/site/`                             | Site chrome/business facts, CMS, JSON-LD, realtime hydration, and public browser-storage consent.    |
 | `src/admin/`                            | Authenticated admin client/auth lifecycle/shell/domain helpers.                                      |
 | `src/admin/adapters/`                   | Admin booking/schedule/service/barber/CMS/media/email-template data access.                          |
 | `src/admin/calendar/`                   | Calendar connection port/status/adapter/hook/UI.                                                     |
@@ -133,6 +134,7 @@ Use this before broad search. **Start** = likely owner/authority; **Next** = imm
 | Booking rate-limited                            | `create_booking_with_limits()`               | `booking_attempts`, recent `bookings`, `IP_SALT`                                                 | booking gateway DB tests                                          |
 | Wrong booking hour/DST                          | `stockholmTime.ts`                           | DB Stockholm logic in `available_slots` / `create_booking`                                       | `stockholmTime.test.ts` + integration                             |
 | Mina bokningar access fails                     | `supabaseMyBookings.ts`                      | `publicBookingActions.ts`, `public-booking-actions`, customer access challenge/session RPCs      | public-action unit + `37_customer_booking_access_test.sql`        |
+| Optional phone memory ignored or retained        | `src/site/storageConsent.ts`                 | `bladeblend_storage_preferences`; optional `bladeblend_mybookings_phone` must be deleted on opt-out | `storageConsent.test.ts` + browser smoke                            |
 | Secure-link request/review rate-limited         | `consume_public_action_attempt()`            | `public_action_attempts`, `PUBLIC_ACTION_HASH_SALT`                                              | public gateway/pgTAP rate-limit tests                             |
 | Customer cancellation fails                     | `supabaseMyBookings.ts`                      | public gateway, `cancel_customer_booking_with_access`, `site_settings.cancellation_policy_hours` | public-action unit + `37_customer_booking_access_test.sql`        |
 | Review rejected unexpectedly                    | `supabaseReviews.ts`                         | gateway, `create_review`                                                                         | review gateway + review integration/pgTAP                         |
@@ -981,7 +983,7 @@ Use this instead of grep for first-hop navigation.
 | Customer action limiter                    | `consume_public_action_attempt`                                       |
 | Admin profile resolve                      | `src/admin/auth.ts:getActiveProfile`                                  |
 | Admin persisted session                    | `src/admin/adminClient.ts` / `knc-admin-auth`                         |
-| Remembered customer phone                  | `src/mybookings/deviceMemory.ts` / `bladeblend.mybookings.phone`      |
+| Consent + remembered customer phone         | `src/site/storageConsent.ts` / `bladeblend_storage_preferences`; optional `bladeblend_mybookings_phone` only after `functional` consent |
 | Calendar adapter selector                  | `src/admin/calendar/adapters/index.ts:defaultCalendarSyncPort`        |
 | Schedule transaction                       | `admin_save_barber_week` (`p_week`: JSONB, exactly 7 weekday objects) |
 | Time-off transaction                       | `admin_add_time_off`                                                  |

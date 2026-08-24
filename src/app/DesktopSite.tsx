@@ -16,7 +16,7 @@ export interface DesktopSiteProps extends ShellProps {
   readonly tx: AppStrings
   readonly view: View
   readonly toggleDeskBooking: () => void
-  readonly toggleDeskAbout: () => void
+  readonly scrollToAbout: () => void
   readonly findUsStyle: JSX.CSSProperties
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
@@ -32,14 +32,16 @@ export interface DesktopSiteProps extends ShellProps {
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const { c, tx, business, view } = props
-  // Hero stays put; each link toggles its own fold below it (same grid-rows animation for both).
+  // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
   const booking = view === 'booking'
-  const about = view === 'about'
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
 
   const navStyle: JSX.CSSProperties = {
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -171,8 +173,20 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style="text-align: center; padding: 74px 40px 60px; color: inherit">
+      <main>
+        <div
+          style={{
+            minHeight: 'calc(100dvh - 61px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '74px 40px 60px',
+            boxSizing: 'border-box',
+            color: 'inherit',
+          }}
+        >
           <div style={heroMarkStyle} aria-hidden="true">
             <DeskLockup height={300} />
           </div>
@@ -200,12 +214,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
             color={heroLinkColor}
-            onOpenAbout={props.toggleDeskAbout}
+            onOpenAbout={props.scrollToAbout}
             onOpenCancel={props.openCancel}
             marginTop="20px"
           />
         </div>
-        {/* Booking fold — unchanged: same grid-rows animation, BookingFlow render path intact. */}
+        {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
         <div style={foldStyle(booking)} data-testid="fold-booking">
           <div style={deskFoldInnerStyle}>
             <div
@@ -226,13 +240,10 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             </div>
           </div>
         </div>
-        {/* About fold — identical animation; AboutSection brings its own border-top + max-width. */}
-        <div style={foldStyle(about)} data-testid="fold-about">
-          <div style={deskFoldInnerStyle}>
-            <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
-          </div>
-        </div>
-      </div>
+        {!booking ? (
+          <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
+        ) : null}
+      </main>
 
       <div style={footerStyle}>
         <span>{tx.hours}</span>

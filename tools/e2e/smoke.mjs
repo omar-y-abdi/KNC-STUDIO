@@ -13,7 +13,7 @@ async function verifyPublicPage(browser, viewport) {
   page.on('pageerror', (error) => errors.push(error.message))
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await page.locator('#root > *').waitFor()
+  await page.locator('#root > :first-child').waitFor()
   await page.evaluate(() => globalThis.document.fonts.ready)
 
   assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
@@ -41,7 +41,33 @@ async function verifyPublicPage(browser, viewport) {
       .getAttribute('aria-pressed')) === 'true',
     'language toggle did not activate English',
   )
+
+  const privacyBanner = page.getByRole('region', { name: 'Privacy and storage' })
+  await privacyBanner.getByRole('button', { name: 'Reject optional storage' }).click()
+  await page.getByRole('button', { name: 'Manage privacy preferences' }).waitFor()
+
+  const about = page.locator('#om-oss')
+  assert((await about.count()) === 1, 'About section is not mounted on the homepage')
+
+  if (viewport.width <= 768) {
+    const scrollRoot = page.getByTestId('mobile-site-scroll')
+    await scrollRoot.evaluate((element) => element.scrollTo({ top: element.clientHeight }))
+    await page.getByRole('button', { name: 'Back to home' }).waitFor()
+    await page.getByRole('button', { name: 'Back to home' }).click()
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop === 0,
+    )
+  } else {
+    await page.getByRole('button', { name: 'About', exact: true }).click()
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('#om-oss')?.getBoundingClientRect().top >= 0,
+    )
+    await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
+  }
+
   await page.getByRole('button', { name: 'Book appointment', exact: true }).first().click()
+  assert((await about.count()) === 0, 'About section remains mounted while booking is open')
   await page
     .getByRole('button', { name: /Hassan|Victor|Salman/ })
     .first()

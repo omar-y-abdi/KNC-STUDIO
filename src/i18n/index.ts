@@ -78,6 +78,22 @@ export interface AppStrings {
   cancelLink: string
 }
 
+/** Public browser-storage controls. No analytics or advertising category exists in this site. */
+export interface PrivacyStrings {
+  title: string
+  lead: string
+  privacyLink: string
+  accept: string
+  reject: string
+  preferences: string
+  save: string
+  functionalTitle: string
+  functionalLead: string
+  necessary: string
+  manage: string
+  manageLabel: string
+}
+
 /**
  * A placeholder stylist bio for the About section. `handle` is the IG handle (echoed from
  * `BARBERS`, kept here so the copy reads naturally per language); `bio` is on-brand placeholder
@@ -184,11 +200,12 @@ export interface CalendarLabels {
   headers: readonly string[]
 }
 
-import { aboutSv, appSv, bookingSv, labelsSv, myBookingsSv } from './sv'
-import { aboutEn, appEn, bookingEn, labelsEn, myBookingsEn } from './en'
+import { aboutSv, appSv, bookingSv, labelsSv, myBookingsSv, privacySv } from './sv'
+import { aboutEn, appEn, bookingEn, labelsEn, myBookingsEn, privacyEn } from './en'
 
 const BOOKING: Readonly<Record<Lang, BookingStrings>> = { sv: bookingSv, en: bookingEn }
 const APP: Readonly<Record<Lang, AppStrings>> = { sv: appSv, en: appEn }
+const PRIVACY: Readonly<Record<Lang, PrivacyStrings>> = { sv: privacySv, en: privacyEn }
 const LABELS: Readonly<Record<Lang, CalendarLabels>> = { sv: labelsSv, en: labelsEn }
 const ABOUT: Readonly<Record<Lang, AboutStrings>> = { sv: aboutSv, en: aboutEn }
 const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
@@ -198,6 +215,7 @@ const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
 
 export const bookingStrings = (lang: Lang): BookingStrings => BOOKING[lang]
 export const appStrings = (lang: Lang): AppStrings => APP[lang]
+export const privacyStrings = (lang: Lang): PrivacyStrings => PRIVACY[lang]
 export const calendarLabels = (lang: Lang): CalendarLabels => LABELS[lang]
 export const aboutStrings = (lang: Lang): AboutStrings => ABOUT[lang]
 export const myBookingsStrings = (lang: Lang): MyBookingsStrings => MY_BOOKINGS[lang]

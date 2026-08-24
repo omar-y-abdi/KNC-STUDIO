@@ -75,6 +75,22 @@ export const appEn: AppStrings = {
   cancelLink: 'Cancel booking',
 }
 
+export const privacyEn = {
+  title: 'Privacy and storage',
+  lead: 'We do not use analytics or advertising storage. You can choose whether we may use a first-party cookie to remember the phone number for My appointments on this device.',
+  privacyLink: 'Read the privacy policy',
+  accept: 'Accept functional storage',
+  reject: 'Reject optional storage',
+  preferences: 'Preferences',
+  save: 'Save choices',
+  functionalTitle: 'Remember phone number',
+  functionalLead:
+    'A first-party cookie stores only the number used for My appointments on this device.',
+  necessary: 'Necessary session storage is used only after you open a secure My appointments link.',
+  manage: 'Privacy',
+  manageLabel: 'Manage privacy preferences',
+}
+
 // NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
 // reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
 export const aboutEn: AboutStrings = {

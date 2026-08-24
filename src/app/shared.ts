@@ -8,11 +8,10 @@ import type { BusinessSettings } from '../site/siteChrome'
 export type Mode = 'light' | 'dark'
 
 /**
- * Which of the three mutually-exclusive site states is showing. The homepage is `'home'` (static
- * hero); pressing "Boka tid" animates to `'booking'`, "Om oss" animates to `'about'` — each its own
- * fold, same animation. A single closed union means no invalid "booking AND about" inhabitant.
+ * Which mutually-exclusive site state is showing. Home always contains the scrollable About section;
+ * pressing "Boka tid" opens the booking fold and removes that section from the document.
  */
-export type View = 'home' | 'booking' | 'about'
+export type View = 'home' | 'booking'
 
 /** Site-shell palette for a given mode. */
 export interface ShellPalette {
