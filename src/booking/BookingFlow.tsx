@@ -537,7 +537,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           >
             {rosterLoading ? <div style={s.timePlaceholderStyle}>{t.loadingBarbers}</div> : null}
             {!rosterLoading && barbers.length === 0 ? (
-              <div style={s.timePlaceholderStyle}>{t.noBarbers}</div>
+              <div data-testid="booking-barber-empty" style={s.timePlaceholderStyle}>
+                {t.noBarbers}
+              </div>
             ) : null}
             {!rosterLoading
               ? barbers.map((b) => (
