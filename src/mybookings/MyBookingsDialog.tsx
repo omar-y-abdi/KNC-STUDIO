@@ -153,10 +153,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     setEmail(e.currentTarget.value)
   }
 
-  const lookupDisabled =
-    busy ||
-    email.trim() === '' ||
-    (challengeRequired && turnstileToken === '')
+  const lookupDisabled = busy || email.trim() === '' || (challengeRequired && turnstileToken === '')
   const onLookupClick = (): void => void requestAccess()
 
   const onChangeDetails = (): void => {

@@ -6,7 +6,9 @@ vi.mock('../../src/backend/supabaseClient', () => ({
   getSupabase: () => ({
     rpc,
     storage: {
-      from: () => ({ getPublicUrl: (path: string) => ({ data: { publicUrl: `https://img/${path}` } }) }),
+      from: () => ({
+        getPublicUrl: (path: string) => ({ data: { publicUrl: `https://img/${path}` } }),
+      }),
     },
   }),
 }))
@@ -62,8 +64,6 @@ describe('shared public booking catalog', () => {
         photoUrl: 'https://img/db.webp',
       },
     ])
-    expect(services).toEqual([
-      { id: 'db-service', name: 'Database Service', price: 425, dur: 45 },
-    ])
+    expect(services).toEqual([{ id: 'db-service', name: 'Database Service', price: 425, dur: 45 }])
   })
 })

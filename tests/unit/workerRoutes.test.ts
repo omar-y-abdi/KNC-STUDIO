@@ -64,10 +64,7 @@ describe('Worker route policy', () => {
     const token = 'a'.repeat(64)
     expect(customerAccessTokenFromPath(`/${token}`)).toBe(token)
 
-    const response = await worker.fetch(
-      new Request(`https://bladeblendstudio.se/${token}`),
-      env,
-    )
+    const response = await worker.fetch(new Request(`https://bladeblendstudio.se/${token}`), env)
 
     expect(response.status).toBe(302)
     expect(response.headers.get('Location')).toBe(

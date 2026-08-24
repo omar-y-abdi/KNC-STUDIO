@@ -36,7 +36,11 @@ async function reachServiceMenu(page) {
   await page.getByTestId('booking-barber-option').first().click()
   await settle(page, 400)
   const menuVisible = () =>
-    page.getByTestId('booking-service-option').first().isVisible().catch(() => false)
+    page
+      .getByTestId('booking-service-option')
+      .first()
+      .isVisible()
+      .catch(() => false)
   const dayCells = page.locator('button', { hasText: /^\d{1,2}$/ })
   for (let attempt = 0; attempt < 2; attempt++) {
     const n = await dayCells.count()

@@ -50,7 +50,8 @@ export async function hashCustomerAccessToken(token: string): Promise<string> {
 }
 
 export async function encryptCustomerAccessToken(token: string, secret: string): Promise<string> {
-  if (!isCustomerAccessToken(token) || secret.length < 32) throw new Error('invalid access token key')
+  if (!isCustomerAccessToken(token) || secret.length < 32)
+    throw new Error('invalid access token key')
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv, additionalData: AUTH_CONTEXT },

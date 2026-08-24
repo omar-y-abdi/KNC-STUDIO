@@ -254,10 +254,7 @@ export default {
     }
 
     const customerAccessToken = customerAccessTokenFromPath(pathname)
-    if (
-      customerAccessToken !== null &&
-      (request.method === 'GET' || request.method === 'HEAD')
-    ) {
+    if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
       return new Response(null, {
         status: 302,
         headers: {
