@@ -29,12 +29,17 @@ describe('public booking action adapter errors', () => {
 
       await expect(
         supabaseMyBookingsAdapter.requestAccess({
-          phone: '0701234567',
           email: 'customer@example.com',
           lang: 'sv',
           turnstileToken: 'challenge',
         }),
       ).resolves.toEqual({ ok: false, error })
+      expect(invokePublicBookingAction).toHaveBeenLastCalledWith({
+        action: 'request_access',
+        email: 'customer@example.com',
+        lang: 'sv',
+        turnstileToken: 'challenge',
+      })
     },
   )
 

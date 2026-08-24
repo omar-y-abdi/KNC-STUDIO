@@ -3,6 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
 
 describe('customer booking access links', () => {
+  it('consumes permanent random root-path links as direct access tokens', () => {
+    const token = 'a'.repeat(64)
+    expect(consumeBookingAccessLink(`https://bladeblendstudio.se/${token}`)).toEqual({
+      code: token,
+      cleanPath: '/',
+      direct: true,
+    })
+  })
+
   it('consumes new fragment links without exposing access codes to HTTP requests', () => {
     expect(
       consumeBookingAccessLink(
@@ -11,6 +20,7 @@ describe('customer booking access links', () => {
     ).toEqual({
       code: 'abc123',
       cleanPath: '/?campaign=mail#source=customer',
+      direct: false,
     })
   })
 
@@ -22,6 +32,7 @@ describe('customer booking access links', () => {
     ).toEqual({
       code: 'legacy123',
       cleanPath: '/?campaign=mail#section=bookings',
+      direct: false,
     })
   })
 
@@ -42,5 +53,17 @@ describe('customer booking access links', () => {
     expect(gateway).not.toContain('edgeRuntime.waitUntil(')
     expect(gateway).not.toContain('sendAccessEmail(')
     expect(migration).toContain("'customer_access_email_send'")
+  })
+
+  it('uses permanent root links in access and booking-confirmation email paths', () => {
+    const accessWorker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
+    const confirmationWorker = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
+
+    expect(accessWorker).toContain('customerAccessUrl(action.access_code)')
+    expect(confirmationWorker).toContain("'customer_confirmation'")
+    expect(confirmationWorker).toContain('customerAccessUrl')
+    expect(confirmationWorker).not.toContain(
+      "ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se'",
+    )
   })
 })
