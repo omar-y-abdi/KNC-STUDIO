@@ -331,7 +331,8 @@ function json(body: unknown, status: number): Response {
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
-  const secret = Deno.env.get('WEBHOOK_SECRET')
+  const bookingSecret = Deno.env.get('BOOKING_WEBHOOK_SECRET')
+  const secret = bookingSecret ?? Deno.env.get('WEBHOOK_SECRET')
   if (!secret) return json({ ok: false, error: 'not_configured' }, 503)
   if (!timingSafeEqual(req.headers.get('x-webhook-secret') ?? '', secret))
     return json({ ok: false, error: 'unauthorized' }, 401)
