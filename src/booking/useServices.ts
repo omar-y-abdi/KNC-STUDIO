@@ -10,16 +10,15 @@ import { defaultServicesPort } from './adapters/servicesIndex'
 import { subscribeBookingCatalog } from './adapters/barbersIndex'
 
 export interface ServicesState {
-  /** The active services to render (the starter menu under the mock; DB rows under a backend). */
+  /** Active rows returned by selected port; empty means no configured services. */
   readonly services: readonly ServiceItem[]
-  /** True only while a real backend fetch is in flight (always false under the mock). */
+  /** True while selected port fetch is in flight. */
   readonly loading: boolean
 }
 
 /**
  * Subscribe to a barber's service menu. `port` defaults to the env-selected `defaultServicesPort`.
- * Passing `null` (no barber chosen yet) yields the mock menu under the mock, or an empty list under a
- * backend — the service step only renders once a barber AND a date are chosen anyway.
+ * Passing `null` (no barber chosen yet) yields an empty list; service step renders after selection.
  */
 export function useServices(
   barberId: BarberId | null,

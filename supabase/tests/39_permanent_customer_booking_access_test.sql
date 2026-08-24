@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(27);
 
 select ok(
   not has_table_privilege('anon', 'public.customer_booking_access_tokens', 'select'),
@@ -84,6 +84,11 @@ select is(
   'ensuring a later confirmation does not increment token generation'
 );
 
+insert into public.customer_booking_access_sessions (phone, email, token_hash, expires_at)
+values ('0703900001', 'person@example.test', repeat('9', 64), '2099-01-01 00:00+00');
+insert into public.customer_booking_access_challenges (phone, email, token_hash, expires_at)
+values ('0703900001', 'person@example.test', repeat('8', 64), '2099-01-01 00:00+00');
+
 set local role service_role;
 select is(
   pg_catalog.jsonb_array_length(
@@ -115,6 +120,24 @@ select is(
   repeat('c', 64),
   'fresh-link request replaces current token hash'
 );
+select is(
+  (select pg_catalog.count(*)::int from public.customer_booking_access_sessions
+   where email = 'person@example.test'),
+  0,
+  'fresh-link rotation purges already-exchanged legacy sessions for the email'
+);
+select is(
+  (select pg_catalog.count(*)::int from public.customer_booking_access_challenges
+   where email = 'person@example.test' and token_hash = repeat('8', 64)),
+  0,
+  'fresh-link rotation purges the previous compatibility challenge'
+);
+select is(
+  (select expires_at::text from public.customer_booking_access_challenges
+   where email = 'person@example.test'),
+  'infinity',
+  'current dispatch credential remains valid until token rotation, not a time deadline'
+);
 
 set local role service_role;
 select is(
@@ -138,6 +161,13 @@ select is(
      and payload->>'access_code' = repeat('d', 64)),
   1,
   'fresh token email is committed to durable delivery outbox'
+);
+select is(
+  (select pg_catalog.count(*)::int
+   from public.customer_booking_access_challenges
+   where email = 'person@example.test'),
+  1,
+  'rotation retains only the current delivery credential'
 );
 
 set local role service_role;

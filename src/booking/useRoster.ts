@@ -6,16 +6,15 @@ import type { BarbersPort, RosterBarber } from './barbersPort'
 import { defaultBarbersPort, subscribeBookingCatalog } from './adapters/barbersIndex'
 
 export interface RosterState {
-  /** The active roster to render (constant under the mock; DB rows under a backend once loaded). */
+  /** Active rows returned by selected port; empty means no configured/active barbers. */
   readonly roster: readonly RosterBarber[]
-  /** True only while a real backend fetch is in flight (always false under the mock). */
+  /** True while selected port fetch is in flight. */
   readonly loading: boolean
 }
 
 /**
  * Subscribe to the public roster. `port` defaults to the env-selected `defaultBarbersPort`. The
- * initial value is always the constant roster (immediate, stable paint); a configured backend then
- * replaces it with the live `barbers` rows.
+ * initial value is empty; configured backend rows are the only production roster authority.
  */
 export function useRoster(port: BarbersPort = defaultBarbersPort): RosterState {
   const [roster, setRoster] = useState<readonly RosterBarber[]>([])

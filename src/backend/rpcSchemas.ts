@@ -141,10 +141,8 @@ export const reviewRow = z.object({
 })
 export type ReviewRow = z.infer<typeof reviewRow>
 
-// --- public barbers row (direct table select) ----------------------------------------------------
-// The ACTIVE roster the public site reads (booking grid + About cards). Same column set the admin
-// reads, but consumed read-only by anon via the `barbers` public-select RLS policy. `active` is
-// included so a malformed/unexpected row can be dropped; the adapter filters active in the query.
+// --- public booking catalog rows -----------------------------------------------------------------
+// Server-filtered active barber/service rows returned by `public_booking_catalog()`.
 
 export const publicBarberRow = z.object({
   id: z.string(),
@@ -159,10 +157,7 @@ export const publicBarberRow = z.object({
 })
 export type PublicBarberRow = z.infer<typeof publicBarberRow>
 
-// --- public services row (direct table select) ---------------------------------------------------
-// One row of a barber's flat service menu. The public booking flow reads the CHOSEN barber's ACTIVE
-// rows (RLS restricts anon to active; the adapter filters active too). `active` is included so a
-// malformed/unexpected row can be dropped. Maps to the booking domain `ServiceItem` (dur = duration_min).
+// One row of a barber's flat service menu; maps to `ServiceItem` (`dur = duration_min`).
 
 export const publicServiceRow = z.object({
   id: z.string(),

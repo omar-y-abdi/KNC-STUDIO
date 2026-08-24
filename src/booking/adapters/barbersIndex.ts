@@ -16,11 +16,7 @@ export const defaultBarbersPort: BarbersPort = isBackendConfigured()
   ? lazySupabaseBarbersPort
   : mockBarbersAdapter
 
-/**
- * Whether the configured roster source is the offline mock (i.e. no backend). The public components
- * use this to render the constant roster SYNCHRONOUSLY on first paint (no loading flash, no layout
- * shift) and only switch to an async fetch when a real backend is configured.
- */
+/** Begin one background catalog read when live configuration exists. */
 export function preloadBookingCatalog(): void {
   if (!isBackendConfigured()) return
   void import('./supabaseBookingCatalog').then((module) => module.preloadBookingCatalog())

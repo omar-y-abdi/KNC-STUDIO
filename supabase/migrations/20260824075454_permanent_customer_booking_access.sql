@@ -184,15 +184,19 @@ begin
         updated_at = pg_catalog.now()
   returning * into v_row;
 
-  -- Existing durable worker contract uses a short-lived challenge only to authorize email dispatch.
-  -- It does not authorize booking access; the permanent table above does.
-  update public.customer_booking_access_challenges c
-  set used_at = pg_catalog.now()
-  where c.email = v_email
-    and c.used_at is null;
+  -- Rotation revokes every compatibility credential for this email. This matters when an older
+  -- one-time link was already exchanged: leaving its 20-minute session alive would violate the
+  -- promise that a newly requested link invalidates the previous one immediately.
+  delete from public.customer_booking_access_sessions s
+  where pg_catalog.lower(s.email) = v_email;
+
+  delete from public.customer_booking_access_challenges c
+  where pg_catalog.lower(c.email) = v_email;
 
   insert into public.customer_booking_access_challenges (phone, email, token_hash, expires_at)
-  values (v_phone, v_email, p_token_hash, pg_catalog.now() + interval '15 minutes')
+  -- Existing durable worker contract uses this row to authorize email dispatch. Tie its lifetime to
+  -- token rotation instead of a clock so delayed retries cannot silently lose a permanent link.
+  values (v_phone, v_email, p_token_hash, 'infinity'::timestamptz)
   returning id into v_challenge_id;
 
   perform public.queue_external_action(

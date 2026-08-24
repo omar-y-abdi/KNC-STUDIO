@@ -50,9 +50,9 @@ export interface BookingFlowProps {
   readonly clock?: Clock
   /** Injected submit seam (default: env-selected; local adapter when no backend is configured). */
   readonly port?: BookingPort
-  /** Injected roster seam — the barbers shown in step 1 (default: env-selected; mock = constants). */
+  /** Injected roster seam — barbers shown in step 1 (default: env-selected; offline = empty). */
   readonly barbersPort?: BarbersPort
-  /** Injected services seam — the chosen barber's menu in step 3 (default: env-selected; mock = seed). */
+  /** Injected services seam — chosen barber's menu in step 3 (default: env-selected; offline = empty). */
   readonly servicesPort?: ServicesPort
   /** Open the app-level "Mina bokningar" popup — surfaced on the confirmation screen. */
   readonly onMyBookings?: () => void
@@ -541,25 +541,25 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
             ) : null}
             {!rosterLoading
               ? barbers.map((b) => (
-              <button
-                key={b.id}
-                data-testid="booking-barber-option"
-                onClick={b.onSelect}
-                style={b.cardStyle}
-              >
-                <span style={b.avatarStyle}>{b.initial}</span>
-                <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;">
-                  <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    {b.name}
-                  </span>
-                  <span style="font-size:11.5px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    @{b.ig}
-                  </span>
-                </span>
-                {b.selected ? (
-                  <img src="/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
-                ) : null}
-              </button>
+                  <button
+                    key={b.id}
+                    data-testid="booking-barber-option"
+                    onClick={b.onSelect}
+                    style={b.cardStyle}
+                  >
+                    <span style={b.avatarStyle}>{b.initial}</span>
+                    <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;">
+                      <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        {b.name}
+                      </span>
+                      <span style="font-size:11.5px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        @{b.ig}
+                      </span>
+                    </span>
+                    {b.selected ? (
+                      <img src="/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
+                    ) : null}
+                  </button>
                 ))
               : null}
           </div>

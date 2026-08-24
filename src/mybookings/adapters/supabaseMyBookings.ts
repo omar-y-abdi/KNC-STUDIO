@@ -29,7 +29,7 @@ async function barberFromId(id: string): Promise<Barber> {
     const hit = roster.find((row) => row.barber.id === id)
     if (hit !== undefined) return hit.barber
   } catch {
-    // Fall through to shipped roster data.
+    // Preserve truthful booking data even when roster hydration fails.
   }
   return { id: asBarberId(id), name: id, ig: '' }
 }
@@ -85,6 +85,7 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
         return { ok: false, error: parsed.value.error }
       }
 
+      rememberCustomerAccessToken(params.accessToken)
       rememberPhone(parsed.value.phone)
 
       const sep = myBookingsStrings(params.lang).atSep
