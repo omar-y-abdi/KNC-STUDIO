@@ -33,6 +33,13 @@ import { AboutView } from './views/AboutView'
 import { SettingsView } from './views/SettingsView'
 import { MailView } from './views/MailView'
 import { useBarbers } from './useBarbers'
+import {
+  adminUrlForTab,
+  persistAdminScroll,
+  readAdminScroll,
+  tabFromAdminUrl,
+  withAdminNavigationHistoryState,
+} from './navigationState'
 import type { AdminBarberId, AdminProfile } from './types'
 
 export interface AdminShellProps {
@@ -84,11 +91,44 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   ]
 
   const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
+  const visibleTabIds = visibleTabs.map((entry) => entry.id)
   // Schedule first: managing today's availability is the barber's most frequent task.
-  const [tab, setTab] = useState<Tab>('schedule')
+  const [tab, setTab] = useState<Tab>(() =>
+    tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule'),
+  )
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scheduleBlocked, setScheduleBlocked] = useState(false)
   const navigationLocked = tab === 'schedule' && scheduleBlocked
+
+  const persistScroll = (tabToPersist: Tab, scrollY: number = window.scrollY): void => {
+    const value = Math.max(0, Math.round(scrollY))
+    persistAdminScroll(sessionStorage, profile.userId, tabToPersist, value)
+    window.history.replaceState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: tabToPersist,
+        scrollY: value,
+      }),
+      '',
+      adminUrlForTab(window.location.href, tabToPersist),
+    )
+  }
+
+  const selectTab = (nextTab: Tab): void => {
+    if (nextTab === tab) return
+    persistScroll(tab)
+    window.history.pushState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: nextTab,
+        scrollY: 0,
+      }),
+      '',
+      adminUrlForTab(window.location.href, nextTab),
+    )
+    setTab(nextTab)
+    window.scrollTo(0, 0)
+  }
 
   useEffect(() => {
     if (!navigationLocked) return
@@ -99,6 +139,58 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     window.addEventListener('beforeunload', preventLeave)
     return () => window.removeEventListener('beforeunload', preventLeave)
   }, [navigationLocked])
+
+  useEffect(() => {
+    let frame: number | null = null
+    const capture = (): void => {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        persistScroll(tab)
+      })
+    }
+    const flush = (): void => persistScroll(tab)
+    // Initialise an addressable history entry so reload and share preserve the active admin tab.
+    flush()
+    window.addEventListener('scroll', capture, { passive: true })
+    window.addEventListener('pagehide', flush)
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', capture)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const restoreY = readAdminScroll(window.history.state, sessionStorage, profile.userId, tab)
+    let cancelled = false
+    let attempts = 0
+    let frame: number | null = null
+    const restore = (): void => {
+      if (cancelled) return
+      window.scrollTo(0, restoreY)
+      // Async CMS views can add height after the shell mounts. Retry until exact target becomes
+      // reachable, bounded to avoid retaining a tab after a failed request.
+      if (Math.abs(window.scrollY - restoreY) >= 1 && attempts < 150) {
+        attempts += 1
+        frame = window.requestAnimationFrame(restore)
+      }
+    }
+    frame = window.requestAnimationFrame(restore)
+    return () => {
+      cancelled = true
+      if (frame !== null) window.cancelAnimationFrame(frame)
+    }
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const onPopState = (): void => {
+      persistScroll(tab)
+      setTab(tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule'))
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [profile.userId, tab, visibleTabIds])
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
@@ -225,7 +317,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         type="button"
         onClick={() => {
           if (navigationLocked && !active) return
-          setTab(def.id)
+          selectTab(def.id)
           setMobileMenuOpen(false)
         }}
         disabled={navigationLocked && !active}
