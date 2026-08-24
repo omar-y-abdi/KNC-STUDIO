@@ -137,9 +137,9 @@ export const QUARTER_LEN_MIN = 15
 /**
  * What one chip on the day grid IS, in priority order:
  *   `booked`  — overlaps a confirmed booking (shows the customer; never tappable)
+ *   `closed`  — outside working hours, a non-working weekday, or a time-off day
  *   `recurring_break` — overlaps a weekly locked period (never tappable)
  *   `blocked` — overlaps a walk-in block row (tap = unblock)
- *   `closed`  — outside working hours, a non-working weekday, or a time-off day
  *   `past`    — already started (only on today)
  *   `open`    — bookable online right now (tap = block)
  */
@@ -224,12 +224,12 @@ function quarterAt(args: DayGridArgs, min: number): DaySlot {
   const state: SlotState =
     booking !== undefined
       ? 'booked'
-      : recurringBreak !== undefined
-        ? 'recurring_break'
-        : block !== undefined
-          ? 'blocked'
-          : closed
-            ? 'closed'
+      : closed
+        ? 'closed'
+        : recurringBreak !== undefined
+          ? 'recurring_break'
+          : block !== undefined
+            ? 'blocked'
             : min < args.pastCutoffMin
               ? 'past'
               : 'open'

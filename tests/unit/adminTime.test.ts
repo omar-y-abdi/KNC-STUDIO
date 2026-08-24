@@ -222,6 +222,23 @@ describe('dayHours', () => {
     }
   })
 
+  it('keeps non-working and time-off days closed despite a matching recurring break', () => {
+    const offDay = { ...workDay, working: false }
+    for (const args of [
+      { day: offDay, dayOff: false },
+      { day: workDay, dayOff: true },
+    ]) {
+      const all = quarters({
+        ...args,
+        blocks: [],
+        recurringBreaks: [recurringBreak(720, 780)],
+        bookings: [],
+        pastCutoffMin: 0,
+      })
+      expect(all.every((q) => q.state === 'closed')).toBe(true)
+    }
+  })
+
   it('quarters outside the working window are closed (start AND end must fit)', () => {
     const lateStart = { ...workDay, startMin: 630, endMin: 900 } // 10:30-15:00
     const all = quarters({
