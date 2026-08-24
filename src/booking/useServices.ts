@@ -44,6 +44,8 @@ export function useServices(
       return
     }
     let cancelled = false
+    // Date changes must never briefly render the prior date's service menu.
+    setServices([])
     setLoading(true)
     void port
       .listForBarber(barberId, dateIso)
