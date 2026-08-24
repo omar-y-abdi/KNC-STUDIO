@@ -5,7 +5,7 @@
 //     tap an OPEN quarter    -> block it (saved instantly, optimistic)
 //     tap a BLOCKED quarter  -> reopen it
 //     BOOKED quarters show the customer's first name (cancel lives in the bookings tab)
-//     CLOSED/PAST quarters are inert
+//     RECURRING-BREAK/CLOSED/PAST quarters are inert
 //   "Blockera hela timmen" writes four independent 15-min rows so each quarter stays individually
 //   reopenable; "Blockera hela dagen" writes a single-day time-off row (and flips to "Öppna dagen").
 //
@@ -24,12 +24,20 @@ import { listServices } from '../adapters/servicesAdmin'
 import { ReserveDialog, type ReserveFields } from '../ReserveDialog'
 import { deleteSlotBlock, listSlotBlocks } from '../adapters/slotBlocksAdmin'
 import type { Palette } from '../../booking/bookingStyles'
-import { QUARTER_LEN_MIN, dayHours, timeOffCovering, toDateIso, upcomingDates } from '../time'
+import {
+  QUARTER_LEN_MIN,
+  dayHours,
+  isSlotTappable,
+  timeOffCovering,
+  toDateIso,
+  upcomingDates,
+} from '../time'
 import type { DayBooking, DaySlot, HourGroup, SlotState } from '../time'
 import type {
   AdminBarberId,
   AdminBooking,
   AdminService,
+  RecurringBreak,
   AdminStylesBundle,
   SlotBlock,
   TimeOff,
@@ -48,6 +56,8 @@ export interface ScheduleDayGridProps {
   readonly barberId: AdminBarberId
   readonly week: WeekSchedule
   readonly timeOff: readonly TimeOff[]
+  /** Weekly locked periods, passed by the parent so the pure day grid mirrors DB availability. */
+  readonly recurringBreaks: readonly RecurringBreak[]
   /**
    * The barber's upcoming bookings, owned and fetched by the parent — the SAME array the parent's
    * conflict detection reads. The grid must not fetch its own copy: a private list drifts out of sync
@@ -136,10 +146,11 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
       day: props.week[selected.getDay()],
       dayOff: off !== undefined,
       blocks: blocks ?? [],
+      recurringBreaks: props.recurringBreaks,
       bookings: dayBookings(props.bookings, dateIso),
       pastCutoffMin,
     })
-  }, [props.week, off, blocks, props.bookings, dateIso])
+  }, [props.week, off, blocks, props.recurringBreaks, props.bookings, dateIso])
 
   // The whole day is off (time off / non-working weekday): show a calm state card, not 9 dead chips.
   const dayIsOff = hours.every((h) => h.quarters.every((q) => q.state === 'closed'))
@@ -301,7 +312,9 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
 
   const hourChip = (hour: HourGroup): JSX.Element => {
     const open = hour.quarters.filter((q) => q.state === 'open').length
-    const inert = hour.quarters.every((q) => q.state === 'closed' || q.state === 'past')
+    const inert = hour.quarters.every(
+      (q) => q.state === 'closed' || q.state === 'past' || q.state === 'recurring_break',
+    )
     const isExpanded = expanded === hour.startMin
     return (
       <button
@@ -347,7 +360,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
 
   const quarterChip = (q: DaySlot): JSX.Element => {
     const busy = busyQuarters.includes(q.startMin)
-    const tappable = q.state === 'open' || q.state === 'blocked'
+    const tappable = isSlotTappable(q.state)
     const sub =
       q.state === 'open'
         ? t.scheduleGridSlotFree
@@ -355,9 +368,11 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           ? t.scheduleGridSlotBlocked
           : q.state === 'booked'
             ? (q.bookingLabel ?? t.scheduleGridSlotBooked)
-            : q.state === 'past'
-              ? t.scheduleGridSlotPast
-              : t.scheduleGridSlotClosed
+            : q.state === 'recurring_break'
+              ? t.scheduleGridSlotRecurringBreak
+              : q.state === 'past'
+                ? t.scheduleGridSlotPast
+                : t.scheduleGridSlotClosed
     return (
       <button
         key={q.startMin}
@@ -368,7 +383,9 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
         aria-label={
           q.state === 'blocked'
             ? `${t.scheduleGridOpenHour} ${q.label}`
-            : `${t.scheduleGridBlockHour} ${q.label} (${sub})`
+            : q.state === 'open'
+              ? `${t.scheduleGridBlockHour} ${q.label} (${sub})`
+              : `${q.label} (${sub})`
         }
         style={quarterChipStyle(c, q.state, tappable, busy)}
       >
@@ -394,6 +411,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
   const expandedPanel = (hour: HourGroup): JSX.Element => {
     const anyOpen = hour.quarters.some((q) => q.state === 'open')
     const anyBlocked = hour.quarters.some((q) => q.state === 'blocked')
+    const startOpen = hour.quarters[0]?.state === 'open'
     const endLabel = String(Number(hour.label.slice(0, 2)) + 1).padStart(2, '0')
     return (
       <div
@@ -419,16 +437,18 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           {hour.quarters.map(quarterChip)}
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            style={{ ...s.primaryBtn, padding: '7px 12px', fontSize: '13px' }}
-            onClick={() => {
-              setReserveError(null)
-              setReserveMin(hour.startMin)
-            }}
-          >
-            {t.reserveBtn}
-          </button>
+          {startOpen ? (
+            <button
+              type="button"
+              style={{ ...s.primaryBtn, padding: '7px 12px', fontSize: '13px' }}
+              onClick={() => {
+                setReserveError(null)
+                setReserveMin(hour.startMin)
+              }}
+            >
+              {t.reserveBtn}
+            </button>
+          ) : null}
           {anyOpen ? (
             <button
               type="button"
@@ -539,6 +559,7 @@ export function ScheduleDayGrid(props: ScheduleDayGridProps): JSX.Element {
           {legendDot(c, 'open', t.scheduleGridLegendFree)}
           {legendDot(c, 'blocked', t.scheduleGridLegendBlocked)}
           {legendDot(c, 'booked', t.scheduleGridLegendBooked)}
+          {legendDot(c, 'recurring_break', t.scheduleGridLegendRecurringBreak)}
           {legendDot(c, 'closed', t.scheduleGridLegendClosed)}
         </div>
       </div>
@@ -575,6 +596,7 @@ function hourSummary(hour: HourGroup, open: number, strings: AdminStrings): stri
   if (bookedLabel !== undefined && bookedLabel !== null) return bookedLabel
   if (open > 0) return `${open}/4 ${strings.scheduleGridFreeCountSuffix}`
   if (qs.some((q) => q.state === 'blocked')) return strings.scheduleGridSlotBlocked
+  if (qs.some((q) => q.state === 'recurring_break')) return strings.scheduleGridSlotRecurringBreak
   return strings.scheduleGridSlotPast
 }
 
@@ -591,6 +613,8 @@ function segmentColor(c: Palette, state: SlotState): JSX.CSSProperties {
       return { background: c.accent }
     case 'booked':
       return { background: c.dot }
+    case 'recurring_break':
+      return { background: c.subtle, border: '1px dashed ' + c.inputLine, boxSizing: 'border-box' }
     case 'past':
     case 'closed':
       return { background: c.line }
@@ -628,6 +652,14 @@ function quarterChipStyle(
       }
     case 'booked':
       return { ...base, border: '0.5px solid ' + c.line, background: c.bg, color: c.text }
+    case 'recurring_break':
+      return {
+        ...base,
+        border: '0.5px dashed ' + c.inputLine,
+        background: c.subtle,
+        color: c.text,
+        opacity: busy ? 0.55 : 0.65,
+      }
     case 'past':
       return {
         ...base,
@@ -650,7 +682,15 @@ function quarterChipStyle(
 /** One legend entry (a state-coloured dot + label). */
 function legendDot(c: Palette, state: SlotState, label: string): JSX.Element {
   const bg =
-    state === 'open' ? c.card : state === 'blocked' ? c.accent : state === 'booked' ? c.dot : c.line
+    state === 'open'
+      ? c.card
+      : state === 'blocked'
+        ? c.accent
+        : state === 'booked'
+          ? c.dot
+          : state === 'recurring_break'
+            ? c.subtle
+            : c.line
   const border = state === 'open' ? '0.5px solid ' + c.inputLine : '0.5px solid ' + c.line
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px' }}>

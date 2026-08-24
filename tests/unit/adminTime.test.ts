@@ -11,6 +11,7 @@ import {
   START_OPTIONS,
   dayHours,
   defaultWeek,
+  isSlotTappable,
   isValidWindow,
   minutesToHHMM,
   sameTimeAllDays,
@@ -22,7 +23,13 @@ import {
   upcomingDates,
   weekIsValid,
 } from '../../src/admin/time'
-import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule } from '../../src/admin/types'
+import type {
+  DaySchedule,
+  RecurringBreak,
+  SlotBlock,
+  TimeOff,
+  WeekSchedule,
+} from '../../src/admin/types'
 
 describe('minutesToHHMM', () => {
   it('formats whole and partial hours zero-padded', () => {
@@ -167,6 +174,10 @@ function block(startMin: number, endMin: number, id = 'b1'): SlotBlock {
   return { id, barberId: 'hassan', date: '2099-01-05', startMin, endMin }
 }
 
+function recurringBreak(startMin: number, endMin: number): RecurringBreak {
+  return { id: 'r1', barberId: 'hassan', weekday: 1, startMin, endMin }
+}
+
 /** Flatten the hour groups into the 36 quarters for easy assertions. */
 function quarters(args: Parameters<typeof dayHours>[0]) {
   return dayHours(args).flatMap((h) => h.quarters)
@@ -178,6 +189,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -199,7 +211,13 @@ describe('dayHours', () => {
       { day: undefined, dayOff: false },
       { day: workDay, dayOff: true },
     ]) {
-      const all = quarters({ ...args, blocks: [], bookings: [], pastCutoffMin: 0 })
+      const all = quarters({
+        ...args,
+        blocks: [],
+        recurringBreaks: [],
+        bookings: [],
+        pastCutoffMin: 0,
+      })
       expect(all.every((q) => q.state === 'closed')).toBe(true)
     }
   })
@@ -210,6 +228,7 @@ describe('dayHours', () => {
       day: lateStart,
       dayOff: false,
       blocks: [],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -224,6 +243,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [block(630, 645)],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -238,6 +258,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [block(720, 780)],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -246,11 +267,31 @@ describe('dayHours', () => {
     ])
   })
 
+  it('makes recurring-break quarters inert while adjacent quarters remain open', () => {
+    const all = quarters({
+      day: workDay,
+      dayOff: false,
+      blocks: [block(720, 735)],
+      recurringBreaks: [recurringBreak(720, 780)],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+
+    expect(all.filter((q) => q.state === 'recurring_break').map((q) => q.startMin)).toEqual([
+      720, 735, 750, 765,
+    ])
+    expect(all.find((q) => q.startMin === 705)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 780)?.state).toBe('open')
+    expect(isSlotTappable(all.find((q) => q.startMin === 720)?.state ?? 'open')).toBe(false)
+    expect(isSlotTappable(all.find((q) => q.startMin === 705)?.state ?? 'closed')).toBe(true)
+  })
+
   it('a booking beats a block, spans its true quarters, and carries its label', () => {
     const all = quarters({
       day: workDay,
       dayOff: false,
       blocks: [block(630, 645)],
+      recurringBreaks: [],
       // 45-min booking 10:30-11:15 -> quarters 10:30, 10:45, 11:00 (11:15 starts AT its end).
       bookings: [{ startMin: 630, endMin: 675, label: 'Anna' }],
       pastCutoffMin: 600, // "now" is 10:00 -> 09:00..09:45 quarters are past

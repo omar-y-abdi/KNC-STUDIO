@@ -287,6 +287,7 @@ export interface AdminStrings {
   readonly scheduleGridLegendFree: string
   readonly scheduleGridLegendBlocked: string
   readonly scheduleGridLegendBooked: string
+  readonly scheduleGridLegendRecurringBreak: string
   readonly scheduleGridLegendClosed: string
   // ScheduleDayGrid — hour/quarter controls + slot states
   readonly scheduleGridSaveError: string
@@ -295,6 +296,7 @@ export interface AdminStrings {
   readonly scheduleGridSlotFree: string
   readonly scheduleGridSlotBlocked: string
   readonly scheduleGridSlotBooked: string
+  readonly scheduleGridSlotRecurringBreak: string
   readonly scheduleGridSlotPast: string
   readonly scheduleGridSlotClosed: string
   /** Suffix for `${n}/4 ${t.scheduleGridFreeCountSuffix}` in the hour chip summary. */
@@ -776,6 +778,7 @@ const SV: AdminStrings = {
   scheduleGridLegendFree: 'Ledig',
   scheduleGridLegendBlocked: 'Blockerad',
   scheduleGridLegendBooked: 'Bokad',
+  scheduleGridLegendRecurringBreak: 'Återkommande paus',
   scheduleGridLegendClosed: 'Stängt',
   scheduleGridSaveError: 'Kunde inte spara. Försök igen.',
   scheduleGridBlockHour: 'Blockera',
@@ -783,6 +786,7 @@ const SV: AdminStrings = {
   scheduleGridSlotFree: 'Ledig',
   scheduleGridSlotBlocked: 'Blockerad',
   scheduleGridSlotBooked: 'Bokad',
+  scheduleGridSlotRecurringBreak: 'Återkommande paus',
   scheduleGridSlotPast: 'Passerad',
   scheduleGridSlotClosed: 'Stängt',
   scheduleGridFreeCountSuffix: 'lediga',
@@ -1255,6 +1259,7 @@ const EN: AdminStrings = {
   scheduleGridLegendFree: 'Free',
   scheduleGridLegendBlocked: 'Blocked',
   scheduleGridLegendBooked: 'Booked',
+  scheduleGridLegendRecurringBreak: 'Recurring break',
   scheduleGridLegendClosed: 'Closed',
   scheduleGridSaveError: 'Could not save. Try again.',
   scheduleGridBlockHour: 'Block',
@@ -1262,6 +1267,7 @@ const EN: AdminStrings = {
   scheduleGridSlotFree: 'Free',
   scheduleGridSlotBlocked: 'Blocked',
   scheduleGridSlotBooked: 'Booked',
+  scheduleGridSlotRecurringBreak: 'Recurring break',
   scheduleGridSlotPast: 'Past',
   scheduleGridSlotClosed: 'Closed',
   scheduleGridFreeCountSuffix: 'free',

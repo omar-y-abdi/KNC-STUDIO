@@ -606,6 +606,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
         barberId={props.barberId}
         week={week}
         timeOff={timeOff}
+        recurringBreaks={recurringBreaks}
         bookings={bookings}
         blocksNonce={blocksNonce}
         onPersistenceStateChange={setDayGridBlocked}

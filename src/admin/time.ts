@@ -2,7 +2,14 @@
 // tested without mocks. The salon's bookable day is 09:00–18:00 on a quarter-hour grid; the schedule
 // editor offers those exact selectable bounds so recurring hours and breaks stay server-compatible.
 
-import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule, Weekday } from './types'
+import type {
+  DaySchedule,
+  RecurringBreak,
+  SlotBlock,
+  TimeOff,
+  WeekSchedule,
+  Weekday,
+} from './types'
 
 /** Minutes from midnight for the default working day (09:00 / 18:00). */
 export const DEFAULT_START_MIN = 540
@@ -130,12 +137,18 @@ export const QUARTER_LEN_MIN = 15
 /**
  * What one chip on the day grid IS, in priority order:
  *   `booked`  — overlaps a confirmed booking (shows the customer; never tappable)
+ *   `recurring_break` — overlaps a weekly locked period (never tappable)
  *   `blocked` — overlaps a walk-in block row (tap = unblock)
  *   `closed`  — outside working hours, a non-working weekday, or a time-off day
  *   `past`    — already started (only on today)
  *   `open`    — bookable online right now (tap = block)
  */
-export type SlotState = 'open' | 'blocked' | 'booked' | 'closed' | 'past'
+export type SlotState = 'open' | 'blocked' | 'booked' | 'recurring_break' | 'closed' | 'past'
+
+/** Only one-off walk-in blocks can be toggled; recurring breaks are displayed but never tappable. */
+export function isSlotTappable(state: SlotState): boolean {
+  return state === 'open' || state === 'blocked'
+}
 
 /** A confirmed booking mapped onto the day's minute line (salon-local). */
 export interface DayBooking {
@@ -173,6 +186,8 @@ export interface DayGridArgs {
   readonly dayOff: boolean
   /** The date's walk-in block rows. */
   readonly blocks: readonly SlotBlock[]
+  /** Weekly locked periods; only rows matching `day.weekday` apply. */
+  readonly recurringBreaks: readonly RecurringBreak[]
   /** The date's CONFIRMED bookings on the salon-local minute line. */
   readonly bookings: readonly DayBooking[]
   /**
@@ -192,6 +207,13 @@ function quarterAt(args: DayGridArgs, min: number): DaySlot {
   const end = min + QUARTER_LEN_MIN
   const booking = args.bookings.find((b) => overlaps(min, end, b.startMin, b.endMin))
   const block = args.blocks.find((b) => overlaps(min, end, b.startMin, b.endMin))
+  const recurringBreak =
+    args.day === undefined
+      ? undefined
+      : args.recurringBreaks.find(
+          (item) =>
+            item.weekday === args.day?.weekday && overlaps(min, end, item.startMin, item.endMin),
+        )
   const closed =
     args.dayOff ||
     args.day === undefined ||
@@ -202,13 +224,15 @@ function quarterAt(args: DayGridArgs, min: number): DaySlot {
   const state: SlotState =
     booking !== undefined
       ? 'booked'
-      : block !== undefined
-        ? 'blocked'
-        : closed
-          ? 'closed'
-          : min < args.pastCutoffMin
-            ? 'past'
-            : 'open'
+      : recurringBreak !== undefined
+        ? 'recurring_break'
+        : block !== undefined
+          ? 'blocked'
+          : closed
+            ? 'closed'
+            : min < args.pastCutoffMin
+              ? 'past'
+              : 'open'
 
   return {
     startMin: min,

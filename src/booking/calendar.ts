@@ -39,6 +39,12 @@ export function iso(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
+/** A date is selectable until it is in the past; schedule/service availability stays server-owned. */
+export function isSelectableBookingDate(date: Date, today: Date): boolean {
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return date >= todayMidnight
+}
+
 /** The three numeric parts of a calendar date (1-based month, as written in `YYYY-MM-DD`). */
 export interface DateParts {
   readonly year: number

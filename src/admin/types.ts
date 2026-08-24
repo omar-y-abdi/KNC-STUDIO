@@ -138,7 +138,7 @@ export interface TimeOff {
 
 /**
  * A walk-in block (minute-granular unavailability on one salon-local date), matching
- * `barber_slot_blocks`. The panel writes one row per 45-min slot; the schema allows ranges.
+ * `barber_slot_blocks`. The panel writes one row per 15-min quarter; the schema allows ranges.
  */
 export interface SlotBlock {
   readonly id: string

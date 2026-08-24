@@ -1,7 +1,6 @@
-// Schedules admin adapter. Reads a barber's 7 weekday rows and writes them back via UPSERT
-// (PK barber_id+weekday). RLS makes a barber able to write ONLY their own rows; the owner may write
-// any barber's. The adapter writes the WHOLE week in one upsert so "samma tid alla dagar" and
-// per-day edits both persist atomically (PostgREST batches the array).
+// Schedules admin adapter. Reads a barber's 7 weekday rows and writes the complete week through the
+// transactional `admin_save_barber_week` RPC. The RPC authorizes owner/own-barber scope, validates
+// all seven rows, and detects conflicts before applying the whole replacement.
 //
 // availableSlotsFor exposes the same anon-callable `available_slots` RPC the public booking flow
 // uses ("what customers see"); the integration tests assert schedule edits through it.
@@ -48,8 +47,8 @@ export async function readWeek(barberId: AdminBarberId): Promise<AdminResult<Wee
 }
 
 /**
- * Persist the whole week (upsert on PK barber_id+weekday). All 7 rows are written so the stored state
- * exactly matches the editor. RLS rejects a write the caller is not allowed to make (42501 -> forbidden).
+ * Persist the whole week through the transactional RPC. All seven rows are supplied so stored state
+ * exactly matches the editor; the server authorizes and validates the replacement atomically.
  */
 export async function saveWeek(
   barberId: AdminBarberId,
