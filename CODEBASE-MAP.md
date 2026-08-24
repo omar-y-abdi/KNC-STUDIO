@@ -86,13 +86,13 @@ Browser
 | Path                                    | Owns / contains                                                                                      |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `src/main.tsx`                          | Browser mount; renders `<Root />`.                                                                   |
-| `src/app/`                              | Public shell/router/layout: `Root.tsx`, `App.tsx`, desktop/mobile hero-to-About scroll shells and booking fold. |
+| `src/app/`                              | Public shells: `Root.tsx`, `App.tsx`, desktop/mobile hero scroll and booking fold.                   |
 | `src/backend/`                          | Public backend seam: config, lazy public Supabase client, Zod wire schemas, public-action wrapper.   |
 | `src/booking/`                          | Booking domain/UI: wizard, validation, Stockholm time, ICS/calendar links, mock slot packing.        |
 | `src/booking/adapters/`                 | Booking/barber/service live Supabase vs local/mock adapters.                                         |
 | `src/mybookings/`                       | Customer secure-link request, appointment history/cancellation, formatting, device memory, adapters. |
 | `src/about/`                            | About CMS overlay, gallery, reviews/domain/gateway adapter.                                          |
-| `src/site/`                             | Site chrome/business facts, CMS, JSON-LD, realtime hydration, and public browser-storage consent.    |
+| `src/site/`                             | Site chrome/facts, CMS, JSON-LD, Realtime, and browser-storage consent.                              |
 | `src/admin/`                            | Authenticated admin client/auth lifecycle/shell/domain helpers.                                      |
 | `src/admin/adapters/`                   | Admin booking/schedule/service/barber/CMS/media/email-template data access.                          |
 | `src/admin/calendar/`                   | Calendar connection port/status/adapter/hook/UI.                                                     |
@@ -134,10 +134,10 @@ Use this before broad search. **Start** = likely owner/authority; **Next** = imm
 | Booking rate-limited                            | `create_booking_with_limits()`               | `booking_attempts`, recent `bookings`, `IP_SALT`                                                 | booking gateway DB tests                                          |
 | Wrong booking hour/DST                          | `stockholmTime.ts`                           | DB Stockholm logic in `available_slots` / `create_booking`                                       | `stockholmTime.test.ts` + integration                             |
 | Mina bokningar access fails                     | `supabaseMyBookings.ts`                      | `publicBookingActions.ts`, `public-booking-actions`, customer access challenge/session RPCs      | public-action unit + `37_customer_booking_access_test.sql`        |
-| Optional phone memory ignored or retained        | `src/site/storageConsent.ts`                 | `bladeblend_storage_preferences`; optional `bladeblend_mybookings_phone` must be deleted on opt-out | `storageConsent.test.ts` + browser smoke                            |
+| Optional phone memory ignored or retained       | `src/site/storageConsent.ts`                 | consent cookie; delete phone cookie on opt-out                                                   | `storageConsent.test.ts` + browser smoke                          |
 | Secure-link request/review rate-limited         | `consume_public_action_attempt()`            | `public_action_attempts`, `PUBLIC_ACTION_HASH_SALT`                                              | public gateway/pgTAP rate-limit tests                             |
 | Customer cancellation fails                     | `supabaseMyBookings.ts`                      | public gateway, `cancel_customer_booking_with_access`, `site_settings.cancellation_policy_hours` | public-action unit + `37_customer_booking_access_test.sql`        |
-| Review rejected unexpectedly                    | `supabaseReviews.ts`                         | gateway, `create_review`; offline adapter is empty and `20260824080527_remove_seeded_fake_reviews.sql` removes known seed fiction | review gateway + integration/pgTAP + mock review unit             |
+| Review rejected unexpectedly                    | `supabaseReviews.ts`                         | gateway; empty offline adapter; fake-seed deletion migration                                     | review gateway + integration/pgTAP + mock review unit             |
 | Admin login loop                                | `src/admin/auth.ts`                          | `AdminApp.tsx`, `profiles`, `account_enabled`, admin client storage                              | `adminAuth.test.ts` + auth integration                            |
 | Password reset/email-change link fails          | recovery/email-change parser + route         | matching Edge mail function + Auth config                                                        | recovery/emailChange unit + live config/logs as needed            |
 | Admin recovery/email-change mail rate-limited   | `consume_auth_email_send()`                  | `auth_email_rate_limits`                                                                         | auth mail tests + DB state                                        |
@@ -194,7 +194,7 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | Selector               | `src/backend/config.ts:isBackendConfigured()` requires both public Supabase Vite vars.                                                                                                                                                                                                                                         |
 | Public client          | `src/backend/supabaseClient.ts`, lazy, `persistSession:false`; keeps `@supabase/supabase-js` out of initial public chunk until needed.                                                                                                                                                                                         |
 | Live/mock selectors    | `src/booking/adapters/index.ts`, `src/booking/adapters/barbersIndex.ts`, `src/booking/adapters/servicesIndex.ts`; `src/about/content/index.ts`; `src/about/gallery/index.ts`; `src/about/reviews/adapters/index.ts`; `src/mybookings/adapters/index.ts`; `src/site/adapters/index.ts`; `src/admin/calendar/adapters/index.ts`. |
-| Reviews fallback       | `mockReviewsAdapter` is intentionally empty and refuses submission; only published `reviews` rows are displayed as customer reviews.                                                                                                                                                                                                                     |
+| Reviews fallback       | `mockReviewsAdapter` is intentionally empty and refuses submission; only published `reviews` rows are displayed as customer reviews.                                                                                                                                                                                           |
 | Mock-only availability | `src/booking/adapters/localCalendar.ts` → `slotPacking.ts`; **live Supabase availability does not use `slotPacking.ts`**.                                                                                                                                                                                                      |
 | Calendar selector      | `defaultCalendarSyncPort` picks lazy Supabase adapter when backend is configured, else `mockCalendarSyncPort`; real OAuth/sync remains Supabase-only.                                                                                                                                                                          |
 
@@ -984,7 +984,7 @@ Use this instead of grep for first-hop navigation.
 | Customer action limiter                    | `consume_public_action_attempt`                                       |
 | Admin profile resolve                      | `src/admin/auth.ts:getActiveProfile`                                  |
 | Admin persisted session                    | `src/admin/adminClient.ts` / `knc-admin-auth`                         |
-| Consent + remembered customer phone         | `src/site/storageConsent.ts` / `bladeblend_storage_preferences`; optional `bladeblend_mybookings_phone` only after `functional` consent |
+| Consent + remembered customer phone        | `storageConsent.ts`; phone cookie only after `functional` consent     |
 | Calendar adapter selector                  | `src/admin/calendar/adapters/index.ts:defaultCalendarSyncPort`        |
 | Schedule transaction                       | `admin_save_barber_week` (`p_week`: JSONB, exactly 7 weekday objects) |
 | Time-off transaction                       | `admin_add_time_off`                                                  |
