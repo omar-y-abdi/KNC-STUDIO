@@ -3,10 +3,10 @@
 -- audited about_content posture (anon read / owner write) and is covered structurally by 05_admin_rls.
 
 begin;
-select plan(10);
+select plan(11);
 
 select is((select count(*)::int from public.site_content), 2, 'site_content has bilingual confirmation defaults');
-select is((select count(*)::int from public.site_settings), 13, 'site_settings has shipped business and SEO defaults');
+select is((select count(*)::int from public.site_settings), 16, 'site_settings has shipped business, SEO, and logo defaults');
 
 -- site_content: (key,lang) PK + lang check + value length.
 insert into public.site_content (key, lang, value) values ('test_kicker', 'sv', 'BARBERSHOP · GÖTEBORG');
@@ -22,6 +22,11 @@ insert into public.site_settings (key, value) values ('test_homepage_scale', 'lg
 select is(
   (select value from public.site_settings where key = 'test_homepage_scale'), 'lg',
   'a setting round-trips');
+insert into public.site_settings (key, value) values ('test_unrecognized_setting', '  value  ');
+select is(
+  (select value from public.site_settings where key = 'test_unrecognized_setting'), 'value',
+  'unknown settings retain prior trim-and-accept normalizer behavior'
+);
 select throws_ok(
   $$ insert into public.site_settings (key, value) values ('test_homepage_scale', 'md') $$,
   '23505', null, 'a duplicate settings key is rejected (primary key)');

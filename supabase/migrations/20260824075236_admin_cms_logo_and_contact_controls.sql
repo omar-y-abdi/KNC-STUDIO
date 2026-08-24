@@ -76,6 +76,9 @@ begin
       if char_length(v_value) not between 1 and 500 then
         raise exception using errcode = '22023', message = 'invalid SEO description setting';
       end if;
+    else
+      new.value := v_value;
+      return new;
   end case;
 
   new.value := v_value;

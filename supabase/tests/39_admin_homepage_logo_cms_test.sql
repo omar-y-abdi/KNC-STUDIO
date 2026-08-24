@@ -25,6 +25,8 @@ select ok(
   not has_function_privilege('authenticated', 'public.internal_remove_homepage_logo(text)', 'execute'),
   'authenticated browser cannot bypass upload gateway deletion RPC'
 );
+insert into auth.users (id, email)
+values ('39000000-0000-4000-8000-000000000001', 'owner@homepage-logo.test');
 insert into public.profiles (id, role, barber_id)
 values ('39000000-0000-4000-8000-000000000001', 'owner', null);
 set local role authenticated;
