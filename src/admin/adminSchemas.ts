@@ -29,6 +29,23 @@ const weekday = z.union([
   z.literal(6),
 ])
 
+const canonicalWeekdays = z
+  .array(weekday)
+  .min(1)
+  .superRefine((weekdays, context) => {
+    for (let index = 1; index < weekdays.length; index += 1) {
+      const previous = weekdays[index - 1]
+      const current = weekdays[index]
+      if (previous !== undefined && current !== undefined && previous >= current) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Expected sorted, unique weekdays',
+        })
+        return
+      }
+    }
+  })
+
 // --- profiles (self-read) ------------------------------------------------------------------------
 
 export const profileRow = z.object({
@@ -150,7 +167,7 @@ export const serviceRow = z.object({
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
-  available_weekdays: z.array(weekday).min(1),
+  available_weekdays: canonicalWeekdays,
 })
 export type ServiceRow = z.infer<typeof serviceRow>
 export const serviceRows = z.array(serviceRow)

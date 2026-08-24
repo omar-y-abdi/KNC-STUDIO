@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(19);
 
 insert into public.barbers (id, name) values ('recurring-availability', 'Recurring Availability');
 insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
@@ -27,6 +27,11 @@ select throws_ok(
   $$ insert into public.services (barber_id, name, price, duration_min, available_weekdays)
      values ('recurring-availability', 'Bad day', 350, 30, array[7]::smallint[]) $$,
   '23514', null, 'service rejects an out-of-range weekday'
+);
+select throws_ok(
+  $$ insert into public.services (barber_id, name, price, duration_min, available_weekdays)
+     values ('recurring-availability', 'Duplicate day', 350, 30, array[1, 1, 2, 3, 4, 5, 6]::smallint[]) $$,
+  '23514', null, 'service rejects duplicate weekday values'
 );
 
 select ok(
