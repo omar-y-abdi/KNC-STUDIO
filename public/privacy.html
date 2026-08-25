@@ -106,10 +106,11 @@
         transaktionsmejl skickas via Resend. Vi använder inte bokningsuppgifter för annonsering.
       </p>
       <p>
-        Mina bokningar använder en säker länk som skickas till bokningens e-postadress. Efter att en
-        länk har öppnats kan webbläsaren hålla en kortlivad sessionsuppgift så att den auktoriserade
-        bokningsvyn fungerar. Den uppgiften används inte för spårning och delas inte mellan
-        webbplatser.
+        Mina bokningar använder en säker, e-postkopplad åtkomstlänk som skickas till bokningens
+        e-postadress. Länken har ingen tidsgräns, men en ny begäran om länk för samma e-postadress
+        ersätter och återkallar den tidigare länken. När en giltig länk har öppnats används
+        sessionslagring i samma flik för den nödvändiga behörighetshanteringen. Den används inte för
+        spårning och delas inte mellan webbplatser eller flikar.
       </p>
 
       <h2>Cookies och annan webblagring</h2>
@@ -122,9 +123,9 @@
         du valfri lagring, eller återkallar valet via knappen Integritet, tas den kakan bort.
       </p>
       <p>
-        Nödvändig sessionslagring kan användas först efter att du öppnat en säker Mina
-        bokningar-länk. Den behövs för den begärda bokningsfunktionen och innehåller inte analys-
-        eller annonsidentifierare.
+        Nödvändig sessionslagring används först efter att du öppnat en giltig Mina bokningar-länk.
+        Den behövs för den begärda bokningsfunktionen och innehåller inte analys- eller
+        annonsidentifierare.
       </p>
 
       <h2>Bokningsformulär och bot-skydd (Cloudflare Turnstile)</h2>
@@ -216,9 +217,11 @@
         transactional email is sent through Resend. We do not use booking data for advertising.
       </p>
       <p>
-        My appointments uses a secure link sent to the email address on the booking. After a link is
-        opened, the browser may hold a short-lived session value so the authorised booking view
-        works. It is not used for tracking and is not shared across websites.
+        My appointments uses a secure, email-scoped access link sent to the email address on the
+        booking. The link has no time limit, but a new link request for the same email address
+        replaces and revokes the previous link. After a valid link is opened, same-tab session
+        storage is used for the necessary credential handling. It is not used for tracking and is
+        not shared across websites or tabs.
       </p>
 
       <h2>Cookies and other browser storage</h2>
@@ -232,8 +235,8 @@
         through the Privacy button, that cookie is removed.
       </p>
       <p>
-        Necessary session storage may be used only after you open a secure My appointments link. It
-        is required for the requested booking function and contains no analytics or advertising
+        Necessary session storage is used only after you open a valid My appointments link. It is
+        required for the requested booking function and contains no analytics or advertising
         identifier.
       </p>
 

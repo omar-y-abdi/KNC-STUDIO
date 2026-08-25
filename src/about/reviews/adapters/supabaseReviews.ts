@@ -1,7 +1,7 @@
 // The real (Supabase) ReviewsPort adapter. Published reviews remain directly readable; review writes
-// go through the protected public action gateway and require the short-lived customer session created
-// only after possession of the booking email link. The phone remains a scope cross-check, not the
-// authorization secret.
+// go through the protected public action gateway and require the current email-scoped bearer token
+// obtained from the booking-email link. A fresh email request rotates and revokes the old token; the
+// phone remains a scope cross-check, not the authorization secret.
 
 import { getSupabase } from '../../../backend/supabaseClient'
 import { invokePublicBookingAction } from '../../../backend/publicBookingActions'

@@ -767,7 +767,7 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | pgTAP              | `npx supabase test db --local`             | effective schema, constraints, grants/RLS, functions, gateway contracts              |
 | Edge type check    | CI Deno `2.9.5` loop                       | every `supabase/functions/*/index.ts` checks with frozen lock                        |
 | Browser smoke      | `npm run test:e2e`                         | critical browser interactions                                                        |
-| Visual             | `tools/visual/capture.mjs` + `compare.mjs` | 8 deterministic desktop/mobile × theme × language baselines                          |
+| Visual             | `tools/visual/capture.mjs` + `compare.mjs` | 8 deterministic homepage variants plus the Swedish privacy-banner baseline           |
 | Cloudflare dry run | `npm run deploy:dry-run`                   | build + Wrangler deployment validation                                               |
 | Live smoke         | `node tools/smoke-live.mjs`                | live Supabase availability/gateway/security; **not** full Worker metadata validation |
 
@@ -943,7 +943,7 @@ After contract, regranting anonymous mutation/lookup RPC execution is emergency 
 | `tools/backup/verify-backup-tree.sh`          | validate backup structure/manifests/lineage                  |
 | `tools/backup/prepare-migration-history.sql`  | restore migration-lineage prep                               |
 | `tools/e2e/smoke.mjs`                         | Playwright smoke                                             |
-| `tools/visual/capture.mjs`                    | 8 deterministic visual variants                              |
+| `tools/visual/capture.mjs`                    | 8 homepage variants plus the Swedish privacy-banner state    |
 | `tools/visual/compare.mjs`                    | pixel compare vs approved baseline                           |
 | `tools/og/render.mjs`                         | social-card generation                                       |
 | `tools/seed-admin-users.mjs`                  | local/admin seed helper                                      |
