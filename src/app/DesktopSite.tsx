@@ -10,7 +10,10 @@ import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { scalePx, type SizePreset } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
+import { useEffect, useRef } from 'preact/hooks'
 import { EASE } from './shared'
+
+const DESKTOP_PANEL_HEIGHT = 61
 
 export interface DesktopSiteProps extends ShellProps {
   readonly tx: AppStrings
@@ -34,17 +37,53 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const { c, tx, business, view } = props
   // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
   const booking = view === 'booking'
+  // At home the existing chrome travels from the lower edge of the hero to the compact top panel.
+  // The document remains the scroll source so wheel, keyboard and browser navigation keep their
+  // expected desktop behaviour; only the panel's position is tied to scroll progress.
+  const panelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let frame = 0
+    const sync = (): void => {
+      frame = 0
+      const panel = panelRef.current
+      if (panel === null) return
+      if (booking) {
+        panel.style.setProperty('--desktop-panel-top', '0px')
+        panel.dataset['scrollProgress'] = '1.000'
+        return
+      }
+      const travel = Math.max(1, window.innerHeight - DESKTOP_PANEL_HEIGHT)
+      const progress = Math.min(1, Math.max(0, window.scrollY / travel))
+      panel.style.setProperty('--desktop-panel-top', Math.round((1 - progress) * travel) + 'px')
+      panel.dataset['scrollProgress'] = progress.toFixed(3)
+    }
+    const schedule = (): void => {
+      if (frame === 0) frame = window.requestAnimationFrame(sync)
+    }
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    sync()
+    return () => {
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      if (frame !== 0) window.cancelAnimationFrame(frame)
+    }
+  }, [booking])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
 
   const navStyle: JSX.CSSProperties = {
-    position: 'sticky',
-    top: 0,
+    position: 'fixed',
+    top: booking ? '0px' : 'var(--desktop-panel-top, calc(100dvh - 61px))',
+    left: 0,
+    right: 0,
     zIndex: 10,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    boxSizing: 'border-box',
+    height: DESKTOP_PANEL_HEIGHT + 'px',
     padding: '15px 30px',
     background: c.navBg,
     borderBottom: '.5px solid ' + c.line,
@@ -147,7 +186,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         WebkitFontSmoothing: 'antialiased',
       }}
     >
-      <div style={navStyle}>
+      <div
+        style={navStyle}
+        data-testid="desktop-top-panel"
+        data-scroll-progress={booking ? '1.000' : '0.000'}
+        ref={panelRef}
+      >
         <h1 style={navLogoStyle}>
           <CornerMark height={30} />
         </h1>
@@ -176,13 +220,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <main>
         <div
           style={{
-            minHeight: 'calc(100dvh - 61px)',
+            minHeight: '100dvh',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             textAlign: 'center',
-            padding: '74px 40px 60px',
+            padding: booking ? '100px 40px 60px' : '60px 40px 120px',
             boxSizing: 'border-box',
             color: 'inherit',
           }}
@@ -241,7 +285,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           </div>
         </div>
         {!booking ? (
-          <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
+          <AboutSection
+            mode={props.mode}
+            lang={props.lang}
+            fontScale={props.aboutScale}
+            scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
+          />
         ) : null}
       </main>
 

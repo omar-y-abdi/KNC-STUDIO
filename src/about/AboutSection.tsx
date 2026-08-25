@@ -56,6 +56,8 @@ export interface AboutSectionProps {
   readonly galleryPort?: GalleryPort
   /** Owner-set font-size preset for the section's editorial header (default 'md' = 1.0×). */
   readonly fontScale?: SizePreset
+  /** Layout-specific compact panel height to keep the target visible after a hero-link scroll. */
+  readonly scrollMarginTop?: string
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
@@ -203,8 +205,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
     WebkitFontSmoothing: 'antialiased',
     borderTop: '.5px solid ' + c.line,
-    // Keeps the heading clear of the compact mobile panel and desktop sticky nav after a hero link.
-    scrollMarginTop: '112px',
+    // Keeps the heading clear of the layout's compact panel after a hero-link scroll.
+    scrollMarginTop: props.scrollMarginTop ?? '112px',
   }
   const innerStyle: JSX.CSSProperties = {
     maxWidth: '1080px',
