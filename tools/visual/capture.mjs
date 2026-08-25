@@ -27,6 +27,16 @@ try {
           deviceScaleFactor: 2,
           reducedMotion: 'reduce',
         })
+        // Homepage baselines represent a visitor who has already rejected optional storage.
+        // The no-choice banner has its own baseline after the regular homepage variants.
+        await ctx.addCookies([
+          {
+            name: 'bladeblend_storage_preferences',
+            value: 'essential',
+            url: BASE,
+            sameSite: 'Lax',
+          },
+        ])
         const page = await ctx.newPage()
         await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
         await page.waitForSelector('#root > :first-child', { timeout: 15000 })
@@ -43,6 +53,20 @@ try {
       }
     }
   }
+
+  const privacyContext = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    colorScheme: 'light',
+    deviceScaleFactor: 2,
+    reducedMotion: 'reduce',
+  })
+  const privacyPage = await privacyContext.newPage()
+  await privacyPage.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await privacyPage.waitForSelector('#root > :first-child', { timeout: 15000 })
+  await privacyPage.evaluate(() => globalThis.document.fonts.ready)
+  await privacyPage.screenshot({ path: `${OUT}/privacy-banner-desktop-light-sv.png` })
+  console.log('captured privacy-banner-desktop-light-sv.png')
+  await privacyContext.close()
   console.log('DONE')
 } catch (e) {
   console.error('CAPTURE ERROR:', e instanceof Error ? e.message : String(e))

@@ -529,7 +529,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       ) : null}
 
       <div style="padding: 18px 22px 26px 22px">
-        <div>
+        <div data-testid="booking-step-barber">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
             <span style={s.badgeStyle}>1</span>
             <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
@@ -538,7 +538,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;">
             {barbers.map((b) => (
-              <button key={b.id} onClick={b.onSelect} style={b.cardStyle}>
+              <button
+                key={b.id}
+                data-testid="booking-barber-option"
+                onClick={b.onSelect}
+                style={b.cardStyle}
+              >
                 <span style={b.avatarStyle}>{b.initial}</span>
                 <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;">
                   <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
