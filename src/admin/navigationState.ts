@@ -14,6 +14,7 @@ interface HistoryStateShape {
 
 const STORAGE_PREFIX = 'knc-admin-navigation:'
 const TAB_PARAM = 'tab'
+export const ADMIN_SCROLL_RESTORE_TIMEOUT_MS = 15_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -90,6 +91,37 @@ export function persistAdminScroll(
   } catch {
     // Private-mode and quota failures only disable convenience restoration.
   }
+}
+
+/**
+ * Restore a saved document position after a tab mounts. A CMS response may make the document tall
+ * several seconds later, so a ResizeObserver retries whenever height changes. Cleanup happens once
+ * the exact position is reached, the tab unmounts, or the explicit safety deadline expires.
+ */
+export function restoreAdminScrollPosition(scrollY: number): () => void {
+  let stopped = false
+  let frame: number | null = null
+  const restore = (): void => {
+    if (stopped) return
+    window.scrollTo(0, scrollY)
+    if (Math.abs(window.scrollY - scrollY) < 1) stop()
+  }
+  const observer = new ResizeObserver(() => restore())
+  const stop = (): void => {
+    if (stopped) return
+    stopped = true
+    observer.disconnect()
+    window.removeEventListener('load', restore)
+    if (frame !== null) window.cancelAnimationFrame(frame)
+    window.clearTimeout(timeout)
+  }
+  const timeout = window.setTimeout(stop, ADMIN_SCROLL_RESTORE_TIMEOUT_MS)
+
+  observer.observe(document.documentElement)
+  if (document.body !== null) observer.observe(document.body)
+  window.addEventListener('load', restore)
+  frame = window.requestAnimationFrame(restore)
+  return stop
 }
 
 export function clearAdminNavigationState(
