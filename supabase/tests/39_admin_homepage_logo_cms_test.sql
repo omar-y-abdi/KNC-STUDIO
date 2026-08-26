@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(17);
 
 select is(
   (select value from public.site_settings where key = 'homepage_logo_path'),
@@ -35,23 +35,21 @@ select set_config(
   pg_catalog.json_build_object('sub', '39000000-0000-4000-8000-000000000001')::text,
   true
 );
+update public.site_settings
+set value = ''
+where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href']);
 select is(
-  (with changed as (
-    update public.site_settings
-    set value = ''
-    where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])
-    returning key
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.site_settings
+   where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])
+     and value = ''),
   3, 'owner CMS may remove phone and maps contacts'
 );
+update public.site_settings
+set value = 'logo/223e4567-e89b-42d3-a456-426614174000.webp'
+where key = 'homepage_logo_path';
 select is(
-  (with changed as (
-    update public.site_settings
-    set value = 'logo/223e4567-e89b-42d3-a456-426614174000.webp'
-    where key = 'homepage_logo_path'
-    returning key
-  ) select count(*)::integer from changed),
-  0, 'owner browser cannot bypass logo gateway storage lifecycle'
+  (select value from public.site_settings where key = 'homepage_logo_path'),
+  '', 'owner browser cannot bypass logo gateway storage lifecycle'
 );
 reset role;
 select is(
