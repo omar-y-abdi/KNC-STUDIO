@@ -1,66 +1,62 @@
 // `useServices` — chosen barber's date-specific service menu, refetched with barber or date changes.
 //
-// Under the MOCK (no backend): the flat starter menu is the immediate value for any barber, so the
-// booking service step paints at once (no loading flash). Under a BACKEND: the selected barber's rows
-// are fetched (race-guarded — a stale response is dropped, exactly like the availability effect); an
-// an empty live result is a real business state, never a hard-coded fallback service menu.
+// Services start empty and come only from the selected port. Switching barber clears prior rows
+// immediately on barber or date change, preventing stale cross-day menus while the shared catalog resolves.
 
 import { useEffect, useState } from 'preact/hooks'
 import type { BarberId, ServiceItem } from './domain'
 import type { ServicesPort } from './servicesPort'
-import { defaultServicesPort, servicesAreMock } from './adapters/servicesIndex'
-import { MOCK_SERVICES } from './adapters/mockServices'
+import { defaultServicesPort } from './adapters/servicesIndex'
+import { subscribeBookingCatalog } from './adapters/barbersIndex'
 
 export interface ServicesState {
-  /** The active services to render (the starter menu under the mock; DB rows under a backend). */
+  /** Active rows returned by selected port; empty means no configured services. */
   readonly services: readonly ServiceItem[]
-  /** True only while a real backend fetch is in flight (always false under the mock). */
+  /** True while selected port fetch is in flight. */
   readonly loading: boolean
 }
 
 /**
  * Subscribe to a barber's service menu. `port` defaults to the env-selected `defaultServicesPort`.
- * Passing `null` (no barber chosen yet) yields the mock menu under the mock, or an empty list under a
- * backend — the service step only renders once a barber AND a date are chosen anyway.
+ * Passing `null` (no barber chosen yet) yields an empty list; service step renders after selection.
  */
 export function useServices(
   barberId: BarberId | null,
   dateIso: string | null,
   port: ServicesPort = defaultServicesPort,
 ): ServicesState {
-  const [services, setServices] = useState<readonly ServiceItem[]>(
-    servicesAreMock ? MOCK_SERVICES : [],
-  )
+  const [services, setServices] = useState<readonly ServiceItem[]>([])
   const [loading, setLoading] = useState<boolean>(false)
 
   useEffect(() => {
     if (barberId === null || dateIso === null) {
-      if (!servicesAreMock) setServices([])
-      return
-    }
-    // Mock: the starter menu is already correct for every barber; skip the fetch (no flash/shift).
-    if (servicesAreMock) {
-      setServices(MOCK_SERVICES)
+      setServices([])
+      setLoading(false)
       return
     }
     let cancelled = false
-    // Date changes must never briefly render the prior date's service menu.
-    setServices([])
-    setLoading(true)
-    void port
-      .listForBarber(barberId, dateIso)
-      .then((rows) => {
-        if (cancelled) return
-        setServices(rows)
-        setLoading(false)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setServices([])
-        setLoading(false)
-      })
+    const load = (): void => {
+      setServices([])
+      setLoading(true)
+      void port
+        .listForBarber(barberId, dateIso)
+        .then((rows) => {
+          if (cancelled) return
+          setServices(rows)
+          setLoading(false)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setServices([])
+          setLoading(false)
+        })
+    }
+    load()
+    const unsubscribe =
+      port === defaultServicesPort ? subscribeBookingCatalog(load) : () => undefined
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [barberId, dateIso, port])
 

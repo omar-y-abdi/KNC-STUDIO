@@ -62,7 +62,7 @@ export interface ScheduleViewProps {
   readonly s: AdminStylesBundle
   /** Whose schedule is being edited (the shell guarantees this is set for this view). */
   readonly barberId: AdminBarberId
-  /** Display name, for the heading ("Schema · Victor"). */
+  /** Display name used by schedule heading. */
   readonly barberName: string
   /** Prevent shell navigation while an autosave is pending, invalid, or failed. */
   readonly onPersistenceStateChange: (blocked: boolean) => void

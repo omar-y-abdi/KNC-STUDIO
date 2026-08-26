@@ -9,8 +9,9 @@ måste passera CI och därefter de externa operatörsgrindarna innan go-live.
 
 ## Slutbedömning
 
-Bokningsdata är serverauktoritativ. Kundens självservice och recensioner kräver e-postbesittning via
-en kortlivad session, och externa sidoeffekter köas hållbart. Personalinloggning använder inbjudan,
+Bokningsdata är serverauktoritativ. Kundens självservice kräver e-postbesittning via kundens aktuella
+permanenta token och recensioner använder samma verifierade bokningsidentitet. Externa sidoeffekter
+köas hållbart. Personalinloggning använder inbjudan,
 bilduppladdning konverteras före Storage och CMS omfattar verksamhetsuppgifter och e-posttexter.
 
 Produktion ska inte öppnas förrän aktuell head har passerat CI och checklistan **Externa
@@ -22,14 +23,15 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 ### Bokning och kundflöden
 
 - Databasen härleder behandlingens namn, pris och längd från aktiv tjänst.
-- Kundens e-post och telefon sparas. **Mina bokningar**, avbokning och recensioner kräver en
-  kortlivad session som endast skapas efter att kunden följt engångslänken till bokningens
-  e-postadress. Telefon används som ytterligare scope-kontroll, inte som autentiseringshemlighet.
+- Kundens e-post och telefon sparas. **Mina bokningar** och avbokning kräver den aktuella permanenta,
+  slumpmässiga tokenen som levereras till bokningens e-postadress. En ny länkbegäran använder bara
+  e-post, roterar tokenen atomärt och ogiltigförklarar föregående länk. Telefon används inte som
+  autentiseringshemlighet; en samtyckesstyrd cookie är bara enhetsbekvämlighet.
 - Bokningsmetoden använder `email` eller `phone`; SMS-semantik är borttagen.
-- Secure-link-begäran och recension går via Edge Function med Turnstile och rate limit. Listning och
-  avbokning kräver den e-postbundna sessions-tokenen.
+- Länkbegäran och recension går via Edge Function med Turnstile och rate limit. Listning och
+  avbokning kräver den e-postbundna permanenta tokenen; äldre engångslänkar stöds under migration.
 - Bokning och avbokning skickar bekräftelse till både kund och barberare.
-- Kundens secure-link-mejl köas i samma hållbara external-action-ledger som övriga externa
+- Kundens länkmejl köas i samma hållbara external-action-ledger som övriga externa
   sidoeffekter. Edge- eller Resend-fel kan därför retryas i stället för att tappa länken efter ett
   lyckat publikt svar.
 - Kundpåminnelse schemaläggs 24 timmar före besöket; bokningar gjorda närmare än 24 timmar får ingen
@@ -58,7 +60,8 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 - Premium HTML- och textmallar finns för bokning, avbokning, påminnelse, kundåtkomst och Auth-flöden.
 - Admin kan redigera all generell kund- och barberarcopy under **Mejl/Mail**.
 - Bokningsspecifik information och varumärkesstruktur är hardcoded för konsekvens och säkerhet.
-- Mejl länkar till `bladeblendstudio.se`, **Mina bokningar**, telefon och karta.
+- Boknings- och påminnelsemejl länkar med kundens permanenta slump-token direkt till **Mina
+  bokningar**. Telefon och karta hämtas från CMS där mallen använder dem.
 - Boknings-/avbokningsmejl och kundens secure-link har durable retry i databasen. Permanenta
   leveransfel stannar synligt för operatörsåtgärd i stället för att loopa obegränsat.
 
@@ -122,8 +125,9 @@ Advisor-warnings gäller flera befintliga permissive RLS-policies och att `btree
 - [ ] Rensa testbarberare, testbokningar och testrecensioner från produktionsprojektet.
 - [ ] Följ `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` exakt: expand, Edge Functions,
       frontend, live verifiering och först därefter contract. Kör inte ett obegränsat `db push`.
-- [ ] Sätt och verifiera produktionssecrets för Resend, Turnstile, Google OAuth, hash-salt och
-      cron-anrop. Inga secrets får ligga i GitHub-loggar eller repot.
+- [ ] Sätt och verifiera produktionssecrets för Resend, Turnstile, Google OAuth, hash-salt, tillåtna
+      publika origins och cron-anrop. Kör `npm run verify:production-secrets -- --project-ref <ref>`;
+      inga secret-värden får ligga i GitHub-loggar eller repot.
 - [ ] Verifiera Supabase Auth Site URL, redirect allowlist, signup-policy, custom SMTP och
       e-postmallar i dashboard.
 - [ ] Verifiera Resend DKIM, SPF och DMARC för `mail.bladeblendstudio.se`; skicka seed-tester till
@@ -157,8 +161,9 @@ Advisor-warnings gäller flera befintliga permissive RLS-policies och att `btree
 
 ## Kvarvarande accepterade risker
 
-- Kundåtkomst är e-postbesittningsbaserad och kortlivad. En angripare med åtkomst till kundens inkorg
-  under giltighetstiden kan få samma temporära sessionsåtkomst.
+- Kundåtkomst är e-postbesittningsbaserad och permanent tills kunden begär en ny länk. En angripare
+  med åtkomst till kundens inkorg eller aktuella bearer-länk kan få samma åtkomst tills tokenen
+  roteras; länken ska därför behandlas som en credential.
 - Supabase Free saknar SLA och managed backup. Krypterad export minskar datarisken men inte
   driftstoppsrisken.
 - Resend Free har kapacitetsgränser. Övervaka leverans och uppgradera innan gränsen blir operativ
@@ -172,6 +177,7 @@ Advisor-warnings gäller flera befintliga permissive RLS-policies och att `btree
 
 Go-live är godkänd först när aktuell head har full grön CI, alla externa lanseringsgrindar är klara,
 en produktionsbokning har skapat korrekta kund- och barberarmejl, secure-link har levererats och gett
-korrekt avgränsad kundsession, recension har krävt samma e-postbesittning, avbokning har bekräftats
+korrekt avgränsad kundåtkomst, gammal länk har avvisats efter rotation, recension har krävt samma
+e-postbesittning, avbokning har bekräftats
 till båda, Calendar-eventet har synkats via durable queue, backup-artifacten har skapats, Storage-bytes
 har verifierats och inga personuppgifter förekommer i loggar.

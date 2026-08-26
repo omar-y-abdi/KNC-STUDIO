@@ -1,6 +1,6 @@
 // Unit tests for the pure About-copy merge logic. The CRITICAL property is the byte-identical
-// fallback: an EMPTY overlay must leave the i18n base field-for-field unchanged (the mock/baseline
-// path). Plus per-key override, and the stylist-copy resolution (DB wins, i18n fallback, none → undefined).
+// fallback: an EMPTY overlay must leave the i18n base field-for-field unchanged. Plus per-key
+// override and DB-owned stylist-copy resolution.
 
 import { describe, expect, it } from 'vitest'
 import { mergeAbout, stylistCopyFor } from '../../src/about/content/merge'
@@ -21,7 +21,6 @@ describe('mergeAbout', () => {
     expect(merged.galleryAlt).toBe(baseSv.galleryAlt)
     expect(merged.reviewSubmit).toBe(baseSv.reviewSubmit)
     expect(merged.ratingValueLabel).toBe(baseSv.ratingValueLabel)
-    expect(merged.stylists).toBe(baseSv.stylists)
   })
 
   it('overrides ONLY the keys present in the overlay; the rest keep i18n', () => {
@@ -64,8 +63,6 @@ describe('mergeAbout', () => {
 })
 
 describe('stylistCopyFor', () => {
-  const i18nStylists = baseSv.stylists
-
   function entry(id: string, copy: RosterBarber['copy']): RosterBarber {
     return { barber: { id: asBarberId(id), name: id, ig: id }, copy }
   }
@@ -77,18 +74,12 @@ describe('stylistCopyFor', () => {
       bioSv: 'sv bio',
       bioEn: 'en bio',
     })
-    expect(stylistCopyFor(e, 'sv', i18nStylists)).toEqual({ role: 'Mästare', bio: 'sv bio' })
-    expect(stylistCopyFor(e, 'en', i18nStylists)).toEqual({ role: 'Master', bio: 'en bio' })
+    expect(stylistCopyFor(e, 'sv')).toEqual({ role: 'Mästare', bio: 'sv bio' })
+    expect(stylistCopyFor(e, 'en')).toEqual({ role: 'Master', bio: 'en bio' })
   })
 
-  it('falls back to the i18n stylist table when the entry has no DB copy (the mock path)', () => {
-    const e = entry('hassan', null)
-    const copy = stylistCopyFor(e, 'sv', i18nStylists)
-    expect(copy).toEqual({ role: i18nStylists.hassan.role, bio: i18nStylists.hassan.bio })
-  })
-
-  it('returns undefined when there is neither DB copy nor an i18n entry (card shows name only)', () => {
+  it('returns undefined when database copy is absent (card shows name only)', () => {
     const e = entry('unknown-barber', null)
-    expect(stylistCopyFor(e, 'sv', i18nStylists)).toBeUndefined()
+    expect(stylistCopyFor(e, 'sv')).toBeUndefined()
   })
 })

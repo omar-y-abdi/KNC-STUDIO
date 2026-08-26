@@ -2,7 +2,7 @@
 // barber sees operational tabs plus Settings; the owner sees those PLUS {Alla bokningar, Barberare,
 // Om oss} and a barber selector to act on any barber.
 //
-// Identity is kept human: a barber sees just their first name in the top bar ("Hej Victor") — they
+// Identity is kept human: a barber sees just their first name in the top bar — they
 // know their own email and job title. The owner instead sees the barber selector (in the controls
 // row, leftmost), which is the only context that actually matters when acting for someone else.
 //

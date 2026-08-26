@@ -1,10 +1,5 @@
-// The barbers-roster swap point. Supabase when configured, the offline mock (the `BARBERS` constant)
-// otherwise — chosen ONCE at module load. With no `VITE_SUPABASE_*` set this is the mock, so the
-// public roster (booking grid + About cards) is byte-identical to today and resolves immediately.
-//
-// The Supabase adapter is reached through a LAZY proxy (dynamic import on first call), so supabase-js
-// lands in its own chunk — fetched only when the backend is configured AND the roster loads. With no
-// env it is never imported, so the public critical path ships none of it.
+// Public roster swap point. Production uses one cached catalog RPC; unconfigured/offline builds
+// return no invented business data.
 
 import { isBackendConfigured } from '../../backend/config'
 import type { BarbersPort, RosterBarber } from '../barbersPort'
@@ -12,16 +7,31 @@ import { mockBarbersAdapter } from './mockBarbers'
 
 const lazySupabaseBarbersPort: BarbersPort = {
   listActive: (): Promise<readonly RosterBarber[]> =>
-    import('./supabaseBarbers').then((m) => m.supabaseBarbersAdapter.listActive()),
+    import('./supabaseBookingCatalog').then((m) =>
+      m.cachedBookingCatalog().then((catalog) => catalog.barbers),
+    ),
 }
 
 export const defaultBarbersPort: BarbersPort = isBackendConfigured()
   ? lazySupabaseBarbersPort
   : mockBarbersAdapter
 
-/**
- * Whether the configured roster source is the offline mock (i.e. no backend). The public components
- * use this to render the constant roster SYNCHRONOUSLY on first paint (no loading flash, no layout
- * shift) and only switch to an async fetch when a real backend is configured.
- */
-export const barbersAreMock = !isBackendConfigured()
+/** Begin one background catalog read when live configuration exists. */
+export function preloadBookingCatalog(): void {
+  if (!isBackendConfigured()) return
+  void import('./supabaseBookingCatalog').then((module) => module.preloadBookingCatalog())
+}
+
+export function subscribeBookingCatalog(onChange: () => void): () => void {
+  if (!isBackendConfigured()) return () => undefined
+  let disposed = false
+  let unsubscribe: (() => void) | null = null
+  void import('./supabaseBookingCatalog').then((module) => {
+    if (disposed) return
+    unsubscribe = module.subscribeBookingCatalog(onChange)
+  })
+  return () => {
+    disposed = true
+    unsubscribe?.()
+  }
+}

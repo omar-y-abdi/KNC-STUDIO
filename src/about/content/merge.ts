@@ -3,7 +3,7 @@
 // returns the rendered strings. The CRITICAL invariant lives here: an EMPTY overlay yields the i18n
 // base UNCHANGED (the mock/baseline path), and a present key overrides exactly that key.
 
-import type { AboutStrings, Lang, StylistCopy } from '../../i18n/index'
+import type { AboutStrings, Lang } from '../../i18n/index'
 import type { RosterBarber } from '../../booking/barbersPort'
 import type { AboutOverlay } from './port'
 
@@ -33,22 +33,13 @@ export interface ResolvedStylistCopy {
 }
 
 /**
- * The role + bio for one roster entry. DB copy wins (mapped to `lang`); otherwise the i18n `stylists`
- * table (a string-keyed view, so an OPEN `BarberId` indexes it). Returns `undefined` when neither has
- * copy — the card then renders just the name + handle (the original guard behaviour). Under the mock,
- * `entry.copy` is null and the seeded ids hit the i18n table, so the 3 constant cards are unchanged.
+ * Role + bio for one database roster entry, mapped to active language. Missing copy renders
+ * name/handle only; frontend contains no barber-specific fallback data.
  */
-export function stylistCopyFor(
-  entry: RosterBarber,
-  lang: Lang,
-  i18nStylists: Readonly<Record<string, StylistCopy>>,
-): ResolvedStylistCopy | undefined {
-  if (entry.copy !== null) {
-    return {
-      role: lang === 'sv' ? entry.copy.roleSv : entry.copy.roleEn,
-      bio: lang === 'sv' ? entry.copy.bioSv : entry.copy.bioEn,
-    }
+export function stylistCopyFor(entry: RosterBarber, lang: Lang): ResolvedStylistCopy | undefined {
+  if (entry.copy === null) return undefined
+  return {
+    role: lang === 'sv' ? entry.copy.roleSv : entry.copy.roleEn,
+    bio: lang === 'sv' ? entry.copy.bioSv : entry.copy.bioEn,
   }
-  const fromI18n: StylistCopy | undefined = i18nStylists[entry.barber.id]
-  return fromI18n ? { role: fromI18n.role, bio: fromI18n.bio } : undefined
 }
