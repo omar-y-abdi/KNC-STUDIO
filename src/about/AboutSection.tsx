@@ -56,6 +56,8 @@ export interface AboutSectionProps {
   readonly galleryPort?: GalleryPort
   /** Owner-set font-size preset for the section's editorial header (default 'md' = 1.0×). */
   readonly fontScale?: SizePreset
+  /** CMS replicas disable external challenge I/O; public pages keep it enabled by default. */
+  readonly challengeEnabled?: boolean
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
@@ -118,7 +120,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
-  const challengeRequired = turnstileConfigured
+  const challengeRequired = props.challengeEnabled !== false && turnstileConfigured
 
   const submitErrorText = (error: ReviewError): string => {
     switch (error.kind) {
@@ -506,7 +508,9 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             </p>
           ) : null}
 
-          <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+          {props.challengeEnabled === false ? null : (
+            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+          )}
 
           <button
             type="button"

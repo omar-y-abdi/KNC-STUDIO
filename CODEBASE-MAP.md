@@ -945,7 +945,7 @@ After contract, regranting anonymous mutation/lookup RPC execution is emergency 
 | `tools/backup/prepare-migration-history.sql`  | restore migration-lineage prep                                |
 | `tools/e2e/smoke.mjs`                         | Playwright smoke                                              |
 | `tools/e2e/admin-state.mjs`                   | Admin history/delayed-scroll/CMS draft browser regression     |
-| `tools/e2e/admin-harness.tsx`                 | In-memory Vite source harness used only by admin browser test |
+| `tools/e2e/admin-harness.html`, `.tsx`        | In-memory Vite source harness used only by admin browser test |
 | `tools/visual/capture.mjs`                    | 8 deterministic visual variants                               |
 | `tools/visual/compare.mjs`                    | pixel compare vs approved baseline                            |
 | `tools/og/render.mjs`                         | social-card generation                                        |

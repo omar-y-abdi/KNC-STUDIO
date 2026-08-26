@@ -275,6 +275,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                     barbersPort: props.previewPorts.barbers,
                     aboutContentPort: props.previewPorts.aboutContent,
                     galleryPort: props.previewPorts.gallery,
+                    challengeEnabled: false,
                   })}
             />
           </div>

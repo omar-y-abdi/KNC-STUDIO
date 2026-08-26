@@ -50,7 +50,7 @@ async function waitForSavedScroll(page, tab, expected) {
 }
 
 async function verifyNavigation(page) {
-  await mount(page, 'navigation', 'owner', '/admin-harness?tab=schedule', '22000px')
+  await mount(page, 'navigation', 'owner', '/tools/e2e/admin-harness.html?tab=schedule', '22000px')
   await page.getByRole('button', { name: 'My schedule', exact: true }).waitFor()
   await waitForSavedScroll(page, 'schedule', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 875))
@@ -80,7 +80,7 @@ async function verifyNavigation(page) {
   const forwardScroll = await page.evaluate(() => Math.round(globalThis.window.scrollY))
   assert(forwardScroll === 425, `Forward lost mail scroll: ${forwardScroll}`)
 
-  await mount(page, 'navigation', 'barber', '/admin-harness?tab=mail')
+  await mount(page, 'navigation', 'barber', '/tools/e2e/admin-harness.html?tab=mail')
   assert(
     (await page.getByRole('button', { name: 'Mail', exact: true }).count()) === 0,
     'barber restored hidden Mail tab',
@@ -94,7 +94,7 @@ async function verifyNavigation(page) {
 }
 
 async function verifyDelayedRestore(page) {
-  await mount(page, 'navigation', 'owner', '/admin-harness?tab=schedule', '22000px')
+  await mount(page, 'navigation', 'owner', '/tools/e2e/admin-harness.html?tab=schedule', '22000px')
   await waitForSavedScroll(page, 'schedule', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 5000))
   await waitForSavedScroll(page, 'schedule', 5000)
@@ -116,8 +116,12 @@ async function verifyDelayedRestore(page) {
 }
 
 async function verifyPresentationDraft(page) {
-  await mount(page, 'site', undefined, '/admin-harness?view=site')
+  await mount(page, 'site', undefined, '/tools/e2e/admin-harness.html?view=site')
   await page.getByLabel('Logo scale').waitFor()
+  assert(
+    (await page.locator('script[src*="challenges.cloudflare.com"]').count()) === 0,
+    'read-only CMS replica loaded external Turnstile challenge',
+  )
   await page.getByLabel('Logo scale').selectOption('xl')
   assert(
     (await page.evaluate(() => globalThis.window.__adminHarnessWrites?.length ?? -1)) === 0,
