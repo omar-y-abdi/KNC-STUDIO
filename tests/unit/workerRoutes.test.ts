@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import worker, {
+  customerAccessTokenFromPath,
   isPrivatePath,
   isSpaPath,
   renderHomepageMetadata,
@@ -55,6 +56,23 @@ describe('Worker route policy', () => {
 
     expect(response.status).toBe(308)
     expect(response.headers.get('Location')).toBe('https://bladeblendstudio.se/login?next=%2Fadmin')
+    expect(env.requestedPaths).toEqual([])
+  })
+
+  it('moves permanent customer credentials into a fragment before loading assets', async () => {
+    const env = createEnv()
+    const token = 'a'.repeat(64)
+    expect(customerAccessTokenFromPath(`/${token}`)).toBe(token)
+
+    const response = await worker.fetch(new Request(`https://bladeblendstudio.se/${token}`), env)
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get('Location')).toBe(
+      `https://bladeblendstudio.se/#booking_token=${token}`,
+    )
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
     expect(env.requestedPaths).toEqual([])
   })
 

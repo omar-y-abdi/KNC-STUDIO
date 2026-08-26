@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { makeMockMyBookingsAdapter } from '../../src/mybookings/adapters/mockMyBookings'
+import { asBarberId } from '../../src/booking/domain'
 
 // Pin "today" so the demo history is deterministic (no real clock). 2026-06-19 is a Friday.
 const fixedClock = (): Date => new Date(2026, 5, 19)
 const adapter = makeMockMyBookingsAdapter(fixedClock)
 
 describe('mockMyBookingsAdapter', () => {
-  it('issues access then lists a demo history split into upcoming + past', async () => {
+  it('issues access then lists an honest empty offline history', async () => {
     await expect(
       adapter.requestAccess({
-        phone: '0701234567',
         email: 'customer@example.com',
         lang: 'sv',
         turnstileToken: 'test',
@@ -18,20 +18,8 @@ describe('mockMyBookingsAdapter', () => {
     const r = await adapter.list({ accessToken: 'mock-customer-access', lang: 'sv' })
     expect(r.ok).toBe(true)
     if (r.ok) {
-      expect(r.bookings.upcoming).toHaveLength(3)
-      expect(r.bookings.past).toHaveLength(4)
-
-      // Upcoming ascending, past descending.
-      const ups = r.bookings.upcoming.map((b) => b.start.getTime())
-      expect(ups).toEqual([...ups].sort((a, b) => a - b))
-      const pasts = r.bookings.past.map((b) => b.start.getTime())
-      expect(pasts).toEqual([...pasts].sort((a, b) => b - a))
-
-      // Rows carry displayable content.
-      const first = r.bookings.upcoming[0]
-      expect(first?.whenLabel.length).toBeGreaterThan(0)
-      expect(first?.barber.name.length).toBeGreaterThan(0)
-      expect(first?.price).toBeGreaterThan(0)
+      expect(r.bookings.upcoming).toEqual([])
+      expect(r.bookings.past).toEqual([])
     }
   })
 
@@ -43,16 +31,17 @@ describe('mockMyBookingsAdapter', () => {
   })
 
   it('cancel() resolves ok, echoing the id', async () => {
-    const r = await adapter.list({ accessToken: 'mock-customer-access', lang: 'en' })
-    expect(r.ok).toBe(true)
-    if (r.ok) {
-      const target = r.bookings.upcoming[0]
-      expect(target).toBeDefined()
-      if (target) {
-        const c = await adapter.cancel(target, 'mock-customer-access')
-        expect(c.ok).toBe(true)
-        if (c.ok) expect(c.id).toBe(target.id)
-      }
+    const target = {
+      id: 'test-booking',
+      barber: { id: asBarberId('test'), name: 'Test', ig: '' },
+      serviceName: 'Test',
+      price: 100,
+      durationMin: 30,
+      start: new Date('2040-01-01T10:00:00Z'),
+      whenLabel: 'Test',
     }
+    const c = await adapter.cancel(target, 'mock-customer-access')
+    expect(c.ok).toBe(true)
+    if (c.ok) expect(c.id).toBe(target.id)
   })
 })

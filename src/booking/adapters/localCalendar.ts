@@ -6,7 +6,6 @@
 // pure `buildIcs`, so the ICS builder stays referentially transparent.
 
 import { DEFAULT_BUSINESS } from '../../config'
-import { barberIndex } from '../barbers'
 import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
@@ -14,6 +13,12 @@ import type { AvailabilityParams, BookingPort } from '../port'
 import { packSlots } from '../slotPacking'
 import type { BlockedInterval } from '../slotPacking'
 import { formatBusinessAddress, type BusinessSettings } from '../../site/siteChrome'
+
+function barberSeed(barberId: string): number {
+  let seed = 0
+  for (const char of barberId) seed = (seed * 31 + char.charCodeAt(0)) >>> 0
+  return seed
+}
 
 /** Human-readable location line for calendar entries. */
 function locationLine(business: BusinessSettings): string {
@@ -117,7 +122,7 @@ export const localCalendarAdapter: BookingPort = {
       openMin: MOCK_OPEN_MIN,
       closeMin: MOCK_CLOSE_MIN,
       durationMin: params.durationMin,
-      blocked: mockBlocked(dayOfMonth(params.dateIso), barberIndex(params.barberId)),
+      blocked: mockBlocked(dayOfMonth(params.dateIso), barberSeed(params.barberId)),
       // The mock has no clock — pass a future-safe cutoff so the grid stays deterministic (no past
       // filtering); the real backend does the now-filter server-side.
       nowMin: -1,

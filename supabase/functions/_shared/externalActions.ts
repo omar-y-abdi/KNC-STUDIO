@@ -19,6 +19,7 @@ import {
   resendDeliveryFailureCode,
   sendViaResend,
 } from './email.ts'
+import { customerAccessUrl } from './customerAccess.ts'
 
 export type StorageBucket = 'gallery' | 'barber-photos'
 
@@ -409,7 +410,7 @@ export async function executeExternalAction(
           to: action.email,
           lang: action.lang,
           copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
-          ctaHref: `https://bladeblendstudio.se/#booking_access=${action.access_code}`,
+          ctaHref: customerAccessUrl(action.access_code),
           business,
         })
         await sendViaResend(message, runtime.resendApiKey, `customer-booking-access/${action.id}`)

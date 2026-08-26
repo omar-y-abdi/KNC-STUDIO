@@ -51,14 +51,14 @@ src/
   backend/              # env "configured?" check, lazy Supabase client seam, Zod RPC schemas
   booking/              # the booking domain:
     domain.ts           #   ADTs — invalid states unrepresentable
-    pricing/slots/calendar.ts   # pure functions (no clock, no I/O)
+    slots/calendar.ts   # pure functions (no clock, no I/O)
     validation.ts       #   Zod + branded types (Name / Phone-SE) → Result
     ics.ts              #   RFC5545-correct .ics builder (escaped, injection-safe)
     port.ts             #   BookingPort — the backend seam (interface only)
     adapters/           #   localCalendarAdapter (offline mock) + lazy Supabase adapter
     BookingFlow + sub-components, bookingStyles
-  about/                # About section: gallery, stylists, reviews (+ their ports/adapters)
-  cancellation/         # phone-proven booking lookup + cancel flow (+ its ports/adapters)
+  about/                # About section: gallery, DB-driven stylists, reviews (+ ports/adapters)
+  mybookings/           # permanent email-token history/cancel + consented device cookie
   admin/                # staff panel: operations + authenticated email/password settings
   i18n/                 # typed sv/en string tables (missing key = compile error)
   ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
@@ -122,17 +122,19 @@ drift fails the gate.
 
 ---
 
-## Backend: mock by default, Supabase when configured
+## Backend: Supabase-owned business catalog
 
-The UI depends only on port interfaces (`BookingPort` and the reviews/cancellation/roster/content
-ports); every backend action flows through them. With no `VITE_SUPABASE_*` env the app runs entirely
-on the offline mock adapters (`localCalendarAdapter` & co. — bookings produce the `.ics`, Google
-Calendar and Maps links locally; nothing is persisted). Setting `VITE_SUPABASE_URL` +
-`VITE_SUPABASE_ANON_KEY` switches every port to the real Supabase adapters — lazy-loaded so
-`supabase-js` stays out of the main bundle — with **no code change**. The full go-live checklist
-(migrations, admin accounts, bot protection, and email delivery) is in `BACKEND.md`.
+The UI depends only on port interfaces. Production requires `VITE_SUPABASE_URL` +
+`VITE_SUPABASE_ANON_KEY`. Roster, profile photos, and services preload through one cached
+`public_booking_catalog()` request and invalidate through Realtime; frontend constants never paint
+named barbers or services. The catalog carries each service's weekday set; the client date-filters
+the menu and asks the service-aware availability RPC, while booking writes recheck the same rule.
+An unconfigured build shows honest empty catalog/history states and persists nothing. See `BACKEND.md`
+for go-live requirements.
 
-Transactional email covers confirmations and cancellations for customer + barber. Supabase Cron
+Customer confirmation/reminder email contains the current permanent, email-scoped Mina bokningar
+link. Requesting a fresh link rotates it and invalidates the prior link. Transactional email covers
+confirmations and cancellations for customer + barber. Supabase Cron
 queues a customer-only reminder one day before start time, but only for bookings created at least
 24 hours in advance; Resend idempotency and a delivery ledger prevent duplicates.
 

@@ -1,4 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  createCustomerAccessToken,
+  encryptCustomerAccessToken,
+  hashCustomerAccessToken,
+} from '../_shared/customerAccess.ts'
 
 type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review'
 type Language = 'sv' | 'en'
@@ -117,17 +122,16 @@ function parseBody(raw: unknown): ParsedAction | null {
       : null
   }
 
-  const phone = normalizePhone(body.phone)
-  if (phone === null || typeof body.turnstileToken !== 'string') return null
-
   if (body.action === 'request_access') {
     const email = normalizeEmail(body.email)
     const lang = body.lang === 'en' ? 'en' : body.lang === 'sv' ? 'sv' : null
-    return email === null || lang === null
+    return email === null || lang === null || typeof body.turnstileToken !== 'string'
       ? null
-      : { action: body.action, phone, email, lang, turnstileToken: body.turnstileToken }
+      : { action: body.action, email, lang, turnstileToken: body.turnstileToken }
   }
 
+  const phone = normalizePhone(body.phone)
+  if (phone === null || typeof body.turnstileToken !== 'string') return null
   if (!opaqueToken(body.accessToken)) return null
   if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
     return null
@@ -182,19 +186,19 @@ function serviceClient(url: string, key: string) {
 async function consumeLimit(
   service: ReturnType<typeof serviceClient>,
   action: 'request_access' | 'review',
-  phone: string,
+  scope: string,
   ip: string,
   hashSalt: string,
 ): Promise<'ok' | 'rate_limited' | 'system'> {
-  const [ipHash, phoneHash] = await Promise.all([
+  const [ipHash, scopeHash] = await Promise.all([
     sha256(`ip:${ip}:${hashSalt}`),
-    sha256(`phone:${phone}:${hashSalt}`),
+    sha256(`${action === 'request_access' ? 'email' : 'phone'}:${scope}:${hashSalt}`),
   ])
   const limit = LIMITS[action]
   const { data, error } = await service.rpc('consume_public_action_attempt', {
     p_action: action,
     p_ip_hash: ipHash,
-    p_phone_hash: phoneHash,
+    p_phone_hash: scopeHash,
     p_window_secs: limit.windowSecs,
     p_ip_limit: limit.perIp,
     p_phone_limit: limit.perPhone,
@@ -220,10 +224,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
-  const hashSalt = Deno.env.get('PUBLIC_ACTION_HASH_SALT')
-  if (!supabaseUrl || !serviceKey || !turnstileSecret || !hashSalt) {
-    console.error('public-booking-actions: required secret missing')
+  if (!supabaseUrl || !serviceKey) {
+    console.error('public-booking-actions: Supabase runtime configuration missing')
     return json(req, { ok: false, error: 'not_configured' }, 500)
   }
 
@@ -235,6 +237,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const parsed = parseBody(raw)
   if (parsed === null) return json(req, { ok: false, error: 'invalid_payload' }, 400)
+
+  const protectedAction = parsed.action === 'request_access' || parsed.action === 'review'
+  const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
+  const hashSalt = Deno.env.get('PUBLIC_ACTION_HASH_SALT')
+  if (protectedAction && (!turnstileSecret || !hashSalt)) {
+    console.error('public-booking-actions: public-action protection configuration missing')
+    return json(req, { ok: false, error: 'not_configured' }, 503)
+  }
 
   const service = serviceClient(supabaseUrl, serviceKey)
   if (parsed.action === 'exchange_access') {
@@ -270,7 +280,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const phone = parsed.phone ?? ''
   const ip = clientIp(req)
-  if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret))) {
+  if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret ?? ''))) {
     return json(req, { ok: false, error: 'failed_challenge' })
   }
 
@@ -289,21 +299,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  const limited = await consumeLimit(service, parsed.action, phone, ip, hashSalt)
+  const limitScope = parsed.action === 'request_access' ? (parsed.email ?? '') : phone
+  const limited = await consumeLimit(service, parsed.action, limitScope, ip, hashSalt ?? '')
   if (limited === 'system') return json(req, { ok: false, error: 'system' }, 500)
   if (limited === 'rate_limited') return json(req, { ok: false, error: 'rate_limited' })
 
   if (parsed.action === 'request_access') {
-    const code = createOpaqueToken()
-    const { error } = await service.rpc('create_customer_booking_access_request', {
-      p_phone: phone,
+    const code = createCustomerAccessToken()
+    const tokenHash = await hashCustomerAccessToken(code)
+    const tokenCiphertext = await encryptCustomerAccessToken(code, hashSalt ?? '')
+    const { error } = await service.rpc('rotate_customer_booking_access_token', {
       p_email: parsed.email,
-      p_token_hash: await sha256(code),
+      p_token_hash: tokenHash,
+      p_token_ciphertext: tokenCiphertext,
       p_access_code: code,
       p_lang: parsed.lang,
     })
     if (error) {
-      console.error('public-booking-actions: access request RPC failed', error.code)
+      console.error('public-booking-actions: access rotation RPC failed', error.code)
       return json(req, { ok: false, error: 'system' }, 500)
     }
     return json(req, { ok: true })

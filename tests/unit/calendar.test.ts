@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pad2, cap, iso, buildWeeks } from '../../src/booking/calendar'
+import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
 
 describe('helpers', () => {
   it('pad2', () => {
@@ -13,6 +13,13 @@ describe('helpers', () => {
   it('iso (local date, no timezone shift)', () => {
     expect(iso(new Date(2026, 5, 19))).toBe('2026-06-19')
     expect(iso(new Date(2026, 0, 1))).toBe('2026-01-01')
+  })
+  it('keeps a configured future Sunday selectable', () => {
+    const today = new Date(2040, 2, 12)
+    const sunday = new Date(2040, 2, 18)
+
+    expect(sunday.getDay()).toBe(0)
+    expect(isSelectableBookingDate(sunday, today)).toBe(true)
   })
 })
 

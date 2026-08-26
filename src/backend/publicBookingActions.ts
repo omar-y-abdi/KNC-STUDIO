@@ -3,7 +3,6 @@ import { getSupabase } from './supabaseClient'
 export type PublicBookingActionPayload =
   | {
       readonly action: 'request_access'
-      readonly phone: string
       readonly email: string
       readonly lang: 'sv' | 'en'
       readonly turnstileToken: string

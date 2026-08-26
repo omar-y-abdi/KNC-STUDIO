@@ -9,7 +9,6 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import { BARBERS } from '../../src/booking/barbers'
 import type { Barber } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
 import type { CreateBookingArgs } from './_helpers'
@@ -26,12 +25,12 @@ import {
   withClient,
 } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? {
+const HASSAN: Barber = {
   id: asBarberId('hassan'),
   name: 'Hassan',
   ig: 'freebandzcuts',
 }
-const VICTOR: Barber = BARBERS[1] ?? HASSAN
+const VICTOR: Barber = { id: asBarberId('victor'), name: 'Victor', ig: 'vic.barber1' }
 
 // 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST → CET +01) = 12:30:00Z. Passing the
 // absolute instant keeps the test tz-independent: create_booking re-derives the salon wall-clock
@@ -233,6 +232,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
+      serviceId: haircutServiceId,
     })
     expect(before).toContain(VALID_TIME)
 
@@ -243,6 +243,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       barberId: HASSAN.id,
       dateIso: VALID_DATE_ISO,
       durationMin: 45,
+      serviceId: haircutServiceId,
     })
     expect(after).not.toContain(VALID_TIME)
   })
@@ -260,5 +261,74 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
       durationMin: 45,
     })
     expect(victorSlots).toContain(VALID_TIME)
+  })
+
+  it('enforces service weekdays and recurring breaks in live availability and create_booking', async () => {
+    const env = readStackEnv()
+    if (!env) return
+
+    const weekday = await withClient(env.dbUrl, async (client) => {
+      const result = await client.query<{ weekday: number }>(
+        `select extract(dow from $1::timestamptz at time zone 'Europe/Stockholm')::integer as weekday`,
+        [VALID_START_UTC],
+      )
+      return result.rows[0]?.weekday
+    })
+    expect(weekday).toBeTypeOf('number')
+    if (weekday === undefined) return
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        'update public.services set available_weekdays = array[$2]::smallint[] where id = $1::uuid',
+        [haircutServiceId, weekday],
+      )
+    })
+
+    const before = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(before).toContain(VALID_TIME)
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        `insert into public.barber_recurring_breaks (barber_id, weekday, start_min, end_min)
+         values ($1, $2, 810, 840)`,
+        [HASSAN.id, weekday],
+      )
+    })
+
+    const blocked = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(blocked).not.toContain(VALID_TIME)
+
+    const breakRejected = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(breakRejected.ok).toBe(false)
+    if (!breakRejected.ok) expect(breakRejected.error).toBe('outside_hours')
+
+    await withClient(env.dbUrl, async (client) => {
+      await client.query(
+        'update public.services set available_weekdays = array[$2]::smallint[] where id = $1::uuid',
+        [haircutServiceId, (weekday + 1) % 7],
+      )
+    })
+
+    const unavailableDay = await supabaseBookingAdapter.availability({
+      barberId: HASSAN.id,
+      dateIso: VALID_DATE_ISO,
+      durationMin: 45,
+      serviceId: haircutServiceId,
+    })
+    expect(unavailableDay).toEqual([])
+
+    const weekdayRejected = await callCreateBooking(env.dbUrl, validArgs(uniquePhone()))
+    expect(weekdayRejected.ok).toBe(false)
+    if (!weekdayRejected.ok) expect(weekdayRejected.error).toBe('outside_hours')
   })
 })

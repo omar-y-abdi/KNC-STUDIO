@@ -1,5 +1,5 @@
 // Walk-in slot-block adapter. A block row says "unavailable on this date between start_min and
-// end_min" — the panel's day grid writes one row per 45-min slot (tap = block, tap again = unblock).
+// end_min" — the panel's day grid writes one row per 15-min quarter (tap = block, tap again = unblock).
 // RLS scopes a barber to their OWN rows; the owner may manage any barber's. Blocks are immutable
 // (toggle = insert/delete), so the surface is exactly list/add/delete.
 //
@@ -55,7 +55,7 @@ export async function listSlotBlocks(
 }
 
 /**
- * Block a window on a date (the day grid passes one 45-min slot). A duplicate tap trips the
+ * Block a window on a date (the day grid passes one 15-min quarter). A duplicate tap trips the
  * exact-window unique constraint (23505) — surfaced as `validation` so the UI can just re-list.
  */
 export async function addSlotBlock(

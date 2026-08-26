@@ -179,6 +179,12 @@ async function verifyPublicPage(browser, viewport) {
   await page.getByRole('button', { name: 'Book appointment', exact: true }).first().click()
   assert((await about.count()) === 0, 'About section remains mounted while booking is open')
   await page.getByTestId('booking-step-barber').waitFor()
+  // Production data may provide options; an intentionally unconfigured test build must show an
+  // honest empty state instead of bundled barber fixtures.
+  await page
+    .locator('[data-testid="booking-barber-option"],[data-testid="booking-barber-empty"]')
+    .first()
+    .waitFor()
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
   await context.close()

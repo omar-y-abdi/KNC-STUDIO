@@ -29,6 +29,7 @@ describe('public booking action gateway client', () => {
     expect(
       parseWith(listCustomerBookingsResponse, {
         ok: true,
+        phone: '0701234567',
         bookings: [
           {
             id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
@@ -47,7 +48,6 @@ describe('public booking action gateway client', () => {
   it('forwards protected action payloads unchanged', async () => {
     const payload = {
       action: 'request_access' as const,
-      phone: '0701234567',
       email: 'customer@example.com',
       lang: 'sv' as const,
       turnstileToken: 'challenge-token',
@@ -98,7 +98,6 @@ describe('public booking action gateway client', () => {
     await expect(
       invokePublicBookingAction({
         action: 'request_access',
-        phone: '0701234567',
         email: 'customer@example.com',
         lang: 'sv',
         turnstileToken: 'challenge-token',
