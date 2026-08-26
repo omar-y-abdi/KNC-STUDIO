@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ADMIN_SCROLL_RESTORE_TIMEOUT_MS,
   adminNavigationStorageKey,
   adminUrlForTab,
   clearAdminNavigationState,
@@ -65,5 +66,9 @@ describe('admin navigation state', () => {
     expect(adminUrlForTab('https://example.test/admin?theme=dark#mail', 'mail')).toBe(
       '/admin?theme=dark&tab=mail#mail',
     )
+  })
+
+  it('keeps delayed-content restoration alive beyond the known ten-second load case', () => {
+    expect(ADMIN_SCROLL_RESTORE_TIMEOUT_MS).toBeGreaterThan(10_000)
   })
 })
