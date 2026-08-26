@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { invokePublicBookingAction } = vi.hoisted(() => ({
   invokePublicBookingAction: vi.fn(),
@@ -8,6 +8,7 @@ vi.mock('../../src/backend/publicBookingActions', () => ({ invokePublicBookingAc
 
 import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
 import type { MyBooking } from '../../src/mybookings/domain'
+import { currentCustomerAccessToken } from '../../src/mybookings/customerAccessSession'
 
 const myBooking: MyBooking = {
   id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
@@ -21,6 +22,26 @@ const myBooking: MyBooking = {
 
 describe('public booking action adapter errors', () => {
   beforeEach(() => invokePublicBookingAction.mockReset())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps a successfully proven direct token for same-tab review access', async () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    })
+    const token = 'a'.repeat(64)
+    invokePublicBookingAction.mockResolvedValue({
+      data: { ok: true, phone: '0701234567', bookings: [] },
+      failed: false,
+    })
+
+    await expect(
+      supabaseMyBookingsAdapter.list({ accessToken: token, lang: 'sv' }),
+    ).resolves.toEqual({ ok: true, bookings: { upcoming: [], past: [] } })
+    expect(currentCustomerAccessToken()).toBe(token)
+  })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(
     'preserves access-request gateway error %s',
@@ -29,12 +50,17 @@ describe('public booking action adapter errors', () => {
 
       await expect(
         supabaseMyBookingsAdapter.requestAccess({
-          phone: '0701234567',
           email: 'customer@example.com',
           lang: 'sv',
           turnstileToken: 'challenge',
         }),
       ).resolves.toEqual({ ok: false, error })
+      expect(invokePublicBookingAction).toHaveBeenLastCalledWith({
+        action: 'request_access',
+        email: 'customer@example.com',
+        lang: 'sv',
+        turnstileToken: 'challenge',
+      })
     },
   )
 

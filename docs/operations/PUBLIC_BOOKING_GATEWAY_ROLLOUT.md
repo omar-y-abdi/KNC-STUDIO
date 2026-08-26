@@ -17,6 +17,12 @@ below. Never run the contract migration before the switched Worker has passed li
 - `PROJECT_REF`, `DATABASE_URL`, and production frontend build variables are available in the
   operator shell. Never write secret values to this repository.
 
+Verify required secret names before function deployment; values/digests are never printed:
+
+```bash
+PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
+```
+
 ## 1. Expand
 
 Create a temporary Supabase worktree containing every pending migration except the final contract.
@@ -101,10 +107,10 @@ curl -fsS https://bladeblendstudio.se/ | grep -F 'business-json-ld'
 curl -fsS https://bladeblendstudio.se/llms.txt | grep -F '# Blade & Blend Studio'
 ```
 
-Then manually verify one real Turnstile-protected **secure-link request** using an exact booking phone
-and email, follow the one-time email link, load that customer's booking history, and cancel an eligible
-booking. Verify a second booking sharing the phone but using a different email is not shown or
-cancellable. Also verify review rejection or success through the production UI. Confirm customer
+Verify customer confirmation email contains a random root-path URL that opens **Mina bokningar**
+directly. Request a fresh link using email only, confirm the prior link reports replacement, load all
+bookings scoped to that email, and cancel an eligible booking. Verify another email is neither shown
+nor cancellable. Also verify review rejection/success through production UI. Confirm customer
 cancellation and Calendar cleanup jobs drain.
 
 Also owner-upload a homepage logo, verify focused and simulated previews before save, verify the public

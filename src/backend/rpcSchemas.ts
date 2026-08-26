@@ -20,6 +20,23 @@ const isoTimestamp = z.string().datetime({ offset: true })
  */
 const ratingInt = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
 
+const canonicalWeekdays = z
+  .array(z.number().int().min(0).max(6))
+  .min(1)
+  .superRefine((weekdays, context) => {
+    for (let index = 1; index < weekdays.length; index += 1) {
+      const previous = weekdays[index - 1]
+      const current = weekdays[index]
+      if (previous !== undefined && current !== undefined && previous >= current) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Expected sorted, unique weekdays',
+        })
+        return
+      }
+    }
+  })
+
 // --- create_booking ------------------------------------------------------------------------------
 // The adapter only branches on `ok` — the confirmation links are built from the LOCAL booking, and
 // the echoed row is never read. Validating only the discriminant means a drift in the echoed fields
@@ -86,6 +103,7 @@ const myBookingRow = z.object({
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  phone: z.string().regex(/^07[0-9]{8}$/),
   bookings: z.array(myBookingRow),
 })
 const listCustomerBookingsErr = z.object({
@@ -140,10 +158,8 @@ export const reviewRow = z.object({
 })
 export type ReviewRow = z.infer<typeof reviewRow>
 
-// --- public barbers row (direct table select) ----------------------------------------------------
-// The ACTIVE roster the public site reads (booking grid + About cards). Same column set the admin
-// reads, but consumed read-only by anon via the `barbers` public-select RLS policy. `active` is
-// included so a malformed/unexpected row can be dropped; the adapter filters active in the query.
+// --- public booking catalog rows -----------------------------------------------------------------
+// Server-filtered active barber/service rows returned by `public_booking_catalog()`.
 
 export const publicBarberRow = z.object({
   id: z.string(),
@@ -158,10 +174,7 @@ export const publicBarberRow = z.object({
 })
 export type PublicBarberRow = z.infer<typeof publicBarberRow>
 
-// --- public services row (direct table select) ---------------------------------------------------
-// One row of a barber's flat service menu. The public booking flow reads the CHOSEN barber's ACTIVE
-// rows (RLS restricts anon to active; the adapter filters active too). `active` is included so a
-// malformed/unexpected row can be dropped. Maps to the booking domain `ServiceItem` (dur = duration_min).
+// One row of a barber's flat service menu; maps to `ServiceItem` (`dur = duration_min`).
 
 export const publicServiceRow = z.object({
   id: z.string(),
@@ -171,8 +184,15 @@ export const publicServiceRow = z.object({
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
+  available_weekdays: canonicalWeekdays,
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
+
+export const publicBookingCatalogResponse = z.object({
+  barbers: z.array(publicBarberRow.extend({ photo_path: z.string().nullable() })),
+  services: z.array(publicServiceRow),
+})
+export type PublicBookingCatalogResponse = z.infer<typeof publicBookingCatalogResponse>
 
 // --- public site_content / site_settings rows (Task 2 §2) ----------------------------------------
 // Editable homepage text (key,lang,value) + non-localized settings (key,value). anon may read both.

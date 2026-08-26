@@ -12,6 +12,13 @@ import {
   type EmailTemplateName,
 } from '../_shared/email.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
+import {
+  createCustomerAccessToken,
+  customerAccessUrl,
+  decryptCustomerAccessToken,
+  encryptCustomerAccessToken,
+  hashCustomerAccessToken,
+} from '../_shared/customerAccess.ts'
 
 interface WebhookEnvelope {
   readonly record?: unknown
@@ -234,7 +241,7 @@ async function message(
   templateName: EmailTemplateName,
   rows: readonly EmailDetailRow[],
   business: EmailBusiness,
-  adminLink = false,
+  ctaHref: string,
 ): Promise<EmailMessage> {
   const client = serviceClient()
   const lang = templateName.startsWith('barber_') ? 'sv' : booking.lang
@@ -248,9 +255,55 @@ async function message(
     copy,
     variables: variables(booking, business),
     rows,
-    ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se',
+    ctaHref,
     business,
   })
+}
+
+function accessCiphertext(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null
+  const ciphertext = (value as Record<string, unknown>).token_ciphertext
+  return typeof ciphertext === 'string' ? ciphertext : null
+}
+
+async function customerAccessHref(booking: BookingRow): Promise<string> {
+  if (booking.email === null || booking.phone === null) {
+    throw new Error('customer access requires booking email and phone')
+  }
+  const client = serviceClient()
+  const accessSecret = Deno.env.get('PUBLIC_ACTION_HASH_SALT')
+  if (client === null || !accessSecret) throw new Error('customer access runtime unavailable')
+
+  const candidate = createCustomerAccessToken()
+  const tokenHash = await hashCustomerAccessToken(candidate)
+  const tokenCiphertext = await encryptCustomerAccessToken(candidate, accessSecret)
+  const ensured = await client.rpc('ensure_customer_booking_access_token', {
+    p_email: booking.email,
+    p_phone: booking.phone,
+    p_token_hash: tokenHash,
+    p_token_ciphertext: tokenCiphertext,
+  })
+  if (ensured.error !== null) throw new Error('customer access token lookup failed')
+
+  const storedCiphertext = accessCiphertext(ensured.data)
+  const storedToken =
+    storedCiphertext === null
+      ? null
+      : await decryptCustomerAccessToken(storedCiphertext, accessSecret)
+  if (storedToken !== null) return customerAccessUrl(storedToken)
+
+  // Encryption-key rotation makes the old ciphertext unreadable. Replace only in this recovery
+  // case; ordinary subsequent booking emails always reuse the current permanent link.
+  const replaced = await client.rpc('replace_customer_booking_access_token', {
+    p_email: booking.email,
+    p_phone: booking.phone,
+    p_token_hash: tokenHash,
+    p_token_ciphertext: tokenCiphertext,
+  })
+  if (replaced.error !== null || replaced.data !== true) {
+    throw new Error('customer access token recovery failed')
+  }
+  return customerAccessUrl(candidate)
 }
 
 async function buildMessages(
@@ -258,6 +311,10 @@ async function buildMessages(
   booking: BookingRow,
   business: EmailBusiness,
 ): Promise<readonly { kind: DeliveryKind; message: EmailMessage }[]> {
+  const customerCtaHref =
+    booking.email !== null && (event === 'booking_confirmed' || event === 'booking_reminder')
+      ? await customerAccessHref(booking)
+      : 'https://bladeblendstudio.se'
   const candidates: Array<Promise<{ kind: DeliveryKind; message: EmailMessage }> | null> =
     event === 'booking_confirmed'
       ? [
@@ -269,6 +326,7 @@ async function buildMessages(
                 'customer_confirmation',
                 customerRows(booking),
                 business,
+                customerCtaHref,
               ).then((message) => ({ kind: 'customer', message })),
           booking.barberEmail === null
             ? null
@@ -278,7 +336,7 @@ async function buildMessages(
                 'barber_confirmation',
                 barberRows(booking),
                 business,
-                true,
+                'https://bladeblendstudio.se/admin',
               ).then((message) => ({ kind: 'barber', message })),
         ]
       : event === 'booking_cancelled'
@@ -291,6 +349,7 @@ async function buildMessages(
                   'customer_cancellation',
                   customerRows(booking),
                   business,
+                  customerCtaHref,
                 ).then((message) => ({ kind: 'customer', message })),
             booking.barberEmail === null
               ? null
@@ -300,7 +359,7 @@ async function buildMessages(
                   'barber_cancellation',
                   barberRows(booking),
                   business,
-                  true,
+                  'https://bladeblendstudio.se/admin',
                 ).then((message) => ({ kind: 'barber', message })),
           ]
         : [
@@ -312,6 +371,7 @@ async function buildMessages(
                   'customer_reminder',
                   customerRows(booking),
                   business,
+                  customerCtaHref,
                 ).then((message) => ({ kind: 'customer', message })),
           ]
   return Promise.all(

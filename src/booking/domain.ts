@@ -12,17 +12,14 @@ export interface Barber {
 }
 
 /**
- * A barber id. Originally a closed union (`'hassan' | 'victor' | 'salman'`); now an OPEN branded
- * string so an owner-added DB barber (any id matching `^[a-z0-9-]+$`) is a valid value, while the
- * `BARBERS` constant + `barberIndex` keep working as the offline fallback (ADMIN_SPEC
- * §5). The brand is purely nominal — it erases to `string` at runtime and carries no cost — yet it
+ * Open branded string: any owner-added DB barber id is valid. Brand is nominal and erases to
+ * `string` at runtime, yet it
  * keeps a `barberId` from being confused with an arbitrary string: a raw string is narrowed to a
- * `BarberId` only at the boundaries (the seed constants, the DB-row mapper, the `BookingDraft`'s own
- * state), never implicitly.
+ * `BarberId` only at DB/adapter and `BookingDraft` boundaries, never implicitly.
  */
 export type BarberId = string & { readonly __brand: 'BarberId' }
 
-/** Narrow a raw string (a seed id or a DB `barbers.id`) into a `BarberId` at the boundary. */
+/** Narrow a raw DB `barbers.id` into a `BarberId` at the boundary. */
 export function asBarberId(raw: string): BarberId {
   return raw as BarberId
 }
@@ -42,8 +39,8 @@ export interface ServiceGroup {
   readonly items: readonly ServiceItem[]
 }
 
-/** Customer-entered contact form (raw, unvalidated). Phone identifies bookings in self-service;
- * email receives transactional confirmation. */
+/** Customer-entered contact form (raw, unvalidated). Phone is operational contact data; email
+ * receives transactional confirmation and permanent self-service access. */
 export interface ContactForm {
   readonly name: string
   readonly phone: string

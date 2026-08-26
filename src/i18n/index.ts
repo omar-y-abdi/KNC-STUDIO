@@ -6,9 +6,13 @@ export type Lang = 'sv' | 'en'
 /** Strings used by the booking flow. */
 export interface BookingStrings {
   chooseBarber: string
+  loadingBarbers: string
+  noBarbers: string
   chooseDate: string
   chooseTime: string
   chooseService: string
+  loadingServices: string
+  noServices: string
   pickDayForService: string
   pickServiceForTime: string
   /** Shown in the time column while real availability is loading from the backend. */
@@ -40,16 +44,6 @@ export interface BookingStrings {
   calGoogle: string
   directions: string
   newBooking: string
-  grpWedSat: string
-  grpMonTue: string
-  grpStudent: string
-  grpKids: string
-  noteStudent: string
-  sHairBeard: string
-  sHair: string
-  sBeard: string
-  sHairStudent: string
-  sKids: string
   min: string
   errName: string
   errPhone: string
@@ -78,17 +72,23 @@ export interface AppStrings {
   cancelLink: string
 }
 
-/**
- * A placeholder stylist bio for the About section. `handle` is the IG handle (echoed from
- * `BARBERS`, kept here so the copy reads naturally per language); `bio` is on-brand placeholder
- * prose. Keyed by `BarberId` in `AboutStrings.stylists`.
- */
-export interface StylistCopy {
-  readonly role: string
-  readonly bio: string
+/** Public browser-storage controls. No analytics or advertising category exists in this site. */
+export interface PrivacyStrings {
+  title: string
+  lead: string
+  privacyLink: string
+  accept: string
+  reject: string
+  preferences: string
+  save: string
+  functionalTitle: string
+  functionalLead: string
+  necessary: string
+  manage: string
+  manageLabel: string
 }
 
-/** Strings for the "Om oss" / About section (all placeholder copy — no real bios/photos exist). */
+/** Strings for the "Om oss" / About section. */
 export interface AboutStrings {
   /** Section eyebrow + heading + intro paragraph. */
   eyebrow: string
@@ -99,7 +99,6 @@ export interface AboutStrings {
   galleryAlt: string
   /** Stylists block. */
   stylistsTitle: string
-  stylists: Readonly<Record<'hassan' | 'victor' | 'salman', StylistCopy>>
   stylistAvatarAlt: string
   /** Customer-cuts gallery. */
   cutsTitle: string
@@ -107,6 +106,9 @@ export interface AboutStrings {
   /** Reviews block + form. The reviewer proves a finished booking by phone; the displayed name is
    * derived server-side from that booking ("Förnamn E."), so the form asks for the phone, not a name. */
   reviewsTitle: string
+  reviewsLoading: string
+  reviewsEmpty: string
+  reviewsUnavailable: string
   reviewPhone: string
   reviewPhonePh: string
   /** Helper line under the phone field explaining the gate + derived name. */
@@ -125,6 +127,7 @@ export interface AboutStrings {
   reviewErrChallenge: string
   reviewErrRateLimited: string
   reviewErrSubmit: string
+  reviewErrUnavailable: string
   /** `aria-label` for a rendered star rating, e.g. "Betyg: 4 av 5". `{n}` is replaced. */
   ratingValueLabel: string
   /** `aria-label` for a star in the keyboard selector, e.g. "4 stjärnor". `{n}` is replaced. */
@@ -135,15 +138,12 @@ export interface AboutStrings {
 /** Strings for the "Mina bokningar" / My-appointments self-service dialog flow. */
 export interface MyBookingsStrings {
   title: string
-  /** Lookup step - request a secure email link using booking contact details. */
+  /** Lookup step - rotate and email the customer's permanent access link. */
   lookupLead: string
-  phone: string
-  phonePh: string
   email: string
   emailPh: string
   lookupBtn: string
   lookingUp: string
-  errPhone: string
   errEmail: string
   accessSent: string
   errAccess: string
@@ -155,8 +155,8 @@ export interface MyBookingsStrings {
   upcomingTitle: string
   pastTitle: string
   upcomingEmpty: string
-  /** Link back to the lookup step (check a different number). */
-  changeNumber: string
+  /** Link back to the lookup step (check a different email). */
+  changeEmail: string
   /** Expanded-row detail labels. */
   fBarber: string
   fService: string
@@ -184,11 +184,12 @@ export interface CalendarLabels {
   headers: readonly string[]
 }
 
-import { aboutSv, appSv, bookingSv, labelsSv, myBookingsSv } from './sv'
-import { aboutEn, appEn, bookingEn, labelsEn, myBookingsEn } from './en'
+import { aboutSv, appSv, bookingSv, labelsSv, myBookingsSv, privacySv } from './sv'
+import { aboutEn, appEn, bookingEn, labelsEn, myBookingsEn, privacyEn } from './en'
 
 const BOOKING: Readonly<Record<Lang, BookingStrings>> = { sv: bookingSv, en: bookingEn }
 const APP: Readonly<Record<Lang, AppStrings>> = { sv: appSv, en: appEn }
+const PRIVACY: Readonly<Record<Lang, PrivacyStrings>> = { sv: privacySv, en: privacyEn }
 const LABELS: Readonly<Record<Lang, CalendarLabels>> = { sv: labelsSv, en: labelsEn }
 const ABOUT: Readonly<Record<Lang, AboutStrings>> = { sv: aboutSv, en: aboutEn }
 const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
@@ -198,6 +199,7 @@ const MY_BOOKINGS: Readonly<Record<Lang, MyBookingsStrings>> = {
 
 export const bookingStrings = (lang: Lang): BookingStrings => BOOKING[lang]
 export const appStrings = (lang: Lang): AppStrings => APP[lang]
+export const privacyStrings = (lang: Lang): PrivacyStrings => PRIVACY[lang]
 export const calendarLabels = (lang: Lang): CalendarLabels => LABELS[lang]
 export const aboutStrings = (lang: Lang): AboutStrings => ABOUT[lang]
 export const myBookingsStrings = (lang: Lang): MyBookingsStrings => MY_BOOKINGS[lang]

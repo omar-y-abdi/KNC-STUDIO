@@ -89,6 +89,10 @@ export function Root(): JSX.Element {
           </Suspense>
         </Route>
 
+        {/* Permanent customer tokens are random one-segment paths. The production Worker redirects
+            them into a fragment before assets load; this route preserves direct Vite/dev visits. */}
+        <Route path="/:customerAccessToken" component={App} />
+
         {/* Unknown -> home. */}
         <Route>
           <Redirect to="/" />

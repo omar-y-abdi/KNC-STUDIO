@@ -19,6 +19,32 @@ const isoTimestamp = z.string().datetime({ offset: true })
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
 
 const lang = z.enum(['sv', 'en'])
+const weekday = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6),
+])
+
+const canonicalWeekdays = z
+  .array(weekday)
+  .min(1)
+  .superRefine((weekdays, context) => {
+    for (let index = 1; index < weekdays.length; index += 1) {
+      const previous = weekdays[index - 1]
+      const current = weekdays[index]
+      if (previous !== undefined && current !== undefined && previous >= current) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Expected sorted, unique weekdays',
+        })
+        return
+      }
+    }
+  })
 
 // --- profiles (self-read) ------------------------------------------------------------------------
 
@@ -52,15 +78,7 @@ export const scheduleRow = z.object({
   barber_id: z.string(),
   // Literal union so the inferred `weekday` is exactly `0|1|…|6` (structurally `Weekday`), letting
   // the adapter map a parsed row straight into a `DaySchedule` with no cast (cf. `ratingInt`).
-  weekday: z.union([
-    z.literal(0),
-    z.literal(1),
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-    z.literal(5),
-    z.literal(6),
-  ]),
+  weekday,
   working: z.boolean(),
   start_min: z.number().int().min(0).max(1440),
   end_min: z.number().int().min(0).max(1440),
@@ -117,6 +135,27 @@ export const addSlotBlockResponse = z.union([
   availabilityMutationDenied,
 ])
 
+// --- barber_recurring_breaks --------------------------------------------------------------------
+
+export const recurringBreakRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  weekday,
+  start_min: z.number().int().min(540).max(1065),
+  end_min: z.number().int().min(555).max(1080),
+})
+export type RecurringBreakRow = z.infer<typeof recurringBreakRow>
+export const recurringBreakRows = z.array(recurringBreakRow)
+export const addRecurringBreakResponse = z.union([
+  z.object({ ok: z.literal(true), row: recurringBreakRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+export const deleteRecurringBreakResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  availabilityMutationDenied,
+])
+
 // --- services (admin CRUD) -----------------------------------------------------------------------
 // A per-barber service-menu row (owner=all, barber=own). Maps to `AdminService` in types.ts.
 
@@ -128,6 +167,7 @@ export const serviceRow = z.object({
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
+  available_weekdays: canonicalWeekdays,
 })
 export type ServiceRow = z.infer<typeof serviceRow>
 export const serviceRows = z.array(serviceRow)

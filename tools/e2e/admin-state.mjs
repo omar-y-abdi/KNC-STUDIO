@@ -141,6 +141,51 @@ async function verifyPresentationDraft(page) {
     (await replica.getByText('BARBERSHOP · GÖTEBORG', { exact: true }).count()) === 1,
     'preview language toggle kept wrong-language CMS copy',
   )
+  const swedishPreviewToolbar = page.getByRole('toolbar', { name: 'Förhandsvisningskontroller' })
+  const replicaScroll = page.getByTestId('homepage-replica-scroll')
+  const replicaPanel = replica.getByTestId('desktop-top-panel')
+  await swedishPreviewToolbar.getByRole('button', { name: 'Om oss', exact: true }).click()
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const about = host?.querySelector('#om-oss')
+    if (!(host instanceof globalThis.HTMLElement) || !(about instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(about.getBoundingClientRect().top - host.getBoundingClientRect().top - 61) <= 1
+  })
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
+  })
+  const [aboutHostBox, aboutPanelBox] = await Promise.all([
+    replicaScroll.boundingBox(),
+    replicaPanel.boundingBox(),
+  ])
+  assert(aboutHostBox !== null && aboutPanelBox !== null, 'replica scroll geometry unavailable')
+  assert(
+    Math.abs(aboutPanelBox.y - aboutHostBox.y) <= 1,
+    `replica panel escaped embedded scroll viewport: ${JSON.stringify({ aboutHostBox, aboutPanelBox })}`,
+  )
+  await swedishPreviewToolbar.getByRole('button', { name: 'Bokning', exact: true }).click()
+  await replica.getByTestId('booking-step-barber').waitFor()
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const booking = host?.querySelector('[data-testid="fold-booking"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(booking instanceof globalThis.HTMLElement))
+      return false
+    const hostRect = host.getBoundingClientRect()
+    const bookingRect = booking.getBoundingClientRect()
+    return bookingRect.top < hostRect.bottom && bookingRect.bottom > hostRect.top + 61
+  })
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
+  })
   await page.getByRole('button', { name: 'Publish presentation', exact: true }).click()
   const writes = await page.evaluate(
     () => globalThis.window.__adminHarnessWrites?.map((entry) => Object.fromEntries(entry)) ?? [],
@@ -162,7 +207,7 @@ try {
     }
   }
   console.log(
-    'Admin browser regressions passed: history, delayed scroll, role safety, draft publish.',
+    'Admin browser regressions passed: history, delayed scroll, role safety, replica, draft publish.',
   )
 } finally {
   await browser.close()

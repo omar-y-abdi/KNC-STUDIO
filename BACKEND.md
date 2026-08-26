@@ -11,10 +11,11 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
    limits, then calls `create_booking` with the service-role key.
 3. Database derives service name, price, and duration from active `services`; browser values cannot
    change commercial fields.
-4. Insert trigger calls `send-confirmation` asynchronously through a Vault-held URL and shared
-   secret.
-5. Resend emails customer and linked barber. Phone remains required for **Mina bokningar**, cancellation,
-   and review eligibility; SMS is not used.
+4. Insert trigger queues durable booking-email state; Cron dispatches `send-confirmation` through a
+   Vault-held URL and shared secret.
+5. Resend emails customer and linked barber. Confirmation/reminder contains the current permanent
+   email-scoped **Mina bokningar** token. Requesting a new link by email rotates it and invalidates
+   the previous token. Phone remains booking contact data and review scope, not a lookup field.
 
 Storage, Calendar, and Auth side effects use one durable `external_action_jobs` outbox. Cron retries
 failed actions, preserves Calendar event identifiers until Google deletion succeeds, and reconciles
@@ -124,9 +125,10 @@ Production smoke test:
 
 1. Book a test slot with a real test email and phone.
 2. Confirm customer and linked barber each receive one email.
-3. Confirm booking appears under **Mina bokningar** using the phone.
-4. Cancel it and confirm it disappears from upcoming bookings.
-5. After appointment time, confirm review eligibility uses the same phone.
+3. Follow the random root-path customer link; confirm it opens **Mina bokningar** directly.
+4. Request a fresh link using email only; confirm the previous link reports replacement/expiry.
+5. Cancel the booking and confirm it disappears from upcoming bookings.
+6. After appointment time, confirm review eligibility uses the same phone.
 
 ## Free-tier operations
 

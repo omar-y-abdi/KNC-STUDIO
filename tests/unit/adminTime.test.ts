@@ -11,6 +11,7 @@ import {
   START_OPTIONS,
   dayHours,
   defaultWeek,
+  isSlotTappable,
   isValidWindow,
   minutesToHHMM,
   sameTimeAllDays,
@@ -22,7 +23,13 @@ import {
   upcomingDates,
   weekIsValid,
 } from '../../src/admin/time'
-import type { DaySchedule, SlotBlock, TimeOff, WeekSchedule } from '../../src/admin/types'
+import type {
+  DaySchedule,
+  RecurringBreak,
+  SlotBlock,
+  TimeOff,
+  WeekSchedule,
+} from '../../src/admin/types'
 
 describe('minutesToHHMM', () => {
   it('formats whole and partial hours zero-padded', () => {
@@ -39,27 +46,29 @@ describe('minutesToHHMM', () => {
 })
 
 describe('time option grids', () => {
-  it('start options are 09:00..17:15 in 45-min steps', () => {
+  it('start options are 09:00..17:45 in 15-min steps', () => {
     expect(START_OPTIONS[0]?.min).toBe(540)
-    expect(START_OPTIONS[START_OPTIONS.length - 1]?.min).toBe(1035)
+    expect(START_OPTIONS[START_OPTIONS.length - 1]?.min).toBe(1065)
     for (let i = 1; i < START_OPTIONS.length; i++) {
-      expect((START_OPTIONS[i]?.min ?? 0) - (START_OPTIONS[i - 1]?.min ?? 0)).toBe(45)
+      expect((START_OPTIONS[i]?.min ?? 0) - (START_OPTIONS[i - 1]?.min ?? 0)).toBe(15)
     }
   })
 
-  it('end options are 09:45..18:00 in 45-min steps', () => {
-    expect(END_OPTIONS[0]?.min).toBe(585)
+  it('end options are 09:15..18:00 in 15-min steps', () => {
+    expect(END_OPTIONS[0]?.min).toBe(555)
     expect(END_OPTIONS[END_OPTIONS.length - 1]?.min).toBe(1080)
+    for (let i = 1; i < END_OPTIONS.length; i++) {
+      expect((END_OPTIONS[i]?.min ?? 0) - (END_OPTIONS[i - 1]?.min ?? 0)).toBe(15)
+    }
   })
 })
 
 describe('defaultWeek', () => {
-  it('is Mon–Sat working 09:00–18:00, Sunday closed', () => {
+  it('is off for every day until a barber saves working hours', () => {
     const w = defaultWeek()
     expect(w).toHaveLength(7)
-    expect(w[0].working).toBe(false) // Sunday
-    for (let d = 1; d <= 6; d++) {
-      expect(w[d]?.working).toBe(true)
+    for (let d = 0; d <= 6; d++) {
+      expect(w[d]?.working).toBe(false)
       expect(w[d]?.startMin).toBe(DEFAULT_START_MIN)
       expect(w[d]?.endMin).toBe(DEFAULT_END_MIN)
     }
@@ -81,8 +90,8 @@ describe('toWeekSchedule', () => {
     expect(w[3]?.startMin).toBe(600)
     expect(w[3]?.endMin).toBe(900)
     expect(w[0]?.working).toBe(true) // overridden from default-closed
-    // A weekday not provided keeps the default.
-    expect(w[1]?.working).toBe(true)
+    // A weekday not provided stays off by default.
+    expect(w[1]?.working).toBe(false)
     expect(w[1]?.startMin).toBe(540)
   })
 
@@ -95,18 +104,17 @@ describe('toWeekSchedule', () => {
 
 describe('sameTimeAllDays', () => {
   it('applies one window to every WORKING day, leaving closed days untouched', () => {
-    const base = defaultWeek() // Sun closed, Mon–Sat 09–18
+    const base = defaultWeek().map((day) => (day.weekday === 1 ? { ...day, working: true } : day))
     const out = sameTimeAllDays(base, 600, 960) // 10:00–16:00
     expect(out[0]?.working).toBe(false)
     expect(out[0]?.startMin).toBe(540) // closed day untouched
-    for (let d = 1; d <= 6; d++) {
-      expect(out[d]?.startMin).toBe(600)
-      expect(out[d]?.endMin).toBe(960)
-    }
+    expect(out[1]?.startMin).toBe(600)
+    expect(out[1]?.endMin).toBe(960)
+    expect(out[2]?.startMin).toBe(540)
   })
 
   it('does not mutate the input (immutability)', () => {
-    const base = defaultWeek()
+    const base = defaultWeek().map((day) => (day.weekday === 1 ? { ...day, working: true } : day))
     const snapshot = JSON.stringify(base)
     sameTimeAllDays(base, 600, 960)
     expect(JSON.stringify(base)).toBe(snapshot)
@@ -120,11 +128,11 @@ describe('toggleWorking + setDayHours', () => {
     expect(out[0]?.working).toBe(true)
     expect(base[0]?.working).toBe(false) // input unchanged
     // other days unchanged
-    expect(out[1]?.working).toBe(true)
+    expect(out[1]?.working).toBe(false)
   })
 
   it('setDayHours updates only the target day', () => {
-    const base = defaultWeek()
+    const base = defaultWeek().map((day) => (day.weekday === 1 ? { ...day, working: true } : day))
     const out = setDayHours(base, 2, 630, 870)
     expect(out[2]?.startMin).toBe(630)
     expect(out[2]?.endMin).toBe(870)
@@ -143,7 +151,10 @@ describe('isValidWindow + weekIsValid', () => {
 
   it('weekIsValid requires every day to validate', () => {
     expect(weekIsValid(defaultWeek())).toBe(true)
-    const bad = setDayHours(defaultWeek(), 1, 1000, 900) as WeekSchedule
+    const workingMonday = defaultWeek().map((day) =>
+      day.weekday === 1 ? { ...day, working: true } : day,
+    ) as WeekSchedule
+    const bad = setDayHours(workingMonday, 1, 1000, 900) as WeekSchedule
     expect(weekIsValid(bad)).toBe(false)
   })
 })
@@ -163,6 +174,10 @@ function block(startMin: number, endMin: number, id = 'b1'): SlotBlock {
   return { id, barberId: 'hassan', date: '2099-01-05', startMin, endMin }
 }
 
+function recurringBreak(startMin: number, endMin: number): RecurringBreak {
+  return { id: 'r1', barberId: 'hassan', weekday: 1, startMin, endMin }
+}
+
 /** Flatten the hour groups into the 36 quarters for easy assertions. */
 function quarters(args: Parameters<typeof dayHours>[0]) {
   return dayHours(args).flatMap((h) => h.quarters)
@@ -174,6 +189,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -195,7 +211,30 @@ describe('dayHours', () => {
       { day: undefined, dayOff: false },
       { day: workDay, dayOff: true },
     ]) {
-      const all = quarters({ ...args, blocks: [], bookings: [], pastCutoffMin: 0 })
+      const all = quarters({
+        ...args,
+        blocks: [],
+        recurringBreaks: [],
+        bookings: [],
+        pastCutoffMin: 0,
+      })
+      expect(all.every((q) => q.state === 'closed')).toBe(true)
+    }
+  })
+
+  it('keeps non-working and time-off days closed despite a matching recurring break', () => {
+    const offDay = { ...workDay, working: false }
+    for (const args of [
+      { day: offDay, dayOff: false },
+      { day: workDay, dayOff: true },
+    ]) {
+      const all = quarters({
+        ...args,
+        blocks: [],
+        recurringBreaks: [recurringBreak(720, 780)],
+        bookings: [],
+        pastCutoffMin: 0,
+      })
       expect(all.every((q) => q.state === 'closed')).toBe(true)
     }
   })
@@ -206,6 +245,7 @@ describe('dayHours', () => {
       day: lateStart,
       dayOff: false,
       blocks: [],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -220,6 +260,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [block(630, 645)],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -234,6 +275,7 @@ describe('dayHours', () => {
       day: workDay,
       dayOff: false,
       blocks: [block(720, 780)],
+      recurringBreaks: [],
       bookings: [],
       pastCutoffMin: 0,
     })
@@ -242,11 +284,31 @@ describe('dayHours', () => {
     ])
   })
 
+  it('makes recurring-break quarters inert while adjacent quarters remain open', () => {
+    const all = quarters({
+      day: workDay,
+      dayOff: false,
+      blocks: [block(720, 735)],
+      recurringBreaks: [recurringBreak(720, 780)],
+      bookings: [],
+      pastCutoffMin: 0,
+    })
+
+    expect(all.filter((q) => q.state === 'recurring_break').map((q) => q.startMin)).toEqual([
+      720, 735, 750, 765,
+    ])
+    expect(all.find((q) => q.startMin === 705)?.state).toBe('open')
+    expect(all.find((q) => q.startMin === 780)?.state).toBe('open')
+    expect(isSlotTappable(all.find((q) => q.startMin === 720)?.state ?? 'open')).toBe(false)
+    expect(isSlotTappable(all.find((q) => q.startMin === 705)?.state ?? 'closed')).toBe(true)
+  })
+
   it('a booking beats a block, spans its true quarters, and carries its label', () => {
     const all = quarters({
       day: workDay,
       dayOff: false,
       blocks: [block(630, 645)],
+      recurringBreaks: [],
       // 45-min booking 10:30-11:15 -> quarters 10:30, 10:45, 11:00 (11:15 starts AT its end).
       bookings: [{ startMin: 630, endMin: 675, label: 'Anna' }],
       pastCutoffMin: 600, // "now" is 10:00 -> 09:00..09:45 quarters are past

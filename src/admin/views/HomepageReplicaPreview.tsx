@@ -3,7 +3,7 @@
 // content without changing the public page.
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { DesktopSite } from '../../app/DesktopSite'
 import { chromeIcon, shellPalette, type View } from '../../app/shared'
 import { LangSwitch, ThemeSwitch } from '../chrome'
@@ -32,12 +32,37 @@ export interface HomepageReplicaPreviewProps {
   readonly s: AdminStylesBundle
 }
 
+type PreviewSurface = View | 'about'
+
 export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.Element {
   const [dark, setDark] = useState(props.dark)
   const [lang, setLang] = useState<Lang>(props.lang)
-  const [view, setView] = useState<View>('home')
+  const [surface, setSurface] = useState<PreviewSurface>('home')
+  const scrollRootRef = useRef<HTMLDivElement>(null)
   useEffect(() => setDark(props.dark), [props.dark])
   useEffect(() => setLang(props.lang), [props.lang])
+  useEffect(() => {
+    const scrollRoot = scrollRootRef.current
+    if (scrollRoot === null) return
+    const frame = window.requestAnimationFrame(() => {
+      const target =
+        surface === 'booking'
+          ? scrollRoot.querySelector<HTMLElement>('[data-testid="fold-booking"]')
+          : surface === 'about'
+            ? scrollRoot.querySelector<HTMLElement>('#om-oss')
+            : null
+      if (target === null) {
+        scrollRoot.scrollTo({ top: 0 })
+        return
+      }
+      const hostTop = scrollRoot.getBoundingClientRect().top
+      const targetTop = target.getBoundingClientRect().top
+      scrollRoot.scrollTo({ top: scrollRoot.scrollTop + targetTop - hostTop - 61 })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [surface])
+
+  const view: View = surface === 'booking' ? 'booking' : 'home'
 
   const c = shellPalette(dark)
   const business = resolveBusinessSettings(props.settings)
@@ -80,9 +105,9 @@ export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.
           <button
             key={entry}
             type="button"
-            aria-pressed={view === entry}
-            onClick={() => setView(entry)}
-            style={view === entry ? props.s.primaryBtn : props.s.ghostBtn}
+            aria-pressed={surface === entry}
+            onClick={() => setSurface(entry)}
+            style={surface === entry ? props.s.primaryBtn : props.s.ghostBtn}
           >
             {entry === 'home'
               ? lang === 'sv'
@@ -105,6 +130,8 @@ export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.
         />
       </div>
       <div
+        ref={scrollRootRef}
+        data-testid="homepage-replica-scroll"
         style={{
           height: '580px',
           overflow: 'auto',
@@ -124,8 +151,10 @@ export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.
             langToggle={<LangSwitch lang={lang} setLang={() => undefined} dark={dark} />}
             tx={tx}
             view={view}
-            toggleDeskBooking={() => setView((value) => (value === 'booking' ? 'home' : 'booking'))}
-            toggleDeskAbout={() => setView((value) => (value === 'about' ? 'home' : 'about'))}
+            toggleDeskBooking={() =>
+              setSurface((value) => (value === 'booking' ? 'home' : 'booking'))
+            }
+            scrollToAbout={() => setSurface('about')}
             findUsStyle={findUsStyle}
             openCancel={() => undefined}
             openMyBookings={() => undefined}
@@ -134,6 +163,7 @@ export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.
             aboutScale={props.aboutScale}
             bookingPopupText={resolvedText}
             previewPorts={previewPorts}
+            scrollRootRef={scrollRootRef}
           />
         </div>
       </div>

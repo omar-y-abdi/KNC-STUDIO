@@ -1,54 +1,73 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { recalledPhone, rememberPhone } from '../../src/mybookings/deviceMemory'
+import { afterEach, describe, expect, it } from 'vitest'
+import { forgetPhone, recalledPhone, rememberPhone } from '../../src/mybookings/deviceMemory'
 
-// The unit suite runs in the `node` env (no DOM), so we stub a minimal localStorage on globalThis to
-// exercise the happy path, and remove it to exercise the graceful "storage unavailable" degradation.
+class CookieDocument {
+  readonly values = new Map<string, string>()
 
-interface FakeLS {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
-}
+  get cookie(): string {
+    return Array.from(this.values, ([name, value]) => `${name}=${value}`).join('; ')
+  }
 
-function fakeStorage(): FakeLS {
-  const map = new Map<string, string>()
-  return {
-    getItem: (k) => {
-      const v = map.get(k)
-      return v === undefined ? null : v
-    },
-    setItem: (k, v) => {
-      map.set(k, v)
-    },
-    removeItem: (k) => {
-      map.delete(k)
-    },
+  set cookie(serialized: string) {
+    const [pair, ...attributes] = serialized.split(';').map((value) => value.trim())
+    const separator = pair?.indexOf('=') ?? -1
+    if (pair === undefined || separator < 1) return
+    const name = pair.slice(0, separator)
+    const value = pair.slice(separator + 1)
+    const expires = attributes.some((attribute) => attribute.toLowerCase() === 'max-age=0')
+    if (expires) this.values.delete(name)
+    else this.values.set(name, value)
   }
 }
 
-const g = globalThis as unknown as { window?: { localStorage: FakeLS } }
+const globals = globalThis as unknown as {
+  document?: CookieDocument
+  location?: { protocol: string }
+}
 
-describe('deviceMemory', () => {
+function browser(preference: 'functional' | 'essential'): CookieDocument {
+  const document = new CookieDocument()
+  document.values.set('bladeblend_storage_preferences', preference)
+  globals.document = document
+  globals.location = { protocol: 'https:' }
+  return document
+}
+
+describe('customer phone device cookie', () => {
   afterEach(() => {
-    delete g.window
+    delete globals.document
+    delete globals.location
   })
 
-  it('remembers and recalls a phone via localStorage', () => {
-    g.window = { localStorage: fakeStorage() }
+  it('writes and recalls phone only after functional-storage opt-in', () => {
+    const document = browser('functional')
     expect(recalledPhone()).toBeNull()
     rememberPhone('0701234567')
     expect(recalledPhone()).toBe('0701234567')
+    expect(document.values.get('bladeblend_mybookings_phone')).toBe('0701234567')
   })
 
-  it('degrades gracefully (null, no throw) when storage is unavailable', () => {
-    delete g.window
+  it('does not read or write phone after optional storage is rejected', () => {
+    const document = browser('essential')
+    rememberPhone('0701234567')
+    expect(recalledPhone()).toBeNull()
+    expect(document.values.has('bladeblend_mybookings_phone')).toBe(false)
+  })
+
+  it('rejects malformed phone values and degrades when cookies are unavailable', () => {
+    browser('functional')
+    rememberPhone('   ')
+    expect(recalledPhone()).toBeNull()
+    delete globals.document
     expect(() => rememberPhone('0701234567')).not.toThrow()
     expect(recalledPhone()).toBeNull()
   })
 
-  it('treats a blank stored value as "not remembered"', () => {
-    g.window = { localStorage: fakeStorage() }
-    rememberPhone('   ')
+  it('forgets the registered-device phone explicitly', () => {
+    const document = browser('functional')
+    rememberPhone('0701234567')
+    forgetPhone()
     expect(recalledPhone()).toBeNull()
+    expect(document.values.has('bladeblend_mybookings_phone')).toBe(false)
   })
 })

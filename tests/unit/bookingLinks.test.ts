@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { buildLinks } from '../../src/booking/adapters/localCalendar'
-import { BARBERS } from '../../src/booking/barbers'
 import type { Barber, Booking, ServiceItem } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
 import type { BusinessSettings } from '../../src/site/siteChrome'
@@ -10,7 +9,7 @@ import type { BusinessSettings } from '../../src/site/siteChrome'
 // links are identical regardless of backend. The links don't ride on the create_booking RPC, so
 // they're verified here at the unit level (the integration suite covers the RPC contract instead).
 
-const HASSAN: Barber = BARBERS[0] ?? {
+const HASSAN: Barber = {
   id: asBarberId('hassan'),
   name: 'Hassan',
   ig: 'freebandzcuts',

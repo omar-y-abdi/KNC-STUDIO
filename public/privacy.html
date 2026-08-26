@@ -98,6 +98,36 @@
         tilldelade barberarens kalender. Telefonnummer och e-post skrivs inte till Google Calendar.
       </p>
 
+      <h2>Bokningar, Mina bokningar och e-post</h2>
+      <p>
+        När du bokar behandlar vi namn, telefonnummer, e-postadress, vald behandling, barberare och
+        bokad tid för att kunna skapa och administrera bokningen, skicka bekräftelse eller
+        påminnelse och hantera avbokning. Bokningsuppgifter lagras i Supabase. Boknings- och
+        transaktionsmejl skickas via Resend. Vi använder inte bokningsuppgifter för annonsering.
+      </p>
+      <p>
+        Mina bokningar använder en säker, e-postkopplad åtkomstlänk som skickas till bokningens
+        e-postadress. Länken har ingen tidsgräns, men en ny begäran om länk för samma e-postadress
+        ersätter och återkallar den tidigare länken. När en giltig länk har öppnats används
+        sessionslagring i samma flik för den nödvändiga behörighetshanteringen. Den används inte för
+        spårning och delas inte mellan webbplatser eller flikar.
+      </p>
+
+      <h2>Cookies och annan webblagring</h2>
+      <p id="webblagring">
+        Webbplatsen använder inga analys- eller annonscookies. Vi använder en förstapartscookie med
+        namnet <code>bladeblend_storage_preferences</code> för att spara ditt lagringsval. Om du
+        godkänner funktionell lagring kan en separat förstapartscookie,
+        <code>bladeblend_mybookings_phone</code>, komma ihåg endast telefonnumret för Mina bokningar
+        på den här enheten. Den är en bekvämlighet och är aldrig behörighet till bokningar. Avvisar
+        du valfri lagring, eller återkallar valet via knappen Integritet, tas den kakan bort.
+      </p>
+      <p>
+        Nödvändig sessionslagring används först efter att du öppnat en giltig Mina bokningar-länk.
+        Den behövs för den begärda bokningsfunktionen och innehåller inte analys- eller
+        annonsidentifierare.
+      </p>
+
       <h2>Bokningsformulär och bot-skydd (Cloudflare Turnstile)</h2>
       <p>
         Det publika bokningsformuläret skyddas mot automatiserad spam och missbruk med Cloudflare
@@ -177,6 +207,37 @@
         synced booking, the customer's name, service, and appointment time are written to the
         assigned barber's calendar. Phone numbers and email addresses are not written to Google
         Calendar.
+      </p>
+
+      <h2>Bookings, My appointments and email</h2>
+      <p>
+        When you book, we process your name, phone number, email address, selected service, barber
+        and appointment time to create and administer the booking, send confirmation or reminder
+        email, and handle cancellation. Booking data is stored in Supabase. Booking and
+        transactional email is sent through Resend. We do not use booking data for advertising.
+      </p>
+      <p>
+        My appointments uses a secure, email-scoped access link sent to the email address on the
+        booking. The link has no time limit, but a new link request for the same email address
+        replaces and revokes the previous link. After a valid link is opened, same-tab session
+        storage is used for the necessary credential handling. It is not used for tracking and is
+        not shared across websites or tabs.
+      </p>
+
+      <h2>Cookies and other browser storage</h2>
+      <p id="browser-storage">
+        This website does not use analytics or advertising cookies. We use a first-party cookie
+        named
+        <code>bladeblend_storage_preferences</code> to remember your storage choice. If you accept
+        functional storage, a separate first-party cookie, <code>bladeblend_mybookings_phone</code>,
+        may remember only the phone number for My appointments on this device. It is a convenience
+        only and never authorises access to bookings. If you reject optional storage, or withdraw
+        through the Privacy button, that cookie is removed.
+      </p>
+      <p>
+        Necessary session storage is used only after you open a valid My appointments link. It is
+        required for the requested booking function and contains no analytics or advertising
+        identifier.
       </p>
 
       <h2>Booking form and bot protection (Cloudflare Turnstile)</h2>

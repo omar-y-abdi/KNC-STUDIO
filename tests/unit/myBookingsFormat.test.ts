@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { formatRowLabel, splitByTime } from '../../src/mybookings/format'
-import { FALLBACK_BARBER } from '../../src/booking/barbers'
+import { asBarberId } from '../../src/booking/domain'
 import type { MyBooking } from '../../src/mybookings/domain'
 
 // "now"/dates are injected, so these are fully deterministic (no clock read, no DOM).
 function mk(start: Date, id: string): MyBooking {
   return {
     id,
-    barber: FALLBACK_BARBER,
+    barber: { id: asBarberId('test'), name: 'Test Barber', ig: '' },
     serviceName: 'Hår',
     price: 350,
     durationMin: 45,

@@ -23,7 +23,7 @@ async function fresh(browser, viewport, scheme) {
   })
   const page = await ctx.newPage()
   await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
-  await page.waitForSelector('#root > *', { timeout: 15000 })
+  await page.waitForSelector('#root > :first-child', { timeout: 15000 })
   await page.evaluate(() => globalThis.document.fonts.ready)
   await settle(page, 500)
   return { ctx, page }
@@ -33,14 +33,11 @@ async function fresh(browser, viewport, scheme) {
 async function reachServiceMenu(page) {
   await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
   await settle(page, 400)
-  await page
-    .getByRole('button', { name: /Hassan|Victor|Salman/ })
-    .first()
-    .click()
+  await page.getByTestId('booking-barber-option').first().click()
   await settle(page, 400)
   const menuVisible = () =>
     page
-      .getByText('Hårklippning + skägg')
+      .getByTestId('booking-service-option')
       .first()
       .isVisible()
       .catch(() => false)
@@ -66,7 +63,7 @@ async function reachServiceMenu(page) {
       await settle(page, 300)
     }
   }
-  await page.getByText('Hårklippning + skägg').first().waitFor({ timeout: 5000 })
+  await page.getByTestId('booking-service-option').first().waitFor({ timeout: 5000 })
 }
 
 async function openMyBookings(page) {

@@ -10,9 +10,13 @@ import type {
 
 export const bookingSv: BookingStrings = {
   chooseBarber: 'Välj din barberare',
+  loadingBarbers: 'Laddar barberare …',
+  noBarbers: 'Inga barberare är tillgängliga för bokning just nu.',
   chooseDate: 'Välj en dag',
   chooseTime: 'Välj en tid',
   chooseService: 'Välj behandling',
+  loadingServices: 'Laddar behandlingar …',
+  noServices: 'Barberaren har inga aktiva behandlingar den valda dagen.',
   pickDayForService: 'Välj en dag i kalendern för att se behandlingar.',
   pickServiceForTime: 'Välj en behandling för att se lediga tider.',
   loadingTimes: 'Laddar tider …',
@@ -42,16 +46,6 @@ export const bookingSv: BookingStrings = {
   calGoogle: 'Google Kalender',
   directions: 'Vägbeskrivning till salongen',
   newBooking: 'Boka en ny tid',
-  grpWedSat: 'Herr · onsdag–lördag',
-  grpMonTue: 'Herr · måndag–tisdag',
-  grpStudent: 'Studentrabatt · onsdag',
-  grpKids: 'Barn upp till 12 år',
-  noteStudent: 'Endast onsdagar',
-  sHairBeard: 'Hårklippning + skägg',
-  sHair: 'Hårklippning',
-  sBeard: 'Skäggklippning',
-  sHairStudent: 'Hårklippning (student)',
-  sKids: 'Klippning, barn',
   min: 'min',
   errName: 'Namnet är för långt',
   errPhone: 'Ogiltigt telefonnummer',
@@ -75,8 +69,22 @@ export const appSv: AppStrings = {
   cancelLink: 'Avbokning',
 }
 
-// NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
-// reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
+export const privacySv = {
+  title: 'Integritet och lagring',
+  lead: 'Vi använder inte analys- eller annonslagring. Du kan välja om vi får använda en förstapartscookie för att komma ihåg telefonnumret för Mina bokningar på den här enheten.',
+  privacyLink: 'Läs integritetspolicyn',
+  accept: 'Godkänn funktionell lagring',
+  reject: 'Avvisa valfri lagring',
+  preferences: 'Inställningar',
+  save: 'Spara val',
+  functionalTitle: 'Kom ihåg telefonnummer',
+  functionalLead:
+    'En förstapartscookie sparar endast numret som används för Mina bokningar på denna enhet.',
+  necessary: 'Nödvändig sessionslagring används bara när du öppnar en säker Mina bokningar-länk.',
+  manage: 'Integritet',
+  manageLabel: 'Hantera integritetsinställningar',
+}
+
 export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
@@ -85,24 +93,13 @@ export const aboutSv: AboutStrings = {
   galleryTitle: 'I salongen',
   galleryAlt: 'Bild från salongen (platshållare)',
   stylistsTitle: 'Barberarna',
-  stylists: {
-    hassan: {
-      role: 'Barberare',
-      bio: 'Specialist på skinfades och precisa kanter. Hassan har saxen i handen sedan tonåren och gör jobbet med is i magen.',
-    },
-    victor: {
-      role: 'Barberare',
-      bio: 'Klassiska klippningar med modern touch. Victor lyssnar in vad du vill ha och levererar varje gång — skägg är hans signatur.',
-    },
-    salman: {
-      role: 'Barberare',
-      bio: 'Texturerat hår och rena övergångar. Salman tar gärna den extra minuten för att detaljen ska bli helt rätt.',
-    },
-  },
   stylistAvatarAlt: 'Porträtt (platshållare)',
   cutsTitle: 'Jobb vi gjort',
   cutsAlt: 'Kundklippning (platshållare)',
   reviewsTitle: 'Omdömen',
+  reviewsLoading: 'Hämtar publicerade omdömen …',
+  reviewsEmpty: 'Inga publicerade omdömen ännu.',
+  reviewsUnavailable: 'Omdömen kan inte hämtas just nu.',
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
@@ -121,6 +118,7 @@ export const aboutSv: AboutStrings = {
   reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   reviewErrSubmit: 'Omdömet kunde inte skickas. Försök igen.',
+  reviewErrUnavailable: 'Omdömen kan lämnas när bokningstjänsten är tillgänglig.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',
@@ -128,25 +126,22 @@ export const aboutSv: AboutStrings = {
 
 export const myBookingsSv: MyBookingsStrings = {
   title: 'Mina bokningar',
-  lookupLead: 'Ange telefonnummer och e-post från bokningen. Vi skickar en säker engångslänk.',
-  phone: 'Telefon',
-  phonePh: '07X XXX XX XX',
+  lookupLead: 'Ange e-postadressen från bokningen. Vi skickar en ny säker länk.',
   email: 'E-post',
   emailPh: 'namn@exempel.se',
   lookupBtn: 'Skicka säker länk',
   lookingUp: 'Skickar …',
-  errPhone: 'Ogiltigt telefonnummer',
   errEmail: 'Ogiltig e-postadress',
   accessSent:
-    'Om uppgifterna stämmer skickar vi en säker länk till din e-post. Länken gäller i 15 minuter.',
-  errAccess: 'Länken är ogiltig eller har gått ut. Begär en ny säker länk.',
+    'Om e-postadressen matchar en bokning skickar vi en ny länk. Den tidigare länken slutar då att fungera.',
+  errAccess: 'Länken är ogiltig eller har ersatts. Begär en ny säker länk.',
   errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
   errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   upcomingTitle: 'Kommande',
   pastTitle: 'Tidigare',
   upcomingEmpty: 'Du har inga kommande bokningar.',
-  changeNumber: 'Använd andra uppgifter',
+  changeEmail: 'Använd en annan e-postadress',
   fBarber: 'Barberare',
   fService: 'Behandling',
   fDuration: 'Längd',

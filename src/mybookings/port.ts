@@ -2,7 +2,6 @@ import type { Lang } from '../i18n/index'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from './domain'
 
 export interface MyBookingsAccessRequestParams {
-  readonly phone: string
   readonly email: string
   readonly lang: Lang
   readonly turnstileToken: string
