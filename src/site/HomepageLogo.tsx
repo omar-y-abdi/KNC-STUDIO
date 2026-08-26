@@ -13,27 +13,34 @@ export interface HomepageLogoProps {
   readonly style?: JSX.CSSProperties
 }
 
+export function homepageLogoFilter(style: HomepageLogo['style']): string | undefined {
+  return style === 'monochrome' ? 'grayscale(1) contrast(1.12)' : undefined
+}
+
 export function HomepageLogo(props: HomepageLogoProps): JSX.Element {
   const height = scalePx(props.height, props.logo.scale)
+  const presentationStyle: JSX.CSSProperties = {
+    ...props.style,
+    filter: homepageLogoFilter(props.logo.style) ?? props.style?.filter,
+  }
   if (props.logo.url !== null) {
     return (
       <img
         src={props.logo.url}
         alt="Blade & Blend Studio"
         style={{
-          ...props.style,
+          ...presentationStyle,
           display: 'block',
           height: `${height}px`,
           maxWidth: 'min(460px, 80vw)',
           objectFit: 'contain',
-          filter: props.logo.style === 'monochrome' ? 'grayscale(1) contrast(1.12)' : undefined,
         }}
       />
     )
   }
   return props.layout === 'desktop' ? (
-    <DeskLockup height={height} {...(props.style === undefined ? {} : { style: props.style })} />
+    <DeskLockup height={height} style={presentationStyle} />
   ) : (
-    <HeroLockup height={height} {...(props.style === undefined ? {} : { style: props.style })} />
+    <HeroLockup height={height} style={presentationStyle} />
   )
 }

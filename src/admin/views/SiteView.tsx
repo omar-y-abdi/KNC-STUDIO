@@ -12,6 +12,7 @@ import {
   listSiteSettings,
   saveSiteContent,
   saveSiteSetting,
+  saveSiteSettings,
 } from '../adapters/siteAdmin'
 import {
   homepageLogoPublicUrl,
@@ -19,6 +20,7 @@ import {
   uploadHomepageLogo,
 } from '../adapters/homepageLogoAdmin'
 import { HomepageLogo } from '../../site/HomepageLogo'
+import { HomepageReplicaPreview } from './HomepageReplicaPreview'
 import {
   ABOUT_SCALE_KEY,
   BOOKING_CONFIRMATION_TEXT_KEYS,
@@ -42,13 +44,21 @@ import {
   type HomepageLogoStyle,
   type SizePreset,
   type SiteSettingKey,
+  type SiteText,
   type SiteTextKey,
 } from '../../site/siteChrome'
 import type { AdminStylesBundle } from './viewTypes'
+import type { AdminResult, AdminSiteContentCell } from '../types'
 
 const LANGS: readonly Lang[] = ['sv', 'en']
 type TextField = SiteTextKey
 type SettingInputType = 'email' | 'number' | 'tel' | 'text' | 'url'
+
+interface HomepagePresentationDraft {
+  readonly homepageScale: SizePreset
+  readonly logoScale: SizePreset
+  readonly logoStyle: HomepageLogoStyle
+}
 
 interface SettingField {
   readonly key: SiteSettingKey
@@ -65,11 +75,29 @@ export interface SiteViewProps {
   readonly dark: boolean
   readonly lang: Lang
   readonly s: AdminStylesBundle
+  readonly port?: SiteViewPort
+}
+
+export interface SiteViewPort {
+  readonly listContent: () => Promise<AdminResult<readonly AdminSiteContentCell[]>>
+  readonly listSettings: typeof listSiteSettings
+  readonly saveContent: typeof saveSiteContent
+  readonly saveSetting: typeof saveSiteSetting
+  readonly saveSettings: typeof saveSiteSettings
+}
+
+const defaultSiteViewPort: SiteViewPort = {
+  listContent: listSiteContent,
+  listSettings: listSiteSettings,
+  saveContent: saveSiteContent,
+  saveSetting: saveSiteSetting,
+  saveSettings: saveSiteSettings,
 }
 
 export function SiteView(props: SiteViewProps): JSX.Element {
   const { s, lang } = props
   const t = adminText(lang)
+  const port = props.port ?? defaultSiteViewPort
 
   const [cells, setCells] = useState<Map<string, string>>(new Map())
   const [settings, setSettings] = useState<ReadonlyMap<string, string>>(() => defaultSiteSettings())
@@ -82,6 +110,13 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null)
   const [logoBusy, setLogoBusy] = useState<'upload' | 'remove' | null>(null)
   const [logoStatus, setLogoStatus] = useState<string | null>(null)
+  const [presentationDraft, setPresentationDraft] = useState<HomepagePresentationDraft>({
+    homepageScale: 'md',
+    logoScale: 'md',
+    logoStyle: 'classic',
+  })
+  const [presentationBusy, setPresentationBusy] = useState(false)
+  const [presentationStatus, setPresentationStatus] = useState<string | null>(null)
 
   useEffect(
     () => () => {
@@ -93,7 +128,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   useEffect(() => {
     let active = true
     void (async () => {
-      const [content, siteSettings] = await Promise.all([listSiteContent(), listSiteSettings()])
+      const [content, siteSettings] = await Promise.all([port.listContent(), port.listSettings()])
       if (!active) return
       if (!content.ok) {
         setLoadError(content.error.message)
@@ -116,12 +151,17 @@ export function SiteView(props: SiteViewProps): JSX.Element {
       }
       setCells(map)
       setSettings(new Map(siteSettings.value))
+      setPresentationDraft({
+        homepageScale: parseScale(siteSettings.value.get(HOMEPAGE_SCALE_KEY)),
+        logoScale: parseScale(siteSettings.value.get(HOMEPAGE_LOGO_SCALE_KEY)),
+        logoStyle: parseHomepageLogoStyle(siteSettings.value.get(HOMEPAGE_LOGO_STYLE_KEY)),
+      })
       setLoaded(true)
     })()
     return () => {
       active = false
     }
-  }, [])
+  }, [port])
 
   const valueFor = (key: TextField, l: Lang): string => cells.get(cellKey(key, l)) ?? ''
   const settingValue = (key: SiteSettingKey): string =>
@@ -143,7 +183,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     const value = valueFor(key, l)
     setSavingKey(ck)
     setErrorFor(null)
-    const result = await saveSiteContent(key, l, value)
+    const result = await port.saveContent(key, l, value)
     setSavingKey(null)
     if (!result.ok) {
       setErrorFor({ key: ck, message: result.error.message })
@@ -201,7 +241,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   ): Promise<void> => {
     setSavingKey(key)
     setErrorFor(null)
-    const result = await saveSiteSetting(key, value)
+    const result = await port.saveSetting(key, value)
     setSavingKey(null)
     if (!result.ok) {
       setErrorFor({ key, message: result.error.message })
@@ -213,18 +253,9 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     setSavedKey(key)
   }
 
-  const onScale = async (
-    which: 'homepage' | 'about' | 'logo',
-    value: SizePreset,
-  ): Promise<void> => {
-    const key =
-      which === 'homepage'
-        ? HOMEPAGE_SCALE_KEY
-        : which === 'about'
-          ? ABOUT_SCALE_KEY
-          : HOMEPAGE_LOGO_SCALE_KEY
-    setSettingValue(key, value)
-    await saveSetting(key, value)
+  const onAboutScale = async (value: SizePreset): Promise<void> => {
+    setSettingValue(ABOUT_SCALE_KEY, value)
+    await saveSetting(ABOUT_SCALE_KEY, value)
   }
 
   const fieldLabels: Record<TextField, string> = {
@@ -253,16 +284,22 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     xl: t.siteSizeXl,
   }
 
-  const homepageScale = parseScale(settingValue(HOMEPAGE_SCALE_KEY))
+  const publishedHomepageScale = parseScale(settingValue(HOMEPAGE_SCALE_KEY))
   const aboutScale = parseScale(settingValue(ABOUT_SCALE_KEY))
-  const logoScale = parseScale(settingValue(HOMEPAGE_LOGO_SCALE_KEY))
-  const logoStyle = parseHomepageLogoStyle(settingValue(HOMEPAGE_LOGO_STYLE_KEY))
   const logoPath = parseHomepageLogoPath(settingValue(HOMEPAGE_LOGO_PATH_KEY))
   const logo: HomepageLogoConfig = {
     path: logoPath,
     url: pendingLogoUrl ?? (logoPath === null ? null : homepageLogoPublicUrl(logoPath)),
-    scale: logoScale,
-    style: logoStyle,
+    scale: presentationDraft.logoScale,
+    style: presentationDraft.logoStyle,
+  }
+  const presentationChanged =
+    presentationDraft.homepageScale !== publishedHomepageScale ||
+    presentationDraft.logoScale !== parseScale(settingValue(HOMEPAGE_LOGO_SCALE_KEY)) ||
+    presentationDraft.logoStyle !== parseHomepageLogoStyle(settingValue(HOMEPAGE_LOGO_STYLE_KEY))
+  const previewTextByLang: Readonly<Record<Lang, SiteText>> = {
+    sv: Object.fromEntries(SITE_TEXT_KEYS.map((key) => [key, valueFor(key, 'sv')])) as SiteText,
+    en: Object.fromEntries(SITE_TEXT_KEYS.map((key) => [key, valueFor(key, 'en')])) as SiteText,
   }
 
   const selectLogo = (file: File | null): void => {
@@ -325,22 +362,45 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     )
   }
 
-  const setLogoStyle = async (style: HomepageLogoStyle): Promise<void> => {
-    setSettingValue(HOMEPAGE_LOGO_STYLE_KEY, style)
-    await saveSetting(HOMEPAGE_LOGO_STYLE_KEY, style)
+  const savePresentation = async (): Promise<void> => {
+    setPresentationBusy(true)
+    setPresentationStatus(null)
+    const result = await port.saveSettings([
+      { key: HOMEPAGE_LOGO_SCALE_KEY, value: presentationDraft.logoScale },
+      { key: HOMEPAGE_SCALE_KEY, value: presentationDraft.homepageScale },
+      { key: HOMEPAGE_LOGO_STYLE_KEY, value: presentationDraft.logoStyle },
+    ])
+    setPresentationBusy(false)
+    if (!result.ok) {
+      setPresentationStatus(result.error.message)
+      return
+    }
+    setSettings((previous) => {
+      const next = new Map(previous)
+      for (const [key, value] of result.value) next.set(key, value)
+      return next
+    })
+    setPresentationStatus(props.lang === 'sv' ? 'Utseende publicerat.' : 'Presentation published.')
+  }
+
+  const updatePresentation = (change: Partial<HomepagePresentationDraft>): void => {
+    setPresentationDraft((previous) => ({ ...previous, ...change }))
+    setPresentationStatus(null)
   }
 
   const scaleSelect = (
-    which: 'homepage' | 'about' | 'logo',
     label: string,
     value: SizePreset,
+    onChange: (value: SizePreset) => void,
+    disabled = false,
   ): JSX.Element => (
     <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px' }}>
       <span style={s.label}>{label}</span>
       <select
         style={s.select}
         value={value}
-        onChange={(e) => void onScale(which, parseScale(e.currentTarget.value))}
+        disabled={disabled}
+        onChange={(e) => onChange(parseScale(e.currentTarget.value))}
       >
         {SIZE_PRESETS.map((p) => (
           <option key={p} value={p}>
@@ -559,14 +619,16 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                 />
               </label>
               {scaleSelect(
-                'logo',
                 props.lang === 'sv' ? 'Logotypstorlek' : 'Logo scale',
-                logoScale,
+                presentationDraft.logoScale,
+                (value) => updatePresentation({ logoScale: value }),
+                presentationBusy,
               )}
               {scaleSelect(
-                'homepage',
                 props.lang === 'sv' ? 'Text under logotyp' : 'Text below logo',
-                homepageScale,
+                presentationDraft.homepageScale,
+                (value) => updatePresentation({ homepageScale: value }),
+                presentationBusy,
               )}
               <label
                 style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px' }}
@@ -574,10 +636,12 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                 <span style={s.label}>{props.lang === 'sv' ? 'Bildstil' : 'Image style'}</span>
                 <select
                   style={s.select}
-                  value={logoStyle}
-                  disabled={savingKey === HOMEPAGE_LOGO_STYLE_KEY}
+                  value={presentationDraft.logoStyle}
+                  disabled={presentationBusy}
                   onChange={(event) =>
-                    void setLogoStyle(parseHomepageLogoStyle(event.currentTarget.value))
+                    updatePresentation({
+                      logoStyle: parseHomepageLogoStyle(event.currentTarget.value),
+                    })
                   }
                 >
                   <option value="classic">{props.lang === 'sv' ? 'Standard' : 'Standard'}</option>
@@ -628,6 +692,29 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                     : 'Restore default'}
               </button>
               {logoStatus === null ? null : <span style={s.mutedText}>{logoStatus}</span>}
+              <button
+                type="button"
+                style={{
+                  ...s.ghostBtn,
+                  opacity: presentationChanged && !presentationBusy ? 1 : 0.6,
+                }}
+                disabled={!presentationChanged || presentationBusy}
+                onClick={() => void savePresentation()}
+              >
+                {presentationBusy
+                  ? props.lang === 'sv'
+                    ? 'Publicerar …'
+                    : 'Publishing …'
+                  : props.lang === 'sv'
+                    ? 'Publicera utseende'
+                    : 'Publish presentation'}
+              </button>
+              <span aria-live="polite" style={s.mutedText}>
+                {presentationStatus ??
+                  (props.lang === 'sv'
+                    ? 'Ändringar syns bara i förhandsvisningen tills du publicerar.'
+                    : 'Changes stay in the preview until you publish.')}
+              </span>
             </div>
             <div
               style={{
@@ -642,6 +729,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                   {props.lang === 'sv' ? 'Fokuserad förhandsvisning' : 'Focused preview'}
                 </h3>
                 <div
+                  data-testid="homepage-logo-focused-preview"
                   style={{
                     minHeight: '245px',
                     display: 'flex',
@@ -659,94 +747,20 @@ export function SiteView(props: SiteViewProps): JSX.Element {
               </div>
               <div>
                 <h3 style={{ ...s.label, fontSize: '13px' }}>
-                  {props.lang === 'sv' ? 'Simulerad startsida' : 'Simulated homepage'}
+                  {props.lang === 'sv'
+                    ? 'Interaktiv startsidereplika'
+                    : 'Interactive homepage replica'}
                 </h3>
-                <div
-                  style={{
-                    height: '320px',
-                    overflowY: 'auto',
-                    border: s.input.border,
-                    borderRadius: '13px',
-                    background: props.dark ? '#1c1c1e' : '#ffffff',
-                    color: props.dark ? '#f5f5f7' : '#1c1c1e',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '10px 14px',
-                      borderBottom: props.dark
-                        ? '0.5px solid rgba(255,255,255,.1)'
-                        : '0.5px solid rgba(0,0,0,.08)',
-                      fontSize: '10px',
-                      letterSpacing: '1.1px',
-                    }}
-                  >
-                    <span>BLADE &amp; BLEND</span>
-                    <span>{props.lang === 'sv' ? 'BOKA TID' : 'BOOK'}</span>
-                  </div>
-                  <div style={{ padding: '34px 20px 28px', textAlign: 'center' }}>
-                    <div
-                      style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}
-                    >
-                      <HomepageLogo logo={logo} layout="mobile" height={86} />
-                    </div>
-                    <p style={{ margin: '0 0 16px', fontSize: '11px', opacity: 0.58 }}>
-                      {props.lang === 'sv' ? 'SHARPEN YOUR LOOK' : 'SHARPEN YOUR LOOK'}
-                    </p>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        borderRadius: '8px',
-                        padding: '9px 14px',
-                        background: props.dark ? '#f5f5f7' : '#1c1c1e',
-                        color: props.dark ? '#1c1c1e' : '#ffffff',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {props.lang === 'sv' ? 'Boka tid' : 'Book now'}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      padding: '28px 20px',
-                      borderTop: props.dark
-                        ? '0.5px solid rgba(255,255,255,.1)'
-                        : '0.5px solid rgba(0,0,0,.08)',
-                      background: props.dark ? '#242427' : '#f4f3f0',
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: '0 0 6px',
-                        fontSize: '10px',
-                        letterSpacing: '1px',
-                        opacity: 0.58,
-                      }}
-                    >
-                      {props.lang === 'sv' ? 'OM OSS' : 'ABOUT US'}
-                    </p>
-                    <h4
-                      style={{
-                        margin: '0 0 8px',
-                        fontFamily: "'Playfair Display',serif",
-                        fontSize: '20px',
-                      }}
-                    >
-                      {props.lang === 'sv'
-                        ? 'Din stil, vår precision.'
-                        : 'Your style, our precision.'}
-                    </h4>
-                    <p style={{ margin: 0, fontSize: '12px', lineHeight: 1.55, opacity: 0.68 }}>
-                      {props.lang === 'sv'
-                        ? 'Bläddra i denna kompakta förhandsvisning innan du publicerar.'
-                        : 'Scroll this compact preview before publishing.'}
-                    </p>
-                  </div>
-                </div>
+                <HomepageReplicaPreview
+                  dark={props.dark}
+                  lang={props.lang}
+                  settings={settings}
+                  textByLang={previewTextByLang}
+                  homepageScale={presentationDraft.homepageScale}
+                  logo={logo}
+                  aboutScale={aboutScale}
+                  s={s}
+                />
               </div>
             </div>
           </>
@@ -862,8 +876,13 @@ export function SiteView(props: SiteViewProps): JSX.Element {
           style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '12px' }}
           aria-live="polite"
         >
-          {scaleSelect('homepage', t.siteFontHomepage, homepageScale)}
-          {scaleSelect('about', t.siteFontAbout, aboutScale)}
+          {scaleSelect(
+            t.siteFontHomepage,
+            presentationDraft.homepageScale,
+            (value) => updatePresentation({ homepageScale: value }),
+            presentationBusy,
+          )}
+          {scaleSelect(t.siteFontAbout, aboutScale, (value) => void onAboutScale(value))}
         </div>
       </section>
     </>

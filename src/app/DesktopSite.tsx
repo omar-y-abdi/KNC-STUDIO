@@ -8,6 +8,12 @@ import { CornerMark } from '../ui/logos/CornerMark'
 import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
+import type { BookingPort } from '../booking/port'
+import type { BarbersPort } from '../booking/barbersPort'
+import type { ServicesPort } from '../booking/servicesPort'
+import type { ReviewsPort } from '../about/reviews/port'
+import type { AboutContentPort } from '../about/content/port'
+import type { GalleryPort } from '../about/gallery/port'
 import {
   scalePx,
   type HomepageLogo as HomepageLogoConfig,
@@ -15,6 +21,16 @@ import {
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { EASE } from './shared'
+
+/** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
+export interface DesktopSitePreviewPorts {
+  readonly booking: BookingPort
+  readonly barbers: BarbersPort
+  readonly services: ServicesPort
+  readonly reviews: ReviewsPort
+  readonly aboutContent: AboutContentPort
+  readonly gallery: GalleryPort
+}
 
 export interface DesktopSiteProps extends ShellProps {
   readonly tx: AppStrings
@@ -34,6 +50,7 @@ export interface DesktopSiteProps extends ShellProps {
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
   readonly bookingPopupText: BookingPopupText
+  readonly previewPorts?: DesktopSitePreviewPorts
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -233,6 +250,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 popupText={props.bookingPopupText}
                 business={business}
                 showDirections={business.mapsHref !== ''}
+                {...(props.previewPorts === undefined
+                  ? {}
+                  : {
+                      port: props.previewPorts.booking,
+                      barbersPort: props.previewPorts.barbers,
+                      servicesPort: props.previewPorts.services,
+                    })}
               />
             </div>
           </div>
@@ -240,7 +264,19 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         {/* About fold — identical animation; AboutSection brings its own border-top + max-width. */}
         <div style={foldStyle(about)} data-testid="fold-about">
           <div style={deskFoldInnerStyle}>
-            <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
+            <AboutSection
+              mode={props.mode}
+              lang={props.lang}
+              fontScale={props.aboutScale}
+              {...(props.previewPorts === undefined
+                ? {}
+                : {
+                    port: props.previewPorts.reviews,
+                    barbersPort: props.previewPorts.barbers,
+                    aboutContentPort: props.previewPorts.aboutContent,
+                    galleryPort: props.previewPorts.gallery,
+                  })}
+            />
           </div>
         </div>
       </div>
