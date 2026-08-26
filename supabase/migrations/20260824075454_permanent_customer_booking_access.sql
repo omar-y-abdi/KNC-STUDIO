@@ -146,7 +146,6 @@ as $$
 declare
   v_email text := pg_catalog.lower(pg_catalog.btrim(p_email));
   v_phone text;
-  v_row public.customer_booking_access_tokens;
   v_challenge_id uuid;
 begin
   if v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
@@ -181,8 +180,7 @@ begin
         token_hash = excluded.token_hash,
         token_ciphertext = excluded.token_ciphertext,
         generation = public.customer_booking_access_tokens.generation + 1,
-        updated_at = pg_catalog.now()
-  returning * into v_row;
+        updated_at = pg_catalog.now();
 
   -- Rotation revokes every compatibility credential for this email. This matters when an older
   -- one-time link was already exchanged: leaving its 20-minute session alive would violate the
@@ -285,11 +283,10 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_phone text;
   v_email text;
   v_cutoff_hours integer;
 begin
-  select s.phone, s.email into v_phone, v_email
+  select s.email into v_email
   from public.customer_booking_access_scope(p_session_hash) s;
 
   if not found then
