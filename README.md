@@ -89,7 +89,7 @@ without a rewrite (see below). What _is_ hardened here:
   (clickjacking), `upgrade-insecure-requests`. `style-src` allows `'unsafe-inline'` — a deliberate,
   documented trade-off: the design uses inline style attributes (Preact style objects); style
   injection is low-severity and **scripts remain locked to `'self'`**, which is the meaningful guard.
-- **Security headers:** HSTS (preload), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+- **Security headers:** one-year HSTS with subdomains, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, a restrictive `Permissions-Policy`, COOP, CORP.
 - **Restricted third-party runtime:** app code and fonts are self-hosted; CSP allows only Supabase and
   Cloudflare Turnstile endpoints required by booking and authentication.

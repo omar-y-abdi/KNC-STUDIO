@@ -712,7 +712,7 @@ CALENDAR_STATE_SECRET
 WEBHOOK_SECRET
 ```
 
-`PUBLIC_ACTION_HASH_SALT` also derives the at-rest encryption key for permanent customer tokens in `send-confirmation` and `public-booking-actions`; rotate it only with a deliberate token-repair/rotation plan. `npm run verify:production-secrets -- --project-ref <ref>` checks required production secret names without reading or printing secret values.
+`PUBLIC_ACTION_HASH_SALT` also derives the at-rest encryption key for permanent customer tokens in `send-confirmation` and `public-booking-actions`; rotate it only with a deliberate token-repair/rotation plan. `npm run verify:production-secrets -- --project-ref <ref>` checks required Edge Function and database Vault secret names plus webhook-secret digest parity without printing secret values or digests.
 
 ### 7.5 Database Vault
 

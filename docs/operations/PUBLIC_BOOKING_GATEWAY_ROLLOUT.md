@@ -17,7 +17,8 @@ below. Never run the contract migration before the switched Worker has passed li
 - `PROJECT_REF`, `DATABASE_URL`, and production frontend build variables are available in the
   operator shell. Never write secret values to this repository.
 
-Verify required secret names before function deployment; values/digests are never printed:
+Verify required Edge Function and database Vault secret names plus shared webhook-secret parity
+before function deployment; values/digests are never printed:
 
 ```bash
 PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
