@@ -136,6 +136,7 @@ async function verifyPresentationDraft(page) {
     'read-only CMS replica loaded external Turnstile challenge',
   )
   await page.getByLabel('Logo scale').selectOption('xl')
+  await page.getByLabel('Image style').selectOption('monochrome')
   assert(
     (await page.evaluate(() => globalThis.window.__adminHarnessWrites?.length ?? -1)) === 0,
     'draft scale wrote before publish',
@@ -143,6 +144,12 @@ async function verifyPresentationDraft(page) {
   const focusedSvg = page.getByTestId('homepage-logo-focused-preview').locator('svg')
   assert((await focusedSvg.count()) === 1, 'focused logo preview did not render one SVG')
   assert((await focusedSvg.getAttribute('height')) === '188', 'draft scale did not reach preview')
+  assert(
+    (await focusedSvg.evaluate((element) => globalThis.getComputedStyle(element).filter)).includes(
+      'grayscale(1)',
+    ),
+    'draft monochrome style did not reach focused preview',
+  )
   const replica = page.getByTestId('homepage-replica-preview')
   assert(
     (await replica.getByText('BARBERSHOP · GOTHENBURG', { exact: true }).count()) === 1,
@@ -206,7 +213,7 @@ async function verifyPresentationDraft(page) {
   assert(writes.length === 1, 'publish did not write exactly once')
   assert(writes[0]?.homepage_logo_scale === 'xl', 'published logo scale missing')
   assert(writes[0]?.homepage_scale === 'md', 'published homepage scale missing')
-  assert(writes[0]?.homepage_logo_style === 'classic', 'published logo style missing')
+  assert(writes[0]?.homepage_logo_style === 'monochrome', 'published logo style missing')
 }
 
 const browser = await chromium.launch()
