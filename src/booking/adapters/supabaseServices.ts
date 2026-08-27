@@ -2,12 +2,12 @@
 
 import type { BarberId, ServiceItem } from '../domain'
 import type { ServicesPort } from '../servicesPort'
-import { refreshBookingCatalog } from './supabaseBookingCatalog'
+import { cachedBookingCatalog, servicesForBookingDate } from './supabaseBookingCatalog'
 
 export const supabaseServicesAdapter: ServicesPort = {
-  async listForBarber(barberId: BarberId): Promise<readonly ServiceItem[]> {
+  async listForBarber(barberId: BarberId, dateIso: string): Promise<readonly ServiceItem[]> {
     try {
-      return (await refreshBookingCatalog()).servicesByBarber.get(barberId) ?? []
+      return servicesForBookingDate(await cachedBookingCatalog(), barberId, dateIso)
     } catch {
       return []
     }

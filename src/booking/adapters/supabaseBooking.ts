@@ -91,11 +91,19 @@ export const supabaseBookingAdapter: BookingPort = {
     try {
       // `p_date` is the calendar's local `YYYY-MM-DD` — the RPC derives the weekday in
       // Europe/Stockholm, so the day window matches the salon's timezone (correct on a UTC server).
-      const { data, error } = await getSupabase().rpc('available_slots', {
-        p_barber_id: params.barberId,
-        p_date: params.dateIso,
-        p_duration_min: params.durationMin,
-      })
+      const rpc =
+        params.serviceId === undefined
+          ? getSupabase().rpc('available_slots', {
+              p_barber_id: params.barberId,
+              p_date: params.dateIso,
+              p_duration_min: params.durationMin,
+            })
+          : getSupabase().rpc('available_slots_for_service', {
+              p_barber_id: params.barberId,
+              p_date: params.dateIso,
+              p_service_id: params.serviceId,
+            })
+      const { data, error } = await rpc
       if (error !== null) return []
       const parsed = parseWith(availableSlotsResponse, data)
       if (!parsed.ok) return []

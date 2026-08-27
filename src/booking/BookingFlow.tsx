@@ -15,6 +15,7 @@ import {
   cap,
   buildWeeks,
   iso,
+  isSelectableBookingDate,
   monthLabel,
   parseDateIso,
   weekdayLabel,
@@ -135,6 +136,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
     S.barberId,
+    S.dateIso,
     props.servicesPort,
   )
 
@@ -143,8 +145,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // responses so fast re-selection can't show the wrong day's slots. On any failure we fail closed to
   // an empty list (the empty-state message shows; create_booking still validates the slot on submit).
   const serviceDur = S.service?.dur
+  const serviceId = S.service?.id
   useEffect(() => {
-    if (S.barberId === null || S.dateIso === null || serviceDur === undefined) {
+    if (
+      S.barberId === null ||
+      S.dateIso === null ||
+      serviceDur === undefined ||
+      serviceId === undefined
+    ) {
       setAvailableTimes([])
       setSlotsLoading(false)
       return
@@ -152,7 +160,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     let cancelled = false
     setSlotsLoading(true)
     void port
-      .availability({ barberId: S.barberId, dateIso: S.dateIso, durationMin: serviceDur })
+      .availability({
+        barberId: S.barberId,
+        dateIso: S.dateIso,
+        durationMin: serviceDur,
+        serviceId,
+      })
       .then((times) => {
         if (cancelled) return
         setAvailableTimes(times)
@@ -166,7 +179,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [port, S.barberId, S.dateIso, serviceDur])
+  }, [port, S.barberId, S.dateIso, serviceDur, serviceId])
 
   const c = palette(dark)
   const tab = makeTab(c)
@@ -228,7 +241,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const cy = base.getFullYear()
   const cm = base.getMonth()
   const monthLabelText = cap(monthLabel(lang, cm)) + ' ' + cy
-  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   const calendarWeeks = buildWeeks(cy, cm).map((w) =>
     w.map((cell) => {
       if (!cell) {
@@ -239,9 +251,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         }
       }
       const cellIso = iso(cell)
-      const past = cell < todayMid
-      const closed = cell.getDay() === 0
-      const selectable = !past && !closed
+      const selectable = isSelectableBookingDate(cell, today)
       const selected = S.dateIso === cellIso
       let bg = 'transparent'
       let color = 'inherit'
@@ -252,8 +262,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         color = c.accentText
       } else if (!selectable) {
         cursor = 'default'
-        op = past ? 0.32 : 0.5
-        if (closed && !past) bg = c.subtle
+        op = 0.32
       }
       return {
         day: cell.getDate() as string | number,

@@ -5,6 +5,6 @@
 import type { BarberId, ServiceItem } from './domain'
 
 export interface ServicesPort {
-  /** The ACTIVE services for one barber, in display order (empty if the barber has none / on error). */
-  listForBarber(barberId: BarberId): Promise<readonly ServiceItem[]>
+  /** Active services bookable for one barber on one salon-local calendar date, in display order. */
+  listForBarber(barberId: BarberId, dateIso: string): Promise<readonly ServiceItem[]>
 }

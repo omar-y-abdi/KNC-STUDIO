@@ -127,8 +127,10 @@ drift fails the gate.
 The UI depends only on port interfaces. Production requires `VITE_SUPABASE_URL` +
 `VITE_SUPABASE_ANON_KEY`. Roster, profile photos, and services preload through one cached
 `public_booking_catalog()` request and invalidate through Realtime; frontend constants never paint
-named barbers or services. An unconfigured build shows honest empty catalog/history states and
-persists nothing. See `BACKEND.md` for go-live requirements.
+named barbers or services. The catalog carries each service's weekday set; the client date-filters
+the menu and asks the service-aware availability RPC, while booking writes recheck the same rule.
+An unconfigured build shows honest empty catalog/history states and persists nothing. See `BACKEND.md`
+for go-live requirements.
 
 Customer confirmation/reminder email contains the current permanent, email-scoped Mina bokningar
 link. Requesting a fresh link rotates it and invalidates the prior link. Transactional email covers

@@ -1,5 +1,5 @@
 begin;
-select plan(8);
+select plan(9);
 
 select ok(
   has_function_privilege('anon', 'public.public_booking_catalog()', 'execute'),
@@ -16,11 +16,11 @@ values
   ('catalog-visible', 'Visible', 'visible', 'Barberare', 'Barber', 'Bio', 'Bio', true, 901),
   ('catalog-hidden', 'Hidden', 'hidden', 'Barberare', 'Barber', 'Bio', 'Bio', false, 900);
 insert into public.services
-  (id, barber_id, name, price, duration_min, active, sort_order)
+  (id, barber_id, name, price, duration_min, active, sort_order, available_weekdays)
 values
-  (gen_random_uuid(), 'catalog-visible', 'Visible service', 410, 45, true, 2),
-  (gen_random_uuid(), 'catalog-visible', 'Hidden service', 420, 45, false, 1),
-  (gen_random_uuid(), 'catalog-hidden', 'Hidden barber service', 430, 45, true, 1);
+  (gen_random_uuid(), 'catalog-visible', 'Visible service', 410, 45, true, 2, array[0]::smallint[]),
+  (gen_random_uuid(), 'catalog-visible', 'Hidden service', 420, 45, false, 1, array[0]::smallint[]),
+  (gen_random_uuid(), 'catalog-hidden', 'Hidden barber service', 430, 45, true, 1, array[0]::smallint[]);
 
 select is(
   (select pg_catalog.count(*)::int
@@ -42,6 +42,13 @@ select is(
    where row->>'name' = 'Visible service'),
   1,
   'catalog contains active service for active barber'
+);
+select is(
+  (select row->'available_weekdays'
+   from pg_catalog.jsonb_array_elements(public.public_booking_catalog()->'services') row
+   where row->>'name' = 'Visible service'),
+  '[0]'::jsonb,
+  'catalog includes each service weekday set for date-specific client filtering'
 );
 select is(
   (select pg_catalog.count(*)::int

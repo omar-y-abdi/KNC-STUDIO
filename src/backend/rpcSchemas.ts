@@ -20,6 +20,23 @@ const isoTimestamp = z.string().datetime({ offset: true })
  */
 const ratingInt = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
 
+const canonicalWeekdays = z
+  .array(z.number().int().min(0).max(6))
+  .min(1)
+  .superRefine((weekdays, context) => {
+    for (let index = 1; index < weekdays.length; index += 1) {
+      const previous = weekdays[index - 1]
+      const current = weekdays[index]
+      if (previous !== undefined && current !== undefined && previous >= current) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Expected sorted, unique weekdays',
+        })
+        return
+      }
+    }
+  })
+
 // --- create_booking ------------------------------------------------------------------------------
 // The adapter only branches on `ok` — the confirmation links are built from the LOCAL booking, and
 // the echoed row is never read. Validating only the discriminant means a drift in the echoed fields
@@ -167,6 +184,7 @@ export const publicServiceRow = z.object({
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
+  available_weekdays: canonicalWeekdays,
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
 

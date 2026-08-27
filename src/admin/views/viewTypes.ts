@@ -10,6 +10,7 @@ export type {
   AdminService,
   GalleryImage,
   GalleryKind,
+  RecurringBreak,
   SlotBlock,
   TimeOff,
   Weekday,

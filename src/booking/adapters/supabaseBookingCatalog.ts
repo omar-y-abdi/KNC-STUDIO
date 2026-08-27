@@ -7,6 +7,7 @@ import {
 } from '../../backend/rpcSchemas'
 import type { BarberId, ServiceItem } from '../domain'
 import { asBarberId } from '../domain'
+import { parseDateIso } from '../calendar'
 import type { RosterBarber } from '../barbersPort'
 
 const PHOTO_BUCKET = 'barber-photos'
@@ -14,9 +15,15 @@ const PHOTO_BUCKET = 'barber-photos'
 export interface BookingCatalog {
   readonly barbers: readonly RosterBarber[]
   readonly servicesByBarber: ReadonlyMap<BarberId, readonly ServiceItem[]>
+  /** Authoritative weekday sets kept beside display-only `ServiceItem` values. */
+  readonly weekdaysByServiceId: ReadonlyMap<string, readonly number[]>
 }
 
-const EMPTY_CATALOG: BookingCatalog = { barbers: [], servicesByBarber: new Map() }
+const EMPTY_CATALOG: BookingCatalog = {
+  barbers: [],
+  servicesByBarber: new Map(),
+  weekdaysByServiceId: new Map(),
+}
 let catalogPromise: Promise<BookingCatalog> | null = null
 let catalogLoading = false
 const catalogListeners = new Set<() => void>()
@@ -45,16 +52,33 @@ async function loadBookingCatalog(): Promise<BookingCatalog> {
   if (!parsed.ok) throw new Error('public booking catalog malformed')
 
   const servicesByBarber = new Map<BarberId, ServiceItem[]>()
+  const weekdaysByServiceId = new Map<string, readonly number[]>()
   for (const row of parsed.value.services) {
     const barberId = asBarberId(row.barber_id)
     const services = servicesByBarber.get(barberId) ?? []
     services.push(toService(row))
     servicesByBarber.set(barberId, services)
+    weekdaysByServiceId.set(row.id, row.available_weekdays)
   }
   return {
     barbers: parsed.value.barbers.map(toRoster),
     servicesByBarber,
+    weekdaysByServiceId,
   }
+}
+
+/** Filter cached catalog rows for the customer-selected local date without another network read. */
+export function servicesForBookingDate(
+  catalog: BookingCatalog,
+  barberId: BarberId,
+  dateIso: string,
+): readonly ServiceItem[] {
+  const parts = parseDateIso(dateIso)
+  if (parts === null) return []
+  const weekday = new Date(parts.year, parts.month - 1, parts.day).getDay()
+  return (catalog.servicesByBarber.get(barberId) ?? []).filter((service) =>
+    catalog.weekdaysByServiceId.get(service.id)?.includes(weekday),
+  )
 }
 
 /** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */

@@ -7,9 +7,11 @@ import type { ServicesPort } from '../servicesPort'
 import { mockServicesAdapter } from './mockServices'
 
 const lazySupabaseServicesPort: ServicesPort = {
-  listForBarber: (barberId: BarberId): Promise<readonly ServiceItem[]> =>
+  listForBarber: (barberId: BarberId, dateIso: string): Promise<readonly ServiceItem[]> =>
     import('./supabaseBookingCatalog').then((m) =>
-      m.cachedBookingCatalog().then((catalog) => catalog.servicesByBarber.get(barberId) ?? []),
+      m
+        .cachedBookingCatalog()
+        .then((catalog) => m.servicesForBookingDate(catalog, barberId, dateIso)),
     ),
 }
 

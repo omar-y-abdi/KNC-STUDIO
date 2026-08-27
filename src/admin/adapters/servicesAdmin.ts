@@ -11,7 +11,7 @@ import { err, ok } from '../types'
 const READ_ERROR = 'Kunde inte läsa tjänster.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
-const COLUMNS = 'id,barber_id,name,price,duration_min,active,sort_order'
+const COLUMNS = 'id,barber_id,name,price,duration_min,active,sort_order,available_weekdays'
 
 /** Map a parsed raw services row into the admin domain type. */
 function toService(r: {
@@ -22,6 +22,7 @@ function toService(r: {
   duration_min: number
   active: boolean
   sort_order: number
+  available_weekdays: AdminService['availableWeekdays']
 }): AdminService {
   return {
     id: r.id,
@@ -31,6 +32,7 @@ function toService(r: {
     durationMin: r.duration_min,
     active: r.active,
     sortOrder: r.sort_order,
+    availableWeekdays: r.available_weekdays,
   }
 }
 
@@ -68,6 +70,7 @@ export async function createService(
         price: s.price,
         duration_min: s.durationMin,
         sort_order: s.sortOrder,
+        available_weekdays: s.availableWeekdays,
       })
       .select(COLUMNS)
       .single()
@@ -95,6 +98,7 @@ export async function updateService(
         duration_min: edit.durationMin,
         active: edit.active,
         sort_order: edit.sortOrder,
+        available_weekdays: edit.availableWeekdays,
       })
       .eq('id', id)
       .select(COLUMNS)

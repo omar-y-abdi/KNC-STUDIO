@@ -9,6 +9,10 @@ vi.mock('../../src/admin/adminClient', () => ({
 import { saveWeek } from '../../src/admin/adapters/schedulesAdmin'
 import { addSlotBlock } from '../../src/admin/adapters/slotBlocksAdmin'
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
+import {
+  addRecurringBreak,
+  deleteRecurringBreak,
+} from '../../src/admin/adapters/recurringBreaksAdmin'
 import { createManualBooking } from '../../src/admin/adapters/bookingsAdmin'
 import { defaultWeek } from '../../src/admin/time'
 
@@ -62,6 +66,50 @@ describe('transactional availability adapters', () => {
     const result = await addSlotBlock('hassan', '2030-01-02', 600, 615)
 
     expect(result).toEqual({ kind: 'booking_conflict', bookingIds: [bookingId] })
+  })
+
+  it('saves a recurring break through its transactional RPC', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        ok: true,
+        row: {
+          id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+          barber_id: 'hassan',
+          weekday: 1,
+          start_min: 720,
+          end_min: 780,
+        },
+      },
+      error: null,
+    })
+
+    const result = await addRecurringBreak('hassan', 1, 720, 780)
+
+    expect(result).toMatchObject({
+      kind: 'ok',
+      value: { barberId: 'hassan', weekday: 1, startMin: 720, endMin: 780 },
+    })
+    expect(rpc).toHaveBeenCalledWith(
+      'admin_add_recurring_break',
+      expect.objectContaining({
+        p_weekday: 1,
+        p_start_min: 720,
+        p_end_min: 780,
+        p_allow_existing_bookings: false,
+      }),
+    )
+  })
+
+  it('deletes a recurring break through its RPC', async () => {
+    rpc.mockResolvedValue({ data: { ok: true }, error: null })
+
+    await expect(deleteRecurringBreak('4d3f88f7-5e08-4d03-abfa-9604816f5614')).resolves.toEqual({
+      ok: true,
+      value: { id: '4d3f88f7-5e08-4d03-abfa-9604816f5614' },
+    })
+    expect(rpc).toHaveBeenCalledWith('admin_delete_recurring_break', {
+      p_id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+    })
   })
 
   it('surfaces authoritative manual-reservation availability rejection', async () => {

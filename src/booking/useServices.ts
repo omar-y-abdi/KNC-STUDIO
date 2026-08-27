@@ -1,7 +1,7 @@
-// `useServices` — the chosen barber's service menu as React state, refetched when the barber changes.
+// `useServices` — chosen barber's date-specific service menu, refetched with barber or date changes.
 //
 // Services start empty and come only from the selected port. Switching barber clears prior rows
-// immediately, preventing a stale service-menu flash while the shared catalog resolves.
+// immediately on barber or date change, preventing stale cross-day menus while the shared catalog resolves.
 
 import { useEffect, useState } from 'preact/hooks'
 import type { BarberId, ServiceItem } from './domain'
@@ -22,13 +22,14 @@ export interface ServicesState {
  */
 export function useServices(
   barberId: BarberId | null,
+  dateIso: string | null,
   port: ServicesPort = defaultServicesPort,
 ): ServicesState {
   const [services, setServices] = useState<readonly ServiceItem[]>([])
   const [loading, setLoading] = useState<boolean>(false)
 
   useEffect(() => {
-    if (barberId === null) {
+    if (barberId === null || dateIso === null) {
       setServices([])
       setLoading(false)
       return
@@ -38,7 +39,7 @@ export function useServices(
       setServices([])
       setLoading(true)
       void port
-        .listForBarber(barberId)
+        .listForBarber(barberId, dateIso)
         .then((rows) => {
           if (cancelled) return
           setServices(rows)
@@ -57,7 +58,7 @@ export function useServices(
       cancelled = true
       unsubscribe()
     }
-  }, [barberId, port])
+  }, [barberId, dateIso, port])
 
   return { services, loading }
 }
