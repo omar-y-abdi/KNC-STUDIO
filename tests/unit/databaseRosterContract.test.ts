@@ -9,6 +9,7 @@ describe('database-owned public catalog', () => {
     const mockServices = readFileSync('src/booking/adapters/mockServices.ts', 'utf8')
     const aboutSv = readFileSync('src/i18n/sv.ts', 'utf8')
     const aboutEn = readFileSync('src/i18n/en.ts', 'utf8')
+    const liveSmoke = readFileSync('tools/smoke-live.mjs', 'utf8')
 
     expect(rosterHook).not.toContain('CONSTANT_ROSTER')
     expect(servicesHook).not.toContain('MOCK_SERVICES')
@@ -16,6 +17,8 @@ describe('database-owned public catalog', () => {
       /Hassan|Victor|Salman|freebandzcuts/,
     )
     expect(mockServices).not.toMatch(/Hårklippning|Skäggklippning|Studentklippning/)
+    expect(liveSmoke).toContain("'/rest/v1/rpc/public_booking_catalog'")
+    expect(liveSmoke).not.toMatch(/Hassan|Victor|Salman|hassan|victor|salman/)
   })
 
   it('preloads and caches live catalog reads instead of fetching after booking opens', () => {
