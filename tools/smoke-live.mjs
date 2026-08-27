@@ -89,22 +89,26 @@ async function smokeCatalog() {
         .map((barber) => (barber !== null && typeof barber === 'object' ? barber.id : null))
         .filter((id) => typeof id === 'string' && id.length > 0),
     )
-    const service = services.find(
-      (row) =>
-        row !== null &&
-        typeof row === 'object' &&
-        typeof row.id === 'string' &&
-        typeof row.barber_id === 'string' &&
-        activeIds.has(row.barber_id) &&
-        Number.isInteger(row.duration_min) &&
-        row.duration_min > 0,
-    )
-    if (service === undefined) throw new Error('public catalog has no active barber/service pair')
-    return {
-      barberId: service.barber_id,
-      serviceId: service.id,
-      durationMin: service.duration_min,
+    const candidates = services
+      .filter(
+        (row) =>
+          row !== null &&
+          typeof row === 'object' &&
+          typeof row.id === 'string' &&
+          typeof row.barber_id === 'string' &&
+          activeIds.has(row.barber_id) &&
+          Number.isInteger(row.duration_min) &&
+          row.duration_min > 0,
+      )
+      .map((service) => ({
+        barberId: service.barber_id,
+        serviceId: service.id,
+        durationMin: service.duration_min,
+      }))
+    if (candidates.length === 0) {
+      throw new Error('public catalog has no active barber/service pair')
     }
+    return candidates
   })()
   return catalogPromise
 }
@@ -113,30 +117,32 @@ async function smokeCatalog() {
 
 // 1. available_slots — expect HTTP 200 + a non-empty array of "HH:MM" strings.
 async function checkAvailableSlots() {
-  const catalog = await smokeCatalog()
-  let last = { status: 0, json: null, date: futureDateIso(3) }
-  for (let offset = 3; offset < 24; offset += 1) {
-    const date = futureDateIso(offset)
-    const { status, json } = await postJson('/rest/v1/rpc/available_slots', {
-      p_barber_id: catalog.barberId,
-      p_date: date,
-      p_duration_min: catalog.durationMin,
-    })
-    last = { status, json, date }
-    const allHHMM =
-      Array.isArray(json) &&
-      json.length > 0 &&
-      json.every((slot) => typeof slot === 'string' && /^\d{2}:\d{2}$/.test(slot))
-    if (status === 200 && allHHMM) {
-      return {
-        pass: true,
-        detail: `barber=${catalog.barberId} date=${date} slots=${JSON.stringify(json)}`,
+  const candidates = await smokeCatalog()
+  let last = { barberId: candidates[0].barberId, status: 0, json: null, date: futureDateIso(3) }
+  for (const catalog of candidates) {
+    for (let offset = 3; offset < 24; offset += 1) {
+      const date = futureDateIso(offset)
+      const { status, json } = await postJson('/rest/v1/rpc/available_slots', {
+        p_barber_id: catalog.barberId,
+        p_date: date,
+        p_duration_min: catalog.durationMin,
+      })
+      last = { barberId: catalog.barberId, status, json, date }
+      const allHHMM =
+        Array.isArray(json) &&
+        json.length > 0 &&
+        json.every((slot) => typeof slot === 'string' && /^\d{2}:\d{2}$/.test(slot))
+      if (status === 200 && allHHMM) {
+        return {
+          pass: true,
+          detail: `barber=${catalog.barberId} date=${date} slots=${JSON.stringify(json)}`,
+        }
       }
     }
   }
   return {
     pass: false,
-    detail: `barber=${catalog.barberId} last_date=${last.date} status=${last.status} slots=${JSON.stringify(last.json)}`,
+    detail: `barber=${last.barberId} last_date=${last.date} status=${last.status} slots=${JSON.stringify(last.json)}`,
   }
 }
 
@@ -149,7 +155,7 @@ async function checkSubmitBookingInvalid() {
 
 // 3. Malformed email is rejected before Turnstile verification.
 async function checkSubmitBookingInvalidEmail() {
-  const catalog = await smokeCatalog()
+  const [catalog] = await smokeCatalog()
   const { status, json } = await postJson('/functions/v1/submit-booking', {
     booking: {
       barberId: catalog.barberId,
@@ -174,7 +180,7 @@ async function checkSubmitBookingInvalidEmail() {
 // 4. submit-booking with a valid body but empty Turnstile token — expect HTTP 200 +
 //    { ok:false, error:"failed_challenge" }. This proves Turnstile is active and fail-closed.
 async function checkSubmitBookingTurnstileGate() {
-  const catalog = await smokeCatalog()
+  const [catalog] = await smokeCatalog()
   const { status, json } = await postJson('/functions/v1/submit-booking', {
     booking: {
       barberId: catalog.barberId,
