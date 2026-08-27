@@ -90,6 +90,45 @@ describe('transactional email business data', () => {
     )
   })
 
+  it('omits removed or unsafe phone and map links without breaking SV email rendering', async () => {
+    const business = await loadEmailBusiness(
+      discoveryClient({
+        ...settings,
+        business_phone_display: '',
+        business_phone_tel: 'javascript:alert(1)',
+        business_maps_href: 'http://unsafe.example/map',
+      }) as never,
+    )
+    expect(business.phoneDisplay).toBeNull()
+    expect(business.phoneHref).toBeNull()
+    expect(business.mapsHref).toBeNull()
+
+    const message = buildEmailMessage({
+      to: 'customer@example.com',
+      lang: 'sv',
+      copy: defaultEmailTemplate('customer_confirmation', 'sv'),
+      ctaHref: 'https://bladeblendstudio.se',
+      business,
+    })
+    expect(message.html).not.toContain('tel:')
+    expect(message.html).not.toContain('unsafe.example')
+    expect(message.html).toContain('Current Street 7, 411 11 Göteborg')
+  })
+
+  it('uses validated shared map and telephone settings in English email rendering', async () => {
+    const business = await loadEmailBusiness(discoveryClient(settings) as never)
+    const message = buildEmailMessage({
+      to: 'customer@example.com',
+      lang: 'en',
+      copy: defaultEmailTemplate('customer_confirmation', 'en'),
+      ctaHref: 'https://bladeblendstudio.se',
+      business,
+    })
+    expect(message.html).toContain('href="tel:+4631123456"')
+    expect(message.html).toContain('href="https://maps.example/current"')
+    expect(message.text).toContain('Questions? Call us on 031-12 34 56')
+  })
+
   it('keeps native Auth fallbacks free from duplicated mutable contact facts', () => {
     for (const template of ['recovery.html', 'email-change.html']) {
       const source = readFileSync(`supabase/templates/${template}`, 'utf8')

@@ -8,14 +8,20 @@
 //  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
 
 import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
-import { HeroLockup } from '../ui/logos/HeroLockup'
+import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { scalePx, type BusinessSettings, type SizePreset } from '../site/siteChrome'
+import {
+  scalePx,
+  type BusinessSettings,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
 
@@ -36,16 +42,18 @@ export interface MobileSiteProps {
   readonly themeToggle: JSX.Element
   readonly langToggle: JSX.Element
   readonly openMobBooking: () => void
-  /** Animate to the About state. */
-  readonly openMobAbout: () => void
-  /** Back chevron — collapse the section and return to the static home hero. */
-  readonly closeMobBooking: () => void
+  /** Scroll the always-mounted About section into view. */
+  readonly scrollToAbout: () => void
+  /** Back chevron — expand the compact panel back into the home hero. */
+  readonly scrollMobToHero: () => void
   /** Open the "Avbokning" (cancellation) popup. */
   readonly openCancel: () => void
   /** Open the "Mina bokningar" (my-appointments) popup. */
   readonly openMyBookings: () => void
   /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
   readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
@@ -55,11 +63,28 @@ export interface MobileSiteProps {
 export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
   const view = props.view
-  // In a section (booking or about) the panel is collapsed, content shows below, page scrolls.
-  // On home the panel fills the screen and the page does NOT scroll (static, minimal hero).
-  const inSection = view !== 'home'
+  // Booking collapses immediately. On home the same panel collapses continuously as its scroll
+  // container advances, exposing the always-mounted About section below.
+  const inSection = view === 'booking'
+  const scrollRoot = useRef<HTMLDivElement>(null)
+  const [collapse, setCollapse] = useState(0)
+  const collapseLimit = (): number => Math.max(0, (scrollRoot.current?.clientHeight ?? 0) - 112)
+  const compactPanel = inSection || collapse > 0
+  const onScroll = (): void => {
+    if (inSection) return
+    const next = Math.min(collapseLimit(), Math.max(0, scrollRoot.current?.scrollTop ?? 0))
+    setCollapse((current) => (current === next ? current : next))
+  }
+  useEffect(() => {
+    const root = scrollRoot.current
+    if (root === null || inSection) return
+    const sync = (): void => onScroll()
+    window.addEventListener('resize', sync)
+    sync()
+    return () => window.removeEventListener('resize', sync)
+  }, [inSection])
   const chromeIcon = props.chromeIconStyle
-  const phoneShift = inSection ? '24px' : '0px'
+  const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
 
@@ -70,9 +95,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     overflow: 'hidden',
     background: dark ? '#242427' : '#f4f3f0',
     color: c.text,
-    borderRadius: inSection ? '0 0 28px 28px' : '0',
-    height: inSection ? PANEL_COMPACT : PANEL_FULL,
-    transition: 'height .66s ' + EASE,
+    borderRadius: compactPanel ? '0 0 28px 28px' : '0',
+    height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
+    transition: inSection
+      ? 'height .66s ' + EASE + ', border-radius .3s ease'
+      : 'border-radius .3s ease',
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
     '--mob-icon': c.iconF,
@@ -100,13 +127,13 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: 'var(--mob-text)',
     top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
     left: '22px',
-    opacity: inSection ? 1 : 0,
+    opacity: compactPanel ? 1 : 0,
     pointerEvents: 'none',
     transition: 'opacity .4s ease',
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
-    display: inSection ? 'flex' : 'none',
+    display: compactPanel ? 'flex' : 'none',
     alignItems: 'center',
     justifyContent: 'center',
     width: '32px',
@@ -129,9 +156,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
     // the screen's TRUE vertical centre instead of the centre of the area below the top row.
     padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
-    opacity: inSection ? 0 : 1,
-    pointerEvents: inSection ? 'none' : 'auto',
-    transition: 'opacity .34s ease',
+    opacity: inSection ? 0 : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45)),
+    pointerEvents: inSection || collapse > 24 ? 'none' : 'auto',
+    transition: inSection ? 'opacity .34s ease' : undefined,
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
     alignSelf: 'stretch',
@@ -180,19 +207,21 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     <div
       style={{
         position: 'relative',
-        // Fixed full-height shell driving the home/booking/about state machine. On home the hero
-        // panel fills the screen and the page does NOT scroll (overflowY hidden) — booking/about are
-        // unreachable by scrolling. In a section the panel collapses and the content below scrolls.
+        // Fixed viewport scroll container. Home keeps the full hero in normal flow while its sticky
+        // panel compresses with scroll; booking starts with the compact panel and replaces About.
         height: '100dvh',
         overflowX: 'hidden',
-        overflowY: inSection ? 'auto' : 'hidden',
+        overflowY: 'auto',
         background: c.bg,
         color: c.text,
         fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
         WebkitFontSmoothing: 'antialiased',
       }}
+      ref={scrollRoot}
+      onScroll={onScroll}
+      data-testid="mobile-site-scroll"
     >
-      <div style={foldingPanelStyle}>
+      <div style={{ ...foldingPanelStyle, position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={panelTopStyle}>
           <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}></div>
           <div
@@ -205,37 +234,41 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               transition: 'margin-top .6s ' + EASE,
             }}
           >
-            <a
-              href={`tel:${business.phoneTel}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                textDecoration: 'none',
-                color: 'var(--mob-text)',
-                fontSize: '12px',
-              }}
-            >
-              <img
-                src="/icons/phone.svg"
-                alt={tx.ariaCall}
+            {business.phoneTel === '' || business.phoneDisplay === '' ? (
+              <span />
+            ) : (
+              <a
+                href={`tel:${business.phoneTel}`}
                 style={{
-                  background: 'var(--mob-btn-bg)',
-                  width: '28px',
-                  height: '28px',
-                  padding: '7px',
-                  boxSizing: 'border-box',
-                  borderRadius: '50%',
-                  filter: 'var(--mob-icon)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontSize: '12px',
                 }}
-              />
-              {business.phoneDisplay}
-            </a>
+              >
+                <img
+                  src="/icons/phone.svg"
+                  alt={tx.ariaCall}
+                  style={{
+                    background: 'var(--mob-btn-bg)',
+                    width: '28px',
+                    height: '28px',
+                    padding: '7px',
+                    boxSizing: 'border-box',
+                    borderRadius: '50%',
+                    filter: 'var(--mob-icon)',
+                  }}
+                />
+                {business.phoneDisplay}
+              </a>
+            )}
             <div style="display:flex;align-items:center;gap:6px;flex:none;">
               {props.langToggle}
               {props.themeToggle}
               <button
-                onClick={props.closeMobBooking}
+                onClick={props.scrollMobToHero}
                 style={expandChevStyle}
                 title={tx.ariaBackHome}
               >
@@ -255,7 +288,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
         <div style={heroExtrasStyle}>
           <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
-            <HeroLockup height={190} style={heroLockupStyle} />
+            <HomepageLogo
+              logo={props.homepageLogo}
+              layout="mobile"
+              height={190}
+              style={heroLockupStyle}
+            />
           </h1>
           <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
             {tx.book}
@@ -267,7 +305,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             aboutLabel={tx.aboutLink}
             cancelLabel={tx.cancelLink}
             color={heroLinkColor}
-            onOpenAbout={props.openMobAbout}
+            onOpenAbout={props.scrollToAbout}
             onOpenCancel={props.openCancel}
             marginTop="16px"
           />
@@ -308,51 +346,53 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 {tx.addr}
               </span>
             </div>
-            <a
-              href={business.mapsHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                textDecoration: 'none',
-                color: 'var(--mob-text)',
-                fontWeight: 600,
-                fontSize: '13px',
-                border: '1.8px solid var(--mob-border)',
-                borderRadius: '999px',
-                padding: '6px 12px',
-                opacity: 0.92,
-                whiteSpace: 'nowrap',
-                flex: 'none',
-              }}
-            >
-              {tx.findUs}
-              <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
-            </a>
+            {business.mapsHref === '' ? null : (
+              <a
+                href={business.mapsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  border: '1.8px solid var(--mob-border)',
+                  borderRadius: '999px',
+                  padding: '6px 12px',
+                  opacity: 0.92,
+                  whiteSpace: 'nowrap',
+                  flex: 'none',
+                }}
+              >
+                {tx.findUs}
+                <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
+              </a>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Section content below the collapsed panel — only one is mounted, and only when not on home
-          (the panel covers the swap, so conditional rendering here is smooth). */}
-      {inSection ? (
-        <div style={m3BodyStyle}>
-          {view === 'booking' ? (
-            <BookingFlow
-              mode={props.mode}
-              defaultLang={props.lang}
-              showHeader={false}
-              onMyBookings={props.openMyBookings}
-              popupText={props.bookingPopupText}
-              business={business}
-            />
-          ) : (
-            <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
-          )}
-        </div>
-      ) : null}
+      {/* Keep panel + spacer at one viewport tall. At max collapse About begins exactly below the
+          compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
+      {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
+      <div style={m3BodyStyle}>
+        {inSection ? (
+          <BookingFlow
+            mode={props.mode}
+            defaultLang={props.lang}
+            showHeader={false}
+            onMyBookings={props.openMyBookings}
+            popupText={props.bookingPopupText}
+            business={business}
+            showDirections={business.mapsHref !== ''}
+          />
+        ) : (
+          <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
+        )}
+      </div>
     </div>
   )
 }

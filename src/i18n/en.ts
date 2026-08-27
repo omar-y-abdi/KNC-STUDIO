@@ -69,6 +69,22 @@ export const appEn: AppStrings = {
   cancelLink: 'Cancel booking',
 }
 
+export const privacyEn = {
+  title: 'Privacy and storage',
+  lead: 'We do not use analytics or advertising storage. You can choose whether we may use a first-party cookie to remember the phone number for My appointments on this device.',
+  privacyLink: 'Read the privacy policy',
+  accept: 'Accept functional storage',
+  reject: 'Reject optional storage',
+  preferences: 'Preferences',
+  save: 'Save choices',
+  functionalTitle: 'Remember phone number',
+  functionalLead:
+    'A first-party cookie stores only the number used for My appointments on this device.',
+  necessary: 'Necessary session storage is used only after you open a secure My appointments link.',
+  manage: 'Privacy',
+  manageLabel: 'Manage privacy preferences',
+}
+
 export const aboutEn: AboutStrings = {
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',
@@ -81,6 +97,9 @@ export const aboutEn: AboutStrings = {
   cutsTitle: 'Work we’ve done',
   cutsAlt: 'Customer haircut (placeholder)',
   reviewsTitle: 'Reviews',
+  reviewsLoading: 'Loading published reviews …',
+  reviewsEmpty: 'No published reviews yet.',
+  reviewsUnavailable: 'Reviews cannot be loaded right now.',
   reviewPhone: 'Phone number',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
@@ -99,6 +118,7 @@ export const aboutEn: AboutStrings = {
   reviewErrChallenge: 'Verification failed. Reload the check and try again.',
   reviewErrRateLimited: 'Too many attempts. Wait a moment before trying again.',
   reviewErrSubmit: 'The review could not be submitted. Please try again.',
+  reviewErrUnavailable: 'Reviews can be submitted when the booking service is available.',
   ratingValueLabel: 'Rating: {n} of 5',
   ratingStarLabel: '{n} stars',
   ratingGroupLabel: 'Choose a rating, 1 to 5 stars',

@@ -69,6 +69,22 @@ export const appSv: AppStrings = {
   cancelLink: 'Avbokning',
 }
 
+export const privacySv = {
+  title: 'Integritet och lagring',
+  lead: 'Vi använder inte analys- eller annonslagring. Du kan välja om vi får använda en förstapartscookie för att komma ihåg telefonnumret för Mina bokningar på den här enheten.',
+  privacyLink: 'Läs integritetspolicyn',
+  accept: 'Godkänn funktionell lagring',
+  reject: 'Avvisa valfri lagring',
+  preferences: 'Inställningar',
+  save: 'Spara val',
+  functionalTitle: 'Kom ihåg telefonnummer',
+  functionalLead:
+    'En förstapartscookie sparar endast numret som används för Mina bokningar på denna enhet.',
+  necessary: 'Nödvändig sessionslagring används bara när du öppnar en säker Mina bokningar-länk.',
+  manage: 'Integritet',
+  manageLabel: 'Hantera integritetsinställningar',
+}
+
 export const aboutSv: AboutStrings = {
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
@@ -81,6 +97,9 @@ export const aboutSv: AboutStrings = {
   cutsTitle: 'Jobb vi gjort',
   cutsAlt: 'Kundklippning (platshållare)',
   reviewsTitle: 'Omdömen',
+  reviewsLoading: 'Hämtar publicerade omdömen …',
+  reviewsEmpty: 'Inga publicerade omdömen ännu.',
+  reviewsUnavailable: 'Omdömen kan inte hämtas just nu.',
   reviewPhone: 'Telefonnummer',
   reviewPhonePh: '07X XXX XX XX',
   reviewPhoneHint:
@@ -99,6 +118,7 @@ export const aboutSv: AboutStrings = {
   reviewErrChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   reviewErrRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',
   reviewErrSubmit: 'Omdömet kunde inte skickas. Försök igen.',
+  reviewErrUnavailable: 'Omdömen kan lämnas när bokningstjänsten är tillgänglig.',
   ratingValueLabel: 'Betyg: {n} av 5',
   ratingStarLabel: '{n} stjärnor',
   ratingGroupLabel: 'Välj betyg, 1 till 5 stjärnor',

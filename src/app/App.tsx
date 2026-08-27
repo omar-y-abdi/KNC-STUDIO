@@ -11,12 +11,14 @@ import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { preloadBookingCatalog, subscribeBookingCatalog } from '../booking/adapters/barbersIndex'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
+import { ABOUT_SECTION_ID } from '../about/AboutSection'
 import { consumeBookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
+import { PrivacyBanner } from '../site/PrivacyBanner'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
@@ -55,7 +57,7 @@ export function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
 interface AppState {
   readonly mode: Mode
   readonly lang: Lang
-  /** The single active site state — home / booking / about (drives both layouts). */
+  /** The single active site state — home / booking (drives both layouts). */
   readonly view: View
   /** Whether the "Mina bokningar" (my-appointments) popup is open. */
   readonly myBookingsOpen: boolean
@@ -129,8 +131,8 @@ export function App(): JSX.Element {
   }
   const bookingPopupText: BookingPopupText = siteText
   const view = state.view
-  // "In a section" = booking or about is open (panel collapsed, content below). Home = static hero.
-  const inSection = view !== 'home'
+  // Booking folds the public panel; the homepage itself remains a scrollable hero + About document.
+  const inSection = view === 'booking'
   const c = shellPalette(dark)
   const mobMutedColor = mobMuted(dark)
   const mobBtnBgColor = mobBtnBg(dark)
@@ -166,15 +168,34 @@ export function App(): JSX.Element {
   const setSv = (): void => setState({ lang: 'sv' })
   const setEn = (): void => setState({ lang: 'en' })
   const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
-  // Desktop: the hero stays; "Boka tid"/"Om oss" each toggle their own fold open/closed.
+  // Desktop: booking is the only fold. Closing it restores the scrollable homepage/About document.
   const toggleDeskBooking = (): void =>
     setState((s) => ({ view: s.view === 'booking' ? 'home' : 'booking' }))
-  const toggleDeskAbout = (): void =>
-    setState((s) => ({ view: s.view === 'about' ? 'home' : 'about' }))
-  // Mobile: the hero collapses to a compact header; open booking/about, the back chevron returns home.
-  const openMobBooking = (): void => setState({ view: 'booking' })
-  const openMobAbout = (): void => setState({ view: 'about' })
-  const closeMobBooking = (): void => setState({ view: 'home' })
+  const scrollToAbout = (): void => {
+    setState({ view: 'home' })
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(ABOUT_SECTION_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+  // Mobile: the hero becomes the compact header as its own scroll container advances.
+  const openMobBooking = (): void => {
+    setState({ view: 'booking' })
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
+        ?.scrollTo({ top: 0 })
+    })
+  }
+  const scrollMobToHero = (): void => {
+    setState({ view: 'home' })
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
+        ?.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }
   const openMyBookings = (): void => {
     setBookingAccess({})
     setState({ myBookingsOpen: true })
@@ -308,15 +329,17 @@ export function App(): JSX.Element {
           themeToggle={themeToggle}
           langToggle={langToggle}
           openMobBooking={openMobBooking}
-          openMobAbout={openMobAbout}
-          closeMobBooking={closeMobBooking}
+          scrollToAbout={scrollToAbout}
+          scrollMobToHero={scrollMobToHero}
           openCancel={openMyBookings}
           openMyBookings={openMyBookings}
           homepageScale={chrome.homepageScale}
+          homepageLogo={chrome.homepageLogo}
           aboutScale={chrome.aboutScale}
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
+        <PrivacyBanner lang={lang} dark={dark} />
       </>
     )
   }
@@ -335,15 +358,17 @@ export function App(): JSX.Element {
         tx={tx}
         view={view}
         toggleDeskBooking={toggleDeskBooking}
-        toggleDeskAbout={toggleDeskAbout}
+        scrollToAbout={scrollToAbout}
         findUsStyle={findUsStyle}
         openCancel={openMyBookings}
         openMyBookings={openMyBookings}
         homepageScale={chrome.homepageScale}
+        homepageLogo={chrome.homepageLogo}
         aboutScale={chrome.aboutScale}
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
+      <PrivacyBanner lang={lang} dark={dark} />
     </>
   )
 }

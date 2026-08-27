@@ -61,6 +61,11 @@ psql \
       union all
       select 'barber-photos'::text as bucket, p.storage_path
       from public.barber_photos p
+      union all
+      select 'gallery'::text as bucket, s.value as storage_path
+      from public.site_settings s
+      where s.key = 'homepage_logo_path'
+        and s.value ~ '^logo/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$'
     ) referenced
     order by referenced.bucket, referenced.storage_path
   " > "$temporary"

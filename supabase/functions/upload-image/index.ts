@@ -46,6 +46,11 @@ type UploadRequest =
       readonly file: File
       readonly barberId: string
     }
+  | {
+      readonly kind: 'site_logo'
+      readonly file: File
+      readonly expectedPath: string
+    }
 
 type DeleteRequest =
   | {
@@ -60,6 +65,14 @@ type DeleteRequest =
       readonly barberId: string
       readonly storagePath: string
     }
+  | {
+      readonly action: 'delete'
+      readonly kind: 'site_logo'
+      readonly storagePath: string
+    }
+
+const LOGO_PATH =
+  /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
 
 class ImageValidationError extends Error {
   readonly code: 'unsupported_image' | 'image_too_large' | 'output_too_large'
@@ -131,6 +144,13 @@ function parseUpload(form: FormData): UploadRequest | null {
     return { kind, file, barberId }
   }
 
+  if (kind === 'site_logo') {
+    if (!hasOnlyFields(form, ['kind', 'file', 'expectedPath'])) return null
+    const expectedPath = textField(form, 'expectedPath')
+    if (expectedPath === null || (expectedPath !== '' && !LOGO_PATH.test(expectedPath))) return null
+    return { kind, file, expectedPath }
+  }
+
   return null
 }
 
@@ -145,6 +165,9 @@ function parseDelete(value: unknown): DeleteRequest | null {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)
   ) {
     return { action: body.action, kind: body.kind, id: body.id, storagePath: body.storagePath }
+  }
+  if (body.kind === 'site_logo' && LOGO_PATH.test(body.storagePath)) {
+    return { action: body.action, kind: body.kind, storagePath: body.storagePath }
   }
   if (
     body.kind === 'barber_photo' &&
@@ -210,7 +233,7 @@ function processImage(input: Uint8Array, kind: UploadRequest['kind']): Uint8Arra
     }
 
     const { width, height } = imageDimensions(image)
-    if (kind === 'gallery') {
+    if (kind === 'gallery' || kind === 'site_logo') {
       const longSide = Math.max(width, height)
       if (longSide > GALLERY_LONG_SIDE) {
         const scale = GALLERY_LONG_SIDE / longSide
@@ -400,7 +423,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
     const deletion = parseDelete(rawDelete)
     if (deletion === null) return json({ ok: false, error: 'invalid_payload' }, 400)
-    if (deletion.kind === 'gallery' && profile.role !== 'owner') {
+    if (
+      (deletion.kind === 'gallery' || deletion.kind === 'site_logo') &&
+      profile.role !== 'owner'
+    ) {
       return json({ ok: false, error: 'forbidden' }, 403)
     }
     if (
@@ -417,10 +443,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
             p_id: deletion.id,
             p_expected_path: deletion.storagePath,
           })
-        : await service.rpc('internal_delete_barber_photo', {
-            p_barber_id: deletion.barberId,
-            p_expected_path: deletion.storagePath,
-          })
+        : deletion.kind === 'barber_photo'
+          ? await service.rpc('internal_delete_barber_photo', {
+              p_barber_id: deletion.barberId,
+              p_expected_path: deletion.storagePath,
+            })
+          : await service.rpc('internal_remove_homepage_logo', {
+              p_expected_path: deletion.storagePath,
+            })
     if (queued.error !== null) {
       console.error('upload-image: deletion transaction failed', queued.error.code)
       return json({ ok: false, error: 'database_failed' }, 500)
@@ -451,7 +481,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (upload === null) return json({ ok: false, error: 'invalid_payload' }, 400)
   if (upload.file.size > MAX_INPUT_BYTES) return json({ ok: false, error: 'file_too_large' }, 413)
 
-  if (upload.kind === 'gallery' && profile.role !== 'owner') {
+  if ((upload.kind === 'gallery' || upload.kind === 'site_logo') && profile.role !== 'owner') {
     return json({ ok: false, error: 'forbidden' }, 403)
   }
   if (
@@ -479,11 +509,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'invalid_image' }, 422)
   }
 
-  const bucket = upload.kind === 'gallery' ? 'gallery' : 'barber-photos'
+  const bucket = upload.kind === 'barber_photo' ? 'barber-photos' : 'gallery'
   const path =
     upload.kind === 'gallery'
       ? `${upload.galleryKind}/${crypto.randomUUID()}.webp`
-      : `${upload.barberId}/${crypto.randomUUID()}.webp`
+      : upload.kind === 'barber_photo'
+        ? `${upload.barberId}/${crypto.randomUUID()}.webp`
+        : `logo/${crypto.randomUUID()}.webp`
 
   let previousPath: string | null = null
   if (upload.kind === 'barber_photo') {
@@ -536,6 +568,36 @@ Deno.serve(async (req: Request): Promise<Response> => {
       },
       200,
     )
+  }
+
+  if (upload.kind === 'site_logo') {
+    const replaced = await service.rpc('internal_replace_homepage_logo', {
+      p_expected_path: upload.expectedPath,
+      p_new_path: path,
+    })
+    if (replaced.error !== null || !isReplacement(replaced.data)) {
+      console.error('upload-image: homepage logo replace failed', replaced.error?.code)
+      await removeObject(bucket, path)
+      const response =
+        typeof replaced.data === 'object' &&
+        replaced.data !== null &&
+        (replaced.data as Record<string, unknown>).error === 'conflict'
+          ? { status: 409, error: 'conflict' }
+          : { status: 500, error: 'database_failed' }
+      return json({ ok: false, error: response.error }, response.status)
+    }
+    let cleanupPending = false
+    if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
+      cleanupPending = !(await removeObject(
+        bucket,
+        replaced.data.previous_path,
+        replaced.data.deletion_id,
+      ))
+    }
+    const publicUrl = createClient(publicSupabaseUrl, anonKey)
+      .storage.from(bucket)
+      .getPublicUrl(path).data.publicUrl
+    return json({ ok: true, kind: 'site_logo', path, publicUrl, cleanupPending }, 200)
   }
 
   const replaced = await service.rpc('internal_replace_barber_photo', {

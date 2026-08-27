@@ -81,4 +81,23 @@ describe('business structured data', () => {
     expect(business.seo.sv.description).toContain('Malmö')
     expect(business.seo.sv.description).not.toContain('{business_name}')
   })
+
+  it('honours deliberate contact removal and omits empty structured-data properties', () => {
+    const business = resolveBusinessSettings(
+      new Map([
+        ['business_phone_display', ''],
+        ['business_phone_tel', ''],
+        ['business_maps_href', ''],
+      ]),
+    )
+    const data = buildBusinessStructuredData(
+      business,
+      { barbers: [], services: [], schedules: [] },
+      'https://example.com',
+    )
+    expect(business.phoneDisplay).toBe('')
+    expect(business.mapsHref).toBe('')
+    expect(data).not.toHaveProperty('telephone')
+    expect(data).not.toHaveProperty('hasMap')
+  })
 })

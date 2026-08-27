@@ -1,6 +1,6 @@
 // The reviews-adapter swap point. Supabase when configured, the offline mock otherwise (chosen once
-// at module load). With no `VITE_SUPABASE_*` set this is the mock (placeholder seeds, nothing
-// persisted) — identical to today.
+// at module load). The offline path intentionally shows no testimonials and does not fabricate
+// submissions; only published database reviews are customer claims.
 //
 // The Supabase adapter is reached through a LAZY proxy (dynamic import on first call), so supabase-js
 // lands in its own chunk — fetched only when the backend is configured and reviews load/submit.

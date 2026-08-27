@@ -41,11 +41,12 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-Expected final migration in this phase: `20260823130000_classify_booking_email_delivery_failures.sql`
+Expected final migration in this phase: `20260824075236_admin_cms_logo_and_contact_controls.sql`
 or any later explicitly reviewed expand-safe migration added before release. The older
 `20260813123853_contract_public_booking_gateway.sql` is intentionally absent from remote history.
-`20260813123851_review_hardening.sql` adds the email-scoped customer access session; the later email
-classification migration accepts status codes emitted by the newly deployed `send-confirmation`.
+`20260813123851_review_hardening.sql` adds the email-scoped customer access session;
+`20260823130000_classify_booking_email_delivery_failures.sql` accepts status codes emitted by the
+newly deployed `send-confirmation`.
 Do not omit either. Anonymous legacy RPCs and both new and legacy service-role gateway RPCs must
 remain executable:
 
@@ -111,6 +112,11 @@ directly. Request a fresh link using email only, confirm the prior link reports 
 bookings scoped to that email, and cancel an eligible booking. Verify another email is neither shown
 nor cancellable. Also verify review rejection/success through production UI. Confirm customer
 cancellation and Calendar cleanup jobs drain.
+
+Also owner-upload a homepage logo, verify focused and simulated previews before save, verify the public
+desktop/mobile hero receives the new processed WebP through Realtime, then replace/remove it and confirm
+the prior `gallery/logo/...` object drains through `external_action_jobs`. Edit and remove phone/map in
+**Mejl**; send SV and EN test messages and verify omitted links never become unsafe or stale fallback links.
 
 ## 5. Contract
 

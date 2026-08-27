@@ -533,7 +533,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       ) : null}
 
       <div style="padding: 18px 22px 26px 22px">
-        <div>
+        <div data-testid="booking-step-barber">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
             <span style={s.badgeStyle}>1</span>
             <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">

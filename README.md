@@ -113,7 +113,7 @@ with `VITE_CLOCK=fixed` so the calendar is deterministic) and diffs it against t
 baselines (`tools/visual/baseline/`) pixel-for-pixel:
 
 ```bash
-node tools/visual/capture.mjs   # BASE=<url> OUT=<dir>  → desktop+mobile × light+dark × sv+en
+node tools/visual/capture.mjs   # BASE=<url> OUT=<dir>  → 8 homepage variants + Swedish privacy-banner state
 node tools/visual/compare.mjs   # BASELINE vs CANDIDATE via pixelmatch; non-zero exit on drift
 ```
 

@@ -45,7 +45,7 @@ export interface ValidReview {
  * unexpected failure.
  */
 export interface ReviewError {
-  readonly kind: 'invalid' | 'no_booking' | 'challenge' | 'rate_limited' | 'submit'
+  readonly kind: 'invalid' | 'no_booking' | 'challenge' | 'rate_limited' | 'submit' | 'unavailable'
   readonly message: string
 }
 

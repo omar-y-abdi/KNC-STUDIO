@@ -1,6 +1,6 @@
 // The reviews seam. A `ReviewsPort` lists the existing reviews and submits a new one, returning
 // the stored `Review` (with a server-assigned id). The About section depends on this interface
-// only; the concrete implementations are `mockReviewsAdapter` (no network, nothing persisted) and
+// only; the concrete implementations are `mockReviewsAdapter` (empty, no network) and
 // `supabaseReviewsAdapter` (the real backend).
 
 import type { Review, ReviewResult, ValidReview } from './domain'

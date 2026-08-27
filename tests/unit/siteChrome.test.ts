@@ -6,6 +6,8 @@ import {
   SITE_TEXT_KEYS,
   defaultSiteText,
   parseCancellationPolicyHours,
+  parseHomepageLogoPath,
+  parseHomepageLogoStyle,
   parseScale,
   resolveBusinessSettings,
   resolveSiteText,
@@ -25,6 +27,24 @@ describe('parseScale', () => {
     expect(parseScale(null)).toBe('md')
     expect(parseScale(undefined)).toBe('md')
     expect(parseScale('')).toBe('md')
+  })
+})
+
+describe('parseHomepageLogoStyle', () => {
+  it('allows only the two bounded image treatments', () => {
+    expect(parseHomepageLogoStyle('classic')).toBe('classic')
+    expect(parseHomepageLogoStyle('monochrome')).toBe('monochrome')
+    expect(parseHomepageLogoStyle('anything')).toBe('classic')
+  })
+})
+
+describe('parseHomepageLogoPath', () => {
+  it('accepts only server-issued gallery logo paths', () => {
+    expect(parseHomepageLogoPath('logo/123e4567-e89b-42d3-a456-426614174000.webp')).toBe(
+      'logo/123e4567-e89b-42d3-a456-426614174000.webp',
+    )
+    expect(parseHomepageLogoPath('salon/123.webp')).toBeNull()
+    expect(parseHomepageLogoPath('logo/../../other.webp')).toBeNull()
   })
 })
 
@@ -107,6 +127,9 @@ describe('business settings', () => {
     expect(SITE_SETTING_KEYS).toEqual([
       'homepage_scale',
       'about_scale',
+      'homepage_logo_path',
+      'homepage_logo_scale',
+      'homepage_logo_style',
       'business_name',
       'business_email',
       'business_phone_display',
@@ -159,7 +182,7 @@ describe('business settings', () => {
     })
   })
 
-  it('rejects malformed contact, maps, and cancellation settings in favour of safe defaults', () => {
+  it('removes malformed contact links and retains safe identity/cancellation defaults', () => {
     const business = resolveBusinessSettings(
       new Map([
         [BUSINESS_SETTING_KEYS.email, 'not-an-email'],
@@ -170,8 +193,9 @@ describe('business settings', () => {
     )
 
     expect(business.email).toBe(DEFAULT_CHROME.business.email)
-    expect(business.phoneTel).toBe(DEFAULT_CHROME.business.phoneTel)
-    expect(business.mapsHref).toBe(DEFAULT_CHROME.business.mapsHref)
+    expect(business.phoneTel).toBe('')
+    expect(business.phoneDisplay).toBe('')
+    expect(business.mapsHref).toBe('')
     expect(business.cancellationPolicyHours).toBe(DEFAULT_CHROME.business.cancellationPolicyHours)
     expect(parseCancellationPolicyHours('169')).toBe(
       DEFAULT_CHROME.business.cancellationPolicyHours,
@@ -217,6 +241,12 @@ describe('DEFAULT_CHROME', () => {
     expect(DEFAULT_CHROME.text).toEqual({})
     expect(DEFAULT_CHROME.business.name).toBe('Blade & Blend Studio')
     expect(DEFAULT_CHROME.homepageScale).toBe('md')
+    expect(DEFAULT_CHROME.homepageLogo).toEqual({
+      path: null,
+      url: null,
+      scale: 'md',
+      style: 'classic',
+    })
     expect(DEFAULT_CHROME.aboutScale).toBe('md')
   })
 })

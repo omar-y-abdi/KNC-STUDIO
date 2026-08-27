@@ -113,16 +113,16 @@ function validEmail(value: string, fallback: string): string {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : fallback
 }
 
-function validTelephone(value: string, fallback: string): string {
-  return /^[+0-9][0-9(). -]{2,39}$/.test(value) ? value : fallback
+function optionalTelephone(value: string): string {
+  return /^[+0-9][0-9(). -]{2,39}$/.test(value) ? value : ''
 }
 
-function validHttpUrl(value: string, fallback: string): string {
+function optionalHttpUrl(value: string): string {
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' ? value : fallback
+    return url.protocol === 'https:' ? value : ''
   } catch {
-    return fallback
+    return ''
   }
 }
 
@@ -145,6 +145,21 @@ function interpolateSeo(value: string, business: Pick<BusinessSettings, 'name' |
 export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): BusinessSettings {
   const name = settingText(settings, BUSINESS_SETTING_KEYS.name, DEFAULT_BUSINESS.name)
   const city = settingText(settings, BUSINESS_SETTING_KEYS.city, DEFAULT_BUSINESS.city)
+  const configuredPhoneDisplay = settings.get(BUSINESS_SETTING_KEYS.phoneDisplay)
+  const configuredPhoneTel = settings.get(BUSINESS_SETTING_KEYS.phoneTel)
+  const rawPhoneDisplay =
+    configuredPhoneDisplay === undefined
+      ? DEFAULT_BUSINESS.phoneDisplay
+      : configuredPhoneDisplay.trim()
+  const rawPhoneTel =
+    configuredPhoneTel === undefined ? DEFAULT_BUSINESS.phoneTel : configuredPhoneTel.trim()
+  const phoneTel = optionalTelephone(rawPhoneTel)
+  const phoneDisplay = rawPhoneDisplay === '' || phoneTel === '' ? '' : rawPhoneDisplay
+  const configuredMapsHref = settings.get(BUSINESS_SETTING_KEYS.mapsHref)
+  const mapsHref =
+    configuredMapsHref === undefined
+      ? DEFAULT_BUSINESS.mapsHref
+      : optionalHttpUrl(configuredMapsHref.trim())
   const base = {
     name,
     city,
@@ -152,25 +167,15 @@ export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): 
       settingText(settings, BUSINESS_SETTING_KEYS.email, DEFAULT_BUSINESS.email),
       DEFAULT_BUSINESS.email,
     ),
-    phoneDisplay: settingText(
-      settings,
-      BUSINESS_SETTING_KEYS.phoneDisplay,
-      DEFAULT_BUSINESS.phoneDisplay,
-    ),
-    phoneTel: validTelephone(
-      settingText(settings, BUSINESS_SETTING_KEYS.phoneTel, DEFAULT_BUSINESS.phoneTel),
-      DEFAULT_BUSINESS.phoneTel,
-    ),
+    phoneDisplay,
+    phoneTel: phoneDisplay === '' ? '' : phoneTel,
     street: settingText(settings, BUSINESS_SETTING_KEYS.street, DEFAULT_BUSINESS.street),
     postalCode: settingText(
       settings,
       BUSINESS_SETTING_KEYS.postalCode,
       DEFAULT_BUSINESS.postalCode,
     ),
-    mapsHref: validHttpUrl(
-      settingText(settings, BUSINESS_SETTING_KEYS.mapsHref, DEFAULT_BUSINESS.mapsHref),
-      DEFAULT_BUSINESS.mapsHref,
-    ),
+    mapsHref,
     cancellationPolicyHours: parseCancellationPolicyHours(
       settings.get(BUSINESS_SETTING_KEYS.cancellationPolicyHours),
     ),
@@ -288,7 +293,6 @@ export function buildBusinessStructuredData(
     name: business.name,
     url: `${root}/`,
     image: `${root}/og-image.png`,
-    telephone: business.phoneTel,
     email: business.email,
     address: {
       '@type': 'PostalAddress',
@@ -297,9 +301,11 @@ export function buildBusinessStructuredData(
       addressLocality: business.city,
       addressCountry: 'SE',
     },
-    hasMap: business.mapsHref,
     availableLanguage: ['sv', 'en'],
   }
+
+  if (business.phoneTel !== '') structured['telephone'] = business.phoneTel
+  if (business.mapsHref !== '') structured['hasMap'] = business.mapsHref
 
   const hours = openingHours(facts)
   if (hours.length > 0) structured['openingHoursSpecification'] = hours
