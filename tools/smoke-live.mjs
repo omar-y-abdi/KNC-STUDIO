@@ -3,7 +3,7 @@
 // Hits the LIVE Supabase project with the PUBLIC anon key only (never a service_role
 // key). Verifies public entry points the booking UI depends on:
 //
-//   1. available_slots RPC   — returns bookable "HH:MM" slots for a barber/day.
+//   1. public catalog + available_slots — discovers current database IDs and returns bookable slots.
 //   2. submit-booking (400)  — rejects a malformed body with HTTP 400.
 //   3. submit-booking email  — malformed email is rejected before the bot check.
 //   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
@@ -39,17 +39,14 @@ if (
 
 const baseUrl = SUPABASE_URL.replace(/\/+$/, '') // tolerate a trailing slash
 
-// A future working day, computed at run time so the checks stay meaningful forever (a hardcoded
-// date silently rots: available_slots excludes past slots, so an elapsed date would return [] and
-// fail check 1). Next Monday at least 3 days out — Mondays are working under the seed schedule.
-function nextMondayIso() {
+// A future date computed at run time. The smoke probes several dates because production schedules
+// and service weekdays are owner-managed database state; no weekday or barber is assumed here.
+function futureDateIso(offsetDays) {
   const d = new Date()
-  d.setDate(d.getDate() + 3)
-  while (d.getDay() !== 1) d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() + offsetDays)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
-const SMOKE_DATE = nextMondayIso()
 
 // Anon-only headers. PostgREST and the Functions gateway both want the apikey; the
 // Bearer is the same public anon JWT (no user session involved).
@@ -77,22 +74,70 @@ async function postJson(path, body) {
   return { status: res.status, json, text }
 }
 
+let catalogPromise
+
+async function smokeCatalog() {
+  catalogPromise ??= (async () => {
+    const { status, json } = await postJson('/rest/v1/rpc/public_booking_catalog', {})
+    const barbers = json !== null && typeof json === 'object' ? json.barbers : null
+    const services = json !== null && typeof json === 'object' ? json.services : null
+    if (status !== 200 || !Array.isArray(barbers) || !Array.isArray(services)) {
+      throw new Error(`public catalog unavailable: status=${status} body=${JSON.stringify(json)}`)
+    }
+    const activeIds = new Set(
+      barbers
+        .map((barber) => (barber !== null && typeof barber === 'object' ? barber.id : null))
+        .filter((id) => typeof id === 'string' && id.length > 0),
+    )
+    const service = services.find(
+      (row) =>
+        row !== null &&
+        typeof row === 'object' &&
+        typeof row.id === 'string' &&
+        typeof row.barber_id === 'string' &&
+        activeIds.has(row.barber_id) &&
+        Number.isInteger(row.duration_min) &&
+        row.duration_min > 0,
+    )
+    if (service === undefined) throw new Error('public catalog has no active barber/service pair')
+    return {
+      barberId: service.barber_id,
+      serviceId: service.id,
+      durationMin: service.duration_min,
+    }
+  })()
+  return catalogPromise
+}
+
 // --- Checks: each returns { pass: boolean, detail: string } -----------------------
 
 // 1. available_slots — expect HTTP 200 + a non-empty array of "HH:MM" strings.
 async function checkAvailableSlots() {
-  const { status, json } = await postJson('/rest/v1/rpc/available_slots', {
-    p_barber_id: 'hassan',
-    p_date: SMOKE_DATE,
-    p_duration_min: 30,
-  })
-  const isArray = Array.isArray(json)
-  const allHHMM =
-    isArray &&
-    json.length > 0 &&
-    json.every((s) => typeof s === 'string' && /^\d{2}:\d{2}$/.test(s))
-  const pass = status === 200 && allHHMM
-  return { pass, detail: `status=${status} slots=${JSON.stringify(json)}` }
+  const catalog = await smokeCatalog()
+  let last = { status: 0, json: null, date: futureDateIso(3) }
+  for (let offset = 3; offset < 24; offset += 1) {
+    const date = futureDateIso(offset)
+    const { status, json } = await postJson('/rest/v1/rpc/available_slots', {
+      p_barber_id: catalog.barberId,
+      p_date: date,
+      p_duration_min: catalog.durationMin,
+    })
+    last = { status, json, date }
+    const allHHMM =
+      Array.isArray(json) &&
+      json.length > 0 &&
+      json.every((slot) => typeof slot === 'string' && /^\d{2}:\d{2}$/.test(slot))
+    if (status === 200 && allHHMM) {
+      return {
+        pass: true,
+        detail: `barber=${catalog.barberId} date=${date} slots=${JSON.stringify(json)}`,
+      }
+    }
+  }
+  return {
+    pass: false,
+    detail: `barber=${catalog.barberId} last_date=${last.date} status=${last.status} slots=${JSON.stringify(last.json)}`,
+  }
 }
 
 // 2. submit-booking with an empty body — expect HTTP 400 (true client fault).
@@ -104,11 +149,12 @@ async function checkSubmitBookingInvalid() {
 
 // 3. Malformed email is rejected before Turnstile verification.
 async function checkSubmitBookingInvalidEmail() {
+  const catalog = await smokeCatalog()
   const { status, json } = await postJson('/functions/v1/submit-booking', {
     booking: {
-      barberId: 'hassan',
-      serviceId: 'klippning',
-      startAt: `${SMOKE_DATE}T10:00:00+02:00`,
+      barberId: catalog.barberId,
+      serviceId: catalog.serviceId,
+      startAt: `${futureDateIso(3)}T10:00:00+02:00`,
       phone: '0701234567',
       email: 'invalid',
       lang: 'sv',
@@ -128,13 +174,14 @@ async function checkSubmitBookingInvalidEmail() {
 // 4. submit-booking with a valid body but empty Turnstile token — expect HTTP 200 +
 //    { ok:false, error:"failed_challenge" }. This proves Turnstile is active and fail-closed.
 async function checkSubmitBookingTurnstileGate() {
+  const catalog = await smokeCatalog()
   const { status, json } = await postJson('/functions/v1/submit-booking', {
     booking: {
-      barberId: 'hassan',
-      serviceId: 'klippning',
+      barberId: catalog.barberId,
+      serviceId: catalog.serviceId,
       // The Turnstile gate rejects before create_booking ever parses this, so a fixed +02:00
       // offset is fine year-round — the gateway's shape check only needs a non-empty string.
-      startAt: `${SMOKE_DATE}T10:00:00+02:00`,
+      startAt: `${futureDateIso(3)}T10:00:00+02:00`,
       phone: '0701234567',
       email: 'smoke@example.com',
       lang: 'sv',
@@ -155,7 +202,6 @@ async function checkSubmitBookingTurnstileGate() {
 async function checkPublicActionGateway() {
   const { status, json } = await postJson('/functions/v1/public-booking-actions', {
     action: 'request_access',
-    phone: '0700000000',
     email: 'smoke@example.com',
     lang: 'sv',
     turnstileToken: '',
@@ -182,7 +228,7 @@ async function checkDirectLookupContract() {
 }
 
 const checks = [
-  [`available_slots (hassan, ${SMOKE_DATE}, 30min)`, checkAvailableSlots],
+  ['database-owned catalog + available_slots', checkAvailableSlots],
   ['submit-booking invalid (empty body -> 400)', checkSubmitBookingInvalid],
   ['submit-booking invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
   [
