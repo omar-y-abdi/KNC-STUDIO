@@ -60,6 +60,19 @@ async function verifyNavigation(page) {
   await waitForSavedScroll(page, 'mail', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 425))
   await waitForSavedScroll(page, 'mail', 425)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () => {
+    const harness = await import('/tools/e2e/admin-harness.tsx')
+    harness.mountAdminNavigationHarness('owner')
+    const shell = globalThis.document.querySelector('.knc-admin-shell')
+    if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '22000px'
+  })
+  assert(
+    (await page.getByRole('button', { name: 'Mail', exact: true }).getAttribute('aria-current')) ===
+      'page',
+    'Reload did not restore Mail tab',
+  )
+  await waitForScroll(page, 425, 'Reload did not restore Mail scroll')
   await page.goBack()
   assert(
     (await page
