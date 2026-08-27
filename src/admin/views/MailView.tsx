@@ -13,6 +13,8 @@ import {
   type EmailTemplateName,
   type FailedBookingEmailDelivery,
 } from '../adapters/emailTemplatesAdmin'
+import { listSiteSettings, saveSiteSettings } from '../adapters/siteAdmin'
+import { BUSINESS_SETTING_KEYS, DEFAULT_SITE_SETTINGS } from '../../site/siteChrome'
 import type { AdminStylesBundle } from './viewTypes'
 
 interface MailViewProps {
@@ -123,25 +125,87 @@ export function MailView(props: MailViewProps): JSX.Element {
   const [retryingDelivery, setRetryingDelivery] = useState<string | null>(null)
   const [discardingDelivery, setDiscardingDelivery] = useState<string | null>(null)
   const [discardTarget, setDiscardTarget] = useState<FailedBookingEmailDelivery | null>(null)
+  const [contactSettings, setContactSettings] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  )
+  const [contactSaving, setContactSaving] = useState<'phone' | 'map' | null>(null)
+  const [contactStatus, setContactStatus] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     void (async () => {
-      const [result, failedResult] = await Promise.all([
+      const [result, failedResult, settingsResult] = await Promise.all([
         listEmailTemplates(),
         listFailedBookingEmailDeliveries(),
+        listSiteSettings(),
       ])
       if (!active) return
       if (!result.ok) setLoadError(result.error.message)
       else setRows(new Map(result.value.map((row) => [rowKey(row.template, row.lang), row])))
       if (!failedResult.ok) setDeliveryError(failedResult.error.message)
       else setFailedDeliveries(failedResult.value)
+      if (!settingsResult.ok) setLoadError(settingsResult.error.message)
+      else setContactSettings(settingsResult.value)
       setLoaded(true)
     })()
     return () => {
       active = false
     }
   }, [])
+
+  const contactValue = (key: string): string =>
+    contactSettings.get(key) ??
+    (key in DEFAULT_SITE_SETTINGS
+      ? DEFAULT_SITE_SETTINGS[key as keyof typeof DEFAULT_SITE_SETTINGS]
+      : '')
+
+  const setContactValue = (key: string, value: string): void => {
+    setContactSettings((previous) => new Map(previous).set(key, value))
+    setContactStatus(null)
+  }
+
+  const saveContact = async (kind: 'phone' | 'map', clear = false): Promise<void> => {
+    const values =
+      kind === 'phone'
+        ? [
+            {
+              key: BUSINESS_SETTING_KEYS.phoneDisplay,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.phoneDisplay),
+            },
+            {
+              key: BUSINESS_SETTING_KEYS.phoneTel,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.phoneTel),
+            },
+          ]
+        : [
+            {
+              key: BUSINESS_SETTING_KEYS.mapsHref,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.mapsHref),
+            },
+          ]
+    setContactSaving(kind)
+    setContactStatus(null)
+    const result = await saveSiteSettings(values)
+    setContactSaving(null)
+    if (!result.ok) {
+      setContactStatus(result.error.message)
+      return
+    }
+    setContactSettings((previous) => {
+      const next = new Map(previous)
+      for (const [key, value] of result.value) next.set(key, value)
+      return next
+    })
+    setContactStatus(
+      props.lang === 'sv'
+        ? clear
+          ? 'Borttaget från kommande mejl.'
+          : 'Sparat. Kommande mejl använder uppgifterna.'
+        : clear
+          ? 'Removed from future emails.'
+          : 'Saved. Future emails use these details.',
+    )
+  }
 
   const update = (
     template: EmailTemplateName,
@@ -244,6 +308,105 @@ export function MailView(props: MailViewProps): JSX.Element {
         <div style={s.emptyState}>{t.mailLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', marginTop: '24px' }}>
+          <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+            <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+              {props.lang === 'sv' ? 'Kontaktuppgifter i mejl' : 'Email contact details'}
+            </h3>
+            <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+              {props.lang === 'sv'
+                ? 'Delas med Startsida. Tomma värden tas bort från nya mejl; länkar valideras på servern.'
+                : 'Shared with Startsida. Empty values are removed from new emails; links are validated server-side.'}
+            </p>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+                gap: '14px',
+              }}
+            >
+              <label>
+                <span style={s.label}>
+                  {props.lang === 'sv' ? 'Telefon (visas)' : 'Phone (display)'}
+                </span>
+                <input
+                  style={s.input}
+                  type="tel"
+                  maxLength={40}
+                  value={contactValue(BUSINESS_SETTING_KEYS.phoneDisplay)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.phoneDisplay, event.currentTarget.value)
+                  }
+                />
+              </label>
+              <label>
+                <span style={s.label}>{props.lang === 'sv' ? 'Telefonlänk' : 'Phone link'}</span>
+                <input
+                  style={s.input}
+                  type="tel"
+                  maxLength={40}
+                  value={contactValue(BUSINESS_SETTING_KEYS.phoneTel)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.phoneTel, event.currentTarget.value)
+                  }
+                />
+              </label>
+              <label>
+                <span style={s.label}>{props.lang === 'sv' ? 'Kartlänk' : 'Maps link'}</span>
+                <input
+                  style={s.input}
+                  type="url"
+                  maxLength={500}
+                  value={contactValue(BUSINESS_SETTING_KEYS.mapsHref)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.mapsHref, event.currentTarget.value)
+                  }
+                />
+              </label>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '14px',
+              }}
+            >
+              <button
+                type="button"
+                style={{ ...s.primaryBtn, opacity: contactSaving === 'phone' ? 0.6 : 1 }}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('phone')}
+              >
+                {props.lang === 'sv' ? 'Spara telefon' : 'Save phone'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('phone', true)}
+              >
+                {props.lang === 'sv' ? 'Ta bort telefon' : 'Remove phone'}
+              </button>
+              <button
+                type="button"
+                style={{ ...s.primaryBtn, opacity: contactSaving === 'map' ? 0.6 : 1 }}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('map')}
+              >
+                {props.lang === 'sv' ? 'Spara karta' : 'Save map'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('map', true)}
+              >
+                {props.lang === 'sv' ? 'Ta bort karta' : 'Remove map'}
+              </button>
+              {contactStatus === null ? null : <span style={s.mutedText}>{contactStatus}</span>}
+            </div>
+          </article>
           <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
             <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
               {props.lang === 'sv' ? 'Misslyckade mejlleveranser' : 'Failed email deliveries'}

@@ -13,6 +13,7 @@ import { useLocation } from 'wouter-preact'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
 import { getActiveProfile, signOut } from './auth'
+import { clearAdminNavigationState } from './navigationState'
 import { AdminShell } from './AdminShell'
 import { ForcedPasswordChange } from './ForcedPasswordChange'
 import { useTheme } from './useTheme'
@@ -56,6 +57,9 @@ export function AdminApp(): JSX.Element {
   }, [navigate])
 
   const onSignOut = async (): Promise<void> => {
+    if (gate.kind === 'authed' || gate.kind === 'forced_change') {
+      clearAdminNavigationState(sessionStorage, gate.profile.userId)
+    }
     await signOut()
     setGate({ kind: 'redirecting' })
     navigate('/login', { replace: true })

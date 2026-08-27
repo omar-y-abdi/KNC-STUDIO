@@ -206,6 +206,10 @@ describe('initial business metadata', () => {
   it('keeps machine discovery on current CMS/domain facts', () => {
     const text = renderLlmsText({ business, facts })
     expect(text).toContain('Current Street 7, 411 11 Göteborg')
+    expect(text.indexOf('- Phone: 031-12 34 56')).toBeGreaterThan(
+      text.indexOf('- Address: Current Street 7, 411 11 Göteborg, Sweden'),
+    )
+    expect(text.indexOf('- Phone: 031-12 34 56')).toBeLessThan(text.indexOf('- Barbers: Ada, Bo'))
     expect(text).toContain('Ada, Bo')
     expect(text).toContain('250–475 kr')
     expect(text).not.toContain('Hassan')

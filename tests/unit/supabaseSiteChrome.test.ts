@@ -22,6 +22,15 @@ vi.mock('../../src/backend/supabaseClient', () => ({
     return {
       from: () => ({ select: () => ({ eq: async () => state.contentResult }) }),
       rpc: async () => state.discoveryResult,
+      storage: {
+        from: () => ({
+          getPublicUrl: (path: string) => ({
+            data: {
+              publicUrl: `https://example.supabase.co/storage/v1/object/public/gallery/${path}`,
+            },
+          }),
+        }),
+      },
       channel: () => channel,
       removeChannel: state.removeChannel,
     }
@@ -58,5 +67,31 @@ describe('Supabase site chrome resolution', () => {
 
     unsubscribe?.()
     expect(state.removeChannel).toHaveBeenCalledOnce()
+  })
+
+  it('hydrates a whitelisted processed homepage logo from discovery settings', async () => {
+    state.contentResult = { data: [], error: null }
+    state.discoveryResult = {
+      data: {
+        settings: {
+          homepage_logo_path: 'logo/123e4567-e89b-42d3-a456-426614174000.webp',
+          homepage_logo_scale: 'lg',
+          homepage_logo_style: 'monochrome',
+        },
+        barbers: [],
+        services: [],
+        schedules: [],
+      },
+      error: null,
+    }
+
+    await expect(supabaseSiteChromeAdapter.load('sv')).resolves.toMatchObject({
+      homepageLogo: {
+        path: 'logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        url: 'https://example.supabase.co/storage/v1/object/public/gallery/logo/123e4567-e89b-42d3-a456-426614174000.webp',
+        scale: 'lg',
+        style: 'monochrome',
+      },
+    })
   })
 })

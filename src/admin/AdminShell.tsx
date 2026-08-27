@@ -16,7 +16,7 @@
 // buttons (keyboard-operable); the active tab is `aria-current`.
 
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
 import { palette } from '../booking/bookingStyles'
@@ -33,6 +33,14 @@ import { AboutView } from './views/AboutView'
 import { SettingsView } from './views/SettingsView'
 import { MailView } from './views/MailView'
 import { useBarbers } from './useBarbers'
+import {
+  adminUrlForTab,
+  persistAdminScroll,
+  readAdminScroll,
+  restoreAdminScrollPosition,
+  tabFromAdminUrl,
+  withAdminNavigationHistoryState,
+} from './navigationState'
 import type { AdminBarberId, AdminProfile } from './types'
 
 export interface AdminShellProps {
@@ -84,11 +92,47 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
   ]
 
   const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
+  const visibleTabIds = useMemo(() => visibleTabs.map((entry) => entry.id), [isOwner, props.lang])
   // Schedule first: managing today's availability is the barber's most frequent task.
-  const [tab, setTab] = useState<Tab>('schedule')
+  const [tab, setTab] = useState<Tab>(() =>
+    tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule'),
+  )
+  const scrollCaptureGeneration = useRef(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [scheduleBlocked, setScheduleBlocked] = useState(false)
   const navigationLocked = tab === 'schedule' && scheduleBlocked
+
+  const persistScroll = (tabToPersist: Tab, scrollY: number = window.scrollY): void => {
+    const value = Math.max(0, Math.round(scrollY))
+    persistAdminScroll(sessionStorage, profile.userId, tabToPersist, value)
+    window.history.replaceState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: tabToPersist,
+        scrollY: value,
+      }),
+      '',
+      adminUrlForTab(window.location.href, tabToPersist),
+    )
+  }
+
+  const selectTab = (nextTab: Tab): void => {
+    if (nextTab === tab) return
+    persistScroll(tab)
+    scrollCaptureGeneration.current += 1
+    window.history.pushState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: nextTab,
+        scrollY: 0,
+      }),
+      '',
+      adminUrlForTab(window.location.href, nextTab),
+    )
+    setTab(nextTab)
+    // Destination restoration owns the scroll. Scrolling here races the outgoing tab listener and
+    // can overwrite its saved position with zero before that effect cleans up.
+  }
 
   useEffect(() => {
     if (!navigationLocked) return
@@ -99,6 +143,62 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     window.addEventListener('beforeunload', preventLeave)
     return () => window.removeEventListener('beforeunload', preventLeave)
   }, [navigationLocked])
+
+  useEffect(() => {
+    let frame: number | null = null
+    const generation = ++scrollCaptureGeneration.current
+    // Preserve a matching browser/session scroll snapshot until the restore effect can reach it.
+    // Writing the current initial `window.scrollY` here would overwrite the only reload evidence.
+    const initialScrollY = readAdminScroll(
+      window.history.state,
+      sessionStorage,
+      profile.userId,
+      tab,
+    )
+    const capture = (): void => {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        if (scrollCaptureGeneration.current === generation) persistScroll(tab)
+      })
+    }
+    const flush = (): void => {
+      if (scrollCaptureGeneration.current === generation) persistScroll(tab)
+    }
+    // Initialise an addressable history entry so reload and share preserve the active admin tab.
+    persistScroll(tab, initialScrollY)
+    window.addEventListener('scroll', capture, { passive: true })
+    window.addEventListener('pagehide', flush)
+    return () => {
+      if (scrollCaptureGeneration.current === generation) scrollCaptureGeneration.current += 1
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', capture)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const previous = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
+    return () => {
+      window.history.scrollRestoration = previous
+    }
+  }, [])
+
+  useEffect(() => {
+    const restoreY = readAdminScroll(window.history.state, sessionStorage, profile.userId, tab)
+    return restoreAdminScrollPosition(restoreY)
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const onPopState = (): void => {
+      const destination = tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule')
+      scrollCaptureGeneration.current += 1
+      setTab(destination)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [visibleTabIds])
 
   // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
   // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
@@ -225,7 +325,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         type="button"
         onClick={() => {
           if (navigationLocked && !active) return
-          setTab(def.id)
+          selectTab(def.id)
           setMobileMenuOpen(false)
         }}
         disabled={navigationLocked && !active}

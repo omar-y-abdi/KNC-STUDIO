@@ -1,17 +1,37 @@
 // Desktop (WEBB · Editorial) layout — nav + hero + collapsible booking fold + footer.
 
-import type { JSX } from 'preact'
+import type { JSX, RefObject } from 'preact'
 import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
-import { DeskLockup } from '../ui/logos/DeskLockup'
+import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { scalePx, type SizePreset } from '../site/siteChrome'
+import type { BookingPort } from '../booking/port'
+import type { BarbersPort } from '../booking/barbersPort'
+import type { ServicesPort } from '../booking/servicesPort'
+import type { ReviewsPort } from '../about/reviews/port'
+import type { AboutContentPort } from '../about/content/port'
+import type { GalleryPort } from '../about/gallery/port'
+import {
+  scalePx,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { useEffect, useRef } from 'preact/hooks'
 import { EASE } from './shared'
+
+/** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
+export interface DesktopSitePreviewPorts {
+  readonly booking: BookingPort
+  readonly barbers: BarbersPort
+  readonly services: ServicesPort
+  readonly reviews: ReviewsPort
+  readonly aboutContent: AboutContentPort
+  readonly gallery: GalleryPort
+}
 
 const DESKTOP_PANEL_HEIGHT = 61
 
@@ -27,10 +47,15 @@ export interface DesktopSiteProps extends ShellProps {
   readonly openMyBookings: () => void
   /** Owner-set font-size preset for the homepage editable text (kicker / hours / address). */
   readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
   /** Owner-set font-size preset forwarded to the "Om oss" section. */
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
   readonly bookingPopupText: BookingPopupText
+  readonly previewPorts?: DesktopSitePreviewPorts
+  /** Embedded replicas scroll inside this host instead of the browser window. */
+  readonly scrollRootRef?: RefObject<HTMLDivElement>
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -48,34 +73,45 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       const panel = panelRef.current
       if (panel === null) return
       if (booking) {
-        panel.style.setProperty('--desktop-panel-top', '0px')
+        panel.style.setProperty(
+          '--desktop-panel-top',
+          (props.scrollRootRef?.current?.scrollTop ?? 0) + 'px',
+        )
         panel.dataset['scrollProgress'] = '1.000'
         return
       }
-      const travel = Math.max(1, window.innerHeight - DESKTOP_PANEL_HEIGHT)
-      const progress = Math.min(1, Math.max(0, window.scrollY / travel))
-      panel.style.setProperty('--desktop-panel-top', Math.round((1 - progress) * travel) + 'px')
+      const scrollRoot = props.scrollRootRef?.current
+      const scrollTop = scrollRoot?.scrollTop ?? window.scrollY
+      const viewportHeight = scrollRoot?.clientHeight ?? window.innerHeight
+      const travel = Math.max(1, viewportHeight - DESKTOP_PANEL_HEIGHT)
+      const progress = Math.min(1, Math.max(0, scrollTop / travel))
+      const visualTop = Math.round((1 - progress) * travel)
+      panel.style.setProperty(
+        '--desktop-panel-top',
+        (scrollRoot === undefined ? visualTop : scrollTop + visualTop) + 'px',
+      )
       panel.dataset['scrollProgress'] = progress.toFixed(3)
     }
     const schedule = (): void => {
       if (frame === 0) frame = window.requestAnimationFrame(sync)
     }
-    window.addEventListener('scroll', schedule, { passive: true })
+    const scrollTarget = props.scrollRootRef?.current ?? window
+    scrollTarget.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
     sync()
     return () => {
-      window.removeEventListener('scroll', schedule)
+      scrollTarget.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       if (frame !== 0) window.cancelAnimationFrame(frame)
     }
-  }, [booking])
+  }, [booking, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
 
   const navStyle: JSX.CSSProperties = {
-    position: 'fixed',
-    top: booking ? '0px' : 'var(--desktop-panel-top, calc(100dvh - 61px))',
+    position: props.scrollRootRef === undefined ? 'fixed' : 'absolute',
+    top: 'var(--desktop-panel-top, calc(100dvh - 61px))',
     left: 0,
     right: 0,
     zIndex: 10,
@@ -177,6 +213,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   return (
     <div
       style={{
+        position: props.scrollRootRef === undefined ? undefined : 'relative',
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
@@ -196,22 +233,26 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <CornerMark height={30} />
         </h1>
         <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
-          <a
-            href={business.mapsHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={props.findUsStyle}
-          >
-            <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
-            {tx.findUs}
-          </a>
-          <a
-            href={`tel:${business.phoneTel}`}
-            style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
-          >
-            <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
-            {business.phoneDisplay}
-          </a>
+          {business.mapsHref === '' ? null : (
+            <a
+              href={business.mapsHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={props.findUsStyle}
+            >
+              <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
+              {tx.findUs}
+            </a>
+          )}
+          {business.phoneTel === '' || business.phoneDisplay === '' ? null : (
+            <a
+              href={`tel:${business.phoneTel}`}
+              style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
+            >
+              <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
+              {business.phoneDisplay}
+            </a>
+          )}
           {props.langToggle}
           {props.themeToggle}
         </div>
@@ -232,7 +273,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           }}
         >
           <div style={heroMarkStyle} aria-hidden="true">
-            <DeskLockup height={300} />
+            <HomepageLogo logo={props.homepageLogo} layout="desktop" height={300} />
           </div>
           <div
             style={{
@@ -280,6 +321,14 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 onMyBookings={props.openMyBookings}
                 popupText={props.bookingPopupText}
                 business={business}
+                showDirections={business.mapsHref !== ''}
+                {...(props.previewPorts === undefined
+                  ? {}
+                  : {
+                      port: props.previewPorts.booking,
+                      barbersPort: props.previewPorts.barbers,
+                      servicesPort: props.previewPorts.services,
+                    })}
               />
             </div>
           </div>
@@ -290,6 +339,15 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             lang={props.lang}
             fontScale={props.aboutScale}
             scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
+            {...(props.previewPorts === undefined
+              ? {}
+              : {
+                  port: props.previewPorts.reviews,
+                  barbersPort: props.previewPorts.barbers,
+                  aboutContentPort: props.previewPorts.aboutContent,
+                  galleryPort: props.previewPorts.gallery,
+                  challengeEnabled: false,
+                })}
           />
         ) : null}
       </main>

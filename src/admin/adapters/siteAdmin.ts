@@ -81,6 +81,27 @@ export async function saveSiteSetting(key: string, value: string): Promise<Admin
   }
 }
 
+/** Atomically upsert a related set of settings (phone display + tel value, for example). */
+export async function saveSiteSettings(
+  values: readonly { readonly key: string; readonly value: string }[],
+): Promise<AdminResult<ReadonlyMap<string, string>>> {
+  if (values.length === 0) return ok(new Map())
+  try {
+    const { data, error } = await getAdminClient()
+      .from('site_settings')
+      .upsert(values, { onConflict: 'key' })
+      .select('key,value')
+    if (error !== null || data === null) return mapWriteError(error)
+    const parsed = parseWith(siteSettingRows, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    const saved = new Map<string, string>()
+    for (const row of parsed.value) saved.set(row.key, row.value)
+    return ok(saved)
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
 function mapWriteError(error: { code?: string } | null): AdminResult<never> {
   if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra startsidan.')
   if (error?.code === '23514' || error?.code === '22023') {

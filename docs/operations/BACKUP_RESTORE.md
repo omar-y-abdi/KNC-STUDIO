@@ -14,7 +14,8 @@ The encrypted bundle contains:
 - `storage/buckets.json`, dynamically inventoried from every current standard bucket;
 - `storage/objects.ndjson`, containing every object path, byte size, SHA-256 checksum, and content
   metadata;
-- `storage/references.ndjson`, containing database references to business-owned Storage objects;
+- `storage/references.ndjson`, containing database references to business-owned Storage objects,
+  including gallery/cut photos, barber photos, and the active `site_settings.homepage_logo_path`;
 - `storage/objects/*.bin`, the actual object bytes; and
 - `storage/inventory.json` plus `MANIFEST.sha256`.
 

@@ -334,6 +334,7 @@ export function App(): JSX.Element {
           openCancel={openMyBookings}
           openMyBookings={openMyBookings}
           homepageScale={chrome.homepageScale}
+          homepageLogo={chrome.homepageLogo}
           aboutScale={chrome.aboutScale}
           bookingPopupText={bookingPopupText}
         />
@@ -362,6 +363,7 @@ export function App(): JSX.Element {
         openCancel={openMyBookings}
         openMyBookings={openMyBookings}
         homepageScale={chrome.homepageScale}
+        homepageLogo={chrome.homepageLogo}
         aboutScale={chrome.aboutScale}
         bookingPopupText={bookingPopupText}
       />

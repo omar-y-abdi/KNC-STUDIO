@@ -40,12 +40,19 @@ jobs:
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/blade-preview.log 2>&1 &
           preview_pid=$!
-          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/blade-admin-harness.log 2>&1 &
+          admin_harness_pid=$!
+          trap 'kill "$preview_pid" "$admin_harness_pid" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
             curl --fail --silent http://127.0.0.1:4173/ >/dev/null && break
             sleep 1
           done
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break
+            sleep 1
+          done
           BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+          BASE_URL=http://127.0.0.1:4188 npm run test:e2e:admin
           BASE=http://127.0.0.1:4173 OUT=/tmp/visual-candidate node tools/visual/capture.mjs
           BASELINE=tools/visual/baseline-linux CANDIDATE=/tmp/visual-candidate DIFF=/tmp/visual-diff node tools/visual/compare.mjs
 
