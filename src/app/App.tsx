@@ -9,6 +9,7 @@ import { useEffect, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
+import { preloadBookingCatalog, subscribeBookingCatalog } from '../booking/adapters/barbersIndex'
 import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
 import { consumeBookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
@@ -83,9 +84,21 @@ export function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    const { code: accessCode, cleanPath } = consumeBookingAccessLink(window.location.href)
+    preloadBookingCatalog()
+    // Keep mobile's preloaded catalog current even before Booking/About mounts a data consumer.
+    // Realtime invalidation starts one coalesced refresh, so opening either surface stays hot.
+    return subscribeBookingCatalog(preloadBookingCatalog)
+  }, [])
+
+  useEffect(() => {
+    const { code: accessCode, cleanPath, direct } = consumeBookingAccessLink(window.location.href)
     if (accessCode === null) return
     window.history.replaceState(window.history.state, '', cleanPath)
+    if (direct) {
+      setBookingAccess({ token: accessCode })
+      setState({ myBookingsOpen: true })
+      return
+    }
     void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
       setBookingAccess(result.ok ? { token: result.accessToken } : { failed: true })
       setState({ myBookingsOpen: true })

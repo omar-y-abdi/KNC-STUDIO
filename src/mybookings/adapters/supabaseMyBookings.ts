@@ -7,12 +7,12 @@ import {
   parseWith,
 } from '../../backend/rpcSchemas'
 import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
-import { BARBERS } from '../../booking/barbers'
 import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { myBookingsStrings } from '../../i18n/index'
 import { forgetCustomerAccessToken, rememberCustomerAccessToken } from '../customerAccessSession'
+import { rememberPhone } from '../deviceMemory'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
 import { formatRowLabel, splitByTime } from '../format'
 import type {
@@ -29,9 +29,9 @@ async function barberFromId(id: string): Promise<Barber> {
     const hit = roster.find((row) => row.barber.id === id)
     if (hit !== undefined) return hit.barber
   } catch {
-    // Fall through to shipped roster data.
+    // Preserve truthful booking data even when roster hydration fails.
   }
-  return BARBERS.find((barber) => barber.id === id) ?? { id: asBarberId(id), name: id, ig: '' }
+  return { id: asBarberId(id), name: id, ig: '' }
 }
 
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
@@ -41,7 +41,6 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
     try {
       const { data, failed } = await invokePublicBookingAction({
         action: 'request_access',
-        phone: params.phone,
         email: params.email,
         lang: params.lang,
         turnstileToken: params.turnstileToken,
@@ -85,6 +84,9 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
         if (parsed.value.error === 'access_denied') forgetCustomerAccessToken(params.accessToken)
         return { ok: false, error: parsed.value.error }
       }
+
+      rememberCustomerAccessToken(params.accessToken)
+      rememberPhone(parsed.value.phone)
 
       const sep = myBookingsStrings(params.lang).atSep
       const bookings: MyBooking[] = []

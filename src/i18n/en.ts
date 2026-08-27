@@ -10,9 +10,13 @@ import type {
 
 export const bookingEn: BookingStrings = {
   chooseBarber: 'Choose your barber',
+  loadingBarbers: 'Loading barbers …',
+  noBarbers: 'No barbers are available for booking right now.',
   chooseDate: 'Pick a day',
   chooseTime: 'Pick a time',
   chooseService: 'Choose a service',
+  loadingServices: 'Loading services …',
+  noServices: 'This barber has no active services on the selected day.',
   pickDayForService: 'Pick a day to see available services.',
   pickServiceForTime: 'Choose a service to see open times.',
   loadingTimes: 'Loading times …',
@@ -42,16 +46,6 @@ export const bookingEn: BookingStrings = {
   calGoogle: 'Google Calendar',
   directions: 'Directions to the studio',
   newBooking: 'Book another time',
-  grpWedSat: 'Men · Wed–Sat',
-  grpMonTue: 'Men · Mon–Tue',
-  grpStudent: 'Student discount · Wed',
-  grpKids: 'Children up to 12',
-  noteStudent: 'Wednesdays only',
-  sHairBeard: 'Haircut + beard',
-  sHair: 'Haircut',
-  sBeard: 'Beard trim',
-  sHairStudent: 'Haircut (student)',
-  sKids: 'Haircut, child',
   min: 'min',
   errName: 'Name is too long',
   errPhone: 'Invalid phone number',
@@ -75,8 +69,6 @@ export const appEn: AppStrings = {
   cancelLink: 'Cancel booking',
 }
 
-// NOTE: All About-section copy below is ON-BRAND PLACEHOLDER text — no real bios, photos or
-// reviews exist yet. Swap the prose freely; the structure (typed keys) is what the UI binds to.
 export const aboutEn: AboutStrings = {
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',
@@ -85,20 +77,6 @@ export const aboutEn: AboutStrings = {
   galleryTitle: 'Inside the shop',
   galleryAlt: 'Photo from the salon (placeholder)',
   stylistsTitle: 'The barbers',
-  stylists: {
-    hassan: {
-      role: 'Barber',
-      bio: 'Specialist in skin fades and precise lines. Hassan has had the scissors in hand since his teens and works with a steady calm.',
-    },
-    victor: {
-      role: 'Barber',
-      bio: 'Classic cuts with a modern touch. Victor listens to what you want and delivers every time — beards are his signature.',
-    },
-    salman: {
-      role: 'Barber',
-      bio: 'Textured hair and clean transitions. Salman happily takes the extra minute to get the detail exactly right.',
-    },
-  },
   stylistAvatarAlt: 'Portrait (placeholder)',
   cutsTitle: 'Work we’ve done',
   cutsAlt: 'Customer haircut (placeholder)',
@@ -128,26 +106,22 @@ export const aboutEn: AboutStrings = {
 
 export const myBookingsEn: MyBookingsStrings = {
   title: 'My appointments',
-  lookupLead:
-    'Enter the phone number and email from your booking. We will send a secure one-time link.',
-  phone: 'Phone',
-  phonePh: '07X XXX XX XX',
+  lookupLead: 'Enter the email from your booking. We will send a new secure link.',
   email: 'Email',
   emailPh: 'name@example.com',
   lookupBtn: 'Send secure link',
   lookingUp: 'Sending …',
-  errPhone: 'Invalid phone number',
   errEmail: 'Invalid email address',
   accessSent:
-    'If the details match, we will send a secure link to your email. The link is valid for 15 minutes.',
-  errAccess: 'This link is invalid or expired. Request a new secure link.',
+    'If the email matches a booking, we will send a new link. The previous link will then stop working.',
+  errAccess: 'This link is invalid or has been replaced. Request a new secure link.',
   errSystem: 'Could not load your appointments. Please try again.',
   errChallenge: 'Verification failed. Reload the check and try again.',
   errRateLimited: 'Too many attempts. Wait a moment before trying again.',
   upcomingTitle: 'Upcoming',
   pastTitle: 'Past',
   upcomingEmpty: 'You have no upcoming appointments.',
-  changeNumber: 'Use different details',
+  changeEmail: 'Use a different email',
   fBarber: 'Barber',
   fService: 'Service',
   fDuration: 'Duration',

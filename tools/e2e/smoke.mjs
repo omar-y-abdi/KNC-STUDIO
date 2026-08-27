@@ -42,8 +42,10 @@ async function verifyPublicPage(browser, viewport) {
     'language toggle did not activate English',
   )
   await page.getByRole('button', { name: 'Book appointment', exact: true }).first().click()
+  // Production data may provide options; an intentionally unconfigured test build must show an
+  // honest empty state instead of bundled barber fixtures.
   await page
-    .getByRole('button', { name: /Hassan|Victor|Salman/ })
+    .locator('[data-testid="booking-barber-option"],[data-testid="booking-barber-empty"]')
     .first()
     .waitFor()
 

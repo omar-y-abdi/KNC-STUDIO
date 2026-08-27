@@ -1,16 +1,14 @@
 // The offline (mock) MyBookingsPort adapter: no network, NOTHING PERSISTED.
 //
 //  - `requestAccess()` and `exchangeAccess()` issue a deterministic opaque session. `list()` returns
-//    deterministic demo history (`buildDemoMyBookings`) split around the injected clock.
+//    an honest empty history; no real-looking customer or barber data is fabricated.
 //  - `cancel()` always resolves `ok`, echoing the id. No state is mutated; a reload forgets it.
 //
 // The clock is injected (default: env-selected `defaultClock`) so the split remains unit-testable.
 
 import { defaultClock } from '../../config'
 import type { Clock } from '../../config'
-import { buildDemoMyBookings } from '../demoMyBookings'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
-import { splitByTime } from '../format'
 import type {
   MyBookingsAccessExchangeResult,
   MyBookingsAccessRequestResult,
@@ -19,6 +17,7 @@ import type {
 } from '../port'
 
 export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookingsPort {
+  void clock
   return {
     requestAccess(): Promise<MyBookingsAccessRequestResult> {
       return Promise.resolve({ ok: true })
@@ -27,8 +26,8 @@ export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookin
       return Promise.resolve({ ok: true, accessToken: 'mock-customer-access' })
     },
     list(params: MyBookingsListParams): Promise<MyBookingsResult> {
-      const all = buildDemoMyBookings(clock(), params.lang)
-      return Promise.resolve({ ok: true, bookings: splitByTime(all, clock()) })
+      void params
+      return Promise.resolve({ ok: true, bookings: { upcoming: [], past: [] } })
     },
     cancel(booking: MyBooking): Promise<MyCancelResult> {
       return Promise.resolve({ ok: true, id: booking.id })

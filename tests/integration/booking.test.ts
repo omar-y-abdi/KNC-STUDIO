@@ -9,7 +9,6 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
-import { BARBERS } from '../../src/booking/barbers'
 import type { Barber } from '../../src/booking/domain'
 import { asBarberId } from '../../src/booking/domain'
 import type { CreateBookingArgs } from './_helpers'
@@ -26,12 +25,12 @@ import {
   withClient,
 } from './_helpers'
 
-const HASSAN: Barber = BARBERS[0] ?? {
+const HASSAN: Barber = {
   id: asBarberId('hassan'),
   name: 'Hassan',
   ig: 'freebandzcuts',
 }
-const VICTOR: Barber = BARBERS[1] ?? HASSAN
+const VICTOR: Barber = { id: asBarberId('victor'), name: 'Victor', ig: 'vic.barber1' }
 
 // 13:30 Europe/Stockholm on 2040-03-14 (a working day, pre-DST → CET +01) = 12:30:00Z. Passing the
 // absolute instant keeps the test tz-independent: create_booking re-derives the salon wall-clock
