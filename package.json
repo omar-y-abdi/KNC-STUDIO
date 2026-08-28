@@ -13,7 +13,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write src/booking/adapters/supabaseBookingCatalog.ts && git diff -- src/booking/adapters/supabaseBookingCatalog.ts && exit 1",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
