@@ -22,7 +22,10 @@ vi.mock('../../src/backend/supabaseClient', () => ({
         state.changeHandlers.push(handler)
         return channel
       }),
-      subscribe: vi.fn(() => channel),
+      subscribe: vi.fn((handler?: (status: string) => void) => {
+        state.subscriptionHandler = handler
+        return channel
+      }),
     }
     return {
       channel: () => channel,
@@ -40,6 +43,7 @@ describe('Supabase site chrome resolution', () => {
     state.contentOk = false
     state.discoveryOk = true
     state.changeHandlers = []
+    state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
 
     vi.stubGlobal(
@@ -90,6 +94,21 @@ describe('Supabase site chrome resolution', () => {
       expect(headers.get('apikey')).toBe('eyJ.test.signature')
       expect(headers.get('Authorization')).toBe('Bearer eyJ.test.signature')
     }
+  })
+
+  it('revalidates after Realtime is subscribed so edits before socket readiness are not missed', async () => {
+    state.contentData = []
+    state.contentOk = true
+    state.discoveryData = { settings: {}, barbers: [], services: [], schedules: [] }
+
+    const onChange = vi.fn()
+    const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', onChange)
+    await vi.waitFor(() => expect(state.subscriptionHandler).toBeDefined())
+
+    state.subscriptionHandler?.('SUBSCRIBED')
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+
+    unsubscribe?.()
   })
 
   it('does not publish an unresolved realtime reload', async () => {

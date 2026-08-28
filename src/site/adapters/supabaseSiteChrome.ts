@@ -143,7 +143,9 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
             { event: '*', schema: 'public', table: 'barber_schedules' },
             reload,
           )
-          .subscribe()
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') reload()
+          })
 
         stop = (): void => {
           void supabase.removeChannel(channel)
