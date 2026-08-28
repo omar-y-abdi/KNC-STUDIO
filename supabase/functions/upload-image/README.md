@@ -13,6 +13,10 @@ limit and does not support static files.
 npx supabase functions deploy upload-image
 ```
 
+For non-interactive deployment (for example GitHub Actions), provide a Supabase management
+`SUPABASE_ACCESS_TOKEN`. Do not substitute `--use-api`: this function's vendored WASM is a
+configured static file and must use the CLI/Docker bundle path.
+
 ## JPEG/WebP corruption guard
 
 `ImageMagick.write()` exposes a temporary WASM-owned byte buffer. The upload gateway must copy those
