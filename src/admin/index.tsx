@@ -8,23 +8,34 @@
 // when unauthenticated).
 
 import type { JSX } from 'preact'
+import { lazy, Suspense } from 'preact/compat'
 import { Route, Switch } from 'wouter-preact'
-import { EmailChangeConfirmRoute } from './EmailChangeConfirmRoute'
 import { LoginRoute } from './LoginRoute'
-import { InvitePasswordRoute } from './InvitePasswordRoute'
-import { ResetPasswordRoute } from './ResetPasswordRoute'
-import { AdminApp } from './AdminApp'
+const ResetPasswordRoute = lazy(() =>
+  import('./ResetPasswordRoute').then((module) => ({ default: module.ResetPasswordRoute })),
+)
+const InvitePasswordRoute = lazy(() =>
+  import('./InvitePasswordRoute').then((module) => ({ default: module.InvitePasswordRoute })),
+)
+const EmailChangeConfirmRoute = lazy(() =>
+  import('./EmailChangeConfirmRoute').then((module) => ({
+    default: module.EmailChangeConfirmRoute,
+  })),
+)
+const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: module.AdminApp })))
 
 /** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
 export default function AdminEntry(): JSX.Element {
   return (
-    <Switch>
-      <Route path="/login" component={LoginRoute} />
-      <Route path="/reset" component={ResetPasswordRoute} />
-      <Route path="/invite" component={InvitePasswordRoute} />
-      <Route path="/auth/confirm" component={EmailChangeConfirmRoute} />
-      <Route path="/admin/:rest*" component={AdminApp} />
-      <Route path="/admin" component={AdminApp} />
-    </Switch>
+    <Suspense fallback={<div aria-live="polite">Laddar …</div>}>
+      <Switch>
+        <Route path="/login" component={LoginRoute} />
+        <Route path="/reset" component={ResetPasswordRoute} />
+        <Route path="/invite" component={InvitePasswordRoute} />
+        <Route path="/auth/confirm" component={EmailChangeConfirmRoute} />
+        <Route path="/admin/:rest*" component={AdminApp} />
+        <Route path="/admin" component={AdminApp} />
+      </Switch>
+    </Suspense>
   )
 }

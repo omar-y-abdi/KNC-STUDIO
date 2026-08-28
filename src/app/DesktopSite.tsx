@@ -1,13 +1,14 @@
 // Desktop (WEBB · Editorial) layout — nav + hero + collapsible booking fold + footer.
 
 import type { JSX, RefObject } from 'preact'
-import { BookingFlow } from '../booking/BookingFlow'
+import { Suspense } from 'preact/compat'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
+import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
 import type { BookingPort } from '../booking/port'
 import type { BarbersPort } from '../booking/barbersPort'
 import type { ServicesPort } from '../booking/servicesPort'
@@ -66,6 +67,8 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   // The document remains the scroll source so wheel, keyboard and browser navigation keep their
   // expected desktop behaviour; only the panel's position is tied to scroll progress.
   const panelRef = useRef<HTMLDivElement>(null)
+  const bookingMounted = useRef(booking)
+  if (booking) bookingMounted.current = true
   useEffect(() => {
     let frame = 0
     const sync = (): void => {
@@ -288,7 +291,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             {tx.kicker}
           </div>
           <div style={heroActionsStyle}>
-            <button onClick={props.toggleDeskBooking} style={heroBtnStyle} type="button">
+            <button
+              onClick={props.toggleDeskBooking}
+              onPointerDown={preloadBookingFlow}
+              onFocus={preloadBookingFlow}
+              style={heroBtnStyle}
+              type="button"
+            >
               {tx.book}
             </button>
             <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle} type="button">
@@ -314,22 +323,26 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                 ';max-width:1180px;margin:0 auto;width:100%;box-sizing:border-box;'
               }
             >
-              <BookingFlow
-                mode={props.mode}
-                defaultLang={props.lang}
-                showHeader={false}
-                onMyBookings={props.openMyBookings}
-                popupText={props.bookingPopupText}
-                business={business}
-                showDirections={business.mapsHref !== ''}
-                {...(props.previewPorts === undefined
-                  ? {}
-                  : {
-                      port: props.previewPorts.booking,
-                      barbersPort: props.previewPorts.barbers,
-                      servicesPort: props.previewPorts.services,
-                    })}
-              />
+              {bookingMounted.current ? (
+                <Suspense fallback={null}>
+                  <LazyBookingFlow
+                    mode={props.mode}
+                    defaultLang={props.lang}
+                    showHeader={false}
+                    onMyBookings={props.openMyBookings}
+                    popupText={props.bookingPopupText}
+                    business={business}
+                    showDirections={business.mapsHref !== ''}
+                    {...(props.previewPorts === undefined
+                      ? {}
+                      : {
+                          port: props.previewPorts.booking,
+                          barbersPort: props.previewPorts.barbers,
+                          servicesPort: props.previewPorts.services,
+                        })}
+                  />
+                </Suspense>
+              ) : null}
             </div>
           </div>
         </div>

@@ -12,6 +12,7 @@ import type { Lang } from '../i18n/index'
 import type { SiteChromePort } from './port'
 import { DEFAULT_CHROME, type SiteChrome } from './siteChrome'
 import { defaultSiteChromePort, siteChromeIsMock } from './adapters/index'
+import { scheduleIdle } from '../ui/idle'
 
 export interface SiteChromeSnapshot {
   readonly chrome: SiteChrome
@@ -76,11 +77,21 @@ export function useSiteChrome(
         if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
       })
       .catch(() => undefined)
-    const unsubscribe = port.subscribe?.(lang, (next) => {
-      if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
-    })
+    let unsubscribe: (() => void) | undefined
+    // The public default port fetches once per language. Do not keep a Realtime socket open for
+    // every visitor; injected ports may still opt into live subscription semantics.
+    const cancelIdle =
+      port === defaultSiteChromePort
+        ? () => undefined
+        : scheduleIdle(() => {
+            if (cancelled) return
+            unsubscribe = port.subscribe?.(lang, (next) => {
+              if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
+            })
+          })
     return () => {
       cancelled = true
+      cancelIdle()
       unsubscribe?.()
     }
   }, [lang, port])

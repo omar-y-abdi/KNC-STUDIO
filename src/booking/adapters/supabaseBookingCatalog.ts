@@ -19,12 +19,15 @@ export interface BookingCatalog {
   readonly weekdaysByServiceId: ReadonlyMap<string, readonly number[]>
 }
 
+export const BOOKING_CATALOG_TTL_MS = 30_000
+
 const EMPTY_CATALOG: BookingCatalog = {
   barbers: [],
   servicesByBarber: new Map(),
   weekdaysByServiceId: new Map(),
 }
 let catalogPromise: Promise<BookingCatalog> | null = null
+let catalogLoadedAt: number | null = null
 let catalogLoading = false
 const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
@@ -83,11 +86,20 @@ export function servicesForBookingDate(
 
 /** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
 export function cachedBookingCatalog(): Promise<BookingCatalog> {
-  if (catalogPromise !== null) return catalogPromise
+  const fresh = catalogLoadedAt !== null && Date.now() - catalogLoadedAt < BOOKING_CATALOG_TTL_MS
+  if (catalogPromise !== null && (catalogLoading || fresh)) return catalogPromise
+
+  catalogPromise = null
+  catalogLoadedAt = null
   catalogLoading = true
   catalogPromise = loadBookingCatalog()
+    .then((catalog) => {
+      catalogLoadedAt = Date.now()
+      return catalog
+    })
     .catch((error: unknown) => {
       catalogPromise = null
+      catalogLoadedAt = null
       throw error
     })
     .finally(() => {
@@ -100,6 +112,7 @@ export function cachedBookingCatalog(): Promise<BookingCatalog> {
 export function refreshBookingCatalog(): Promise<BookingCatalog> {
   if (catalogLoading && catalogPromise !== null) return catalogPromise
   catalogPromise = null
+  catalogLoadedAt = null
   return cachedBookingCatalog()
 }
 
@@ -113,6 +126,7 @@ function startCatalogSubscription(): () => void {
   let channel = client.channel('public-booking-catalog')
   const changed = (): void => {
     catalogPromise = null
+    catalogLoadedAt = null
     for (const listener of catalogListeners) listener()
   }
   for (const table of ['barbers', 'barber_photos', 'services']) {

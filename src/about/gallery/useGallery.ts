@@ -16,10 +16,15 @@ import { defaultGalleryPort, galleryIsMock } from './index'
 export function useGallery(
   kind: GalleryKind,
   port: GalleryPort = defaultGalleryPort,
+  enabled = true,
 ): readonly GalleryPhoto[] {
   const [photos, setPhotos] = useState<readonly GalleryPhoto[]>([])
 
   useEffect(() => {
+    if (!enabled) {
+      setPhotos([])
+      return
+    }
     // Mock: there are no DB photos; keep placeholders (never fetch).
     if (galleryIsMock) return
     let cancelled = false
@@ -36,7 +41,7 @@ export function useGallery(
     return () => {
       cancelled = true
     }
-  }, [kind, port])
+  }, [enabled, kind, port])
 
   return photos
 }

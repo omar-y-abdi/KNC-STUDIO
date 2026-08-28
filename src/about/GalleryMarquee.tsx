@@ -68,6 +68,7 @@ interface MarqueeRowProps {
 }
 
 function MarqueeRow(props: MarqueeRowProps): JSX.Element {
+  const rowRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const offset = useRef(0)
   const half = useRef(0)
@@ -128,21 +129,67 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   }
 
   useEffect(() => {
+    if (reduce.current) return
+    const row = rowRef.current
+    if (row === null) return
+
     let raf = 0
     let last = 0
+    let intersecting = false
+    let running = false
+
     const tick = (t: number): void => {
+      if (!running) return
       if (last === 0) last = t
       const dt = Math.min(64, t - last)
       last = t
-      if (half.current > 0 && !dragging.current && !pausedRef.current && !reduce.current) {
+      if (half.current > 0 && !dragging.current && !pausedRef.current) {
         offset.current -= dir.current * SPEED * (dt / 1000)
         wrap()
         paint()
       }
       raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    const start = (): void => {
+      if (running || document.hidden || !intersecting) return
+      running = true
+      last = 0
+      raf = requestAnimationFrame(tick)
+    }
+    const stop = (): void => {
+      running = false
+      last = 0
+      if (raf !== 0) cancelAnimationFrame(raf)
+      raf = 0
+    }
+
+    const onVisibility = (): void => {
+      if (document.hidden) stop()
+      else start()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    let observer: IntersectionObserver | null = null
+    if (typeof IntersectionObserver === 'undefined') {
+      intersecting = true
+      start()
+    } else {
+      observer = new IntersectionObserver(
+        (entries) => {
+          intersecting = entries.some((entry) => entry.isIntersecting)
+          if (intersecting) start()
+          else stop()
+        },
+        { threshold: 0.01 },
+      )
+      observer.observe(row)
+    }
+
+    return () => {
+      observer?.disconnect()
+      document.removeEventListener('visibilitychange', onVisibility)
+      stop()
+    }
   }, [])
 
   const onPointerDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
@@ -207,6 +254,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 
   return (
     <div
+      ref={rowRef}
       style={rowStyle}
       data-testid="marquee-row"
       onPointerDown={onPointerDown}

@@ -305,7 +305,7 @@ export default {
         headers.delete('Content-Length')
         headers.delete('ETag')
         headers.delete('Last-Modified')
-        headers.set('Cache-Control', 'no-cache')
+        headers.set('Cache-Control', 'public, max-age=60, s-maxage=300')
         return new Response(renderHomepageMetadata(await asset.text(), discovery), {
           status: asset.status,
           statusText: asset.statusText,

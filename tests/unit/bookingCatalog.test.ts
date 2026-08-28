@@ -37,7 +37,12 @@ vi.mock('../../src/backend/supabaseClient', () => ({
 
 import { supabaseBarbersAdapter } from '../../src/booking/adapters/supabaseBarbers'
 import { supabaseServicesAdapter } from '../../src/booking/adapters/supabaseServices'
-import { subscribeBookingCatalog } from '../../src/booking/adapters/supabaseBookingCatalog'
+import {
+  BOOKING_CATALOG_TTL_MS,
+  cachedBookingCatalog,
+  refreshBookingCatalog,
+  subscribeBookingCatalog,
+} from '../../src/booking/adapters/supabaseBookingCatalog'
 import { asBarberId } from '../../src/booking/domain'
 
 describe('shared public booking catalog', () => {
@@ -96,6 +101,25 @@ describe('shared public booking catalog', () => {
       supabaseServicesAdapter.listForBarber(asBarberId('db-barber'), '2040-03-19'),
     ).resolves.toEqual([])
     expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes an idle-preloaded catalog after its freshness window expires', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    rpc.mockClear()
+    rpc.mockResolvedValue({ data: { barbers: [], services: [] }, error: null })
+
+    await refreshBookingCatalog()
+    expect(rpc).toHaveBeenCalledTimes(1)
+
+    await cachedBookingCatalog()
+    expect(rpc).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(BOOKING_CATALOG_TTL_MS + 1)
+    await cachedBookingCatalog()
+    expect(rpc).toHaveBeenCalledTimes(2)
+
+    vi.useRealTimers()
   })
 
   it('refreshes date-filtered service consumers after catalog-owned service changes', () => {

@@ -128,7 +128,7 @@ describe('Worker route policy', () => {
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
   })
 
-  it('does not reuse static validators or cache a CMS-derived homepage body', async () => {
+  it('does not reuse static validators and gives rendered homepage HTML an explicit edge TTL', async () => {
     const env = createEnv()
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/', {
@@ -142,7 +142,7 @@ describe('Worker route policy', () => {
 
     expect(env.requestHeaders[0]?.has('If-Modified-Since')).toBe(false)
     expect(env.requestHeaders[0]?.has('If-None-Match')).toBe(false)
-    expect(response.headers.get('Cache-Control')).toBe('no-cache')
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
     expect(response.headers.has('ETag')).toBe(false)
     expect(response.headers.has('Last-Modified')).toBe(false)
   })

@@ -8,14 +8,15 @@
 //  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
 
 import type { JSX } from 'preact'
+import { Suspense } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { BookingFlow } from '../booking/BookingFlow'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
+import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
 import {
   scalePx,
   type BusinessSettings,
@@ -68,20 +69,34 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const inSection = view === 'booking'
   const scrollRoot = useRef<HTMLDivElement>(null)
   const [collapse, setCollapse] = useState(0)
+  const scrollFrame = useRef<number | null>(null)
   const collapseLimit = (): number => Math.max(0, (scrollRoot.current?.clientHeight ?? 0) - 112)
   const compactPanel = inSection || collapse > 0
-  const onScroll = (): void => {
+  const syncCollapse = (): void => {
     if (inSection) return
     const next = Math.min(collapseLimit(), Math.max(0, scrollRoot.current?.scrollTop ?? 0))
     setCollapse((current) => (current === next ? current : next))
   }
+  const onScroll = (): void => {
+    if (inSection || scrollFrame.current !== null) return
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null
+      syncCollapse()
+    })
+  }
   useEffect(() => {
     const root = scrollRoot.current
     if (root === null || inSection) return
-    const sync = (): void => onScroll()
+    const sync = (): void => syncCollapse()
     window.addEventListener('resize', sync)
     sync()
-    return () => window.removeEventListener('resize', sync)
+    return () => {
+      window.removeEventListener('resize', sync)
+      if (scrollFrame.current !== null) {
+        cancelAnimationFrame(scrollFrame.current)
+        scrollFrame.current = null
+      }
+    }
   }, [inSection])
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
@@ -295,7 +310,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               style={heroLockupStyle}
             />
           </h1>
-          <button onClick={props.openMobBooking} style={heroBtnDarkStyle}>
+          <button
+            onClick={props.openMobBooking}
+            onPointerDown={preloadBookingFlow}
+            onFocus={preloadBookingFlow}
+            style={heroBtnDarkStyle}
+          >
             {tx.book}
           </button>
           <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle}>
@@ -380,15 +400,17 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
       <div style={m3BodyStyle}>
         {inSection ? (
-          <BookingFlow
-            mode={props.mode}
-            defaultLang={props.lang}
-            showHeader={false}
-            onMyBookings={props.openMyBookings}
-            popupText={props.bookingPopupText}
-            business={business}
-            showDirections={business.mapsHref !== ''}
-          />
+          <Suspense fallback={null}>
+            <LazyBookingFlow
+              mode={props.mode}
+              defaultLang={props.lang}
+              showHeader={false}
+              onMyBookings={props.openMyBookings}
+              popupText={props.bookingPopupText}
+              business={business}
+              showDirections={business.mapsHref !== ''}
+            />
+          </Suspense>
         ) : (
           <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
         )}

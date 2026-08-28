@@ -9,7 +9,7 @@
 // fallback neither persists nor invents a review.
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
@@ -70,6 +70,36 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const s = buildBookingStyles(c, dark, false)
   const red = systemRed(dark)
   const port: ReviewsPort = props.port ?? defaultReviewsPort
+  const sectionRef = useRef<HTMLElement>(null)
+  const deferPublicData =
+    props.port === undefined &&
+    props.barbersPort === undefined &&
+    props.aboutContentPort === undefined &&
+    props.galleryPort === undefined
+  const [dataActive, setDataActive] = useState(!deferPublicData)
+
+  useEffect(() => {
+    if (!deferPublicData) {
+      setDataActive(true)
+      return
+    }
+    const section = sectionRef.current
+    if (section === null || typeof IntersectionObserver === 'undefined') {
+      setDataActive(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setDataActive(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.01 },
+    )
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [deferPublicData])
 
   // Editable About copy: i18n is the base; a configured backend overlays the 7 DB-editable keys.
   // Under the mock the overlay stays empty, so `tx` === the i18n copy, byte-identical to today (and
@@ -77,7 +107,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const contentPort: AboutContentPort = props.aboutContentPort ?? defaultAboutContentPort
   const [overlay, setOverlay] = useState<AboutOverlay>({})
   useEffect(() => {
-    if (aboutContentIsMock) return // mock overlay is empty — nothing to fetch, no flash
+    if (!dataActive || aboutContentIsMock) return // defer public I/O until About enters the viewport
     let live = true
     void contentPort
       .overlay(lang)
@@ -90,21 +120,22 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     return () => {
       live = false
     }
-  }, [contentPort, lang])
+  }, [contentPort, dataActive, lang])
   const tx: AboutStrings = mergeAbout(base, overlay)
 
   // The stylist cards' roster (constant under the mock, immediate; DB rows under a backend). The
   // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
-  const { roster } = useRoster(props.barbersPort)
+  const { roster } = useRoster(props.barbersPort, dataActive)
 
   // Gallery photos per kind: empty under the mock (placeholder tiles), Storage URLs under a backend.
-  const salonPhotos = useGallery('salon', props.galleryPort)
-  const cutPhotos = useGallery('cuts', props.galleryPort)
+  const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
+  const cutPhotos = useGallery('cuts', props.galleryPort, dataActive)
 
   // Reviews list: server-published entries only. The offline fallback is intentionally empty.
   const [reviews, setReviews] = useState<readonly Review[]>([])
   const [reviewsState, setReviewsState] = useState<'loading' | 'ready' | 'error'>('loading')
   useEffect(() => {
+    if (!dataActive) return
     let live = true
     setReviewsState('loading')
     void port
@@ -120,7 +151,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     return () => {
       live = false
     }
-  }, [port])
+  }, [dataActive, port])
 
   // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
   // error (the phone gate `no_booking`, or a generic invalid/transport failure).
@@ -321,7 +352,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   }
 
   return (
-    <section id={ABOUT_SECTION_ID} style={sectionStyle} aria-labelledby="om-oss-heading">
+    <section
+      ref={sectionRef}
+      id={ABOUT_SECTION_ID}
+      style={sectionStyle}
+      aria-labelledby="om-oss-heading"
+    >
       <div style={innerStyle}>
         <div style={eyebrowStyle}>{tx.eyebrow}</div>
         <h2 id="om-oss-heading" style={headingStyle}>
@@ -539,7 +575,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             </p>
           ) : null}
 
-          {props.challengeEnabled === false ? null : (
+          {props.challengeEnabled === false || !dataActive ? null : (
             <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
           )}
 

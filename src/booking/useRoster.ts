@@ -16,11 +16,16 @@ export interface RosterState {
  * Subscribe to the public roster. `port` defaults to the env-selected `defaultBarbersPort`. The
  * initial value is empty; configured backend rows are the only production roster authority.
  */
-export function useRoster(port: BarbersPort = defaultBarbersPort): RosterState {
+export function useRoster(port: BarbersPort = defaultBarbersPort, enabled = true): RosterState {
   const [roster, setRoster] = useState<readonly RosterBarber[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const [loading, setLoading] = useState<boolean>(enabled)
 
   useEffect(() => {
+    if (!enabled) {
+      setRoster([])
+      setLoading(false)
+      return
+    }
     let cancelled = false
     const load = (): void => {
       setLoading(true)
@@ -44,7 +49,7 @@ export function useRoster(port: BarbersPort = defaultBarbersPort): RosterState {
       cancelled = true
       unsubscribe()
     }
-  }, [port])
+  }, [enabled, port])
 
   return { roster, loading }
 }
