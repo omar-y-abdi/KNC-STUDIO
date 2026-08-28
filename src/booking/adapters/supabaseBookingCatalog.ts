@@ -105,11 +105,14 @@ function startCatalogLoad(): Promise<BookingCatalog> {
 /** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
 export function cachedBookingCatalog(): Promise<BookingCatalog> {
   if (catalogRefreshPromise !== null) return catalogRefreshPromise
-  const fresh =
+  if (
     catalogValue !== null &&
     catalogLoadedAt !== null &&
     Date.now() - catalogLoadedAt < BOOKING_CATALOG_TTL_MS
-  return fresh ? Promise.resolve(catalogValue) : startCatalogLoad()
+  ) {
+    return Promise.resolve(catalogValue)
+  }
+  return startCatalogLoad()
 }
 
 /**

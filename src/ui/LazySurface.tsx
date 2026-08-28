@@ -11,13 +11,13 @@ interface LazyLoadBoundaryState {
 }
 
 class LazyLoadBoundary extends Component<LazyLoadBoundaryProps, LazyLoadBoundaryState> {
-  state: LazyLoadBoundaryState = { failed: false }
+  override state: LazyLoadBoundaryState = { failed: false }
 
-  static getDerivedStateFromError(): LazyLoadBoundaryState {
+  static override getDerivedStateFromError(): LazyLoadBoundaryState {
     return { failed: true }
   }
 
-  render(): ComponentChildren {
+  override render(): ComponentChildren {
     return this.state.failed ? this.props.error : this.props.children
   }
 }
