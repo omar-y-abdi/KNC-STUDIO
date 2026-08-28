@@ -14,6 +14,7 @@ const JPEG_FIXTURE = Uint8Array.from(
     'base64',
   ),
 )
+
 describe('upload-image JPEG runtime', () => {
   beforeAll(async () => {
     const wasm = new Uint8Array(readFileSync('supabase/functions/upload-image/magick.wasm'))
@@ -41,6 +42,7 @@ describe('upload-image JPEG runtime', () => {
     })
     expect(decodedSize).toEqual([120, 80])
   })
+
   it('keeps the barber-profile resize/crop output decodable', () => {
     const encoded: { value?: Uint8Array } = {}
 
