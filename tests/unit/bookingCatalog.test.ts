@@ -192,8 +192,7 @@ describe('shared public booking catalog', () => {
 
   it('does not lose an invalidation that arrives while a catalog refresh is in flight', async () => {
     let resolveFirst:
-      | ((value: { data: { barbers: []; services: [] }; error: null }) => void)
-      | undefined
+      ((value: { data: { barbers: []; services: [] }; error: null }) => void) | undefined
     rpc.mockReset()
     rpc
       .mockResolvedValueOnce({ data: { barbers: [], services: [] }, error: null })
