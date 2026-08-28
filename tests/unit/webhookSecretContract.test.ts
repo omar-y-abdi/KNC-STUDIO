@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const edgeHandlers = [
   'supabase/functions/calendar-sync/index.ts',
   'supabase/functions/external-cleanup/index.ts',
+  'supabase/functions/send-confirmation/index.ts',
 ] as const
 
 const databaseDispatchers = [
@@ -19,13 +20,6 @@ describe('webhook secret contract', () => {
       expect(source, path).not.toContain('BOOKING_WEBHOOK_SECRET')
       expect(source, path).toContain('timingSafeEqual')
     }
-  })
-
-  it('keeps the booking-specific production secret compatible with WEBHOOK_SECRET', () => {
-    const source = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
-    expect(source).toContain("Deno.env.get('BOOKING_WEBHOOK_SECRET')")
-    expect(source).toContain("bookingSecret ?? Deno.env.get('WEBHOOK_SECRET')")
-    expect(source).toContain('timingSafeEqual')
   })
 
   it('uses booking_webhook_secret as the database Vault key', () => {
