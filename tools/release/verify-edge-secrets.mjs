@@ -13,6 +13,8 @@ export const REQUIRED_EDGE_SECRETS = [
   'WEBHOOK_SECRET',
 ]
 
+export const FORBIDDEN_EDGE_SECRETS = ['BOOKING_WEBHOOK_SECRET']
+
 export const REQUIRED_VAULT_SECRETS = [
   'booking_confirmation_url',
   'booking_webhook_secret',
@@ -28,6 +30,17 @@ export function missingEdgeSecrets(payload) {
       : [],
   )
   return REQUIRED_EDGE_SECRETS.filter((name) => !names.has(name))
+}
+
+export function presentForbiddenEdgeSecrets(payload) {
+  const names = new Set(
+    Array.isArray(payload?.secrets)
+      ? payload.secrets
+          .map((secret) => (typeof secret?.name === 'string' ? secret.name : null))
+          .filter((name) => name !== null)
+      : [],
+  )
+  return FORBIDDEN_EDGE_SECRETS.filter((name) => names.has(name))
 }
 
 export function missingVaultSecrets(payload) {
@@ -50,13 +63,13 @@ export function webhookSecretDigestsMatch(edgePayload, vaultPayload) {
   const vaultDigest = Array.isArray(vaultPayload?.rows)
     ? vaultPayload.rows.find((secret) => secret?.name === 'booking_webhook_secret')?.value_digest
     : undefined
-  return (
-    typeof edgeDigest === 'string' &&
-    edgeDigest.length > 0 &&
+  const sha256 = /^[0-9a-f]{64}$/i
+  return typeof edgeDigest === 'string' &&
+    sha256.test(edgeDigest) &&
     typeof vaultDigest === 'string' &&
-    vaultDigest.length > 0 &&
-    edgeDigest === vaultDigest
-  )
+    sha256.test(vaultDigest)
+    ? edgeDigest === vaultDigest
+    : false
 }
 
 function projectRef() {
@@ -89,6 +102,10 @@ export function main() {
   const missing = missingEdgeSecrets(payload)
   if (missing.length > 0) {
     throw new Error(`Missing required Supabase Edge secrets: ${missing.join(', ')}`)
+  }
+  const forbidden = presentForbiddenEdgeSecrets(payload)
+  if (forbidden.length > 0) {
+    throw new Error(`Remove forbidden legacy Supabase Edge secrets: ${forbidden.join(', ')}`)
   }
 
   const vaultQuery = [

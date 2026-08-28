@@ -62,30 +62,30 @@ select ok(
   'service role cannot invoke the legacy booking email trigger function'
 );
 
-select ok(
-  coalesce(
-    not pg_catalog.has_function_privilege(
-      'anon', pg_catalog.to_regprocedure('public.rls_auto_enable()'), 'execute'),
-    true
-  ),
-  'anon cannot invoke the platform RLS event-trigger function'
-);
-select ok(
-  coalesce(
-    not pg_catalog.has_function_privilege(
-      'authenticated', pg_catalog.to_regprocedure('public.rls_auto_enable()'), 'execute'),
-    true
-  ),
-  'authenticated users cannot invoke the platform RLS event-trigger function'
-);
-select ok(
-  coalesce(
-    not pg_catalog.has_function_privilege(
-      'service_role', pg_catalog.to_regprocedure('public.rls_auto_enable()'), 'execute'),
-    true
-  ),
-  'service role cannot invoke the platform RLS event-trigger function'
-);
+select case
+  when pg_catalog.to_regprocedure('public.rls_auto_enable()') is null
+    then skip('rls_auto_enable() exists only on hosted Supabase')
+  else ok(
+    not pg_catalog.has_function_privilege('anon', 'public.rls_auto_enable()', 'execute'),
+    'anon cannot invoke the platform RLS event-trigger function'
+  )
+end;
+select case
+  when pg_catalog.to_regprocedure('public.rls_auto_enable()') is null
+    then skip('rls_auto_enable() exists only on hosted Supabase')
+  else ok(
+    not pg_catalog.has_function_privilege('authenticated', 'public.rls_auto_enable()', 'execute'),
+    'authenticated users cannot invoke the platform RLS event-trigger function'
+  )
+end;
+select case
+  when pg_catalog.to_regprocedure('public.rls_auto_enable()') is null
+    then skip('rls_auto_enable() exists only on hosted Supabase')
+  else ok(
+    not pg_catalog.has_function_privilege('service_role', 'public.rls_auto_enable()', 'execute'),
+    'service role cannot invoke the platform RLS event-trigger function'
+  )
+end;
 
 select * from finish();
 rollback;

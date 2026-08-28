@@ -9,6 +9,7 @@
 
 import { adminSeedEnvFrom, loadStackEnv } from './loadStackEnv'
 import { cleanupTestIdentities, seedTestIdentities } from './_adminHelpers'
+import { truncateAll } from './_helpers'
 
 export async function setup(): Promise<void> {
   const env = adminSeedEnvFrom(loadStackEnv())
@@ -20,4 +21,5 @@ export async function teardown(): Promise<void> {
   const env = adminSeedEnvFrom(loadStackEnv())
   if (env === null) return
   await cleanupTestIdentities(env)
+  await truncateAll(env.dbUrl)
 }

@@ -30,4 +30,6 @@ npx supabase secrets set \
 ```
 
 `RESEND_API_KEY` is consumed by `external-cleanup` for queued secure-link mail. Run
-`PROJECT_REF=<ref> npm run verify:production-secrets` before deployment; it verifies names only.
+`PROJECT_REF=<ref> npm run verify:production-secrets` before deployment; it verifies required Edge
+and Vault names, rejects legacy secret aliases, and checks webhook-secret digest parity without
+printing secret material.

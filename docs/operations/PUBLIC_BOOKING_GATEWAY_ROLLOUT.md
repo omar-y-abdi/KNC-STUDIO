@@ -12,13 +12,15 @@ below. Never run the contract migration before the switched Worker has passed li
 - Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
   `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
   dispatchers read the same value from Vault key `booking_webhook_secret`.
+- Legacy Edge secret `BOOKING_WEBHOOK_SECRET` is absent; `send-confirmation` must not accept an
+  unchecked second credential.
 - Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
   variable in `wrangler.jsonc`.
 - `PROJECT_REF`, `DATABASE_URL`, and production frontend build variables are available in the
   operator shell. Never write secret values to this repository.
 
-Verify required Edge Function and database Vault secret names plus shared webhook-secret parity
-before function deployment; values/digests are never printed:
+Verify required Edge Function and database Vault secret names, reject legacy aliases, and confirm
+shared webhook-secret parity before function deployment; values/digests are never printed:
 
 ```bash
 PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
@@ -139,6 +141,19 @@ npx supabase test db --db-url "$DATABASE_URL" \
 Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests
 must still work; direct anonymous RPC execution must now fail. Record deployment commit, migration
 list, function list, Worker version, smoke results, and UTC completion time in operations records.
+
+After deploying any later function-privilege hardening migration, run the matching pgTAP file against
+the linked database and inspect hosted-only `rls_auto_enable()` explicitly; local pgTAP marks those
+three assertions as skipped because the function is absent locally:
+
+```bash
+npx supabase test db --linked supabase/tests/41_internal_function_privilege_hardening_test.sql
+npx supabase db query --linked --project-ref "$PROJECT_REF" --output-format json \
+  "select proacl::text from pg_proc where oid = to_regprocedure('public.rls_auto_enable()');"
+```
+
+The linked pgTAP run must pass and the ACL must not contain `anon`, `authenticated`, or
+`service_role` execute grants before rollout is recorded complete.
 
 ## Rollback boundary
 
