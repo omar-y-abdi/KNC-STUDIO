@@ -31,6 +31,7 @@ let catalogPromise: Promise<BookingCatalog> | null = null
 let catalogRefreshPromise: Promise<BookingCatalog> | null = null
 let catalogLoadedAt: number | null = null
 let catalogListenerRefresh: Promise<void> | null = null
+let catalogRevalidateRequested = false
 const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
 
@@ -150,14 +151,23 @@ export function preloadBookingCatalog(): void {
 }
 
 function revalidateCatalogListeners(): void {
-  catalogListenerRefresh ??= refreshBookingCatalog()
-    .then(() => {
-      for (const listener of catalogListeners) listener()
-    })
-    .catch(() => undefined)
-    .finally(() => {
-      catalogListenerRefresh = null
-    })
+  catalogRevalidateRequested = true
+  if (catalogListenerRefresh !== null) return
+
+  catalogListenerRefresh = (async () => {
+    while (catalogRevalidateRequested) {
+      catalogRevalidateRequested = false
+      try {
+        await refreshBookingCatalog()
+      } catch {
+        continue
+      }
+    }
+    for (const listener of catalogListeners) listener()
+  })().finally(() => {
+    catalogListenerRefresh = null
+    if (catalogRevalidateRequested) revalidateCatalogListeners()
+  })
 }
 
 function startCatalogSubscription(): () => void {

@@ -190,6 +190,34 @@ describe('shared public booking catalog', () => {
     expect(removeChannel).toHaveBeenCalledWith(channel)
   })
 
+  it('does not lose an invalidation that arrives while a catalog refresh is in flight', async () => {
+    let resolveFirst: ((value: { data: { barbers: []; services: [] }; error: null }) => void) | undefined
+    rpc.mockReset()
+    rpc
+      .mockResolvedValueOnce({ data: { barbers: [], services: [] }, error: null })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ data: { barbers: [], services: [] }, error: null })
+
+    await refreshBookingCatalog()
+    const onCatalogChange = vi.fn()
+    const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    triggerSubscribed()
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2))
+
+    triggerChange()
+    resolveFirst?.({ data: { barbers: [], services: [] }, error: null })
+
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
+
+    unsubscribe()
+  })
+
   it('refreshes consumers after catalog-owned service changes', async () => {
     rpc.mockReset()
     rpc.mockResolvedValue({ data: { barbers: [], services: [] }, error: null })
