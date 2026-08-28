@@ -151,7 +151,8 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 ### JPEG runtime regression
 
-- Added a real 2×2 JPEG fixture test that initializes the exact vendored `magick.wasm`, decodes JPEG, writes WebP while copying callback bytes, validates the RIFF/WEBP signature, and decodes the copied WebP back to 2×2.
+- Added a real 120×80 rectangular JPEG fixture test that initializes the exact vendored `magick.wasm`, decodes JPEG, writes WebP while copying callback bytes, validates the RIFF/WEBP signature, and decodes the copied WebP back to 120×80.
+- A separate profile-path regression applies the production cover-resize + centered crop and verifies the copied WebP decodes to 800×800.
 - Final rebased CI must pass this runtime test in addition to the existing source-contract guard before handoff.
 
 ### Barber profile corruption follow-up
@@ -162,3 +163,9 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 - The deployed/`main` upload gateway still contains the unsafe `encoded.value = data` assignment. The performance PR contains the corrected `new Uint8Array(data)` copy; therefore the observed production symptom is expected until the updated Edge Function is deployed.
 - Added a profile-specific ImageMagick runtime regression using a real rectangular JPEG through the exact resize + centered 800×800 crop + copied WebP encode + decode path; this passed in CI, ruling out the crop/resize transform as a second corruption source.
 - Added an owner integration regression that uploads PNG through the actual barber-profile gateway, fetches the public Storage object, validates `Content-Type: image/webp` and RIFF/WEBP signatures, then removes the profile.
+
+### Review-comment corrections
+
+- **Catalog preload gap:** first production catalog subscription now waits for Realtime's `SUBSCRIBED` status, then performs an authoritative refresh before notifying consumers. Realtime table changes use the same coalesced refresh path. This closes the preload → missed admin edit → stale first consumer sequence.
+- **SiteChrome live updates:** restored the public live-update contract. The subscription is active only while the document is visible; hidden tabs disconnect, and returning to visibility performs an immediate read before resubscribing.
+- **Homepage fallback caching:** successful Supabase discovery keeps the 60 s browser / 300 s shared TTL. Discovery fallback/error renders are `no-store`, so transient backend failure cannot seed five minutes of shared fallback metadata.

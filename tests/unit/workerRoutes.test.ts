@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import worker, {
   customerAccessTokenFromPath,
   isPrivatePath,
@@ -128,7 +128,7 @@ describe('Worker route policy', () => {
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
   })
 
-  it('does not reuse static validators and gives rendered homepage HTML an explicit edge TTL', async () => {
+  it('does not share-cache fallback homepage metadata when discovery is unavailable', async () => {
     const env = createEnv()
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/', {
@@ -142,9 +142,31 @@ describe('Worker route policy', () => {
 
     expect(env.requestHeaders[0]?.has('If-Modified-Since')).toBe(false)
     expect(env.requestHeaders[0]?.has('If-None-Match')).toBe(false)
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(response.headers.has('ETag')).toBe(false)
     expect(response.headers.has('Last-Modified')).toBe(false)
+  })
+
+  it('share-caches homepage metadata only after successful discovery', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ settings: {}, barbers: [], services: [], schedules: [] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const env = {
+      ...createEnv(),
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_ANON_KEY: 'test-anon-key',
+    }
+
+    try {
+      const response = await worker.fetch(new Request('https://bladeblendstudio.se/'), env)
+      expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally {
+      fetchMock.mockRestore()
+    }
   })
 })
 

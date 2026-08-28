@@ -297,7 +297,8 @@ export default {
     const asset = await serveAsset(request, env, assetPath, dynamicHomepage)
     if (asset.status !== 404) {
       if (dynamicHomepage) {
-        const discovery = (await loadDiscovery(env)) ?? {
+        const loadedDiscovery = await loadDiscovery(env)
+        const discovery = loadedDiscovery ?? {
           business: DEFAULT_BUSINESS,
           facts: EMPTY_BUSINESS_FACTS,
         }
@@ -305,7 +306,10 @@ export default {
         headers.delete('Content-Length')
         headers.delete('ETag')
         headers.delete('Last-Modified')
-        headers.set('Cache-Control', 'public, max-age=60, s-maxage=300')
+        headers.set(
+          'Cache-Control',
+          loadedDiscovery === null ? 'no-store' : 'public, max-age=60, s-maxage=300',
+        )
         return new Response(renderHomepageMetadata(await asset.text(), discovery), {
           status: asset.status,
           statusText: asset.statusText,

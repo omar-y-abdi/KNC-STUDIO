@@ -26,9 +26,11 @@ const EMPTY_CATALOG: BookingCatalog = {
   servicesByBarber: new Map(),
   weekdaysByServiceId: new Map(),
 }
+let catalogValue: BookingCatalog | null = null
 let catalogPromise: Promise<BookingCatalog> | null = null
+let catalogRefreshPromise: Promise<BookingCatalog> | null = null
 let catalogLoadedAt: number | null = null
-let catalogLoading = false
+let catalogListenerRefresh: Promise<void> | null = null
 const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
 
@@ -84,36 +86,52 @@ export function servicesForBookingDate(
   )
 }
 
-/** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
-export function cachedBookingCatalog(): Promise<BookingCatalog> {
-  const fresh = catalogLoadedAt !== null && Date.now() - catalogLoadedAt < BOOKING_CATALOG_TTL_MS
-  if (catalogPromise !== null && (catalogLoading || fresh)) return catalogPromise
+function startCatalogLoad(): Promise<BookingCatalog> {
+  if (catalogPromise !== null) return catalogPromise
 
-  catalogPromise = null
-  catalogLoadedAt = null
-  catalogLoading = true
-  catalogPromise = loadBookingCatalog()
+  const request = loadBookingCatalog()
     .then((catalog) => {
+      catalogValue = catalog
       catalogLoadedAt = Date.now()
       return catalog
     })
-    .catch((error: unknown) => {
-      catalogPromise = null
-      catalogLoadedAt = null
-      throw error
-    })
     .finally(() => {
-      catalogLoading = false
+      if (catalogPromise === request) catalogPromise = null
     })
-  return catalogPromise
+  catalogPromise = request
+  return request
 }
 
-/** Force a current read, while coalescing callers that refresh during the same in-flight request. */
+/** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
+export function cachedBookingCatalog(): Promise<BookingCatalog> {
+  if (catalogRefreshPromise !== null) return catalogRefreshPromise
+  const fresh =
+    catalogValue !== null &&
+    catalogLoadedAt !== null &&
+    Date.now() - catalogLoadedAt < BOOKING_CATALOG_TTL_MS
+  return fresh ? Promise.resolve(catalogValue) : startCatalogLoad()
+}
+
+/**
+ * Force a read that begins after any older in-flight load has settled. This matters when a
+ * Realtime subscription is first established: an idle preload may have completed before an owner
+ * edit, so reusing that preload would preserve the exact missed-change gap the refresh is closing.
+ */
 export function refreshBookingCatalog(): Promise<BookingCatalog> {
-  if (catalogLoading && catalogPromise !== null) return catalogPromise
-  catalogPromise = null
-  catalogLoadedAt = null
-  return cachedBookingCatalog()
+  if (catalogRefreshPromise !== null) return catalogRefreshPromise
+
+  const previous = catalogPromise
+  const refresh = (previous === null ? Promise.resolve() : previous.then(() => undefined, () => undefined))
+    .then(() => {
+      catalogValue = null
+      catalogLoadedAt = null
+      return startCatalogLoad()
+    })
+    .finally(() => {
+      if (catalogRefreshPromise === refresh) catalogRefreshPromise = null
+    })
+  catalogRefreshPromise = refresh
+  return refresh
 }
 
 /** Start truthful catalog hydration before a visitor opens booking. */
@@ -121,18 +139,33 @@ export function preloadBookingCatalog(): void {
   void cachedBookingCatalog().catch(() => EMPTY_CATALOG)
 }
 
+function revalidateCatalogListeners(): void {
+  catalogListenerRefresh ??= refreshBookingCatalog()
+    .then(() => {
+      for (const listener of catalogListeners) listener()
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      catalogListenerRefresh = null
+    })
+}
+
 function startCatalogSubscription(): () => void {
   const client = getSupabase()
   let channel = client.channel('public-booking-catalog')
-  const changed = (): void => {
-    catalogPromise = null
-    catalogLoadedAt = null
-    for (const listener of catalogListeners) listener()
-  }
+  const changed = (): void => revalidateCatalogListeners()
   for (const table of ['barbers', 'barber_photos', 'services']) {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, changed)
   }
-  channel.subscribe()
+  let initialRevalidated = false
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED' && !initialRevalidated) {
+      initialRevalidated = true
+      // Close the idle-preload gap only after the socket is live, so edits before subscription
+      // are covered by this authoritative read and later edits are covered by Realtime.
+      revalidateCatalogListeners()
+    }
+  })
   return () => {
     void client.removeChannel(channel)
   }

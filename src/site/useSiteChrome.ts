@@ -1,5 +1,6 @@
 // `useSiteChrome` — owner-editable public copy, business identity, SEO, and sizing as React state,
-// refetched per language and updated when the owner changes `site_content` or `site_settings`.
+// refetched per language and updated when the owner changes public CMS/business tables. Realtime is
+// visibility-gated so hidden tabs do not retain a socket; returning to the page also revalidates.
 //
 // Under the MOCK (no backend): `DEFAULT_CHROME` is the immediate, stable value (no flash, no shift) —
 // the site renders from its i18n defaults + 1.0× scale exactly as before. Under a BACKEND: the same
@@ -71,28 +72,49 @@ export function useSiteChrome(
     // Mock: the default IS the answer for both languages; never fetch (no flash/shift).
     if (siteChromeIsMock) return
     let cancelled = false
-    void port
-      .load(lang)
-      .then((next) => {
-        if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
-      })
-      .catch(() => undefined)
     let unsubscribe: (() => void) | undefined
-    // The public default port fetches once per language. Do not keep a Realtime socket open for
-    // every visitor; injected ports may still opt into live subscription semantics.
-    const cancelIdle =
-      port === defaultSiteChromePort
-        ? () => undefined
-        : scheduleIdle(() => {
-            if (cancelled) return
-            unsubscribe = port.subscribe?.(lang, (next) => {
-              if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
-            })
-          })
+    let cancelIdle = (): void => undefined
+
+    const load = (): void => {
+      void port
+        .load(lang)
+        .then((next) => {
+          if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
+        })
+        .catch(() => undefined)
+    }
+    const stopSubscription = (): void => {
+      cancelIdle()
+      cancelIdle = (): void => undefined
+      unsubscribe?.()
+      unsubscribe = undefined
+    }
+    const startSubscription = (): void => {
+      if (cancelled || port.subscribe === undefined || document.visibilityState === 'hidden') return
+      cancelIdle = scheduleIdle(() => {
+        if (cancelled || document.visibilityState === 'hidden' || unsubscribe !== undefined) return
+        unsubscribe = port.subscribe?.(lang, (next) => {
+          if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
+        })
+      })
+    }
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') {
+        stopSubscription()
+        return
+      }
+      // Revalidate after a hidden period because Realtime intentionally was not connected there.
+      load()
+      startSubscription()
+    }
+
+    load()
+    startSubscription()
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       cancelled = true
-      cancelIdle()
-      unsubscribe?.()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      stopSubscription()
     }
   }, [lang, port])
 

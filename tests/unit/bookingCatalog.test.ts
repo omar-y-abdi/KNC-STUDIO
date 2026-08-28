@@ -1,26 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { channel, removeChannel, resetChannel, rpc, triggerChange } = vi.hoisted(() => {
-  const callbacks: (() => void)[] = []
-  const channel = {
-    on: vi.fn((_event: string, _filter: unknown, callback: () => void) => {
-      callbacks.push(callback)
-      return channel
-    }),
-    subscribe: vi.fn(),
-  }
-  return {
-    channel,
-    removeChannel: vi.fn(),
-    resetChannel: () => {
-      callbacks.length = 0
-      channel.on.mockClear()
-      channel.subscribe.mockClear()
-    },
-    rpc: vi.fn(),
-    triggerChange: () => callbacks.at(-1)?.(),
-  }
-})
+const { channel, removeChannel, resetChannel, rpc, triggerChange, triggerSubscribed } = vi.hoisted(
+  () => {
+    const callbacks: (() => void)[] = []
+    let statusCallback: ((status: string) => void) | undefined
+    const channel = {
+      on: vi.fn((_event: string, _filter: unknown, callback: () => void) => {
+        callbacks.push(callback)
+        return channel
+      }),
+      subscribe: vi.fn((callback?: (status: string) => void) => {
+        statusCallback = callback
+        return channel
+      }),
+    }
+    return {
+      channel,
+      removeChannel: vi.fn(),
+      resetChannel: () => {
+        callbacks.length = 0
+        statusCallback = undefined
+        channel.on.mockClear()
+        channel.subscribe.mockClear()
+        removeChannel.mockClear()
+      },
+      rpc: vi.fn(),
+      triggerChange: () => callbacks.at(-1)?.(),
+      triggerSubscribed: () => statusCallback?.('SUBSCRIBED'),
+    }
+  },
+)
 
 vi.mock('../../src/backend/supabaseClient', () => ({
   getSupabase: () => ({
@@ -122,7 +131,71 @@ describe('shared public booking catalog', () => {
     vi.useRealTimers()
   })
 
-  it('refreshes date-filtered service consumers after catalog-owned service changes', () => {
+  it('revalidates an idle preload after the first real consumer subscription is live', async () => {
+    rpc.mockReset()
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          barbers: [
+            {
+              id: 'db-barber',
+              name: 'Preloaded Barber',
+              ig: 'db',
+              role_sv: 'Barberare',
+              role_en: 'Barber',
+              bio_sv: 'Bio',
+              bio_en: 'Bio',
+              active: true,
+              sort_order: 0,
+              photo_path: null,
+            },
+          ],
+          services: [],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          barbers: [
+            {
+              id: 'db-barber',
+              name: 'Edited Barber',
+              ig: 'db',
+              role_sv: 'Barberare',
+              role_en: 'Barber',
+              bio_sv: 'Bio',
+              bio_en: 'Bio',
+              active: true,
+              sort_order: 0,
+              photo_path: null,
+            },
+          ],
+          services: [],
+        },
+        error: null,
+      })
+
+    await refreshBookingCatalog()
+    expect((await cachedBookingCatalog()).barbers[0]?.barber.name).toBe('Preloaded Barber')
+
+    const onCatalogChange = vi.fn()
+    const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    triggerSubscribed()
+
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
+    expect((await cachedBookingCatalog()).barbers[0]?.barber.name).toBe('Edited Barber')
+
+    unsubscribe()
+    expect(removeChannel).toHaveBeenCalledWith(channel)
+  })
+
+  it('refreshes consumers after catalog-owned service changes', async () => {
+    rpc.mockReset()
+    rpc.mockResolvedValue({ data: { barbers: [], services: [] }, error: null })
+    await refreshBookingCatalog()
+    rpc.mockClear()
+
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
 
@@ -131,8 +204,13 @@ describe('shared public booking catalog', () => {
       { event: '*', schema: 'public', table: 'services' },
       expect.any(Function),
     )
+
+    triggerSubscribed()
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
+    rpc.mockClear()
     triggerChange()
-    expect(onCatalogChange).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledTimes(2))
 
     unsubscribe()
     expect(removeChannel).toHaveBeenCalledWith(channel)
