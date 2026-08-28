@@ -27,7 +27,6 @@ import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
 import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
-
 function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
 }

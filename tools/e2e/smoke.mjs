@@ -83,7 +83,9 @@ async function verifyPublicPage(browser, viewport) {
     'withdrawing functional storage did not delete the phone-memory cookie',
   )
 
-  const myBookingsButton = page.getByRole('button', { name: 'My appointments', exact: true }).first()
+  const myBookingsButton = page
+    .getByRole('button', { name: 'My appointments', exact: true })
+    .first()
   await myBookingsButton.click()
   const myBookingsDialog = page.getByRole('dialog', { name: 'My appointments' })
   await myBookingsDialog.waitFor()

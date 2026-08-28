@@ -121,8 +121,9 @@ export function refreshBookingCatalog(): Promise<BookingCatalog> {
   if (catalogRefreshPromise !== null) return catalogRefreshPromise
 
   const previous = catalogPromise
-  const refresh = (previous === null ? Promise.resolve() : previous.then(() => undefined, () => undefined))
-    .then(() => {
+  const refresh = (
+    previous === null ? Promise.resolve() : previous.then(() => undefined, () => undefined)
+  ).then(() => {
       catalogValue = null
       catalogLoadedAt = null
       return startCatalogLoad()

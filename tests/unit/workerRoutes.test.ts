@@ -149,10 +149,10 @@ describe('Worker route policy', () => {
 
   it('share-caches homepage metadata only after successful discovery', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({ settings: {}, barbers: [], services: [], schedules: [] }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+      new Response(JSON.stringify({ settings: {}, barbers: [], services: [], schedules: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
     )
     const env = {
       ...createEnv(),
