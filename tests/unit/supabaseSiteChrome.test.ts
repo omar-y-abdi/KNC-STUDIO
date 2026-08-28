@@ -6,6 +6,8 @@ const state = vi.hoisted(() => ({
   contentOk: false,
   discoveryOk: true,
   changeHandlers: [] as (() => void)[],
+  systemHandlers: [] as ((payload: unknown) => void)[],
+  subscriptionHandler: undefined as ((status: string) => void) | undefined,
   removeChannel: vi.fn(),
 }))
 
@@ -18,8 +20,9 @@ vi.mock('../../src/backend/config', () => ({
 vi.mock('../../src/backend/supabaseClient', () => ({
   getSupabase: () => {
     const channel = {
-      on: vi.fn((_event: string, _filter: unknown, handler: () => void) => {
-        state.changeHandlers.push(handler)
+      on: vi.fn((event: string, _filter: unknown, handler: (payload?: unknown) => void) => {
+        if (event === 'system') state.systemHandlers.push(handler)
+        if (event === 'postgres_changes') state.changeHandlers.push(handler)
         return channel
       }),
       subscribe: vi.fn((handler?: (status: string) => void) => {
@@ -43,6 +46,7 @@ describe('Supabase site chrome resolution', () => {
     state.contentOk = false
     state.discoveryOk = true
     state.changeHandlers = []
+    state.systemHandlers = []
     state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
 
@@ -96,7 +100,7 @@ describe('Supabase site chrome resolution', () => {
     }
   })
 
-  it('revalidates after Realtime is subscribed so edits before socket readiness are not missed', async () => {
+  it('waits for Postgres Changes readiness before the authoritative realtime re-read', async () => {
     state.contentData = []
     state.contentOk = true
     state.discoveryData = { settings: {}, barbers: [], services: [], schedules: [] }
@@ -106,7 +110,40 @@ describe('Supabase site chrome resolution', () => {
     await vi.waitFor(() => expect(state.subscriptionHandler).toBeDefined())
 
     state.subscriptionHandler?.('SUBSCRIBED')
+    await Promise.resolve()
+    expect(onChange).not.toHaveBeenCalled()
+
+    for (const handler of state.systemHandlers) {
+      handler({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' })
+    }
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+
+    unsubscribe?.()
+  })
+
+  it('revalidates again after reconnect when Postgres Changes becomes ready', async () => {
+    state.contentData = []
+    state.contentOk = true
+    state.discoveryData = { settings: {}, barbers: [], services: [], schedules: [] }
+
+    const onChange = vi.fn()
+    const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', onChange)
+    await vi.waitFor(() => expect(state.subscriptionHandler).toBeDefined())
+
+    state.subscriptionHandler?.('SUBSCRIBED')
+    for (const handler of state.systemHandlers) {
+      handler({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' })
+    }
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+
+    state.subscriptionHandler?.('SUBSCRIBED')
+    await Promise.resolve()
+    expect(onChange).toHaveBeenCalledOnce()
+
+    for (const handler of state.systemHandlers) {
+      handler({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' })
+    }
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(2))
 
     unsubscribe?.()
   })

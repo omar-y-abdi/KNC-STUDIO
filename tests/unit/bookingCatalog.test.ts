@@ -1,35 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { channel, removeChannel, resetChannel, rpc, triggerChange, triggerSubscribed } = vi.hoisted(
-  () => {
-    const callbacks: (() => void)[] = []
-    let statusCallback: ((status: string) => void) | undefined
-    const channel = {
-      on: vi.fn((_event: string, _filter: unknown, callback: () => void) => {
-        callbacks.push(callback)
-        return channel
-      }),
-      subscribe: vi.fn((callback?: (status: string) => void) => {
-        statusCallback = callback
-        return channel
-      }),
-    }
-    return {
-      channel,
-      removeChannel: vi.fn(),
-      resetChannel: () => {
-        callbacks.length = 0
-        statusCallback = undefined
-        channel.on.mockClear()
-        channel.subscribe.mockClear()
-        removeChannel.mockClear()
-      },
-      rpc: vi.fn(),
-      triggerChange: () => callbacks.at(-1)?.(),
-      triggerSubscribed: () => statusCallback?.('SUBSCRIBED'),
-    }
-  },
-)
+const {
+  channel,
+  removeChannel,
+  resetChannel,
+  rpc,
+  triggerChange,
+  triggerPostgresReady,
+  triggerSubscribed,
+} = vi.hoisted(() => {
+  const changeCallbacks: (() => void)[] = []
+  const systemCallbacks: ((payload: unknown) => void)[] = []
+  let statusCallback: ((status: string) => void) | undefined
+  const channel = {
+    on: vi.fn((event: string, _filter: unknown, callback: (payload?: unknown) => void) => {
+      if (event === 'system') systemCallbacks.push(callback)
+      if (event === 'postgres_changes') changeCallbacks.push(callback)
+      return channel
+    }),
+    subscribe: vi.fn((callback?: (status: string) => void) => {
+      statusCallback = callback
+      return channel
+    }),
+  }
+  return {
+    channel,
+    removeChannel: vi.fn(),
+    resetChannel: () => {
+      changeCallbacks.length = 0
+      systemCallbacks.length = 0
+      statusCallback = undefined
+      channel.on.mockClear()
+      channel.subscribe.mockClear()
+      removeChannel.mockClear()
+    },
+    rpc: vi.fn(),
+    triggerChange: () => changeCallbacks.at(-1)?.(),
+    triggerPostgresReady: () =>
+      systemCallbacks.forEach((callback) =>
+        callback({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' }),
+      ),
+    triggerSubscribed: () => statusCallback?.('SUBSCRIBED'),
+  }
+})
 
 vi.mock('../../src/backend/supabaseClient', () => ({
   getSupabase: () => ({
@@ -181,13 +194,42 @@ describe('shared public booking catalog', () => {
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
     triggerSubscribed()
+    await Promise.resolve()
+    expect(rpc).toHaveBeenCalledTimes(1)
 
+    triggerPostgresReady()
     await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2))
     await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
     expect((await cachedBookingCatalog()).barbers[0]?.barber.name).toBe('Edited Barber')
 
     unsubscribe()
     expect(removeChannel).toHaveBeenCalledWith(channel)
+  })
+
+  it('revalidates again after a Realtime reconnect reaches Postgres Changes readiness', async () => {
+    rpc.mockReset()
+    rpc.mockResolvedValue({ data: { barbers: [], services: [] }, error: null })
+    await refreshBookingCatalog()
+    rpc.mockClear()
+
+    const onCatalogChange = vi.fn()
+    const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+
+    triggerSubscribed()
+    triggerPostgresReady()
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
+
+    rpc.mockClear()
+    triggerSubscribed()
+    await Promise.resolve()
+    expect(rpc).not.toHaveBeenCalled()
+
+    triggerPostgresReady()
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledTimes(2))
+
+    unsubscribe()
   })
 
   it('does not lose an invalidation that arrives while a catalog refresh is in flight', async () => {
@@ -208,6 +250,7 @@ describe('shared public booking catalog', () => {
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
     triggerSubscribed()
+    triggerPostgresReady()
     await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2))
 
     triggerChange()
@@ -235,6 +278,9 @@ describe('shared public booking catalog', () => {
     )
 
     triggerSubscribed()
+    await Promise.resolve()
+    expect(onCatalogChange).not.toHaveBeenCalled()
+    triggerPostgresReady()
     await vi.waitFor(() => expect(onCatalogChange).toHaveBeenCalledOnce())
     rpc.mockClear()
     triggerChange()

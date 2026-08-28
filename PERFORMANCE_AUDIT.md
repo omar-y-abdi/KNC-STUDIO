@@ -74,7 +74,7 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 - Baseline `supabaseSiteChromeAdapter.load()` statically imported `getSupabase()`, so the full Supabase JS client was pulled in merely to read public CMS chrome during initial hydration.
 - Replaced only the anonymous read path with direct Data API `fetch` calls using the existing public key, while preserving all Zod boundary parsing and null-on-malformed behavior.
-- The adapter retains optional dynamic Realtime support for injected/custom consumers, but the default public `useSiteChrome` path no longer opens a persistent subscription.
+- The default public `useSiteChrome` path keeps Realtime out of initial hydration, then opens a visibility-gated subscription during idle time. Hidden tabs disconnect; visible pages retain live owner-edit freshness.
 - Data API requests always send the public `apikey`; legacy JWT-shaped anon keys also send the bearer header required for equivalent RLS behavior, while opaque publishable keys are not misused as bearer tokens.
 
 ### Admin bundle findings
@@ -120,7 +120,7 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 - **RLS header attack:** direct Data API reads initially sent only `apikey`. Supabase documents that RLS authorization is determined from the `Authorization` JWT, not the `apikey` header. Legacy anon JWTs now also receive `Authorization: Bearer <anon>`; opaque publishable keys are detected by shape and are not incorrectly sent as bearer tokens.
 - Added a regression assertion covering both Data API calls' `apikey` and legacy bearer headers.
-- **Idle socket attack:** `useSiteChrome` still opened a Realtime subscription for every public visitor after idle. The default public port now performs one fetch per language without a persistent socket. Custom/injected ports retain subscription support.
+- **Idle socket attack:** the first revision kept a Realtime socket open even while the page was hidden. The final default path defers subscription until idle, disconnects while hidden, revalidates on visibility return, and reconnects only while the document is visible.
 
 ### Admin login waterfall correction
 
@@ -166,8 +166,8 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 ### Review-comment corrections
 
-- **Catalog preload gap:** first production catalog subscription now waits for Realtime's `SUBSCRIBED` status, then performs an authoritative refresh before notifying consumers. Realtime table changes use the same coalesced refresh path. This closes the preload → missed admin edit → stale first consumer sequence.
-- **SiteChrome live updates:** restored the public live-update contract. The subscription is active only while the document is visible; hidden tabs disconnect, and returning to visibility performs an immediate read before resubscribing.
+- **Catalog preload/reconnect gap:** `SUBSCRIBED` is not treated as Postgres readiness. The catalog waits for Realtime's `system` message confirming `extension=postgres_changes` with `status=ok`, then performs an authoritative refresh. The same readiness-gated refresh repeats after reconnect, and table changes use the existing coalesced invalidation path.
+- **SiteChrome live updates:** restored the public live-update contract with a visibility-gated subscription. Initial joins and reconnects wait for confirmed Postgres Changes readiness before the corrective re-read; hidden tabs disconnect, and returning to visibility performs an immediate read before resubscribing.
 - **Homepage fallback caching:** successful Supabase discovery keeps the 60 s browser / 300 s shared TTL. Discovery fallback/error renders are `no-store`, so transient backend failure cannot seed five minutes of shared fallback metadata.
 
 ### Lazy interaction review correction

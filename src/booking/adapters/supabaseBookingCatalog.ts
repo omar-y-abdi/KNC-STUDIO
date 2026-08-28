@@ -9,6 +9,7 @@ import type { BarberId, ServiceItem } from '../domain'
 import { asBarberId } from '../domain'
 import { parseDateIso } from '../calendar'
 import type { RosterBarber } from '../barbersPort'
+import { isPostgresChangesReady } from '../../backend/realtimeReady'
 
 const PHOTO_BUCKET = 'barber-photos'
 
@@ -173,18 +174,26 @@ function revalidateCatalogListeners(): void {
 function startCatalogSubscription(): () => void {
   const client = getSupabase()
   let channel = client.channel('public-booking-catalog')
-  const changed = (): void => revalidateCatalogListeners()
+  let awaitingPostgresReady = true
+  const changed = (): void => {
+    // Receiving an actual change also proves the Postgres Changes listener is live.
+    awaitingPostgresReady = false
+    revalidateCatalogListeners()
+  }
+  channel = channel.on('system', {}, (payload) => {
+    if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
+    awaitingPostgresReady = false
+    // SUBSCRIBED only confirms the channel/WebSocket. This system signal confirms the
+    // Postgres Changes listener is ready, so this read closes the pre-listener missed-edit gap.
+    revalidateCatalogListeners()
+  })
   for (const table of ['barbers', 'barber_photos', 'services']) {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, changed)
   }
-  let initialRevalidated = false
   channel.subscribe((status) => {
-    if (status === 'SUBSCRIBED' && !initialRevalidated) {
-      initialRevalidated = true
-      // Close the idle-preload gap only after the socket is live, so edits before subscription
-      // are covered by this authoritative read and later edits are covered by Realtime.
-      revalidateCatalogListeners()
-    }
+    // Supabase can reconnect a channel after a network interruption. Every new join needs an
+    // authoritative read after Postgres Changes is ready because events can be lost while offline.
+    if (status === 'SUBSCRIBED') awaitingPostgresReady = true
   })
   return () => {
     void client.removeChannel(channel)

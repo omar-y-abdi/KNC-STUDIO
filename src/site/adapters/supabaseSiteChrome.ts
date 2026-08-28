@@ -10,6 +10,7 @@ import {
 } from '../../backend/rpcSchemas'
 import type { Lang } from '../../i18n/index'
 import type { SiteChromePort } from '../port'
+import { isPostgresChangesReady } from '../../backend/realtimeReady'
 import {
   ABOUT_SCALE_KEY,
   HOMEPAGE_LOGO_PATH_KEY,
@@ -123,28 +124,52 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
       .then(({ getSupabase }) => {
         if (closed) return
         const supabase = getSupabase()
+        let reloadRequested = false
+        let reloadPromise: Promise<void> | null = null
         const reload = (): void => {
-          void loadSiteChrome(lang).then((next) => {
-            if (!closed && next !== null) onChange(next)
+          reloadRequested = true
+          if (reloadPromise !== null) return
+
+          reloadPromise = (async () => {
+            let latest: SiteChrome | null = null
+            while (reloadRequested && !closed) {
+              reloadRequested = false
+              latest = await loadSiteChrome(lang)
+            }
+            if (!closed && !reloadRequested && latest !== null) onChange(latest)
+          })().finally(() => {
+            reloadPromise = null
+            if (reloadRequested && !closed) reload()
           })
+        }
+
+        let awaitingPostgresReady = true
+        const changed = (): void => {
+          awaitingPostgresReady = false
+          reload()
         }
         const channel = supabase
           .channel(`site-chrome:${lang}`)
+          .on('system', {}, (payload) => {
+            if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
+            awaitingPostgresReady = false
+            reload()
+          })
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
-            reload,
+            changed,
           )
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, reload)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, reload)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, reload)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'barber_schedules' },
-            reload,
+            changed,
           )
           .subscribe((status) => {
-            if (status === 'SUBSCRIBED') reload()
+            if (status === 'SUBSCRIBED') awaitingPostgresReady = true
           })
 
         stop = (): void => {
