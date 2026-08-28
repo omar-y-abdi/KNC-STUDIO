@@ -38,7 +38,11 @@ const {
     triggerChange: () => changeCallbacks.at(-1)?.(),
     triggerPostgresReady: () =>
       systemCallbacks.forEach((callback) =>
-        callback({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' }),
+        callback({
+          extension: 'postgres_changes',
+          status: 'ok',
+          message: 'Subscribed to PostgreSQL',
+        }),
       ),
     triggerSubscribed: () => statusCallback?.('SUBSCRIBED'),
   }
