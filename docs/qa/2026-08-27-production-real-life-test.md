@@ -43,11 +43,12 @@
 ### QA-007 — Confirmation handler trusts an unchecked legacy webhook secret
 
 - Severity: **High operational / Low security**
-- Status: **FIXED ON BRANCH — pending deploy and legacy-secret removal**
+- Status: **FIXED IN PRODUCTION**
 - Observed: `send-confirmation` prefers `BOOKING_WEBHOOK_SECRET` when present, while the production verifier proves Vault parity only against canonical `WEBHOOK_SECRET`.
 - Live evidence: production still contains the legacy secret name and its digest differs from canonical `WEBHOOK_SECRET`; no value or digest was printed. The verifier therefore passed while booking confirmation/reminder dispatch could return `401`.
 - Security impact: a stale credential remains accepted by an internet-reachable `verify_jwt=false` handler. Exploitation additionally requires possession of the stale value and a valid booking/delivery UUID.
-- Remediation: `send-confirmation` now accepts only `WEBHOOK_SECRET`; contract tests include every shared-secret handler; production verification rejects the legacy alias entirely.
+- Remediation: deployed `send-confirmation` version 44, which accepts only `WEBHOOK_SECRET`; removed production `BOOKING_WEBHOOK_SECRET`; contract tests include every shared-secret handler; production verification rejects the legacy alias entirely.
+- Verification: live preflight passed all nine Edge names, three Vault names, legacy-secret absence, and canonical digest parity. Server-side Vault probe request `472` reached the handler and returned `404 booking_not_found`, not `401`, proving authentication without creating a booking or sending customer mail.
 
 ### QA-008 — Integration suite contaminates later database tests
 
@@ -175,3 +176,5 @@
 - Hostile review — confirmed production `BOOKING_WEBHOOK_SECRET` exists with a different digest from canonical `WEBHOOK_SECRET` while preflight passes. Logged QA-007; no secret value or digest printed.
 - Security diff scan `e95940fc-33ae-49ca-9081-9b7090f55a87` validated the stale-credential path as Low security severity/high confidence; separate operational impact remains High because booking mail/reminders can fail for every dispatch.
 - Test isolation — reproduced pgTAP failures only after integration, traced leaked fixtures, added exact and global teardown, then verified integration 40/40 → clean state readback → pgTAP 803/803. Logged QA-008.
+- Production hotfix — CI run `33141989649` passed all jobs on `27e23f6`; deployed `send-confirmation` v44, removed legacy `BOOKING_WEBHOOK_SECRET`, and reran production preflight successfully.
+- Vault auth probe — `pg_net` request `472` used Vault-held URL/secret and returned expected `404 booking_not_found` with no timeout. This distinguishes successful authentication from prior `401` failures without touching a real booking or recipient.
