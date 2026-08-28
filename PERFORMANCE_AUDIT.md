@@ -153,3 +153,12 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 - Added a real 2×2 JPEG fixture test that initializes the exact vendored `magick.wasm`, decodes JPEG, writes WebP while copying callback bytes, validates the RIFF/WEBP signature, and decodes the copied WebP back to 2×2.
 - Final rebased CI must pass this runtime test in addition to the existing source-contract guard before handoff.
+
+### Barber profile corruption follow-up
+
+- User reported that barber profile uploads render as broken/corrupted regardless of source image type.
+- Production Storage logs confirm profile objects were successfully created in `barber-photos` and served with HTTP 200 to iPhone Safari, then removed shortly afterwards during repeated retries. The bucket itself is public and WebP-only, so this was not a private-bucket or missing-object response problem.
+- Production currently has no surviving `barber_photos` row after those retries, consistent with the uploaded broken images being removed.
+- The deployed/`main` upload gateway still contains the unsafe `encoded.value = data` assignment. The performance PR contains the corrected `new Uint8Array(data)` copy; therefore the observed production symptom is expected until the updated Edge Function is deployed.
+- Added a profile-specific ImageMagick runtime regression using a real rectangular JPEG through the exact resize + centered 800×800 crop + copied WebP encode + decode path; this passed in CI, ruling out the crop/resize transform as a second corruption source.
+- Added an owner integration regression that uploads PNG through the actual barber-profile gateway, fetches the public Storage object, validates `Content-Type: image/webp` and RIFF/WEBP signatures, then removes the profile.
