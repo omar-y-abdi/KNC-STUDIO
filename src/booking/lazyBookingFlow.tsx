@@ -7,5 +7,5 @@ export const LazyBookingFlow = lazy(() =>
 )
 
 export function preloadBookingFlow(): void {
-  void loadBookingFlow()
+  void loadBookingFlow().catch(() => undefined)
 }

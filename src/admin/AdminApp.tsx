@@ -8,7 +8,7 @@
 // admin/auth/supabase-auth code ships on the public critical path.
 
 import type { JSX } from 'preact'
-import { lazy, Suspense } from 'preact/compat'
+import { lazy } from 'preact/compat'
 import { useEffect, useState } from 'preact/hooks'
 import { useLocation } from 'wouter-preact'
 import { isBackendConfigured } from '../backend/config'
@@ -17,6 +17,7 @@ import { getActiveProfile, signOut } from './auth'
 import { clearAdminNavigationState } from './navigationState'
 import { useTheme } from './useTheme'
 import type { AdminProfile } from './types'
+import { LazySurface } from '../ui/LazySurface'
 
 const AdminShell = lazy(() =>
   import('./AdminShell').then((module) => ({ default: module.AdminShell })),
@@ -73,10 +74,28 @@ export function AdminApp(): JSX.Element {
 
   const c = palette(theme.dark)
 
+  const lazyText =
+    theme.lang === 'sv'
+      ? {
+          loading: 'Laddar adminpanelen …',
+          error: 'Kunde inte ladda adminpanelen.',
+          retry: 'Ladda om',
+        }
+      : {
+          loading: 'Loading admin panel …',
+          error: 'Could not load the admin panel.',
+          retry: 'Reload',
+        }
+
   // Forced first-login gate — blocks the panel until the barber picks a real password.
   if (gate.kind === 'forced_change') {
     return (
-      <Suspense fallback={null}>
+      <LazySurface
+        loadingLabel={lazyText.loading}
+        errorLabel={lazyText.error}
+        retryLabel={lazyText.retry}
+        minHeight="100vh"
+      >
         <ForcedPasswordChange
           lang={theme.lang}
           onDone={() =>
@@ -84,7 +103,7 @@ export function AdminApp(): JSX.Element {
           }
           onSignOut={() => void onSignOut()}
         />
-      </Suspense>
+      </LazySurface>
     )
   }
 
@@ -110,7 +129,12 @@ export function AdminApp(): JSX.Element {
   }
 
   return (
-    <Suspense fallback={null}>
+    <LazySurface
+      loadingLabel={lazyText.loading}
+      errorLabel={lazyText.error}
+      retryLabel={lazyText.retry}
+      minHeight="100vh"
+    >
       <AdminShell
         profile={gate.profile}
         dark={theme.dark}
@@ -119,6 +143,6 @@ export function AdminApp(): JSX.Element {
         setLang={theme.setLang}
         onSignOut={() => void onSignOut()}
       />
-    </Suspense>
+    </LazySurface>
   )
 }

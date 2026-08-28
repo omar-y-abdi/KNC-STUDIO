@@ -1,7 +1,6 @@
 // Desktop (WEBB · Editorial) layout — nav + hero + collapsible booking fold + footer.
 
 import type { JSX, RefObject } from 'preact'
-import { Suspense } from 'preact/compat'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
@@ -9,6 +8,8 @@ import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
+import { preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import { LazySurface } from '../ui/LazySurface'
 import type { BookingPort } from '../booking/port'
 import type { BarbersPort } from '../booking/barbersPort'
 import type { ServicesPort } from '../booking/servicesPort'
@@ -300,7 +301,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             >
               {tx.book}
             </button>
-            <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle} type="button">
+            <button
+              onClick={props.openMyBookings}
+              onPointerDown={preloadMyBookingsDialog}
+              onFocus={preloadMyBookingsDialog}
+              style={heroSecondaryBtnStyle}
+              type="button"
+            >
               {tx.myBookings}
             </button>
           </div>
@@ -324,7 +331,14 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
               }
             >
               {bookingMounted.current ? (
-                <Suspense fallback={null}>
+                <LazySurface
+                  loadingLabel={props.lang === 'sv' ? 'Laddar bokning …' : 'Loading booking …'}
+                  errorLabel={
+                    props.lang === 'sv' ? 'Kunde inte ladda bokningen.' : 'Could not load booking.'
+                  }
+                  retryLabel={props.lang === 'sv' ? 'Ladda om' : 'Reload'}
+                  minHeight="280px"
+                >
                   <LazyBookingFlow
                     mode={props.mode}
                     defaultLang={props.lang}
@@ -341,7 +355,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                           servicesPort: props.previewPorts.services,
                         })}
                   />
-                </Suspense>
+                </LazySurface>
               ) : null}
             </div>
           </div>

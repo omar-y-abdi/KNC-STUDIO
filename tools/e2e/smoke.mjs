@@ -83,6 +83,13 @@ async function verifyPublicPage(browser, viewport) {
     'withdrawing functional storage did not delete the phone-memory cookie',
   )
 
+  const myBookingsButton = page.getByRole('button', { name: 'My appointments', exact: true }).first()
+  await myBookingsButton.click()
+  const myBookingsDialog = page.getByRole('dialog', { name: 'My appointments' })
+  await myBookingsDialog.waitFor()
+  await myBookingsDialog.getByRole('button', { name: 'Close' }).click()
+  await myBookingsDialog.waitFor({ state: 'detached' })
+
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
 
@@ -210,7 +217,7 @@ try {
   const page = await browser.newPage()
   await verifyStaticEndpoints(page)
   await page.close()
-  console.log('Browser smoke passed: desktop, mobile, assets, booking, discovery.')
+  console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
 } finally {
   await browser.close()
 }

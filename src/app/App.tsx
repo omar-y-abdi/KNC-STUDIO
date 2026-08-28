@@ -5,7 +5,6 @@
 // passed down so both layouts render identical controls.
 
 import type { JSX } from 'preact'
-import { lazy, Suspense } from 'preact/compat'
 import { useEffect, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
@@ -15,20 +14,19 @@ import { preloadBookingFlow } from '../booking/lazyBookingFlow'
 import { ABOUT_SECTION_ID } from '../about/AboutSection'
 import { consumeBookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
+import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { PrivacyBanner } from '../site/PrivacyBanner'
 import { scheduleIdle } from '../ui/idle'
+import { LazySurface } from '../ui/LazySurface'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
 import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
 
-const MyBookingsDialog = lazy(() =>
-  import('../mybookings/MyBookingsDialog').then((module) => ({ default: module.MyBookingsDialog })),
-)
 
 function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
@@ -206,6 +204,7 @@ export function App(): JSX.Element {
     })
   }
   const openMyBookings = (): void => {
+    preloadMyBookingsDialog()
     setBookingAccess({})
     setState({ myBookingsOpen: true })
   }
@@ -311,16 +310,34 @@ export function App(): JSX.Element {
     </div>
   )
 
+  const asyncText =
+    lang === 'sv'
+      ? {
+          bookingsLoading: 'Laddar bokningar …',
+          bookingsError: 'Kunde inte ladda bokningarna.',
+          retry: 'Ladda om',
+        }
+      : {
+          bookingsLoading: 'Loading appointments …',
+          bookingsError: 'Could not load appointments.',
+          retry: 'Reload',
+        }
+
   const myBookingsDialog = state.myBookingsOpen ? (
-    <Suspense fallback={null}>
-      <MyBookingsDialog
+    <LazySurface
+      overlay
+      loadingLabel={asyncText.bookingsLoading}
+      errorLabel={asyncText.bookingsError}
+      retryLabel={asyncText.retry}
+    >
+      <LazyMyBookingsDialog
         mode={state.mode}
         lang={lang}
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
       />
-    </Suspense>
+    </LazySurface>
   ) : null
 
   if (isMobile) {

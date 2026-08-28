@@ -8,7 +8,6 @@
 //  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
 
 import type { JSX } from 'preact'
-import { Suspense } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
@@ -17,6 +16,8 @@ import { HomepageLogo } from '../site/HomepageLogo'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
+import { preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import { LazySurface } from '../ui/LazySurface'
 import {
   scalePx,
   type BusinessSettings,
@@ -318,7 +319,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           >
             {tx.book}
           </button>
-          <button onClick={props.openMyBookings} style={heroSecondaryBtnStyle}>
+          <button
+            onClick={props.openMyBookings}
+            onPointerDown={preloadMyBookingsDialog}
+            onFocus={preloadMyBookingsDialog}
+            style={heroSecondaryBtnStyle}
+          >
             {tx.myBookings}
           </button>
           <HeroLinks
@@ -400,7 +406,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
       <div style={m3BodyStyle}>
         {inSection ? (
-          <Suspense fallback={null}>
+          <LazySurface
+            loadingLabel={props.lang === 'sv' ? 'Laddar bokning …' : 'Loading booking …'}
+            errorLabel={
+              props.lang === 'sv' ? 'Kunde inte ladda bokningen.' : 'Could not load booking.'
+            }
+            retryLabel={props.lang === 'sv' ? 'Ladda om' : 'Reload'}
+            minHeight="280px"
+          >
             <LazyBookingFlow
               mode={props.mode}
               defaultLang={props.lang}
@@ -410,7 +423,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               business={business}
               showDirections={business.mapsHref !== ''}
             />
-          </Suspense>
+          </LazySurface>
         ) : (
           <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
         )}

@@ -8,9 +8,10 @@
 // when unauthenticated).
 
 import type { JSX } from 'preact'
-import { lazy, Suspense } from 'preact/compat'
+import { lazy } from 'preact/compat'
 import { Route, Switch } from 'wouter-preact'
 import { LoginRoute } from './LoginRoute'
+import { LazySurface } from '../ui/LazySurface'
 const ResetPasswordRoute = lazy(() =>
   import('./ResetPasswordRoute').then((module) => ({ default: module.ResetPasswordRoute })),
 )
@@ -27,7 +28,12 @@ const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: mo
 /** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
 export default function AdminEntry(): JSX.Element {
   return (
-    <Suspense fallback={<div aria-live="polite">Laddar …</div>}>
+    <LazySurface
+      loadingLabel="Laddar …"
+      errorLabel="Kunde inte ladda adminvyn."
+      retryLabel="Ladda om"
+      minHeight="100vh"
+    >
       <Switch>
         <Route path="/login" component={LoginRoute} />
         <Route path="/reset" component={ResetPasswordRoute} />
@@ -36,6 +42,6 @@ export default function AdminEntry(): JSX.Element {
         <Route path="/admin/:rest*" component={AdminApp} />
         <Route path="/admin" component={AdminApp} />
       </Switch>
-    </Suspense>
+    </LazySurface>
   )
 }

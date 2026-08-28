@@ -169,3 +169,10 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 - **Catalog preload gap:** first production catalog subscription now waits for Realtime's `SUBSCRIBED` status, then performs an authoritative refresh before notifying consumers. Realtime table changes use the same coalesced refresh path. This closes the preload → missed admin edit → stale first consumer sequence.
 - **SiteChrome live updates:** restored the public live-update contract. The subscription is active only while the document is visible; hidden tabs disconnect, and returning to visibility performs an immediate read before resubscribing.
 - **Homepage fallback caching:** successful Supabase discovery keeps the 60 s browser / 300 s shared TTL. Discovery fallback/error renders are `no-store`, so transient backend failure cannot seed five minutes of shared fallback metadata.
+
+### Lazy interaction review correction
+
+- Replaced interaction-critical `Suspense fallback={null}` surfaces with a shared accessible lazy boundary: loading state uses `role=status` / `aria-live`, import/runtime failure shows `role=alert`, and users receive an explicit reload recovery action.
+- Booking uses an inline bounded loading/error surface; My Bookings uses a visible overlay fallback; authenticated admin and password-change surfaces use full-page fallbacks.
+- My Bookings now preloads on pointer-down/focus for the primary buttons and also starts preload in the shared open handler, covering cancellation links that do not expose pointer-prefetch props.
+- Browser smoke now opens and closes My Bookings before exercising BookingFlow, so both public interaction chunks are loaded in CI rather than only compiled.
