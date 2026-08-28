@@ -67,5 +67,4 @@ describe('upload-image JPEG runtime', () => {
     })
     expect(decodedSize).toEqual([800, 800])
   })
-
 })
