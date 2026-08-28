@@ -21,10 +21,7 @@ import {
 } from '../../src/admin/adapters/barbersAdmin'
 import { listAbout, saveAbout } from '../../src/admin/adapters/aboutAdmin'
 import { deleteImage, listGallery, uploadImage } from '../../src/admin/adapters/galleryAdmin'
-import {
-  removeBarberPhoto,
-  uploadBarberPhoto,
-} from '../../src/admin/adapters/barberPhotoAdmin'
+import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
 import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
 import { cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
