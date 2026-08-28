@@ -107,7 +107,6 @@ jobs:
         if: always()
         run: npx supabase stop --no-backup
 
-
   deploy-upload-image-review:
     name: Deploy reviewed upload-image
     needs: [frontend, edge-functions, database]
@@ -126,7 +125,7 @@ jobs:
       - run: npm ci
       - name: Validate reviewed image bundle
         run: |
-          printf '%s  %s\n'             'c903248c3b66a550b74bac5ea25d359e84455b8d82aa945a16f75f6fd8be610a'             'supabase/functions/upload-image/magick.wasm' | sha256sum --check -
+          echo 'c903248c3b66a550b74bac5ea25d359e84455b8d82aa945a16f75f6fd8be610a  supabase/functions/upload-image/magick.wasm' | sha256sum --check -
           grep -F 'encoded.value = new Uint8Array(data)' supabase/functions/upload-image/index.ts
           ! grep -F 'encoded.value = data' supabase/functions/upload-image/index.ts
       - name: Deploy upload-image with static WASM
@@ -137,5 +136,5 @@ jobs:
             echo 'Missing SUPABASE_ACCESS_TOKEN repository secret'
             exit 1
           }
-          npx supabase functions deploy upload-image             --project-ref soktgawvexeumqvtyhda
-          npx supabase functions list             --project-ref soktgawvexeumqvtyhda
+          npx supabase functions deploy upload-image --project-ref soktgawvexeumqvtyhda
+          npx supabase functions list --project-ref soktgawvexeumqvtyhda
