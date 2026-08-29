@@ -17,7 +17,9 @@ below. Never run the contract migration before the switched Worker has passed li
 - Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
   variable in `wrangler.jsonc`.
 - `PROJECT_REF`, `DATABASE_URL`, and production frontend build variables are available in the
-  operator shell. Never write secret values to this repository.
+  operator shell. Non-interactive Edge deployment also requires a Supabase management
+  `SUPABASE_ACCESS_TOKEN`; an interactive operator may instead authenticate the CLI with
+  `supabase login`. Never write secret values to this repository.
 
 Verify required Edge Function and database Vault secret names, reject legacy aliases, and confirm
 shared webhook-secret parity before function deployment; values/digests are never printed:

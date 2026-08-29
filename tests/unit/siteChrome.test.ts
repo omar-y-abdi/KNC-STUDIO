@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   BUSINESS_SETTING_KEYS,
   DEFAULT_CHROME,
@@ -15,7 +15,11 @@ import {
   textOrDefault,
   SIZE_PRESETS,
 } from '../../src/site/siteChrome'
-import { canReplaceDocumentMetadata, resolveSiteChromeSnapshot } from '../../src/site/useSiteChrome'
+import {
+  canReplaceDocumentMetadata,
+  createSiteChromeVisibilityLifecycle,
+  resolveSiteChromeSnapshot,
+} from '../../src/site/useSiteChrome'
 
 describe('parseScale', () => {
   it('passes through the four valid presets', () => {
@@ -233,6 +237,46 @@ describe('hydration metadata readiness', () => {
     expect(canReplaceDocumentMetadata(false, '{}')).toBe(true)
     expect(canReplaceDocumentMetadata(false, 'malformed')).toBe(true)
     expect(canReplaceDocumentMetadata(true, complete)).toBe(true)
+  })
+})
+
+describe('SiteChrome visibility lifecycle', () => {
+  it('disconnects while hidden and revalidates before resubscribing when visible', () => {
+    let hidden = false
+    const scheduled: (() => void)[] = []
+    const load = vi.fn()
+    const unsubscribe = vi.fn()
+    const subscribe = vi.fn(() => unsubscribe)
+    const cancelIdle = vi.fn()
+    const lifecycle = createSiteChromeVisibilityLifecycle({
+      load,
+      subscribe,
+      isHidden: () => hidden,
+      schedule: (task) => {
+        scheduled.push(task)
+        return cancelIdle
+      },
+    })
+
+    lifecycle.start()
+    expect(load).toHaveBeenCalledOnce()
+    expect(subscribe).not.toHaveBeenCalled()
+    scheduled.shift()?.()
+    expect(subscribe).toHaveBeenCalledOnce()
+
+    hidden = true
+    lifecycle.visibilityChanged()
+    expect(unsubscribe).toHaveBeenCalledOnce()
+
+    hidden = false
+    lifecycle.visibilityChanged()
+    expect(load).toHaveBeenCalledTimes(2)
+    scheduled.shift()?.()
+    expect(subscribe).toHaveBeenCalledTimes(2)
+
+    lifecycle.stop()
+    expect(unsubscribe).toHaveBeenCalledTimes(2)
+    expect(cancelIdle).toHaveBeenCalled()
   })
 })
 

@@ -1,5 +1,6 @@
 // `useSiteChrome` — owner-editable public copy, business identity, SEO, and sizing as React state,
-// refetched per language and updated when the owner changes `site_content` or `site_settings`.
+// refetched per language and updated when the owner changes public CMS/business tables. Realtime is
+// visibility-gated so hidden tabs do not retain a socket; returning to the page also revalidates.
 //
 // Under the MOCK (no backend): `DEFAULT_CHROME` is the immediate, stable value (no flash, no shift) —
 // the site renders from its i18n defaults + 1.0× scale exactly as before. Under a BACKEND: the same
@@ -12,10 +13,65 @@ import type { Lang } from '../i18n/index'
 import type { SiteChromePort } from './port'
 import { DEFAULT_CHROME, type SiteChrome } from './siteChrome'
 import { defaultSiteChromePort, siteChromeIsMock } from './adapters/index'
+import { scheduleIdle } from '../ui/idle'
 
 export interface SiteChromeSnapshot {
   readonly chrome: SiteChrome
   readonly metadataReady: boolean
+}
+
+interface SiteChromeVisibilityLifecycleOptions {
+  readonly load: () => void
+  readonly subscribe?: () => () => void
+  readonly isHidden: () => boolean
+  readonly schedule: (task: () => void) => () => void
+}
+
+export interface SiteChromeVisibilityLifecycle {
+  readonly start: () => void
+  readonly visibilityChanged: () => void
+  readonly stop: () => void
+}
+
+export function createSiteChromeVisibilityLifecycle(
+  options: SiteChromeVisibilityLifecycleOptions,
+): SiteChromeVisibilityLifecycle {
+  let stopped = false
+  let unsubscribe: (() => void) | undefined
+  let cancelIdle = (): void => undefined
+
+  const stopSubscription = (): void => {
+    cancelIdle()
+    cancelIdle = (): void => undefined
+    unsubscribe?.()
+    unsubscribe = undefined
+  }
+  const startSubscription = (): void => {
+    if (stopped || options.subscribe === undefined || options.isHidden()) return
+    cancelIdle = options.schedule(() => {
+      if (stopped || options.isHidden() || unsubscribe !== undefined) return
+      unsubscribe = options.subscribe?.()
+    })
+  }
+
+  return {
+    start: () => {
+      options.load()
+      startSubscription()
+    },
+    visibilityChanged: () => {
+      if (options.isHidden()) {
+        stopSubscription()
+        return
+      }
+      options.load()
+      startSubscription()
+    },
+    stop: () => {
+      stopped = true
+      stopSubscription()
+    },
+  }
 }
 
 type SiteChromeCache = Readonly<Partial<Record<Lang, SiteChrome>>>
@@ -70,18 +126,36 @@ export function useSiteChrome(
     // Mock: the default IS the answer for both languages; never fetch (no flash/shift).
     if (siteChromeIsMock) return
     let cancelled = false
-    void port
-      .load(lang)
-      .then((next) => {
-        if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
-      })
-      .catch(() => undefined)
-    const unsubscribe = port.subscribe?.(lang, (next) => {
-      if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
+    const load = (): void => {
+      void port
+        .load(lang)
+        .then((next) => {
+          if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
+        })
+        .catch(() => undefined)
+    }
+    const subscribe = port.subscribe
+    const lifecycle = createSiteChromeVisibilityLifecycle({
+      load,
+      isHidden: () => document.visibilityState === 'hidden',
+      schedule: scheduleIdle,
+      ...(subscribe === undefined
+        ? {}
+        : {
+            subscribe: () =>
+              subscribe.call(port, lang, (next) => {
+                if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
+              }),
+          }),
     })
+    const onVisibilityChange = (): void => lifecycle.visibilityChanged()
+
+    lifecycle.start()
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       cancelled = true
-      unsubscribe?.()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      lifecycle.stop()
     }
   }, [lang, port])
 

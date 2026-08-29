@@ -21,6 +21,7 @@ import {
 } from '../../src/admin/adapters/barbersAdmin'
 import { listAbout, saveAbout } from '../../src/admin/adapters/aboutAdmin'
 import { deleteImage, listGallery, uploadImage } from '../../src/admin/adapters/galleryAdmin'
+import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
 import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
 import { cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
@@ -173,6 +174,26 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     // The object 404s after delete.
     const gone = await fetch(uploaded.value.url, { method: 'GET' })
     expect(gone.ok).toBe(false)
+  })
+
+  it('uploads a barber profile as a valid public WebP and removes it', async () => {
+    const uploaded = await uploadBarberPhoto(OTHER_BARBER_ID, pngFile('it-profile.png'))
+    expect(uploaded.ok).toBe(true)
+    if (!uploaded.ok) return
+
+    try {
+      expect(uploaded.value.url).toContain('/storage/v1/object/public/barber-photos/')
+
+      const response = await fetch(uploaded.value.url)
+      expect(response.ok).toBe(true)
+      expect(response.headers.get('content-type')).toContain('image/webp')
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe('RIFF')
+      expect(new TextDecoder().decode(bytes.subarray(8, 12))).toBe('WEBP')
+    } finally {
+      const removed = await removeBarberPhoto(OTHER_BARBER_ID, uploaded.value.storagePath)
+      expect(removed.ok).toBe(true)
+    }
   })
 
   it('cancels ANY barber’s booking', async () => {

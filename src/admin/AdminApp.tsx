@@ -8,16 +8,24 @@
 // admin/auth/supabase-auth code ships on the public critical path.
 
 import type { JSX } from 'preact'
+import { lazy } from 'preact/compat'
 import { useEffect, useState } from 'preact/hooks'
 import { useLocation } from 'wouter-preact'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
+import { adminText } from '../i18n/adminStrings'
 import { getActiveProfile, signOut } from './auth'
 import { clearAdminNavigationState } from './navigationState'
-import { AdminShell } from './AdminShell'
-import { ForcedPasswordChange } from './ForcedPasswordChange'
 import { useTheme } from './useTheme'
 import type { AdminProfile } from './types'
+import { LazySurface } from '../ui/LazySurface'
+
+const AdminShell = lazy(() =>
+  import('./AdminShell').then((module) => ({ default: module.AdminShell })),
+)
+const ForcedPasswordChange = lazy(() =>
+  import('./ForcedPasswordChange').then((module) => ({ default: module.ForcedPasswordChange })),
+)
 
 type Gate =
   | { readonly kind: 'checking' }
@@ -66,17 +74,25 @@ export function AdminApp(): JSX.Element {
   }
 
   const c = palette(theme.dark)
+  const t = adminText(theme.lang)
 
   // Forced first-login gate — blocks the panel until the barber picks a real password.
   if (gate.kind === 'forced_change') {
     return (
-      <ForcedPasswordChange
-        lang={theme.lang}
-        onDone={() =>
-          setGate({ kind: 'authed', profile: { ...gate.profile, mustChangePassword: false } })
-        }
-        onSignOut={() => void onSignOut()}
-      />
+      <LazySurface
+        loadingLabel={t.lazyLoading}
+        errorLabel={t.lazyError}
+        retryLabel={t.lazyReload}
+        minHeight="100vh"
+      >
+        <ForcedPasswordChange
+          lang={theme.lang}
+          onDone={() =>
+            setGate({ kind: 'authed', profile: { ...gate.profile, mustChangePassword: false } })
+          }
+          onSignOut={() => void onSignOut()}
+        />
+      </LazySurface>
     )
   }
 
@@ -96,19 +112,26 @@ export function AdminApp(): JSX.Element {
           opacity: 0.7,
         }}
       >
-        Laddar …
+        {t.lazyLoading}
       </div>
     )
   }
 
   return (
-    <AdminShell
-      profile={gate.profile}
-      dark={theme.dark}
-      lang={theme.lang}
-      toggleMode={theme.toggleMode}
-      setLang={theme.setLang}
-      onSignOut={() => void onSignOut()}
-    />
+    <LazySurface
+      loadingLabel={t.lazyLoading}
+      errorLabel={t.lazyError}
+      retryLabel={t.lazyReload}
+      minHeight="100vh"
+    >
+      <AdminShell
+        profile={gate.profile}
+        dark={theme.dark}
+        lang={theme.lang}
+        toggleMode={theme.toggleMode}
+        setLang={theme.setLang}
+        onSignOut={() => void onSignOut()}
+      />
+    </LazySurface>
   )
 }

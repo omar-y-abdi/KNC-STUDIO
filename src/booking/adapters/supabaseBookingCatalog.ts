@@ -9,6 +9,7 @@ import type { BarberId, ServiceItem } from '../domain'
 import { asBarberId } from '../domain'
 import { parseDateIso } from '../calendar'
 import type { RosterBarber } from '../barbersPort'
+import { isPostgresChangesReady } from '../../backend/realtimeReady'
 
 const PHOTO_BUCKET = 'barber-photos'
 
@@ -19,13 +20,19 @@ export interface BookingCatalog {
   readonly weekdaysByServiceId: ReadonlyMap<string, readonly number[]>
 }
 
+export const BOOKING_CATALOG_TTL_MS = 30_000
+
 const EMPTY_CATALOG: BookingCatalog = {
   barbers: [],
   servicesByBarber: new Map(),
   weekdaysByServiceId: new Map(),
 }
+let catalogValue: BookingCatalog | null = null
 let catalogPromise: Promise<BookingCatalog> | null = null
-let catalogLoading = false
+let catalogRefreshPromise: Promise<BookingCatalog> | null = null
+let catalogLoadedAt: number | null = null
+let catalogListenerRefresh: Promise<void> | null = null
+let catalogRevalidateRequested = false
 const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
 
@@ -81,26 +88,62 @@ export function servicesForBookingDate(
   )
 }
 
-/** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
-export function cachedBookingCatalog(): Promise<BookingCatalog> {
+function startCatalogLoad(): Promise<BookingCatalog> {
   if (catalogPromise !== null) return catalogPromise
-  catalogLoading = true
-  catalogPromise = loadBookingCatalog()
-    .catch((error: unknown) => {
-      catalogPromise = null
-      throw error
+
+  const request = loadBookingCatalog()
+    .then((catalog) => {
+      catalogValue = catalog
+      catalogLoadedAt = Date.now()
+      return catalog
     })
     .finally(() => {
-      catalogLoading = false
+      if (catalogPromise === request) catalogPromise = null
     })
-  return catalogPromise
+  catalogPromise = request
+  return request
 }
 
-/** Force a current read, while coalescing callers that refresh during the same in-flight request. */
+/** Shared in-flight/result cache: roster, photos, and services resolve through one RPC request. */
+export function cachedBookingCatalog(): Promise<BookingCatalog> {
+  if (catalogRefreshPromise !== null) return catalogRefreshPromise
+  if (
+    catalogValue !== null &&
+    catalogLoadedAt !== null &&
+    Date.now() - catalogLoadedAt < BOOKING_CATALOG_TTL_MS
+  ) {
+    return Promise.resolve(catalogValue)
+  }
+  return startCatalogLoad()
+}
+
+/**
+ * Force a read that begins after any older in-flight load has settled. This matters when a
+ * Realtime subscription is first established: an idle preload may have completed before an owner
+ * edit, so reusing that preload would preserve the exact missed-change gap the refresh is closing.
+ */
 export function refreshBookingCatalog(): Promise<BookingCatalog> {
-  if (catalogLoading && catalogPromise !== null) return catalogPromise
-  catalogPromise = null
-  return cachedBookingCatalog()
+  if (catalogRefreshPromise !== null) return catalogRefreshPromise
+
+  const previous = catalogPromise
+  const refresh = (
+    previous === null
+      ? Promise.resolve()
+      : previous.then(
+          () => undefined,
+          () => undefined,
+        )
+  )
+    .then(() => {
+      catalogValue = null
+      catalogLoadedAt = null
+      return startCatalogLoad()
+    })
+    .finally(() => {
+      if (catalogRefreshPromise === refresh) catalogRefreshPromise = null
+    })
+  catalogRefreshPromise = refresh
+  return refresh
 }
 
 /** Start truthful catalog hydration before a visitor opens booking. */
@@ -108,17 +151,50 @@ export function preloadBookingCatalog(): void {
   void cachedBookingCatalog().catch(() => EMPTY_CATALOG)
 }
 
+function revalidateCatalogListeners(): void {
+  catalogRevalidateRequested = true
+  if (catalogListenerRefresh !== null) return
+
+  catalogListenerRefresh = (async () => {
+    while (catalogRevalidateRequested) {
+      catalogRevalidateRequested = false
+      try {
+        await refreshBookingCatalog()
+      } catch {
+        continue
+      }
+    }
+    for (const listener of catalogListeners) listener()
+  })().finally(() => {
+    catalogListenerRefresh = null
+    if (catalogRevalidateRequested) revalidateCatalogListeners()
+  })
+}
+
 function startCatalogSubscription(): () => void {
   const client = getSupabase()
   let channel = client.channel('public-booking-catalog')
+  let awaitingPostgresReady = true
   const changed = (): void => {
-    catalogPromise = null
-    for (const listener of catalogListeners) listener()
+    // Receiving an actual change also proves the Postgres Changes listener is live.
+    awaitingPostgresReady = false
+    revalidateCatalogListeners()
   }
+  channel = channel.on('system', {}, (payload) => {
+    if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
+    awaitingPostgresReady = false
+    // SUBSCRIBED only confirms the channel/WebSocket. This system signal confirms the
+    // Postgres Changes listener is ready, so this read closes the pre-listener missed-edit gap.
+    revalidateCatalogListeners()
+  })
   for (const table of ['barbers', 'barber_photos', 'services']) {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, changed)
   }
-  channel.subscribe()
+  channel.subscribe((status) => {
+    // Supabase can reconnect a channel after a network interruption. Every new join needs an
+    // authoritative read after Postgres Changes is ready because events can be lost while offline.
+    if (status === 'SUBSCRIBED') awaitingPostgresReady = true
+  })
   return () => {
     void client.removeChannel(channel)
   }

@@ -16,6 +16,7 @@
 // buttons (keyboard-operable); the active tab is `aria-current`.
 
 import type { JSX } from 'preact'
+import { lazy, Suspense } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
@@ -23,15 +24,7 @@ import { palette } from '../booking/bookingStyles'
 import { PoleLogo } from '../ui/PoleLogo'
 import { buildAdminStyles } from './adminStyles'
 import { LangSwitch, ThemeSwitch } from './chrome'
-import { BookingsView } from './views/BookingsView'
 import { ScheduleView } from './views/ScheduleView'
-import { BarbersView } from './views/BarbersView'
-import { ServicesView } from './views/ServicesView'
-import { ProfileView } from './views/ProfileView'
-import { SiteView } from './views/SiteView'
-import { AboutView } from './views/AboutView'
-import { SettingsView } from './views/SettingsView'
-import { MailView } from './views/MailView'
 import { useBarbers } from './useBarbers'
 import {
   adminUrlForTab,
@@ -42,6 +35,31 @@ import {
   withAdminNavigationHistoryState,
 } from './navigationState'
 import type { AdminBarberId, AdminProfile } from './types'
+
+const BookingsView = lazy(() =>
+  import('./views/BookingsView').then((module) => ({ default: module.BookingsView })),
+)
+const BarbersView = lazy(() =>
+  import('./views/BarbersView').then((module) => ({ default: module.BarbersView })),
+)
+const ServicesView = lazy(() =>
+  import('./views/ServicesView').then((module) => ({ default: module.ServicesView })),
+)
+const ProfileView = lazy(() =>
+  import('./views/ProfileView').then((module) => ({ default: module.ProfileView })),
+)
+const SiteView = lazy(() =>
+  import('./views/SiteView').then((module) => ({ default: module.SiteView })),
+)
+const AboutView = lazy(() =>
+  import('./views/AboutView').then((module) => ({ default: module.AboutView })),
+)
+const SettingsView = lazy(() =>
+  import('./views/SettingsView').then((module) => ({ default: module.SettingsView })),
+)
+const MailView = lazy(() =>
+  import('./views/MailView').then((module) => ({ default: module.MailView })),
+)
 
 export interface AdminShellProps {
   readonly profile: AdminProfile
@@ -453,7 +471,15 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           </div>
         </header>
 
-        {renderView()}
+        <Suspense
+          fallback={
+            <section style={s.card}>
+              <p style={s.emptyState}>{t.lazyLoading}</p>
+            </section>
+          }
+        >
+          {renderView()}
+        </Suspense>
       </main>
     </div>
   )

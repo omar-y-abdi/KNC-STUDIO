@@ -1,3 +1,4 @@
+import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import {
   DEFAULT_BUSINESS,
@@ -17,6 +18,14 @@ interface Env {
   ASSETS: StaticAssets
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
+}
+
+interface WorkerContext {
+  readonly exports: {
+    readonly PublicContent: {
+      fetch(request: Request): Promise<Response>
+    }
+  }
 }
 
 const CANONICAL_HOST = 'bladeblendstudio.se'
@@ -242,86 +251,108 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
   return lines.join('\n')
 }
 
+async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url)
+  const pathname = url.pathname
+  const cleanPathname = withoutTrailingSlash(pathname)
+
+  const customerAccessToken = customerAccessTokenFromPath(pathname)
+  if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `${url.origin}/#booking_token=${customerAccessToken}`,
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+        'X-Robots-Tag': 'noindex, nofollow',
+      },
+    })
+  }
+
+  if (pathname === '/llms.txt' && request.method === 'GET') {
+    const discovery = await loadDiscovery(env)
+    if (discovery !== null) {
+      return new Response(renderLlmsText(discovery), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+        },
+      })
+    }
+  }
+
+  if (
+    pathname !== cleanPathname &&
+    (isSpaPath(cleanPathname) || Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
+  ) {
+    return redirectTo(url, cleanPathname)
+  }
+
+  const canonicalPath = pathname.endsWith('.html') ? pathname.slice(0, -'.html'.length) : undefined
+  if (canonicalPath !== undefined && Object.hasOwn(PUBLIC_FILE_ALIASES, canonicalPath)) {
+    return redirectTo(url, canonicalPath)
+  }
+
+  const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
+  const dynamicHomepage = pathname === '/' && request.method === 'GET'
+  const asset = await serveAsset(request, env, assetPath, dynamicHomepage)
+  if (asset.status !== 404) {
+    if (dynamicHomepage) {
+      const loadedDiscovery = await loadDiscovery(env)
+      const discovery = loadedDiscovery ?? {
+        business: DEFAULT_BUSINESS,
+        facts: EMPTY_BUSINESS_FACTS,
+      }
+      const headers = new Headers(asset.headers)
+      headers.delete('Content-Length')
+      headers.delete('ETag')
+      headers.delete('Last-Modified')
+      headers.set(
+        'Cache-Control',
+        loadedDiscovery === null ? 'no-store' : 'public, max-age=60, s-maxage=300',
+      )
+      return new Response(renderHomepageMetadata(await asset.text(), discovery), {
+        status: asset.status,
+        statusText: asset.statusText,
+        headers,
+      })
+    }
+    return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
+  }
+
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    if (isSpaPath(pathname)) {
+      const index = await serveAsset(request, env, '/index.html')
+      return isNoIndexPath(pathname) ? withNoIndex(index) : index
+    }
+  }
+
+  return withNoIndex(asset)
+}
+
+export class PublicContent extends WorkerEntrypoint<Env> {
+  override async fetch(request: Request): Promise<Response> {
+    return fetchPublicContent(request, this.env)
+  }
+}
+
+function isCacheablePublicContent(request: Request, url: URL): boolean {
+  return request.method === 'GET' && (url.pathname === '/' || url.pathname === '/llms.txt')
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> {
     const url = new URL(request.url)
-    const pathname = url.pathname
-    const cleanPathname = withoutTrailingSlash(pathname)
 
     if (url.hostname === WWW_HOST) {
       url.hostname = CANONICAL_HOST
       return new Response(null, { status: 308, headers: { Location: url.toString() } })
     }
 
-    const customerAccessToken = customerAccessTokenFromPath(pathname)
-    if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: `${url.origin}/#booking_token=${customerAccessToken}`,
-          'Cache-Control': 'no-store',
-          'Referrer-Policy': 'no-referrer',
-          'X-Robots-Tag': 'noindex, nofollow',
-        },
-      })
+    if (url.hostname === CANONICAL_HOST && isCacheablePublicContent(request, url)) {
+      return context.exports.PublicContent.fetch(request)
     }
 
-    if (pathname === '/llms.txt' && request.method === 'GET') {
-      const discovery = await loadDiscovery(env)
-      if (discovery !== null) {
-        return new Response(renderLlmsText(discovery), {
-          headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Cache-Control': 'public, max-age=300',
-          },
-        })
-      }
-    }
-
-    if (
-      pathname !== cleanPathname &&
-      (isSpaPath(cleanPathname) || Object.hasOwn(PUBLIC_FILE_ALIASES, cleanPathname))
-    ) {
-      return redirectTo(url, cleanPathname)
-    }
-
-    const canonicalPath = pathname.endsWith('.html')
-      ? pathname.slice(0, -'.html'.length)
-      : undefined
-    if (canonicalPath !== undefined && Object.hasOwn(PUBLIC_FILE_ALIASES, canonicalPath)) {
-      return redirectTo(url, canonicalPath)
-    }
-
-    const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
-    const dynamicHomepage = pathname === '/' && request.method === 'GET'
-    const asset = await serveAsset(request, env, assetPath, dynamicHomepage)
-    if (asset.status !== 404) {
-      if (dynamicHomepage) {
-        const discovery = (await loadDiscovery(env)) ?? {
-          business: DEFAULT_BUSINESS,
-          facts: EMPTY_BUSINESS_FACTS,
-        }
-        const headers = new Headers(asset.headers)
-        headers.delete('Content-Length')
-        headers.delete('ETag')
-        headers.delete('Last-Modified')
-        headers.set('Cache-Control', 'no-cache')
-        return new Response(renderHomepageMetadata(await asset.text(), discovery), {
-          status: asset.status,
-          statusText: asset.statusText,
-          headers,
-        })
-      }
-      return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
-    }
-
-    if (request.method === 'GET' || request.method === 'HEAD') {
-      if (isSpaPath(pathname)) {
-        const index = await serveAsset(request, env, '/index.html')
-        return isNoIndexPath(pathname) ? withNoIndex(index) : index
-      }
-    }
-
-    return withNoIndex(asset)
+    return fetchPublicContent(request, env)
   },
-} satisfies { fetch(request: Request, env: Env): Promise<Response> }
+} satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

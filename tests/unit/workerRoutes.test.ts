@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
 import worker, {
+  PublicContent,
   customerAccessTokenFromPath,
   isPrivatePath,
   isSpaPath,
@@ -36,6 +38,47 @@ function createEnv() {
   }
 }
 
+function createWorkerContext(env: ReturnType<typeof createEnv>) {
+  const publicContent = new PublicContent({} as never, env)
+  return {
+    exports: {
+      PublicContent: {
+        fetch(request: Request): Promise<Response> {
+          return publicContent.fetch(request)
+        },
+      },
+    },
+  }
+}
+
+function readWranglerConfig(): {
+  readonly cache?: { readonly enabled?: boolean }
+  readonly exports?: Readonly<
+    Record<
+      string,
+      {
+        readonly type?: string
+        readonly cache?: { readonly enabled?: boolean }
+      }
+    >
+  >
+} {
+  const source = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8')
+  const withoutFullLineComments = source.replace(/^\s*\/\/.*$/gm, '')
+  return JSON.parse(withoutFullLineComments.replace(/,\s*([}\]])/g, '$1')) as {
+    readonly cache?: { readonly enabled?: boolean }
+    readonly exports?: Readonly<
+      Record<
+        string,
+        {
+          readonly type?: string
+          readonly cache?: { readonly enabled?: boolean }
+        }
+      >
+    >
+  }
+}
+
 describe('Worker route policy', () => {
   it('recognizes only protected SPA paths as private', () => {
     expect(isPrivatePath('/admin')).toBe(true)
@@ -57,6 +100,47 @@ describe('Worker route policy', () => {
     expect(response.status).toBe(308)
     expect(response.headers.get('Location')).toBe('https://bladeblendstudio.se/login?next=%2Fadmin')
     expect(env.requestedPaths).toEqual([])
+  })
+
+  it('keeps hostname routing outside the cached public-content entrypoint', async () => {
+    const env = createEnv()
+    const cachedFetch = vi.fn(async () => new Response('cached public content'))
+    const fetchGateway = worker.fetch as (
+      request: Request,
+      workerEnv: ReturnType<typeof createEnv>,
+      context: {
+        readonly exports: {
+          readonly PublicContent: { fetch(request: Request): Promise<Response> }
+        }
+      },
+    ) => Promise<Response>
+    const context = { exports: { PublicContent: { fetch: cachedFetch } } }
+
+    const wwwResponse = await fetchGateway(
+      new Request('https://www.bladeblendstudio.se/?campaign=summer'),
+      env,
+      context,
+    )
+    expect(wwwResponse.status).toBe(308)
+    expect(wwwResponse.headers.get('Location')).toBe('https://bladeblendstudio.se/?campaign=summer')
+    expect(cachedFetch).not.toHaveBeenCalled()
+
+    const apexRequest = new Request('https://bladeblendstudio.se/?campaign=summer')
+    const apexResponse = await fetchGateway(apexRequest, env, context)
+    expect(await apexResponse.text()).toBe('cached public content')
+    expect(cachedFetch).toHaveBeenCalledOnce()
+    expect(cachedFetch).toHaveBeenCalledWith(apexRequest)
+
+    const config = readWranglerConfig()
+    expect(config.cache).toEqual({ enabled: false })
+    expect(config.exports?.default).toEqual({
+      type: 'worker',
+      cache: { enabled: false },
+    })
+    expect(config.exports?.PublicContent).toEqual({
+      type: 'worker',
+      cache: { enabled: true },
+    })
   })
 
   it('moves permanent customer credentials into a fragment before loading assets', async () => {
@@ -128,7 +212,7 @@ describe('Worker route policy', () => {
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
   })
 
-  it('does not reuse static validators or cache a CMS-derived homepage body', async () => {
+  it('does not share-cache fallback homepage metadata when discovery is unavailable', async () => {
     const env = createEnv()
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/', {
@@ -138,13 +222,40 @@ describe('Worker route policy', () => {
         },
       }),
       env,
+      createWorkerContext(env),
     )
 
     expect(env.requestHeaders[0]?.has('If-Modified-Since')).toBe(false)
     expect(env.requestHeaders[0]?.has('If-None-Match')).toBe(false)
-    expect(response.headers.get('Cache-Control')).toBe('no-cache')
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(response.headers.has('ETag')).toBe(false)
     expect(response.headers.has('Last-Modified')).toBe(false)
+  })
+
+  it('share-caches homepage metadata only after successful discovery', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ settings: {}, barbers: [], services: [], schedules: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const env = {
+      ...createEnv(),
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_ANON_KEY: 'test-anon-key',
+    }
+
+    try {
+      const response = await worker.fetch(
+        new Request('https://bladeblendstudio.se/'),
+        env,
+        createWorkerContext(env),
+      )
+      expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally {
+      fetchMock.mockRestore()
+    }
   })
 })
 

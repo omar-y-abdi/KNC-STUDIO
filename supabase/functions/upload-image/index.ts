@@ -23,9 +23,14 @@ const MIN_WEBP_QUALITY = 55
 const WEBP_QUALITY_STEP = 3
 const BARBER_ID = /^[a-z0-9-]{1,32}$/
 const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
-const imageMagickReady = Deno.readFile(new URL('./magick.wasm', import.meta.url)).then((wasm) =>
-  initializeImageMagick(wasm),
-)
+let imageMagickReady: Promise<void> | null = null
+
+function ensureImageMagickReady(): Promise<void> {
+  imageMagickReady ??= Deno.readFile(new URL('./magick.wasm', import.meta.url)).then((wasm) =>
+    initializeImageMagick(wasm),
+  )
+  return imageMagickReady
+}
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -210,7 +215,9 @@ function encodeWebp(image: {
     image.quality = quality
     const encoded: { value?: Uint8Array } = {}
     image.write(MagickFormat.WebP, (data) => {
-      encoded.value = data
+      // magick-wasm owns this callback buffer and may free/reuse it after the callback returns.
+      // Copy while it is valid before returning bytes to async Storage upload code.
+      encoded.value = new Uint8Array(data)
     })
     if (encoded.value !== undefined && encoded.value.byteLength <= MAX_OUTPUT_BYTES) {
       return encoded.value
@@ -494,7 +501,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let processed: Uint8Array
   try {
-    await imageMagickReady
+    await ensureImageMagickReady()
   } catch (error) {
     console.error('upload-image: ImageMagick initialization failed', error)
     return json({ ok: false, error: 'image_processor_unavailable' }, 500)

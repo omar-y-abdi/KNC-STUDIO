@@ -19,6 +19,9 @@ export interface AdminStrings {
   readonly tabProfile: string
   readonly tabSettings: string
   readonly tabMail: string
+  readonly lazyLoading: string
+  readonly lazyError: string
+  readonly lazyReload: string
   // Mail (owner-only transactional email copy)
   readonly mailTitle: string
   readonly mailLead: string
@@ -526,6 +529,9 @@ const SV: AdminStrings = {
   tabProfile: 'Profil',
   tabSettings: 'Inställningar',
   tabMail: 'Mejl',
+  lazyLoading: 'Laddar adminpanelen …',
+  lazyError: 'Kunde inte ladda adminpanelen.',
+  lazyReload: 'Ladda om',
   mailTitle: 'Mejlmallar',
   mailLead:
     'Redigera all fast text som kunder och barberare ser. Varumärket, kontaktuppgifterna och bokningens faktiska uppgifter är låsta.',
@@ -1006,6 +1012,9 @@ const EN: AdminStrings = {
   tabProfile: 'Profile',
   tabSettings: 'Settings',
   tabMail: 'Mail',
+  lazyLoading: 'Loading admin panel …',
+  lazyError: 'Could not load the admin panel.',
+  lazyReload: 'Reload',
   mailTitle: 'Email templates',
   mailLead:
     'Edit all fixed copy customers and barbers see. Brand, contact details, and actual booking data remain locked.',

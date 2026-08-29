@@ -9,6 +9,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@cloudflare/workers-types@5.20260828.1",
         "npm:@eslint/js@^9.39.4",
         "npm:@imagemagick/magick-wasm@0.0.42",
         "npm:@preact/preset-vite@^2.10.5",

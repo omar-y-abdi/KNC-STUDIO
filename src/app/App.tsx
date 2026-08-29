@@ -9,16 +9,19 @@ import { useEffect, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
-import { preloadBookingCatalog, subscribeBookingCatalog } from '../booking/adapters/barbersIndex'
-import { MyBookingsDialog } from '../mybookings/MyBookingsDialog'
+import { preloadBookingCatalog } from '../booking/adapters/barbersIndex'
+import { preloadBookingFlow } from '../booking/lazyBookingFlow'
 import { ABOUT_SECTION_ID } from '../about/AboutSection'
 import { consumeBookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
+import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
 import { PrivacyBanner } from '../site/PrivacyBanner'
+import { scheduleIdle } from '../ui/idle'
+import { LazySurface } from '../ui/LazySurface'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
@@ -85,12 +88,15 @@ export function App(): JSX.Element {
     return () => m.removeEventListener('change', h)
   }, [])
 
-  useEffect(() => {
-    preloadBookingCatalog()
-    // Keep mobile's preloaded catalog current even before Booking/About mounts a data consumer.
-    // Realtime invalidation starts one coalesced refresh, so opening either surface stays hot.
-    return subscribeBookingCatalog(preloadBookingCatalog)
-  }, [])
+  useEffect(
+    () =>
+      scheduleIdle(() => {
+        // Warm the first booking interaction without competing with first paint or opening a socket.
+        preloadBookingFlow()
+        preloadBookingCatalog()
+      }),
+    [],
+  )
 
   useEffect(() => {
     const { code: accessCode, cleanPath, direct } = consumeBookingAccessLink(window.location.href)
@@ -197,6 +203,7 @@ export function App(): JSX.Element {
     })
   }
   const openMyBookings = (): void => {
+    preloadMyBookingsDialog()
     setBookingAccess({})
     setState({ myBookingsOpen: true })
   }
@@ -303,13 +310,20 @@ export function App(): JSX.Element {
   )
 
   const myBookingsDialog = state.myBookingsOpen ? (
-    <MyBookingsDialog
-      mode={state.mode}
-      lang={lang}
-      onClose={closeMyBookings}
-      {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
-      {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
-    />
+    <LazySurface
+      overlay
+      loadingLabel={tx.lazyMyBookingsLoading}
+      errorLabel={tx.lazyMyBookingsError}
+      retryLabel={tx.lazyReload}
+    >
+      <LazyMyBookingsDialog
+        mode={state.mode}
+        lang={lang}
+        onClose={closeMyBookings}
+        {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
+        {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
+      />
+    </LazySurface>
   ) : null
 
   if (isMobile) {
