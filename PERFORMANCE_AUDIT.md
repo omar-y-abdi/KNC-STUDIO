@@ -18,8 +18,8 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 - [x] Run static checks, unit/integration tests, build, E2E/visual checks where CI supports them.
 - [x] Adversarially review the complete diff and attempt to disprove each optimization.
 - [x] Open fresh PR against `main`.
-- [ ] Submit review findings/comment per assignment.
-- [ ] Confirm all CI checks are green.
+- [x] Submit review findings/comment per assignment.
+- [x] Confirm all CI checks are green.
 - [x] Do not merge.
 
 ## Audit notes
@@ -29,7 +29,7 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 - `main` head at audit start: `f184f10fbe7f87f4510081552520bde0992e9aba`.
 - Repository contains 474 tracked blobs in the baseline recursive Git tree.
 - Frontend uses Vite + Preact; Supabase and Cloudflare deployment/configuration are present.
-- Container network access is unavailable, so repository inspection/writes and CI evidence are being performed through the connected GitHub tooling rather than a local clone.
+- The initial sandbox had no container network access, so early inspection/writes and CI evidence used connected GitHub tooling. The final operator follow-up used the local clone, authenticated CLIs, Docker, and live provider reads.
 
 ### Guardrails
 
@@ -153,7 +153,7 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 
 - Added a real 120×80 rectangular JPEG fixture test that initializes the exact vendored `magick.wasm`, decodes JPEG, writes WebP while copying callback bytes, validates the RIFF/WEBP signature, and decodes the copied WebP back to 120×80.
 - A separate profile-path regression applies the production cover-resize + centered crop and verifies the copied WebP decodes to 800×800.
-- Final rebased CI must pass this runtime test in addition to the existing source-contract guard before handoff.
+- Final CI at `b1e6d128` passed this runtime test in addition to the existing source-contract guard.
 
 ### Barber profile corruption follow-up
 
@@ -182,3 +182,12 @@ Scope: performance plus the explicitly added launch-blocking JPEG upload correct
 - **Cross-host Worker cache:** Workers Cache does not isolate custom hostnames in its generated cache key. The first caching revision could therefore serve cached apex homepage content to `www` before redirect logic ran. Cache is now disabled on the default Worker entrypoint; it canonicalizes `www` first and delegates only apex `GET /` and `/llms.txt` to cached `PublicContent`. Unit coverage proves the redirect never reaches the cached export, and Wrangler dry-run accepts the per-entrypoint configuration.
 - **Architecture/test documentation:** `CODEBASE-MAP.md` now records lazy public/admin chunks, deferred About I/O, visibility-gated Realtime/RAF work, lazy WASM initialization, and the uncached hostname gateway/cached public-content split. Focused regressions cover lazy import failure recovery, SiteChrome hide/show lifecycle, About/gallery/mobile scheduling contracts, image cold paths, and hostname cache routing. Lazy-state copy now uses the canonical SV/EN string tables.
 - **Production Supabase deploy:** authenticated Supabase CLI `2.114.0` used local Docker bundling (no `--use-api`) against linked project `soktgawvexeumqvtyhda`. `upload-image` advanced from ACTIVE v14 hash `7fb99373…` to ACTIVE v15 hash `eddb49fd…`; `verify_jwt=true` remains unchanged. A production JPEG upload/retrieval smoke remains required to prove the hosted pixel path.
+
+### Final operator verification
+
+- Local checks passed: tracked-source formatting, ESLint, strict TypeScript, 427 unit/runtime tests, production build, Wrangler dry-run, dependency production audit, public/admin browser smoke, and zero-pixel change against all nine macOS visual baselines.
+- Local Supabase checks passed: expand-stage 39 assertions, contract-stage 31 assertions, 803 pgTAP assertions, and 41 adapter integration tests. Pinned Deno `2.9.5` in Docker passed frozen checks for all 13 Edge Function entrypoints.
+- The first remote follow-up exposed one missing `deno.lock` package-graph entry for `@cloudflare/workers-types`; the lockfile was synced with pinned Deno and rechecked before push.
+- Final GitHub Actions run `33255748465` at `b1e6d128` passed frontend/browser, Edge Functions, and database/integration. Cloudflare build passed; Supabase Preview was skipped by repository configuration, not failed.
+- Cloudflare Git integration uploaded version `41f2106a-ba31-45d6-9c7b-865721048664` but did not promote it to the active custom-domain deployment. The PR remains intentionally unmerged; the hostname-cache fix is proven by focused routing/config tests and Wrangler validation, not claimed as live production behavior.
+- Operator review follow-up: <https://github.com/omar-y-abdi/KNC-STUDIO/pull/21#issuecomment-5462790372>.
