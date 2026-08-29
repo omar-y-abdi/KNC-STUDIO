@@ -38,14 +38,14 @@ select is(
   'anon cannot list phone bookings directly'
 );
 select is(
-  pg_catalog.has_function_privilege('anon', 'public.cancel_booking(uuid,text)', 'execute'),
-  false,
-  'anon cannot cancel directly'
+  pg_catalog.to_regprocedure('public.cancel_booking(uuid,text)') is null,
+  true,
+  'legacy cancel_booking signature is removed'
 );
 select is(
-  pg_catalog.has_function_privilege('anon', 'public.create_review(text,integer,text)', 'execute'),
-  false,
-  'anon cannot submit reviews directly'
+  pg_catalog.to_regprocedure('public.create_review(text,integer,text)') is null,
+  true,
+  'legacy create_review signature is removed'
 );
 
 select is(

@@ -241,29 +241,32 @@ select set_config(
 );
 select is(public.lookup_booking('0700000000')->>'error', 'not_found', 'wrong phone is generic');
 select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0700000000')->>'error',
-  'not_found',
-  'wrong cancellation contact is generic'
+  pg_catalog.to_regprocedure('public.cancel_booking(uuid,text)') is null,
+  true,
+  'legacy cancel_booking signature is removed'
+);
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'service role can cancel through the access-scoped replacement'
+);
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'anon cannot call access-scoped cancellation directly'
+);
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'authenticated cannot call access-scoped cancellation directly'
 );
 select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0701234567')->>'ok',
-  'true',
-  'matching contact cancels'
-);
-select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0701234567')->>'error',
-  'not_found',
-  'second cancellation is idempotent'
-);
-select is(
-  public.cancel_booking('93000000-0000-0000-0000-000000000001', '0709999999')->>'error',
-  'not_found',
-  'past booking cannot be cancelled through customer action'
-);
-select is(
-  public.cancel_booking('93000000-0000-0000-0000-000000000002', '0708888888')->>'error',
-  'not_found',
-  'booking inside configured cancellation cutoff cannot be cancelled'
+  pg_catalog.to_regprocedure('public.create_review(text,integer,text)') is null,
+  true,
+  'legacy create_review signature is removed'
 );
 
 reset role;

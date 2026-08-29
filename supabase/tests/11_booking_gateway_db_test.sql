@@ -31,16 +31,22 @@ select ok(
   'anon canNOT INSERT booking_attempts'
 );
 
--- recent_booking_count_by_phone: definer counter, service_role-only (bookings stays RPC-gated PII).
+-- recent_booking_count_by_phone is retired after create_booking_with_limits moved this check
+-- into the atomic gateway transaction.
+select is(
+  pg_catalog.to_regprocedure('public.recent_booking_count_by_phone(text,timestamptz)') is null,
+  true,
+  'legacy recent_booking_count_by_phone signature is removed'
+);
 select ok(
-  pg_catalog.has_function_privilege(
+  not pg_catalog.has_function_privilege(
     'service_role', 'public.recent_booking_count_by_phone(text, timestamptz)', 'execute'),
-  'service_role can execute recent_booking_count_by_phone'
+  'service_role cannot execute removed recent_booking_count_by_phone'
 );
 select ok(
   not pg_catalog.has_function_privilege(
     'anon', 'public.recent_booking_count_by_phone(text, timestamptz)', 'execute'),
-  'anon canNOT execute recent_booking_count_by_phone'
+  'anon canNOT execute removed recent_booking_count_by_phone'
 );
 
 select ok(
@@ -66,7 +72,7 @@ select has_index(
   'booking attempt cleanup has a time-first index'
 );
 
--- Functional: it counts only the given phone's bookings within the window.
+-- Functional: the atomic gateway still enforces limits and writes accepted requests only.
 insert into public.bookings
   (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
    customer_name, method, phone, email, lang)
@@ -75,10 +81,6 @@ values
    'Count One','phone','0706660000', null,'sv'),
   ('hassan','h','Hår',350,45, now() + interval '6 days', now() + interval '6 days' + interval '45 minutes',
    'Count Two','phone','0706660000', null,'sv');
-select is(
-  public.recent_booking_count_by_phone('0706660000', now() - interval '1 hour'),
-  2, 'recent_booking_count_by_phone counts this phone''s recent bookings (2)'
-);
 
 select set_config(
   'test.victor_service',

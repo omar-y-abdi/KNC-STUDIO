@@ -86,8 +86,9 @@ select is(
   'not_found', 'lookup_booking by email returns not_found (email arm removed)'
 );
 select is(
-  public.cancel_booking(current_setting('test.email_bid')::uuid, 'mejl@example.com') ->> 'error',
-  'not_found', 'cancel_booking by email returns not_found (email arm removed)'
+  pg_catalog.to_regprocedure('public.cancel_booking(uuid,text)') is null,
+  true,
+  'legacy cancel_booking signature is removed'
 );
 
 reset role;
@@ -99,62 +100,58 @@ select is(
 );
 
 -- =============================================================================================
--- create_review is phone-gated and called by the public gateway as service_role.
+-- create_review is retired; access-scoped review creation is called by the public gateway as service_role.
 -- =============================================================================================
 set local role service_role;
 
--- No finished booking for this phone -> no_booking (the anti-spam gate; a bot with no cut gets nothing).
 select is(
-  public.create_review('0700000000', 5, 'Ingen genomförd bokning') ->> 'error',
-  'no_booking', 'create_review with no finished booking -> no_booking'
+  pg_catalog.to_regprocedure('public.create_review(text,integer,text)') is null,
+  true,
+  'legacy create_review signature is removed'
 );
-
--- A finished booking -> ok, with the name DERIVED "First L." from customer_name.
-select set_config(
-  'test.rev',
-  public.create_review('0709999999', 5, 'Bra klippning, kommer åter.')::text,
-  true
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'service_role can execute access-scoped review creation'
 );
-select is(
-  (current_setting('test.rev')::jsonb) ->> 'ok',
-  'true', 'create_review with a finished booking -> ok:true'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'anon cannot execute access-scoped review creation directly'
 );
-select is(
-  (current_setting('test.rev')::jsonb) -> 'review' ->> 'name',
-  'Hassan A.', 'review name is derived "First L." from customer_name ("Hassan Ahmed" -> "Hassan A.")'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'authenticated cannot execute access-scoped review creation directly'
 );
-
--- Second review for the SAME booking -> no_booking (one review per cut; the booking is now excluded).
-select is(
-  public.create_review('0709999999', 4, 'En gång till') ->> 'error',
-  'no_booking', 'a second review for the same booking -> no_booking (one per cut)'
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'service_role can execute access-scoped cancellation'
 );
-
--- Single-word customer_name -> just the first name, no trailing initial.
-select is(
-  (public.create_review('0708888888', 4, 'Toppen service')::jsonb) -> 'review' ->> 'name',
-  'Madonna', 'a single-word customer_name yields just the first name (no initial)'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'anon cannot execute access-scoped cancellation directly'
 );
-
--- Bad rating (out of 1..5) -> invalid (validated before the booking lookup).
-select is(
-  public.create_review('0709999999', 7, 'rating fel') ->> 'error',
-  'invalid', 'rating out of range -> invalid'
-);
-
--- Malformed phone (fails ^07[0-9]{8}$) -> invalid.
-select is(
-  public.create_review('123', 5, 'fel nummer') ->> 'error',
-  'invalid', 'a malformed phone -> invalid'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.cancel_customer_booking_with_access(uuid,text)', 'execute'
+  ),
+  'authenticated cannot execute access-scoped cancellation directly'
 );
 
 reset role;
 
--- The created review is stored + published (visible via the published-select path).
 select is(
-  (select count(*)::int from public.reviews
-     where name = 'Hassan A.' and text = 'Bra klippning, kommer åter.'),
-  1, 'the new review is stored and published'
+  pg_catalog.to_regprocedure('public.cancel_booking(uuid,text)') is null,
+  true,
+  'legacy cancellation signature remains absent'
 );
 
 select * from finish();

@@ -49,17 +49,18 @@ select ok(
   'service role cannot invoke the reminder trigger function'
 );
 
-select ok(
-  not pg_catalog.has_function_privilege('anon', 'public.queue_booking_confirmation()', 'execute'),
-  'anon cannot invoke the legacy booking email trigger function'
+select is(
+  pg_catalog.to_regprocedure('public.queue_booking_confirmation()') is null,
+  true,
+  'legacy booking email trigger function is removed'
 );
 select ok(
   not pg_catalog.has_function_privilege('authenticated', 'public.queue_booking_confirmation()', 'execute'),
-  'authenticated users cannot invoke the legacy booking email trigger function'
+  'authenticated users cannot invoke the removed legacy booking email trigger function'
 );
 select ok(
   not pg_catalog.has_function_privilege('service_role', 'public.queue_booking_confirmation()', 'execute'),
-  'service role cannot invoke the legacy booking email trigger function'
+  'service role cannot invoke the removed legacy booking email trigger function'
 );
 
 select case

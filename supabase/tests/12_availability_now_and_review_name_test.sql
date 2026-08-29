@@ -37,7 +37,7 @@ select is(
 );
 
 -- =============================================================================================
--- create_review: display-name derivation is clamped into the reviews.name CHECK.
+-- Legacy create_review is removed and replaced by access-scoped review creation.
 -- =============================================================================================
 -- Two FINISHED confirmed bookings with legal-but-hostile customer_names: a single space (length 1,
 -- passes the bookings CHECK) and a 78-char first word + ' X' (80 chars total, also legal — but the
@@ -54,28 +54,28 @@ values
    now() - interval '4 hours', now() - interval '195 minutes',
    pg_catalog.repeat('a', 78) || ' X','phone','0707777772', null,'sv');
 
--- Whitespace-only name -> ok:true with the neutral fallback (was: check_violation -> raw 500).
-select set_config('test.r_blank',
-  public.create_review('0707777771', 5, 'Toppenklippning!')::text, true);
 select is(
-  (current_setting('test.r_blank')::jsonb ->> 'ok'), 'true',
-  'whitespace-only customer_name: review is accepted'
+  pg_catalog.to_regprocedure('public.create_review(text,integer,text)') is null,
+  true,
+  'legacy create_review signature is removed'
 );
-select is(
-  (current_setting('test.r_blank')::jsonb -> 'review' ->> 'name'), 'Kund',
-  'whitespace-only customer_name: display name falls back to Kund'
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'service_role can execute access-scoped review creation'
 );
-
--- 81-char derivation -> ok:true with the name capped at 80 (was: check_violation -> raw 500).
-select set_config('test.r_long',
-  public.create_review('0707777772', 4, 'Bra klippning.')::text, true);
-select is(
-  (current_setting('test.r_long')::jsonb ->> 'ok'), 'true',
-  'over-long derived name: review is accepted'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'anon cannot execute access-scoped review creation directly'
 );
-select is(
-  pg_catalog.char_length(current_setting('test.r_long')::jsonb -> 'review' ->> 'name'), 80,
-  'over-long derived name: display name is capped at exactly 80 chars'
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.create_review_with_access(text,text,integer,text)', 'execute'
+  ),
+  'authenticated cannot execute access-scoped review creation directly'
 );
 
 select * from finish();

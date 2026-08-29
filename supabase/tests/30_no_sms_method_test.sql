@@ -40,9 +40,10 @@ select ok(
   'lookup RPC contains no legacy SMS response label'
 );
 
-select ok(
-  pg_catalog.pg_get_functiondef('public.cancel_booking(uuid,text)'::regprocedure) not like '%''sms''%',
-  'cancellation RPC contains no legacy SMS response label'
+select is(
+  pg_catalog.to_regprocedure('public.cancel_booking(uuid,text)') is null,
+  true,
+  'legacy cancel_booking signature is removed'
 );
 
 select * from finish();
