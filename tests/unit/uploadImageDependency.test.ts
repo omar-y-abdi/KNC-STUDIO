@@ -19,4 +19,27 @@ describe('upload image runtime dependency', () => {
     expect(edgeSource).toContain('encoded.value = new Uint8Array(data)')
     expect(edgeSource).not.toContain('encoded.value = data')
   })
+
+  it('initializes ImageMagick only after CORS, method, and JSON deletion paths', () => {
+    const edgeSource = readFileSync('supabase/functions/upload-image/index.ts', 'utf8')
+    const handlerStart = edgeSource.indexOf('Deno.serve(async (req: Request)')
+    const corsBranch = edgeSource.indexOf("if (req.method === 'OPTIONS')", handlerStart)
+    const methodBranch = edgeSource.indexOf("if (req.method !== 'POST')", handlerStart)
+    const deleteBranch = edgeSource.indexOf(
+      "if (contentType.startsWith('application/json'))",
+      handlerStart,
+    )
+    const multipartBranch = edgeSource.indexOf(
+      "if (!contentType.startsWith('multipart/form-data'))",
+      handlerStart,
+    )
+    const initialization = edgeSource.indexOf('await ensureImageMagickReady()', handlerStart)
+
+    expect(handlerStart).toBeGreaterThan(-1)
+    expect(corsBranch).toBeGreaterThan(handlerStart)
+    expect(methodBranch).toBeGreaterThan(corsBranch)
+    expect(deleteBranch).toBeGreaterThan(methodBranch)
+    expect(multipartBranch).toBeGreaterThan(deleteBranch)
+    expect(initialization).toBeGreaterThan(multipartBranch)
+  })
 })

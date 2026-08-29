@@ -13,6 +13,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { useLocation } from 'wouter-preact'
 import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
+import { adminText } from '../i18n/adminStrings'
 import { getActiveProfile, signOut } from './auth'
 import { clearAdminNavigationState } from './navigationState'
 import { useTheme } from './useTheme'
@@ -73,27 +74,15 @@ export function AdminApp(): JSX.Element {
   }
 
   const c = palette(theme.dark)
-
-  const lazyText =
-    theme.lang === 'sv'
-      ? {
-          loading: 'Laddar adminpanelen …',
-          error: 'Kunde inte ladda adminpanelen.',
-          retry: 'Ladda om',
-        }
-      : {
-          loading: 'Loading admin panel …',
-          error: 'Could not load the admin panel.',
-          retry: 'Reload',
-        }
+  const t = adminText(theme.lang)
 
   // Forced first-login gate — blocks the panel until the barber picks a real password.
   if (gate.kind === 'forced_change') {
     return (
       <LazySurface
-        loadingLabel={lazyText.loading}
-        errorLabel={lazyText.error}
-        retryLabel={lazyText.retry}
+        loadingLabel={t.lazyLoading}
+        errorLabel={t.lazyError}
+        retryLabel={t.lazyReload}
         minHeight="100vh"
       >
         <ForcedPasswordChange
@@ -123,16 +112,16 @@ export function AdminApp(): JSX.Element {
           opacity: 0.7,
         }}
       >
-        Laddar …
+        {t.lazyLoading}
       </div>
     )
   }
 
   return (
     <LazySurface
-      loadingLabel={lazyText.loading}
-      errorLabel={lazyText.error}
-      retryLabel={lazyText.retry}
+      loadingLabel={t.lazyLoading}
+      errorLabel={t.lazyError}
+      retryLabel={t.lazyReload}
       minHeight="100vh"
     >
       <AdminShell

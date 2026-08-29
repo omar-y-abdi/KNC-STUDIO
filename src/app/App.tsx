@@ -309,25 +309,12 @@ export function App(): JSX.Element {
     </div>
   )
 
-  const asyncText =
-    lang === 'sv'
-      ? {
-          bookingsLoading: 'Laddar bokningar …',
-          bookingsError: 'Kunde inte ladda bokningarna.',
-          retry: 'Ladda om',
-        }
-      : {
-          bookingsLoading: 'Loading appointments …',
-          bookingsError: 'Could not load appointments.',
-          retry: 'Reload',
-        }
-
   const myBookingsDialog = state.myBookingsOpen ? (
     <LazySurface
       overlay
-      loadingLabel={asyncText.bookingsLoading}
-      errorLabel={asyncText.bookingsError}
-      retryLabel={asyncText.retry}
+      loadingLabel={tx.lazyMyBookingsLoading}
+      errorLabel={tx.lazyMyBookingsError}
+      retryLabel={tx.lazyReload}
     >
       <LazyMyBookingsDialog
         mode={state.mode}

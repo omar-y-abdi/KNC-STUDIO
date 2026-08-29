@@ -70,6 +70,11 @@ export interface AppStrings {
   /** Underlined hero links added under the "Boka tid" button. */
   aboutLink: string
   cancelLink: string
+  lazyBookingLoading: string
+  lazyBookingError: string
+  lazyMyBookingsLoading: string
+  lazyMyBookingsError: string
+  lazyReload: string
 }
 
 /** Public browser-storage controls. No analytics or advertising category exists in this site. */

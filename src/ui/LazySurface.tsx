@@ -10,7 +10,7 @@ interface LazyLoadBoundaryState {
   readonly failed: boolean
 }
 
-class LazyLoadBoundary extends Component<LazyLoadBoundaryProps, LazyLoadBoundaryState> {
+export class LazyLoadBoundary extends Component<LazyLoadBoundaryProps, LazyLoadBoundaryState> {
   override state: LazyLoadBoundaryState = { failed: false }
 
   static override getDerivedStateFromError(): LazyLoadBoundaryState {

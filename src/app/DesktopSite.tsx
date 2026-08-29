@@ -332,11 +332,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             >
               {bookingMounted.current ? (
                 <LazySurface
-                  loadingLabel={props.lang === 'sv' ? 'Laddar bokning …' : 'Loading booking …'}
-                  errorLabel={
-                    props.lang === 'sv' ? 'Kunde inte ladda bokningen.' : 'Could not load booking.'
-                  }
-                  retryLabel={props.lang === 'sv' ? 'Ladda om' : 'Reload'}
+                  loadingLabel={tx.lazyBookingLoading}
+                  errorLabel={tx.lazyBookingError}
+                  retryLabel={tx.lazyReload}
                   minHeight="280px"
                 >
                   <LazyBookingFlow

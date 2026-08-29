@@ -94,6 +94,19 @@ async function verifyPublicPage(browser, viewport) {
 
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
+  await about.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(100)
+  const marqueeTransforms = await page
+    .getByTestId('marquee-track')
+    .evaluateAll((tracks) => tracks.map((track) => track.style.transform))
+  assert(
+    marqueeTransforms.every((transform) => transform === ''),
+    `gallery moved with reduced motion: ${marqueeTransforms.join(', ')}`,
+  )
+  await page.evaluate(() => {
+    globalThis.window.scrollTo({ top: 0 })
+    globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
+  })
 
   if (viewport.width <= 768) {
     const scrollRoot = page.getByTestId('mobile-site-scroll')

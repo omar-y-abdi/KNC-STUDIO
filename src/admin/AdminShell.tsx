@@ -474,7 +474,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
         <Suspense
           fallback={
             <section style={s.card}>
-              <p style={s.emptyState}>Laddar …</p>
+              <p style={s.emptyState}>{t.lazyLoading}</p>
             </section>
           }
         >

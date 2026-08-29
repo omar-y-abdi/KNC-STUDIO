@@ -19,7 +19,17 @@
     "enabled": true,
   },
   "cache": {
-    "enabled": true,
+    "enabled": false,
+  },
+  "exports": {
+    "default": {
+      "type": "worker",
+      "cache": { "enabled": false },
+    },
+    "PublicContent": {
+      "type": "worker",
+      "cache": { "enabled": true },
+    },
   },
   "vars": {
     "SUPABASE_URL": "https://soktgawvexeumqvtyhda.supabase.co",

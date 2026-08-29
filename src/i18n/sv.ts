@@ -67,6 +67,11 @@ export const appSv: AppStrings = {
   ariaCall: 'Ring',
   aboutLink: 'Om oss',
   cancelLink: 'Avbokning',
+  lazyBookingLoading: 'Laddar bokning …',
+  lazyBookingError: 'Kunde inte ladda bokningen.',
+  lazyMyBookingsLoading: 'Laddar bokningar …',
+  lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
+  lazyReload: 'Ladda om',
 }
 
 export const privacySv = {
