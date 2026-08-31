@@ -96,7 +96,7 @@ const myBookingRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   service_name: z.string(),
-  price: z.number(),
+  price: z.number().finite().min(0).max(100000),
   duration_min: z.number(),
   start_at: isoTimestamp,
 })
@@ -180,7 +180,7 @@ export const publicServiceRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   name: z.string(),
-  price: z.number(),
+  price: z.number().finite().min(0).max(100000),
   duration_min: z.number(),
   active: z.boolean(),
   sort_order: z.number(),
@@ -214,7 +214,11 @@ export const publicBusinessDiscoveryResponse = z.object({
   settings: z.record(z.string()),
   barbers: z.array(z.object({ id: z.string(), name: z.string() })),
   services: z.array(
-    z.object({ id: z.string(), barber_id: z.string(), price: z.number().int().nonnegative() }),
+    z.object({
+      id: z.string(),
+      barber_id: z.string(),
+      price: z.number().finite().min(0).max(100000),
+    }),
   ),
   schedules: z.array(
     z.object({

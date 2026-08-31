@@ -214,7 +214,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
   const numInput = (value: string, onInput: (v: string) => void, width: string): JSX.Element => (
     <input
       style={{ ...s.input, width, textAlign: 'right' }}
-      inputMode="numeric"
+      inputMode="decimal"
       value={value}
       onInput={(e) => onInput(e.currentTarget.value)}
     />

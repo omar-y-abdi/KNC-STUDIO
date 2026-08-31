@@ -11,6 +11,14 @@ describe('parseServiceRow', () => {
     expect(parseServiceRow({ name: 'Konsultation', price: '0', durationMin: '15' })).not.toBeNull()
   })
 
+  it('accepts a decimal price and rounds a numeric duration upward', () => {
+    expect(parseServiceRow({ name: 'Skinfade', price: '199.99', durationMin: '44.1' })).toEqual({
+      name: 'Skinfade',
+      price: 199.99,
+      durationMin: 45,
+    })
+  })
+
   it('rejects an empty / whitespace-only name', () => {
     expect(parseServiceRow({ name: '   ', price: '350', durationMin: '45' })).toBeNull()
   })
@@ -22,6 +30,15 @@ describe('parseServiceRow', () => {
   it('rejects a non-numeric or negative price', () => {
     expect(parseServiceRow({ name: 'X', price: 'abc', durationMin: '45' })).toBeNull()
     expect(parseServiceRow({ name: 'X', price: '-5', durationMin: '45' })).toBeNull()
+  })
+
+  it('rejects trailing junk and values outside the decimal contract', () => {
+    expect(parseServiceRow({ name: 'X', price: '199abc', durationMin: '45' })).toBeNull()
+    expect(parseServiceRow({ name: 'X', price: '199.999', durationMin: '45' })).toBeNull()
+    expect(parseServiceRow({ name: 'X', price: '100000.01', durationMin: '45' })).toBeNull()
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '45minutes' })).toBeNull()
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '600.1' })).toBeNull()
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '4.1' })).toBeNull()
   })
 
   it('rejects a duration outside 5..600', () => {

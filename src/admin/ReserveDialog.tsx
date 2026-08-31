@@ -14,6 +14,7 @@ import { parsePhone } from '../booking/validation'
 import { buildAdminStyles } from './adminStyles'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
+import { parseServicePrice } from './serviceValidation'
 
 const TITLE_ID = 'admin-reserve-title'
 
@@ -109,10 +110,10 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       }
       normalizedPhone = parsed.value
     }
-    const priceNum = Number.parseInt(price, 10)
+    const priceNum = parseServicePrice(price)
     props.onSubmit({
       customerName: name.trim() === '' ? t.reserveDefaultName : name.trim(),
-      price: Number.isInteger(priceNum) && priceNum >= 0 ? priceNum : 0,
+      price: priceNum ?? 0,
       phone: normalizedPhone,
       durationMin: selectedService?.durationMin ?? FALLBACK_DURATION_MIN,
       serviceName: selectedService?.name ?? t.reserveServiceName,
@@ -124,7 +125,11 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
     value: string,
     onInput: (v: string) => void,
     placeholder: string,
-    opts?: { inputMode?: 'tel' | 'numeric'; invalid?: boolean; note?: string | undefined },
+    opts?: {
+      inputMode?: 'tel' | 'numeric' | 'decimal'
+      invalid?: boolean
+      note?: string | undefined
+    },
   ): JSX.Element => (
     <label style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '12px' }}>
       <span style={s.label}>{label}</span>
@@ -185,7 +190,7 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       ) : null}
 
       {field(t.reserveName, name, setName, t.reserveNamePh)}
-      {field(t.reservePrice, price, setPrice, t.reservePricePh, { inputMode: 'numeric' })}
+      {field(t.reservePrice, price, setPrice, t.reservePricePh, { inputMode: 'decimal' })}
       {field(
         t.reservePhone,
         phone,
