@@ -53,6 +53,7 @@ export const bookingEn: BookingStrings = {
   errSubmit: 'Something went wrong. Please try again.',
   errRateLimited: 'Too many booking attempts. Please wait a moment and try again.',
   errChallenge: 'We could not verify you are human. Reload the page and try again.',
+  ariaClose: 'Close',
 }
 
 export const appEn: AppStrings = {

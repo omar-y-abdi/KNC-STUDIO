@@ -53,6 +53,7 @@ export const bookingSv: BookingStrings = {
   errSubmit: 'Något gick fel. Försök igen.',
   errRateLimited: 'För många bokningsförsök. Vänta en stund och försök igen.',
   errChallenge: 'Vi kunde inte verifiera att du är en människa. Ladda om sidan och försök igen.',
+  ariaClose: 'Stäng',
 }
 
 export const appSv: AppStrings = {

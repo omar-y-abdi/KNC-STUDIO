@@ -91,7 +91,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         >
           {t.yourDetails}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle}>
+        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={t.ariaClose}>
           ×
         </button>
       </div>

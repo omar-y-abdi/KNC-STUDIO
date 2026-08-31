@@ -44,7 +44,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
       cardClass="knc-sheet-card"
       cardStyle={s.overlayCardStyle}
     >
-      <button onClick={props.onReset} style={s.confirmCloseStyle}>
+      <button onClick={props.onReset} style={s.confirmCloseStyle} aria-label={t.ariaClose}>
         ×
       </button>
       <div style="padding:28px 22px 20px;text-align:center;">

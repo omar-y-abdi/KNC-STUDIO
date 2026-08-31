@@ -53,6 +53,7 @@ export interface BookingStrings {
   errRateLimited: string
   /** Gateway rejection: the Turnstile human-verification challenge failed. */
   errChallenge: string
+  ariaClose: string
 }
 
 /** Strings used by the site shell (incl. a11y labels). */
