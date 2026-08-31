@@ -512,6 +512,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               value={draft.phone}
               onInput={setPhone}
               placeholder={tx.reviewPhonePh}
+              type="tel"
+              autoComplete="tel"
               inputMode="tel"
               aria-invalid={errors.phone ? 'true' : undefined}
               style={errors.phone ? s.inputErrorStyle : s.inputStyle}
