@@ -52,6 +52,8 @@ function createWorkerContext(env: ReturnType<typeof createEnv>) {
 }
 
 function readWranglerConfig(): {
+  readonly workers_dev?: boolean
+  readonly preview_urls?: boolean
   readonly cache?: { readonly enabled?: boolean }
   readonly exports?: Readonly<
     Record<
@@ -66,6 +68,8 @@ function readWranglerConfig(): {
   const source = readFileSync(new URL('../../wrangler.jsonc', import.meta.url), 'utf8')
   const withoutFullLineComments = source.replace(/^\s*\/\/.*$/gm, '')
   return JSON.parse(withoutFullLineComments.replace(/,\s*([}\]])/g, '$1')) as {
+    readonly workers_dev?: boolean
+    readonly preview_urls?: boolean
     readonly cache?: { readonly enabled?: boolean }
     readonly exports?: Readonly<
       Record<
@@ -80,6 +84,16 @@ function readWranglerConfig(): {
 }
 
 describe('Worker route policy', () => {
+  it('does not carry header rules for disabled Cloudflare preview routes', () => {
+    const headers = readFileSync(new URL('../../public/_headers', import.meta.url), 'utf8')
+    const config = readWranglerConfig()
+
+    expect(config.workers_dev).toBe(false)
+    expect(config.preview_urls).toBe(false)
+    expect(headers).not.toMatch(/^https:\/\/[^\s]+\.workers\.dev\/\*$/m)
+    expect(headers).toContain('X-Frame-Options: DENY')
+  })
+
   it('recognizes only protected SPA paths as private', () => {
     expect(isPrivatePath('/admin')).toBe(true)
     expect(isPrivatePath('/admin/settings')).toBe(true)

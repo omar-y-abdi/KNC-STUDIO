@@ -18,9 +18,3 @@
 /.well-known/acp.json
   Content-Type: application/json; charset=utf-8
   Cache-Control: public, max-age=3600
-
-https://bladeblendstudio.s2305975.workers.dev/*
-  X-Robots-Tag: noindex, nofollow
-
-https://knc-studio.s2305975.workers.dev/*
-  X-Robots-Tag: noindex, nofollow
