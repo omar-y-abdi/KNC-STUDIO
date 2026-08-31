@@ -35,6 +35,7 @@ import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyle
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
+import { stockholmWallClockDate } from './stockholmTime'
 import { pseudoClass } from '../ui/pseudo'
 
 type Mode = 'light' | 'dark'
@@ -132,7 +133,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
   const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
-  const today = clock()
+  const today = stockholmWallClockDate(clock())
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
     S.barberId,

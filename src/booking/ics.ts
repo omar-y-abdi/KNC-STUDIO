@@ -12,7 +12,7 @@ export function escapeIcsText(value: string): string {
     .replace(/\r\n|\r|\n/g, '\\n')
 }
 
-/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp. */
+/** Format a local `Date` as a floating `YYYYMMDDTHHMMSS` timestamp for Google Calendar. */
 export function formatIcsLocal(dt: Date): string {
   const p = (n: number): string => String(n).padStart(2, '0')
   return (
@@ -47,9 +47,9 @@ export interface IcsEvent {
   readonly uid: string
   /** Creation stamp in UTC (injected at the edge). */
   readonly dtstamp: Date
-  /** Local event start. */
+  /** Absolute event start instant. */
   readonly start: Date
-  /** Local event end. */
+  /** Absolute event end instant. */
   readonly end: Date
   readonly summary: string
   readonly location: string
@@ -71,8 +71,8 @@ export function buildIcs(event: IcsEvent): string {
     'BEGIN:VEVENT',
     `UID:${escapeIcsText(event.uid)}`,
     `DTSTAMP:${formatIcsUtc(event.dtstamp)}`,
-    `DTSTART:${formatIcsLocal(event.start)}`,
-    `DTEND:${formatIcsLocal(event.end)}`,
+    `DTSTART:${formatIcsUtc(event.start)}`,
+    `DTEND:${formatIcsUtc(event.end)}`,
     `SUMMARY:${escapeIcsText(event.summary)}`,
     `LOCATION:${escapeIcsText(event.location)}`,
     `DESCRIPTION:${escapeIcsText(event.description)}`,
