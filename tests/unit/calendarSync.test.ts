@@ -131,6 +131,15 @@ describe('public Calendar privacy disclosure', () => {
     expect(privacy).not.toContain('Calendar events already created remain')
   })
 
+  it('documents the verified Google-data transfer and use', () => {
+    expect(privacy).toContain('Google-data används endast för att')
+    expect(privacy).toContain('Refresh token överförs till och lagras i Supabase')
+    expect(privacy).toContain('Google data is used only to')
+    expect(privacy).toContain('The refresh token is transferred to and stored in Supabase')
+    expect(privacy).not.toContain('grundläggande konto-id')
+    expect(privacy).not.toContain('basic account id')
+  })
+
   it('documents the exact production scope used by the OAuth redirect', () => {
     expect(OAUTH_SCOPE).toContain('https://www.googleapis.com/auth/calendar.events.owned')
     expect(setup).toContain('https://www.googleapis.com/auth/calendar.events.owned')

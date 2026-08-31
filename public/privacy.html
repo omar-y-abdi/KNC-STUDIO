@@ -88,7 +88,7 @@
       <!-- ===================== SVENSKA ===================== -->
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 27 augusti 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 1 september 2026</p>
 
       <p>
         Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information
@@ -155,19 +155,33 @@
           händelser i kalendern än de vi själva skapat för bokningar.
         </li>
         <li>
-          <strong>E-postadress och grundläggande konto-id</strong> (<code>openid</code>,
-          <code>email</code>) — enbart för att visa "kopplad som &lt;din e-post&gt;" i adminpanelen
-          så att barberaren ser vilket konto som är anslutet.
+          <strong>E-postadress</strong> (<code>openid</code>, <code>email</code>) — enbart för att
+          visa "kopplad som &lt;din e-post&gt;" i adminpanelen så att barberaren ser vilket konto
+          som är anslutet.
         </li>
       </ul>
+
+      <h2>Hur Google-data delas och används</h2>
+      <p>
+        Google-data används endast för att ansluta en barberares Google-konto och synka den
+        barberarens bokningar till Google Calendar. Google OAuth returnerar en refresh token och
+        kontots e-postadress till servern. Refresh token överförs till och lagras i Supabase för
+        serverns fortsatta synkning; den skickas aldrig till webbläsaren. E-postadressen lagras för
+        att visa vilket konto som är anslutet i adminpanelen.
+      </p>
+      <p>
+        När en bekräftad bokning synkas skickar servern kundens namn, behandling, bokad tid samt
+        start- och sluttid till Google Calendar. Telefonnummer och e-postadress skickas inte till
+        kalendern. Dessa Google-data används inte för annonsering, profilering eller andra
+        orelaterade ändamål.
+      </p>
 
       <h2>Hur data lagras och skyddas</h2>
       <p>
         Kopplingen sparar en <em>refresh token</em> från Google. Den lagras krypterad i vila hos vår
         databasleverantör (Supabase), är åtkomlig endast av tjänstens server (aldrig av webbläsaren
         eller någon annan barberare), och används enbart för att synka bokningar till just den
-        barberarens kalender. Vi säljer aldrig data och delar den aldrig med tredje part för
-        annonsering eller andra ändamål.
+        barberarens kalender.
       </p>
 
       <h2>Lagringstid och radering</h2>
@@ -199,7 +213,7 @@
       <!-- ===================== ENGLISH ===================== -->
       <p class="lang">English</p>
       <h1>Privacy Policy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Last updated 27 August 2026</p>
+      <p class="updated">Blade &amp; Blend Studio · Last updated 1 September 2026</p>
 
       <p>
         This policy describes how Blade &amp; Blend Studio ("we", "the service") handles information
@@ -270,19 +284,33 @@
           booking events we ourselves created.
         </li>
         <li>
-          <strong>Email address and basic account id</strong> (<code>openid</code>,
-          <code>email</code>) — solely to display "connected as &lt;your email&gt;" in the admin
-          panel so the barber can see which account is linked.
+          <strong>Email address</strong> (<code>openid</code>, <code>email</code>) — solely to
+          display "connected as &lt;your email&gt;" in the admin panel so the barber can see which
+          account is linked.
         </li>
       </ul>
+
+      <h2>How Google data is shared and used</h2>
+      <p>
+        Google data is used only to connect a barber's Google account and synchronize that barber's
+        bookings with Google Calendar. Google OAuth returns a refresh token and the account's email
+        address to the server. The refresh token is transferred to and stored in Supabase for the
+        server's ongoing synchronization; it is never sent to the browser. The email address is
+        stored to show which account is connected in the admin panel.
+      </p>
+      <p>
+        When a confirmed booking is synchronized, the server sends the customer's name, service,
+        booked time, and start and end times to Google Calendar. Phone numbers and email addresses
+        are not sent to the calendar. This Google data is not used for advertising, profiling, or
+        other unrelated purposes.
+      </p>
 
       <h2>How data is stored and protected</h2>
       <p>
         The connection stores a Google <em>refresh token</em>. It is held encrypted at rest by our
         database provider (Supabase), is accessible only by the service's server (never by the
         browser or any other barber), and is used solely to sync bookings into that barber's own
-        calendar. We never sell data and never share it with third parties for advertising or any
-        other purpose.
+        calendar.
       </p>
 
       <h2>Retention and deletion</h2>
