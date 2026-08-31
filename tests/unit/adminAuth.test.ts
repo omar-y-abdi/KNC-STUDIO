@@ -23,6 +23,7 @@ vi.mock('../../src/admin/adminClient', () => ({
 import {
   changeOwnPassword,
   confirmOwnEmailChange,
+  requestPasswordReset,
   requestOwnEmailChange,
   signIn,
 } from '../../src/admin/auth'
@@ -98,6 +99,17 @@ describe('admin account settings auth', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('validation')
+  })
+
+  it('sends the password-recovery Turnstile token to the Edge function', async () => {
+    authMocks.invoke.mockResolvedValue({ data: { ok: true }, error: null })
+
+    const result = await requestPasswordReset('staff@example.com', 'en', 'challenge-token')
+
+    expect(result).toEqual({ ok: true, value: undefined })
+    expect(authMocks.invoke).toHaveBeenCalledWith('send-recovery-email', {
+      body: { email: 'staff@example.com', lang: 'en', turnstileToken: 'challenge-token' },
+    })
   })
 
   it('confirms an email change from its one-time token hash', async () => {

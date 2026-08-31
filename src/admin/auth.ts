@@ -172,10 +172,11 @@ export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminRes
 export async function requestPasswordReset(
   email: string,
   lang: 'sv' | 'en',
+  turnstileToken: string,
 ): Promise<AdminResult<void>> {
   try {
     const { error } = await getAdminClient().functions.invoke('send-recovery-email', {
-      body: { email, lang },
+      body: { email, lang, turnstileToken },
     })
     if (error !== null) return err('network', NETWORK_ERROR)
     return ok(undefined)

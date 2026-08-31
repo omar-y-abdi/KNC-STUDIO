@@ -15,6 +15,7 @@ import { AuthCard, authLinkStyle } from './AuthCard'
 import { buildAdminStyles } from './adminStyles'
 import { requestPasswordReset } from './auth'
 import { useTheme } from './useTheme'
+import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 
 export interface ForgotPasswordFormProps {
   /** The active UI language (threaded from LoginPage — `useTheme` is per-instance). */
@@ -37,6 +38,8 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
 
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -47,12 +50,17 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
     e.preventDefault()
     if (status.kind === 'submitting') return
     setStatus({ kind: 'submitting' })
-    const result = await requestPasswordReset(email.trim(), props.lang)
-    if (result.ok) {
-      setStatus({ kind: 'done' })
-      return
+    try {
+      const result = await requestPasswordReset(email.trim(), props.lang, turnstileToken)
+      if (result.ok) {
+        setStatus({ kind: 'done' })
+        return
+      }
+      setStatus({ kind: 'error', message: result.error.message })
+    } finally {
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
     }
-    setStatus({ kind: 'error', message: result.error.message })
   }
 
   if (status.kind === 'done') {
@@ -76,6 +84,7 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
   }
 
   const busy = status.kind === 'submitting'
+  const challengeRequired = turnstileConfigured
 
   return (
     <AuthCard subtitle={t.forgotPwSubtitle}>
@@ -100,14 +109,16 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
           {status.kind === 'error' ? <span style={s.errorText}>{status.message}</span> : null}
         </div>
 
+        <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || (challengeRequired && turnstileToken === '')}
           style={{
             ...s.primaryBtn,
             width: '100%',
-            opacity: busy ? 0.6 : 1,
-            cursor: busy ? 'default' : 'pointer',
+            opacity: busy || (challengeRequired && turnstileToken === '') ? 0.6 : 1,
+            cursor: busy || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
           }}
         >
           {busy ? t.forgotPwSending : t.forgotPwSubmit}
