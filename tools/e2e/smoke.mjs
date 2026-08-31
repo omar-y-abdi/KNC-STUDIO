@@ -103,6 +103,33 @@ async function verifyPublicPage(browser, viewport) {
     marqueeTransforms.every((transform) => transform === ''),
     `gallery moved with reduced motion: ${marqueeTransforms.join(', ')}`,
   )
+  const marqueeSemantics = await page.getByTestId('marquee-row').evaluateAll((rows) =>
+    rows.map((row) => {
+      const tiles = [...row.querySelectorAll('[data-tile-key]')]
+      const selectable = tiles.filter((tile) => tile.getAttribute('role') === 'button')
+      const keys = new Set(selectable.map((tile) => tile.getAttribute('data-tile-key')))
+      const hidden = tiles.filter((tile) => tile.getAttribute('aria-hidden') === 'true')
+      return {
+        tileCount: tiles.length,
+        selectableCount: selectable.length,
+        logicalCount: keys.size,
+        hiddenCount: hidden.length,
+        hiddenFocusableCount: hidden.filter((tile) => tile.hasAttribute('tabindex')).length,
+        hiddenRoleCount: hidden.filter((tile) => tile.hasAttribute('role')).length,
+      }
+    }),
+  )
+  assert(
+    marqueeSemantics.every(
+      (row) =>
+        row.tileCount > 0 &&
+        row.selectableCount === row.logicalCount &&
+        row.hiddenCount === row.tileCount - row.selectableCount &&
+        row.hiddenFocusableCount === 0 &&
+        row.hiddenRoleCount === 0,
+    ),
+    `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
+  )
   await page.evaluate(() => {
     globalThis.window.scrollTo({ top: 0 })
     globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })

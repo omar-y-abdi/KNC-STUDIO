@@ -79,6 +79,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const startOffset = useRef(0)
   const lastX = useRef(0)
   const lastDx = useRef(0)
+  const pointerId = useRef<number | null>(null)
   const pausedRef = useRef(props.paused)
   const reduce = useRef(prefersReducedMotion())
 
@@ -127,6 +128,37 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     const el = trackRef.current
     if (el) el.style.transform = `translate3d(${offset.current}px,0,0)`
   }
+
+  const releasePointerCapture = (target: HTMLDivElement | null, id: number | null): void => {
+    if (
+      target !== null &&
+      id !== null &&
+      target.releasePointerCapture &&
+      target.hasPointerCapture(id)
+    ) {
+      target.releasePointerCapture(id)
+    }
+  }
+
+  const cancelPointer = (e?: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current) return
+    const id = pointerId.current
+    dragging.current = false
+    pointerId.current = null
+    moved.current = true
+    lastDx.current = 0
+    releasePointerCapture(e?.currentTarget ?? rowRef.current, id)
+  }
+
+  const onScroll = (): void => {
+    cancelPointer()
+  }
+
+  useEffect(() => {
+    // Capture descendant scroll events too (the mobile site uses an inner scrolling element).
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => document.removeEventListener('scroll', onScroll, true)
+  }, [])
 
   useEffect(() => {
     if (reduce.current) return
@@ -193,7 +225,9 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   }, [])
 
   const onPointerDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (dragging.current) return
     dragging.current = true
+    pointerId.current = e.pointerId
     moved.current = false
     startX.current = e.clientX
     lastX.current = e.clientX
@@ -201,7 +235,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onPointerMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
-    if (!dragging.current) return
+    if (!dragging.current || pointerId.current !== e.pointerId) return
     const dx = e.clientX - startX.current
     if (Math.abs(dx) > 4) moved.current = true
     lastDx.current = e.clientX - lastX.current
@@ -211,8 +245,10 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     paint()
   }
   const onPointerEnd = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
-    if (!dragging.current) return
+    if (!dragging.current || pointerId.current !== e.pointerId) return
+    const id = pointerId.current
     dragging.current = false
+    pointerId.current = null
     if (moved.current && Math.abs(lastDx.current) > 0.4) {
       // Keep rolling in the direction the finger was moving.
       dir.current = lastDx.current < 0 ? 1 : -1
@@ -224,9 +260,22 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       const key = tile ? tile.getAttribute('data-tile-key') : null
       if (key !== null) props.onSelect(key)
     }
-    if (e.currentTarget.releasePointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    }
+    releasePointerCapture(e.currentTarget, id)
+  }
+
+  const onPointerCancel = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (pointerId.current !== e.pointerId) return
+    cancelPointer(e)
+  }
+
+  const onRowFocus = (): void => {
+    pausedRef.current = true
+  }
+
+  const onRowBlur = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
+    const row = rowRef.current
+    if (row !== null && e.relatedTarget instanceof Node && row.contains(e.relatedTarget)) return
+    pausedRef.current = props.paused
   }
 
   const onTileKey =
@@ -260,7 +309,9 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
-      onPointerCancel={onPointerEnd}
+      onPointerCancel={onPointerCancel}
+      onFocus={onRowFocus}
+      onBlur={onRowBlur}
     >
       <div
         ref={trackRef}
@@ -269,7 +320,11 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
         data-dir={String(props.initialDir)}
       >
         {tiles.map((j) => {
-          const key = String(j)
+          const logicalIndex = itemCount > 0 ? j % itemCount : 0
+          const key = usePhotos
+            ? (props.photos[logicalIndex]?.id ?? String(logicalIndex))
+            : (props.ids[logicalIndex] ?? String(logicalIndex))
+          const accessible = j < itemCount
           const selected = props.selectedKey === key
           const tileStyle: JSX.CSSProperties = {
             flex: 'none',
@@ -286,17 +341,18 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
               : '0 0 0 0 rgba(0,0,0,0)',
           }
           // Real photo for this tile (cycled by index across the two copies) or a placeholder.
-          const photo = usePhotos ? props.photos[j % props.photos.length] : undefined
+          const photo = usePhotos ? props.photos[logicalIndex] : undefined
           return (
             <div
-              key={key}
+              key={String(j)}
               data-tile-key={key}
               style={tileStyle}
-              role="button"
-              tabIndex={0}
-              aria-pressed={selected}
-              aria-label={photo ? photo.alt : props.alt}
-              onKeyDown={onTileKey(key)}
+              role={accessible ? 'button' : undefined}
+              tabIndex={accessible ? 0 : undefined}
+              aria-hidden={accessible ? undefined : 'true'}
+              aria-pressed={accessible ? selected : undefined}
+              aria-label={accessible ? (photo ? photo.alt : props.alt) : undefined}
+              onKeyDown={accessible ? onTileKey(key) : undefined}
             >
               {photo ? (
                 // Same wrapper geometry as PlaceholderPhoto (4/3, 14px radius, hairline border) so
