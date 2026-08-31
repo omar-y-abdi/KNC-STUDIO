@@ -26,7 +26,8 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 - Kundens e-post och telefon sparas. **Mina bokningar** och avbokning kräver den aktuella permanenta,
   slumpmässiga tokenen som levereras till bokningens e-postadress. En ny länkbegäran använder bara
   e-post, roterar tokenen atomärt och ogiltigförklarar föregående länk. Telefon används inte som
-  autentiseringshemlighet; en samtyckesstyrd cookie är bara enhetsbekvämlighet.
+  autentiseringshemlighet; samma-flikens sessionslagring är bara en användarbekvämlighet och
+  aldrig en behörighetskälla.
 - Bokningsmetoden använder `email` eller `phone`; SMS-semantik är borttagen.
 - Länkbegäran och recension går via Edge Function med Turnstile och rate limit. Listning och
   avbokning kräver den e-postbundna permanenta tokenen; äldre engångslänkar stöds under migration.

@@ -33,17 +33,6 @@ async function verifyPublicPage(browser, viewport) {
     )
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
-  await page.evaluate(() => {
-    globalThis.document.cookie = 'bladeblend_mybookings_phone=0700000000; Path=/; SameSite=Lax'
-  })
-  const swedishPrivacyBanner = page.getByRole('region', { name: 'Integritet och lagring' })
-  await swedishPrivacyBanner.getByRole('button', { name: 'Avvisa valfri lagring' }).click()
-  assert(
-    !(await page.evaluate(() =>
-      globalThis.document.cookie.includes('bladeblend_mybookings_phone='),
-    )),
-    'rejecting optional storage did not delete the phone-memory cookie',
-  )
   await page.getByRole('button', { name: 'EN', exact: true }).first().click()
   assert(
     (await page
@@ -51,36 +40,6 @@ async function verifyPublicPage(browser, viewport) {
       .first()
       .getAttribute('aria-pressed')) === 'true',
     'language toggle did not activate English',
-  )
-
-  const privacyBanner = page.getByRole('region', { name: 'Privacy and storage' })
-  const managePrivacy = page.getByRole('button', { name: 'Manage privacy preferences' })
-  await managePrivacy.waitFor()
-  await managePrivacy.click()
-  await privacyBanner.waitFor()
-  const functionalStorage = page.locator('#functional-storage')
-  await functionalStorage.check()
-  await privacyBanner.getByRole('button', { name: 'Save choices' }).click()
-  await page.waitForFunction(() =>
-    globalThis.document.cookie.includes('bladeblend_storage_preferences=functional'),
-  )
-
-  await page.evaluate(() => {
-    globalThis.document.cookie = 'bladeblend_mybookings_phone=0700000000; Path=/; SameSite=Lax'
-  })
-  await managePrivacy.click()
-  await privacyBanner.waitFor()
-  assert(await functionalStorage.isChecked(), 'functional storage was not restored in preferences')
-  await functionalStorage.uncheck()
-  await privacyBanner.getByRole('button', { name: 'Save choices' }).click()
-  await page.waitForFunction(() =>
-    globalThis.document.cookie.includes('bladeblend_storage_preferences=essential'),
-  )
-  assert(
-    !(await page.evaluate(() =>
-      globalThis.document.cookie.includes('bladeblend_mybookings_phone='),
-    )),
-    'withdrawing functional storage did not delete the phone-memory cookie',
   )
 
   const myBookingsButton = page

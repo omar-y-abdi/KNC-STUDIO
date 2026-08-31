@@ -75,22 +75,6 @@ export const appEn: AppStrings = {
   lazyReload: 'Reload',
 }
 
-export const privacyEn = {
-  title: 'Privacy and storage',
-  lead: 'We do not use analytics or advertising storage. You can choose whether we may use a first-party cookie to remember the phone number for My appointments on this device.',
-  privacyLink: 'Read the privacy policy',
-  accept: 'Accept functional storage',
-  reject: 'Reject optional storage',
-  preferences: 'Preferences',
-  save: 'Save choices',
-  functionalTitle: 'Remember phone number',
-  functionalLead:
-    'A first-party cookie stores only the number used for My appointments on this device.',
-  necessary: 'Necessary session storage is used only after you open a secure My appointments link.',
-  manage: 'Privacy',
-  manageLabel: 'Manage privacy preferences',
-}
-
 export const aboutEn: AboutStrings = {
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',

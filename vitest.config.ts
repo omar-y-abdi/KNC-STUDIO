@@ -30,7 +30,6 @@ export default defineConfig({
         'src/about/reviewValidation.ts',
         'src/mybookings/format.ts',
         'src/mybookings/escalation.ts',
-        'src/mybookings/deviceMemory.ts',
         'src/mybookings/demoMyBookings.ts',
         'src/admin/serviceValidation.ts',
         'src/site/siteChrome.ts',
