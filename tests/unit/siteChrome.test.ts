@@ -103,6 +103,16 @@ describe('editable public copy', () => {
     expect(defaults.confirmSent).toContain('skickats till {email}')
   })
 
+  it('keeps both shipped confirmation defaults email-scoped and secure-link based', () => {
+    for (const lang of ['sv', 'en'] as const) {
+      const confirmation = defaultSiteText(lang).confirmSent
+
+      expect(confirmation).toContain('{email}')
+      expect(confirmation).not.toMatch(/telefon|phone|sms/i)
+      expect(confirmation).toMatch(/säker länk|secure link/i)
+    }
+  })
+
   it('interpolates the owner-managed cancellation deadline into shipped policy copy', () => {
     expect(defaultSiteText('sv', 48, 'Northside Barbers').policy).toContain('48 timmar')
     expect(defaultSiteText('en', 12, 'Northside Barbers').policy).toContain('12 hours')
