@@ -10,8 +10,10 @@ below. Never run the contract migration before the switched Worker has passed li
 - Edge Function secrets are present, including `TURNSTILE_SECRET`, `IP_SALT`,
   `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, `RESEND_API_KEY`, and `WEBHOOK_SECRET`.
 - Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
-  `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
-  dispatchers read the same value from Vault key `booking_webhook_secret`.
+  `booking_webhook_secret`. The booking-email and external-action dispatchers read that same value
+  from Vault; `send-confirmation` and `external-cleanup` accept it as `WEBHOOK_SECRET`. The optional
+  `calendar-sync` compatibility endpoint uses the same Edge secret only while its legacy Database
+  Webhook remains configured.
 - Legacy Edge secret `BOOKING_WEBHOOK_SECRET` is absent; `send-confirmation` must not accept an
   unchecked second credential.
 - Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
@@ -80,6 +82,9 @@ npx supabase functions list --project-ref "$PROJECT_REF"
 
 Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
 `external-cleanup`, `admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed.
+`external-cleanup` is the durable Calendar create/update/delete/disconnect executor. Keep
+`calendar-sync` deployed only as long as a legacy Dashboard Database Webhook remains; it only
+re-queues the deduplicated `calendar_event_sync` action.
 
 ## 3. Switch frontend
 
@@ -122,6 +127,13 @@ Also owner-upload a homepage logo, verify focused and simulated previews before 
 desktop/mobile hero receives the new processed WebP through Realtime, then replace/remove it and confirm
 the prior `gallery/logo/...` object drains through `external_action_jobs`. Edit and remove phone/map in
 **Mejl**; send SV and EN test messages and verify omitted links never become unsafe or stale fallback links.
+
+Calendar create/update correctness must be verified through the durable
+`booking_calendar_sync_on_change` trigger → `calendar_event_sync` outbox action →
+`external-cleanup` path. If the optional `calendar_sync_on_bookings` Dashboard Webhook is still
+present, verify that it only re-queues the same deduplicated action. Do not remove that webhook or
+rotate `WEBHOOK_SECRET` during this rollout until the merged code, durable-path verification, and a
+coordinated secret-maintenance window are complete.
 
 ## 5. Contract
 
