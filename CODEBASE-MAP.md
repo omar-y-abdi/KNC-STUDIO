@@ -1,6 +1,6 @@
 # CODEBASE-MAP.md
 
-> **Scope of truth:** checked-in state of `launch/integration-readiness` represented by the supplied repository snapshot. For DB behavior, **later migrations override earlier migrations**. Live state outside git - Supabase Dashboard Database Webhooks, Vault values, deployed secrets, DNS, Resend domain status, Google OAuth config/provider health - must be verified in the platform when relevant.
+> **Scope of truth:** checked-in repository state on this branch. For DB behavior, **later migrations override earlier migrations**. Live state outside git - Supabase Dashboard Database Webhooks, Vault values, deployed secrets, DNS, Resend domain status, Google OAuth config/provider health - must be verified in the platform when relevant.
 >
 > **Coverage note:** This revision condenses the verified repository map for faster agent navigation while preserving the important ownership, authority, contract, security, test, and operational boundaries.
 
@@ -21,7 +21,7 @@
 
 `current implementation + latest applicable migration` → `tests exercising it` → `current runbooks` → `general docs/function READMEs` → `historical reviews`.
 
-Known drift: **§12**.
+Historical notes: **§12**.
 
 ### Hard invariants - do not violate casually
 
@@ -798,26 +798,26 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 
 ### 8.3 Change → focused tests
 
-| Change                          | Focused tests                                                                                                                                                                             |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| booking/contact validation      | `tests/unit/validation.test.ts`                                                                                                                                                           |
-| mock slot packing               | `slotPacking.test.ts`, `slots.test.ts`                                                                                                                                                    |
-| Stockholm conversion            | `stockholmTime.test.ts`                                                                                                                                                                   |
-| ICS/calendar links              | `calendar.test.ts`, `ics.test.ts`, `bookingLinks.test.ts`                                                                                                                                 |
-| booking catalog + weekdays      | `bookingCatalog.test.ts`, `supabaseServices.test.ts`, `40_public_booking_catalog_test.sql`, public-site integration                                                                       |
-| lazy/performance lifecycles     | `lazySurface.test.ts`, `performanceLifecycle.test.ts`, `siteChrome.test.ts`, `supabaseSiteChrome.test.ts`, browser smoke                                                                  |
-| public self-service             | `customerAccessToken`, `myBookingsFormat`, `myBookingsEscalation`, `deviceMemory`, `publicBookingActions`, `publicBookingActionAdapters`, `39_permanent_customer_booking_access_test.sql` |
-| reviews                         | `reviewValidation`, `reviewGatewayContract`, integration reviews                                                                                                                          |
-| About CMS merge                 | `aboutMerge.test.ts`                                                                                                                                                                      |
-| admin schedule/conflicts        | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`                                                                                                                          |
-| admin booking grouping/deletion | `bookingsSections`, `weekOfYear`, `deleteAdapters`                                                                                                                                        |
-| admin auth/account links        | `adminAuth`, `passwordPolicy`, `recoveryLink`, `emailChangeLink`, `barberAccountAdmin`, `barberLinkStatus`                                                                                |
-| site CMS/discovery/SEO          | `siteChrome`, `supabaseSiteChrome`, `businessStructuredData`, `discovery`, `workerRoutes`                                                                                                 |
-| image gateway/runtime           | `imageUploadAdapters.test.ts`, `uploadImageDependency.test.ts`, `uploadImageRuntime.test.ts`                                                                                              |
-| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`                                                                                                     |
-| Google Calendar                 | `calendarSync`, `calendarDeletionOwnership`, `externalActions`                                                                                                                            |
-| backup scripts                  | `backupScripts.test.ts`                                                                                                                                                                   |
-| CI pins/actions/locks           | `ciSupplyChain.test.ts`                                                                                                                                                                   |
+| Change                          | Focused tests                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| booking/contact validation      | `tests/unit/validation.test.ts`                                                                                                                                                                     |
+| mock slot packing               | `slotPacking.test.ts`, `slots.test.ts`                                                                                                                                                              |
+| Stockholm conversion            | `stockholmTime.test.ts`                                                                                                                                                                             |
+| ICS/calendar links              | `calendar.test.ts`, `ics.test.ts`, `bookingLinks.test.ts`                                                                                                                                           |
+| booking catalog + weekdays      | `bookingCatalog.test.ts`, `supabaseServices.test.ts`, `40_public_booking_catalog_test.sql`, public-site integration                                                                                 |
+| lazy/performance lifecycles     | `lazySurface.test.ts`, `performanceLifecycle.test.ts`, `siteChrome.test.ts`, `supabaseSiteChrome.test.ts`, browser smoke                                                                            |
+| public self-service             | `customerAccessToken`, `myBookingsFormat`, `deviceMemory`, `publicBookingActions`, `publicBookingActionAdapters`, `customerAccessSecurityContract`, `39_permanent_customer_booking_access_test.sql` |
+| reviews                         | `reviewValidation`, `reviewGatewayContract`, integration reviews                                                                                                                                    |
+| About CMS merge                 | `aboutMerge.test.ts`                                                                                                                                                                                |
+| admin schedule/conflicts        | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`                                                                                                                                    |
+| admin booking grouping/deletion | `bookingsSections`, `weekOfYear`, `deleteAdapters`                                                                                                                                                  |
+| admin auth/account links        | `adminAuth`, `passwordPolicy`, `recoveryLink`, `emailChangeLink`, `barberAccountAdmin`, `barberLinkStatus`                                                                                          |
+| site CMS/discovery/SEO          | `siteChrome`, `supabaseSiteChrome`, `businessStructuredData`, `discovery`, `workerRoutes`                                                                                                           |
+| image gateway/runtime           | `imageUploadAdapters.test.ts`, `uploadImageDependency.test.ts`, `uploadImageRuntime.test.ts`                                                                                                        |
+| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`                                                                                                               |
+| Google Calendar                 | `calendarSync`, `calendarDeletionOwnership`, `externalActions`                                                                                                                                      |
+| backup scripts                  | `backupScripts.test.ts`                                                                                                                                                                             |
+| CI pins/actions/locks           | `ciSupplyChain.test.ts`                                                                                                                                                                             |
 
 ### 8.4 Actual CI gate
 
@@ -1035,15 +1035,12 @@ Use this instead of grep for first-hop navigation.
 
 ---
 
-## 12. Documentation Trust / Known Drift
+## 12. Documentation Trust / Historical Notes
 
-| Source                                                         | Drift                                                                                                                                                                                                                             | Trust instead                                                                                                                         |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `supabase/functions/calendar-sync/README.md`                   | Older prose describes broader past+future backfill and says disconnect leaves Google events/mappings. Current code backfills future confirmed and disconnect removes mapped events through durable cleanup before token teardown. | current functions + `20260813115438_durable_storage_cleanup.sql`                                                                      |
-| `supabase/functions/send-confirmation/README.md`, `BACKEND.md` | Some prose still models booking trigger → direct function call; `BACKEND.md` also overgeneralizes external outbox coverage.                                                                                                       | current chain: trigger → durable DB job → cron → Vault+pg_net → `send-confirmation`; subsystem ownership in §5                        |
-| `.claude/runtime/SLOT_PACKING_SPEC.md`                         | Any statement that `BookingFlow.tsx` directly consumes `packSlots()` is shorthand for mock mode.                                                                                                                                  | actual: `localCalendar.ts` consumes `slotPacking.ts`; live uses `available_slots()`                                                   |
-| `src/admin/adapters/schedulesAdmin.ts` comments                | Header/JSDoc still describes old direct-upsert/RLS week save.                                                                                                                                                                     | executable `saveWeek()` + `20260813115437_transactional_availability_mutations.sql`; direct authenticated schedule writes are revoked |
-| `REVIEW_FINDINGS.md`                                           | Predates later hardening migrations.                                                                                                                                                                                              | historical context only; current code/migrations/tests                                                                                |
+| Source                                 | Status / clarification                                                                                                                           | Trust instead                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `.claude/runtime/SLOT_PACKING_SPEC.md` | `packSlots()` describes the mock availability path; live availability remains the database `available_slots()` RPC.                              | `src/booking/adapters/localCalendar.ts` and live booking adapter/database RPCs |
+| `REVIEW_FINDINGS.md`                   | Archived historical review; its findings and recommendations predate later hardening and are not current implementation or launch-status claims. | current code, latest migrations, tests, and `docs/operations/` runbooks        |
 
 ---
 

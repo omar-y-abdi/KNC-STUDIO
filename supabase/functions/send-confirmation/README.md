@@ -28,7 +28,7 @@ per booking and recipient, preventing duplicate email during delivery retries.
 
 The job ledger keeps only booking UUIDs, event/status, attempt timing, and short error codes. It does
 not store email addresses, phone numbers, message content, provider responses, or tokens. Failed rows
-remain until explicit owner retry or acknowledgement. Completed/skipped rows are retained for 90 days,
+remain until explicit owner retry or discard. Completed/skipped rows are retained for 90 days,
 then removed by `booking-email-delivery-cleanup`.
 
 ## Security
