@@ -5,7 +5,7 @@ const functionsBase = (
 ).replace(/\/$/, '')
 
 describe('password recovery Edge function', () => {
-  it('keeps an invalid Turnstile recovery request neutral without sending email', async ({
+  it('keeps an invalid Turnstile recovery request neutral without delivery configuration', async ({
     skip,
   }) => {
     let response: Response
@@ -16,7 +16,9 @@ describe('password recovery Edge function', () => {
         body: JSON.stringify({
           email: 'unknown@example.test',
           lang: 'en',
-          turnstileToken: 'invalid-local-test-token',
+          // The CI secret is Turnstile's always-pass test key. An empty token
+          // remains deterministically invalid without requiring a real token.
+          turnstileToken: '',
         }),
         signal: AbortSignal.timeout(2_000),
       })

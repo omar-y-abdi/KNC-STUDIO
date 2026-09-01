@@ -65,15 +65,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const lang = body.lang === 'en' ? 'en' : 'sv'
   const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken : ''
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json({ ok: true })
-  const url = Deno.env.get('SUPABASE_URL')
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const resendKey = Deno.env.get('RESEND_API_KEY')
   const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
-  if (!url || !key || !resendKey || !turnstileSecret)
-    return json({ ok: false, error: 'not_configured' }, 503)
+  if (!turnstileSecret) return json({ ok: false, error: 'not_configured' }, 503)
   if (!(await verifyTurnstile(turnstileToken, clientIp(req), turnstileSecret))) {
     return json({ ok: true })
   }
+  const url = Deno.env.get('SUPABASE_URL')
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!url || !key || !resendKey) return json({ ok: false, error: 'not_configured' }, 503)
   const service = createClient(url, key, { auth: { persistSession: false } })
   const scope = await sha256(`recovery:${email}`)
   const limited = await service.rpc('consume_auth_email_send', {

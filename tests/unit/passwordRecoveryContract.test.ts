@@ -32,4 +32,17 @@ describe('password recovery Turnstile contract', () => {
     expect(source).toContain('return json({ ok: true })')
     expect(source).toContain('if (!(await verifyTurnstile(')
   })
+
+  it('does not require delivery configuration before rejecting a challenge', () => {
+    const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
+    const secret = source.indexOf("const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')")
+    const verify = source.indexOf('if (!(await verifyTurnstile(')
+    const serviceConfig = source.indexOf("const url = Deno.env.get('SUPABASE_URL')")
+    const resendConfig = source.indexOf("const resendKey = Deno.env.get('RESEND_API_KEY')")
+
+    expect(secret).toBeGreaterThan(-1)
+    expect(verify).toBeGreaterThan(secret)
+    expect(serviceConfig).toBeGreaterThan(verify)
+    expect(resendConfig).toBeGreaterThan(verify)
+  })
 })
