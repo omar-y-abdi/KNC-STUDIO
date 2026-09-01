@@ -157,6 +157,37 @@ describe('public Calendar privacy disclosure', () => {
   })
 })
 
+describe('Calendar database contract ownership', () => {
+  const calendarMigration = readFileSync(
+    new URL(
+      '../../supabase/migrations/20260901013601_calendar_customer_contact_payload.sql',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+  const genericDispatchMigration = readFileSync(
+    new URL(
+      '../../supabase/migrations/20260823174500_close_launch_review_findings.sql',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+
+  it('leaves generic customer dispatch outside the Calendar migration', () => {
+    expect(calendarMigration).not.toContain('external_action_for_dispatch')
+    expect(calendarMigration).not.toContain('customer_access_email_send')
+    expect(genericDispatchMigration).toContain("v_job.action_type = 'customer_access_email_send'")
+  })
+
+  it('keeps Calendar PII in authoritative source RPCs instead of durable job payloads', () => {
+    expect(calendarMigration).toContain("'email',           b.email")
+    expect(calendarMigration).toContain("'email', b.email")
+    expect(calendarMigration).toContain('old.email is distinct from new.email')
+    expect(calendarMigration).toContain('perform public.queue_calendar_event_sync(new.id)')
+    expect(calendarMigration).not.toContain("jsonb_build_object('booking_id'")
+  })
+})
+
 describe('idempotent event insertion', () => {
   afterEach(() => vi.unstubAllGlobals())
 

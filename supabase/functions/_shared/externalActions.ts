@@ -19,7 +19,7 @@ import {
   resendDeliveryFailureCode,
   sendViaResend,
 } from './email.ts'
-import { customerAccessUrl, decryptCustomerAccessToken } from './customerAccess.ts'
+import { customerAccessUrl } from './customerAccess.ts'
 
 export type StorageBucket = 'gallery' | 'barber-photos'
 
@@ -44,7 +44,6 @@ export type ExternalAction =
       readonly service_name: string
       readonly customer_name: string
       readonly phone: string | null
-      readonly email: string | null
       readonly start_at: string
       readonly end_at: string
       readonly refresh_token: string
@@ -67,10 +66,9 @@ export type ExternalAction =
     })
   | (DispatchBase & {
       readonly action_type: 'customer_access_email_send'
-      readonly challenge_id: string
       readonly email: string
       readonly lang: Language
-      readonly token_ciphertext: string
+      readonly access_code: string
     })
   | (DispatchBase & {
       readonly action_type: 'auth_user_access_sync'
@@ -114,7 +112,6 @@ export interface ExternalActionRuntime {
   readonly googleClientId: string | undefined
   readonly googleClientSecret: string | undefined
   readonly resendApiKey?: string | undefined
-  readonly customerAccessHashSalt?: string | undefined
 }
 
 export class ExternalActionError extends Error {
@@ -144,13 +141,37 @@ function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
-function customerAccessCiphertext(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length >= 40 &&
-    value.length <= 700 &&
-    /^v1\.[A-Za-z0-9_-]+$/.test(value)
-  )
+interface CalendarBookingSource {
+  readonly service_name: string
+  readonly customer_name: string
+  readonly phone: string | null
+  readonly email: string | null
+  readonly start_at: string
+  readonly end_at: string
+}
+
+function parseCalendarBookingSource(value: unknown): CalendarBookingSource | null {
+  if (
+    !isRecord(value) ||
+    value.status !== 'confirmed' ||
+    !nonEmpty(value.service_name) ||
+    !nonEmpty(value.customer_name) ||
+    (value.phone !== null && typeof value.phone !== 'string') ||
+    (value.email !== null && !nonEmpty(value.email)) ||
+    !nonEmpty(value.start_at) ||
+    !nonEmpty(value.end_at)
+  ) {
+    return null
+  }
+
+  return {
+    service_name: value.service_name,
+    customer_name: value.customer_name,
+    phone: value.phone,
+    email: value.email,
+    start_at: value.start_at,
+    end_at: value.end_at,
+  }
 }
 
 function dispatchBase(row: Record<string, unknown>): DispatchBase | null {
@@ -181,7 +202,6 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
     nonEmpty(value.service_name) &&
     nonEmpty(value.customer_name) &&
     (value.phone === null || typeof value.phone === 'string') &&
-    (value.email === null || nonEmpty(value.email)) &&
     nonEmpty(value.start_at) &&
     nonEmpty(value.end_at) &&
     nonEmpty(value.refresh_token) &&
@@ -196,7 +216,6 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       service_name: value.service_name,
       customer_name: value.customer_name,
       phone: value.phone,
-      email: value.email,
       start_at: value.start_at,
       end_at: value.end_at,
       refresh_token: value.refresh_token,
@@ -226,18 +245,17 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
 
   if (
     value.action_type === 'customer_access_email_send' &&
-    isUuid(value.challenge_id) &&
     nonEmpty(value.email) &&
     (value.lang === 'sv' || value.lang === 'en') &&
-    customerAccessCiphertext(value.token_ciphertext)
+    typeof value.access_code === 'string' &&
+    /^[0-9a-f]{64}$/i.test(value.access_code)
   ) {
     return {
       ...base,
       action_type: value.action_type,
-      challenge_id: value.challenge_id,
       email: value.email,
       lang: value.lang,
-      token_ciphertext: value.token_ciphertext,
+      access_code: value.access_code,
     }
   }
 
@@ -327,7 +345,24 @@ export async function executeExternalAction(
           runtime.googleClientId,
           runtime.googleClientSecret,
         )
-        const event = buildEvent(action)
+        const source = await service.rpc('calendar_sync_source', {
+          p_booking_id: action.booking_id,
+        })
+        if (source.error !== null) {
+          throw new ExternalActionError(
+            'calendar_source_failed',
+            source.error.message ?? 'Calendar booking source failed',
+          )
+        }
+        const booking = parseCalendarBookingSource(source.data)
+        if (booking === null) {
+          throw new ExternalActionError(
+            'calendar_sync_superseded',
+            'Calendar booking is no longer confirmed',
+            false,
+          )
+        }
+        const event = buildEvent(booking)
         if (action.google_event_id !== null) {
           const patched = await patchEvent(
             accessToken,
@@ -414,43 +449,22 @@ export async function executeExternalAction(
       return
     }
     case 'customer_access_email_send': {
-      if (!runtime.resendApiKey || !runtime.customerAccessHashSalt) {
+      if (!runtime.resendApiKey) {
         throw new ExternalActionError('not_configured', 'Resend runtime is not configured')
       }
       try {
         const emailClient = service as unknown as SupabaseClient
         const business = await loadEmailBusiness(emailClient)
         const copy = await loadEmailTemplate(emailClient, 'customer_booking_access', action.lang)
-        const accessCode = await decryptCustomerAccessToken(
-          action.token_ciphertext,
-          runtime.customerAccessHashSalt,
-        )
-        if (accessCode === null) {
-          throw new ExternalActionError(
-            'customer_access_token_decrypt_failed',
-            'Customer access token could not be decrypted',
-            false,
-          )
-        }
         const message = buildEmailMessage({
           to: action.email,
           lang: action.lang,
           copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
-          ctaHref: customerAccessUrl(accessCode),
+          ctaHref: customerAccessUrl(action.access_code),
           business,
         })
         await sendViaResend(message, runtime.resendApiKey, `customer-booking-access/${action.id}`)
-        const consumed = await service.rpc('consume_customer_access_email_challenge', {
-          p_challenge_id: action.challenge_id,
-        })
-        if (consumed.error !== null || consumed.data !== true) {
-          throw new ExternalActionError(
-            'customer_access_challenge_consume_failed',
-            'Customer access challenge could not be consumed',
-          )
-        }
       } catch (error) {
-        if (error instanceof ExternalActionError) throw error
         const failureCode = resendDeliveryFailureCode(error)
         throw new ExternalActionError(
           failureCode,
