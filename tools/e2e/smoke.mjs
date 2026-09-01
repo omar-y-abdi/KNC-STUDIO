@@ -1,7 +1,20 @@
 import { chromium } from 'playwright'
+import { writeSync } from 'node:fs'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
+const WATCHDOG_TIMEOUT = 180_000
+let activeStage = 'startup'
+
+function mark(stage) {
+  activeStage = stage
+  writeSync(1, `[browser-smoke ${new Date().toISOString()}] ${stage}\n`)
+}
+
+const watchdog = globalThis.setTimeout(() => {
+  writeSync(2, `[browser-smoke watchdog ${new Date().toISOString()}] timed out in ${activeStage}\n`)
+  process.exit(124)
+}, WATCHDOG_TIMEOUT)
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -33,13 +46,52 @@ async function scrollMarqueeRowIntoView(page, rowIndex) {
 async function marqueeTilePoint(page, rowIndex) {
   return page.evaluate((index) => {
     const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
-    const tile = row?.querySelector('[role="button"]')
+    const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find((candidate) => {
+      const rect = candidate.getBoundingClientRect()
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.right > 0 &&
+        rect.left < globalThis.innerWidth &&
+        rect.bottom > 0 &&
+        rect.top < globalThis.innerHeight
+      )
+    })
     if (!(row instanceof globalThis.HTMLElement) || !(tile instanceof globalThis.HTMLElement)) {
       throw new Error(`marquee logical tile ${index} missing`)
     }
     const rect = tile.getBoundingClientRect()
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    const key = tile.getAttribute('data-tile-key')
+    if (key === null) throw new Error(`marquee logical tile ${index} has no key`)
+    return { key, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
   }, rowIndex)
+}
+
+async function marqueeTileState(page, rowIndex, key) {
+  return page.evaluate(
+    ({ index, tileKey }) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find(
+        (candidate) => candidate.getAttribute('data-tile-key') === tileKey,
+      )
+      return tile?.getAttribute('aria-pressed') ?? null
+    },
+    { index: rowIndex, tileKey: key },
+  )
+}
+
+async function waitForMarqueeTileState(page, rowIndex, key, state) {
+  await page.waitForFunction(
+    ({ index, tileKey, expected }) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find(
+        (candidate) => candidate.getAttribute('data-tile-key') === tileKey,
+      )
+      return tile?.getAttribute('aria-pressed') === expected
+    },
+    { index: rowIndex, tileKey: key, expected: state },
+    { timeout: WAIT_TIMEOUT },
+  )
 }
 
 async function waitForGalleryToSettle(page) {
@@ -80,49 +132,77 @@ async function waitForGalleryToSettle(page) {
 }
 
 async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
-  const point = await marqueeTilePoint(page, rowIndex)
+  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: locate point`)
   if (sequence === 'cancel') {
-    await page.evaluate(() => {
-      globalThis.__smokePointerId = null
-      globalThis.document.addEventListener(
-        'pointerdown',
-        (event) => {
-          globalThis.__smokePointerId = event.pointerId
+    const point = await marqueeTilePoint(page, rowIndex)
+    mark(`gallery pointer row=${rowIndex} sequence=cancel: install observer`)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (!(row instanceof globalThis.HTMLElement))
+        throw new Error('gallery pointercancel row missing')
+      globalThis.__smokeCancelObserved = false
+      row.addEventListener(
+        'pointercancel',
+        () => {
+          globalThis.__smokeCancelObserved = true
         },
         { capture: true, once: true },
       )
+    }, rowIndex)
+    mark('gallery pointer cancel: create CDP session')
+    const client = await page.context().newCDPSession(page)
+    let touchStarted = false
+    try {
+      mark('gallery pointer cancel: touchStart')
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: point.x, y: point.y, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
+        modifiers: 0,
+      })
+      touchStarted = true
+      mark('gallery pointer cancel: touchMove')
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: point.x, y: point.y + 80, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
+        modifiers: 0,
+      })
+    } finally {
+      if (touchStarted) {
+        mark('gallery pointer cancel: touchEnd')
+        await client.send('Input.dispatchTouchEvent', {
+          type: 'touchEnd',
+          touchPoints: [],
+          modifiers: 0,
+        })
+      }
+      mark('gallery pointer cancel: detach CDP session')
+      await client.detach()
+    }
+    mark('gallery pointer cancel: await native pointercancel')
+    await page.waitForFunction(() => globalThis.__smokeCancelObserved === true, undefined, {
+      timeout: WAIT_TIMEOUT,
     })
+    mark('gallery pointer cancel: read exact tile state')
+    await page.evaluate(() => {
+      delete globalThis.__smokeCancelObserved
+    })
+    return {
+      key: point.key,
+      pressed: await marqueeTileState(page, rowIndex, point.key),
+    }
   }
+
+  const point = await marqueeTilePoint(page, rowIndex)
+  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.move`)
   await page.mouse.move(point.x, point.y)
+  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.down`)
   await page.mouse.down()
   try {
     if (sequence === 'drag') {
+      mark('gallery pointer drag: mouse.move')
       await page.mouse.move(point.x + 36, point.y, { steps: 3 })
-    } else if (sequence === 'cancel') {
-      const pointerId = await page.evaluate(() => {
-        const activePointerId = globalThis.__smokePointerId
-        delete globalThis.__smokePointerId
-        return activePointerId
-      })
-      assert(Number.isInteger(pointerId), 'gallery pointercancel id was not recorded')
-      await page.evaluate(
-        ({ index, pointerId, x, y }) => {
-          const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
-          if (!(row instanceof globalThis.HTMLElement))
-            throw new Error('gallery pointercancel row missing')
-          row.dispatchEvent(
-            new globalThis.PointerEvent('pointercancel', {
-              bubbles: true,
-              pointerId,
-              pointerType: 'mouse',
-              clientX: x,
-              clientY: y,
-            }),
-          )
-        },
-        { index: rowIndex, pointerId, x: point.x, y: point.y },
-      )
     } else if (sequence === 'scroll') {
+      mark('gallery pointer scroll: page scroll')
       await page.evaluate(() => {
         const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
         if (scrollRoot instanceof globalThis.HTMLElement) {
@@ -135,27 +215,31 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
       })
     }
   } finally {
+    mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.up`)
     await page.mouse.up()
   }
 
-  return page.evaluate((index) => {
-    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
-    return row?.querySelector('[role="button"]')?.getAttribute('aria-pressed') ?? null
-  }, rowIndex)
+  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: read exact tile state`)
+  return { key: point.key, pressed: await marqueeTileState(page, rowIndex, point.key) }
 }
 
 async function verifyPublicPage(browser, viewport) {
+  const label = `public ${viewport.width}x${viewport.height}`
   const errors = []
-  const context = await browser.newContext({ viewport, reducedMotion: 'reduce' })
+  mark(`${label}: context.new`)
+  const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: true })
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
+  mark(`${label}: page.new`)
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
 
+  mark(`${label}: navigation and fonts`)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
   await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
   await waitForFonts(page)
 
+  mark(`${label}: base assertions`)
   assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
   const overflow = await page.evaluate(
     () =>
@@ -173,6 +257,7 @@ async function verifyPublicPage(browser, viewport) {
     )
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
+  mark(`${label}: language and my-bookings`)
   await page
     .getByRole('button', { name: 'EN', exact: true })
     .first()
@@ -194,6 +279,7 @@ async function verifyPublicPage(browser, viewport) {
   await myBookingsDialog.getByRole('button', { name: 'Close' }).click({ timeout: WAIT_TIMEOUT })
   await myBookingsDialog.waitFor({ state: 'detached', timeout: WAIT_TIMEOUT })
 
+  mark(`${label}: gallery semantics`)
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
   await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
@@ -233,18 +319,11 @@ async function verifyPublicPage(browser, viewport) {
     `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
   )
 
+  mark(`${label}: gallery pointer interactions`)
   await waitForGalleryToSettle(page)
   await scrollMarqueeRowIntoView(page, 0)
-  await dispatchGalleryPointerSequence(page, 0, 'tap')
-  await page.waitForFunction(
-    () =>
-      globalThis.document
-        .querySelectorAll('[data-testid="marquee-row"]')[0]
-        ?.querySelector('[role="button"]')
-        ?.getAttribute('aria-pressed') === 'true',
-    undefined,
-    { timeout: WAIT_TIMEOUT },
-  )
+  const tap = await dispatchGalleryPointerSequence(page, 0, 'tap')
+  await waitForMarqueeTileState(page, 0, tap.key, 'true')
   await waitForGalleryToSettle(page)
 
   await scrollMarqueeRowIntoView(page, 1)
@@ -259,53 +338,34 @@ async function verifyPublicPage(browser, viewport) {
   })
   assert(!cloneFocused, 'gallery loop clone can receive focus')
 
-  assert(
-    (await dispatchGalleryPointerSequence(page, 1, 'drag')) === 'false',
-    'gallery drag selected a tile',
-  )
-  await page.waitForTimeout(50)
-  assert(
-    (await page.evaluate(() =>
-      globalThis.document
-        .querySelectorAll('[data-testid="marquee-row"]')[1]
-        ?.querySelector('[role="button"]')
-        ?.getAttribute('aria-pressed'),
-    )) === 'false',
-    'gallery drag selected a tile after release',
-  )
-
   await scrollMarqueeRowIntoView(page, 1)
-  assert(
-    (await dispatchGalleryPointerSequence(page, 1, 'cancel')) === 'false',
-    'gallery pointercancel selected a tile',
-  )
+  const cancel = await dispatchGalleryPointerSequence(page, 1, 'cancel')
+  assert(cancel.pressed === 'false', 'gallery pointercancel selected a tile')
   await page.waitForTimeout(50)
   assert(
-    (await page.evaluate(() =>
-      globalThis.document
-        .querySelectorAll('[data-testid="marquee-row"]')[1]
-        ?.querySelector('[role="button"]')
-        ?.getAttribute('aria-pressed'),
-    )) === 'false',
+    (await marqueeTileState(page, 1, cancel.key)) === 'false',
     'gallery pointercancel selected a tile after release',
   )
 
   await scrollMarqueeRowIntoView(page, 1)
-  assert(
-    (await dispatchGalleryPointerSequence(page, 1, 'scroll')) === 'false',
-    'gallery scroll selected a tile',
-  )
+  const scroll = await dispatchGalleryPointerSequence(page, 1, 'scroll')
+  assert(scroll.pressed === 'false', 'gallery scroll selected a tile')
   await page.waitForTimeout(50)
   assert(
-    (await page.evaluate(() =>
-      globalThis.document
-        .querySelectorAll('[data-testid="marquee-row"]')[1]
-        ?.querySelector('[role="button"]')
-        ?.getAttribute('aria-pressed'),
-    )) === 'false',
+    (await marqueeTileState(page, 1, scroll.key)) === 'false',
     'gallery scroll selected a tile after release',
   )
 
+  await scrollMarqueeRowIntoView(page, 1)
+  const drag = await dispatchGalleryPointerSequence(page, 1, 'drag')
+  assert(drag.pressed === 'false', 'gallery drag selected a tile')
+  await page.waitForTimeout(50)
+  assert(
+    (await marqueeTileState(page, 1, drag.key)) === 'false',
+    'gallery drag selected a tile after release',
+  )
+
+  mark(`${label}: navigation state`)
   await page.evaluate(() => {
     globalThis.window.scrollTo({ top: 0 })
     globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
@@ -425,6 +485,7 @@ async function verifyPublicPage(browser, viewport) {
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
   }
 
+  mark(`${label}: booking state`)
   await page
     .getByRole('button', { name: 'Book appointment', exact: true })
     .first()
@@ -439,10 +500,13 @@ async function verifyPublicPage(browser, viewport) {
     .waitFor({ timeout: WAIT_TIMEOUT })
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
+  mark(`${label}: context.close start`)
   await context.close()
+  mark(`${label}: context.close done`)
 }
 
 async function verifyStaticEndpoints(page) {
+  mark('static endpoints: ACP request')
   const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`, { timeout: WAIT_TIMEOUT })
   assert(acp.status() === 200, `ACP status ${acp.status()}`)
   const document = await acp.json()
@@ -450,19 +514,32 @@ async function verifyStaticEndpoints(page) {
   assert(Array.isArray(document?.capabilities?.services), 'ACP services missing')
 
   for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
+    mark(`static endpoints: ${path} request`)
     const response = await page.request.get(`${baseUrl}${path}`, { timeout: WAIT_TIMEOUT })
     assert(response.status() === 200, `${path} status ${response.status()}`)
   }
 }
 
+mark('chromium.launch start')
 const browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
+mark('chromium.launch done')
 try {
+  mark('public desktop start')
   await verifyPublicPage(browser, { width: 1280, height: 900 })
+  mark('public desktop done')
+  mark('public mobile start')
   await verifyPublicPage(browser, { width: 390, height: 844 })
+  mark('public mobile done')
+  mark('static endpoints page.new')
   const page = await browser.newPage()
   await verifyStaticEndpoints(page)
+  mark('static endpoints page.close start')
   await page.close()
+  mark('static endpoints page.close done')
   console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
 } finally {
+  mark('browser.close start')
   await browser.close()
+  mark('browser.close done')
+  globalThis.clearTimeout(watchdog)
 }
