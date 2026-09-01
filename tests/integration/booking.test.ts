@@ -87,7 +87,7 @@ describe.skipIf(!backendReady())('create_booking RPC contract (integration)', ()
     expect(persisted?.phone).toBe(phone)
     expect(persisted?.email).toBe(`integration-${phone}@example.com`)
     expect(persisted?.serviceName).toBe('Hårklippning')
-    expect(persisted?.price).toBe(350)
+    expect(persisted?.price).toBe('350')
     expect(persisted?.durationMin).toBe(45)
 
     // The row stores exactly the instant we passed — 13:30 Stockholm (CET) = 12:30:00Z.

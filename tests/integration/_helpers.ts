@@ -75,7 +75,8 @@ export interface PersistedBookingPii {
   readonly phone: string | null
   readonly email: string | null
   readonly serviceName: string
-  readonly price: number
+  /** PostgreSQL numeric is returned as a string by node-postgres; preserve exact decimal text. */
+  readonly price: string
   readonly durationMin: number
 }
 
@@ -95,7 +96,7 @@ export async function fetchPersistedBookingByPhone(
       phone: string | null
       email: string | null
       service_name: string
-      price: number
+      price: string
       duration_min: number
     }>(
       "select customer_name, phone, email, service_name, price, duration_min from public.bookings where phone = $1 and status = 'confirmed' limit 1",
