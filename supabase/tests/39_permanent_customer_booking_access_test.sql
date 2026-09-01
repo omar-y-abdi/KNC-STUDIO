@@ -158,9 +158,9 @@ select is(
   (select pg_catalog.count(*)::int
    from public.external_action_jobs
    where action_type = 'customer_access_email_send'
-     and payload->>'access_code' = repeat('d', 64)),
-  1,
-  'fresh token email is committed to durable delivery outbox'
+     and payload ? 'access_code'),
+  0,
+  'fresh token email outbox does not retain a plaintext access code'
 );
 select is(
   (select pg_catalog.count(*)::int

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
 
@@ -39,12 +39,15 @@ describe('customer booking access links', () => {
   it('sends permanent root links through the durable external-action worker', () => {
     const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
     const worker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
-    const migration = readFileSync(
-      'supabase/migrations/20260824075454_permanent_customer_booking_access.sql',
-      'utf8',
+    const outboxMigrationName = readdirSync('supabase/migrations').find((name) =>
+      name.endsWith('_customer_access_outbox_ciphertext.sql'),
     )
+    expect(outboxMigrationName).toBeDefined()
+    const migration = readFileSync(`supabase/migrations/${outboxMigrationName}`, 'utf8')
 
-    expect(worker).toContain('customerAccessUrl(action.access_code)')
+    expect(worker).toContain('decryptCustomerAccessToken')
+    expect(worker).toContain('customerAccessUrl(accessCode)')
+    expect(worker).not.toContain('customerAccessUrl(action.access_code)')
     expect(worker).not.toContain('#booking_access=${action.access_code}')
     expect(gateway).toContain("service.rpc('rotate_customer_booking_access_token'")
     expect(gateway).toContain('p_access_code: code')
@@ -52,13 +55,16 @@ describe('customer booking access links', () => {
     expect(gateway).not.toContain('sendAccessEmail(')
     expect(migration).toContain("'customer_access_email_send'")
     expect(migration).toContain('customer_booking_access_tokens')
+    expect(migration).toContain('payload = pg_catalog.jsonb_build_object(')
+    expect(migration).toContain("'challenge_id', payload->'challenge_id'")
+    expect(migration).toContain("'lang', payload->'lang'")
   })
 
   it('uses permanent root links in access and booking-confirmation email paths', () => {
     const accessWorker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
     const confirmationWorker = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
 
-    expect(accessWorker).toContain('customerAccessUrl(action.access_code)')
+    expect(accessWorker).toContain('customerAccessUrl(accessCode)')
     expect(confirmationWorker).toContain("'customer_confirmation'")
     expect(confirmationWorker).toContain('customerAccessUrl')
     expect(confirmationWorker).not.toContain(

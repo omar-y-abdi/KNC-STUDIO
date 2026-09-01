@@ -22,6 +22,9 @@ failed actions, preserves Calendar event identifiers until Google deletion succe
 managed Storage bytes left unreferenced for 30 minutes after a failed upload compensation path.
 Homepage-logo replacement uses the same authenticated `upload-image` gateway, `site_settings` path
 swap, and durable gallery cleanup; raw image bytes and service credentials never enter browser config.
+Customer-access email jobs persist only a challenge identifier and language. Dispatch resolves the
+current encrypted token, and `external-cleanup` decrypts it only immediately before sending through
+Resend; the challenge is consumed only after a successful delivery with a stable idempotency key.
 
 ## Public frontend configuration
 
