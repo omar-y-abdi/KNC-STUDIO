@@ -12,6 +12,9 @@ import { z } from 'zod'
 
 /** ISO-8601 timestamp WITH offset, exactly how PostgREST serializes `timestamptz`. */
 const isoTimestamp = z.string().datetime({ offset: true })
+const bookingDurationMin = z.number().finite().int().min(1).max(600)
+const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const sortOrder = z.number().finite().int().min(0)
 
 /**
  * A 1..5 rating. Modeled as a literal union so the INFERRED type is exactly `1 | 2 | 3 | 4 | 5`,
@@ -97,7 +100,7 @@ const myBookingRow = z.object({
   barber_id: z.string(),
   service_name: z.string(),
   price: z.number().finite().min(0).max(100000),
-  duration_min: z.number(),
+  duration_min: bookingDurationMin,
   start_at: isoTimestamp,
 })
 
@@ -181,9 +184,9 @@ export const publicServiceRow = z.object({
   barber_id: z.string(),
   name: z.string(),
   price: z.number().finite().min(0).max(100000),
-  duration_min: z.number(),
+  duration_min: serviceDurationMin,
   active: z.boolean(),
-  sort_order: z.number(),
+  sort_order: sortOrder,
   available_weekdays: canonicalWeekdays,
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>

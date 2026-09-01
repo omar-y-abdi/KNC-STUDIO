@@ -17,6 +17,9 @@ const isoTimestamp = z.string().datetime({ offset: true })
 
 /** `YYYY-MM-DD` date (PostgREST serializes a `date` column as this). */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+const bookingDurationMin = z.number().finite().int().min(1).max(600)
+const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const sortOrder = z.number().finite().int().min(0)
 
 const lang = z.enum(['sv', 'en'])
 const weekday = z.union([
@@ -164,9 +167,9 @@ export const serviceRow = z.object({
   barber_id: z.string(),
   name: z.string(),
   price: z.number().finite().min(0).max(100000),
-  duration_min: z.number(),
+  duration_min: serviceDurationMin,
   active: z.boolean(),
-  sort_order: z.number(),
+  sort_order: sortOrder,
   available_weekdays: canonicalWeekdays,
 })
 export type ServiceRow = z.infer<typeof serviceRow>
@@ -337,7 +340,7 @@ export const adminBookingRow = z.object({
   barber_id: z.string(),
   service_name: z.string(),
   price: z.number().finite().min(0).max(100000),
-  duration_min: z.number(),
+  duration_min: bookingDurationMin,
   start_at: isoTimestamp,
   end_at: isoTimestamp,
   customer_name: z.string(),
