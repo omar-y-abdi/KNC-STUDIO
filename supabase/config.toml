@@ -402,13 +402,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# send-confirmation: invoked by a trusted Supabase Database Webhook on `bookings` INSERT (server
-# -> server), so it does not receive a Supabase user JWT -> verify_jwt = false. SECURING IT: the
-# function is NOT a public endpoint by design. Lock it down in production by (a) keeping its URL
-# unpublished, and (b) requiring a shared secret the webhook sends in a custom header
-# (e.g. `x-webhook-secret`, stored via `supabase secrets set`) and which the handler checks before
-# doing any work. See supabase/functions/send-confirmation/README.md for the webhook wiring + the
-# header-secret recipe. Do NOT flip this to true: the webhook cannot mint a Supabase auth JWT.
+# send-confirmation: invoked by the durable booking-email delivery dispatcher with a job id (server
+# -> server), so it does not receive a Supabase user JWT -> verify_jwt = false. The booking INSERT
+# trigger queues `booking_email_delivery_jobs`; this function is not a booking Database Webhook
+# handler. It remains fail-closed on the canonical `WEBHOOK_SECRET` header and uses the durable
+# ledger for retry, recipient progress, and owner-visible failure state. Do NOT flip this to true:
+# the dispatcher cannot mint a Supabase auth JWT.
 [functions.send-confirmation]
 enabled = true
 verify_jwt = false
@@ -462,9 +461,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = false
 
-# calendar-sync: invoked by a bookings INSERT/UPDATE/DELETE Database Webhook (server -> server, no
-# user JWT) -> verify_jwt = false. Fail-closed on the shared WEBHOOK_SECRET header (same recipe as
-# send-confirmation). Re-reads every field from the DB by id (never trusts the webhook body).
+# calendar-sync: compatibility-only endpoint for an already-configured legacy Database Webhook
+# (server -> server, no user JWT) -> verify_jwt = false. The durable booking trigger/outbox owns
+# Calendar correctness; this endpoint only re-queues the same deduplicated action and never executes
+# Google work itself. It fails closed on the canonical `WEBHOOK_SECRET` header.
 [functions.calendar-sync]
 enabled = true
 verify_jwt = false

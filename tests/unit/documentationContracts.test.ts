@@ -10,12 +10,20 @@ describe('handoff documentation contracts', () => {
       new URL('../../supabase/functions/send-confirmation/README.md', import.meta.url),
       'utf8',
     )
+    const supabaseConfig = readFileSync(
+      new URL('../../supabase/config.toml', import.meta.url),
+      'utf8',
+    )
 
     expect(env).not.toContain('Vercel')
     expect(findings).toMatch(/^> Status: ARCHIVED — historical reference only/m)
     expect(map).not.toContain('myBookingsEscalation')
     expect(map).not.toContain('Older prose describes broader past+future backfill')
     expect(emailSetup).toContain('retry or discard')
+    expect(supabaseConfig).toContain('booking_email_delivery_jobs')
+    expect(supabaseConfig).toContain('not a booking Database Webhook')
+    expect(supabaseConfig).toContain('compatibility-only')
+    expect(supabaseConfig).toContain('re-queues the same deduplicated action')
   })
 
   it('records current ownership and contracts for the audited subsystems', () => {
