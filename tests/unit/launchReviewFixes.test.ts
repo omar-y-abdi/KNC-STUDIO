@@ -37,13 +37,18 @@ describe('launch-review durable action contracts', () => {
         service_name: 'Klippning',
         customer_name: 'Test Kund',
         phone: '0701234567',
+        email: 'customer@example.com',
         start_at: '2040-03-14T12:30:00.000Z',
         end_at: '2040-03-14T13:15:00.000Z',
         refresh_token: 'server-token',
         calendar_id: 'primary',
         google_event_id: null,
       }),
-    ).toMatchObject({ action_type: 'calendar_event_sync', booking_id: BOOKING_ID })
+    ).toMatchObject({
+      action_type: 'calendar_event_sync',
+      booking_id: BOOKING_ID,
+      email: 'customer@example.com',
+    })
   })
 
   it('accepts only encrypted customer-access dispatch context', () => {

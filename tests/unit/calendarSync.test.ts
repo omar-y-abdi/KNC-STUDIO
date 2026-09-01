@@ -85,6 +85,7 @@ describe('buildEvent', () => {
     service_name: 'Skägg & puts',
     customer_name: 'Omar',
     phone: '0701234567',
+    email: 'omar@example.com',
     start_at: '2026-07-24T12:00:00+00:00',
     end_at: '2026-07-24T12:30:00+00:00',
   }
@@ -93,8 +94,8 @@ describe('buildEvent', () => {
     const e = buildEvent(base)
     expect(e.summary).toBe('Omar — Skägg & puts')
     expect(e.description).toContain('Kund: Omar')
-    expect(e.description).not.toContain('0701234567')
-    expect(e.description).not.toContain('Telefon')
+    expect(e.description).toContain('Telefon: 0701234567')
+    expect(e.description).toContain('E-post: omar@example.com')
     expect(e.description).toContain('Tjänst: Skägg & puts')
     expect(e.start).toEqual({ dateTime: base.start_at, timeZone: 'Europe/Stockholm' })
     expect(e.end).toEqual({ dateTime: base.end_at, timeZone: 'Europe/Stockholm' })
@@ -102,9 +103,12 @@ describe('buildEvent', () => {
     expect(e.reminders.overrides[0]).toEqual({ method: 'popup', minutes: 30 })
   })
 
-  it('never includes contact details in the event', () => {
-    const e = buildEvent({ ...base, phone: null })
+  it('omits unavailable contact details without changing the rest of the event', () => {
+    const e = buildEvent({ ...base, phone: null, email: null })
     expect(e.description).not.toContain('Telefon')
+    expect(e.description).not.toContain('E-post')
+    expect(e.description).toContain('Kund: Omar')
+    expect(e.description).toContain('Tjänst: Skägg & puts')
   })
 })
 
@@ -119,11 +123,11 @@ describe('public Calendar privacy disclosure', () => {
   )
 
   it('matches minimized event content and durable disconnect cleanup', () => {
-    expect(privacy).toContain('kundens namn, behandling och bokad tid')
-    expect(privacy).toContain("customer's name, service, and appointment time")
-    expect(privacy).toContain('Telefonnummer och e-post skrivs inte till Google Calendar')
     expect(privacy).toContain(
-      'Phone numbers and email addresses are not written to Google Calendar',
+      'kundens namn, telefonnummer och e-postadress tillsammans med behandling och bokad tid',
+    )
+    expect(privacy).toContain(
+      "customer's name, phone number, and email address, together with the service and appointment time",
     )
     expect(privacy).toContain('refresh token behålls endast under')
     expect(privacy).toContain('refresh token is retained only during this')
@@ -162,6 +166,7 @@ describe('idempotent event insertion', () => {
     service_name: 'Klippning',
     customer_name: 'Omar',
     phone: '0701234567',
+    email: 'omar@example.com',
     start_at: '2026-07-24T12:00:00+00:00',
     end_at: '2026-07-24T12:30:00+00:00',
   })
@@ -183,7 +188,11 @@ describe('idempotent event insertion', () => {
 
     await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    expect(JSON.parse(String(init.body))).toMatchObject({ id: eventId, summary: event.summary })
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+    expect(body).toMatchObject({ id: eventId, summary: event.summary })
+    expect(body).not.toHaveProperty('refresh_token')
+    expect(body).not.toHaveProperty('access_token')
+    expect(JSON.stringify(body)).not.toContain('server-token')
     expect(init.signal).toBeInstanceOf(AbortSignal)
   })
 

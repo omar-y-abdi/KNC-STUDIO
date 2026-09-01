@@ -44,6 +44,7 @@ export type ExternalAction =
       readonly service_name: string
       readonly customer_name: string
       readonly phone: string | null
+      readonly email: string | null
       readonly start_at: string
       readonly end_at: string
       readonly refresh_token: string
@@ -180,6 +181,7 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
     nonEmpty(value.service_name) &&
     nonEmpty(value.customer_name) &&
     (value.phone === null || typeof value.phone === 'string') &&
+    (value.email === null || nonEmpty(value.email)) &&
     nonEmpty(value.start_at) &&
     nonEmpty(value.end_at) &&
     nonEmpty(value.refresh_token) &&
@@ -194,6 +196,7 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       service_name: value.service_name,
       customer_name: value.customer_name,
       phone: value.phone,
+      email: value.email,
       start_at: value.start_at,
       end_at: value.end_at,
       refresh_token: value.refresh_token,

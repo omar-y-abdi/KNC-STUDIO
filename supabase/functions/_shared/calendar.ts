@@ -139,6 +139,7 @@ export interface BookingEventInput {
   readonly service_name: string
   readonly customer_name: string
   readonly phone: string | null
+  readonly email: string | null
   readonly start_at: string // RFC3339 / ISO instant (unambiguous with the tz below)
   readonly end_at: string
 }
@@ -166,12 +167,20 @@ export function googleEventId(bookingId: string): string {
   return `bbs${bookingId.replaceAll('-', '').toLowerCase()}`
 }
 
-/** Map a booking to the Google Calendar event body. Customer name and service identify the visit;
- * contact details stay inside the booking system. A 30-min popup reminder fires before the slot. */
+/** Map a booking to the Google Calendar event body. The assigned barber needs the authorized
+ * customer contact details to identify the visit. Credentials are held by the caller and never
+ * become part of this body. A 30-min popup reminder fires before the slot. */
 export function buildEvent(b: BookingEventInput): GoogleEventBody {
+  const description = [
+    `Kund: ${b.customer_name}`,
+    ...(b.phone === null ? [] : [`Telefon: ${b.phone}`]),
+    ...(b.email === null ? [] : [`E-post: ${b.email}`]),
+    `Tjänst: ${b.service_name}`,
+  ].join('\n')
+
   return {
     summary: `${b.customer_name} — ${b.service_name}`,
-    description: `Kund: ${b.customer_name}\nTjänst: ${b.service_name}`,
+    description,
     start: { dateTime: b.start_at, timeZone: SALON_TZ },
     end: { dateTime: b.end_at, timeZone: SALON_TZ },
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] },
