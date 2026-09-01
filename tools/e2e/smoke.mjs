@@ -1,20 +1,160 @@
 import { chromium } from 'playwright'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
+const WAIT_TIMEOUT = 15_000
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
+async function waitForFonts(page) {
+  await page.evaluate((timeout) => {
+    let timer
+    return Promise.race([
+      globalThis.document.fonts.ready,
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(
+          () => reject(new Error(`document fonts did not settle within ${timeout}ms`)),
+          timeout,
+        )
+      }),
+    ]).finally(() => globalThis.clearTimeout(timer))
+  }, WAIT_TIMEOUT)
+}
+
+async function scrollMarqueeRowIntoView(page, rowIndex) {
+  await page.evaluate((index) => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+    if (!(row instanceof globalThis.HTMLElement)) throw new Error(`marquee row ${index} missing`)
+    row.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' })
+  }, rowIndex)
+}
+
+async function marqueeTilePoint(page, rowIndex) {
+  return page.evaluate((index) => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+    const tile = row?.querySelector('[role="button"]')
+    if (!(row instanceof globalThis.HTMLElement) || !(tile instanceof globalThis.HTMLElement)) {
+      throw new Error(`marquee logical tile ${index} missing`)
+    }
+    const rect = tile.getBoundingClientRect()
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  }, rowIndex)
+}
+
+async function waitForGalleryToSettle(page) {
+  let previousSignature = ''
+  let stableSamples = 0
+  for (let attempt = 0; attempt < 50 && stableSamples < 3; attempt += 1) {
+    const galleryState = await page.evaluate(() => {
+      const rows = [...globalThis.document.querySelectorAll('[data-testid="marquee-row"]')]
+      return {
+        ready:
+          rows.length >= 2 &&
+          rows.every(
+            (row) =>
+              row.querySelector('[role="button"]') !== null &&
+              row.querySelector('[aria-hidden="true"]') !== null,
+          ),
+        signature: rows
+          .map((row) =>
+            [...row.querySelectorAll('[data-tile-key]')]
+              .map(
+                (tile) =>
+                  `${tile.getAttribute('data-tile-key')}:${tile.getAttribute('role')}:${tile.getAttribute('aria-hidden')}`,
+              )
+              .join('|'),
+          )
+          .join('||'),
+      }
+    })
+    if (galleryState.ready && galleryState.signature === previousSignature) {
+      stableSamples += 1
+    } else {
+      stableSamples = 0
+    }
+    previousSignature = galleryState.signature
+    if (stableSamples < 3) await page.waitForTimeout(100)
+  }
+  assert(stableSamples >= 3, 'gallery tiles did not settle before interaction checks')
+}
+
+async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
+  const point = await marqueeTilePoint(page, rowIndex)
+  if (sequence === 'cancel') {
+    await page.evaluate(() => {
+      globalThis.__smokePointerId = null
+      globalThis.document.addEventListener(
+        'pointerdown',
+        (event) => {
+          globalThis.__smokePointerId = event.pointerId
+        },
+        { capture: true, once: true },
+      )
+    })
+  }
+  await page.mouse.move(point.x, point.y)
+  await page.mouse.down()
+  try {
+    if (sequence === 'drag') {
+      await page.mouse.move(point.x + 36, point.y, { steps: 3 })
+    } else if (sequence === 'cancel') {
+      const pointerId = await page.evaluate(() => {
+        const activePointerId = globalThis.__smokePointerId
+        delete globalThis.__smokePointerId
+        return activePointerId
+      })
+      assert(Number.isInteger(pointerId), 'gallery pointercancel id was not recorded')
+      await page.evaluate(
+        ({ index, pointerId, x, y }) => {
+          const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+          if (!(row instanceof globalThis.HTMLElement))
+            throw new Error('gallery pointercancel row missing')
+          row.dispatchEvent(
+            new globalThis.PointerEvent('pointercancel', {
+              bubbles: true,
+              pointerId,
+              pointerType: 'mouse',
+              clientX: x,
+              clientY: y,
+            }),
+          )
+        },
+        { index: rowIndex, pointerId, x: point.x, y: point.y },
+      )
+    } else if (sequence === 'scroll') {
+      await page.evaluate(() => {
+        const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
+        if (scrollRoot instanceof globalThis.HTMLElement) {
+          scrollRoot.scrollBy({ top: 40 })
+          scrollRoot.dispatchEvent(new globalThis.Event('scroll'))
+        } else {
+          globalThis.window.scrollBy({ top: 40 })
+          globalThis.document.dispatchEvent(new globalThis.Event('scroll'))
+        }
+      })
+    }
+  } finally {
+    await page.mouse.up()
+  }
+
+  return page.evaluate((index) => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+    return row?.querySelector('[role="button"]')?.getAttribute('aria-pressed') ?? null
+  }, rowIndex)
+}
+
 async function verifyPublicPage(browser, viewport) {
   const errors = []
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce' })
+  context.setDefaultTimeout(WAIT_TIMEOUT)
+  context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
 
-  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await page.locator('#root > :first-child').waitFor()
-  await page.evaluate(() => globalThis.document.fonts.ready)
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
+  await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
+  await waitForFonts(page)
 
   assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
   const overflow = await page.evaluate(
@@ -33,7 +173,10 @@ async function verifyPublicPage(browser, viewport) {
     )
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
-  await page.getByRole('button', { name: 'EN', exact: true }).first().click()
+  await page
+    .getByRole('button', { name: 'EN', exact: true })
+    .first()
+    .click({ timeout: WAIT_TIMEOUT })
   assert(
     (await page
       .getByRole('button', { name: 'EN', exact: true })
@@ -45,15 +188,15 @@ async function verifyPublicPage(browser, viewport) {
   const myBookingsButton = page
     .getByRole('button', { name: 'My appointments', exact: true })
     .first()
-  await myBookingsButton.click()
+  await myBookingsButton.click({ timeout: WAIT_TIMEOUT })
   const myBookingsDialog = page.getByRole('dialog', { name: 'My appointments' })
-  await myBookingsDialog.waitFor()
-  await myBookingsDialog.getByRole('button', { name: 'Close' }).click()
-  await myBookingsDialog.waitFor({ state: 'detached' })
+  await myBookingsDialog.waitFor({ timeout: WAIT_TIMEOUT })
+  await myBookingsDialog.getByRole('button', { name: 'Close' }).click({ timeout: WAIT_TIMEOUT })
+  await myBookingsDialog.waitFor({ state: 'detached', timeout: WAIT_TIMEOUT })
 
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
-  await about.scrollIntoViewIfNeeded()
+  await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
   await page.waitForTimeout(100)
   const marqueeTransforms = await page
     .getByTestId('marquee-track')
@@ -90,92 +233,77 @@ async function verifyPublicPage(browser, viewport) {
     `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
   )
 
-  const marqueeRow = page.getByTestId('marquee-row').first()
-  await marqueeRow.scrollIntoViewIfNeeded()
-  let previousGallerySignature = ''
-  let stableGallerySamples = 0
-  for (let attempt = 0; attempt < 30 && stableGallerySamples < 3; attempt += 1) {
-    const gallerySignature = await marqueeRow
-      .locator('[data-tile-key]')
-      .evaluateAll((tiles) => tiles.map((tile) => tile.getAttribute('data-tile-key')).join('|'))
-    if (gallerySignature === previousGallerySignature) stableGallerySamples += 1
-    else stableGallerySamples = 0
-    previousGallerySignature = gallerySignature
-    if (stableGallerySamples < 3) await page.waitForTimeout(100)
-  }
-  assert(stableGallerySamples >= 3, 'gallery tiles did not settle before interaction checks')
-  const marqueeTiles = marqueeRow.locator('[role="button"]')
-  assert((await marqueeTiles.count()) >= 1, 'gallery interaction regression has no logical tile')
+  await waitForGalleryToSettle(page)
+  await scrollMarqueeRowIntoView(page, 0)
+  await dispatchGalleryPointerSequence(page, 0, 'tap')
+  await page.waitForFunction(
+    () =>
+      globalThis.document
+        .querySelectorAll('[data-testid="marquee-row"]')[0]
+        ?.querySelector('[role="button"]')
+        ?.getAttribute('aria-pressed') === 'true',
+    undefined,
+    { timeout: WAIT_TIMEOUT },
+  )
+  await waitForGalleryToSettle(page)
 
-  const tapTile = marqueeTiles.nth(0)
-  await tapTile.click()
-  assert((await tapTile.getAttribute('aria-pressed')) === 'true', 'gallery tap did not select tile')
-
-  const interactionRow = page.getByTestId('marquee-row').nth(1)
-  await interactionRow.scrollIntoViewIfNeeded()
-  const interactionTile = interactionRow.locator('[role="button"]').first()
-  const clone = interactionRow.locator('[aria-hidden="true"]').first()
-  const cloneFocused = await clone.evaluate((element) => {
-    element.focus()
-    return globalThis.document.activeElement === element
+  await scrollMarqueeRowIntoView(page, 1)
+  const cloneFocused = await page.evaluate(() => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[1]
+    const clones = row?.querySelectorAll('[aria-hidden="true"]')
+    if (clones === undefined || clones.length === 0) throw new Error('gallery loop clone missing')
+    return [...clones].some((clone) => {
+      clone.focus()
+      return globalThis.document.activeElement === clone
+    })
   })
   assert(!cloneFocused, 'gallery loop clone can receive focus')
 
-  const dragBox = await interactionTile.boundingBox()
-  assert(dragBox !== null, 'gallery drag tile is not measurable')
-  if (dragBox !== null) {
-    const x = dragBox.x + dragBox.width / 2
-    const y = dragBox.y + dragBox.height / 2
-    await page.mouse.move(x, y)
-    await page.mouse.down()
-    await page.mouse.move(x + 36, y, { steps: 3 })
-    await page.mouse.up()
-  }
   assert(
-    (await interactionTile.getAttribute('aria-pressed')) === 'false',
+    (await dispatchGalleryPointerSequence(page, 1, 'drag')) === 'false',
     'gallery drag selected a tile',
   )
-
-  await interactionRow.scrollIntoViewIfNeeded()
-  const cancelBox = await interactionTile.boundingBox()
-  assert(cancelBox !== null, 'gallery pointercancel tile is not measurable')
-  if (cancelBox !== null) {
-    const x = cancelBox.x + cancelBox.width / 2
-    const y = cancelBox.y + cancelBox.height / 2
-    await page.mouse.move(x, y)
-    await page.mouse.down()
-    await interactionRow.evaluate((row) => {
-      row.dispatchEvent(
-        new globalThis.PointerEvent('pointercancel', { bubbles: true, pointerId: 1 }),
-      )
-    })
-    await page.mouse.up()
-  }
+  await page.waitForTimeout(50)
   assert(
-    (await interactionTile.getAttribute('aria-pressed')) === 'false',
-    'gallery pointercancel selected a tile',
+    (await page.evaluate(() =>
+      globalThis.document
+        .querySelectorAll('[data-testid="marquee-row"]')[1]
+        ?.querySelector('[role="button"]')
+        ?.getAttribute('aria-pressed'),
+    )) === 'false',
+    'gallery drag selected a tile after release',
   )
 
-  await interactionRow.scrollIntoViewIfNeeded()
-  const scrollBox = await interactionTile.boundingBox()
-  assert(scrollBox !== null, 'gallery scroll tile is not measurable')
-  if (scrollBox !== null) {
-    const x = scrollBox.x + scrollBox.width / 2
-    const y = scrollBox.y + scrollBox.height / 2
-    await page.mouse.move(x, y)
-    await page.mouse.down()
-    if (viewport.width <= 768) {
-      await page
-        .getByTestId('mobile-site-scroll')
-        .evaluate((element) => element.scrollBy({ top: 40 }))
-    } else {
-      await page.evaluate(() => globalThis.window.scrollBy({ top: 40 }))
-    }
-    await page.mouse.up()
-  }
+  await scrollMarqueeRowIntoView(page, 1)
   assert(
-    (await interactionTile.getAttribute('aria-pressed')) === 'false',
+    (await dispatchGalleryPointerSequence(page, 1, 'cancel')) === 'false',
+    'gallery pointercancel selected a tile',
+  )
+  await page.waitForTimeout(50)
+  assert(
+    (await page.evaluate(() =>
+      globalThis.document
+        .querySelectorAll('[data-testid="marquee-row"]')[1]
+        ?.querySelector('[role="button"]')
+        ?.getAttribute('aria-pressed'),
+    )) === 'false',
+    'gallery pointercancel selected a tile after release',
+  )
+
+  await scrollMarqueeRowIntoView(page, 1)
+  assert(
+    (await dispatchGalleryPointerSequence(page, 1, 'scroll')) === 'false',
     'gallery scroll selected a tile',
+  )
+  await page.waitForTimeout(50)
+  assert(
+    (await page.evaluate(() =>
+      globalThis.document
+        .querySelectorAll('[data-testid="marquee-row"]')[1]
+        ?.querySelector('[role="button"]')
+        ?.getAttribute('aria-pressed'),
+    )) === 'false',
+    'gallery scroll selected a tile after release',
   )
 
   await page.evaluate(() => {
@@ -186,35 +314,45 @@ async function verifyPublicPage(browser, viewport) {
   if (viewport.width <= 768) {
     const scrollRoot = page.getByTestId('mobile-site-scroll')
     await scrollRoot.evaluate((element) => element.scrollTo({ top: element.clientHeight }))
-    await page.getByRole('button', { name: 'Back to home' }).waitFor()
-    await page.getByRole('button', { name: 'Back to home' }).click()
+    await page.getByRole('button', { name: 'Back to home' }).waitFor({ timeout: WAIT_TIMEOUT })
+    await page.getByRole('button', { name: 'Back to home' }).click({ timeout: WAIT_TIMEOUT })
     await page.waitForFunction(
       () =>
         globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop === 0,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
     )
   } else {
     const panel = page.getByTestId('desktop-top-panel')
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 80 })
-    await page.waitForFunction(() => {
-      const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
-      return (
-        panel !== null &&
-        Math.abs(panel.getBoundingClientRect().top - (globalThis.window.innerHeight - 61)) <= 1
-      )
-    })
+    await page.waitForFunction(
+      () => {
+        const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
+        return (
+          panel !== null &&
+          Math.abs(panel.getBoundingClientRect().top - (globalThis.window.innerHeight - 61)) <= 1
+        )
+      },
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
     const initialPanelTop = await panel.evaluate((element) => element.getBoundingClientRect().top)
     assert(initialPanelTop > 0, 'desktop panel does not begin at the hero lower edge')
     await page.evaluate(() =>
       globalThis.window.scrollTo({ top: globalThis.window.innerHeight / 2 }),
     )
-    await page.waitForFunction(() => {
-      const progress = Number(
-        globalThis.document
-          .querySelector('[data-testid="desktop-top-panel"]')
-          ?.getAttribute('data-scroll-progress'),
-      )
-      return progress > 0 && progress < 1
-    })
+    await page.waitForFunction(
+      () => {
+        const progress = Number(
+          globalThis.document
+            .querySelector('[data-testid="desktop-top-panel"]')
+            ?.getAttribute('data-scroll-progress'),
+        )
+        return progress > 0 && progress < 1
+      },
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
     const intermediatePanelTop = await panel.evaluate(
       (element) => element.getBoundingClientRect().top,
     )
@@ -222,11 +360,15 @@ async function verifyPublicPage(browser, viewport) {
       intermediatePanelTop > 0 && intermediatePanelTop < initialPanelTop,
       'desktop panel did not move continuously toward the top',
     )
-    await page.getByRole('button', { name: 'Toggle light/dark' }).click()
-    await page.waitForFunction((previousTop) => {
-      const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
-      return panel !== null && Math.abs(panel.getBoundingClientRect().top - previousTop) <= 1
-    }, intermediatePanelTop)
+    await page.getByRole('button', { name: 'Toggle light/dark' }).click({ timeout: WAIT_TIMEOUT })
+    await page.waitForFunction(
+      (previousTop) => {
+        const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
+        return panel !== null && Math.abs(panel.getBoundingClientRect().top - previousTop) <= 1
+      },
+      intermediatePanelTop,
+      { timeout: WAIT_TIMEOUT },
+    )
     await page.evaluate(() => globalThis.window.scrollTo({ top: globalThis.window.innerHeight }))
     await page.waitForFunction(
       () =>
@@ -235,6 +377,8 @@ async function verifyPublicPage(browser, viewport) {
             .querySelector('[data-testid="desktop-top-panel"]')
             ?.getAttribute('data-scroll-progress'),
         ) === 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
     )
     assert(
       (await panel.evaluate((element) => element.getBoundingClientRect().top)) <= 1,
@@ -248,6 +392,8 @@ async function verifyPublicPage(browser, viewport) {
             .querySelector('[data-testid="desktop-top-panel"]')
             ?.getBoundingClientRect().top ?? 1) - 0,
         ) <= 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
     )
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
     await page.waitForFunction(
@@ -257,6 +403,8 @@ async function verifyPublicPage(browser, viewport) {
             .querySelector('[data-testid="desktop-top-panel"]')
             ?.getAttribute('data-scroll-progress'),
         ) === 0,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
     )
     assert(
       Math.abs(
@@ -265,42 +413,49 @@ async function verifyPublicPage(browser, viewport) {
       ) <= 1,
       'desktop panel did not reverse back to the hero lower edge',
     )
-    await page.getByRole('button', { name: 'About', exact: true }).click()
-    await page.waitForFunction(() => {
-      const top = globalThis.document.querySelector('#om-oss')?.getBoundingClientRect().top
-      return top !== undefined && top >= 60 && top <= 62
-    })
+    await page.getByRole('button', { name: 'About', exact: true }).click({ timeout: WAIT_TIMEOUT })
+    await page.waitForFunction(
+      () => {
+        const top = globalThis.document.querySelector('#om-oss')?.getBoundingClientRect().top
+        return top !== undefined && top >= 60 && top <= 62
+      },
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
   }
 
-  await page.getByRole('button', { name: 'Book appointment', exact: true }).first().click()
+  await page
+    .getByRole('button', { name: 'Book appointment', exact: true })
+    .first()
+    .click({ timeout: WAIT_TIMEOUT })
   assert((await about.count()) === 0, 'About section remains mounted while booking is open')
-  await page.getByTestId('booking-step-barber').waitFor()
+  await page.getByTestId('booking-step-barber').waitFor({ timeout: WAIT_TIMEOUT })
   // Production data may provide options; an intentionally unconfigured test build must show an
   // honest empty state instead of bundled barber fixtures.
   await page
     .locator('[data-testid="booking-barber-option"],[data-testid="booking-barber-empty"]')
     .first()
-    .waitFor()
+    .waitFor({ timeout: WAIT_TIMEOUT })
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
   await context.close()
 }
 
 async function verifyStaticEndpoints(page) {
-  const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`)
+  const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`, { timeout: WAIT_TIMEOUT })
   assert(acp.status() === 200, `ACP status ${acp.status()}`)
   const document = await acp.json()
   assert(document?.protocol?.name === 'acp', 'ACP protocol name missing')
   assert(Array.isArray(document?.capabilities?.services), 'ACP services missing')
 
   for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
-    const response = await page.request.get(`${baseUrl}${path}`)
+    const response = await page.request.get(`${baseUrl}${path}`, { timeout: WAIT_TIMEOUT })
     assert(response.status() === 200, `${path} status ${response.status()}`)
   }
 }
 
-const browser = await chromium.launch()
+const browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
 try {
   await verifyPublicPage(browser, { width: 1280, height: 900 })
   await verifyPublicPage(browser, { width: 390, height: 844 })
