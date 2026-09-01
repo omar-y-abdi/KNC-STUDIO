@@ -4,15 +4,12 @@ import { writeSync } from 'node:fs'
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
 const WATCHDOG_TIMEOUT = 180_000
-let activeStage = 'startup'
-
-function mark(stage) {
-  activeStage = stage
-  writeSync(1, `[browser-smoke ${new Date().toISOString()}] ${stage}\n`)
-}
 
 const watchdog = globalThis.setTimeout(() => {
-  writeSync(2, `[browser-smoke watchdog ${new Date().toISOString()}] timed out in ${activeStage}\n`)
+  writeSync(
+    2,
+    `[browser-smoke watchdog ${new Date().toISOString()}] exceeded ${WATCHDOG_TIMEOUT}ms\n`,
+  )
   process.exit(124)
 }, WATCHDOG_TIMEOUT)
 
@@ -132,10 +129,8 @@ async function waitForGalleryToSettle(page) {
 }
 
 async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
-  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: locate point`)
   if (sequence === 'cancel') {
     const point = await marqueeTilePoint(page, rowIndex)
-    mark(`gallery pointer row=${rowIndex} sequence=cancel: install observer`)
     await page.evaluate((index) => {
       const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
       if (!(row instanceof globalThis.HTMLElement))
@@ -149,18 +144,15 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
         { capture: true, once: true },
       )
     }, rowIndex)
-    mark('gallery pointer cancel: create CDP session')
     const client = await page.context().newCDPSession(page)
     let touchStarted = false
     try {
-      mark('gallery pointer cancel: touchStart')
       await client.send('Input.dispatchTouchEvent', {
         type: 'touchStart',
         touchPoints: [{ x: point.x, y: point.y, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
         modifiers: 0,
       })
       touchStarted = true
-      mark('gallery pointer cancel: touchMove')
       await client.send('Input.dispatchTouchEvent', {
         type: 'touchMove',
         touchPoints: [{ x: point.x, y: point.y + 80, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
@@ -168,21 +160,17 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
       })
     } finally {
       if (touchStarted) {
-        mark('gallery pointer cancel: touchEnd')
         await client.send('Input.dispatchTouchEvent', {
           type: 'touchEnd',
           touchPoints: [],
           modifiers: 0,
         })
       }
-      mark('gallery pointer cancel: detach CDP session')
       await client.detach()
     }
-    mark('gallery pointer cancel: await native pointercancel')
     await page.waitForFunction(() => globalThis.__smokeCancelObserved === true, undefined, {
       timeout: WAIT_TIMEOUT,
     })
-    mark('gallery pointer cancel: read exact tile state')
     await page.evaluate(() => {
       delete globalThis.__smokeCancelObserved
     })
@@ -193,16 +181,12 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
   }
 
   const point = await marqueeTilePoint(page, rowIndex)
-  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.move`)
   await page.mouse.move(point.x, point.y)
-  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.down`)
   await page.mouse.down()
   try {
     if (sequence === 'drag') {
-      mark('gallery pointer drag: mouse.move')
       await page.mouse.move(point.x + 36, point.y, { steps: 3 })
     } else if (sequence === 'scroll') {
-      mark('gallery pointer scroll: page scroll')
       await page.evaluate(() => {
         const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
         if (scrollRoot instanceof globalThis.HTMLElement) {
@@ -215,31 +199,24 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
       })
     }
   } finally {
-    mark(`gallery pointer row=${rowIndex} sequence=${sequence}: mouse.up`)
     await page.mouse.up()
   }
 
-  mark(`gallery pointer row=${rowIndex} sequence=${sequence}: read exact tile state`)
   return { key: point.key, pressed: await marqueeTileState(page, rowIndex, point.key) }
 }
 
 async function verifyPublicPage(browser, viewport) {
-  const label = `public ${viewport.width}x${viewport.height}`
   const errors = []
-  mark(`${label}: context.new`)
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: true })
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
-  mark(`${label}: page.new`)
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
 
-  mark(`${label}: navigation and fonts`)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
   await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
   await waitForFonts(page)
 
-  mark(`${label}: base assertions`)
   assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
   const overflow = await page.evaluate(
     () =>
@@ -257,7 +234,6 @@ async function verifyPublicPage(browser, viewport) {
     )
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
-  mark(`${label}: language and my-bookings`)
   await page
     .getByRole('button', { name: 'EN', exact: true })
     .first()
@@ -279,7 +255,6 @@ async function verifyPublicPage(browser, viewport) {
   await myBookingsDialog.getByRole('button', { name: 'Close' }).click({ timeout: WAIT_TIMEOUT })
   await myBookingsDialog.waitFor({ state: 'detached', timeout: WAIT_TIMEOUT })
 
-  mark(`${label}: gallery semantics`)
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
   await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
@@ -319,7 +294,6 @@ async function verifyPublicPage(browser, viewport) {
     `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
   )
 
-  mark(`${label}: gallery pointer interactions`)
   await waitForGalleryToSettle(page)
   await scrollMarqueeRowIntoView(page, 0)
   const tap = await dispatchGalleryPointerSequence(page, 0, 'tap')
@@ -365,7 +339,6 @@ async function verifyPublicPage(browser, viewport) {
     'gallery drag selected a tile after release',
   )
 
-  mark(`${label}: navigation state`)
   await page.evaluate(() => {
     globalThis.window.scrollTo({ top: 0 })
     globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
@@ -485,7 +458,6 @@ async function verifyPublicPage(browser, viewport) {
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
   }
 
-  mark(`${label}: booking state`)
   await page
     .getByRole('button', { name: 'Book appointment', exact: true })
     .first()
@@ -500,13 +472,10 @@ async function verifyPublicPage(browser, viewport) {
     .waitFor({ timeout: WAIT_TIMEOUT })
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
-  mark(`${label}: context.close start`)
   await context.close()
-  mark(`${label}: context.close done`)
 }
 
 async function verifyStaticEndpoints(page) {
-  mark('static endpoints: ACP request')
   const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`, { timeout: WAIT_TIMEOUT })
   assert(acp.status() === 200, `ACP status ${acp.status()}`)
   const document = await acp.json()
@@ -514,32 +483,23 @@ async function verifyStaticEndpoints(page) {
   assert(Array.isArray(document?.capabilities?.services), 'ACP services missing')
 
   for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
-    mark(`static endpoints: ${path} request`)
     const response = await page.request.get(`${baseUrl}${path}`, { timeout: WAIT_TIMEOUT })
     assert(response.status() === 200, `${path} status ${response.status()}`)
   }
 }
 
-mark('chromium.launch start')
-const browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
-mark('chromium.launch done')
+let browser
 try {
-  mark('public desktop start')
+  browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
   await verifyPublicPage(browser, { width: 1280, height: 900 })
-  mark('public desktop done')
-  mark('public mobile start')
   await verifyPublicPage(browser, { width: 390, height: 844 })
-  mark('public mobile done')
-  mark('static endpoints page.new')
   const page = await browser.newPage()
   await verifyStaticEndpoints(page)
-  mark('static endpoints page.close start')
   await page.close()
-  mark('static endpoints page.close done')
   console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
 } finally {
-  mark('browser.close start')
-  await browser.close()
-  mark('browser.close done')
+  if (browser !== undefined) {
+    await browser.close()
+  }
   globalThis.clearTimeout(watchdog)
 }
