@@ -142,35 +142,47 @@ function nonEmpty(value: unknown): value is string {
 }
 
 interface CalendarBookingSource {
+  readonly barber_id: string
   readonly service_name: string
   readonly customer_name: string
   readonly phone: string | null
   readonly email: string | null
   readonly start_at: string
   readonly end_at: string
+  readonly refresh_token: string
+  readonly calendar_id: string
+  readonly google_event_id: string | null
 }
 
 function parseCalendarBookingSource(value: unknown): CalendarBookingSource | null {
   if (
     !isRecord(value) ||
     value.status !== 'confirmed' ||
+    !nonEmpty(value.barber_id) ||
     !nonEmpty(value.service_name) ||
     !nonEmpty(value.customer_name) ||
     (value.phone !== null && typeof value.phone !== 'string') ||
     (value.email !== null && !nonEmpty(value.email)) ||
     !nonEmpty(value.start_at) ||
-    !nonEmpty(value.end_at)
+    !nonEmpty(value.end_at) ||
+    !nonEmpty(value.refresh_token) ||
+    !nonEmpty(value.calendar_id) ||
+    (value.google_event_id !== null && !nonEmpty(value.google_event_id))
   ) {
     return null
   }
 
   return {
+    barber_id: value.barber_id,
     service_name: value.service_name,
     customer_name: value.customer_name,
     phone: value.phone,
     email: value.email,
     start_at: value.start_at,
     end_at: value.end_at,
+    refresh_token: value.refresh_token,
+    calendar_id: value.calendar_id,
+    google_event_id: value.google_event_id,
   }
 }
 
@@ -303,13 +315,14 @@ function authUserAlreadyMissing(error: AuthAdminError): boolean {
 }
 
 async function recordCalendarEvent(
-  action: Extract<ExternalAction, { action_type: 'calendar_event_sync' }>,
+  bookingId: string,
+  barberId: string,
   service: ExternalActionService,
   googleEventIdValue: string,
 ): Promise<void> {
   const recorded = await service.rpc('calendar_record_event', {
-    p_booking_id: action.booking_id,
-    p_barber_id: action.barber_id,
+    p_booking_id: bookingId,
+    p_barber_id: barberId,
     p_google_event_id: googleEventIdValue,
   })
   if (recorded.error !== null) {
@@ -336,18 +349,18 @@ export async function executeExternalAction(
       return
     }
     case 'calendar_event_sync': {
-      if (!runtime.googleClientId || !runtime.googleClientSecret) {
-        throw new ExternalActionError('not_configured', 'Google OAuth runtime is not configured')
-      }
       try {
-        const accessToken = await refreshAccessToken(
-          action.refresh_token,
-          runtime.googleClientId,
-          runtime.googleClientSecret,
-        )
-        const source = await service.rpc('calendar_sync_source', {
-          p_booking_id: action.booking_id,
-        })
+        let source: Awaited<ReturnType<ExternalActionService['rpc']>>
+        try {
+          source = await service.rpc('calendar_sync_source', {
+            p_booking_id: action.booking_id,
+          })
+        } catch (error) {
+          throw new ExternalActionError(
+            'calendar_source_failed',
+            error instanceof Error ? error.message : 'Calendar booking source failed',
+          )
+        }
         if (source.error !== null) {
           throw new ExternalActionError(
             'calendar_source_failed',
@@ -355,33 +368,40 @@ export async function executeExternalAction(
           )
         }
         const booking = parseCalendarBookingSource(source.data)
-        if (booking === null) {
-          throw new ExternalActionError(
-            'calendar_sync_superseded',
-            'Calendar booking is no longer confirmed',
-            false,
-          )
-        }
+        if (booking === null) return
         const event = buildEvent(booking)
-        if (action.google_event_id !== null) {
+        if (!runtime.googleClientId || !runtime.googleClientSecret) {
+          throw new ExternalActionError('not_configured', 'Google OAuth runtime is not configured')
+        }
+        const accessToken = await refreshAccessToken(
+          booking.refresh_token,
+          runtime.googleClientId,
+          runtime.googleClientSecret,
+        )
+        if (booking.google_event_id !== null) {
           const patched = await patchEvent(
             accessToken,
-            action.calendar_id,
-            action.google_event_id,
+            booking.calendar_id,
+            booking.google_event_id,
             event,
           )
           if (patched) {
-            await recordCalendarEvent(action, service, action.google_event_id)
+            await recordCalendarEvent(
+              action.booking_id,
+              booking.barber_id,
+              service,
+              booking.google_event_id,
+            )
             return
           }
         }
         const eventId = await insertEvent(
           accessToken,
-          action.calendar_id,
+          booking.calendar_id,
           googleEventId(action.booking_id),
           event,
         )
-        await recordCalendarEvent(action, service, eventId)
+        await recordCalendarEvent(action.booking_id, booking.barber_id, service, eventId)
       } catch (error) {
         if (error instanceof ExternalActionError) throw error
         const authorizationRequired = isGoogleAuthorizationError(error)
