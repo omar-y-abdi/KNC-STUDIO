@@ -16,6 +16,7 @@ const BACKDROP_STYLE =
 export interface DetailsDialogProps {
   readonly t: BookingStrings
   readonly s: BookingStyles
+  readonly closeLabel: string
   readonly sumBarber: string
   readonly sumWhen: string
   readonly sumService: string
@@ -93,7 +94,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         >
           {t.yourDetails}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={t.ariaClose}>
+        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={props.closeLabel}>
           ×
         </button>
       </div>
