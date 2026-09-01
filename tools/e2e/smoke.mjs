@@ -89,6 +89,95 @@ async function verifyPublicPage(browser, viewport) {
     ),
     `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
   )
+
+  const marqueeRow = page.getByTestId('marquee-row').first()
+  await marqueeRow.scrollIntoViewIfNeeded()
+  let previousGallerySignature = ''
+  let stableGallerySamples = 0
+  for (let attempt = 0; attempt < 30 && stableGallerySamples < 3; attempt += 1) {
+    const gallerySignature = await marqueeRow
+      .locator('[data-tile-key]')
+      .evaluateAll((tiles) => tiles.map((tile) => tile.getAttribute('data-tile-key')).join('|'))
+    if (gallerySignature === previousGallerySignature) stableGallerySamples += 1
+    else stableGallerySamples = 0
+    previousGallerySignature = gallerySignature
+    if (stableGallerySamples < 3) await page.waitForTimeout(100)
+  }
+  assert(stableGallerySamples >= 3, 'gallery tiles did not settle before interaction checks')
+  const marqueeTiles = marqueeRow.locator('[role="button"]')
+  assert((await marqueeTiles.count()) >= 1, 'gallery interaction regression has no logical tile')
+
+  const tapTile = marqueeTiles.nth(0)
+  await tapTile.click()
+  assert((await tapTile.getAttribute('aria-pressed')) === 'true', 'gallery tap did not select tile')
+
+  const interactionRow = page.getByTestId('marquee-row').nth(1)
+  await interactionRow.scrollIntoViewIfNeeded()
+  const interactionTile = interactionRow.locator('[role="button"]').first()
+  const clone = interactionRow.locator('[aria-hidden="true"]').first()
+  const cloneFocused = await clone.evaluate((element) => {
+    element.focus()
+    return globalThis.document.activeElement === element
+  })
+  assert(!cloneFocused, 'gallery loop clone can receive focus')
+
+  const dragBox = await interactionTile.boundingBox()
+  assert(dragBox !== null, 'gallery drag tile is not measurable')
+  if (dragBox !== null) {
+    const x = dragBox.x + dragBox.width / 2
+    const y = dragBox.y + dragBox.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 36, y, { steps: 3 })
+    await page.mouse.up()
+  }
+  assert(
+    (await interactionTile.getAttribute('aria-pressed')) === 'false',
+    'gallery drag selected a tile',
+  )
+
+  await interactionRow.scrollIntoViewIfNeeded()
+  const cancelBox = await interactionTile.boundingBox()
+  assert(cancelBox !== null, 'gallery pointercancel tile is not measurable')
+  if (cancelBox !== null) {
+    const x = cancelBox.x + cancelBox.width / 2
+    const y = cancelBox.y + cancelBox.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await interactionRow.evaluate((row) => {
+      row.dispatchEvent(
+        new globalThis.PointerEvent('pointercancel', { bubbles: true, pointerId: 1 }),
+      )
+    })
+    await page.mouse.up()
+  }
+  assert(
+    (await interactionTile.getAttribute('aria-pressed')) === 'false',
+    'gallery pointercancel selected a tile',
+  )
+
+  await interactionRow.scrollIntoViewIfNeeded()
+  const scrollBox = await interactionTile.boundingBox()
+  assert(scrollBox !== null, 'gallery scroll tile is not measurable')
+  if (scrollBox !== null) {
+    const x = scrollBox.x + scrollBox.width / 2
+    const y = scrollBox.y + scrollBox.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    if (viewport.width <= 768) {
+      await page
+        .getByTestId('mobile-site-scroll')
+        .evaluate((element) => element.scrollBy({ top: 40 }))
+    } else {
+      await page.evaluate(() => globalThis.window.scrollBy({ top: 40 }))
+    }
+    await page.mouse.up()
+  }
+  assert(
+    (await interactionTile.getAttribute('aria-pressed')) === 'false',
+    'gallery scroll selected a tile',
+  )
+
   await page.evaluate(() => {
     globalThis.window.scrollTo({ top: 0 })
     globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
