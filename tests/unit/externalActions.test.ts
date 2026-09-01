@@ -162,6 +162,37 @@ describe('external action contract', () => {
     })
   })
 
+  it('keeps Calendar execution retryable when the authoritative source is unavailable', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'temporary source failure' } })
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      executeExternalAction(
+        {
+          id: ACTION_ID,
+          dispatch_token: DISPATCH_TOKEN,
+          action_type: 'calendar_event_sync',
+          booking_id: BOOKING_ID,
+          barber_id: 'ada',
+          service_name: 'Stale Service',
+          customer_name: 'Stale Customer',
+          phone: '0700000000',
+          start_at: '2040-03-14T12:30:00.000Z',
+          end_at: '2040-03-14T13:15:00.000Z',
+          refresh_token: 'server-resolved-refresh-token',
+          calendar_id: 'primary',
+          google_event_id: null,
+        },
+        service,
+        { googleClientId: 'client', googleClientSecret: 'secret' },
+      ),
+    ).rejects.toMatchObject({ code: 'calendar_source_failed', retryable: true })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it('forgets Calendar mapping only after Google deletion succeeds', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
