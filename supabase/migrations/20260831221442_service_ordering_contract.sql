@@ -160,7 +160,6 @@ declare
   v_target integer;
   v_count integer;
   v_swap uuid;
-  v_index integer;
   v_services jsonb;
 begin
   if not coalesce(public.is_owner() or p_barber_id = public.current_barber_id(), false) then
