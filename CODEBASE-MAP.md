@@ -598,7 +598,7 @@ After contract migration, direct anon execution of customer mutation/lookup RPCs
 ### 6.8 Authorization/helper residue
 
 - `current_role()`, `current_barber_id()`, `is_owner()`.
-- `taken_slots()` = legacy/public availability helper still present; live public UI uses `available_slots()`.
+- `taken_slots()` = retired superseded availability helper; live public UI uses `available_slots()`.
 - `queue_booking_confirmation()` = **legacy/superseded pre-ledger function**. Later migrations remove calling triggers but leave function defined. Do not extend/reuse; current booking email events use `queue_booking_email_delivery()` + `booking_email_delivery_jobs`.
 
 ### 6.9 Triggers, cron, external webhook
