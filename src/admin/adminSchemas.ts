@@ -172,6 +172,23 @@ export const serviceRow = z.object({
 export type ServiceRow = z.infer<typeof serviceRow>
 export const serviceRows = z.array(serviceRow)
 
+const serviceMutationError = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const createServiceResponse = z.union([
+  z.object({ ok: z.literal(true), row: serviceRow }),
+  serviceMutationError,
+])
+export const deleteServiceResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  serviceMutationError,
+])
+export const reorderServiceResponse = z.union([
+  z.object({ ok: z.literal(true), services: serviceRows }),
+  serviceMutationError,
+])
+
 // --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
 
 export const siteContentRow = z.object({

@@ -4,7 +4,14 @@
 // row/response; failure -> AdminError; never throws to the UI).
 
 import { getAdminClient } from '../adminClient'
-import { parseWith, serviceRow, serviceRows } from '../adminSchemas'
+import {
+  createServiceResponse,
+  deleteServiceResponse,
+  parseWith,
+  reorderServiceResponse,
+  serviceRow,
+  serviceRows,
+} from '../adminSchemas'
 import type { AdminBarberId, AdminResult, AdminService, NewService, ServiceEdit } from '../types'
 import { err, ok } from '../types'
 
@@ -56,35 +63,32 @@ export async function listServices(
   }
 }
 
-/** Create a service for a barber (owner any; barber only their own — RLS-enforced). */
+/** Create a service at the next per-barber position through the authorized ordering RPC. */
 export async function createService(
   barberId: AdminBarberId,
   s: NewService,
 ): Promise<AdminResult<AdminService>> {
   try {
-    const { data, error } = await getAdminClient()
-      .from('services')
-      .insert({
-        barber_id: barberId,
-        name: s.name,
-        price: s.price,
-        duration_min: s.durationMin,
-        sort_order: s.sortOrder,
-        available_weekdays: s.availableWeekdays,
-      })
-      .select(COLUMNS)
-      .single()
-    if (error !== null || data === null) return mapWriteError(error)
+    const { data, error } = await getAdminClient().rpc('admin_create_service', {
+      p_barber_id: barberId,
+      p_name: s.name,
+      p_price: s.price,
+      p_duration_min: s.durationMin,
+      p_active: true,
+      p_available_weekdays: s.availableWeekdays,
+    })
+    if (error !== null) return mapWriteError(error)
 
-    const parsed = parseWith(serviceRow, data)
+    const parsed = parseWith(createServiceResponse, data)
     if (!parsed.ok) return err('malformed', WRITE_ERROR)
-    return ok(toService(parsed.value))
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
+    return ok(toService(parsed.value.row))
   } catch {
     return err('network', WRITE_ERROR)
   }
 }
 
-/** Update a service by id (name/price/duration/active/sort_order). */
+/** Update a service by id, leaving its server-owned sort_order untouched. */
 export async function updateService(
   id: string,
   edit: ServiceEdit,
@@ -97,7 +101,6 @@ export async function updateService(
         price: edit.price,
         duration_min: edit.durationMin,
         active: edit.active,
-        sort_order: edit.sortOrder,
         available_weekdays: edit.availableWeekdays,
       })
       .eq('id', id)
@@ -113,12 +116,37 @@ export async function updateService(
   }
 }
 
-/** Delete a service by id. */
+/** Delete a service by id and compact its barber's order in the authorized RPC transaction. */
 export async function deleteService(id: string): Promise<AdminResult<{ id: string }>> {
   try {
-    const { error } = await getAdminClient().from('services').delete().eq('id', id)
+    const { data, error } = await getAdminClient().rpc('admin_delete_service', { p_id: id })
     if (error !== null) return mapWriteError(error)
+    const parsed = parseWith(deleteServiceResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
     return ok({ id })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Move one service by one position through the atomic per-barber ordering RPC. */
+export async function reorderService(
+  barberId: AdminBarberId,
+  id: string,
+  direction: -1 | 1,
+): Promise<AdminResult<readonly AdminService[]>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_reorder_service', {
+      p_barber_id: barberId,
+      p_service_id: id,
+      p_direction: direction,
+    })
+    if (error !== null) return mapWriteError(error)
+    const parsed = parseWith(reorderServiceResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
+    return ok(parsed.value.services.map(toService))
   } catch {
     return err('network', WRITE_ERROR)
   }
@@ -132,4 +160,13 @@ function mapWriteError(error: { code?: string; message?: string } | null): Admin
     if (error.code === '23514') return err('validation', 'Kontrollera namn, pris och längd.')
   }
   return err('network', WRITE_ERROR)
+}
+
+function mapMutationError(
+  error: 'forbidden' | 'not_found' | 'invalid' | 'duplicate',
+): AdminResult<never> {
+  if (error === 'forbidden') return err('forbidden', 'Du har inte behörighet för detta.')
+  if (error === 'not_found') return err('not_found', 'Tjänsten finns inte.')
+  if (error === 'duplicate') return err('validation', 'Tjänsteordningen kunde inte sparas.')
+  return err('validation', 'Kontrollera namn, pris och längd.')
 }

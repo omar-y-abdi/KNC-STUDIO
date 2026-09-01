@@ -15,6 +15,7 @@ import {
   createService,
   deleteService,
   listServices,
+  reorderService,
   updateService,
 } from '../adapters/servicesAdmin'
 import { parseServiceRow } from '../serviceValidation'
@@ -118,7 +119,6 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     const r = await updateService(row.id, {
       ...parsed,
       active: row.active,
-      sortOrder: row.sortOrder,
       availableWeekdays: row.availableWeekdays,
     })
     setBusyId(null)
@@ -135,40 +135,21 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     const a = rows[index]
     const b = rows[j]
     if (a === undefined || b === undefined) return
-    const pa = parseServiceRow(a)
-    const pb = parseServiceRow(b)
-    if (pa === null || pb === null) {
-      setRowError({ id: a.id, msg: t.svcValidation })
-      return
-    }
     setBusyId(a.id)
     setRowError(null)
-    // a takes position j, b takes position index; sort_order is renumbered to the new index.
-    const [ra, rb] = await Promise.all([
-      updateService(a.id, {
-        ...pa,
-        active: a.active,
-        sortOrder: j,
-        availableWeekdays: a.availableWeekdays,
-      }),
-      updateService(b.id, {
-        ...pb,
-        active: b.active,
-        sortOrder: index,
-        availableWeekdays: b.availableWeekdays,
-      }),
-    ])
+    const r = await reorderService(props.barberId, a.id, dir)
     setBusyId(null)
-    if (!ra.ok || !rb.ok) {
+    if (!r.ok) {
       setRowError({ id: a.id, msg: t.svcSaveError })
       return
     }
-    setRows((prev) => {
-      const next = [...prev]
-      next[index] = b
-      next[j] = a
-      return next.map((r, i) => ({ ...r, sortOrder: i }))
-    })
+    const localById = new Map(rows.map((row) => [row.id, row]))
+    setRows(
+      r.value.map((service) => {
+        const local = localById.get(service.id)
+        return local === undefined ? toEdit(service) : { ...local, sortOrder: service.sortOrder }
+      }),
+    )
   }
 
   const confirmDelete = async (): Promise<void> => {
@@ -182,7 +163,9 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
       setRowError({ id: target.id, msg: r.error.message })
       return
     }
-    setRows((prev) => prev.filter((x) => x.id !== target.id))
+    setRows((prev) =>
+      prev.filter((x) => x.id !== target.id).map((row, index) => ({ ...row, sortOrder: index })),
+    )
   }
 
   const add = async (): Promise<void> => {
@@ -195,7 +178,6 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     setAddError(null)
     const r = await createService(props.barberId, {
       ...parsed,
-      sortOrder: rows.length,
       availableWeekdays: nAvailableWeekdays,
     })
     setAddBusy(false)

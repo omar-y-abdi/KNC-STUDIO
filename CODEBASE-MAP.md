@@ -275,7 +275,7 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Files    | `src/admin/views/BarbersView.tsx`; `src/admin/views/ServicesView.tsx`; `src/admin/adapters/barbersAdmin.ts`; `src/admin/adapters/servicesAdmin.ts`; `src/admin/serviceValidation.ts`.                                          |
 | Barbers  | Public reads active. Owner create/update = direct PostgREST+owner RLS. Authenticated direct DELETE revoked; delete goes via `admin-manage-barber` → `admin_delete_barber()` for upcoming-booking guard + cleanup coordination. |
-| Services | Public reads active. Owner and linked barber use permitted direct PostgREST+RLS CRUD. Prices are exact `numeric` SEK values with at most two decimals; duration input is normalized to whole minutes before persistence. Booking insertion always re-resolves service authority server-side. |
+| Services | Public reads active. Owner and linked barber read through RLS; ordinary edits use permitted direct PostgREST fields and cannot alter `sort_order`. Create, delete, and reorder use authorized per-barber RPCs with an advisory lock, unique constraint, and zero-based contiguous compaction. Prices are exact `numeric` SEK values with at most two decimals; duration input is normalized to whole minutes before persistence. Booking insertion always re-resolves service authority server-side. |
 | State    | `barbers`, `services`, linked `profiles`.                                                                                                                                                                                      |
 | Verify   | `serviceValidation`, `deleteAdapters`, `barberLinkStatus`, owner/barber integration, pgTAP services/delete-barber.                                                                                                             |
 
@@ -518,6 +518,9 @@ After contract migration, direct anon execution of customer mutation/lookup RPCs
 | `admin_save_barber_week`           | `schedulesAdmin.ts`   | atomic week save + conflict result              |
 | `admin_add_time_off`               | `timeOffAdmin.ts`     | atomic time-off add + conflict result           |
 | `admin_add_slot_block`             | `slotBlocksAdmin.ts`  | atomic block add + conflict result              |
+| `admin_create_service`             | `servicesAdmin.ts`    | authorized append at the next per-barber position |
+| `admin_delete_service`             | `servicesAdmin.ts`    | authorized delete + per-barber compaction         |
+| `admin_reorder_service`            | `servicesAdmin.ts`    | authorized atomic one-position reorder            |
 | `admin_delete_barber`              | `admin-manage-barber` | guarded deletion + cleanup orchestration        |
 | `admin_set_barber_account_enabled` | `admin-manage-barber` | account flag + durable Auth sync                |
 | `set_own_password_changed`         | `src/admin/auth.ts`   | clear caller forced-change flag                 |
@@ -796,7 +799,7 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | Change                          | Focused tests                                                                                                                                                                                       |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | booking/contact validation      | `tests/unit/validation.test.ts`                                                                                                                                                                     |
-| admin service values            | `serviceValidation.test.ts`, `42_decimal_service_values_test.sql`                                                                                                                                    |
+| admin service values/order      | `serviceValidation.test.ts`, `servicesAdmin.test.ts`, `services.ordering.test.ts`, `42_decimal_service_values_test.sql`, `43_service_ordering_test.sql`                                           |
 | mock slot packing               | `slotPacking.test.ts`, `slots.test.ts`                                                                                                                                                              |
 | Stockholm conversion            | `stockholmTime.test.ts`                                                                                                                                                                             |
 | ICS/calendar links              | `calendar.test.ts`, `ics.test.ts`, `bookingLinks.test.ts`                                                                                                                                           |
