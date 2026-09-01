@@ -63,7 +63,13 @@ or any later explicitly reviewed expand-safe migration added before release. The
 `20260813123853_contract_public_booking_gateway.sql` is intentionally absent from remote history.
 `20260813123851_review_hardening.sql` adds the email-scoped customer access session;
 `20260823130000_classify_booking_email_delivery_failures.sql` accepts status codes emitted by the
-newly deployed `send-confirmation`.
+newly deployed `send-confirmation`. The reviewed branch migrations
+`20260831220511_decimal_service_prices_and_duration_contract.sql`,
+`20260831221442_service_ordering_contract.sql`,
+`20260901013601_calendar_customer_contact_payload.sql`, and
+`20260901014248_relocate_btree_gist_to_extensions.sql` are expand-safe schema/contract changes and
+must be included in the staged worktree before the final contract step. The latter has a local
+relocation regression test because Supabase's advisor currently reports `btree_gist` in `public`.
 Do not omit either. Anonymous legacy RPCs and both new and legacy service-role gateway RPCs must
 remain executable:
 
@@ -198,6 +204,8 @@ npx supabase db push --linked --dry-run --include-all
 ```
 
 If anything except `20260813123853_contract_public_booking_gateway.sql`,
+`20260901013601_calendar_customer_contact_payload.sql`,
+`20260901014248_relocate_btree_gist_to_extensions.sql`,
 `20260901011908_retire_legacy_customer_lookup_overloads.sql`, and
 `20260901012503_retire_superseded_booking_contracts.sql` appears, stop. Otherwise:
 
@@ -209,6 +217,10 @@ npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/45_retire_legacy_customer_lookup_test.sql
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/46_retire_superseded_booking_contract_test.sql
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/47_calendar_customer_contact_test.sql
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/48_btree_gist_relocation_test.sql
 ```
 
 Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests
@@ -234,4 +246,6 @@ Before contract, roll back only frontend or Edge deployment; legacy RPC clients 
 contract, restore frontend/Edge first. The post-contract retirement drops are irreversible; restore
 a retired function only through a separately reviewed forward migration after proving its callers and
 privilege boundary. Regranting direct anonymous RPC access is an emergency-only security rollback and
-must be time-boxed, documented, and followed by the contract migration again.
+must be time-boxed, documented, and followed by the contract migration again. The btree_gist schema
+move does not delete data or rebuild the overlap constraint; if rollback is needed, use a separately
+reviewed forward `ALTER EXTENSION btree_gist SET SCHEMA public` migration rather than manual drift.
