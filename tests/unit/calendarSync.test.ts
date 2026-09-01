@@ -147,6 +147,10 @@ describe('public Calendar privacy disclosure', () => {
     expect(setup).not.toContain('https://www.googleapis.com/auth/calendar.events`')
     expect(privacy).not.toContain('<code>calendar.events</code>')
   })
+
+  it('marks the English policy section with its document language', () => {
+    expect(privacy).toContain('<section lang="en">')
+  })
 })
 
 describe('idempotent event insertion', () => {
