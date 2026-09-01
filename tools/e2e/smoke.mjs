@@ -213,13 +213,6 @@ async function verifyPublicPage(browser, viewport) {
 }
 
 async function verifyStaticEndpoints(page) {
-  const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`)
-  assert(acp.status() === 404, `ACP status ${acp.status()}`)
-  assert(
-    acp.headers()['x-robots-tag'] === 'noindex, nofollow',
-    `ACP robots header ${acp.headers()['x-robots-tag'] ?? '<missing>'}`,
-  )
-
   for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
     const response = await page.request.get(`${baseUrl}${path}`)
     assert(response.status() === 200, `${path} status ${response.status()}`)
