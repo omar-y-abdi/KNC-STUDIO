@@ -24,12 +24,16 @@ describe('password recovery Edge function', () => {
       skip('local Edge Functions runtime is not serving send-recovery-email')
       return
     }
-    if (response.status === 404) {
+    const responseText = await response.text()
+    if (
+      response.status === 404 ||
+      (response.status === 503 && responseText.includes('name resolution failed'))
+    ) {
       skip('local Edge Functions runtime is not serving send-recovery-email')
       return
     }
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ ok: true })
+    expect(JSON.parse(responseText)).toEqual({ ok: true })
   })
 })
