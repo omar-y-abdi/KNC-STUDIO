@@ -1,19 +1,112 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 
 describe('public booking rollout operations', () => {
-  it('tests the same expand migration set deployed by the runbook', () => {
+  const expandAfterBaseline = [
+    '20260831220511_decimal_service_prices_and_duration_contract.sql',
+    '20260831221442_service_ordering_contract.sql',
+    '20260901013601_calendar_customer_contact_payload.sql',
+    '20260901014248_relocate_btree_gist_to_extensions.sql',
+  ]
+  const contractAfterBaseline = [
+    ...expandAfterBaseline,
+    '20260901011632_retire_taken_slots_contract.sql',
+    '20260901011908_retire_legacy_customer_lookup_overloads.sql',
+    '20260901012503_retire_superseded_booking_contracts.sql',
+  ]
+
+  function stage(mode: 'expand' | 'contract'): string[] {
+    const stageRoot = mkdtempSync(join(tmpdir(), 'blade-booking-rollout-'))
+    const target = join(stageRoot, 'supabase')
+    try {
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          [
+            'set -euo pipefail',
+            'source "$PWD/tools/release/public-booking-migration-stages.sh"',
+            `public_booking_stage_migrations ${mode} "$PWD/supabase" "$STAGE_TARGET"`,
+          ].join('\n'),
+        ],
+        { cwd: process.cwd(), env: { ...process.env, STAGE_TARGET: target }, encoding: 'utf8' },
+      )
+      expect(result.status, result.stderr).toBe(0)
+      return readdirSync(join(target, 'migrations')).sort()
+    } finally {
+      rmSync(stageRoot, { recursive: true, force: true })
+    }
+  }
+
+  it('uses one executable migration selector for the runbook and CI harness', () => {
     const script = readFileSync('tools/release/test-public-booking-stages.sh', 'utf8')
-    expect(script).toContain('20260813123853_contract_public_booking_gateway.sql')
-    expect(script).toContain('--workdir "$stage_root"')
-    expect(script).not.toContain('db reset --version 20260813123852')
+    const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
+    expect(script).toContain('public_booking_stage_migrations expand')
+    expect(script).toContain('public_booking_stage_migrations contract')
+    expect(runbook).toContain('public_booking_stage_migrations expand')
+    expect(runbook).toContain('public_booking_stage_migrations contract')
   })
 
-  it('installs the intentionally older contract after later expand-safe migrations', () => {
+  it('stages only reviewed post-baseline migrations at each rollout boundary', () => {
+    const expand = stage('expand').filter(
+      (name) => name.startsWith('20260831') || name.startsWith('20260901'),
+    )
+    const contract = stage('contract').filter(
+      (name) => name.startsWith('20260831') || name.startsWith('20260901'),
+    )
+    expect(expand).toEqual(expandAfterBaseline.sort())
+    expect(contract).toEqual(contractAfterBaseline.sort())
+  })
+
+  it('records the verified remote baseline and defers every irreversible retirement', () => {
     const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
-    expect(runbook).toContain('20260823130000_classify_booking_email_delivery_failures.sql')
-    expect(runbook).toContain('db push --linked --dry-run --include-all')
-    expect(runbook).toContain('db push --linked --yes --include-all')
+    expect(runbook).toContain('20260827170300')
+    expect(runbook).toContain('20260813123853_contract_public_booking_gateway.sql')
+    expect(runbook).toContain('20260901011632_retire_taken_slots_contract.sql')
+    expect(runbook).toContain('20260901011908_retire_legacy_customer_lookup_overloads.sql')
+    expect(runbook).toContain('20260901012503_retire_superseded_booking_contracts.sql')
+  })
+
+  it('distinguishes already-denied Expand access from Contract function absence', () => {
+    const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
+    const smoke = readFileSync('tools/smoke-live.mjs', 'utf8')
+    expect(runbook).toContain('Expand smoke')
+    expect(runbook).toContain('HTTP 401 or 403')
+    expect(runbook).toContain('Contract smoke')
+    expect(runbook).toContain('HTTP 404')
+    expect(smoke).toContain("PUBLIC_BOOKING_STAGE === 'expand'")
+    expect(smoke).toContain("PUBLIC_BOOKING_STAGE === 'contract'")
+    expect(smoke).toContain('status === 404')
+  })
+
+  it('documents forward-only recovery after retirement and reads the baseline ACL', () => {
+    const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
+    expect(runbook).toContain('secure-gateway-compatible')
+    expect(runbook).toContain('never regrant anonymous access')
+    expect(runbook).toContain('already part of the verified baseline')
+    expect(runbook).toContain('read back its existing ACL')
+    expect(runbook).not.toContain('legacy RPC clients remain available')
+    expect(runbook).not.toContain(
+      'After deploying any later function-privilege hardening migration',
+    )
+  })
+
+  it('keeps the staging worktree isolated from the source tree', () => {
+    const script = readFileSync('tools/release/test-public-booking-stages.sh', 'utf8')
+    expect(script).toContain('--workdir "$stage_root"')
+    expect(script).toContain('mktemp -d')
+  })
+
+  it('keeps the already-live gateway contract out of the pending retirement set', () => {
+    const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
+    expect(runbook).toContain('20260827170300_harden_internal_function_privileges.sql')
+    expect(runbook).toContain('20260813123853_contract_public_booking_gateway.sql')
+    expect(runbook).toContain('20260901011632_retire_taken_slots_contract.sql')
+    expect(runbook).not.toContain('db push --linked --dry-run --include-all')
+    expect(runbook).not.toContain('db push --linked --yes --include-all')
   })
 
   it('deploys the customer outbox contract before the retired-RPC cleanup', () => {

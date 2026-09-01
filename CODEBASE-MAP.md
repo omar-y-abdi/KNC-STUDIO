@@ -921,8 +921,10 @@ Authoritative runbook: `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`.
 
 ```text
 1 EXPAND
-  apply through 20260813123852_expand_public_booking_gateway.sql, including 20260813123851_review_hardening.sql
-  legacy direct anon RPC access temporarily coexists with gateways
+  verified linked baseline already includes 20260813123853_contract_public_booking_gateway.sql
+  and continues through 20260827170300_harden_internal_function_privileges.sql
+  use tools/release/public-booking-migration-stages.sh for the exact four reviewed post-baseline migrations
+  direct anon RPC access is already denied; the three retirement functions still exist for service-role gateway compatibility
 
 2 DEPLOY EDGE FUNCTIONS
   run npm run verify:production-secrets -- --project-ref <ref>
@@ -936,8 +938,8 @@ Authoritative runbook: `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`.
   node tools/smoke-live.mjs + runbook production UI/manual checks
 
 5 CONTRACT
-  apply 20260813123853_contract_public_booking_gateway.sql
-  direct anon customer RPC execution revoked
+  use the same explicit selector, adding 20260901011632, 20260901011908, and 20260901012503
+  direct anon customer RPC execution remains denied; the three retired function families become absent
 
 6 RE-VERIFY
 ```
@@ -950,22 +952,23 @@ After contract, regranting anonymous mutation/lookup RPC execution is emergency 
 
 ### 10.4 Operational tooling
 
-| Tool                                          | Purpose                                                      |
-| --------------------------------------------- | ------------------------------------------------------------ |
-| `tools/smoke-live.mjs`                        | live Supabase availability/gateway/direct-RPC contract smoke |
-| `tools/release/test-public-booking-stages.sh` | validate expand/contract compatibility locally               |
-| `tools/backup/capture-storage-references.sh`  | capture DB-owned Storage refs                                |
-| `tools/backup/storage-backup.sh`              | export Storage objects + metadata/checksums                  |
-| `tools/backup/storage-restore.sh`             | restore + verify Storage                                     |
-| `tools/backup/verify-backup-tree.sh`          | validate backup structure/manifests/lineage                  |
-| `tools/backup/prepare-migration-history.sql`  | restore migration-lineage prep                               |
-| `tools/e2e/smoke.mjs`                         | Playwright smoke                                             |
-| `tools/e2e/admin-state.mjs`                   | Admin history/delayed-scroll/CMS draft browser regression    |
-| `tools/e2e/admin-harness.html`, `.tsx`        | In-memory Vite source harness for admin browser test         |
-| `tools/visual/capture.mjs`                    | 8 homepage variants plus the Swedish privacy-banner state    |
-| `tools/visual/compare.mjs`                    | pixel compare vs approved baseline                           |
-| `tools/og/render.mjs`                         | social-card generation                                       |
-| `tools/seed-admin-users.mjs`                  | local/admin seed helper                                      |
+| Tool                                               | Purpose                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------ |
+| `tools/smoke-live.mjs`                             | live Supabase availability/gateway/direct-RPC contract smoke |
+| `tools/release/test-public-booking-stages.sh`      | validate expand/contract compatibility locally               |
+| `tools/release/public-booking-migration-stages.sh` | shared explicit migration manifest for rollout and CI        |
+| `tools/backup/capture-storage-references.sh`       | capture DB-owned Storage refs                                |
+| `tools/backup/storage-backup.sh`                   | export Storage objects + metadata/checksums                  |
+| `tools/backup/storage-restore.sh`                  | restore + verify Storage                                     |
+| `tools/backup/verify-backup-tree.sh`               | validate backup structure/manifests/lineage                  |
+| `tools/backup/prepare-migration-history.sql`       | restore migration-lineage prep                               |
+| `tools/e2e/smoke.mjs`                              | Playwright smoke                                             |
+| `tools/e2e/admin-state.mjs`                        | Admin history/delayed-scroll/CMS draft browser regression    |
+| `tools/e2e/admin-harness.html`, `.tsx`             | In-memory Vite source harness for admin browser test         |
+| `tools/visual/capture.mjs`                         | 8 homepage variants plus the Swedish privacy-banner state    |
+| `tools/visual/compare.mjs`                         | pixel compare vs approved baseline                           |
+| `tools/og/render.mjs`                              | social-card generation                                       |
+| `tools/seed-admin-users.mjs`                       | local/admin seed helper                                      |
 
 ### 10.5 Backup properties + restore invariants
 

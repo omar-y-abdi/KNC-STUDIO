@@ -1,29 +1,37 @@
 # Public booking gateway rollout
 
-This release removes anonymous browser access to contact-keyed booking RPCs. After the gateway
-contract is verified, it also retires the superseded phone lookup/listing and access-request RPCs.
-Deploy in the order below. Never run the contract or retirement migrations before the switched Worker
-has passed live gateway checks.
+This branch targets a linked database whose gateway contract is already live. The verified remote
+migration history includes `20260813123853_contract_public_booking_gateway.sql` and continues through
+`20260827170300_harden_internal_function_privileges.sql`. This rollout therefore stages the four
+reviewed post-baseline migrations first, verifies the deployed Edge/frontend coexistence, and retires
+the three superseded contracts only at the final step.
 
-## Cross-PR customer-access dependency
+PR #55 / #42 must be merged and deployed before PR #56. Its
+`20260831222332_customer_access_outbox_ciphertext.sql` migration changes the customer-access payload
+contract; PR #56 then retires the old overloads. Applying #56 first and #55 afterward would recreate a
+function that #56 removes. This checkout does not contain #55, so after #55 merges/deploys, rebase this
+branch, refresh the linked-baseline evidence and rerun the complete rollout checks. Reverse deployment
+of #55 / #42 after #56 is unsupported. PR #54 has the same required post-merge rebase/disclosure gate
+described under Rollback boundary.
 
-The `20260831222332_customer_access_outbox_ciphertext.sql` migration in PR #55 redefines the
-five-argument `create_customer_booking_access_request` compatibility signature so its queued
-payload is identifier-only. Merge/deploy PR #55 before database PR #48. Apply the migration and
-deploy the matching `external-cleanup` and `public-booking-actions` Edge versions, then verify the
-identifier-only queue and successful challenge consumption before applying the database PR #48
-migration that drops that retired signature. Applying database PR #48 first is unsafe: applying
-PR #55 afterward recreates a function that the final database contract intends to remove.
+Never run an unrestricted `db push`, and never apply a retirement migration before the switched
+frontend and the deployed gateway have passed coexistence checks. This runbook is an operational
+procedure, not a launch-ready claim; production data and external-provider smoke remain separate
+operator gates.
 
 ## Preconditions
 
 - PR validation and encrypted backup workflow are green.
-- `npx supabase migration list --linked` shows no remote migration after `20260812112939`.
+- `npx supabase migration list --linked` confirms the current target baseline: the remote history
+  contains `20260813123853_contract_public_booking_gateway.sql` and ends at
+  `20260827170300_harden_internal_function_privileges.sql` before this rollout. Do not use the old
+  `20260812112939` cutoff. If #55 has already been deployed, its migration must also be present and
+  this branch must have been rebased before continuing.
 - Edge Function secrets are present, including `TURNSTILE_SECRET`, `IP_SALT`,
   `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, `RESEND_API_KEY`, and `WEBHOOK_SECRET`.
 - Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
-  `booking_webhook_secret`. The booking-email and external-action dispatchers read that same value
-  from Vault; `send-confirmation` and `external-cleanup` accept it as `WEBHOOK_SECRET`.
+  `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
+  dispatchers read the same value from Vault key `booking_webhook_secret`.
 - Legacy Edge secret `BOOKING_WEBHOOK_SECRET` is absent; `send-confirmation` must not accept an
   unchecked second credential.
 - Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
@@ -40,43 +48,57 @@ shared webhook-secret parity before function deployment; values/digests are neve
 PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
 ```
 
+## Shared migration selection
+
+`tools/release/public-booking-migration-stages.sh` is the executable manifest used by both this
+runbook and CI. It copies the complete local lineage through the verified remote baseline plus an
+explicit reviewed set; it does not copy arbitrary later migrations.
+
+For the current baseline, the Expand set is exactly:
+
+- `20260831220511_decimal_service_prices_and_duration_contract.sql`
+- `20260831221442_service_ordering_contract.sql`
+- `20260901013601_calendar_customer_contact_payload.sql`
+- `20260901014248_relocate_btree_gist_to_extensions.sql`
+
+The Contract set adds exactly these three irreversible retirements:
+
+- `20260901011632_retire_taken_slots_contract.sql`
+- `20260901011908_retire_legacy_customer_lookup_overloads.sql`
+- `20260901012503_retire_superseded_booking_contracts.sql`
+
+The already-applied `20260813123853_contract_public_booking_gateway.sql` remains in the historical
+lineage. It is not an Expand exclusion and must not be treated as a pending Contract migration.
+
 ## 1. Expand
 
-Create a temporary Supabase worktree containing every pending migration except the final contract.
-This keeps the source tree untouched and prevents an accidental all-at-once `db push`.
+Create a temporary Supabase worktree from the shared manifest. The source tree remains untouched.
 
 ```bash
 export PROJECT_REF='<project-ref>'
 stage_root="$(mktemp -d)"
 trap 'rm -rf "$stage_root"' EXIT
-mkdir -p "$stage_root/supabase"
-rsync -a --exclude '.temp' supabase/ "$stage_root/supabase/"
-rm "$stage_root/supabase/migrations/20260813123853_contract_public_booking_gateway.sql"
+source "$PWD/tools/release/public-booking-migration-stages.sh"
+public_booking_stage_migrations expand "$PWD/supabase" "$stage_root/supabase"
 
 npx supabase link --project-ref "$PROJECT_REF" --workdir "$stage_root"
 npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-Expected final migration in this phase: `20260824075236_admin_cms_logo_and_contact_controls.sql`
-or any later explicitly reviewed expand-safe migration added before release. The older
-`20260813123853_contract_public_booking_gateway.sql` is intentionally absent from remote history.
-`20260813123851_review_hardening.sql` adds the email-scoped customer access session;
-`20260823130000_classify_booking_email_delivery_failures.sql` accepts status codes emitted by the
-newly deployed `send-confirmation`. The reviewed branch migrations
-`20260831220511_decimal_service_prices_and_duration_contract.sql`,
-`20260831221442_service_ordering_contract.sql`,
-`20260901013601_calendar_customer_contact_payload.sql`, and
-`20260901014248_relocate_btree_gist_to_extensions.sql` are expand-safe schema/contract changes and
-must be included in the staged worktree before the final contract step. The latter has a local
-relocation regression test because Supabase's advisor currently reports `btree_gist` in `public`.
-Do not omit either. Anonymous legacy RPCs and both new and legacy service-role gateway RPCs must
-remain executable:
+The dry run must show only the four explicit Expand migrations above as pending after the verified
+baseline. The three retirement migrations must not be applied in this phase. The staging harness uses
+the same selector and asserts that already-live gateway denial coexists with service-role gateway
+execution:
 
 ```bash
 npx supabase test db --db-url "$DATABASE_URL" \
   tools/release/expand_public_booking_gateway_test.sql
 ```
+
+The Calendar migration only extends authoritative Calendar source/trigger behavior; it does not
+replace `external_action_for_dispatch` or change customer-access delivery. The btree-gist migration
+is a reviewed schema relocation that preserves the booking overlap constraint. Do not omit either.
 
 ## 2. Deploy Edge Functions
 
@@ -87,7 +109,7 @@ static WASM asset, so deploy it with local Docker bundling rather than `--use-ap
 ```bash
 for function in \
   admin-create-barber admin-manage-barber \
-  calendar-disconnect calendar-oauth-callback calendar-oauth-start \
+  calendar-disconnect calendar-oauth-callback calendar-oauth-start calendar-sync \
   external-cleanup public-booking-actions send-confirmation send-email-change \
   send-recovery-email submit-booking; do
   npx supabase functions deploy "$function" --project-ref "$PROJECT_REF" --use-api
@@ -96,52 +118,8 @@ npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
 npx supabase functions list --project-ref "$PROJECT_REF"
 ```
 
-Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `external-cleanup`,
-`admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed. `external-cleanup`
-is the durable Calendar create/update/delete/disconnect executor.
-
-The forward-only migration `20260901213117_retire_legacy_calendar_sync.sql` drops the legacy
-`calendar_sync_on_bookings` trigger only after checking the durable Calendar trigger, queue, outbox,
-and dispatcher are present. The repository ships no compatibility handler after this migration.
-
-After the migration is deployed, prove the trigger retirement and durable path with a read-only
-query before deleting the already-deployed compatibility function:
-
-```bash
-npx supabase db query --linked --project-ref "$PROJECT_REF" --output-format json \
-  "select
-     exists (
-       select 1 from pg_catalog.pg_trigger
-       where tgrelid = 'public.bookings'::regclass
-         and tgname = 'booking_calendar_sync_on_change'
-         and not tgisinternal
-     ) as durable_trigger_present,
-     not exists (
-       select 1 from pg_catalog.pg_trigger
-       where tgrelid = 'public.bookings'::regclass
-         and tgname = 'calendar_sync_on_bookings'
-         and not tgisinternal
-     ) as legacy_trigger_absent,
-     to_regprocedure('public.queue_calendar_event_sync(uuid)') is not null
-       as durable_queue_present,
-     to_regclass('public.external_action_jobs') is not null as outbox_present"
-```
-
-Continue only when all four returned fields are `true`, then remove the hosted function and read
-back the function list. Deleting the local directory does not remove an already-deployed function:
-
-```bash
-npx supabase functions delete calendar-sync --project-ref "$PROJECT_REF" --yes
-npx supabase functions list --project-ref "$PROJECT_REF" --output-format json \
-  | jq -e 'all(.functions[]; .slug != "calendar-sync")'
-```
-
-Only after the function-list readback proves that the hosted function is absent, coordinate one
-maintenance window to rotate canonical Edge `WEBHOOK_SECRET` and Vault `booking_webhook_secret`
-together. Run `PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets` to prove Edge/Vault
-parity without printing values or digests. These production deployment, function deletion, secret
-rotation, and parity steps are operator actions; repository tests do not claim that live retirement
-or rotation has happened.
+Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
+`external-cleanup`, `admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed.
 
 ## 3. Switch frontend
 
@@ -162,7 +140,9 @@ and cancellation must call `public-booking-actions` with an opaque access token 
 
 ## 4. Verify coexistence
 
-Run live gateway smoke checks while legacy RPC access is still available:
+Run live gateway smoke checks while the three retirement migrations are still unapplied. In the
+`expand` stage the gateway contract is already active, so direct anonymous lookup is denied while the
+legacy service-role downstream functions remain available:
 
 ```bash
 SUPABASE_URL="https://${PROJECT_REF}.supabase.co" \
@@ -173,6 +153,15 @@ node tools/smoke-live.mjs
 curl -fsS https://bladeblendstudio.se/ | grep -F 'business-json-ld'
 curl -fsS https://bladeblendstudio.se/llms.txt | grep -F '# Blade & Blend Studio'
 ```
+
+The direct `lookup_booking` smoke check is phase-specific:
+
+- **Expand smoke:** must return HTTP 401 or 403 because the already-live gateway contract denies
+  anonymous execution.
+- **Contract smoke:** must return HTTP 404 because the retirement migration removes the function
+  itself.
+
+The pgTAP retirement readback is authoritative for function absence.
 
 Verify customer confirmation email contains a random root-path URL that opens **Mina bokningar**
 directly. Request a fresh link using email only, confirm the prior link reports replacement, load all
@@ -185,34 +174,41 @@ desktop/mobile hero receives the new processed WebP through Realtime, then repla
 the prior `gallery/logo/...` object drains through `external_action_jobs`. Edit and remove phone/map in
 **Mejl**; send SV and EN test messages and verify omitted links never become unsafe or stale fallback links.
 
-Calendar create/update correctness must be verified through the durable
-`booking_calendar_sync_on_change` trigger → `calendar_event_sync` outbox action →
-`external-cleanup` path. After the retirement migration is deployed, verify that
-`calendar_sync_on_bookings` is absent and that a confirmed booking still creates one deduplicated
-`calendar_event_sync` job. Production deployment, canonical `WEBHOOK_SECRET` rotation, and
-Edge/Vault parity verification are action-time operator steps; this repository change does not
-perform or claim them.
+Do not proceed until the switched frontend, deployed Edge Functions, and these live gateway checks
+coexist successfully. A production booking, inbox delivery, Google provider behavior, and production
+data cleanup are separate operator approvals and are not proven by this repository or CI.
 
 ## 5. Contract
 
-Because expand applied later-numbered compatibility migrations while intentionally omitting the
-contract, include older local migrations and the reviewed post-contract retirement migration in this
-dry run:
+Stage the final migration set through the same explicit manifest. Do not use `--include-all`; that
+would make an unrelated later migration an accidental release dependency:
 
 ```bash
-npx supabase db push --linked --dry-run --include-all
+contract_root="$(mktemp -d)"
+trap 'rm -rf "$stage_root" "$contract_root"' EXIT
+public_booking_stage_migrations contract "$PWD/supabase" "$contract_root/supabase"
+
+npx supabase link --project-ref "$PROJECT_REF" --workdir "$contract_root"
+npx supabase db push --linked --dry-run --workdir "$contract_root"
 ```
 
-If anything except `20260813123853_contract_public_booking_gateway.sql`,
-`20260901013601_calendar_customer_contact_payload.sql`,
-`20260901014248_relocate_btree_gist_to_extensions.sql`,
-`20260901011908_retire_legacy_customer_lookup_overloads.sql`, and
-`20260901012503_retire_superseded_booking_contracts.sql` appears, stop. Otherwise:
+If anything other than these three migrations is pending, stop and review the linked history and
+rebase state:
+
+```text
+20260901011632_retire_taken_slots_contract.sql
+20260901011908_retire_legacy_customer_lookup_overloads.sql
+20260901012503_retire_superseded_booking_contracts.sql
+```
+
+Only after the dry run matches exactly:
 
 ```bash
-npx supabase db push --linked --yes --include-all
+npx supabase db push --linked --yes --workdir "$contract_root"
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/34_public_booking_gateway_contract_test.sql
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/44_retire_taken_slots_test.sql
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/45_retire_legacy_customer_lookup_test.sql
 npx supabase test db --db-url "$DATABASE_URL" \
@@ -223,13 +219,15 @@ npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/48_btree_gist_relocation_test.sql
 ```
 
-Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests
-must still work; direct anonymous RPC execution must now fail. Record deployment commit, migration
-list, function list, Worker version, smoke results, and UTC completion time in operations records.
+Re-run the live smoke with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests must still work, direct
+anonymous RPC execution must remain denied, and the three retired function families must now be
+absent. Record the deployment commit, migration list, function list, Worker version, smoke results,
+and UTC completion time in private operations records.
 
-After deploying any later function-privilege hardening migration, run the matching pgTAP file against
-the linked database and inspect hosted-only `rls_auto_enable()` explicitly; local pgTAP marks those
-three assertions as skipped because the function is absent locally:
+`20260827170300_harden_internal_function_privileges.sql` is already part of the verified baseline, not
+a migration deployed by this rollout. Read back its existing privilege result after the staged
+database changes and inspect hosted-only `rls_auto_enable()` explicitly; local pgTAP marks those three
+assertions as skipped because the function is absent locally:
 
 ```bash
 npx supabase test db --linked supabase/tests/41_internal_function_privilege_hardening_test.sql
@@ -237,15 +235,22 @@ npx supabase db query --linked --project-ref "$PROJECT_REF" --output-format json
   "select proacl::text from pg_proc where oid = to_regprocedure('public.rls_auto_enable()');"
 ```
 
-The linked pgTAP run must pass and the ACL must not contain `anon`, `authenticated`, or
-`service_role` execute grants before rollout is recorded complete.
+The linked pgTAP run must pass. Operators must read back its existing ACL and confirm it does not
+contain `anon`, `authenticated`, or `service_role` execute grants before rollout is recorded complete.
 
 ## Rollback boundary
 
-Before contract, roll back only frontend or Edge deployment; legacy RPC clients still work. After
-contract, restore frontend/Edge first. The post-contract retirement drops are irreversible; restore
-a retired function only through a separately reviewed forward migration after proving its callers and
-privilege boundary. Regranting direct anonymous RPC access is an emergency-only security rollback and
-must be time-boxed, documented, and followed by the contract migration again. The btree_gist schema
-move does not delete data or rebuild the overlap constraint; if rollback is needed, use a separately
-reviewed forward `ALTER EXTENSION btree_gist SET SCHEMA public` migration rather than manual drift.
+Before the final retirement step, the already-live gateway contract has already denied direct
+anonymous clients; only the current secure gateway clients are supported. If a pre-retirement
+frontend or Edge artifact must be rolled back, it must still use that gateway contract. After
+retirement, old frontend/Edge artifacts cannot be restored first because they may call the dropped
+service-role functions. Recovery requires a separately reviewed forward migration that restores only a
+secure-gateway-compatible function surface, followed by matching Edge/frontend deployment; recovery
+must never regrant anonymous access. The three drops are irreversible. The btree_gist schema move does
+not delete data or rebuild the overlap constraint; if rollback is needed, use a separately reviewed forward
+`ALTER EXTENSION btree_gist SET SCHEMA public` migration rather than manual drift.
+
+After platform PR #54 merges, rebase this database branch and update every occurrence of the Calendar
+privacy disclosure in both Swedish and English sections before opening or refreshing the database PR.
+After PR #55 / #42 merges and deploys, rebase this branch onto the resulting main, refresh the linked
+migration baseline and rerun the exact Expand/Contract harness before any final rollout decision.
