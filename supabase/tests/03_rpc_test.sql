@@ -2,7 +2,7 @@
 -- owns privileged RPC execution. Services are server-authoritative and selected by UUID.
 
 begin;
-select plan(29);
+select plan(22);
 
 insert into public.barber_time_off (barber_id, start_date, end_date, reason)
 values ('victor', date '2040-03-20', date '2040-03-20', 'pgtap');
@@ -33,19 +33,6 @@ select
   timestamptz '2020-03-14T12:30:00Z',
   timestamptz '2020-03-14T12:30:00Z' + pg_catalog.make_interval(mins => s.duration_min),
   'Historisk Kund', 'email', '0709999999', 'historical@example.test', 'sv'
-from public.services s
-where s.id::text = current_setting('test.hassan_service');
-
-insert into public.bookings (
-  id, barber_id, service_id, service_name, price, duration_min,
-  start_at, end_at, customer_name, method, phone, email, lang
-)
-select
-  '93000000-0000-0000-0000-000000000002',
-  'hassan', s.id::text, s.name, s.price, s.duration_min,
-  pg_catalog.now() + interval '1 hour',
-  pg_catalog.now() + interval '1 hour' + pg_catalog.make_interval(mins => s.duration_min),
-  'Sen Kund', 'email', '0708888888', 'late-cancel@example.test', 'sv'
 from public.services s
 where s.id::text = current_setting('test.hassan_service');
 
@@ -214,54 +201,11 @@ select is(
   true,
   'service role can create'
 );
-set local role service_role;
-
-select set_config(
-  'test.bid',
-  (current_setting('test.created')::jsonb)->'booking'->>'id',
-  true
-);
-select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0700000000')->>'error',
-  'not_found',
-  'wrong cancellation contact is generic'
-);
-select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0701234567')->>'ok',
-  'true',
-  'matching contact cancels'
-);
-select is(
-  public.cancel_booking(current_setting('test.bid')::uuid, '0701234567')->>'error',
-  'not_found',
-  'second cancellation is idempotent'
-);
-select is(
-  public.cancel_booking('93000000-0000-0000-0000-000000000001', '0709999999')->>'error',
-  'not_found',
-  'past booking cannot be cancelled through customer action'
-);
-select is(
-  public.cancel_booking('93000000-0000-0000-0000-000000000002', '0708888888')->>'error',
-  'not_found',
-  'booking inside configured cancellation cutoff cannot be cancelled'
-);
-
 reset role;
 
 select is(
-  (select status from public.bookings where id = '93000000-0000-0000-0000-000000000001'),
-  'confirmed',
-  'rejected past cancellation leaves booking unchanged'
-);
-select is(
-  (select status from public.bookings where id = '93000000-0000-0000-0000-000000000002'),
-  'confirmed',
-  'rejected late cancellation leaves booking unchanged'
-);
-
-select is(
-  (select customer_name from public.bookings where id = current_setting('test.bid')::uuid),
+  (select customer_name from public.bookings
+   where id = ((current_setting('test.created')::jsonb)->'booking'->>'id')::uuid),
   'Test Kund',
   'customer name persisted correctly'
 );

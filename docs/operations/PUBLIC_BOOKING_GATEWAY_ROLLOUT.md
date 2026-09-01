@@ -197,8 +197,9 @@ dry run:
 npx supabase db push --linked --dry-run --include-all
 ```
 
-If anything except `20260813123853_contract_public_booking_gateway.sql` and
-`20260901011908_retire_legacy_customer_lookup_overloads.sql` appears, stop. Otherwise:
+If anything except `20260813123853_contract_public_booking_gateway.sql`,
+`20260901011908_retire_legacy_customer_lookup_overloads.sql`, and
+`20260901012503_retire_superseded_booking_contracts.sql` appears, stop. Otherwise:
 
 ```bash
 npx supabase db push --linked --yes --include-all
@@ -206,6 +207,8 @@ npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/34_public_booking_gateway_contract_test.sql
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/45_retire_legacy_customer_lookup_test.sql
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/46_retire_superseded_booking_contract_test.sql
 ```
 
 Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests
@@ -228,5 +231,7 @@ The linked pgTAP run must pass and the ACL must not contain `anon`, `authenticat
 ## Rollback boundary
 
 Before contract, roll back only frontend or Edge deployment; legacy RPC clients still work. After
-contract, restore frontend/Edge first. Regranting direct anonymous RPC access is an emergency-only
-security rollback and must be time-boxed, documented, and followed by the contract migration again.
+contract, restore frontend/Edge first. The post-contract retirement drops are irreversible; restore
+a retired function only through a separately reviewed forward migration after proving its callers and
+privilege boundary. Regranting direct anonymous RPC access is an emergency-only security rollback and
+must be time-boxed, documented, and followed by the contract migration again.

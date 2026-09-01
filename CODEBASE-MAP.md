@@ -477,8 +477,8 @@ Effective state is after **all** migrations, not original grants.
 | `gallery_images`                     | `id`                   | anon/auth SELECT                                                  | `upload-image` internal RPCs                                          |
 | `profiles`                           | Auth user `id`         | self SELECT; owner SELECT-all                                     | provisioning/account RPC/Edge flows; no generic browser CRUD          |
 | `public_action_attempts`             | bigint identity        | none                                                              | `consume_public_action_attempt()`                                     |
-| `reviews`                            | `id`                   | anon/auth SELECT only `published=true`                            | `create_review()` via public gateway                                  |
-| `services`                           | `id`                   | anon active SELECT; authenticated owner/own SELECT                | owner/barber direct CRUD via RLS                                      |
+| `reviews`                            | `id`                   | anon/auth SELECT only `published=true`                            | `create_review_with_access()` via public gateway                      |
+| `services`                           | `id`                   | anon active SELECT; authenticated owner/own SELECT                | reads + ordinary edits via RLS; create/delete/reorder service RPCs    |
 | `site_content`                       | `(key, lang)`          | anon/auth SELECT                                                  | owner direct CRUD via RLS                                             |
 | `site_settings`                      | `key`                  | anon/auth SELECT                                                  | owner direct CRUD via RLS                                             |
 
@@ -491,17 +491,13 @@ Effective state is after **all** migrations, not original grants.
 | `available_slots`                        | public/admin adapters                 | live bookable starts                                        | `20260813095409_harden_booking_boundaries_and_action_ledger.sql`   |
 | `create_booking`                         | booking gateway/service role          | service re-resolution + slot validation + insert            | same                                                               |
 | `create_booking_with_limits`             | `submit-booking`                      | transactional submit rate limit + create                    | `20260813115437_transactional_availability_mutations.sql`          |
-| `lookup_booking`                         | legacy service role only              | old phone-keyed upcoming lookup; no frontend caller         | `20260812125009_align_booking_method_responses.sql`                |
-| `list_bookings_by_phone`                 | legacy service role only              | old phone-keyed list; no frontend caller                    | `20260715090000_list_bookings_by_phone.sql`                        |
-| `cancel_booking`                         | legacy service role only              | old phone-keyed cancellation; no frontend caller            | `20260813095409_harden_booking_boundaries_and_action_ledger.sql`   |
-| `create_customer_booking_access_request` | `public-booking-actions` service role | exact phone/email access-link issuance                      | `20260813123851_review_hardening.sql`                              |
 | `exchange_customer_booking_access`       | `public-booking-actions` service role | one-time code to opaque session exchange                    | same                                                               |
 | `ensure_customer_booking_access_token`   | `send-confirmation` service role      | create/reuse permanent token for confirmation mail          | `20260824075454_permanent_customer_booking_access.sql`             |
 | `replace_customer_booking_access_token`  | `send-confirmation` service role      | repair unreadable encrypted token after key change          | same                                                               |
 | `rotate_customer_booking_access_token`   | `public-booking-actions` service role | email-only token rotation + durable email enqueue           | same                                                               |
 | `list_customer_bookings_with_access`     | `public-booking-actions` service role | current permanent token or legacy session history           | same                                                               |
 | `cancel_customer_booking_with_access`    | `public-booking-actions` service role | current permanent token or legacy session + cutoff          | same                                                               |
-| `create_review`                          | public gateway                        | completed-booking review gate                               | `20260702100000_availability_now_filter_and_review_name_clamp.sql` |
+| `create_review_with_access`             | `public-booking-actions` service role | completed-booking review gate                               | `20260823174500_close_launch_review_findings.sql`                |
 | `public_booking_catalog`                 | public booking adapters               | active barber/photo/service catalog plus canonical weekdays | `20260824092548_public_booking_catalog_service_weekdays.sql`       |
 | `public_business_discovery`              | Worker/public site/server email       | whitelisted business facts                                  | `20260813115439_public_business_discovery.sql`                     |
 
@@ -813,7 +809,7 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | admin auth/account links        | `adminAuth`, `passwordPolicy`, `recoveryLink`, `emailChangeLink`, `barberAccountAdmin`, `barberLinkStatus`                                                                                          |
 | site CMS/discovery/SEO          | `siteChrome`, `supabaseSiteChrome`, `businessStructuredData`, `discovery`, `workerRoutes`                                                                                                           |
 | image gateway/runtime           | `imageUploadAdapters.test.ts`, `uploadImageDependency.test.ts`, `uploadImageRuntime.test.ts`                                                                                                        |
-| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`                                                                                                               |
+| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`, `46_retire_superseded_booking_contract_test.sql`                                                                                                |
 | Google Calendar                 | `calendarSync`, `calendarDeletionOwnership`, `externalActions`                                                                                                                                      |
 | backup scripts                  | `backupScripts.test.ts`                                                                                                                                                                             |
 | CI pins/actions/locks           | `ciSupplyChain.test.ts`                                                                                                                                                                             |

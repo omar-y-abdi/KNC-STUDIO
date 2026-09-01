@@ -2,7 +2,7 @@
 --   * available_slots never advertises a slot whose start has already passed (the read path now
 --     agrees with create_booking's `invalid_time` rejection of past starts),
 --   * a future day is unaffected by the now() filter (no over-filtering),
---   * create_review's derived display name is clamped into the reviews.name CHECK (1..80):
+--   * access-scoped review's derived display name is clamped into the reviews.name CHECK (1..80):
 --     a whitespace-only customer_name falls back to 'Kund', and a two-word name whose "First X."
 --     derivation would exceed 80 chars is capped at 80 — neither can raise check_violation.
 --
@@ -37,7 +37,7 @@ select is(
 );
 
 -- =============================================================================================
--- create_review: display-name derivation is clamped into the reviews.name CHECK.
+-- create_review_with_access: display-name derivation is clamped into the reviews.name CHECK.
 -- =============================================================================================
 -- Two FINISHED confirmed bookings with legal-but-hostile customer_names: a single space (length 1,
 -- passes the bookings CHECK) and a 78-char first word + ' X' (80 chars total, also legal — but the
@@ -48,15 +48,20 @@ insert into public.bookings
 values
   ('hassan','h','Hår',350,45,
    now() - interval '2 hours', now() - interval '75 minutes',
-   ' ','phone','0707777771', null,'sv'),
+   ' ','phone','0707777771', 'blank-review@example.test','sv'),
   -- staggered earlier: same barber, so the slots must not overlap (bookings_no_overlap)
   ('hassan','h','Hår',350,45,
    now() - interval '4 hours', now() - interval '195 minutes',
-   pg_catalog.repeat('a', 78) || ' X','phone','0707777772', null,'sv');
+   pg_catalog.repeat('a', 78) || ' X','phone','0707777772', 'long-review@example.test','sv');
+
+insert into public.customer_booking_access_sessions (phone, email, token_hash, expires_at)
+values
+  ('0707777771', 'blank-review@example.test', repeat('a', 64), pg_catalog.now() + interval '20 minutes'),
+  ('0707777772', 'long-review@example.test', repeat('b', 64), pg_catalog.now() + interval '20 minutes');
 
 -- Whitespace-only name -> ok:true with the neutral fallback (was: check_violation -> raw 500).
 select set_config('test.r_blank',
-  public.create_review('0707777771', 5, 'Toppenklippning!')::text, true);
+  public.create_review_with_access(repeat('a', 64), '0707777771', 5, 'Toppenklippning!')::text, true);
 select is(
   (current_setting('test.r_blank')::jsonb ->> 'ok'), 'true',
   'whitespace-only customer_name: review is accepted'
@@ -68,7 +73,7 @@ select is(
 
 -- 81-char derivation -> ok:true with the name capped at 80 (was: check_violation -> raw 500).
 select set_config('test.r_long',
-  public.create_review('0707777772', 4, 'Bra klippning.')::text, true);
+  public.create_review_with_access(repeat('b', 64), '0707777772', 4, 'Bra klippning.')::text, true);
 select is(
   (current_setting('test.r_long')::jsonb ->> 'ok'), 'true',
   'over-long derived name: review is accepted'
