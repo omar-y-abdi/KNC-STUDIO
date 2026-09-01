@@ -64,6 +64,7 @@ describe('launch-review durable action contracts', () => {
       parseExternalAction({ ...base, token_ciphertext: 'v1.' + 'A'.repeat(80) }),
     ).toMatchObject({
       action_type: 'customer_access_email_send',
+      challenge_id: CHALLENGE_ID,
     })
     expect(parseExternalAction({ ...base, token_ciphertext: 'plain-link-token' })).toBeNull()
     expect(parseExternalAction({ ...base, access_code: 'a'.repeat(64) })).toBeNull()

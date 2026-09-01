@@ -2,6 +2,27 @@
 -- booking already authorizes. Keep OAuth credentials in the server-side dispatch context only;
 -- the event builder never receives them as part of the Google event body.
 
+-- This migration intentionally depends on the secure #42 customer-access contract. Applying it
+-- before that migration is unsupported: fail closed instead of replacing the secure dispatcher with
+-- an older customer-access branch.
+do $$
+declare
+  v_queue_definition text;
+begin
+  select pg_catalog.pg_get_functiondef(p.oid)
+    into v_queue_definition
+  from pg_catalog.pg_proc p
+  where p.oid = pg_catalog.to_regprocedure('public.queue_external_action(text,text,jsonb)');
+
+  if pg_catalog.to_regprocedure('public.consume_customer_access_email_challenge(uuid)') is null
+     or coalesce(v_queue_definition, '') not like '%customer_access_email_send%'
+     or coalesce(v_queue_definition, '') not like '%challenge_id%'
+     or coalesce(v_queue_definition, '') like '%access_code%' then
+    raise exception 'secure #42 customer-access outbox contract must be deployed first';
+  end if;
+end;
+$$;
+
 create or replace function public.queue_booking_calendar_sync()
 returns trigger
 language plpgsql
@@ -112,6 +133,7 @@ declare
   v_booking public.bookings;
   v_token public.barber_calendar_tokens;
   v_challenge public.customer_booking_access_challenges;
+  v_token_ciphertext text;
   v_refresh_token text;
   v_calendar_id text;
   v_disconnect_requested_at timestamptz;
@@ -236,11 +258,23 @@ begin
   if v_job.action_type = 'customer_access_email_send' then
     select c.* into v_challenge
     from public.customer_booking_access_challenges c
+    join public.customer_booking_access_tokens t
+      on t.email = c.email
+     and t.token_hash = c.token_hash
     where c.id = (v_job.payload->>'challenge_id')::uuid
       and c.used_at is null
       and c.expires_at > pg_catalog.now();
 
-    if not found or not exists (
+    if not found then
+      return pg_catalog.jsonb_build_object(
+        'id', v_job.id,
+        'dispatch_token', v_job.dispatch_token,
+        'action_type', v_job.action_type,
+        'superseded', true
+      );
+    end if;
+
+    if not exists (
       select 1
       from public.bookings b
       where b.phone = v_challenge.phone
@@ -255,13 +289,28 @@ begin
       );
     end if;
 
+    select t.token_ciphertext into v_token_ciphertext
+    from public.customer_booking_access_tokens t
+    where t.email = v_challenge.email
+      and t.token_hash = v_challenge.token_hash;
+
+    if not found or v_token_ciphertext is null then
+      return pg_catalog.jsonb_build_object(
+        'id', v_job.id,
+        'dispatch_token', v_job.dispatch_token,
+        'action_type', v_job.action_type,
+        'superseded', true
+      );
+    end if;
+
     return pg_catalog.jsonb_build_object(
       'id', v_job.id,
       'dispatch_token', v_job.dispatch_token,
       'action_type', v_job.action_type,
+      'challenge_id', v_challenge.id,
       'email', v_challenge.email,
       'lang', v_job.payload->>'lang',
-      'access_code', v_job.payload->>'access_code'
+      'token_ciphertext', v_token_ciphertext
     );
   end if;
 
