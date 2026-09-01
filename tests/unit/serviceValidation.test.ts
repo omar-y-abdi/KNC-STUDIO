@@ -19,6 +19,16 @@ describe('parseServiceRow', () => {
     })
   })
 
+  it('rounds duration before applying the whole-minute bounds', () => {
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '4.1' })).toMatchObject({
+      durationMin: 5,
+    })
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '600' })).toMatchObject({
+      durationMin: 600,
+    })
+    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '600.1' })).toBeNull()
+  })
+
   it('rejects an empty / whitespace-only name', () => {
     expect(parseServiceRow({ name: '   ', price: '350', durationMin: '45' })).toBeNull()
   })
@@ -38,7 +48,6 @@ describe('parseServiceRow', () => {
     expect(parseServiceRow({ name: 'X', price: '100000.01', durationMin: '45' })).toBeNull()
     expect(parseServiceRow({ name: 'X', price: '100', durationMin: '45minutes' })).toBeNull()
     expect(parseServiceRow({ name: 'X', price: '100', durationMin: '600.1' })).toBeNull()
-    expect(parseServiceRow({ name: 'X', price: '100', durationMin: '4.1' })).toBeNull()
   })
 
   it('rejects a duration outside 5..600', () => {

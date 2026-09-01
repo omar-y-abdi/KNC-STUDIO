@@ -38,9 +38,7 @@ export function parseServicePrice(input: string): number | null {
 /** Parse a complete numeric duration and round it upward to the next whole minute. */
 export function parseServiceDuration(input: string): number | null {
   const numericDuration = parseUnsignedDecimal(input, Number.POSITIVE_INFINITY)
-  if (numericDuration === null || numericDuration < 5 || numericDuration > 600) {
-    return null
-  }
+  if (numericDuration === null) return null
   const duration = Math.ceil(numericDuration)
   return duration >= 5 && duration <= 600 ? duration : null
 }
