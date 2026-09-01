@@ -3,6 +3,16 @@
 This release removes anonymous browser access to contact-keyed booking RPCs. Deploy in the order
 below. Never run the contract migration before the switched Worker has passed live gateway checks.
 
+## Cross-PR customer-access dependency
+
+The `20260831222332_customer_access_outbox_ciphertext.sql` migration in PR #55 redefines the
+five-argument `create_customer_booking_access_request` compatibility signature so its queued
+payload is identifier-only. Merge/deploy PR #55 before database PR #48. Apply the migration and
+deploy the matching `external-cleanup` and `public-booking-actions` Edge versions, then verify the
+identifier-only queue and successful challenge consumption before applying the database PR #48
+migration that drops that retired signature. Applying database PR #48 first is unsafe: applying
+PR #55 afterward recreates a function that the final database contract intends to remove.
+
 ## Preconditions
 
 - PR validation and encrypted backup workflow are green.
