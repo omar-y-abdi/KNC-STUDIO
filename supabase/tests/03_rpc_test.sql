@@ -2,7 +2,7 @@
 -- owns privileged RPC execution. Services are server-authoritative and selected by UUID.
 
 begin;
-select plan(34);
+select plan(29);
 
 insert into public.barber_time_off (barber_id, start_date, end_date, reason)
 values ('victor', date '2040-03-20', date '2040-03-20', 'pgtap');
@@ -214,32 +214,13 @@ select is(
   true,
   'service role can create'
 );
-select is(
-  pg_catalog.has_function_privilege('anon', 'public.lookup_booking(text)', 'execute'),
-  false,
-  'anon cannot lookup directly'
-);
-
 set local role service_role;
 
-select set_config('test.looked', public.lookup_booking('0701234567')::text, true);
-select is((current_setting('test.looked')::jsonb)->>'ok', 'true', 'service lookup succeeds');
-select is(
-  (current_setting('test.looked')::jsonb)->'booking'->>'barber_id',
-  'hassan',
-  'lookup returns matching booking'
-);
-select is(
-  (current_setting('test.looked')::jsonb)->'booking'->>'method',
-  'email',
-  'lookup returns persisted delivery method'
-);
 select set_config(
   'test.bid',
-  (current_setting('test.looked')::jsonb)->'booking'->>'id',
+  (current_setting('test.created')::jsonb)->'booking'->>'id',
   true
 );
-select is(public.lookup_booking('0700000000')->>'error', 'not_found', 'wrong phone is generic');
 select is(
   public.cancel_booking(current_setting('test.bid')::uuid, '0700000000')->>'error',
   'not_found',

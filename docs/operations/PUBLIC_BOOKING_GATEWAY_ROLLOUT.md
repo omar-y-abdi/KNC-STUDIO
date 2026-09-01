@@ -1,7 +1,9 @@
 # Public booking gateway rollout
 
-This release removes anonymous browser access to contact-keyed booking RPCs. Deploy in the order
-below. Never run the contract migration before the switched Worker has passed live gateway checks.
+This release removes anonymous browser access to contact-keyed booking RPCs. After the gateway
+contract is verified, it also retires the superseded phone lookup/listing and access-request RPCs.
+Deploy in the order below. Never run the contract or retirement migrations before the switched Worker
+has passed live gateway checks.
 
 ## Cross-PR customer-access dependency
 
@@ -188,18 +190,22 @@ perform or claim them.
 ## 5. Contract
 
 Because expand applied later-numbered compatibility migrations while intentionally omitting the
-contract, include older local migrations in this dry run:
+contract, include older local migrations and the reviewed post-contract retirement migration in this
+dry run:
 
 ```bash
 npx supabase db push --linked --dry-run --include-all
 ```
 
-If anything except `20260813123853_contract_public_booking_gateway.sql` appears, stop. Otherwise:
+If anything except `20260813123853_contract_public_booking_gateway.sql` and
+`20260901011908_retire_legacy_customer_lookup_overloads.sql` appears, stop. Otherwise:
 
 ```bash
 npx supabase db push --linked --yes --include-all
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/34_public_booking_gateway_contract_test.sql
+npx supabase test db --db-url "$DATABASE_URL" \
+  supabase/tests/45_retire_legacy_customer_lookup_test.sql
 ```
 
 Re-run `tools/smoke-live.mjs` after contract with `PUBLIC_BOOKING_STAGE=contract`. Gateway requests

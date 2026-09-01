@@ -2,7 +2,7 @@
 -- Source: PLAN §1 (email removal) + §2 (phone-gated reviews). Complements 03_rpc_test.sql, which
 -- carries the adapted create_booking/lookup/cancel coverage; this file adds what is NET-NEW:
 --   * the old 11-arg create_booking signature is GONE (only the 9-arg remains),
---   * lookup_booking / cancel_booking no longer match on email (phone-only),
+--   * cancel_booking no longer matches on email (phone-only),
 --   * create_review is phone-gated: no finished booking -> no_booking; a finished booking -> ok with a
 --     server-derived "First L." name; one review per booking (unique); bad rating/phone -> invalid.
 --
@@ -10,7 +10,7 @@
 -- legacy email-method row, and bookings whose end_at is already in the PAST (a "finished" cut).
 
 begin;
-select plan(16);
+select plan(15);
 
 -- ---- fixtures (as owner) --------------------------------------------------------------------
 -- A legacy/dormant EMAIL booking (method='email', phone null) in the FUTURE. Proves the lookup/cancel
@@ -77,14 +77,10 @@ select is(
 );
 
 -- =============================================================================================
--- lookup_booking / cancel_booking are phone-only: email no longer matches.
+-- cancel_booking is phone-only: email no longer matches.
 -- =============================================================================================
 set local role service_role;
 
-select is(
-  public.lookup_booking('mejl@example.com') ->> 'error',
-  'not_found', 'lookup_booking by email returns not_found (email arm removed)'
-);
 select is(
   public.cancel_booking(current_setting('test.email_bid')::uuid, 'mejl@example.com') ->> 'error',
   'not_found', 'cancel_booking by email returns not_found (email arm removed)'
