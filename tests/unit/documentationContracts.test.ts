@@ -22,13 +22,13 @@ describe('handoff documentation contracts', () => {
     expect(emailSetup).toContain('retry or discard')
     expect(supabaseConfig).toContain('booking_email_delivery_jobs')
     expect(supabaseConfig).toContain('not a booking Database Webhook')
-    expect(supabaseConfig).toContain('compatibility-only')
-    expect(supabaseConfig).toContain('re-queues the same deduplicated action')
+    expect(supabaseConfig).toContain('booking-email delivery dispatcher')
+    expect(supabaseConfig).not.toContain('[functions.calendar-sync]')
   })
 
   it('records current ownership and contracts for the audited subsystems', () => {
-    const calendarSetup = readFileSync(
-      new URL('../../supabase/functions/calendar-sync/README.md', import.meta.url),
+    const calendarModule = readFileSync(
+      new URL('../../supabase/functions/_shared/calendar.ts', import.meta.url),
       'utf8',
     )
     const calendarCallback = readFileSync(
@@ -67,15 +67,12 @@ describe('handoff documentation contracts', () => {
     )
     const findings = readFileSync(new URL('../../REVIEW_FINDINGS.md', import.meta.url), 'utf8')
     const map = readFileSync(new URL('../../CODEBASE-MAP.md', import.meta.url), 'utf8')
+    const supabaseConfig = readFileSync(
+      new URL('../../supabase/config.toml', import.meta.url),
+      'utf8',
+    )
 
-    expect(calendarSetup).toContain(
-      'queues a `calendar_event_sync` row in `public.external_action_jobs`',
-    )
-    expect(calendarSetup).toContain(
-      'OAuth callback backfill covers confirmed future bookings (those with end time after now)',
-    )
-    expect(calendarSetup).toContain('owner coordinates external webhook and')
-    expect(calendarSetup).toContain('shared-secret maintenance')
+    expect(calendarModule).toContain('calendar.events.owned')
     expect(calendarCallback).toContain('backfill future confirmed bookings')
     expect(calendarMigration).toContain('and b.end_at > pg_catalog.now()')
 
@@ -107,10 +104,11 @@ describe('handoff documentation contracts', () => {
     expect(findings).toContain(
       'not the current security, architecture, or production-status source',
     )
-    expect(map).toContain('`supabase/functions/calendar-sync/README.md`')
+    expect(map).toContain('`supabase/functions/_shared/calendar.ts`')
     expect(map).toContain('`supabase/functions/send-confirmation/README.md`')
     expect(map).toContain('`BACKEND.md`')
     expect(map).toContain('`src/admin/adapters/schedulesAdmin.ts`')
     expect(map).toContain('`REVIEW_FINDINGS.md`')
+    expect(supabaseConfig).not.toContain('[functions.calendar-sync]')
   })
 })

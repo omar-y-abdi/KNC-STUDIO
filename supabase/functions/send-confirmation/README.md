@@ -46,8 +46,7 @@ npx supabase secrets set \
 ```
 
 Set the same random value in Database Vault as `booking_webhook_secret`; that existing Vault key is
-what the booking trigger reads when it sends `x-webhook-secret`. Calendar sync uses the same
-`WEBHOOK_SECRET` Edge Function secret.
+what the booking-email dispatcher reads when it sends `x-webhook-secret`.
 
 Verified sender domain must permit:
 

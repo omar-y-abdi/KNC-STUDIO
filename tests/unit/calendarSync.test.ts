@@ -114,7 +114,7 @@ describe('public Calendar privacy disclosure', () => {
     'utf8',
   ).replace(/\s+/g, ' ')
   const setup = readFileSync(
-    new URL('../../supabase/functions/calendar-sync/README.md', import.meta.url),
+    new URL('../../supabase/functions/_shared/calendar.ts', import.meta.url),
     'utf8',
   )
 

@@ -461,14 +461,6 @@ verify_jwt = true
 enabled = true
 verify_jwt = false
 
-# calendar-sync: compatibility-only endpoint for an already-configured legacy Database Webhook
-# (server -> server, no user JWT) -> verify_jwt = false. The durable booking trigger/outbox owns
-# Calendar correctness; this endpoint only re-queues the same deduplicated action and never executes
-# Google work itself. It fails closed on the canonical `WEBHOOK_SECRET` header.
-[functions.calendar-sync]
-enabled = true
-verify_jwt = false
-
 # calendar-disconnect: called BY an authenticated barber FROM the admin panel to unlink their own
 # calendar. Holds a valid Supabase JWT -> verify_jwt = true; also validates internally.
 [functions.calendar-disconnect]

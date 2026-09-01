@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const edgeHandlers = [
-  'supabase/functions/calendar-sync/index.ts',
   'supabase/functions/external-cleanup/index.ts',
   'supabase/functions/send-confirmation/index.ts',
 ] as const

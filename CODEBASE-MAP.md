@@ -38,7 +38,7 @@ Historical notes: **§12**.
 | Media                | Gallery/photo/homepage-logo metadata + Storage lifecycle remain server-coordinated through `upload-image` + internal RPCs + cleanup outbox; do not restore direct browser media writes/deletes.                                                               |
 | Email                | Booking email jobs and 24h reminders are **separate ledgers and dispatchers**. Auth email bypasses both and sends directly through Resend.                                                                                                                    |
 | External actions     | `external_action_jobs` is durable but not universal: Calendar insert/update/cancel/delete/disconnect use the durable Calendar actions; booking mail has its own ledger; auth mail is direct; image upload is synchronous.                                     |
-| Calendar             | Confirmed booking insert/update queues `calendar_event_sync` through the durable trigger/outbox; an optional Dashboard Webhook only re-queues that deduplicated action through `calendar-sync`. Cancellation/delete/disconnect use the same durable outbox.   |
+| Calendar             | Confirmed booking insert/update queues `calendar_event_sync` through the durable trigger/outbox; cancellation/delete/disconnect use the same durable outbox. The legacy Dashboard webhook is retired by a guarded forward migration. |
 | Secrets              | Every `VITE_*` value is public. Never move service-role keys, Turnstile secret, OAuth client secret, webhook secret, salts, or Resend key into frontend config.                                                                                               |
 | Schema               | Change DB schema/grants/policies/RPCs through migrations. Evaluate effective state after all later revokes/policy replacements.                                                                                                                               |
 | Discovery            | Public business discovery is explicitly whitelisted; add facts deliberately rather than exposing internal tables.                                                                                                                                             |
@@ -75,7 +75,6 @@ Browser
    ├─ bookings → email trigger → booking_email_delivery_jobs → cron → `send-confirmation` → Resend
    ├─ bookings → reminder trigger → booking_reminders → cron → `send-confirmation` → Resend
    ├─ bookings → durable Calendar trigger → `external_action_jobs` → `external-cleanup` → Google Calendar
-   │  └─ optional Dashboard DB Webhook → `calendar-sync` → same deduplicated queue
    └─ cancellation/deletion/storage/auth lifecycle → external_action_jobs → cron → `external-cleanup`
       ├─ Storage
       ├─ Google Calendar
@@ -165,7 +164,7 @@ Use this before broad search. **Start** = likely owner/authority; **Next** = imm
 | 24h reminder missing                            | `booking_reminders`                                                            | eligibility/due → reminder cron → Vault → `send-confirmation`                                                           | reminder pgTAP + email tests                                          |
 | Email template copy wrong                       | `MailView.tsx`, `emailTemplatesAdmin.ts`                                       | `email_template_for_delivery`, `_shared/email.ts`                                                                       | `emailBusiness` + `28_email_templates_test.sql`                       |
 | Calendar connect fails                          | `calendar-oauth-start` / callback                                              | state secret, OAuth config, `calendar_store_token`                                                                      | Calendar unit + function/provider logs                                |
-| New/updated booking not in Google               | durable `booking_calendar_sync_on_change` trigger / `external-action-dispatch` | optional `calendar-sync` compatibility webhook, `calendar_sync_source`, token `last_sync_error`                         | `calendarDeletionOwnership` + `externalActions` + queue/function logs |
+| New/updated booking not in Google               | durable `booking_calendar_sync_on_change` trigger / `external-action-dispatch` | `calendar_sync_source`, token `last_sync_error`                         | `calendarDeletionOwnership` + `externalActions` + queue/function logs |
 | Cancelled booking remains in Google             | `external_action_jobs`                                                         | cleanup executor, `calendar_forget_event`                                                                               | `calendarDeletionOwnership` + `externalActions`                       |
 | Calendar disconnect stuck                       | `prepare_calendar_disconnect` / tokens                                         | mapped events, pending/blocked jobs, `calendar_disconnect` action                                                       | Calendar/outbox tests + DB state                                      |
 | Backup corrupt/fails                            | `.github/workflows/database-backup.yml`                                        | `tools/backup/*`, backup runbook                                                                                        | `backupScripts.test.ts`                                               |
@@ -211,7 +210,7 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | Write authority             | `create_booking_with_limits()` migration: `supabase/migrations/20260813115437_transactional_availability_mutations.sql`; availability hardening: `supabase/migrations/20260824074813_recurring_service_availability.sql`. `src/backend/publicBookingActions.ts` is **not** on submit path.                                                                                                                                                  |
 | DB guarantees               | `create_booking_with_limits`: advisory locks on IP/phone scopes; IP ledger `booking_attempts`; phone count from recent `bookings`. `create_booking`: re-resolve active service + weekday, 15-min grid, schedule/time-off/one-off/recurring-break validation, barber availability advisory lock, insert; GiST exclusion rejects confirmed overlap.                                                                                           |
 | Commercial/time constraints | Client price/duration/service name are not authority. Selected wall clock is anchored with `localWallClockToStockholmIso()`; DB uses `Europe/Stockholm`.                                                                                                                                                                                                                                                                                    |
-| On insert                   | email job trigger; optional reminder row; durable Calendar sync trigger queues `calendar_event_sync`; an optional Database Webhook only re-queues the deduplicated action. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                           |
+| On insert                   | email job trigger; optional reminder row; durable Calendar sync trigger queues `calendar_event_sync`. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                           |
 | Verify                      | `slotPacking.test.ts` only for mock; `stockholmTime.test.ts`; `tests/integration/booking.test.ts`; `supabase/tests/11_booking_gateway_db_test.sql`, `32_transactional_availability_test.sql`, `34_public_booking_gateway_contract_test.sql`; `tests/unit/bookingLinks.test.ts`.                                                                                                                                                             |
 
 ### 5.4 Customer self-service: Mina bokningar
@@ -368,12 +367,12 @@ If Worker/email/machine-discovery code needs a new mutable fact, update the SQL 
 
 | Path                | Chain / authority                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Files/state         | UI `src/admin/calendar/CalendarConnectButton.tsx`, `src/admin/calendar/useCalendarSync.ts`, `src/admin/calendar/adapters/supabaseCalendarSync.ts`; server `supabase/functions/_shared/calendar.ts`; functions `calendar-oauth-start`, `calendar-oauth-callback`, `calendar-sync`, `calendar-disconnect`; tables `barber_calendar_tokens`, `calendar_event_map`.                               |
+| Files/state         | UI `src/admin/calendar/CalendarConnectButton.tsx`, `src/admin/calendar/useCalendarSync.ts`, `src/admin/calendar/adapters/supabaseCalendarSync.ts`; server `supabase/functions/_shared/calendar.ts`; functions `calendar-oauth-start`, `calendar-oauth-callback`, `calendar-disconnect`, `external-cleanup`; tables `barber_calendar_tokens`, `calendar_event_map`. |
 | Connect             | authenticated barber → OAuth start → signed HMAC state (`CALENDAR_STATE_SECRET`) → Google consent → callback → verify state + active linked barber → code exchange → `calendar_store_token()` → best-effort `calendar_backfill_source()`. Backfill is future confirmed bookings, not arbitrary history.                                                                                       |
-| Insert/update       | `booking_calendar_sync_on_change` queues `calendar_event_sync` in the transaction → `external-action-dispatch` → `external-cleanup` claims the action, re-reads authoritative DB state, and performs idempotent Google insert/patch. An optional Dashboard Database Webhook calls `calendar-sync`, which only re-queues the same deduplicated action with `x-webhook-secret==WEBHOOK_SECRET`. |
+| Insert/update       | `booking_calendar_sync_on_change` queues `calendar_event_sync` in the transaction → `external-action-dispatch` → `external-cleanup` claims the action, re-reads authoritative DB state, and performs idempotent Google insert/patch. |
 | Cancel/delete       | DB trigger → deduplicated `calendar_event_delete` in `external_action_jobs` → `external-cleanup` → Google delete → `calendar_forget_event()`.                                                                                                                                                                                                                                                 |
 | Disconnect          | `prepare_calendar_disconnect()` marks pending, queues mapped deletions, then `calendar_disconnect`; executor revokes Google token and deletes token state after cleanup.                                                                                                                                                                                                                      |
-| External dependency | The durable trigger/outbox is migration-owned. A legacy Database Webhook binding is optional, Dashboard-managed, and cannot be proven from repository files; if present, it is compatibility-only.                                                                                                                                                                                            |
+| External dependency | The durable trigger/outbox is migration-owned. The guarded retirement migration removes the legacy Dashboard Webhook trigger; production deployment and secret maintenance remain operator actions. |
 | Verify              | `calendarSync.test.ts`, `calendarDeletionOwnership.test.ts`, `externalActions.test.ts`, `38_launch_review_fixes_test.sql`, pgTAP Calendar tests + live queue/function/provider logs.                                                                                                                                                                                                          |
 
 ### 5.15 Durable external-actions outbox
@@ -430,12 +429,6 @@ send-confirmation
 ├─ Resend
 ├─ mark_booking_email_delivery_recipient
 └─ complete/fail booking job OR mark reminder delivered
-
-calendar-sync
-├─ optional Dashboard bookings webhook
-├─ x-webhook-secret
-├─ queue_calendar_event_sync (compatibility-only)
-└─ deduplicated durable Calendar action queue
 
 upload-image
 ├─ auth/profile authorization
@@ -569,7 +562,7 @@ After contract migration, direct anon execution of customer mutation/lookup RPCs
 | ------------------------------- | ------------------------------------------------------------------------------------ |
 | `calendar_connection_status`    | admin Calendar adapter                                                               |
 | `calendar_store_token`          | OAuth callback                                                                       |
-| `calendar_sync_source`          | `calendar-sync`; authoritative booking/token re-read                                 |
+| `calendar_sync_source`          | `external-cleanup`; authoritative booking/token re-read                              |
 | `calendar_record_event`         | sync/backfill mapping write                                                          |
 | `calendar_record_error`         | sync/backfill error state                                                            |
 | `calendar_backfill_source`      | OAuth callback future-confirmed backfill                                             |
@@ -626,11 +619,11 @@ Older direct booking-email triggers are dropped by the durable email migration.
 | `external-action-dispatch`        | every minute        | `queue_due_external_actions()`         |
 | `booking-attempt-cleanup`         | hourly at minute 23 | delete booking attempts >2d            |
 
-**Optional compatibility webhook:** a Dashboard-managed `calendar_sync_on_bookings` binding may call
-`calendar-sync` for `public.bookings` INSERT/UPDATE/DELETE. It only re-queues the deduplicated
-`calendar_event_sync` action; the migration-owned `booking_calendar_sync_on_change` trigger is the
-correctness path. The binding is not represented by migration; verify it in the linked project when
-coordinating its removal.
+The guarded retirement migration `20260901213117_retire_legacy_calendar_sync.sql` removes the
+Dashboard-managed `calendar_sync_on_bookings` trigger after checking the migration-owned
+`booking_calendar_sync_on_change` trigger, `queue_calendar_event_sync(uuid)`, the external-action
+outbox, and its dispatch resolver. Verify the trigger is absent in the linked project after the
+operator applies the migration; do not recreate a compatibility webhook.
 
 ### 6.10 State ownership quick index
 
@@ -672,7 +665,6 @@ coordinating its removal.
 | `admin-manage-barber`           | authenticated owner                        | JWT + owner check                                                                                                                                                    | durable Auth side effects when needed         |
 | Calendar OAuth start/disconnect | authenticated barber                       | JWT + linked active barber                                                                                                                                           | deny unauthorized account                     |
 | Calendar callback               | Google redirect                            | `verify_jwt=false`; HMAC state + active linked barber                                                                                                                | fail closed invalid/expired state             |
-| `calendar-sync`                 | Optional DB Webhook compatibility endpoint | `verify_jwt=false`; `WEBHOOK_SECRET`; re-queues a deduplicated DB action                                                                                             | 5xx supports webhook retry                    |
 | `send-confirmation`             | DB cron/pg_net                             | `verify_jwt=false`; `WEBHOOK_SECRET`; dispatch RPC                                                                                                                   | durable ledger retry/idempotency              |
 | `external-cleanup`              | DB cron/pg_net                             | `verify_jwt=false`; `WEBHOOK_SECRET`; dispatch token                                                                                                                 | outbox retry/block                            |
 | `upload-image`                  | authenticated admin                        | JWT + role/profile + server decode                                                                                                                                   | reject invalid/oversize before durable DB ref |
@@ -770,7 +762,6 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | `admin-manage-barber`     |         true |
 | `calendar-oauth-start`    |         true |
 | `calendar-oauth-callback` |        false |
-| `calendar-sync`           |        false |
 | `calendar-disconnect`     |         true |
 | `upload-image`            |         true |
 | `external-cleanup`        |        false |
@@ -919,7 +910,7 @@ Search for the **old hostname** before declaring complete.
 | Availability            | `create_booking`, `available_slots`, GiST, transactional availability migrations, `stockholmTime.ts`; client-only fixes are insufficient.                                                                                                                                                                                                   |
 | RLS/grants              | Later migrations revoke earlier direct writes; always inspect final effective state.                                                                                                                                                                                                                                                        |
 | Email                   | Two booking-email ledgers + separate cron dispatchers; both depend on Vault URL/secret + `WEBHOOK_SECRET` parity.                                                                                                                                                                                                                           |
-| Calendar                | Durable booking trigger/outbox owns insert/update; external outbox owns deletion/disconnect. An optional Database Webhook only re-queues the same sync action. Diagnose the durable queue first.                                                                                                                                            |
+| Calendar                | Durable booking trigger/outbox owns insert/update; external outbox owns deletion/disconnect. The legacy Dashboard webhook is retired by a guarded migration. Diagnose the durable queue first. |
 | Media deletion          | Keep server + outbox ownership; no direct browser delete shortcuts. Homepage logo replacement/removal is `upload-image` → `site_settings.homepage_logo_path` → durable gallery cleanup.                                                                                                                                                     |
 | Admin account lifecycle | Keep `profiles.account_enabled`, Auth ban/delete state, and durable actions coherent.                                                                                                                                                                                                                                                       |
 | Migrations              | Migrations only. Production booking gateway uses staged expand/deploy/switch/verify/contract, not unrestricted `db push`.                                                                                                                                                                                                                   |
@@ -985,7 +976,7 @@ Restore authority: `docs/operations/BACKUP_RESTORE.md`. Procedure targets a **ne
 1. Restore `schema.sql` + `data.sql` in one transaction with `session_replication_role = replica`. Backup includes Auth users but excludes Storage metadata; managed roles/project/dashboard config come from new target and are not restored.
 2. Run `tools/backup/prepare-migration-history.sql` **before** `history_data.sql`; it creates the `supabase_migrations` schema/tables if needed and truncates history tables so captured lineage loads cleanly.
 3. Restore Storage bucket metadata and bytes with `tools/backup/storage-restore.sh`, then `--verify-only` for byte count/SHA-256/inventory parity. The reference snapshot includes gallery, barber-photo, and `site_settings.homepage_logo_path` bytes.
-4. Reconfigure Auth URLs/SMTP, Edge secrets, cron, any optional Database Webhook, Google/Resend/Cloudflare, and other provider/project state separately.
+4. Reconfigure Auth URLs/SMTP, Edge secrets, cron, Google/Resend/Cloudflare, and other provider/project state separately.
 
 `verify-backup-tree.sh` asserts `data.sql` contains `auth.users` but no Storage metadata; `history_data.sql` contains `supabase_migrations.schema_migrations`; Storage archive metadata and bytes are checksummed separately.
 
@@ -1029,7 +1020,6 @@ Use this instead of grep for first-hop navigation.
 | Booking-email dispatcher                   | `queue_due_booking_email_deliveries`                                          |
 | Reminder dispatcher                        | `queue_due_booking_reminders`                                                 |
 | Calendar connection status                 | `calendar_connection_status`                                                  |
-| Calendar sync gateway                      | `supabase/functions/calendar-sync/index.ts`                                   |
 | Calendar mapping                           | `public.calendar_event_map`                                                   |
 | Calendar deletion enqueue                  | `queue_calendar_event_deletion`                                               |
 | Legacy booking-email function - do not use | `queue_booking_confirmation`                                                  |
@@ -1044,7 +1034,6 @@ Use this instead of grep for first-hop navigation.
 | Source                                           | Status / clarification                                                                                                                                                                | Trust instead                                                                  |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `.claude/runtime/SLOT_PACKING_SPEC.md`           | `packSlots()` describes the mock availability path; live availability remains the database `available_slots()` RPC.                                                                   | `src/booking/adapters/localCalendar.ts` and live booking adapter/database RPCs |
-| `supabase/functions/calendar-sync/README.md`     | Current Calendar durability, future-confirmed backfill, and compatibility-webhook cutover language is verified against the callback, latest Calendar migrations, and rollout runbook. | callback + `20260813115438_durable_storage_cleanup.sql` + operations runbook   |
 | `supabase/functions/send-confirmation/README.md` | Current booking-email ledger, failed owner-review state, recipient progress, and 90-day cleanup language is verified against the function and latest email-delivery migrations.       | function + `20260823130000_classify_booking_email_delivery_failures.sql`       |
 | `BACKEND.md`                                     | Current runtime boundary distinguishes the booking-email ledger, external-action outbox, direct Auth mail, and synchronous upload from durable cleanup.                               | current functions, migrations, and operations runbooks                         |
 | `src/admin/adapters/schedulesAdmin.ts`           | Current comments identify the transactional week-save RPC, revoked direct schedule writes, and the database `available_slots()` read authority.                                       | adapter + `20260813115437_transactional_availability_mutations.sql`            |
