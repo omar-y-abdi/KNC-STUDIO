@@ -18,7 +18,8 @@ cancellation immediately queues cleanup rather than orphaning the event.
 
 `calendar-sync` remains as a compatibility endpoint for an already-configured Supabase Database
 Webhook. It only re-queues the same deduplicated action and never calls Google directly. The webhook
-may be removed after the durable migration is deployed and verified.
+must remain until the merged durable path is verified and the owner coordinates external webhook and
+shared-secret maintenance; only then may it be removed.
 
 ## Components
 
@@ -79,13 +80,16 @@ supabase functions deploy \
 
 After deployment, verify that the external-action cron drains `calendar_event_sync` jobs and that a
 real create/update/cancel cycle reaches Google. An existing `public.bookings` Database Webhook may
-remain during rollout, but it is no longer required for correctness.
+remain during rollout, but it is no longer required for correctness. Do not remove it from the
+Dashboard until the merged durable path is verified and the coordinated external maintenance is
+complete.
 
 ## Notes
 
 - Events use a deterministic booking-derived Google event id, making retried inserts idempotent.
 - The event carries a 30-minute popup reminder; device notification behavior still depends on the
   barber's Google Calendar settings.
-- OAuth callback backfill covers confirmed future bookings that predate connection.
+- OAuth callback backfill covers confirmed future bookings (those with end time after now) that
+  predate connection.
 - Revoked Google grants block affected Calendar jobs for explicit same-account reauthorization
   instead of discarding the durable mapping.

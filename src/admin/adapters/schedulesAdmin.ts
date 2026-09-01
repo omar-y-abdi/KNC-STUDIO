@@ -1,9 +1,11 @@
 // Schedules admin adapter. Reads a barber's 7 weekday rows and writes the complete week through the
-// transactional `admin_save_barber_week` RPC. The RPC authorizes owner/own-barber scope, validates
-// all seven rows, and detects conflicts before applying the whole replacement.
+// transactional `admin_save_barber_week` RPC. Direct authenticated writes to `barber_schedules` are
+// revoked by the transactional availability migration; the RPC authorizes owner/own-barber scope,
+// validates all seven rows, and detects conflicts before applying the whole replacement.
 //
 // availableSlotsFor exposes the same anon-callable `available_slots` RPC the public booking flow
-// uses ("what customers see"); the integration tests assert schedule edits through it.
+// uses ("what customers see"); the database definer RPC remains the live availability authority and
+// the integration tests assert schedule edits through it.
 //
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 

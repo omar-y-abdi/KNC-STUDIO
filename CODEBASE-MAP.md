@@ -1042,10 +1042,14 @@ Use this instead of grep for first-hop navigation.
 
 ## 12. Documentation Trust / Historical Notes
 
-| Source                                 | Status / clarification                                                                                                                           | Trust instead                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `.claude/runtime/SLOT_PACKING_SPEC.md` | `packSlots()` describes the mock availability path; live availability remains the database `available_slots()` RPC.                              | `src/booking/adapters/localCalendar.ts` and live booking adapter/database RPCs |
-| `REVIEW_FINDINGS.md`                   | Archived historical review; its findings and recommendations predate later hardening and are not current implementation or launch-status claims. | current code, latest migrations, tests, and `docs/operations/` runbooks        |
+| Source                                           | Status / clarification                                                                                                                                                                | Trust instead                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `.claude/runtime/SLOT_PACKING_SPEC.md`           | `packSlots()` describes the mock availability path; live availability remains the database `available_slots()` RPC.                                                                   | `src/booking/adapters/localCalendar.ts` and live booking adapter/database RPCs |
+| `supabase/functions/calendar-sync/README.md`     | Current Calendar durability, future-confirmed backfill, and compatibility-webhook cutover language is verified against the callback, latest Calendar migrations, and rollout runbook. | callback + `20260813115438_durable_storage_cleanup.sql` + operations runbook   |
+| `supabase/functions/send-confirmation/README.md` | Current booking-email ledger, failed owner-review state, recipient progress, and 90-day cleanup language is verified against the function and latest email-delivery migrations.       | function + `20260823130000_classify_booking_email_delivery_failures.sql`       |
+| `BACKEND.md`                                     | Current runtime boundary distinguishes the booking-email ledger, external-action outbox, direct Auth mail, and synchronous upload from durable cleanup.                               | current functions, migrations, and operations runbooks                         |
+| `src/admin/adapters/schedulesAdmin.ts`           | Current comments identify the transactional week-save RPC, revoked direct schedule writes, and the database `available_slots()` read authority.                                       | adapter + `20260813115437_transactional_availability_mutations.sql`            |
+| `REVIEW_FINDINGS.md`                             | Archived historical review; its findings and recommendations predate later hardening and are not current implementation or launch-status claims.                                      | current code, latest migrations, tests, and `docs/operations/` runbooks        |
 
 ---
 

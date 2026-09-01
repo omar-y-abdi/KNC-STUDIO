@@ -21,15 +21,15 @@ per booking and recipient, preventing duplicate email during delivery retries.
 - one recipient rejection does not suppress remaining recipients; successful sends are persisted
   before the job enters retry or owner review
 - transient failures retry with capped exponential backoff; permanent provider/configuration errors
-  stop immediately for explicit owner review; a dispatcher invocation lost before reaching the Edge
-  Function is reclaimed after five minutes
+  move the job to `failed` for explicit owner review; a dispatcher invocation lost before reaching
+  the Edge Function is reclaimed after five minutes
 - one-day reminders keep their existing durable `booking_reminders` retry ledger and use the same
   Resend idempotency keys
 
 The job ledger keeps only booking UUIDs, event/status, attempt timing, and short error codes. It does
 not store email addresses, phone numbers, message content, provider responses, or tokens. Failed rows
-remain until explicit owner retry or discard. Completed/skipped rows are retained for 90 days,
-then removed by `booking-email-delivery-cleanup`.
+remain until explicit owner retry or discard. Completed/skipped/superseded rows are retained for 90
+days, then removed by `booking-email-delivery-cleanup`.
 
 ## Security
 
