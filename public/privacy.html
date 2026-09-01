@@ -217,12 +217,12 @@
         <p class="updated">Blade &amp; Blend Studio · Last updated 1 September 2026</p>
 
         <p>
-          This policy describes how Blade &amp; Blend Studio ("we", "the service") handles information
-          when a barber voluntarily connects their Google account to mirror their bookings into Google
-          Calendar. Only the studio's barbers use this connection and it is never mandatory. For a
-          synced booking, the customer's name, service, and appointment time are written to the
-          assigned barber's calendar. Phone numbers and email addresses are not written to Google
-          Calendar.
+          This policy describes how Blade &amp; Blend Studio ("we", "the service") handles
+          information when a barber voluntarily connects their Google account to mirror their
+          bookings into Google Calendar. Only the studio's barbers use this connection and it is
+          never mandatory. For a synced booking, the customer's name, service, and appointment time
+          are written to the assigned barber's calendar. Phone numbers and email addresses are not
+          written to Google Calendar.
         </p>
 
         <h2>Bookings, My appointments and email</h2>
@@ -245,10 +245,11 @@
           This website does not use analytics or advertising cookies. We use a first-party cookie
           named
           <code>bladeblend_storage_preferences</code> to remember your storage choice. If you accept
-          functional storage, a separate first-party cookie, <code>bladeblend_mybookings_phone</code>,
-          may remember only the phone number for My appointments on this device. It is a convenience
-          only and never authorises access to bookings. If you reject optional storage, or withdraw
-          through the Privacy button, that cookie is removed.
+          functional storage, a separate first-party cookie,
+          <code>bladeblend_mybookings_phone</code>, may remember only the phone number for My
+          appointments on this device. It is a convenience only and never authorises access to
+          bookings. If you reject optional storage, or withdraw through the Privacy button, that
+          cookie is removed.
         </p>
         <p>
           Necessary session storage is used only after you open a valid My appointments link. It is
@@ -260,11 +261,11 @@
         <p>
           Public booking, reviews, and requests for a new My appointments link are protected against
           automated spam and abuse with Cloudflare Turnstile. Verification runs invisibly in the
-          background when a protected form is shown or submitted — there is no checkbox to tick and no
-          puzzle challenge. To do this, Cloudflare may process technical information about your device
-          and browser to determine whether the request is likely to come from a human. Turnstile does
-          not use this information to track you across sites or for advertising. Cloudflare's
-          processing is described in
+          background when a protected form is shown or submitted — there is no checkbox to tick and
+          no puzzle challenge. To do this, Cloudflare may process technical information about your
+          device and browser to determine whether the request is likely to come from a human.
+          Turnstile does not use this information to track you across sites or for advertising.
+          Cloudflare's processing is described in
           <a
             href="https://www.cloudflare.com/turnstile-privacy-policy/"
             target="_blank"
@@ -275,14 +276,15 @@
 
         <h2>Google data we access</h2>
         <p>
-          When a barber chooses to connect their Google account, we request the following permissions:
+          When a barber chooses to connect their Google account, we request the following
+          permissions:
         </p>
         <ul>
           <li>
             <strong>Google Calendar events on calendars owned by the barber</strong>
-            (<code>calendar.events.owned</code>) — to create, update, and delete calendar events that
-            correspond to the barber's bookings. We never read or touch calendar events other than the
-            booking events we ourselves created.
+            (<code>calendar.events.owned</code>) — to create, update, and delete calendar events
+            that correspond to the barber's bookings. We never read or touch calendar events other
+            than the booking events we ourselves created.
           </li>
           <li>
             <strong>Email address</strong> (<code>openid</code>, <code>email</code>) — solely to
@@ -293,11 +295,11 @@
 
         <h2>How Google data is shared and used</h2>
         <p>
-          Google data is used only to connect a barber's Google account and synchronize that barber's
-          bookings with Google Calendar. Google OAuth returns a refresh token and the account's email
-          address to the server. The refresh token is transferred to and stored in Supabase for the
-          server's ongoing synchronization; it is never sent to the browser. The email address is
-          stored to show which account is connected in the admin panel.
+          Google data is used only to connect a barber's Google account and synchronize that
+          barber's bookings with Google Calendar. Google OAuth returns a refresh token and the
+          account's email address to the server. The refresh token is transferred to and stored in
+          Supabase for the server's ongoing synchronization; it is never sent to the browser. The
+          email address is stored to show which account is connected in the admin panel.
         </p>
         <p>
           When a confirmed booking is synchronized, the server sends the customer's name, service,
@@ -318,9 +320,9 @@
         <p>
           When the barber taps "Disconnect", new synchronization stops immediately. The service then
           deletes Calendar events it created. Google's refresh token is retained only during this
-          cleanup, revoked at Google, and deleted from our database after cleanup succeeds. If Google
-          access was already revoked, the barber must reconnect the same Google account so cleanup can
-          finish.
+          cleanup, revoked at Google, and deleted from our database after cleanup succeeds. If
+          Google access was already revoked, the barber must reconnect the same Google account so
+          cleanup can finish.
         </p>
 
         <h2>Google Limited Use</h2>
