@@ -415,7 +415,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             <LazyBookingFlow
               mode={props.mode}
               defaultLang={props.lang}
-              showHeader={false}
               onMyBookings={props.openMyBookings}
               popupText={props.bookingPopupText}
               business={business}
