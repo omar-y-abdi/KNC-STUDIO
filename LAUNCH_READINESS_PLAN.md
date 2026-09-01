@@ -68,7 +68,7 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 ### CMS, webb och discovery
 
 - Verksamhetsidentitet, kontaktuppgifter och SEO-data hanteras via CMS.
-- ACP discovery publiceras på `/.well-known/acp.json`.
+- ACP discovery publiceras inte innan ett konformt officiellt protokoll och faktisk boknings-/checkout-auktoritet finns.
 - Google Calendar-information är inte användarsynlig på startsidan.
 - Verifieringsmetadata finns utan synlig mellanlandningssida eller flash.
 - Legacy SF Pro-filer är ersatta med öppet licensierade Inter och Playfair Display med licensfiler.

@@ -245,7 +245,6 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
     '## Pages',
     `- [${business.name}](${SITE_URL}/): Home and online booking`,
     `- [Privacy Policy](${SITE_URL}/privacy): Data handling and Google Calendar disclosure`,
-    `- [ACP discovery](${SITE_URL}/.well-known/acp.json): Agentic Commerce Protocol metadata`,
     '',
   )
   return lines.join('\n')

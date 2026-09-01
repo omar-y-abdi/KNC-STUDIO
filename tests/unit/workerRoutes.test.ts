@@ -196,6 +196,18 @@ describe('Worker route policy', () => {
     expect(env.requestedPaths).toEqual(['/not-a-route'])
   })
 
+  it('returns a genuine noindex 404 for unsupported ACP discovery', async () => {
+    const env = createEnv()
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/.well-known/acp.json'),
+      env,
+    )
+
+    expect(response.status).toBe(404)
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    expect(env.requestedPaths).toEqual(['/.well-known/acp.json'])
+  })
+
   it('serves clean static URLs and redirects their HTML filenames', async () => {
     const env = createEnv()
     const cleanResponse = await worker.fetch(
