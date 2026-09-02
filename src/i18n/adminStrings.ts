@@ -475,6 +475,8 @@ export interface AdminStrings {
   readonly forgotPwEmailLabel: string
   readonly forgotPwSending: string
   readonly forgotPwSubmit: string
+  readonly forgotPwChallengeError: string
+  readonly forgotPwRetryChallenge: string
   // ForcedPasswordChange (forced first-login change)
   readonly forcedPwSubtitle: string
   readonly forcedPwIntro: string
@@ -959,6 +961,8 @@ const SV: AdminStrings = {
   forgotPwEmailLabel: 'E‑post',
   forgotPwSending: 'Skickar …',
   forgotPwSubmit: 'Skicka återställningslänk',
+  forgotPwChallengeError: 'Säkerhetskontrollen misslyckades. Försök igen.',
+  forgotPwRetryChallenge: 'Försök igen',
   forcedPwSubtitle: 'Byt ditt lösenord',
   forcedPwIntro:
     'Ditt konto har ett tillfälligt lösenord. Du måste välja ett nytt för att komma åt panelen.',
@@ -1444,6 +1448,8 @@ const EN: AdminStrings = {
   forgotPwEmailLabel: 'Email',
   forgotPwSending: 'Sending …',
   forgotPwSubmit: 'Send reset link',
+  forgotPwChallengeError: 'The security check failed. Please try again.',
+  forgotPwRetryChallenge: 'Try again',
   forcedPwSubtitle: 'Change your password',
   forcedPwIntro:
     'Your account has a temporary password. You must choose a new one to access the panel.',

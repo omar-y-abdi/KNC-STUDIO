@@ -37,6 +37,7 @@ interface TurnstileRenderOptions {
   readonly callback: (token: string) => void
   readonly 'expired-callback': () => void
   readonly 'error-callback': () => void
+  readonly 'timeout-callback': () => void
 }
 
 interface TurnstileApi {
@@ -86,6 +87,8 @@ function loadTurnstileScript(): Promise<void> {
 export interface TurnstileProps {
   /** Called with a fresh token on success, and with `''` on expiry / error / unset key. */
   readonly onToken: (token: string) => void
+  /** Called when the managed challenge needs user-visible recovery (error, timeout, or expiry). */
+  readonly onError?: () => void
   /** Bump (increment) to force a fresh challenge — a token is single-use and ~5-min-expiring. */
   readonly resetNonce: number
 }
@@ -95,19 +98,28 @@ export interface TurnstileProps {
  * its token. Renders `null` when no site key is configured.
  */
 export function Turnstile(props: TurnstileProps): JSX.Element | null {
-  const { onToken, resetNonce } = props
+  const { onToken, onError, resetNonce } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetIdRef = useRef<string | null>(null)
   // Keep the latest callback in a ref so the mount/reset effects never re-run when the parent
   // re-renders with a new closure (the widget is rendered ONCE; only `resetNonce` re-executes it).
   const onTokenRef = useRef(onToken)
+  const onErrorRef = useRef(onError)
   useEffect(() => {
     onTokenRef.current = onToken
   }, [onToken])
+  useEffect(() => {
+    onErrorRef.current = onError
+  }, [onError])
 
-  // Mount: load the script and render the widget once. Unset key or script failure emits an empty
-  // token; mock mode remains usable, while production gateway rejects it as failed_challenge.
+  const notifyError = (): void => {
+    onTokenRef.current('')
+    onErrorRef.current?.()
+  }
+
+  // Mount: load the script and render the widget once. Unset key emits an empty token; mock mode
+  // remains usable. Script/widget failures notify an interested caller so it can offer recovery.
   useEffect(() => {
     if (SITE_KEY === undefined) {
       onTokenRef.current('')
@@ -120,18 +132,19 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
         const api = window.turnstile
         const el = containerRef.current
         if (api === undefined || el === null) {
-          onTokenRef.current('')
+          notifyError()
           return
         }
         widgetIdRef.current = api.render(el, {
           sitekey: SITE_KEY,
           callback: (token: string) => onTokenRef.current(token),
-          'expired-callback': () => onTokenRef.current(''),
-          'error-callback': () => onTokenRef.current(''),
+          'expired-callback': notifyError,
+          'error-callback': notifyError,
+          'timeout-callback': notifyError,
         })
       })
       .catch(() => {
-        if (!cancelled) onTokenRef.current('')
+        if (!cancelled) notifyError()
       })
     return () => {
       cancelled = true

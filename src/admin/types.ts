@@ -219,7 +219,8 @@ export interface GalleryImage {
 
 /** A small typed error: a stable `kind` for branching + a human message for the UI. */
 export interface AdminError {
-  readonly kind: 'auth' | 'forbidden' | 'not_found' | 'validation' | 'network' | 'malformed'
+  readonly kind:
+    'auth' | 'forbidden' | 'not_found' | 'validation' | 'network' | 'malformed' | 'challenge'
   readonly message: string
 }
 

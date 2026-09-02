@@ -5,6 +5,7 @@ import {
   loadEmailTemplate,
   sendViaResend,
 } from '../_shared/email.ts'
+import { verifyTurnstile } from '../_shared/turnstile.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,29 +25,8 @@ async function sha256(value: string): Promise<string> {
     .join('')
 }
 
-const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
-
 function clientIp(req: Request): string {
   return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
-}
-
-async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
-  if (token === '') return false
-  try {
-    const form = new URLSearchParams()
-    form.set('secret', secret)
-    form.set('response', token)
-    if (ip && ip !== 'unknown') form.set('remoteip', ip)
-    const response = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: form })
-    const data = (await response.json()) as { success?: boolean }
-    return data.success === true
-  } catch (error) {
-    console.error(
-      'send-recovery-email: Turnstile verify error:',
-      error instanceof Error ? error.message : 'unknown error',
-    )
-    return false
-  }
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -68,7 +48,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
   if (!turnstileSecret) return json({ ok: false, error: 'not_configured' }, 503)
   if (!(await verifyTurnstile(turnstileToken, clientIp(req), turnstileSecret))) {
-    return json({ ok: true })
+    return json({ ok: false, error: 'failed_challenge' })
   }
   const url = Deno.env.get('SUPABASE_URL')
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')

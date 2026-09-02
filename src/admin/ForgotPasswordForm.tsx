@@ -27,7 +27,7 @@ export interface ForgotPasswordFormProps {
 type Status =
   | { readonly kind: 'idle' }
   | { readonly kind: 'submitting' }
-  | { readonly kind: 'error'; readonly message: string }
+  | { readonly kind: 'error'; readonly message: string; readonly retryable: boolean }
   | { readonly kind: 'done' }
 
 export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element {
@@ -56,11 +56,26 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
         setStatus({ kind: 'done' })
         return
       }
-      setStatus({ kind: 'error', message: result.error.message })
+      setStatus({
+        kind: 'error',
+        message: result.error.message,
+        retryable: result.error.kind === 'challenge',
+      })
     } finally {
       setTurnstileToken('')
       setTurnstileNonce((nonce) => nonce + 1)
     }
+  }
+
+  const onChallengeError = (): void => {
+    setTurnstileToken('')
+    setStatus({ kind: 'error', message: t.forgotPwChallengeError, retryable: true })
+  }
+
+  const retryChallenge = (): void => {
+    setStatus({ kind: 'idle' })
+    setTurnstileToken('')
+    setTurnstileNonce((nonce) => nonce + 1)
   }
 
   if (status.kind === 'done') {
@@ -106,10 +121,27 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
         </div>
 
         <div aria-live="assertive" role="alert" style={{ minHeight: '18px', marginBottom: '12px' }}>
-          {status.kind === 'error' ? <span style={s.errorText}>{status.message}</span> : null}
+          {status.kind === 'error' ? (
+            <>
+              <span style={s.errorText}>{status.message}</span>
+              {status.retryable ? (
+                <button
+                  type="button"
+                  style={{ ...authLinkStyle(c.accent), display: 'block', marginTop: '6px' }}
+                  onClick={retryChallenge}
+                >
+                  {t.forgotPwRetryChallenge}
+                </button>
+              ) : null}
+            </>
+          ) : null}
         </div>
 
-        <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+        <Turnstile
+          onToken={setTurnstileToken}
+          onError={onChallengeError}
+          resetNonce={turnstileNonce}
+        />
 
         <button
           type="submit"

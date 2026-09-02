@@ -15,10 +15,7 @@ describe('password recovery Turnstile contract', () => {
     const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
 
     ordered(source, [
-      "const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'",
-      'async function verifyTurnstile',
-      "form.set('secret', secret)",
-      "form.set('response', token)",
+      "import { verifyTurnstile } from '../_shared/turnstile.ts'",
       "typeof body.turnstileToken === 'string'",
       "Deno.env.get('TURNSTILE_SECRET')",
       'verifyTurnstile(turnstileToken',
@@ -29,8 +26,11 @@ describe('password recovery Turnstile contract', () => {
   it('keeps failed challenge outcomes neutral to the recovery requester', () => {
     const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
 
-    expect(source).toContain('return json({ ok: true })')
-    expect(source).toContain('if (!(await verifyTurnstile(')
+    const failedChallenge = source.indexOf("return json({ ok: false, error: 'failed_challenge' })")
+    const challengeCheck = source.indexOf('if (!(await verifyTurnstile(')
+
+    expect(failedChallenge).toBeGreaterThan(challengeCheck)
+    expect(source).not.toContain('return json({ ok: true })\n  }\n  const url')
   })
 
   it('does not require delivery configuration before rejecting a challenge', () => {

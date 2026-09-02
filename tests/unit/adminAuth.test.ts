@@ -112,6 +112,20 @@ describe('admin account settings auth', () => {
     })
   })
 
+  it('surfaces a generic localized challenge failure for password recovery', async () => {
+    authMocks.invoke.mockResolvedValue({
+      data: { ok: false, error: 'failed_challenge' },
+      error: null,
+    })
+
+    const result = await requestPasswordReset('staff@example.com', 'en', 'invalid-token')
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'challenge', message: 'The security check failed. Please try again.' },
+    })
+  })
+
   it('confirms an email change from its one-time token hash', async () => {
     authMocks.verifyOtp.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
 
