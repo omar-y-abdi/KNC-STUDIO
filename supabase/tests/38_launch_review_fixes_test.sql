@@ -1,5 +1,30 @@
 begin;
-select plan(14);
+select plan(16);
+
+select ok(
+  exists (
+    select 1
+    from pg_catalog.pg_trigger
+    where tgrelid = 'public.bookings'::regclass
+      and tgname = 'booking_calendar_sync_on_change'
+      and not tgisinternal
+  ),
+  'durable Calendar booking trigger remains installed'
+);
+select ok(
+  not exists (
+    select 1
+    from pg_catalog.pg_trigger
+    where tgrelid = 'public.bookings'::regclass
+      and tgname = 'calendar_sync_on_bookings'
+      and not tgisinternal
+  ),
+  'legacy secret-bearing Calendar webhook trigger is absent'
+);
+select ok(
+  pg_catalog.to_regprocedure('public.queue_calendar_event_sync(uuid)') is not null,
+  'durable Calendar queue function remains available'
+);
 
 insert into public.barbers (id, name) values ('review-fix', 'Review Fix Barber');
 insert into public.barber_calendar_tokens (barber_id, refresh_token, calendar_id)
@@ -82,19 +107,14 @@ select set_config(
 );
 reset role;
 select is(
-  current_setting('test.valid_access_context')::jsonb->>'superseded',
-  'true',
-  'legacy challenge without a canonical encrypted token is suppressed'
+  current_setting('test.valid_access_context')::jsonb->>'email',
+  'future@example.test',
+  'dispatcher resolves matching access email server-side'
 );
 select is(
   current_setting('test.valid_access_context')::jsonb->>'access_code',
-  null,
-  'legacy dispatcher never exposes a plaintext access code'
-);
-select is(
-  current_setting('test.valid_access_context')::jsonb->>'token_ciphertext',
-  null,
-  'legacy dispatcher never exposes encrypted token material for an unmatched challenge'
+  repeat('d', 64),
+  'dispatcher exposes the opaque code only to the claimed service-role worker'
 );
 
 insert into public.bookings

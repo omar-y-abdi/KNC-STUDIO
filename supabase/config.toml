@@ -402,13 +402,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# send-confirmation: invoked by a trusted Supabase Database Webhook on `bookings` INSERT (server
-# -> server), so it does not receive a Supabase user JWT -> verify_jwt = false. SECURING IT: the
-# function is NOT a public endpoint by design. Lock it down in production by (a) keeping its URL
-# unpublished, and (b) requiring a shared secret the webhook sends in a custom header
-# (e.g. `x-webhook-secret`, stored via `supabase secrets set`) and which the handler checks before
-# doing any work. See supabase/functions/send-confirmation/README.md for the webhook wiring + the
-# header-secret recipe. Do NOT flip this to true: the webhook cannot mint a Supabase auth JWT.
+# send-confirmation: invoked by the durable booking-email delivery dispatcher with a job id (server
+# -> server), so it does not receive a Supabase user JWT -> verify_jwt = false. The booking INSERT
+# trigger queues `booking_email_delivery_jobs`; this function is not a booking Database Webhook
+# handler. It remains fail-closed on the canonical `WEBHOOK_SECRET` header and uses the durable
+# ledger for retry, recipient progress, and owner-visible failure state. Do NOT flip this to true:
+# the dispatcher cannot mint a Supabase auth JWT.
 [functions.send-confirmation]
 enabled = true
 verify_jwt = false
@@ -459,13 +458,6 @@ verify_jwt = true
 # HMAC-signed `state` minted by calendar-oauth-start (CALENDAR_STATE_SECRET). Register its URL under
 # the OAuth client's Authorised redirect URIs: <SUPABASE_URL>/functions/v1/calendar-oauth-callback.
 [functions.calendar-oauth-callback]
-enabled = true
-verify_jwt = false
-
-# calendar-sync: invoked by a bookings INSERT/UPDATE/DELETE Database Webhook (server -> server, no
-# user JWT) -> verify_jwt = false. Fail-closed on the shared WEBHOOK_SECRET header (same recipe as
-# send-confirmation). Re-reads every field from the DB by id (never trusts the webhook body).
-[functions.calendar-sync]
 enabled = true
 verify_jwt = false
 

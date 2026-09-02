@@ -20,8 +20,8 @@ PR #55 afterward recreates a function that the final database contract intends t
 - Edge Function secrets are present, including `TURNSTILE_SECRET`, `IP_SALT`,
   `PUBLIC_ACTION_HASH_SALT`, `PUBLIC_SITE_ORIGINS`, `RESEND_API_KEY`, and `WEBHOOK_SECRET`.
 - Database Vault contains `booking_confirmation_url`, `external_cleanup_url`, and
-  `booking_webhook_secret`. Both Edge webhook handlers read `WEBHOOK_SECRET`; both database
-  dispatchers read the same value from Vault key `booking_webhook_secret`.
+  `booking_webhook_secret`. The booking-email and external-action dispatchers read that same value
+  from Vault; `send-confirmation` and `external-cleanup` accept it as `WEBHOOK_SECRET`.
 - Legacy Edge secret `BOOKING_WEBHOOK_SECRET` is absent; `send-confirmation` must not accept an
   unchecked second credential.
 - Cloudflare Worker secret `SUPABASE_ANON_KEY` is present. `SUPABASE_URL` is the public Worker
@@ -79,7 +79,7 @@ static WASM asset, so deploy it with local Docker bundling rather than `--use-ap
 ```bash
 for function in \
   admin-create-barber admin-manage-barber \
-  calendar-disconnect calendar-oauth-callback calendar-oauth-start calendar-sync \
+  calendar-disconnect calendar-oauth-callback calendar-oauth-start \
   external-cleanup public-booking-actions send-confirmation send-email-change \
   send-recovery-email submit-booking; do
   npx supabase functions deploy "$function" --project-ref "$PROJECT_REF" --use-api
@@ -88,8 +88,52 @@ npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
 npx supabase functions list --project-ref "$PROJECT_REF"
 ```
 
-Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
-`external-cleanup`, `admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed.
+Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `external-cleanup`,
+`admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed. `external-cleanup`
+is the durable Calendar create/update/delete/disconnect executor.
+
+The forward-only migration `20260901213117_retire_legacy_calendar_sync.sql` drops the legacy
+`calendar_sync_on_bookings` trigger only after checking the durable Calendar trigger, queue, outbox,
+and dispatcher are present. The repository ships no compatibility handler after this migration.
+
+After the migration is deployed, prove the trigger retirement and durable path with a read-only
+query before deleting the already-deployed compatibility function:
+
+```bash
+npx supabase db query --linked --project-ref "$PROJECT_REF" --output-format json \
+  "select
+     exists (
+       select 1 from pg_catalog.pg_trigger
+       where tgrelid = 'public.bookings'::regclass
+         and tgname = 'booking_calendar_sync_on_change'
+         and not tgisinternal
+     ) as durable_trigger_present,
+     not exists (
+       select 1 from pg_catalog.pg_trigger
+       where tgrelid = 'public.bookings'::regclass
+         and tgname = 'calendar_sync_on_bookings'
+         and not tgisinternal
+     ) as legacy_trigger_absent,
+     to_regprocedure('public.queue_calendar_event_sync(uuid)') is not null
+       as durable_queue_present,
+     to_regclass('public.external_action_jobs') is not null as outbox_present"
+```
+
+Continue only when all four returned fields are `true`, then remove the hosted function and read
+back the function list. Deleting the local directory does not remove an already-deployed function:
+
+```bash
+npx supabase functions delete calendar-sync --project-ref "$PROJECT_REF" --yes
+npx supabase functions list --project-ref "$PROJECT_REF" --output-format json \
+  | jq -e 'all(.functions[]; .slug != "calendar-sync")'
+```
+
+Only after the function-list readback proves that the hosted function is absent, coordinate one
+maintenance window to rotate canonical Edge `WEBHOOK_SECRET` and Vault `booking_webhook_secret`
+together. Run `PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets` to prove Edge/Vault
+parity without printing values or digests. These production deployment, function deletion, secret
+rotation, and parity steps are operator actions; repository tests do not claim that live retirement
+or rotation has happened.
 
 ## 3. Switch frontend
 
@@ -132,6 +176,14 @@ Also owner-upload a homepage logo, verify focused and simulated previews before 
 desktop/mobile hero receives the new processed WebP through Realtime, then replace/remove it and confirm
 the prior `gallery/logo/...` object drains through `external_action_jobs`. Edit and remove phone/map in
 **Mejl**; send SV and EN test messages and verify omitted links never become unsafe or stale fallback links.
+
+Calendar create/update correctness must be verified through the durable
+`booking_calendar_sync_on_change` trigger → `calendar_event_sync` outbox action →
+`external-cleanup` path. After the retirement migration is deployed, verify that
+`calendar_sync_on_bookings` is absent and that a confirmed booking still creates one deduplicated
+`calendar_event_sync` job. Production deployment, canonical `WEBHOOK_SECRET` rotation, and
+Edge/Vault parity verification are action-time operator steps; this repository change does not
+perform or claim them.
 
 ## 5. Contract
 

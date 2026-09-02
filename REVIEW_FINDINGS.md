@@ -1,3 +1,9 @@
+> Status: ARCHIVED — historical reference only
+>
+> This review was written on 2026-06-24, before the later launch-readiness migrations and
+> verification work. It is not the current security, architecture, or production-status source of
+> truth. Use the current implementation, latest migrations, tests, and operations runbooks instead.
+
 # Blade & Blend Studio — Consolidated Review Findings
 
 Three independent, read-only review passes (one each), consolidated. Sources:
