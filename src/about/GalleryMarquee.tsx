@@ -268,8 +268,17 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     cancelPointer(e)
   }
 
-  const onRowFocus = (): void => {
+  const onRowFocus = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
     pausedRef.current = true
+    const target = e.target
+    if (!(target instanceof HTMLElement)) return
+    const tile = target.closest<HTMLElement>('[data-tile-key]')
+    if (tile === null || tile.getAttribute('aria-hidden') === 'true') return
+
+    // Only the first logical copy is focusable. Normal motion can carry that copy completely out
+    // of view when perHalf > 1, so put it back at the visible anchor before the keyboard user lands.
+    offset.current = 0
+    paint()
   }
 
   const onRowBlur = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {

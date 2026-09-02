@@ -475,6 +475,108 @@ async function verifyPublicPage(browser, viewport) {
   await context.close()
 }
 
+async function verifyNormalMotionGalleryKeyboard(browser) {
+  const context = await browser.newContext({
+    viewport: { width: 2400, height: 900 },
+    reducedMotion: 'no-preference',
+    hasTouch: true,
+  })
+  context.setDefaultTimeout(WAIT_TIMEOUT)
+  context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
+  const page = await context.newPage()
+
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
+  await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
+  await waitForFonts(page)
+  await page.locator('#om-oss').scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
+  await scrollMarqueeRowIntoView(page, 0)
+  await waitForGalleryToSettle(page)
+
+  const row = page.getByTestId('marquee-row').first()
+  const layout = await row.evaluate((element) => ({
+    physicalCount: element.querySelectorAll('[data-tile-key]').length,
+    logicalCount: element.querySelectorAll('[role="button"]').length,
+    rowWidth: element.getBoundingClientRect().width,
+    rowTop: element.getBoundingClientRect().top,
+  }))
+  assert(
+    layout.physicalCount > layout.logicalCount * 2,
+    `normal-motion gallery did not exercise perHalf > 1: ${JSON.stringify(layout)}`,
+  )
+  await page.waitForFunction(
+    () =>
+      globalThis.document.querySelector('[data-testid="marquee-track"]')?.style.transform !== '',
+    undefined,
+    { timeout: WAIT_TIMEOUT },
+  )
+
+  const rowBox = await row.boundingBox()
+  if (rowBox === null) throw new Error('normal-motion marquee row has no box')
+  const dragDistance = layout.logicalCount * (210 + 14) + 150
+  const startX = rowBox.x + rowBox.width - 12
+  const endX = Math.max(rowBox.x + 12, startX - dragDistance)
+  const client = await page.context().newCDPSession(page)
+  let touchStarted = false
+  try {
+    const y = rowBox.y + rowBox.height / 2
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: startX, y, radiusX: 1, radiusY: 1, force: 1, id: 88 }],
+      modifiers: 0,
+    })
+    touchStarted = true
+    for (let step = 1; step <= 12; step += 1) {
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [
+          {
+            x: startX + ((endX - startX) * step) / 12,
+            y,
+            radiusX: 1,
+            radiusY: 1,
+            force: 1,
+            id: 88,
+          },
+        ],
+        modifiers: 0,
+      })
+    }
+  } finally {
+    if (touchStarted) {
+      await client.send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: [],
+        modifiers: 0,
+      })
+    }
+    await client.detach()
+  }
+
+  const firstLogicalTile = row.locator('[role="button"]').first()
+  const beforeFocus = await firstLogicalTile.boundingBox()
+  assert(
+    beforeFocus !== null && (beforeFocus.x + beforeFocus.width <= 0 || beforeFocus.x >= 2400),
+    `normal-motion focus target was not advanced past the initial logical set: ${JSON.stringify(beforeFocus)}`,
+  )
+  await firstLogicalTile.focus()
+  await page.waitForFunction(
+    () => {
+      const active = globalThis.document.activeElement
+      if (!(active instanceof globalThis.HTMLElement)) return false
+      const rect = active.getBoundingClientRect()
+      return rect.right > 0 && rect.left < globalThis.innerWidth && rect.bottom > 0
+    },
+    undefined,
+    { timeout: WAIT_TIMEOUT },
+  )
+  const afterFocus = await firstLogicalTile.boundingBox()
+  assert(
+    afterFocus !== null && afterFocus.x + afterFocus.width > 0 && afterFocus.x < 2400,
+    `normal-motion focus target remained offscreen after re-anchor: ${JSON.stringify(afterFocus)}`,
+  )
+  await context.close()
+}
+
 async function verifyStaticEndpoints(page) {
   const acp = await page.request.get(`${baseUrl}/.well-known/acp.json`, { timeout: WAIT_TIMEOUT })
   assert(acp.status() === 200, `ACP status ${acp.status()}`)
@@ -493,6 +595,7 @@ try {
   browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
   await verifyPublicPage(browser, { width: 1280, height: 900 })
   await verifyPublicPage(browser, { width: 390, height: 844 })
+  await verifyNormalMotionGalleryKeyboard(browser)
   const page = await browser.newPage()
   await verifyStaticEndpoints(page)
   await page.close()

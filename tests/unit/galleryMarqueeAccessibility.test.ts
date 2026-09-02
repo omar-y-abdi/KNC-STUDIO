@@ -18,4 +18,12 @@ describe('gallery marquee interaction contract', () => {
     expect(source).toContain('onFocus={onRowFocus}')
     expect(source).toContain('onBlur={onRowBlur}')
   })
+
+  it('re-anchors the one focusable logical copy when normal motion moved it away', () => {
+    expect(source).toContain('const target = e.target')
+    expect(source).toContain("target.closest<HTMLElement>('[data-tile-key]')")
+    expect(source).toContain("tile.getAttribute('aria-hidden') === 'true'")
+    expect(source).toContain('offset.current = 0')
+    expect(source).toContain('paint()')
+  })
 })
