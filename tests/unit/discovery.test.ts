@@ -1,29 +1,13 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-interface AcpDiscovery {
-  readonly protocol: {
-    readonly name: string
-    readonly version: string
-  }
-  readonly api_base_url: string
-  readonly transports: readonly string[]
-  readonly capabilities: {
-    readonly services: readonly unknown[]
-  }
-}
-
 describe('public discovery documents', () => {
-  it('publishes a valid ACP discovery document', () => {
-    const discovery = JSON.parse(
-      readFileSync('public/.well-known/acp.json', 'utf8'),
-    ) as AcpDiscovery
+  it('does not advertise unsupported ACP discovery', () => {
+    expect(existsSync('public/.well-known/acp.json')).toBe(false)
 
-    expect(discovery.protocol.name).toBe('acp')
-    expect(discovery.protocol.version).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(new URL(discovery.api_base_url).protocol).toMatch(/^https?:$/)
-    expect(discovery.transports.length).toBeGreaterThan(0)
-    expect(discovery.capabilities.services.length).toBeGreaterThan(0)
+    const fallback = readFileSync('public/llms.txt', 'utf8')
+    expect(fallback).not.toContain('ACP discovery')
+    expect(fallback).not.toContain('Agentic Commerce Protocol')
   })
 
   it('keeps Google OAuth verification copy off the customer homepage', () => {

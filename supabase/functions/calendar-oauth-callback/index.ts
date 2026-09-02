@@ -66,7 +66,8 @@ interface BackfillBooking extends BookingEventInput {
   readonly google_event_id: string | null
 }
 
-/** Push every future confirmed booking that is not already mapped into the barber's calendar. Best-effort:
+/** Push every confirmed booking ending in the future that is not already mapped into the barber's
+ * calendar. Best-effort:
  *  a per-booking failure is recorded and skipped so one bad row never aborts the whole backfill. */
 async function backfill(
   service: SupabaseClient,

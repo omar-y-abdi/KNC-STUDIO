@@ -11,17 +11,20 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
    limits, then calls `create_booking` with the service-role key.
 3. Database derives service name, price, and duration from active `services`; browser values cannot
    change commercial fields.
-4. Insert trigger queues durable booking-email state; Cron dispatches `send-confirmation` through a
-   Vault-held URL and shared secret.
+4. Insert trigger queues a `booking_email_delivery_jobs` row; the one-minute `pg_cron` dispatcher
+   invokes `send-confirmation` through a Vault-held URL and shared secret.
 5. Resend emails customer and linked barber. Confirmation/reminder contains the current permanent
    email-scoped **Mina bokningar** token. Requesting a new link by email rotates it and invalidates
    the previous token. Phone remains booking contact data and review scope, not a lookup field.
 
-Storage, Calendar, and Auth side effects use one durable `external_action_jobs` outbox. Cron retries
-failed actions, preserves Calendar event identifiers until Google deletion succeeds, and reconciles
-managed Storage bytes left unreferenced for 30 minutes after a failed upload compensation path.
-Homepage-logo replacement uses the same authenticated `upload-image` gateway, `site_settings` path
-swap, and durable gallery cleanup; raw image bytes and service credentials never enter browser config.
+The `external_action_jobs` outbox covers Calendar actions, Storage cleanup, customer-access email, and
+Auth user lifecycle actions. Booking email delivery has its separate
+`booking_email_delivery_jobs` ledger; Auth email sends directly through Resend; and `upload-image`
+is synchronous while its managed Storage cleanup is durable. Cron retries failed outbox actions,
+preserves Calendar event identifiers until Google deletion succeeds, and reconciles managed Storage
+bytes left unreferenced for 30 minutes after a failed upload compensation path. Homepage-logo
+replacement uses the same authenticated `upload-image` gateway, `site_settings` path swap, and
+durable gallery cleanup; raw image bytes and service credentials never enter browser config.
 
 ## Public frontend configuration
 
