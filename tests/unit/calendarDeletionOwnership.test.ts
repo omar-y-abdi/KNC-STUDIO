@@ -59,7 +59,17 @@ describe('Calendar external-action ownership', () => {
   })
 
   it('repairs blocked sync jobs without sweeping healthy Calendar mappings', () => {
-    expect(reassignmentMigration).toContain("j.action_type = 'calendar_event_sync'")
+    expect(reassignmentMigration).toContain(
+      'create or replace function public.calendar_authorization_owner_for_job',
+    )
+    expect(reassignmentMigration).toContain(
+      'calendar_authorization_owner_for_job(j.action_type, j.payload) = p_barber_id',
+    )
+    expect(reassignmentMigration).toContain(
+      'calendar_authorization_owner_for_job(j.action_type, j.payload) = me.bid',
+    )
+    expect(reassignmentMigration).toContain('m.barber_id is distinct from b.barber_id')
+    expect(reassignmentMigration).toContain("p_action_type = 'calendar_event_sync'")
     expect(reassignmentMigration).toContain('and b.barber_id = p_barber_id')
     expect(reassignmentMigration).toContain('t.google_email is null')
     expect(reassignmentMigration).toContain("pg_catalog.btrim(t.google_email) = ''")

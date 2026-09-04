@@ -1,11 +1,21 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { queueBackfill } from '../../supabase/functions/_shared/calendarBackfill'
 
 const OLD_ASSIGNMENT = '54000000-0000-0000-0000-000000000001'
 const CURRENT_ASSIGNMENT = '54000000-0000-0000-0000-000000000002'
 const UNMAPPED = '54000000-0000-0000-0000-000000000003'
+const calendarCallback = readFileSync('supabase/functions/calendar-oauth-callback/index.ts', 'utf8')
 
 describe('Calendar OAuth backfill', () => {
+  it('rejects an OAuth connection when Google does not provide a non-empty account identity', () => {
+    expect(calendarCallback).toContain("if (email === null || email.trim() === '')")
+    expect(calendarCallback).toContain('Google-kontots e-post kunde inte verifieras')
+    expect(calendarCallback.indexOf("if (email === null || email.trim() === '')")).toBeLessThan(
+      calendarCallback.indexOf("service.rpc('calendar_store_token'"),
+    )
+  })
+
   it('queues old and unmapped identities for the durable worker, including an old map after relink', async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === 'calendar_backfill_source') {

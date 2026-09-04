@@ -57,7 +57,7 @@ for the Calendar migration found `map_count=1`, `maps_without_token=0`, and
 `maps_without_calendar_id=0`. The same read-only join found `mapped_tokens=1` and
 `mapped_tokens_without_email=0`, so the same-account repair gate has a non-null legacy identity to
 compare. These are evidence only; the rollout performs no production data write during preflight,
-and the migration fails closed if the map or token evidence is no longer true.
+and the migration fails closed if the map, token, or account-identity evidence is no longer true.
 
 For the current baseline, the Expand set is exactly:
 

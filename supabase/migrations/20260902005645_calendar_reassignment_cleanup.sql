@@ -631,6 +631,60 @@ revoke execute on function public.calendar_external_action_for_dispatch(uuid, uu
 grant execute on function public.calendar_external_action_for_dispatch(uuid, uuid)
   to service_role;
 
+-- A Calendar authorization failure belongs to the credential the worker actually attempted.  A sync
+-- with a stale map first attempts the mapped barber's credential to delete the old event; only a
+-- current/unmapped sync belongs to the booking's target barber.  Delete payloads already carry their
+-- immutable barber identity.  This predicate is shared by status and reauthorization, so the UI never
+-- sends the wrong barber to repair a reassignment.
+create or replace function public.calendar_authorization_owner_for_job(
+  p_action_type text,
+  p_payload jsonb
+)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select case
+    when p_action_type = 'calendar_event_delete'
+      and pg_catalog.jsonb_typeof(p_payload->'barber_id') = 'string'
+      and pg_catalog.btrim(p_payload->>'barber_id') <> ''
+    then p_payload->>'barber_id'
+    when p_action_type = 'calendar_event_delete'
+      and p_payload->>'booking_id' ~
+        '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    then (
+      select m.barber_id
+      from public.calendar_event_map m
+      where m.booking_id = (p_payload->>'booking_id')::uuid
+    )
+    when p_action_type = 'calendar_event_sync'
+      and p_payload->>'booking_id' ~
+        '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    then (
+      select case
+        when m.barber_id is not null
+          and (
+            m.barber_id is distinct from b.barber_id
+            or target.barber_id is null
+            or target.disconnect_requested_at is not null
+            or m.calendar_id is distinct from target.calendar_id
+          )
+        then m.barber_id
+        else b.barber_id
+      end
+      from public.bookings b
+      left join public.calendar_event_map m on m.booking_id = b.id
+      left join public.barber_calendar_tokens target on target.barber_id = b.barber_id
+      where b.id = (p_payload->>'booking_id')::uuid
+    )
+  end;
+$$;
+
+revoke execute on function public.calendar_authorization_owner_for_job(text, jsonb)
+  from public, anon, authenticated, service_role;
+
 -- Reauthorization rotates the credential and resumes blocked Calendar work for this barber.  The
 -- old identity remains in its map/job until the new current credential deletes it.
 create or replace function public.calendar_store_token(
@@ -652,6 +706,10 @@ declare
   v_repair_required boolean;
   v_map record;
 begin
+  if p_google_email is null or pg_catalog.btrim(p_google_email) = '' then
+    return pg_catalog.jsonb_build_object('ok', false, 'error', 'calendar_account_identity_required');
+  end if;
+
   select t.google_email, t.disconnect_requested_at
     into v_existing_email, v_disconnect_requested_at
   from public.barber_calendar_tokens t
@@ -668,39 +726,16 @@ begin
     from public.external_action_jobs j
     where j.action_type = 'calendar_event_delete'
       and j.status in ('pending', 'dispatching', 'blocked')
-      and (
-        j.payload->>'barber_id' = p_barber_id
-        or exists (
-          select 1
-          from public.calendar_event_map m
-          where m.booking_id = (j.payload->>'booking_id')::uuid
-            and m.barber_id = p_barber_id
-        )
-      )
+      and public.calendar_authorization_owner_for_job(j.action_type, j.payload) = p_barber_id
   ) into v_identity_bound;
 
   select coalesce(exists (
     select 1
     from public.external_action_jobs j
-    where j.status = 'blocked'
+    where j.action_type in ('calendar_event_delete', 'calendar_event_sync')
+      and j.status = 'blocked'
       and j.last_error_code = 'calendar_authorization_required'
-      and (
-        (j.action_type = 'calendar_event_delete' and (
-          j.payload->>'barber_id' = p_barber_id
-          or exists (
-            select 1
-            from public.calendar_event_map m
-            where m.booking_id = (j.payload->>'booking_id')::uuid
-              and m.barber_id = p_barber_id
-          )
-        ))
-        or (j.action_type = 'calendar_event_sync' and exists (
-          select 1
-          from public.bookings b
-          where b.id = (j.payload->>'booking_id')::uuid
-            and b.barber_id = p_barber_id
-        ))
-      )
+      and public.calendar_authorization_owner_for_job(j.action_type, j.payload) = p_barber_id
   ), false) into v_repair_required;
 
   if v_token_found and v_disconnect_requested_at is not null then
@@ -733,21 +768,7 @@ begin
     where j.action_type in ('calendar_event_delete', 'calendar_event_sync')
       and j.status = 'blocked'
       and j.last_error_code = 'calendar_authorization_required'
-      and (
-        j.payload->>'barber_id' = p_barber_id
-        or (j.action_type = 'calendar_event_delete' and exists (
-          select 1
-          from public.calendar_event_map m
-          where m.booking_id = (j.payload->>'booking_id')::uuid
-            and m.barber_id = p_barber_id
-        ))
-        or (j.action_type = 'calendar_event_sync' and exists (
-          select 1
-          from public.bookings b
-          where b.id = (j.payload->>'booking_id')::uuid
-            and b.barber_id = p_barber_id
-        ))
-      );
+      and public.calendar_authorization_owner_for_job(j.action_type, j.payload) = p_barber_id;
 
     return pg_catalog.jsonb_build_object('ok', true, 'cleanup_pending', true);
   end if;
@@ -777,21 +798,7 @@ begin
     where j.action_type in ('calendar_event_delete', 'calendar_event_sync')
       and j.status = 'blocked'
       and j.last_error_code = 'calendar_authorization_required'
-      and (
-        j.payload->>'barber_id' = p_barber_id
-        or (j.action_type = 'calendar_event_delete' and exists (
-          select 1
-          from public.calendar_event_map m
-          where m.booking_id = (j.payload->>'booking_id')::uuid
-            and m.barber_id = p_barber_id
-        ))
-        or (j.action_type = 'calendar_event_sync' and exists (
-          select 1
-          from public.bookings b
-          where b.id = (j.payload->>'booking_id')::uuid
-            and b.barber_id = p_barber_id
-        ))
-      );
+      and public.calendar_authorization_owner_for_job(j.action_type, j.payload) = p_barber_id;
 
     return pg_catalog.jsonb_build_object(
       'ok', true,
@@ -887,25 +894,10 @@ as $$
     'repair_required', coalesce(exists (
       select 1
       from public.external_action_jobs j
-      where j.status = 'blocked'
+      where j.action_type in ('calendar_event_delete', 'calendar_event_sync')
+        and j.status = 'blocked'
         and j.last_error_code = 'calendar_authorization_required'
-        and (
-          (j.action_type = 'calendar_event_delete' and (
-            j.payload->>'barber_id' = me.bid
-            or exists (
-              select 1
-              from public.calendar_event_map m
-              where m.booking_id = (j.payload->>'booking_id')::uuid
-                and m.barber_id = me.bid
-            )
-          ))
-          or (j.action_type = 'calendar_event_sync' and exists (
-            select 1
-            from public.bookings b
-            where b.id = (j.payload->>'booking_id')::uuid
-              and b.barber_id = me.bid
-          ))
-        )
+        and public.calendar_authorization_owner_for_job(j.action_type, j.payload) = me.bid
     ), false),
     'google_email', t.google_email,
     'last_sync_at', t.last_sync_at,

@@ -5,7 +5,7 @@
 -- or booking PII.
 
 begin;
-select plan(62);
+select plan(70);
 
 select ok(
   (select a.attnotnull
@@ -332,6 +332,62 @@ select is(
    where booking_id='49000000-0000-0000-0000-000000000004'),
   'calendar-reassign-a', 'unlinked reassignment never overwrites the old map early'
 );
+set local role service_role;
+select is(public.block_external_action(
+  current_setting('test.unlinked_job')::uuid,
+  (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid,
+  'calendar_authorization_required'
+), true, 'A to B cleanup authorization failure remains on the durable sync job');
+reset role;
+
+insert into auth.users (id, email)
+values
+  ('49000000-0000-0000-0000-000000000010', 'barber-a@example.test'),
+  ('49000000-0000-0000-0000-000000000011', 'barber-b@example.test');
+insert into public.profiles (id, role, barber_id)
+values
+  ('49000000-0000-0000-0000-000000000010', 'barber', 'calendar-reassign-a'),
+  ('49000000-0000-0000-0000-000000000011', 'barber', 'calendar-reassign-b');
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  pg_catalog.json_build_object('sub', '49000000-0000-0000-0000-000000000010')::text,
+  true
+);
+select is(public.calendar_connection_status()->>'repair_required', 'true',
+  'old mapped barber A owns a reassignment sync authorization repair');
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  pg_catalog.json_build_object('sub', '49000000-0000-0000-0000-000000000011')::text,
+  true
+);
+select is(public.calendar_connection_status()->>'repair_required', 'false',
+  'new barber B does not own old barber A cleanup repair');
+reset role;
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'wrong-account-refresh', 'other@example.test', 'calendar-a'
+) ->> 'error', 'account_mismatch',
+  'old barber repair rejects a different Google account');
+reset role;
+select is((select refresh_token from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-a'), 'refresh-a-rotated',
+  'old barber account mismatch preserves its credential');
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'repair-refresh-a', 'A@EXAMPLE.TEST', 'calendar-a'
+) ->> 'repair_pending', 'true', 'same-account old barber repair resumes the sync');
+reset role;
+select is((select status from public.external_action_jobs
+  where id=current_setting('test.unlinked_job')::uuid), 'pending',
+  'old barber reauthorization requeues the blocked reassignment sync');
+set local role service_role;
+select set_config('test.unlinked_claim', public.claim_external_action(
+  current_setting('test.unlinked_job')::uuid
+)::text, true);
+reset role;
 select is(public.calendar_forget_event_if_matches(
   '49000000-0000-0000-0000-000000000004',
   'calendar-reassign-a', 'calendar-a', 'old-event-unlinked'
@@ -372,27 +428,13 @@ select public.block_external_action(
 );
 reset role;
 
-insert into auth.users (id, email)
-values ('49000000-0000-0000-0000-000000000010', 'barber-a@example.test');
-insert into public.profiles (id, role, barber_id)
-values ('49000000-0000-0000-0000-000000000010', 'barber', 'calendar-reassign-a');
-set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  pg_catalog.json_build_object('sub', '49000000-0000-0000-0000-000000000010')::text,
-  true
-);
-select is(public.calendar_connection_status()->>'repair_required', 'true',
-  'connected barber status exposes sync-only Calendar repair');
-reset role;
-
 set local role service_role;
 select is(public.calendar_store_token(
   'calendar-reassign-a', 'wrong-account-refresh', 'other@example.test', 'calendar-a'
 ) ->> 'error', 'account_mismatch', 'sync-only connected repair rejects a different Google account');
 reset role;
 select is((select refresh_token from public.barber_calendar_tokens
-  where barber_id='calendar-reassign-a'), 'refresh-a-rotated',
+  where barber_id='calendar-reassign-a'), 'repair-refresh-a',
   'connected account mismatch preserves the current credential');
 set local role service_role;
 select is(public.calendar_store_token(
@@ -457,6 +499,15 @@ reset role;
 select is((select refresh_token from public.barber_calendar_tokens
   where barber_id='calendar-reassign-a'), 'normal-refresh-a',
   'same-account connected rotation stores the new credential');
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-b', 'first-refresh-b', '', 'calendar-b'
+) ->> 'error', 'calendar_account_identity_required',
+  'first Calendar connection rejects a missing Google account identity');
+reset role;
+select is((select count(*)::int from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-b'), 0,
+  'missing Google account identity does not create a token row');
 
 select * from finish();
 rollback;

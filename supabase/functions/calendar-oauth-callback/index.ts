@@ -128,11 +128,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       )
     }
     const email = tokens.id_token !== undefined ? decodeIdTokenEmail(tokens.id_token) : null
+    if (email === null || email.trim() === '') {
+      return done(
+        payload.return_to,
+        'error',
+        'Fel',
+        'Google-kontots e-post kunde inte verifieras. Försök koppla igen.',
+        400,
+      )
+    }
 
     const { data: storeData, error: storeError } = await service.rpc('calendar_store_token', {
       p_barber_id: payload.barber_id,
       p_refresh_token: tokens.refresh_token,
-      p_google_email: email,
+      p_google_email: email.trim(),
       p_calendar_id: 'primary',
     })
     if (storeError) {
