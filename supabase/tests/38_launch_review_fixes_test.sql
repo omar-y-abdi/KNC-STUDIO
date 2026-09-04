@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(17);
 
 select ok(
   exists (
@@ -107,14 +107,19 @@ select set_config(
 );
 reset role;
 select is(
-  current_setting('test.valid_access_context')::jsonb->>'email',
-  'future@example.test',
-  'dispatcher resolves matching access email server-side'
+  current_setting('test.valid_access_context')::jsonb->>'superseded',
+  'true',
+  'legacy challenge without a canonical encrypted token is suppressed'
 );
 select is(
   current_setting('test.valid_access_context')::jsonb->>'access_code',
-  repeat('d', 64),
-  'dispatcher exposes the opaque code only to the claimed service-role worker'
+  null,
+  'legacy dispatcher never exposes a plaintext access code'
+);
+select is(
+  current_setting('test.valid_access_context')::jsonb->>'token_ciphertext',
+  null,
+  'legacy dispatcher never exposes encrypted token material for an unmatched challenge'
 );
 
 insert into public.bookings
