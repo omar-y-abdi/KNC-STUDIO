@@ -5,7 +5,7 @@
 // originated from our authenticated start AND carries the barber id to store the token against.
 //
 // Flow: verify state -> exchange code for a refresh token (server-side, with the client secret) ->
-// store the token for the barber -> backfill future confirmed bookings into Google Calendar ->
+// store the token for the barber -> queue future confirmed bookings for the durable Calendar worker ->
 // render a small success page. The refresh token is written ONLY through the service_role definer RPC
 // and never leaves the server.
 //
@@ -13,17 +13,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import {
-  buildEvent,
-  decodeIdTokenEmail,
-  exchangeCode,
-  googleEventId,
-  insertEvent,
-  refreshAccessToken,
-  verifyState,
-  withGoogleRetry,
-} from '../_shared/calendar.ts'
-import type { BookingEventInput } from '../_shared/calendar.ts'
+import { decodeIdTokenEmail, exchangeCode, verifyState } from '../_shared/calendar.ts'
+import { queueBackfill } from '../_shared/calendarBackfill.ts'
 
 const STATE_MAX_AGE_SEC = 600 // the consent round-trip must complete within 10 minutes
 
@@ -59,69 +50,6 @@ function done(
     })
   }
   return html(page(title, message, returnTo), status)
-}
-
-interface BackfillBooking extends BookingEventInput {
-  readonly id: string
-  readonly google_event_id: string | null
-}
-
-/** Push every confirmed booking ending in the future that is not already mapped into the barber's
- * calendar. Best-effort:
- *  a per-booking failure is recorded and skipped so one bad row never aborts the whole backfill. */
-async function backfill(
-  service: SupabaseClient,
-  barberId: string,
-  clientId: string,
-  clientSecret: string,
-): Promise<void> {
-  const { data, error } = await service.rpc('calendar_backfill_source', { p_barber_id: barberId })
-  if (error || data === null || typeof data !== 'object') return
-  const d = data as Record<string, unknown>
-  const refreshToken = d['refresh_token']
-  const calendarId = typeof d['calendar_id'] === 'string' ? d['calendar_id'] : 'primary'
-  const rows = Array.isArray(d['bookings']) ? (d['bookings'] as BackfillBooking[]) : []
-  if (typeof refreshToken !== 'string' || rows.length === 0) return
-
-  // Mint the access token WITH retry. This is the step whose silent throw used to abort the whole
-  // backfill on a first-connect transient (e.g. the Calendar API's cold-start 403) — leaving zero
-  // events AND no recorded error. If it still fails after retries, RECORD it (surfaced in the panel)
-  // instead of swallowing, so the failure is visible and a reconnect isn't the only clue.
-  let accessToken: string
-  try {
-    accessToken = await withGoogleRetry(
-      () => refreshAccessToken(refreshToken, clientId, clientSecret),
-      { retries: 3, delayMs: 500 },
-    )
-  } catch (err) {
-    await service.rpc('calendar_record_error', {
-      p_barber_id: barberId,
-      p_error: `backfill setup: ${err instanceof Error ? err.message : 'unknown'}`,
-    })
-    return
-  }
-
-  for (const b of rows) {
-    if (b.google_event_id !== null) continue // already synced
-    try {
-      // Retry each insert independently — a thrown insert created nothing, so a retry can't duplicate.
-      const eventId = await withGoogleRetry(
-        () => insertEvent(accessToken, calendarId, googleEventId(b.id), buildEvent(b)),
-        { retries: 2, delayMs: 500 },
-      )
-      const { error: recordError } = await service.rpc('calendar_record_event', {
-        p_booking_id: b.id,
-        p_barber_id: barberId,
-        p_google_event_id: eventId,
-      })
-      if (recordError) throw new Error(`record_event: ${recordError.message}`)
-    } catch (err) {
-      await service.rpc('calendar_record_error', {
-        p_barber_id: barberId,
-        p_error: `backfill ${b.id}: ${err instanceof Error ? err.message : 'unknown'}`,
-      })
-    }
-  }
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -251,7 +179,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Backfill is best-effort — the connection is already saved. Any per-booking failure is recorded
     // and surfaced in the calendar settings panel.
     try {
-      await backfill(service, payload.barber_id, clientId, clientSecret)
+      await queueBackfill(service, payload.barber_id)
     } catch (backfillErr) {
       console.error('calendar-oauth-callback: backfill error:', backfillErr)
     }

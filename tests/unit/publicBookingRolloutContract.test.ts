@@ -10,6 +10,7 @@ describe('public booking rollout operations', () => {
     '20260831221442_service_ordering_contract.sql',
     '20260901013601_calendar_customer_contact_payload.sql',
     '20260901014248_relocate_btree_gist_to_extensions.sql',
+    '20260902005645_calendar_reassignment_cleanup.sql',
   ]
   const contractAfterBaseline = [
     ...expandAfterBaseline,
@@ -52,10 +53,12 @@ describe('public booking rollout operations', () => {
 
   it('stages only reviewed post-baseline migrations at each rollout boundary', () => {
     const expand = stage('expand').filter(
-      (name) => name.startsWith('20260831') || name.startsWith('20260901'),
+      (name) =>
+        name.startsWith('20260831') || name.startsWith('20260901') || name.startsWith('20260902'),
     )
     const contract = stage('contract').filter(
-      (name) => name.startsWith('20260831') || name.startsWith('20260901'),
+      (name) =>
+        name.startsWith('20260831') || name.startsWith('20260901') || name.startsWith('20260902'),
     )
     expect(expand).toEqual(expandAfterBaseline.sort())
     expect(contract).toEqual(contractAfterBaseline.sort())
@@ -68,6 +71,7 @@ describe('public booking rollout operations', () => {
     expect(runbook).toContain('20260901011632_retire_taken_slots_contract.sql')
     expect(runbook).toContain('20260901011908_retire_legacy_customer_lookup_overloads.sql')
     expect(runbook).toContain('20260901012503_retire_superseded_booking_contracts.sql')
+    expect(runbook).toContain('20260902005645_calendar_reassignment_cleanup.sql')
   })
 
   it('distinguishes already-denied Expand access from Contract function absence', () => {
@@ -105,8 +109,10 @@ describe('public booking rollout operations', () => {
     expect(runbook).toContain('20260827170300_harden_internal_function_privileges.sql')
     expect(runbook).toContain('20260813123853_contract_public_booking_gateway.sql')
     expect(runbook).toContain('20260901011632_retire_taken_slots_contract.sql')
-    expect(runbook).not.toContain('db push --linked --dry-run --include-all')
-    expect(runbook).not.toContain('db push --linked --yes --include-all')
+    expect(runbook).toContain('db push --linked --dry-run --include-all --workdir "$contract_root"')
+    expect(runbook).toContain('db push --linked --yes --include-all --workdir "$contract_root"')
+    expect(runbook).not.toContain('db push --linked --dry-run --include-all --workdir "$PWD"')
+    expect(runbook).not.toContain('db push --linked --yes --include-all --workdir "$PWD"')
   })
 
   it('deploys the customer outbox contract before the retired-RPC cleanup', () => {

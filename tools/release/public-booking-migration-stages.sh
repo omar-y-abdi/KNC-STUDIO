@@ -14,6 +14,7 @@ readonly PUBLIC_BOOKING_EXPAND_MIGRATIONS=(
   '20260831221442_service_ordering_contract.sql'
   '20260901013601_calendar_customer_contact_payload.sql'
   '20260901014248_relocate_btree_gist_to_extensions.sql'
+  '20260902005645_calendar_reassignment_cleanup.sql'
 )
 readonly PUBLIC_BOOKING_CONTRACT_MIGRATIONS=(
   '20260901011632_retire_taken_slots_contract.sql'

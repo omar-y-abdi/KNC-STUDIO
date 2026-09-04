@@ -52,7 +52,9 @@ PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
 
 `tools/release/public-booking-migration-stages.sh` is the executable manifest used by both this
 runbook and CI. It copies the complete local lineage through the verified remote baseline plus an
-explicit reviewed set; it does not copy arbitrary later migrations.
+explicit reviewed set; it does not copy arbitrary later migrations. The linked read-only preflight
+for the Calendar migration found `map_count=1`, `maps_without_token=0`, and
+`maps_without_calendar_id=0`; the migration fails closed if that evidence is no longer true.
 
 For the current baseline, the Expand set is exactly:
 
@@ -60,6 +62,7 @@ For the current baseline, the Expand set is exactly:
 - `20260831221442_service_ordering_contract.sql`
 - `20260901013601_calendar_customer_contact_payload.sql`
 - `20260901014248_relocate_btree_gist_to_extensions.sql`
+- `20260902005645_calendar_reassignment_cleanup.sql`
 
 The Contract set adds exactly these three irreversible retirements:
 
@@ -86,7 +89,7 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-The dry run must show only the four explicit Expand migrations above as pending after the verified
+The dry run must show only the five explicit Expand migrations above as pending after the verified
 baseline. The three retirement migrations must not be applied in this phase. The staging harness uses
 the same selector and asserts that already-live gateway denial coexists with service-role gateway
 execution:
@@ -96,8 +99,9 @@ npx supabase test db --db-url "$DATABASE_URL" \
   tools/release/expand_public_booking_gateway_test.sql
 ```
 
-The Calendar migration only extends authoritative Calendar source/trigger behavior; it does not
-replace `external_action_for_dispatch` or change customer-access delivery. The btree-gist migration
+The Calendar migrations extend authoritative Calendar source/trigger behavior, add the durable old
+barber/calendar/event identity and conditional mapping lifecycle, and do not replace
+`external_action_for_dispatch` or change customer-access delivery. The btree-gist migration
 is a reviewed schema relocation that preserves the booking overlap constraint. Do not omit either.
 
 ## 2. Deploy Edge Functions
@@ -180,8 +184,11 @@ data cleanup are separate operator approvals and are not proven by this reposito
 
 ## 5. Contract
 
-Stage the final migration set through the same explicit manifest. Do not use `--include-all`; that
-would make an unrelated later migration an accidental release dependency:
+Stage the final migration set through the same explicit manifest. `--include-all` is required here
+because the three reviewed retirement files are older than the later Expand files. It is safe only
+against this staged tree, which contains the verified baseline, the five explicit Expand migrations,
+and the three explicit retirement migrations. Never use it against the source tree or an unrestricted
+working directory:
 
 ```bash
 contract_root="$(mktemp -d)"
@@ -189,11 +196,11 @@ trap 'rm -rf "$stage_root" "$contract_root"' EXIT
 public_booking_stage_migrations contract "$PWD/supabase" "$contract_root/supabase"
 
 npx supabase link --project-ref "$PROJECT_REF" --workdir "$contract_root"
-npx supabase db push --linked --dry-run --workdir "$contract_root"
+npx supabase db push --linked --dry-run --include-all --workdir "$contract_root"
 ```
 
-If anything other than these three migrations is pending, stop and review the linked history and
-rebase state:
+The staged Contract tree must contain exactly the five Expand migrations above plus these three
+retirements; if anything else is pending, stop and review the linked history and rebase state:
 
 ```text
 20260901011632_retire_taken_slots_contract.sql
@@ -204,7 +211,7 @@ rebase state:
 Only after the dry run matches exactly:
 
 ```bash
-npx supabase db push --linked --yes --workdir "$contract_root"
+npx supabase db push --linked --yes --include-all --workdir "$contract_root"
 npx supabase test db --db-url "$DATABASE_URL" \
   supabase/tests/34_public_booking_gateway_contract_test.sql
 npx supabase test db --db-url "$DATABASE_URL" \

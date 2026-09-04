@@ -221,8 +221,8 @@ values
   ('33000000-0000-0000-0000-000000000010', 'calendar-outbox', 'service', 'Service', 300, 30,
    '2099-08-01 09:00+00', '2099-08-01 09:30+00', 'Calendar Customer', 'email',
    '0703300010', 'customer@example.test', 'sv', 'confirmed');
-insert into public.calendar_event_map (booking_id, barber_id, google_event_id)
-values ('33000000-0000-0000-0000-000000000010', 'calendar-outbox', 'google-event-10');
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values ('33000000-0000-0000-0000-000000000010', 'calendar-outbox', 'primary', 'google-event-10');
 
 update public.bookings set status='cancelled', cancelled_at=pg_catalog.now()
 where id='33000000-0000-0000-0000-000000000010';
@@ -265,8 +265,8 @@ values
   ('33000000-0000-0000-0000-000000000011', 'calendar-outbox', 'service', 'Service', 300, 30,
    '2099-08-02 09:00+00', '2099-08-02 09:30+00', 'Delete Customer', 'email',
    '0703300011', 'delete@example.test', 'sv', 'confirmed');
-insert into public.calendar_event_map (booking_id, barber_id, google_event_id)
-values ('33000000-0000-0000-0000-000000000011', 'calendar-outbox', 'google-event-11');
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values ('33000000-0000-0000-0000-000000000011', 'calendar-outbox', 'primary', 'google-event-11');
 update public.booking_email_delivery_jobs
 set status='delivered', completed_at=pg_catalog.now()
 where booking_id='33000000-0000-0000-0000-000000000011';
@@ -333,7 +333,30 @@ select is((select refresh_token from public.barber_calendar_tokens where barber_
 select is((select status from public.external_action_jobs where id=current_setting('test.repair_job')::uuid),
   'pending', 'same-account repair resumes blocked Calendar deletion');
 
+-- Simulate Google deletion acknowledgements for every remaining Calendar job before asking whether
+-- disconnect is safe.  A drained map alone is insufficient once direct identity jobs are durable.
 delete from public.calendar_event_map where barber_id='calendar-outbox';
+do $$
+declare
+  v_job record;
+  v_claim jsonb;
+begin
+  for v_job in
+    select id
+    from public.external_action_jobs
+    where action_type='calendar_event_delete'
+      and payload->>'barber_id'='calendar-outbox'
+  loop
+    v_claim := public.claim_external_action(v_job.id);
+    if v_claim is not null then
+      perform public.complete_external_action(
+        v_job.id,
+        (v_claim->>'dispatch_token')::uuid
+      );
+    end if;
+  end loop;
+end;
+$$;
 update public.barber_calendar_tokens set disconnect_requested_at=pg_catalog.now()-interval '6 minutes'
 where barber_id='calendar-outbox';
 select set_config('test.disconnect_job', (select id::text from public.external_action_jobs
@@ -416,8 +439,8 @@ select is((select count(*)::int from public.external_action_jobs
 insert into public.barbers (id, name) values ('calendar-delete', 'Calendar Delete');
 insert into public.barber_calendar_tokens (barber_id, refresh_token)
 values ('calendar-delete', 'delete-refresh');
-insert into public.calendar_event_map (booking_id, barber_id, google_event_id)
-values ('33000000-0000-0000-0000-000000000030', 'calendar-delete', 'delete-event');
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values ('33000000-0000-0000-0000-000000000030', 'calendar-delete', 'primary', 'delete-event');
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub','33000000-0000-0000-0000-000000000020')::text, true);
 select set_config('test.delete_calendar', public.admin_delete_barber('calendar-delete')::text, true);
