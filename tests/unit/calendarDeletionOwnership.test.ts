@@ -17,6 +17,7 @@ const reassignmentMigration = readFileSync(
   'supabase/migrations/20260902005645_calendar_reassignment_cleanup.sql',
   'utf8',
 )
+const calendarConnectButton = readFileSync('src/admin/calendar/CalendarConnectButton.tsx', 'utf8')
 
 describe('Calendar external-action ownership', () => {
   it('keeps deletion durable and makes the legacy webhook a sync-queue compatibility path', () => {
@@ -45,6 +46,50 @@ describe('Calendar external-action ownership', () => {
     expect(reassignmentMigration).toContain(
       'perform public.queue_calendar_event_sync(p_booking_id)',
     )
+  })
+
+  it('queues cleanup-only sync when a confirmed reassignment has an old map', () => {
+    expect(reassignmentMigration).toContain(
+      'create or replace function public.queue_calendar_event_sync(p_booking_id uuid)',
+    )
+    expect(reassignmentMigration).toContain("and b.status = 'confirmed'")
+    expect(reassignmentMigration).toContain('from public.calendar_event_map m')
+    expect(reassignmentMigration).toContain('m.booking_id = b.id')
+    expect(reassignmentMigration).toContain('and t.disconnect_requested_at is null')
+  })
+
+  it('repairs blocked sync jobs without sweeping healthy Calendar mappings', () => {
+    expect(reassignmentMigration).toContain("j.action_type = 'calendar_event_sync'")
+    expect(reassignmentMigration).toContain('and b.barber_id = p_barber_id')
+    expect(reassignmentMigration).toContain('t.google_email is null')
+    expect(reassignmentMigration).toContain("pg_catalog.btrim(t.google_email) = ''")
+    expect(reassignmentMigration).toContain('v_identity_bound')
+    expect(reassignmentMigration).toContain("j.status in ('pending', 'dispatching', 'blocked')")
+    const connectedRepairStart = reassignmentMigration.indexOf(
+      'if v_token_found and v_disconnect_requested_at is null and v_repair_required then',
+    )
+    const connectedRepairEnd = reassignmentMigration.indexOf(
+      'insert into public.barber_calendar_tokens',
+      connectedRepairStart,
+    )
+    expect(connectedRepairStart).toBeGreaterThan(-1)
+    expect(connectedRepairEnd).toBeGreaterThan(connectedRepairStart)
+    expect(reassignmentMigration.slice(connectedRepairStart, connectedRepairEnd)).not.toContain(
+      'for v_map in',
+    )
+  })
+
+  it('shows connected Calendar repair and reauthorization before ordinary connected actions', () => {
+    expect(calendarConnectButton).toContain(
+      'const repairRequired = status?.repairRequired === true',
+    )
+    expect(calendarConnectButton).toContain('connected && repairRequired')
+    expect(calendarConnectButton).toContain('t.calendarRepairHint')
+    expect(calendarConnectButton).toContain('t.calendarRepairAccess')
+    expect(calendarConnectButton.indexOf('repairRequired')).toBeLessThan(
+      calendarConnectButton.indexOf('calendarOpenApp'),
+    )
+    expect(calendarConnectButton).toContain('connected ? (')
   })
 
   it('uses the Calendar dispatcher first and falls back to the generic seam only when absent', () => {

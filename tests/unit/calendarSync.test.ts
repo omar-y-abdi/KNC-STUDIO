@@ -287,6 +287,21 @@ describe('parseCalendarStatus', () => {
     })
   })
 
+  it('preserves connected state while surfacing required Calendar repair', () => {
+    expect(
+      parseCalendarStatus({
+        connected: true,
+        repair_required: true,
+        google_email: 'barber@example.test',
+      }),
+    ).toMatchObject({
+      connected: true,
+      disconnectPending: false,
+      repairRequired: true,
+      googleEmail: 'barber@example.test',
+    })
+  })
+
   it('carries a sync error string', () => {
     expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
       'boom',

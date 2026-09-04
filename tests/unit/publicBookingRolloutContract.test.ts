@@ -72,6 +72,8 @@ describe('public booking rollout operations', () => {
     expect(runbook).toContain('20260901011908_retire_legacy_customer_lookup_overloads.sql')
     expect(runbook).toContain('20260901012503_retire_superseded_booking_contracts.sql')
     expect(runbook).toContain('20260902005645_calendar_reassignment_cleanup.sql')
+    expect(runbook).toContain('mapped_tokens=1')
+    expect(runbook).toContain('mapped_tokens_without_email=0')
   })
 
   it('distinguishes already-denied Expand access from Contract function absence', () => {

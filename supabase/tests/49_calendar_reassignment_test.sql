@@ -5,7 +5,7 @@
 -- or booking PII.
 
 begin;
-select plan(36);
+select plan(62);
 
 select ok(
   (select a.attnotnull
@@ -82,6 +82,13 @@ values
 insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
 values
   ('49000000-0000-0000-0000-000000000001', 'calendar-reassign-a', 'calendar-a', 'old-event-a');
+select is(
+  (select count(*)::int
+   from public.calendar_event_map m
+   left join public.barber_calendar_tokens t on t.barber_id = m.barber_id
+   where t.google_email is null or pg_catalog.btrim(t.google_email) = ''),
+  0, 'mapped Calendar identities have a non-empty Google account'
+);
 
 select is(
   public.calendar_sync_source('49000000-0000-0000-0000-000000000001')->>'barber_id',
@@ -252,6 +259,204 @@ select is(
      and dedupe_key='49000000-0000-0000-0000-000000000002'),
   0, 'cancellation cleanup payload contains no current refresh token'
 );
+
+-- A real reassignment update to a barber without a usable token must still enqueue cleanup.  The
+-- old A identity remains authoritative; the sync worker receives no destination event identity and
+-- therefore performs no replacement insert.
+delete from public.barber_calendar_tokens
+where barber_id='calendar-reassign-b';
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('49000000-0000-0000-0000-000000000004', 'calendar-reassign-a', 'service', 'Service', 300, 30,
+   '2099-09-04 09:00+00', '2099-09-04 09:30+00', 'Unlinked Customer', 'email',
+   '0704900004', 'unlinked@example.test', 'sv', 'confirmed');
+delete from public.external_action_jobs
+where action_type='calendar_event_sync'
+  and dedupe_key='49000000-0000-0000-0000-000000000004';
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values
+  ('49000000-0000-0000-0000-000000000004', 'calendar-reassign-a', 'calendar-a', 'old-event-unlinked');
+update public.bookings
+set barber_id='calendar-reassign-b'
+where id='49000000-0000-0000-0000-000000000004';
+select is(
+  (select count(*)::int from public.external_action_jobs
+   where action_type='calendar_event_sync'
+     and dedupe_key='49000000-0000-0000-0000-000000000004'),
+  1, 'A to unlinked B reassignment queues cleanup-only sync'
+);
+select is(
+  (select (payload - 'booking_id')::text from public.external_action_jobs
+   where action_type='calendar_event_sync'
+     and dedupe_key='49000000-0000-0000-0000-000000000004'),
+  '{}', 'unlinked reassignment sync payload remains identifier-only'
+);
+select set_config('test.unlinked_job', (select id::text from public.external_action_jobs
+  where action_type='calendar_event_sync'
+    and dedupe_key='49000000-0000-0000-0000-000000000004'), true);
+select set_config('test.unlinked_claim', public.claim_external_action(
+  current_setting('test.unlinked_job')::uuid
+)::text, true);
+select is(
+  public.calendar_external_action_for_dispatch(
+    current_setting('test.unlinked_job')::uuid,
+    (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid
+  )->>'calendar_id',
+  null, 'unlinked reassignment has no destination Calendar'
+);
+select is(
+  public.calendar_external_action_for_dispatch(
+    current_setting('test.unlinked_job')::uuid,
+    (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid
+  )->>'google_event_id',
+  null, 'unlinked reassignment has no destination event replacement'
+);
+select is(
+  public.calendar_external_action_for_dispatch(
+    current_setting('test.unlinked_job')::uuid,
+    (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid
+  )->>'mapped_barber_id',
+  'calendar-reassign-a', 'cleanup-only dispatch preserves old barber identity'
+);
+select is(
+  public.calendar_external_action_for_dispatch(
+    current_setting('test.unlinked_job')::uuid,
+    (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid
+  )->>'mapped_google_event_id',
+  'old-event-unlinked', 'cleanup-only dispatch preserves old event identity'
+);
+select is(
+  (select barber_id from public.calendar_event_map
+   where booking_id='49000000-0000-0000-0000-000000000004'),
+  'calendar-reassign-a', 'unlinked reassignment never overwrites the old map early'
+);
+select is(public.calendar_forget_event_if_matches(
+  '49000000-0000-0000-0000-000000000004',
+  'calendar-reassign-a', 'calendar-a', 'old-event-unlinked'
+), true, 'cleanup-only dispatch can acknowledge old Google deletion');
+select is(public.complete_external_action(
+  current_setting('test.unlinked_job')::uuid,
+  (current_setting('test.unlinked_claim')::jsonb ->> 'dispatch_token')::uuid
+), true, 'cleanup-only sync completes after old deletion');
+select is(
+  (select count(*)::int from public.calendar_event_map
+   where booking_id='49000000-0000-0000-0000-000000000004'),
+  0, 'unlinked reassignment leaves no stale old mapping after deletion'
+);
+
+-- A connected barber can have a sync-only authorization block.  Reauthorization must be visible for
+-- that job too, bind to the same Google account, and leave valid mapped events untouched.
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, email, lang, status)
+values
+  ('49000000-0000-0000-0000-000000000003', 'calendar-reassign-a', 'service', 'Service', 300, 30,
+   '2099-09-03 09:00+00', '2099-09-03 09:30+00', 'Valid Customer', 'email',
+   '0704900003', 'valid@example.test', 'sv', 'confirmed');
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values
+  ('49000000-0000-0000-0000-000000000003', 'calendar-reassign-a', 'calendar-a', 'valid-event-a');
+select set_config('test.repair_sync_job', (select id::text from public.external_action_jobs
+  where action_type='calendar_event_sync'
+    and dedupe_key='49000000-0000-0000-0000-000000000003'), true);
+set local role service_role;
+select set_config('test.repair_sync_claim', public.claim_external_action(
+  current_setting('test.repair_sync_job')::uuid
+)::text, true);
+select public.block_external_action(
+  current_setting('test.repair_sync_job')::uuid,
+  (current_setting('test.repair_sync_claim')::jsonb ->> 'dispatch_token')::uuid,
+  'calendar_authorization_required'
+);
+reset role;
+
+insert into auth.users (id, email)
+values ('49000000-0000-0000-0000-000000000010', 'barber-a@example.test');
+insert into public.profiles (id, role, barber_id)
+values ('49000000-0000-0000-0000-000000000010', 'barber', 'calendar-reassign-a');
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  pg_catalog.json_build_object('sub', '49000000-0000-0000-0000-000000000010')::text,
+  true
+);
+select is(public.calendar_connection_status()->>'repair_required', 'true',
+  'connected barber status exposes sync-only Calendar repair');
+reset role;
+
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'wrong-account-refresh', 'other@example.test', 'calendar-a'
+) ->> 'error', 'account_mismatch', 'sync-only connected repair rejects a different Google account');
+reset role;
+select is((select refresh_token from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-a'), 'refresh-a-rotated',
+  'connected account mismatch preserves the current credential');
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'repair-refresh-a', 'A@EXAMPLE.TEST', 'calendar-a'
+) ->> 'repair_pending', 'true', 'same-account sync repair reactivates cleanup');
+reset role;
+select is((select status from public.external_action_jobs
+  where id=current_setting('test.repair_sync_job')::uuid), 'pending',
+  'connected repair resumes blocked sync');
+select is((select count(*)::int from public.external_action_jobs
+  where action_type='calendar_event_delete'
+    and dedupe_key='49000000-0000-0000-0000-000000000003'), 0,
+  'connected repair does not queue deletion for a valid mapped event');
+select is((select google_event_id from public.calendar_event_map
+  where booking_id='49000000-0000-0000-0000-000000000003'), 'valid-event-a',
+  'connected repair preserves the valid mapped event');
+select is((select disconnect_requested_at is null from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-a'), true,
+  'connected repair keeps the ordinary connected state');
+
+-- A separately blocked direct deletion is reactivated by the same connected repair branch.
+set local role service_role;
+select set_config('test.repair_job', public.calendar_queue_event_deletion_for_identity(
+  '49000000-0000-0000-0000-000000000002',
+  'calendar-reassign-a', 'calendar-a', 'repair-event-a'
+)::text, true);
+select set_config('test.repair_claim', public.claim_external_action(
+  current_setting('test.repair_job')::uuid
+)::text, true);
+select public.block_external_action(
+  current_setting('test.repair_job')::uuid,
+  (current_setting('test.repair_claim')::jsonb ->> 'dispatch_token')::uuid,
+  'calendar_authorization_required'
+);
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'repair-refresh-a-2', 'a@example.test', 'calendar-a'
+) ->> 'repair_pending', 'true', 'connected repair reactivates blocked deletion');
+reset role;
+select is((select status from public.external_action_jobs
+  where id=current_setting('test.repair_job')::uuid), 'pending',
+  'connected repair resumes the blocked direct deletion');
+
+-- A normal connected upsert cannot switch accounts while any old Calendar identity remains bound.
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'wrong-connected-refresh', 'other@example.test', 'calendar-a'
+) ->> 'error', 'account_mismatch',
+  'normal connected upsert rejects an account switch while cleanup identity remains');
+reset role;
+select is((select refresh_token from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-a'), 'repair-refresh-a-2',
+  'normal account mismatch preserves the current credential');
+select is((select google_event_id from public.calendar_event_map
+  where booking_id='49000000-0000-0000-0000-000000000003'), 'valid-event-a',
+  'normal account mismatch preserves the mapped event');
+set local role service_role;
+select is(public.calendar_store_token(
+  'calendar-reassign-a', 'normal-refresh-a', 'a@example.test', 'calendar-a'
+) ->> 'cleanup_pending', 'false',
+  'same-account connected rotation remains an ordinary upsert');
+reset role;
+select is((select refresh_token from public.barber_calendar_tokens
+  where barber_id='calendar-reassign-a'), 'normal-refresh-a',
+  'same-account connected rotation stores the new credential');
 
 select * from finish();
 rollback;

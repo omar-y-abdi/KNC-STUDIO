@@ -2,7 +2,7 @@
 
 This branch targets a linked database whose gateway contract is already live. The verified remote
 migration history includes `20260813123853_contract_public_booking_gateway.sql` and continues through
-`20260827170300_harden_internal_function_privileges.sql`. This rollout therefore stages the four
+`20260827170300_harden_internal_function_privileges.sql`. This rollout therefore stages the five
 reviewed post-baseline migrations first, verifies the deployed Edge/frontend coexistence, and retires
 the three superseded contracts only at the final step.
 
@@ -54,7 +54,10 @@ PROJECT_REF="$PROJECT_REF" npm run verify:production-secrets
 runbook and CI. It copies the complete local lineage through the verified remote baseline plus an
 explicit reviewed set; it does not copy arbitrary later migrations. The linked read-only preflight
 for the Calendar migration found `map_count=1`, `maps_without_token=0`, and
-`maps_without_calendar_id=0`; the migration fails closed if that evidence is no longer true.
+`maps_without_calendar_id=0`. The same read-only join found `mapped_tokens=1` and
+`mapped_tokens_without_email=0`, so the same-account repair gate has a non-null legacy identity to
+compare. These are evidence only; the rollout performs no production data write during preflight,
+and the migration fails closed if the map or token evidence is no longer true.
 
 For the current baseline, the Expand set is exactly:
 
