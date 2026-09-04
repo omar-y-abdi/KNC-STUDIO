@@ -35,6 +35,16 @@ export function parseServicePrice(input: string): number | null {
   return price
 }
 
+export type ManualReservationPrice =
+  { readonly ok: true; readonly value: number | null } | { readonly ok: false }
+
+/** Validate the optional manual-reservation price without conflating blank input with invalid input. */
+export function validateManualReservationPrice(input: string): ManualReservationPrice {
+  if (input.trim() === '') return { ok: true, value: null }
+  const price = parseServicePrice(input)
+  return price === null ? { ok: false } : { ok: true, value: price }
+}
+
 /** Parse a complete numeric duration and round it upward to the next whole minute. */
 export function parseServiceDuration(input: string): number | null {
   const numericDuration = parseUnsignedDecimal(input, Number.POSITIVE_INFINITY)

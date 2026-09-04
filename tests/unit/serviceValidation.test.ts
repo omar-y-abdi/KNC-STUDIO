@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseServiceRow } from '../../src/admin/serviceValidation'
+import { parseServiceRow, validateManualReservationPrice } from '../../src/admin/serviceValidation'
 
 describe('parseServiceRow', () => {
   it('accepts a valid row and trims the name', () => {
@@ -57,5 +57,23 @@ describe('parseServiceRow', () => {
 
   it('rejects an empty numeric field', () => {
     expect(parseServiceRow({ name: 'X', price: '', durationMin: '45' })).toBeNull()
+  })
+})
+
+describe('validateManualReservationPrice', () => {
+  it('treats empty input as the intentional default price', () => {
+    expect(validateManualReservationPrice('')).toEqual({ ok: true, value: null })
+    expect(validateManualReservationPrice('   ')).toEqual({ ok: true, value: null })
+  })
+
+  it('preserves zero and valid dot-decimal prices', () => {
+    expect(validateManualReservationPrice('0')).toEqual({ ok: true, value: 0 })
+    expect(validateManualReservationPrice('199.99')).toEqual({ ok: true, value: 199.99 })
+  })
+
+  it('rejects non-empty trailing text, comma decimals, and too many decimals', () => {
+    expect(validateManualReservationPrice('199abc')).toEqual({ ok: false })
+    expect(validateManualReservationPrice('199,99')).toEqual({ ok: false })
+    expect(validateManualReservationPrice('199.999')).toEqual({ ok: false })
   })
 })

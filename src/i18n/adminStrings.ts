@@ -321,6 +321,7 @@ export interface AdminStrings {
   readonly reserveDefaultName: string
   readonly reserveServiceName: string
   readonly reserveErrPhone: string
+  readonly reserveErrPrice: string
   readonly reserveOk: string
   // Unavailability ↔ booking conflict (block day / veckoschema / ledighet that clashes with bookings)
   readonly unavailTitle: string
@@ -814,6 +815,7 @@ const SV: AdminStrings = {
   reserveDefaultName: 'Reserverad kund',
   reserveServiceName: 'Reserverad tid',
   reserveErrPhone: 'Ogiltigt telefonnummer',
+  reserveErrPrice: 'Ange ett giltigt pris (t.ex. 199 eller 199.99).',
   reserveOk: 'Kunden är bokad.',
   unavailTitle: 'Kunder är bokade',
   unavailLead: 'Följande kunder är bokade under tiden du vill vara borta:',
@@ -1300,6 +1302,7 @@ const EN: AdminStrings = {
   reserveDefaultName: 'Reserved',
   reserveServiceName: 'Reserved time',
   reserveErrPhone: 'Invalid phone number',
+  reserveErrPrice: 'Enter a valid price (for example 199 or 199.99).',
   reserveOk: 'The customer is booked.',
   unavailTitle: 'Customers are booked',
   unavailLead: 'These customers are booked during the time you want off:',
