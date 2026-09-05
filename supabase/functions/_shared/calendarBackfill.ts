@@ -1,7 +1,7 @@
 // OAuth callback backfill seam.  It only selects durable sync work; Google I/O stays in the
 // external-action worker so reassignment and reconnects share one lifecycle.
 
-interface CalendarBackfillService {
+export interface CalendarBackfillService {
   rpc(
     name: string,
     params: Readonly<Record<string, unknown>>,

@@ -31,7 +31,9 @@ describe('Calendar external-action ownership', () => {
 
   it('routes OAuth backfill through the durable reassignment state machine', () => {
     expect(calendarCallback).toContain("from '../_shared/calendarBackfill.ts'")
-    expect(calendarCallback).toContain('await queueBackfill(service, payload.barber_id)')
+    expect(calendarCallback).toContain(
+      'await queueBackfill(service as unknown as CalendarBackfillService',
+    )
     expect(calendarCallback).not.toContain('insertEvent(')
     expect(calendarCallback).not.toContain('refreshAccessToken(')
     expect(calendarCallback).not.toContain("service.rpc('calendar_record_event'")

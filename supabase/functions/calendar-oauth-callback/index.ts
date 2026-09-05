@@ -14,7 +14,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { decodeIdTokenEmail, exchangeCode, verifyState } from '../_shared/calendar.ts'
-import { queueBackfill } from '../_shared/calendarBackfill.ts'
+import { queueBackfill, type CalendarBackfillService } from '../_shared/calendarBackfill.ts'
 
 const STATE_MAX_AGE_SEC = 600 // the consent round-trip must complete within 10 minutes
 
@@ -188,7 +188,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // backfill future confirmed bookings as best-effort — the connection is already saved. Any per-booking failure is recorded
     // and surfaced in the calendar settings panel.
     try {
-      await queueBackfill(service, payload.barber_id)
+      await queueBackfill(service as unknown as CalendarBackfillService, payload.barber_id)
     } catch (backfillErr) {
       console.error('calendar-oauth-callback: backfill error:', backfillErr)
     }
