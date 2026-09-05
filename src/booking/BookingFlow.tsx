@@ -31,6 +31,7 @@ import type { ServicesPort } from './servicesPort'
 import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
+import type { CustomerProfile } from '../mybookings/domain'
 import { buildBookingStyles, makeNavBtn, palette } from './bookingStyles'
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
@@ -61,6 +62,7 @@ export interface BookingFlowProps {
   readonly popupText?: BookingPopupText
   /** Current owner-managed business identity used by confirmation calendar/map links. */
   readonly business?: BusinessSettings
+  readonly initialContact?: CustomerProfile
 }
 
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
@@ -86,6 +88,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const setState = (
     u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
+  useEffect(() => {
+    if (props.initialContact === undefined) return
+    setState({ form: { ...props.initialContact } })
+  }, [props.initialContact])
   const reset = (): void => {
     setResult(null)
     setFieldErrors(NO_FIELD_ERRORS)

@@ -21,6 +21,8 @@ import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site
 import { paintViewport } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
+import { PrivacyBanner } from '../site/PrivacyBanner'
+import type { CustomerProfile } from '../mybookings/domain'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
@@ -80,6 +82,7 @@ export function App(): JSX.Element {
     readonly token?: string
     readonly failed?: boolean
   }>({})
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
   useEffect(() => {
     const m = window.matchMedia(MOBILE_MQ)
     const h = (e: MediaQueryListEvent): void => setIsMobile(e.matches)
@@ -321,6 +324,7 @@ export function App(): JSX.Element {
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
+        onProfile={setCustomerProfile}
       />
     </LazySurface>
   ) : null
@@ -332,6 +336,7 @@ export function App(): JSX.Element {
           mode={state.mode}
           lang={lang}
           tx={tx}
+          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
           dark={dark}
           c={c}
           view={view}
@@ -352,6 +357,7 @@ export function App(): JSX.Element {
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
+        <PrivacyBanner lang={lang} dark={dark} />
       </>
     )
   }
@@ -368,6 +374,7 @@ export function App(): JSX.Element {
         langToggle={langToggle}
         chromeIconStyle={chromeIconStyle}
         tx={tx}
+        {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
         view={view}
         toggleDeskBooking={toggleDeskBooking}
         scrollToAbout={scrollToAbout}
@@ -380,6 +387,7 @@ export function App(): JSX.Element {
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
+      <PrivacyBanner lang={lang} dark={dark} />
     </>
   )
 }

@@ -4,6 +4,7 @@ import type {
   BookingStrings,
   CalendarLabels,
   MyBookingsStrings,
+  PrivacyStrings,
 } from './index'
 
 // Swedish strings.
@@ -72,6 +73,22 @@ export const appSv: AppStrings = {
   lazyMyBookingsLoading: 'Laddar bokningar …',
   lazyMyBookingsError: 'Kunde inte ladda bokningarna.',
   lazyReload: 'Ladda om',
+}
+
+export const privacySv: PrivacyStrings = {
+  title: 'Integritet och lagring',
+  lead: 'Vi använder ingen analys- eller annonslagring. Du kan välja om vi får spara ditt val av valfri lagring.',
+  privacyLink: 'Läs integritetspolicyn',
+  accept: 'Godkänn valfri lagring',
+  reject: 'Avvisa valfri lagring',
+  preferences: 'Inställningar',
+  save: 'Spara val',
+  functionalTitle: 'Valfri lagring',
+  functionalLead: 'Används endast för att minnas ditt lagringsval; inget telefonnummer sparas.',
+  necessary:
+    'Efter giltig e-postlänk används en nödvändig, säker sessionscookie för att hålla dig inloggad. Utan cookies kan Mina bokningar inte logga in automatiskt.',
+  manage: 'Integritet',
+  manageLabel: 'Hantera integritetsinställningar',
 }
 
 export const aboutSv: AboutStrings = {

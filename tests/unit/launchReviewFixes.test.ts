@@ -1,28 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { parseExternalAction } from '../../supabase/functions/_shared/externalActions'
-import {
-  currentCustomerAccessToken,
-  forgetCustomerAccessToken,
-  rememberCustomerAccessToken,
-} from '../../src/mybookings/customerAccessSession'
 
 const ACTION_ID = '71000000-0000-4000-8000-000000000001'
 const DISPATCH_TOKEN = '71000000-0000-4000-8000-000000000002'
 const BOOKING_ID = '71000000-0000-4000-8000-000000000003'
-
-function memoryStorage(): Storage {
-  const values = new Map<string, string>()
-  return {
-    get length() {
-      return values.size
-    },
-    clear: () => values.clear(),
-    getItem: (key) => values.get(key) ?? null,
-    key: (index) => [...values.keys()][index] ?? null,
-    removeItem: (key) => void values.delete(key),
-    setItem: (key, value) => void values.set(key, value),
-  }
-}
 
 describe('launch-review durable action contracts', () => {
   it('accepts a fully server-resolved Calendar sync action', () => {
@@ -45,7 +26,7 @@ describe('launch-review durable action contracts', () => {
     ).toMatchObject({ action_type: 'calendar_event_sync', booking_id: BOOKING_ID })
   })
 
-  it('accepts only opaque customer-access email codes', () => {
+  it('accepts only encrypted customer-access email payloads', () => {
     const base = {
       id: ACTION_ID,
       dispatch_token: DISPATCH_TOKEN,
@@ -53,28 +34,17 @@ describe('launch-review durable action contracts', () => {
       email: 'customer@example.com',
       lang: 'sv',
     }
-    expect(parseExternalAction({ ...base, access_code: 'a'.repeat(64) })).toMatchObject({
+    expect(
+      parseExternalAction({
+        ...base,
+        challenge_id: ACTION_ID,
+        token_ciphertext: 'v1.' + 'a'.repeat(64),
+      }),
+    ).toMatchObject({
       action_type: 'customer_access_email_send',
     })
-    expect(parseExternalAction({ ...base, access_code: 'plain-link-token' })).toBeNull()
-  })
-})
-
-describe('customer access session persistence', () => {
-  beforeEach(() => {
-    vi.stubGlobal('sessionStorage', memoryStorage())
-  })
-
-  it('keeps only a valid opaque session and can clear the matching token', () => {
-    const token = 'b'.repeat(64)
-    rememberCustomerAccessToken('invalid')
-    expect(currentCustomerAccessToken()).toBeNull()
-
-    rememberCustomerAccessToken(token)
-    expect(currentCustomerAccessToken()).toBe(token)
-    forgetCustomerAccessToken('c'.repeat(64))
-    expect(currentCustomerAccessToken()).toBe(token)
-    forgetCustomerAccessToken(token)
-    expect(currentCustomerAccessToken()).toBeNull()
+    expect(
+      parseExternalAction({ ...base, challenge_id: ACTION_ID, access_code: 'a'.repeat(64) }),
+    ).toBeNull()
   })
 })

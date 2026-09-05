@@ -9,10 +9,17 @@ the three superseded contracts only at the final step.
 PR #55 / #42 must be merged and deployed before PR #56. Its
 `20260831222332_customer_access_outbox_ciphertext.sql` migration changes the customer-access payload
 contract; PR #56 then retires the old overloads. Applying #56 first and #55 afterward would recreate a
-function that #56 removes. This checkout does not contain #55, so after #55 merges/deploys, rebase this
+function that #56 removes. Merge/deploy PR #55 before database PR #48; customer outbox encryption must
+exist before database contract retirement. This checkout does not contain #55, so after #55 merges/deploys, rebase this
 branch, refresh the linked-baseline evidence and rerun the complete rollout checks. Reverse deployment
 of #55 / #42 after #56 is unsupported. PR #54 has the same required post-merge rebase/disclosure gate
 described under Rollback boundary.
+
+Calendar sync uses durable `calendar_event_sync` jobs. Remove retired deployment with
+`supabase functions delete calendar-sync --project-ref "$PROJECT_REF"` after replacement dispatcher verification.
+Verify removal with `npx supabase functions list --project-ref "$PROJECT_REF" --output-format json` and
+`jq -e 'all(.functions[]; .slug != "calendar-sync")'`. The durable trigger is
+`calendar_sync_on_bookings`; verify Edge/Vault parity before switching traffic.
 
 Never run an unrestricted `db push`, and never apply a retirement migration before the switched
 frontend and the deployed gateway have passed coexistence checks. This runbook is an operational
@@ -66,6 +73,7 @@ For the current baseline, the Expand set is exactly:
 - `20260901013601_calendar_customer_contact_payload.sql`
 - `20260901014248_relocate_btree_gist_to_extensions.sql`
 - `20260902005645_calendar_reassignment_cleanup.sql`
+- `20260905154608_customer_http_only_session.sql`
 
 The Contract set adds exactly these three irreversible retirements:
 
@@ -92,7 +100,7 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-The dry run must show only the five explicit Expand migrations above as pending after the verified
+The dry run must show only the six explicit Expand migrations above as pending after the verified
 baseline. The three retirement migrations must not be applied in this phase. The staging harness uses
 the same selector and asserts that already-live gateway denial coexists with service-role gateway
 execution:
@@ -122,7 +130,7 @@ for function in \
   npx supabase functions deploy "$function" --project-ref "$PROJECT_REF" --use-api
 done
 npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
-npx supabase functions list --project-ref "$PROJECT_REF"
+npx supabase functions list --project-ref "$PROJECT_REF" --output-format json
 ```
 
 Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
@@ -189,7 +197,7 @@ data cleanup are separate operator approvals and are not proven by this reposito
 
 Stage the final migration set through the same explicit manifest. `--include-all` is required here
 because the three reviewed retirement files are older than the later Expand files. It is safe only
-against this staged tree, which contains the verified baseline, the five explicit Expand migrations,
+against this staged tree, which contains the verified baseline, the six explicit Expand migrations,
 and the three explicit retirement migrations. Never use it against the source tree or an unrestricted
 working directory:
 
@@ -202,7 +210,7 @@ npx supabase link --project-ref "$PROJECT_REF" --workdir "$contract_root"
 npx supabase db push --linked --dry-run --include-all --workdir "$contract_root"
 ```
 
-The staged Contract tree must contain exactly the five Expand migrations above plus these three
+The staged Contract tree must contain exactly the six Expand migrations above plus these three
 retirements; if anything else is pending, stop and review the linked history and rebase state:
 
 ```text

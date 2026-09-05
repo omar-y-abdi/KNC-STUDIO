@@ -5,7 +5,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
 import type { Phone } from '../../src/booking/validation'
-import { rememberCustomerAccessToken } from '../../src/mybookings/customerAccessSession'
 import {
   backendReady,
   readStackEnv,
@@ -21,8 +20,7 @@ import {
 } from './reviewAccessHelpers'
 
 async function authorizeReview(dbUrl: string, phone: string, email: string): Promise<void> {
-  const accessToken = await seedCustomerAccessSession(dbUrl, { phone, email })
-  rememberCustomerAccessToken(accessToken)
+  await seedCustomerAccessSession(dbUrl, { phone, email })
 }
 
 describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {

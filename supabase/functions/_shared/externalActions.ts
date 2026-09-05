@@ -19,7 +19,7 @@ import {
   resendDeliveryFailureCode,
   sendViaResend,
 } from './email.ts'
-import { customerAccessUrl } from './customerAccess.ts'
+import { customerAccessUrl, decryptCustomerAccessToken } from './customerAccess.ts'
 
 export type StorageBucket = 'gallery' | 'barber-photos'
 
@@ -70,9 +70,10 @@ export type ExternalAction =
     })
   | (DispatchBase & {
       readonly action_type: 'customer_access_email_send'
+      readonly challenge_id: string
       readonly email: string
       readonly lang: Language
-      readonly access_code: string
+      readonly token_ciphertext: string
     })
   | (DispatchBase & {
       readonly action_type: 'auth_user_access_sync'
@@ -119,6 +120,7 @@ export interface ExternalActionRuntime {
   readonly googleClientId: string | undefined
   readonly googleClientSecret: string | undefined
   readonly resendApiKey?: string | undefined
+  readonly customerAccessHashSalt?: string | undefined
 }
 
 /** The only safe reason for a new Edge worker to use the pre-migration generic dispatcher. */
@@ -160,6 +162,15 @@ function isUuid(value: unknown): value is string {
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function customerAccessCiphertext(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 40 &&
+    value.length <= 700 &&
+    /^v1\.[A-Za-z0-9_-]+$/.test(value)
+  )
 }
 
 interface CalendarBookingSource {
@@ -304,15 +315,16 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
     value.action_type === 'customer_access_email_send' &&
     nonEmpty(value.email) &&
     (value.lang === 'sv' || value.lang === 'en') &&
-    typeof value.access_code === 'string' &&
-    /^[0-9a-f]{64}$/i.test(value.access_code)
+    isUuid(value.challenge_id) &&
+    customerAccessCiphertext(value.token_ciphertext)
   ) {
     return {
       ...base,
       action_type: value.action_type,
+      challenge_id: value.challenge_id,
       email: value.email,
       lang: value.lang,
-      access_code: value.access_code,
+      token_ciphertext: value.token_ciphertext,
     }
   }
 
@@ -725,22 +737,43 @@ export async function executeExternalAction(
       return
     }
     case 'customer_access_email_send': {
-      if (!runtime.resendApiKey) {
+      if (!runtime.resendApiKey || !runtime.customerAccessHashSalt) {
         throw new ExternalActionError('not_configured', 'Resend runtime is not configured')
       }
       try {
         const emailClient = service as unknown as SupabaseClient
         const business = await loadEmailBusiness(emailClient)
         const copy = await loadEmailTemplate(emailClient, 'customer_booking_access', action.lang)
+        const accessCode = await decryptCustomerAccessToken(
+          action.token_ciphertext,
+          runtime.customerAccessHashSalt,
+        )
+        if (accessCode === null) {
+          throw new ExternalActionError(
+            'customer_access_token_decrypt_failed',
+            'Customer access token could not be decrypted',
+            false,
+          )
+        }
         const message = buildEmailMessage({
           to: action.email,
           lang: action.lang,
           copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
-          ctaHref: customerAccessUrl(action.access_code),
+          ctaHref: customerAccessUrl(accessCode),
           business,
         })
         await sendViaResend(message, runtime.resendApiKey, `customer-booking-access/${action.id}`)
+        const consumed = await service.rpc('consume_customer_access_email_challenge', {
+          p_challenge_id: action.challenge_id,
+        })
+        if (consumed.error !== null || consumed.data !== true) {
+          throw new ExternalActionError(
+            'customer_access_challenge_consume_failed',
+            'Customer access challenge could not be consumed',
+          )
+        }
       } catch (error) {
+        if (error instanceof ExternalActionError) throw error
         const failureCode = resendDeliveryFailureCode(error)
         throw new ExternalActionError(
           failureCode,

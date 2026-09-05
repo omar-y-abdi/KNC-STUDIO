@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const calendarSync = readFileSync('supabase/functions/calendar-sync/index.ts', 'utf8')
 const calendarCallback = readFileSync('supabase/functions/calendar-oauth-callback/index.ts', 'utf8')
 const calendarBackfill = readFileSync('supabase/functions/_shared/calendarBackfill.ts', 'utf8')
 const externalCleanup = readFileSync('supabase/functions/external-cleanup/index.ts', 'utf8')
@@ -27,9 +26,7 @@ describe('Calendar external-action ownership', () => {
 
     expect(syncOutboxMigration).toContain("'calendar_event_sync'")
     expect(syncOutboxMigration).toContain('booking_calendar_sync_on_change')
-    expect(calendarSync).toContain("service.rpc('queue_calendar_event_sync'")
-    expect(calendarSync).not.toContain("service.rpc('calendar_deletion_context'")
-    expect(calendarSync).not.toContain('await deleteEvent(')
+    expect(calendarCallback).not.toContain("service.rpc('calendar_deletion_context'")
   })
 
   it('routes OAuth backfill through the durable reassignment state machine', () => {

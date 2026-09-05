@@ -14,9 +14,6 @@ vi.mock('../../src/backend/supabaseClient', () => ({
     }),
   }),
 }))
-vi.mock('../../src/mybookings/customerAccessSession', () => ({
-  currentCustomerAccessToken: () => 'a'.repeat(64),
-}))
 
 import { createReviewResponse } from '../../src/backend/rpcSchemas'
 import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
@@ -41,7 +38,7 @@ describe('review gateway response contract', () => {
     const result = await supabaseReviewsAdapter.submit(review, 'challenge-token')
 
     expect(invokePublicBookingAction).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'review', accessToken: 'a'.repeat(64) }),
+      expect.objectContaining({ action: 'review' }),
     )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe(domainKind)

@@ -104,6 +104,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       googleClientId: Deno.env.get('GOOGLE_OAUTH_CLIENT_ID'),
       googleClientSecret: Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET'),
       resendApiKey: Deno.env.get('RESEND_API_KEY'),
+      customerAccessHashSalt: Deno.env.get('PUBLIC_ACTION_HASH_SALT'),
     })
   } catch (error) {
     const code = error instanceof ExternalActionError ? error.code : 'external_action_failed'

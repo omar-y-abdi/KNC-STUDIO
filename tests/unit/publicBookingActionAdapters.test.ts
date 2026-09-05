@@ -8,7 +8,6 @@ vi.mock('../../src/backend/publicBookingActions', () => ({ invokePublicBookingAc
 
 import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
 import type { MyBooking } from '../../src/mybookings/domain'
-import { currentCustomerAccessToken } from '../../src/mybookings/customerAccessSession'
 
 const myBooking: MyBooking = {
   id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
@@ -39,8 +38,11 @@ describe('public booking action adapter errors', () => {
 
     await expect(
       supabaseMyBookingsAdapter.list({ accessToken: token, lang: 'sv' }),
-    ).resolves.toEqual({ ok: true, bookings: { upcoming: [], past: [] } })
-    expect(currentCustomerAccessToken()).toBe(token)
+    ).resolves.toEqual({
+      ok: true,
+      bookings: { upcoming: [], past: [] },
+      profile: { name: '', phone: '0701234567', email: '' },
+    })
   })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(

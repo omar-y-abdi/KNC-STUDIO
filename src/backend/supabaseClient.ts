@@ -30,7 +30,12 @@ export function getSupabase(): SupabaseClient {
   if (client === undefined) {
     // No auth/session: the app is static + anonymous, the anon key is the only credential, and the
     // security boundary is RLS + SECURITY DEFINER RPCs (so persisting a session would be pointless).
-    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
+    client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false },
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, credentials: 'include' }),
+      },
+    })
   }
   return client
 }

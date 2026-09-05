@@ -11,7 +11,6 @@ import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { myBookingsStrings } from '../../i18n/index'
-import { forgetCustomerAccessToken, rememberCustomerAccessToken } from '../customerAccessSession'
 import type { MyBooking, MyBookingsResult, MyCancelResult } from '../domain'
 import { formatRowLabel, splitByTime } from '../format'
 import type {
@@ -63,8 +62,7 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       const parsed = parseWith(customerAccessExchangeResponse, data)
       if (!parsed.ok) return { ok: false, error: 'system' }
       if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
-      rememberCustomerAccessToken(parsed.value.access_token)
-      return { ok: true, accessToken: parsed.value.access_token }
+      return { ok: true, accessToken: '' }
     } catch {
       return { ok: false, error: 'system' }
     }
@@ -72,19 +70,17 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
 
   async list(params: MyBookingsListParams): Promise<MyBookingsResult> {
     try {
-      const { data, failed } = await invokePublicBookingAction({
-        action: 'list',
-        accessToken: params.accessToken,
-      })
+      const { data, failed } = await invokePublicBookingAction(
+        params.accessToken === ''
+          ? { action: 'list' }
+          : { action: 'list', accessToken: params.accessToken },
+      )
       if (failed) return { ok: false, error: 'system' }
       const parsed = parseWith(listCustomerBookingsResponse, data)
       if (!parsed.ok) return { ok: false, error: 'system' }
       if (!parsed.value.ok) {
-        if (parsed.value.error === 'access_denied') forgetCustomerAccessToken(params.accessToken)
         return { ok: false, error: parsed.value.error }
       }
-
-      rememberCustomerAccessToken(params.accessToken)
 
       const sep = myBookingsStrings(params.lang).atSep
       const bookings: MyBooking[] = []
@@ -100,7 +96,15 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
           whenLabel: formatRowLabel(params.lang, stockholmWallClockDate(start), sep),
         })
       }
-      return { ok: true, bookings: splitByTime(bookings, new Date()) }
+      return {
+        ok: true,
+        bookings: splitByTime(bookings, new Date()),
+        profile: {
+          name: parsed.value.name ?? '',
+          phone: parsed.value.phone,
+          email: parsed.value.email ?? '',
+        },
+      }
     } catch {
       return { ok: false, error: 'system' }
     }
@@ -111,14 +115,11 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       const { data, failed } = await invokePublicBookingAction({
         action: 'cancel',
         bookingId: booking.id,
-        accessToken,
+        ...(accessToken === '' ? {} : { accessToken }),
       })
       if (failed) return { ok: false, error: 'system' }
       const parsed = parseWith(customerBookingCancelResponse, data)
       if (!parsed.ok) return { ok: false, error: 'system' }
-      if (!parsed.value.ok && parsed.value.error === 'access_denied') {
-        forgetCustomerAccessToken(accessToken)
-      }
       return parsed.value.ok
         ? { ok: true, id: booking.id }
         : { ok: false, error: parsed.value.error }

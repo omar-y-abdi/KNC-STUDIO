@@ -83,10 +83,7 @@ export const customerAccessRequestResponse = z.discriminatedUnion('ok', [
   customerAccessRequestErr,
 ])
 
-const customerAccessExchangeOk = z.object({
-  ok: z.literal(true),
-  access_token: z.string().length(64),
-})
+const customerAccessExchangeOk = z.object({ ok: z.literal(true) })
 const customerAccessExchangeErr = z.object({ ok: z.literal(false), error: z.literal('invalid') })
 export const customerAccessExchangeResponse = z.discriminatedUnion('ok', [
   customerAccessExchangeOk,
@@ -106,7 +103,9 @@ const myBookingRow = z.object({
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  name: z.string().optional(),
   phone: z.string().regex(/^07[0-9]{8}$/),
+  email: z.string().email().optional(),
   bookings: z.array(myBookingRow),
 })
 const listCustomerBookingsErr = z.object({

@@ -27,7 +27,11 @@ export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookin
     },
     list(params: MyBookingsListParams): Promise<MyBookingsResult> {
       void params
-      return Promise.resolve({ ok: true, bookings: { upcoming: [], past: [] } })
+      return Promise.resolve({
+        ok: true,
+        bookings: { upcoming: [], past: [] },
+        profile: { name: '', phone: '', email: '' },
+      })
     },
     cancel(booking: MyBooking): Promise<MyCancelResult> {
       return Promise.resolve({ ok: true, id: booking.id })

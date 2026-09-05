@@ -185,7 +185,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       )
     }
 
-    // Backfill is best-effort — the connection is already saved. Any per-booking failure is recorded
+    // backfill future confirmed bookings as best-effort — the connection is already saved. Any per-booking failure is recorded
     // and surfaced in the calendar settings panel.
     try {
       await queueBackfill(service, payload.barber_id)

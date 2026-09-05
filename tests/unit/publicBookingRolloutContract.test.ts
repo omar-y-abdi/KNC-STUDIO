@@ -11,6 +11,7 @@ describe('public booking rollout operations', () => {
     '20260901013601_calendar_customer_contact_payload.sql',
     '20260901014248_relocate_btree_gist_to_extensions.sql',
     '20260902005645_calendar_reassignment_cleanup.sql',
+    '20260905154608_customer_http_only_session.sql',
   ]
   const contractAfterBaseline = [
     ...expandAfterBaseline,
@@ -52,13 +53,11 @@ describe('public booking rollout operations', () => {
   })
 
   it('stages only reviewed post-baseline migrations at each rollout boundary', () => {
-    const expand = stage('expand').filter(
-      (name) =>
-        name.startsWith('20260831') || name.startsWith('20260901') || name.startsWith('20260902'),
+    const expand = stage('expand').filter((name) =>
+      /^20260905|^20260831|^20260901|^20260902/.test(name),
     )
-    const contract = stage('contract').filter(
-      (name) =>
-        name.startsWith('20260831') || name.startsWith('20260901') || name.startsWith('20260902'),
+    const contract = stage('contract').filter((name) =>
+      /^20260905|^20260831|^20260901|^20260902/.test(name),
     )
     expect(expand).toEqual(expandAfterBaseline.sort())
     expect(contract).toEqual(contractAfterBaseline.sort())
