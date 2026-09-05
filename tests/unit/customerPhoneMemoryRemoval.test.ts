@@ -24,6 +24,16 @@ describe('customer phone-memory removal contract', () => {
     }
   })
 
+  it('keeps the public smoke consent-free after the storage-consent removal', () => {
+    const smoke = readFileSync('tools/e2e/smoke.mjs', 'utf8')
+
+    expect(smoke).not.toContain('PrivacyBanner')
+    expect(smoke).not.toContain('Avvisa valfri lagring')
+    expect(smoke).not.toContain('Manage privacy preferences')
+    expect(smoke).not.toContain('functional-storage')
+    expect(smoke).not.toContain('bladeblend_storage_preferences')
+  })
+
   it('retains only same-tab access-token handling for authorized My Bookings use', () => {
     const session = readFileSync('src/mybookings/customerAccessSession.ts', 'utf8')
     const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
