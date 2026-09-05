@@ -13,6 +13,10 @@ import { err, ok } from './types'
 
 /** Map any thrown/transport problem to a neutral network error (kept human + non-leaky). */
 const NETWORK_ERROR = 'Kunde inte nå servern. Försök igen.'
+const RECOVERY_CHALLENGE_ERROR = {
+  sv: 'Säkerhetskontrollen misslyckades. Försök igen.',
+  en: 'The security check failed. Please try again.',
+} as const
 /** Wrong email/password (Supabase returns "Invalid login credentials"). */
 const BAD_CREDENTIALS = 'Fel e‑post eller lösenord.'
 /** Authenticated but no linked profile (owner forgot to create the `profiles` row). */
@@ -172,12 +176,26 @@ export async function confirmOwnEmailChange(tokenHash: string): Promise<AdminRes
 export async function requestPasswordReset(
   email: string,
   lang: 'sv' | 'en',
+  turnstileToken: string,
 ): Promise<AdminResult<void>> {
   try {
-    const { error } = await getAdminClient().functions.invoke('send-recovery-email', {
-      body: { email, lang },
+    const { data, error } = await getAdminClient().functions.invoke('send-recovery-email', {
+      body: { email, lang, turnstileToken },
     })
     if (error !== null) return err('network', NETWORK_ERROR)
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'ok' in data &&
+      data.ok === false &&
+      'error' in data &&
+      data.error === 'failed_challenge'
+    ) {
+      return err('challenge', RECOVERY_CHALLENGE_ERROR[lang])
+    }
+    if (typeof data !== 'object' || data === null || !('ok' in data) || data.ok !== true) {
+      return err('network', NETWORK_ERROR)
+    }
     return ok(undefined)
   } catch {
     return err('network', NETWORK_ERROR)

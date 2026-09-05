@@ -16,6 +16,7 @@ const BACKDROP_STYLE =
 export interface DetailsDialogProps {
   readonly t: BookingStrings
   readonly s: BookingStyles
+  readonly closeLabel: string
   readonly sumBarber: string
   readonly sumWhen: string
   readonly sumService: string
@@ -51,7 +52,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
     value: string,
     onInput: (ev: JSX.TargetedInputEvent<HTMLInputElement>) => void,
     placeholder: string,
-    inputMode: 'tel' | 'email' | undefined,
+    inputType: 'text' | 'tel' | 'email',
     invalid: boolean,
     note: string,
   ): JSX.Element => (
@@ -61,7 +62,9 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         value={value}
         onInput={onInput}
         placeholder={placeholder}
-        {...(inputMode !== undefined ? { inputMode } : {})}
+        type={inputType}
+        autoComplete={inputType === 'text' ? 'name' : inputType}
+        {...(inputType !== 'text' ? { inputMode: inputType } : {})}
         aria-invalid={invalid ? 'true' : undefined}
         style={invalid ? s.inputErrorStyle : s.inputStyle}
         class={FOCUS_CLS}
@@ -91,7 +94,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         >
           {t.yourDetails}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle}>
+        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={props.closeLabel}>
           ×
         </button>
       </div>
@@ -120,7 +123,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         </div>
 
         <div style="display:flex;flex-direction:column;gap:10px;">
-          {field(t.name, props.nameValue, props.onName, t.namePh, undefined, e.name, t.errName)}
+          {field(t.name, props.nameValue, props.onName, t.namePh, 'text', e.name, t.errName)}
           {field(t.phone, props.phoneValue, props.onPhone, t.phonePh, 'tel', e.phone, t.errPhone)}
           {field(t.email, props.emailValue, props.onEmail, t.emailPh, 'email', e.email, t.errEmail)}
         </div>

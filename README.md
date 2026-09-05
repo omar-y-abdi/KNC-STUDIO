@@ -58,7 +58,7 @@ src/
     adapters/           #   localCalendarAdapter (offline mock) + lazy Supabase adapter
     BookingFlow + sub-components, bookingStyles
   about/                # About section: gallery, DB-driven stylists, reviews (+ ports/adapters)
-  mybookings/           # permanent email-token history/cancel + consented device cookie
+  mybookings/           # permanent email-token history/cancel + same-tab access session
   admin/                # staff panel: operations + authenticated email/password settings
   i18n/                 # typed sv/en string tables (missing key = compile error)
   ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
@@ -113,7 +113,7 @@ with `VITE_CLOCK=fixed` so the calendar is deterministic) and diffs it against t
 baselines (`tools/visual/baseline/`) pixel-for-pixel:
 
 ```bash
-node tools/visual/capture.mjs   # BASE=<url> OUT=<dir>  → 8 homepage variants + Swedish privacy-banner state
+node tools/visual/capture.mjs   # BASE=<url> OUT=<dir>  → 8 homepage variants
 node tools/visual/compare.mjs   # BASELINE vs CANDIDATE via pixelmatch; non-zero exit on drift
 ```
 

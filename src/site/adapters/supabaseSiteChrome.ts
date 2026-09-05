@@ -163,11 +163,6 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
           .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'barber_schedules' },
-            changed,
-          )
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') awaitingPostgresReady = true
           })

@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
+import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
 
 describe('helpers', () => {
   it('pad2', () => {
@@ -20,6 +22,22 @@ describe('helpers', () => {
 
     expect(sunday.getDay()).toBe(0)
     expect(isSelectableBookingDate(sunday, today)).toBe(true)
+  })
+
+  it('uses the Stockholm wall-clock day when an injected clock crosses midnight during DST', () => {
+    const today = stockholmWallClockDate(new Date('2040-03-31T22:30:00.000Z'))
+    const previousDay = new Date(2040, 2, 31)
+    const stockholmDay = new Date(2040, 3, 1)
+
+    expect(iso(today)).toBe('2040-04-01')
+    expect(isSelectableBookingDate(previousDay, today)).toBe(false)
+    expect(isSelectableBookingDate(stockholmDay, today)).toBe(true)
+  })
+
+  it('normalizes the BookingFlow clock before deriving its calendar day', () => {
+    const source = readFileSync('src/booking/BookingFlow.tsx', 'utf8')
+
+    expect(source).toContain('stockholmWallClockDate(clock())')
   })
 })
 

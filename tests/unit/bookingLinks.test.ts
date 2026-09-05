@@ -72,4 +72,22 @@ describe('buildLinks', () => {
     expect(ics).toContain('Kungsgatan 1')
     expect(ics).toContain('Hårklippning')
   })
+
+  it('uses Stockholm UTC instants in ICS while keeping Google Calendar wall-clock time', () => {
+    const start = new Date(2040, 6, 15, 13, 30)
+    const summerBooking = {
+      ...booking(),
+      start,
+      end: new Date(start.getTime() + HAIRCUT.dur * 60000),
+    }
+
+    const links = buildLinks(summerBooking, NOW, BUSINESS)
+    const ics = decodeURIComponent(links.icsHref.replace('data:text/calendar;charset=utf-8,', ''))
+    const google = decodeURIComponent(links.gcalHref)
+
+    expect(ics).toContain('DTSTART:20400715T113000Z')
+    expect(ics).toContain('DTEND:20400715T121500Z')
+    expect(google).toContain('dates=20400715T133000/20400715T141500')
+    expect(google).toContain('ctz=Europe/Stockholm')
+  })
 })

@@ -15,7 +15,7 @@ Customer self-service gateway for secure booking access, cancellation, and revie
 
 A successful `request_access` response remains enumeration-safe. For a matching email, the database atomically rotates the permanent token and commits its `customer_access_email_send` external-action job. The response does not depend on `EdgeRuntime.waitUntil` or a best-effort send.
 
-The external-action worker resolves the matching challenge and booking server-side before exposing the destination email/code to the dispatch context. Transient Resend failures retry with the shared backoff/reclaim machinery. Permanent delivery errors are blocked and the stored access code is redacted; expired/used challenge jobs are cleaned up automatically.
+The external-action worker resolves the matching challenge and booking server-side before exposing the destination email and canonical encrypted token ciphertext to the dispatch context. The ciphertext is decrypted only immediately before the worker constructs the email. Transient Resend failures retry with the shared backoff/reclaim machinery and the stable Resend idempotency key. The dispatch-only challenge is consumed only after a successful send; expired/used challenge jobs are cleaned up automatically.
 
 ## Secrets
 

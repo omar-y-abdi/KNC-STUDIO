@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   contentOk: false,
   discoveryOk: true,
   changeHandlers: [] as (() => void)[],
+  changeFilters: [] as Record<string, unknown>[],
   systemHandlers: [] as ((payload: unknown) => void)[],
   subscriptionHandler: undefined as ((status: string) => void) | undefined,
   removeChannel: vi.fn(),
@@ -20,11 +21,16 @@ vi.mock('../../src/backend/config', () => ({
 vi.mock('../../src/backend/supabaseClient', () => ({
   getSupabase: () => {
     const channel = {
-      on: vi.fn((event: string, _filter: unknown, handler: (payload?: unknown) => void) => {
-        if (event === 'system') state.systemHandlers.push(handler)
-        if (event === 'postgres_changes') state.changeHandlers.push(handler)
-        return channel
-      }),
+      on: vi.fn(
+        (event: string, filter: Record<string, unknown>, handler: (payload?: unknown) => void) => {
+          if (event === 'system') state.systemHandlers.push(handler)
+          if (event === 'postgres_changes') {
+            state.changeFilters.push(filter)
+            state.changeHandlers.push(handler)
+          }
+          return channel
+        },
+      ),
       subscribe: vi.fn((handler?: (status: string) => void) => {
         state.subscriptionHandler = handler
         return channel
@@ -46,6 +52,7 @@ describe('Supabase site chrome resolution', () => {
     state.contentOk = false
     state.discoveryOk = true
     state.changeHandlers = []
+    state.changeFilters = []
     state.systemHandlers = []
     state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
@@ -117,6 +124,21 @@ describe('Supabase site chrome resolution', () => {
       handler({ extension: 'postgres_changes', status: 'ok', message: 'Subscribed to PostgreSQL' })
     }
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledOnce())
+
+    unsubscribe?.()
+  })
+
+  it('does not subscribe to anonymous schedule changes that RLS cannot deliver', async () => {
+    const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', vi.fn())
+    await vi.waitFor(() => expect(state.changeFilters.length).toBeGreaterThan(0))
+
+    expect(state.changeFilters.map((filter) => filter.table)).toEqual([
+      'site_content',
+      'site_settings',
+      'barbers',
+      'services',
+    ])
+    expect(state.changeFilters.some((filter) => filter.table === 'barber_schedules')).toBe(false)
 
     unsubscribe?.()
   })

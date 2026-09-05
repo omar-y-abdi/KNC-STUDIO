@@ -9,6 +9,7 @@ import { DEFAULT_BUSINESS } from '../../config'
 import { parseDateIso } from '../calendar'
 import type { Booking, BookingLinks, BookingResult } from '../domain'
 import { buildIcs, formatIcsLocal } from '../ics'
+import { localWallClockToStockholmIso } from '../stockholmTime'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { packSlots } from '../slotPacking'
 import type { BlockedInterval } from '../slotPacking'
@@ -49,11 +50,13 @@ function googleCalHref(booking: Booking, business: BusinessSettings): string {
 
 /** Build the `data:text/calendar` href from an escaped ICS payload. */
 function icsHref(booking: Booking, uid: string, dtstamp: Date, business: BusinessSettings): string {
+  const start = new Date(localWallClockToStockholmIso(booking.start))
+  const end = new Date(start.getTime() + booking.service.dur * 60000)
   const ics = buildIcs({
     uid,
     dtstamp,
-    start: booking.start,
-    end: booking.end,
+    start,
+    end,
     summary: eventTitle(booking, business),
     location: locationLine(business),
     description: eventDescription(booking),

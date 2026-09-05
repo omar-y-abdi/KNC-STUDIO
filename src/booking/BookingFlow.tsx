@@ -8,7 +8,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
-import { appStrings, bookingStrings } from '../i18n/index'
+import { appStrings, bookingStrings, myBookingsStrings } from '../i18n/index'
 import type { BookingPopupTextKey } from '../site/siteChrome'
 import type { BusinessSettings } from '../site/siteChrome'
 import {
@@ -35,6 +35,7 @@ import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyle
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
+import { stockholmWallClockDate } from './stockholmTime'
 import { pseudoClass } from '../ui/pseudo'
 
 type Mode = 'light' | 'dark'
@@ -132,7 +133,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
   const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
-  const today = clock()
+  const today = stockholmWallClockDate(clock())
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
     S.barberId,
@@ -743,6 +744,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <DetailsDialog
           t={t}
           s={s}
+          closeLabel={myBookingsStrings(lang).ariaClose}
           sumBarber={sumBarber}
           sumWhen={sumWhen}
           sumService={sumService}
@@ -771,6 +773,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <ConfirmationDialog
           t={t}
           s={s}
+          closeLabel={myBookingsStrings(lang).ariaClose}
           confirmSentLine={confirmSentLine}
           sumBarber={sumBarber}
           sumWhen={sumWhen}

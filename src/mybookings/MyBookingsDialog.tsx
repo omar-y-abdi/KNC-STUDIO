@@ -383,6 +383,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         onInput={onInput}
         placeholder={placeholder}
         type={type}
+        autoComplete={type}
         inputMode={type === 'tel' ? 'tel' : 'email'}
         aria-invalid={invalid ? 'true' : undefined}
         style={invalid ? s.inputErrorStyle : s.inputStyle}

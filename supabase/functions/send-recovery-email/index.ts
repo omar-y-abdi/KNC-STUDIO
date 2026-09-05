@@ -5,6 +5,7 @@ import {
   loadEmailTemplate,
   sendViaResend,
 } from '../_shared/email.ts'
+import { verifyTurnstile } from '../_shared/turnstile.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,10 @@ async function sha256(value: string): Promise<string> {
     .join('')
 }
 
+function clientIp(req: Request): string {
+  return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
@@ -38,7 +43,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const body = raw as Record<string, unknown>
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
   const lang = body.lang === 'en' ? 'en' : 'sv'
+  const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken : ''
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json({ ok: true })
+  const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
+  if (!turnstileSecret) return json({ ok: false, error: 'not_configured' }, 503)
+  if (!(await verifyTurnstile(turnstileToken, clientIp(req), turnstileSecret))) {
+    return json({ ok: false, error: 'failed_challenge' })
+  }
   const url = Deno.env.get('SUPABASE_URL')
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   const resendKey = Deno.env.get('RESEND_API_KEY')

@@ -15,8 +15,8 @@ describe('buildIcs', () => {
   const event = {
     uid: '1@kncstudio',
     dtstamp: new Date(Date.UTC(2026, 5, 19, 8, 0, 0)),
-    start: new Date(2026, 5, 20, 10, 30),
-    end: new Date(2026, 5, 20, 11, 30),
+    start: new Date('2026-06-20T08:30:00.000Z'),
+    end: new Date('2026-06-20T09:30:00.000Z'),
     summary: 'KNC Studio – Klippning (Hassan)',
     location: 'KNC Studio, Geijersgatan 10, 411 34 Göteborg',
     description: 'Bokning hos Hassan · 350 kr',
@@ -32,10 +32,10 @@ describe('buildIcs', () => {
   it('escapes commas in LOCATION (the original prototype did not — the bug this fixes)', () => {
     expect(ics).toContain('LOCATION:KNC Studio\\, Geijersgatan 10\\, 411 34 Göteborg')
   })
-  it('formats DTSTAMP as UTC (Z) and DTSTART as local floating time', () => {
+  it('formats DTSTAMP, DTSTART, and DTEND as UTC (Z) timestamps', () => {
     expect(ics).toMatch(/DTSTAMP:\d{8}T\d{6}Z/)
-    expect(ics).toContain('DTSTART:20260620T103000')
-    expect(ics).toContain('DTEND:20260620T113000')
+    expect(ics).toContain('DTSTART:20260620T083000Z')
+    expect(ics).toContain('DTEND:20260620T093000Z')
   })
   it('neutralizes CRLF property-injection in a text field', () => {
     const evil = buildIcs({ ...event, summary: 'ok\r\nX-EVIL:1' })

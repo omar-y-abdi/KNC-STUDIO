@@ -16,6 +16,16 @@ describe('public booking rollout operations', () => {
     expect(runbook).toContain('db push --linked --yes --include-all')
   })
 
+  it('deploys the customer outbox contract before the retired-RPC cleanup', () => {
+    const runbook = readFileSync('docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', 'utf8')
+    const customerOutbox = runbook.indexOf('20260831222332_customer_access_outbox_ciphertext.sql')
+    const retirement = runbook.indexOf('database PR #48')
+
+    expect(customerOutbox).toBeGreaterThan(-1)
+    expect(retirement).toBeGreaterThan(customerOutbox)
+    expect(runbook).toContain('Merge/deploy PR #55 before database PR #48')
+  })
+
   it('smokes the current request-access action instead of removed lookup action', () => {
     const smoke = readFileSync('tools/smoke-live.mjs', 'utf8')
     expect(smoke).toContain("action: 'request_access'")

@@ -161,6 +161,10 @@ describe('Worker route policy', () => {
     const env = createEnv()
     const token = 'a'.repeat(64)
     expect(customerAccessTokenFromPath(`/${token}`)).toBe(token)
+    expect(customerAccessTokenFromPath(`/${token}/extra`)).toBeNull()
+    expect(customerAccessTokenFromPath(`/prefix/${token}`)).toBeNull()
+    expect(customerAccessTokenFromPath(`/${token}?campaign=mail`)).toBeNull()
+    expect(customerAccessTokenFromPath(`/${token.slice(1)}`)).toBeNull()
 
     const response = await worker.fetch(new Request(`https://bladeblendstudio.se/${token}`), env)
 
@@ -171,6 +175,15 @@ describe('Worker route policy', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    expect(env.requestedPaths).toEqual([])
+
+    const headResponse = await worker.fetch(
+      new Request(`https://bladeblendstudio.se/${token}`, { method: 'HEAD' }),
+      env,
+    )
+    expect(headResponse.status).toBe(302)
+    expect(headResponse.headers.get('Cache-Control')).toBe('no-store')
+    expect(await headResponse.text()).toBe('')
     expect(env.requestedPaths).toEqual([])
   })
 

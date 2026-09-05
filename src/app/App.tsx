@@ -19,7 +19,6 @@ import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome
 import { buildBusinessStructuredData } from '../site/business'
 import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
 import { paintViewport } from '../ui/paintViewport'
-import { PrivacyBanner } from '../site/PrivacyBanner'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
 import { DesktopSite } from './DesktopSite'
@@ -353,7 +352,6 @@ export function App(): JSX.Element {
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
-        <PrivacyBanner lang={lang} dark={dark} />
       </>
     )
   }
@@ -382,7 +380,6 @@ export function App(): JSX.Element {
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
-      <PrivacyBanner lang={lang} dark={dark} />
     </>
   )
 }
