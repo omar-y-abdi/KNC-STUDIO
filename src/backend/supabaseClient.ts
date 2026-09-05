@@ -33,7 +33,7 @@ export function getSupabase(): SupabaseClient {
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: false },
       global: {
-        fetch: (input, init) => fetch(input, { ...init, credentials: 'include' }),
+        fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
       },
     })
   }

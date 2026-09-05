@@ -334,14 +334,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (existingSession !== null) {
       sessionHash = await sha256(existingSession)
     } else if (parsed.accessToken !== undefined) {
-      const sessionToken = createOpaqueToken()
-      const established = await service.rpc('establish_customer_booking_session', {
-        p_access_token: parsed.accessToken,
-        p_session_hash: await sha256(sessionToken),
+      const candidateHash = await sha256(parsed.accessToken)
+      const candidateScope = await service.rpc('customer_booking_access_scope', {
+        p_session_hash: candidateHash,
       })
-      if (established.error || established.data !== true)
-        return json(req, { ok: false, error: 'no_booking' })
-      sessionHash = await sha256(sessionToken)
+      if (candidateScope.error) return json(req, { ok: false, error: 'system' }, 500)
+      if (scopePhone(candidateScope.data) !== null) {
+        // Integration/non-browser callers may already hold a short-lived session token.
+        sessionHash = candidateHash
+      } else {
+        const sessionToken = createOpaqueToken()
+        const established = await service.rpc('establish_customer_booking_session', {
+          p_access_token: parsed.accessToken,
+          p_session_hash: await sha256(sessionToken),
+        })
+        if (established.error || established.data !== true)
+          return json(req, { ok: false, error: 'no_booking' })
+        sessionHash = await sha256(sessionToken)
+      }
     }
     if (sessionHash === null) return json(req, { ok: false, error: 'no_booking' })
     const scope = await service.rpc('customer_booking_access_scope', {
