@@ -41,11 +41,16 @@ export const supabaseReviewsAdapter: ReviewsPort = {
     }
   },
 
-  async submit(review: ValidReview, turnstileToken: string): Promise<ReviewResult> {
+  async submit(
+    review: ValidReview,
+    turnstileToken: string,
+    accessToken?: string,
+  ): Promise<ReviewResult> {
     try {
       const { data, failed } = await invokePublicBookingAction({
         action: 'review',
         phone: review.phone,
+        ...(accessToken === undefined ? {} : { accessToken }),
         rating: review.rating,
         text: review.text,
         turnstileToken,

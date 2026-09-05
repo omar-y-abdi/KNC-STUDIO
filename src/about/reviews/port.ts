@@ -9,5 +9,10 @@ export interface ReviewsPort {
   /** The reviews to show on first render (seed/placeholder data for the mock). */
   list(): Promise<readonly Review[]>
   /** Submit a validated review; resolves with the stored item (or a domain error). */
-  submit(review: ValidReview, turnstileToken: string): Promise<ReviewResult>
+  submit(
+    review: ValidReview,
+    turnstileToken: string,
+    /** Optional non-browser transport override used by integration adapters; browsers use HttpOnly cookie. */
+    accessToken?: string,
+  ): Promise<ReviewResult>
 }

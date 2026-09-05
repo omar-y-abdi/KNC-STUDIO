@@ -2,7 +2,7 @@
 // proves possession of the booking email, and the submitted phone must match that session's scope.
 // The tests seed the server-side session directly, then drive the real browser adapter + Edge gateway.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
 import type { Phone } from '../../src/booking/validation'
 import {
@@ -13,25 +13,26 @@ import {
   uniquePhone,
   uniqueReviewMarker,
 } from './_helpers'
-import {
-  memorySessionStorage,
-  seedCustomerAccessSession,
-  seedReviewableBooking,
-} from './reviewAccessHelpers'
+import { seedCustomerAccessSession, seedReviewableBooking } from './reviewAccessHelpers'
+
+let sessionCookieToken: string | null = null
 
 async function authorizeReview(dbUrl: string, phone: string, email: string): Promise<void> {
-  await seedCustomerAccessSession(dbUrl, { phone, email })
+  sessionCookieToken = await seedCustomerAccessSession(dbUrl, { phone, email })
+}
+
+function submitReview(
+  review: Parameters<typeof supabaseReviewsAdapter.submit>[0],
+  turnstileToken: string,
+): ReturnType<typeof supabaseReviewsAdapter.submit> {
+  return supabaseReviewsAdapter.submit(review, turnstileToken, sessionCookieToken ?? undefined)
 }
 
 describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
   beforeEach(async () => {
-    vi.stubGlobal('sessionStorage', memorySessionStorage())
+    sessionCookieToken = null
     const env = readStackEnv()
     if (env) await truncateAll(env.dbUrl)
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
   })
 
   it('an email-authorized finished booking publishes once with the server-derived name', async () => {
@@ -48,7 +49,7 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     await authorizeReview(env.dbUrl, phone, email)
 
     const marker = uniqueReviewMarker()
-    const submitted = await supabaseReviewsAdapter.submit(
+    const submitted = await submitReview(
       {
         phone: phone as Phone,
         rating: 5,
@@ -66,7 +67,7 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     expect(found).toBeDefined()
     expect(found?.name).toBe('Anna A.')
 
-    const second = await supabaseReviewsAdapter.submit(
+    const second = await submitReview(
       {
         phone: phone as Phone,
         rating: 4,
@@ -86,7 +87,7 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     const email = `none-${uniqueReviewMarker()}@example.test`
     await authorizeReview(env.dbUrl, phone, email)
 
-    const result = await supabaseReviewsAdapter.submit(
+    const result = await submitReview(
       {
         phone: phone as Phone,
         rating: 5,
@@ -118,13 +119,13 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     })
 
     await authorizeReview(env.dbUrl, olderPhone, olderEmail)
-    const first = await supabaseReviewsAdapter.submit(
+    const first = await submitReview(
       { phone: olderPhone as Phone, rating: 4, text: 'old' },
       TURNSTILE_TEST_TOKEN,
     )
 
     await authorizeReview(env.dbUrl, newerPhone, newerEmail)
-    const second = await supabaseReviewsAdapter.submit(
+    const second = await submitReview(
       { phone: newerPhone as Phone, rating: 5, text: 'new' },
       TURNSTILE_TEST_TOKEN,
     )
