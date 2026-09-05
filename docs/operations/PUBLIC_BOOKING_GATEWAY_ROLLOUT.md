@@ -76,6 +76,7 @@ For the current baseline, the Expand set is exactly:
 - `20260901014248_relocate_btree_gist_to_extensions.sql`
 - `20260902005645_calendar_reassignment_cleanup.sql`
 - `20260905154608_customer_http_only_session.sql`
+- `20260902010333_update_confirm_sent_secure_link_copy.sql`
 
 The Contract set adds exactly these three irreversible retirements:
 
@@ -102,7 +103,7 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-The dry run must show only the seven explicit Expand migrations above as pending after the verified
+The dry run must show only the eight explicit Expand migrations above as pending after the verified
 baseline. The three retirement migrations must not be applied in this phase. The staging harness uses
 the same selector and asserts that already-live gateway denial coexists with service-role gateway
 execution:
@@ -199,7 +200,7 @@ data cleanup are separate operator approvals and are not proven by this reposito
 
 Stage the final migration set through the same explicit manifest. `--include-all` is required here
 because the three reviewed retirement files are older than the later Expand files. It is safe only
-against this staged tree, which contains the verified baseline, the seven explicit Expand migrations,
+against this staged tree, which contains the verified baseline, the eight explicit Expand migrations,
 and the three explicit retirement migrations. Never use it against the source tree or an unrestricted
 working directory:
 
@@ -212,7 +213,7 @@ npx supabase link --project-ref "$PROJECT_REF" --workdir "$contract_root"
 npx supabase db push --linked --dry-run --include-all --workdir "$contract_root"
 ```
 
-The staged Contract tree must contain exactly the seven Expand migrations above plus these three
+The staged Contract tree must contain exactly the eight Expand migrations above plus these three
 retirements; if anything else is pending, stop and review the linked history and rebase state:
 
 ```text

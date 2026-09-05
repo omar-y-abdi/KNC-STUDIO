@@ -13,6 +13,7 @@ describe('public booking rollout operations', () => {
     '20260901014248_relocate_btree_gist_to_extensions.sql',
     '20260902005645_calendar_reassignment_cleanup.sql',
     '20260905154608_customer_http_only_session.sql',
+    '20260902010333_update_confirm_sent_secure_link_copy.sql',
   ]
   const contractAfterBaseline = [
     ...expandAfterBaseline,
