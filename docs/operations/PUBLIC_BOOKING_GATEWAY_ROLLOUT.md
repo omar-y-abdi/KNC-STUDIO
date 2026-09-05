@@ -8,7 +8,8 @@ the three superseded contracts only at the final step.
 
 PR #55 / #42 must be merged and deployed before PR #56. Its
 `20260831222332_customer_access_outbox_ciphertext.sql` migration changes the customer-access payload
-contract; PR #56 then retires the old overloads. Applying #56 first and #55 afterward would recreate a
+contract and is staged explicitly with PR #56; PR #56 then retires the old overloads. Applying #56 first
+and #55 afterward would recreate a
 function that #56 removes. Merge/deploy PR #55 before database PR #48; customer outbox encryption must
 exist before database contract retirement. This checkout does not contain #55, so after #55 merges/deploys, rebase this
 branch, refresh the linked-baseline evidence and rerun the complete rollout checks. Reverse deployment
@@ -68,6 +69,7 @@ and the migration fails closed if the map, token, or account-identity evidence i
 
 For the current baseline, the Expand set is exactly:
 
+- `20260831222332_customer_access_outbox_ciphertext.sql`
 - `20260831220511_decimal_service_prices_and_duration_contract.sql`
 - `20260831221442_service_ordering_contract.sql`
 - `20260901013601_calendar_customer_contact_payload.sql`
@@ -100,7 +102,7 @@ npx supabase db push --linked --dry-run --workdir "$stage_root"
 npx supabase db push --linked --yes --workdir "$stage_root"
 ```
 
-The dry run must show only the six explicit Expand migrations above as pending after the verified
+The dry run must show only the seven explicit Expand migrations above as pending after the verified
 baseline. The three retirement migrations must not be applied in this phase. The staging harness uses
 the same selector and asserts that already-live gateway denial coexists with service-role gateway
 execution:
@@ -197,7 +199,7 @@ data cleanup are separate operator approvals and are not proven by this reposito
 
 Stage the final migration set through the same explicit manifest. `--include-all` is required here
 because the three reviewed retirement files are older than the later Expand files. It is safe only
-against this staged tree, which contains the verified baseline, the six explicit Expand migrations,
+against this staged tree, which contains the verified baseline, the seven explicit Expand migrations,
 and the three explicit retirement migrations. Never use it against the source tree or an unrestricted
 working directory:
 
@@ -210,7 +212,7 @@ npx supabase link --project-ref "$PROJECT_REF" --workdir "$contract_root"
 npx supabase db push --linked --dry-run --include-all --workdir "$contract_root"
 ```
 
-The staged Contract tree must contain exactly the six Expand migrations above plus these three
+The staged Contract tree must contain exactly the seven Expand migrations above plus these three
 retirements; if anything else is pending, stop and review the linked history and rebase state:
 
 ```text

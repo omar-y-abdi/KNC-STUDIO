@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 describe('public booking rollout operations', () => {
   const expandAfterBaseline = [
+    '20260831222332_customer_access_outbox_ciphertext.sql',
     '20260831220511_decimal_service_prices_and_duration_contract.sql',
     '20260831221442_service_ordering_contract.sql',
     '20260901013601_calendar_customer_contact_payload.sql',
