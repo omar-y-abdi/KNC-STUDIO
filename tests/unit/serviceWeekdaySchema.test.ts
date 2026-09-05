@@ -28,4 +28,16 @@ describe('service weekday wire contracts', () => {
     expect(serviceRow.safeParse(unsorted).success).toBe(false)
     expect(publicServiceRow.safeParse(unsorted).success).toBe(false)
   })
+
+  it('rejects fractional or out-of-range service durations and positions', () => {
+    for (const duration_min of [4.1, 4, 601, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(serviceRow.safeParse({ ...service, duration_min }).success).toBe(false)
+      expect(publicServiceRow.safeParse({ ...service, duration_min }).success).toBe(false)
+    }
+
+    for (const sort_order of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(serviceRow.safeParse({ ...service, sort_order }).success).toBe(false)
+      expect(publicServiceRow.safeParse({ ...service, sort_order }).success).toBe(false)
+    }
+  })
 })

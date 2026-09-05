@@ -60,6 +60,20 @@ describe('customer booking access links', () => {
     expect(migration).toContain("'lang', payload->'lang'")
   })
 
+  it('uses an opaque HttpOnly session cookie rather than browser storage for return visits', () => {
+    const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
+    const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
+    const client = readFileSync('src/backend/supabaseClient.ts', 'utf8')
+    expect(gateway).toContain('__Host-bladeblend_customer_session')
+    expect(gateway).toContain('HttpOnly; Secure; SameSite=Lax')
+    expect(gateway).toContain('sessionCookie(req)')
+    expect(gateway).not.toContain('customer_email')
+    expect(adapter).not.toContain('sessionStorage')
+    expect(client).toContain("credentials: 'include'")
+    expect(gateway).toContain('establish_customer_booking_session')
+    expect(gateway).not.toContain('Set-Cookie: ${CUSTOMER_SESSION_COOKIE}=${accessToken}')
+  })
+
   it('uses permanent root links in access and booking-confirmation email paths', () => {
     const accessWorker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
     const confirmationWorker = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')

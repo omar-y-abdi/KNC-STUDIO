@@ -24,11 +24,17 @@ export interface MyBookings {
   readonly past: readonly MyBooking[]
 }
 
+export interface CustomerProfile {
+  readonly name: string
+  readonly phone: string
+  readonly email: string
+}
+
 /**
  * Result of listing email-scoped customer bookings.
  */
 export type MyBookingsResult =
-  | { readonly ok: true; readonly bookings: MyBookings }
+  | { readonly ok: true; readonly bookings: MyBookings; readonly profile: CustomerProfile }
   | { readonly ok: false; readonly error: 'access_denied' | 'system' }
 
 /** Result of cancelling one upcoming booking. */

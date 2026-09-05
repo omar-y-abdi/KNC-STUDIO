@@ -54,6 +54,20 @@ describe('business structured data', () => {
     ])
   })
 
+  it('retains decimal service prices in the public price range', () => {
+    const data = buildBusinessStructuredData(
+      DEFAULT_BUSINESS,
+      {
+        barbers: [{ id: 'ada', name: 'Ada' }],
+        services: [{ id: 'decimal', barberId: 'ada', price: 199.99 }],
+        schedules: [],
+      },
+      'https://example.com',
+    )
+
+    expect(data.priceRange).toBe('199.99 kr')
+  })
+
   it('omits unsupported dynamic claims instead of inventing defaults', () => {
     const data = buildBusinessStructuredData(
       DEFAULT_BUSINESS,

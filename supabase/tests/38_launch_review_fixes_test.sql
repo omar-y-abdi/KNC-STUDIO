@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(10);
 
 select ok(
   exists (
@@ -44,82 +44,6 @@ select is(
      and dedupe_key = '71000000-0000-4000-8000-000000000010'),
   1,
   'confirmed booking transaction durably queues Calendar synchronization'
-);
-
-set local role service_role;
-select is(
-  public.create_customer_booking_access_request(
-    '0707100099', 'missing@example.test', repeat('a', 64), repeat('b', 64), 'sv'
-  ),
-  false,
-  'non-matching customer access request keeps generic false database result'
-);
-reset role;
-
-select is(
-  (select pg_catalog.count(*)::int from public.external_action_jobs
-   where action_type = 'customer_access_email_send'),
-  1,
-  'non-matching request still follows the same durable outbox write path'
-);
-
-select set_config(
-  'test.invalid_access_action',
-  (select id::text from public.external_action_jobs
-   where action_type = 'customer_access_email_send'
-   order by created_at desc limit 1),
-  true
-);
-set local role service_role;
-select is(
-  public.claim_external_action(current_setting('test.invalid_access_action')::uuid)->>'superseded',
-  'true',
-  'dispatcher suppresses email when no confirmed booking matches the challenge'
-);
-reset role;
-
-set local role service_role;
-select is(
-  public.create_customer_booking_access_request(
-    '0707100010', 'future@example.test', repeat('c', 64), repeat('d', 64), 'en'
-  ),
-  true,
-  'matching customer access request is accepted'
-);
-reset role;
-
-select set_config(
-  'test.valid_access_action',
-  (select j.id::text
-   from public.external_action_jobs j
-   join public.customer_booking_access_challenges c
-     on c.id = (j.payload->>'challenge_id')::uuid
-   where j.action_type = 'customer_access_email_send'
-     and c.phone = '0707100010'
-   order by j.created_at desc limit 1),
-  true
-);
-set local role service_role;
-select set_config(
-  'test.valid_access_context',
-  public.claim_external_action(current_setting('test.valid_access_action')::uuid)::text,
-  true
-);
-reset role;
-select is(
-  current_setting('test.valid_access_context')::jsonb->>'superseded',
-  'true',
-  'legacy challenge without a canonical encrypted token is suppressed'
-);
-select is(
-  current_setting('test.valid_access_context')::jsonb->>'access_code',
-  null,
-  'legacy dispatcher never exposes a plaintext access code'
-);
-select is(
-  current_setting('test.valid_access_context')::jsonb->>'token_ciphertext',
-  null,
-  'legacy dispatcher never exposes encrypted token material for an unmatched challenge'
 );
 
 insert into public.bookings

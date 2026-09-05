@@ -31,7 +31,8 @@ import type { ServicesPort } from './servicesPort'
 import { useRoster } from './useRoster'
 import { parseContact } from './validation'
 import type { FieldErrors } from './validation'
-import { buildBookingStyles, makeNavBtn, makeTab, palette } from './bookingStyles'
+import type { CustomerProfile } from '../mybookings/domain'
+import { buildBookingStyles, makeNavBtn, palette } from './bookingStyles'
 import { Turnstile, turnstileConfigured } from './Turnstile'
 import { DetailsDialog } from './DetailsDialog'
 import { ConfirmationDialog } from './ConfirmationDialog'
@@ -47,7 +48,6 @@ export interface BookingFlowProps {
   readonly mode?: Mode
   readonly defaultLang?: Lang
   readonly showDirections?: boolean
-  readonly showHeader?: boolean
   /** Injected clock — "today" comes from here, never `new Date()` (default: env-selected). */
   readonly clock?: Clock
   /** Injected submit seam (default: env-selected; local adapter when no backend is configured). */
@@ -62,6 +62,7 @@ export interface BookingFlowProps {
   readonly popupText?: BookingPopupText
   /** Current owner-managed business identity used by confirmation calendar/map links. */
   readonly business?: BusinessSettings
+  readonly initialContact?: CustomerProfile
 }
 
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
@@ -87,6 +88,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const setState = (
     u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
+  useEffect(() => {
+    if (props.initialContact === undefined) return
+    setState({ form: { ...props.initialContact } })
+  }, [props.initialContact])
   const reset = (): void => {
     setResult(null)
     setFieldErrors(NO_FIELD_ERRORS)
@@ -129,7 +134,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   }
   const dark = (props.mode ?? 'light') === 'dark'
   const showDirections = props.showDirections !== false
-  const showHeader = props.showHeader !== false
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
   const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
@@ -183,7 +187,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   }, [port, S.barberId, S.dateIso, serviceDur, serviceId])
 
   const c = palette(dark)
-  const tab = makeTab(c)
   const navBtn = makeNavBtn(c)
 
   const barbers = roster.map((entry) => {
@@ -514,25 +517,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
 
   return (
     <div style={s.rootStyle}>
-      {showHeader ? (
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px 0 22px;">
-          <div style="display:flex;align-items:baseline;gap:8px;">
-            <span style="font-family:'Inter Variable';font-weight:700;letter-spacing:1.5px;font-size:15px;">
-              BLADE & BLEND STUDIO
-            </span>
-            <span style="font-size:11px;opacity:.5;letter-spacing:.3px;">Göteborg</span>
-          </div>
-          <div style={s.tabWrapStyle}>
-            <button onClick={() => setState({ lang: 'sv' })} style={tab(lang === 'sv')}>
-              SV
-            </button>
-            <button onClick={() => setState({ lang: 'en' })} style={tab(lang === 'en')}>
-              EN
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <div style="padding: 18px 22px 26px 22px">
         <div data-testid="booking-step-barber">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">

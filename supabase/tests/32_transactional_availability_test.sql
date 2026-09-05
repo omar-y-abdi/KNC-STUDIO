@@ -40,7 +40,7 @@ select ok(
   'core booking writer owns the shared availability lock'
 );
 select ok(
-  pg_catalog.pg_get_functiondef('public.admin_create_booking(text,timestamptz,integer,text,integer,text,text)'::regprocedure)
+  pg_catalog.pg_get_functiondef('public.admin_create_booking(text,timestamptz,integer,text,numeric,text,text)'::regprocedure)
     like '%availability:%',
   'manual booking writer owns the shared availability lock'
 );

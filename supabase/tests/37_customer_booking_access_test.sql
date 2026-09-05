@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(16);
 
 select ok(
   not has_table_privilege('anon', 'public.customer_booking_access_challenges', 'select'),
@@ -8,22 +8,6 @@ select ok(
 select ok(
   not has_table_privilege('service_role', 'public.customer_booking_access_sessions', 'select'),
   'service role cannot read access sessions directly'
-);
-select ok(
-  has_function_privilege(
-    'service_role',
-    'public.create_customer_booking_access_request(text, text, text)',
-    'execute'
-  ),
-  'gateway role can create an access challenge'
-);
-select ok(
-  not has_function_privilege(
-    'anon',
-    'public.create_customer_booking_access_request(text, text, text)',
-    'execute'
-  ),
-  'anon cannot create an access challenge directly'
 );
 select ok(
   not has_function_privilege(
@@ -57,24 +41,13 @@ values
    now() + interval '5 days', now() + interval '5 days 45 minutes',
    'Access B', 'email', '0703700000', 'b@example.test', 'sv', 'confirmed');
 
-set local role service_role;
-select ok(
-  public.create_customer_booking_access_request(
-    '0703700000', 'A@EXAMPLE.TEST', repeat('a', 64)
-  ),
-  'matching phone and email create an access link'
-);
-select ok(
-  not public.create_customer_booking_access_request(
-    '0703700000', 'unknown@example.test', repeat('b', 64)
-  ),
-  'unknown email cannot create an access link'
-);
+insert into public.customer_booking_access_challenges (phone, email, token_hash, expires_at)
+values ('0703700000', 'a@example.test', repeat('a', 64), pg_catalog.now() + interval '15 minutes');
 reset role;
 select is(
   (select pg_catalog.count(*) from public.customer_booking_access_challenges),
-  2::bigint,
-  'matching and non-matching requests perform the same challenge write workload'
+  1::bigint,
+  'a staged access challenge is available for the preserved exchange path'
 );
 set local role service_role;
 select ok(

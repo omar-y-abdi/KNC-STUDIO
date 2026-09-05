@@ -4,6 +4,7 @@ import type {
   BookingStrings,
   CalendarLabels,
   MyBookingsStrings,
+  PrivacyStrings,
 } from './index'
 
 // English strings.
@@ -72,6 +73,22 @@ export const appEn: AppStrings = {
   lazyMyBookingsLoading: 'Loading appointments …',
   lazyMyBookingsError: 'Could not load appointments.',
   lazyReload: 'Reload',
+}
+
+export const privacyEn: PrivacyStrings = {
+  title: 'Privacy and storage',
+  lead: 'We use no analytics or advertising storage. You can choose whether we may remember your storage choice.',
+  privacyLink: 'Read the privacy policy',
+  accept: 'Accept optional storage',
+  reject: 'Reject optional storage',
+  preferences: 'Preferences',
+  save: 'Save choices',
+  functionalTitle: 'Optional storage',
+  functionalLead: 'Used only to remember your storage choice; no phone number is stored.',
+  necessary:
+    'After a valid email link, a necessary secure session cookie keeps you signed in. Without cookies, My appointments cannot sign you in automatically.',
+  manage: 'Privacy',
+  manageLabel: 'Manage privacy preferences',
 }
 
 export const aboutEn: AboutStrings = {

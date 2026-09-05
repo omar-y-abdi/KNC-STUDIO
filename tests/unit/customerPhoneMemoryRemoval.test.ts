@@ -7,39 +7,37 @@ const retainedSources = [
   'src/i18n/sv.ts',
   'src/i18n/en.ts',
   'src/mybookings/adapters/supabaseMyBookings.ts',
+  'src/site/PrivacyBanner.tsx',
+  'src/site/storageConsent.ts',
   'public/privacy.html',
 ] as const
 
 describe('customer phone-memory removal contract', () => {
-  it('ships no remembered-phone consent or cookie flow', () => {
+  it('keeps privacy controls while removing remembered-phone semantics', () => {
     for (const path of retainedSources) {
       const source = readFileSync(path, 'utf8')
 
-      expect(source, path).not.toContain('PrivacyBanner')
-      expect(source, path).not.toContain('storageConsent')
       expect(source, path).not.toContain('bladeblend_mybookings_phone')
-      expect(source, path).not.toContain('bladeblend_storage_preferences')
-      expect(source, path).not.toContain('functional-storage')
-      expect(source, path).not.toContain('rememberPhone')
     }
+    expect(readFileSync('src/app/App.tsx', 'utf8')).toContain('PrivacyBanner')
+    expect(readFileSync('src/site/storageConsent.ts', 'utf8')).toContain(
+      'bladeblend_storage_preferences',
+    )
+    expect(readFileSync('src/site/PrivacyBanner.tsx', 'utf8')).toContain('functional-storage')
   })
 
-  it('keeps the public smoke consent-free after the storage-consent removal', () => {
+  it('keeps public smoke free of phone-memory while privacy controls remain mounted', () => {
     const smoke = readFileSync('tools/e2e/smoke.mjs', 'utf8')
 
-    expect(smoke).not.toContain('PrivacyBanner')
-    expect(smoke).not.toContain('Avvisa valfri lagring')
-    expect(smoke).not.toContain('Manage privacy preferences')
-    expect(smoke).not.toContain('functional-storage')
-    expect(smoke).not.toContain('bladeblend_storage_preferences')
+    expect(smoke).not.toContain('bladeblend_mybookings_phone')
+    expect(readFileSync('src/app/App.tsx', 'utf8')).toContain('PrivacyBanner')
+    expect(readFileSync('src/site/PrivacyBanner.tsx', 'utf8')).toContain('functional-storage')
   })
 
   it('retains only same-tab access-token handling for authorized My Bookings use', () => {
-    const session = readFileSync('src/mybookings/customerAccessSession.ts', 'utf8')
     const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
 
-    expect(session).toContain('sessionStorage')
-    expect(session).not.toContain('localStorage')
-    expect(adapter).toContain('rememberCustomerAccessToken')
+    expect(adapter).not.toContain('rememberCustomerAccessToken')
+    expect(adapter).not.toContain('sessionStorage')
   })
 })

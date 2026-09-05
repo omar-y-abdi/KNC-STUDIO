@@ -33,6 +33,7 @@ const LIMITS: Readonly<Record<'request_access' | 'review', Limit>> = {
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
+const CUSTOMER_SESSION_COOKIE = '__Host-bladeblend_customer_session'
 
 function allowedOrigins(): readonly string[] {
   const configured = Deno.env.get('PUBLIC_SITE_ORIGINS')
@@ -50,6 +51,7 @@ function corsHeaders(req: Request): Record<string, string> {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
     Vary: 'Origin',
   }
 }
@@ -59,11 +61,25 @@ function originAllowed(req: Request): boolean {
   return origin === null || allowedOrigins().includes(origin)
 }
 
-function json(req: Request, body: unknown, status = 200): Response {
+function json(req: Request, body: unknown, status = 200, extra?: HeadersInit): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(req), 'content-type': 'application/json' },
+    headers: { ...corsHeaders(req), 'content-type': 'application/json', ...extra },
   })
+}
+
+function sessionCookie(req: Request): string | null {
+  const cookie = req.headers.get('cookie') ?? ''
+  const match = cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${CUSTOMER_SESSION_COOKIE}=`))
+  const value = match?.slice(CUSTOMER_SESSION_COOKIE.length + 1) ?? null
+  return opaqueToken(value) ? value : null
+}
+
+function sessionCookieHeader(token: string): string {
+  return `${CUSTOMER_SESSION_COOKIE}=${token}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
 }
 
 function isAction(value: unknown): value is Action {
@@ -111,14 +127,22 @@ function parseBody(raw: unknown): ParsedAction | null {
   }
 
   if (body.action === 'list') {
-    return opaqueToken(body.accessToken)
-      ? { action: body.action, accessToken: body.accessToken }
+    return body.accessToken === undefined || opaqueToken(body.accessToken)
+      ? {
+          action: body.action,
+          ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
+        }
       : null
   }
 
   if (body.action === 'cancel') {
-    return opaqueToken(body.accessToken) && isBookingId(body.bookingId)
-      ? { action: body.action, accessToken: body.accessToken, bookingId: body.bookingId }
+    return (body.accessToken === undefined || opaqueToken(body.accessToken)) &&
+      isBookingId(body.bookingId)
+      ? {
+          action: body.action,
+          ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
+          bookingId: body.bookingId,
+        }
       : null
   }
 
@@ -132,14 +156,14 @@ function parseBody(raw: unknown): ParsedAction | null {
 
   const phone = normalizePhone(body.phone)
   if (phone === null || typeof body.turnstileToken !== 'string') return null
-  if (!opaqueToken(body.accessToken)) return null
+  if (body.accessToken !== undefined && !opaqueToken(body.accessToken)) return null
   if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
     return null
   if (typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 1000) return null
   return {
     action: body.action,
     phone,
-    accessToken: body.accessToken,
+    ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
     rating: Number(body.rating),
     text: body.text,
     turnstileToken: body.turnstileToken,
@@ -258,12 +282,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json(req, { ok: false, error: 'system' }, 500)
     }
     return data === true
-      ? json(req, { ok: true, access_token: accessToken })
+      ? json(req, { ok: true }, 200, { 'Set-Cookie': sessionCookieHeader(accessToken) })
       : json(req, { ok: false, error: 'invalid' })
   }
 
   if (parsed.action === 'list' || parsed.action === 'cancel') {
-    const accessHash = await sha256(parsed.accessToken ?? '')
+    const existingSession = sessionCookie(req)
+    let sessionToken = existingSession
+    let setCookie: string | undefined
+    if (sessionToken === null && parsed.accessToken !== undefined) {
+      sessionToken = createOpaqueToken()
+      const established = await service.rpc('establish_customer_booking_session', {
+        p_access_token: parsed.accessToken,
+        p_session_hash: await sha256(sessionToken),
+      })
+      if (established.error || established.data !== true) {
+        return json(req, { ok: false, error: 'access_denied' })
+      }
+      setCookie = sessionCookieHeader(sessionToken)
+    }
+    if (sessionToken === null) return json(req, { ok: false, error: 'access_denied' })
+    const accessHash = await sha256(sessionToken)
     const result =
       parsed.action === 'list'
         ? await service.rpc('list_customer_bookings_with_access', { p_session_hash: accessHash })
@@ -275,7 +314,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error(`public-booking-actions: ${parsed.action} access RPC failed`, result.error.code)
       return json(req, { ok: false, error: 'system' }, 500)
     }
-    return json(req, result.data)
+    return json(
+      req,
+      result.data,
+      200,
+      setCookie === undefined ? undefined : { 'Set-Cookie': setCookie },
+    )
   }
 
   const phone = parsed.phone ?? ''
@@ -286,7 +330,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let sessionHash: string | null = null
   if (parsed.action === 'review') {
-    sessionHash = await sha256(parsed.accessToken ?? '')
+    const existingSession = sessionCookie(req)
+    if (existingSession !== null) {
+      sessionHash = await sha256(existingSession)
+    } else if (parsed.accessToken !== undefined) {
+      const candidateHash = await sha256(parsed.accessToken)
+      const candidateScope = await service.rpc('customer_booking_access_scope', {
+        p_session_hash: candidateHash,
+      })
+      if (candidateScope.error) return json(req, { ok: false, error: 'system' }, 500)
+      if (scopePhone(candidateScope.data) !== null) {
+        // Integration/non-browser callers may already hold a short-lived session token.
+        sessionHash = candidateHash
+      } else {
+        const sessionToken = createOpaqueToken()
+        const established = await service.rpc('establish_customer_booking_session', {
+          p_access_token: parsed.accessToken,
+          p_session_hash: await sha256(sessionToken),
+        })
+        if (established.error || established.data !== true)
+          return json(req, { ok: false, error: 'no_booking' })
+        sessionHash = await sha256(sessionToken)
+      }
+    }
+    if (sessionHash === null) return json(req, { ok: false, error: 'no_booking' })
     const scope = await service.rpc('customer_booking_access_scope', {
       p_session_hash: sessionHash,
     })

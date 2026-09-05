@@ -1,6 +1,6 @@
 # CODEBASE-MAP.md
 
-> **Scope of truth:** checked-in repository state on this branch. For DB behavior, **later migrations override earlier migrations**. Live state outside git - Supabase Dashboard Database Webhooks, Vault values, deployed secrets, DNS, Resend domain status, Google OAuth config/provider health - must be verified in the platform when relevant.
+> **Scope of truth:** checked-in state of `launch/integration-readiness` represented by the supplied repository snapshot. For DB behavior, **later migrations override earlier migrations**. Live state outside git - Supabase Dashboard Database Webhooks, Vault values, deployed secrets, DNS, Resend domain status, Google OAuth config/provider health - must be verified in the platform when relevant.
 >
 > **Coverage note:** This revision condenses the verified repository map for faster agent navigation while preserving the important ownership, authority, contract, security, test, and operational boundaries.
 
@@ -21,13 +21,13 @@
 
 `current implementation + latest applicable migration` → `tests exercising it` → `current runbooks` → `general docs/function READMEs` → `historical reviews`.
 
-Historical notes: **§12**.
+Known drift: **§12**.
 
 ### Hard invariants - do not violate casually
 
 | Area                 | Invariant                                                                                                                                                                                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commercial authority | Booking price/duration/service identity and configured service weekdays are re-resolved from active `public.services`; browser copies are display/input hints only.                                                                                           |
+| Commercial authority | Booking price/duration/service identity and configured service weekdays are re-resolved from active `public.services`; prices are exact numeric SEK values (maximum two decimals), and browser copies are display/input hints only.                           |
 | Availability         | `available_slots()` is live read authority; write-time authority is `create_booking()` + barber advisory locking + schedule/time-off/one-off/recurring-break checks + confirmed-booking GiST exclusion. A returned slot is not a reservation.                 |
 | Time                 | Business timezone is `Europe/Stockholm`; preserve explicit Stockholm wall-clock conversion across DST.                                                                                                                                                        |
 | Public privilege     | Public mutation/lookup RPCs stay behind `submit-booking` / `public-booking-actions`; do not casually regrant direct anon execution.                                                                                                                           |
@@ -37,17 +37,17 @@ Historical notes: **§12**.
 | Mutation model       | Hybrid writes are intentional: simple owner/barber CRUD may be direct PostgREST+RLS; transactional/sensitive/cross-row operations are RPC/Edge-only. Determine the path before changing grants.                                                               |
 | Media                | Gallery/photo/homepage-logo metadata + Storage lifecycle remain server-coordinated through `upload-image` + internal RPCs + cleanup outbox; do not restore direct browser media writes/deletes.                                                               |
 | Email                | Booking email jobs and 24h reminders are **separate ledgers and dispatchers**. Auth email bypasses both and sends directly through Resend.                                                                                                                    |
-| External actions     | `external_action_jobs` is durable but not universal: Calendar insert/update/cancel/delete/disconnect use the durable Calendar actions; booking mail has its own ledger; auth mail is direct; image upload is synchronous.                                     |
-| Calendar             | Confirmed booking insert/update queues `calendar_event_sync` through the durable trigger/outbox; cancellation/delete/disconnect use the same durable outbox. The legacy Dashboard webhook is retired by a guarded forward migration.                          |
+| External actions     | `external_action_jobs` is durable but not universal: Calendar insert/update and cleanup use the outbox; booking mail has its own ledger; auth mail is direct; image upload is synchronous.                                                                    |
+| Calendar             | Normal insert/update sync is queued transactionally in `external_action_jobs`; an existing Dashboard Database Webhook may requeue the compatibility endpoint. Cancellation/delete/disconnect cleanup uses the same outbox.                                    |
 | Secrets              | Every `VITE_*` value is public. Never move service-role keys, Turnstile secret, OAuth client secret, webhook secret, salts, or Resend key into frontend config.                                                                                               |
-| Schema               | Change DB schema/grants/policies/RPCs through migrations. Evaluate effective state after all later revokes/policy replacements.                                                                                                                               |
+| Schema               | Change DB schema/grants/policies/RPCs through migrations. `btree_gist` lives in `extensions`; `bookings_no_overlap` remains the authoritative GiST exclusion. Evaluate effective state after all later revokes/policy replacements.                           |
 | Discovery            | Public business discovery is explicitly whitelisted; add facts deliberately rather than exposing internal tables.                                                                                                                                             |
 | Supabase clients     | Keep public and admin clients isolated: public `persistSession=false`; admin owns persisted `knc-admin-auth`.                                                                                                                                                 |
 | Tests                | Match evidence to claim. Adapter/unit tests do not prove ImageMagick pixels, third-party provider state, Dashboard webhooks, or other live behavior.                                                                                                          |
 | Deployment           | Live webhooks, Vault values, secrets, OAuth/DNS/domain/provider state are outside git and require operational verification.                                                                                                                                   |
 | Availability edits   | Time-off, slot-block, and recurring-break records are add/delete, not in-place update. Preserve transactional add + RLS-scoped delete unless deliberately redesigning.                                                                                        |
 | Browser integrations | `public/_headers` CSP is part of runtime architecture; new browser origins require CSP/header review.                                                                                                                                                         |
-| Browser privacy      | `src/site/storageConsent.ts` records an explicit first-party storage choice. Optional Mina bokningar phone memory is off until `functional`; no analytics or advertising storage is present.                                                                  |
+| Browser privacy      | `src/site/storageConsent.ts` records an explicit first-party storage choice. Customer authorization uses only a server-set HttpOnly session cookie; no phone-memory, analytics, or advertising storage is present.                                            |
 | Domain changes       | `VITE_SITE_URL` alone is not the canonical-origin migration surface; see §9.8.                                                                                                                                                                                |
 | Map upkeep           | Update this map when ownership, important paths, RPC contracts, triggers, grants, runtime/deployment topology, or test authority changes.                                                                                                                     |
 
@@ -74,7 +74,8 @@ Browser
    ├─ PostgREST / Auth / Realtime / SECURITY DEFINER RPCs / Edge Functions
    ├─ bookings → email trigger → booking_email_delivery_jobs → cron → `send-confirmation` → Resend
    ├─ bookings → reminder trigger → booking_reminders → cron → `send-confirmation` → Resend
-   ├─ bookings → durable Calendar trigger → `external_action_jobs` → `external-cleanup` → Google Calendar
+   ├─ bookings → external_action_jobs → cron → `external-cleanup` → Google Calendar
+   │  └─ optional Dashboard DB Webhook → `calendar-sync` → same durable queue
    └─ cancellation/deletion/storage/auth lifecycle → external_action_jobs → cron → `external-cleanup`
       ├─ Storage
       ├─ Google Calendar
@@ -85,37 +86,38 @@ Browser
 
 ## 3. Repository Topology
 
-| Path                                    | Owns / contains                                                                                                       |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `src/main.tsx`                          | Browser mount; renders `<Root />`.                                                                                    |
-| `src/app/`                              | Public shells: `Root.tsx`, `App.tsx`, desktop/mobile hero scroll and booking fold.                                    |
-| `src/backend/`                          | Public backend seam: config, lazy public Supabase client, Zod wire schemas, public-action wrapper.                    |
-| `src/booking/`                          | Booking domain/UI: wizard, validation, Stockholm time, ICS/calendar links, mock slot packing.                         |
-| `src/booking/adapters/`                 | Booking availability plus shared DB-owned barber/photo/service catalog; live Supabase vs empty local/mock adapters.   |
-| `src/mybookings/`                       | Permanent customer-link request, appointment history/cancellation, formatting, consent-gated device cookie, adapters. |
-| `src/about/`                            | About CMS overlay, gallery, reviews/domain/gateway adapter.                                                           |
-| `src/site/`                             | Site chrome/facts, CMS, JSON-LD, Realtime, and browser-storage consent.                                               |
-| `src/admin/`                            | Authenticated admin client/auth lifecycle/shell/domain helpers.                                                       |
-| `src/admin/adapters/`                   | Admin booking/schedule/service/barber/CMS/media/email-template data access.                                           |
-| `src/admin/calendar/`                   | Calendar connection port/status/adapter/hook/UI.                                                                      |
-| `src/admin/views/`                      | Admin tabs: bookings, schedule, services, barbers, site, about, settings, mail, profile.                              |
-| `src/i18n/`                             | SV/EN public/admin strings.                                                                                           |
-| `src/ui/`                               | Shared dialog/logo/viewport/font/global-style primitives plus lazy-load boundaries and idle scheduling.               |
-| `src/worker.ts`                         | Uncached hostname/route gateway plus cached public-content entrypoint, assets, metadata, `/llms.txt`, SPA routing.    |
-| `public/llms.txt`                       | Checked-in machine-readable fallback; Worker renders dynamic `/llms.txt` when discovery succeeds.                     |
-| `supabase/migrations/`                  | DB source of truth: schema, RLS/grants, RPCs, triggers, outboxes, cron.                                               |
-| `supabase/functions/`                   | Deno Edge Functions: public gateways, auth mail, Calendar, media, cleanup.                                            |
-| `supabase/functions/_shared/`           | Shared email, Calendar API, external-action execution.                                                                |
-| `supabase/tests/`                       | pgTAP schema/RLS/RPC/contract/security tests.                                                                         |
-| `tests/unit/`                           | Vitest pure logic, adapters/contracts, scripts, Worker.                                                               |
-| `tests/integration/`                    | Live local-Supabase auth/RLS/RPC/booking/admin/customer flows.                                                        |
-| `tools/release/`                        | Public-booking expand/contract rollout validation.                                                                    |
-| `tools/backup/`                         | DB/Storage inventory, backup, restore, integrity checks.                                                              |
-| `tools/e2e/`                            | Public smoke plus source-harness admin history/CMS browser regressions.                                               |
-| `tools/visual/`                         | Deterministic captures + pixel compare.                                                                               |
-| `.github/workflows/ci.yml`              | Definitive CI gate.                                                                                                   |
-| `.github/workflows/database-backup.yml` | Scheduled encrypted DB + Storage backup.                                                                              |
-| `docs/operations/`                      | Booking-gateway rollout + backup/restore runbooks.                                                                    |
+| Path                                    | Owns / contains                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `src/main.tsx`                          | Browser mount; renders `<Root />`.                                                                                       |
+| `src/app/`                              | Public shells: `Root.tsx`, `App.tsx`, desktop/mobile hero scroll and booking fold.                                       |
+| `src/backend/`                          | Public backend seam: config, lazy public Supabase client, Zod wire schemas, public-action wrapper.                       |
+| `src/booking/`                          | Booking domain/UI: wizard, validation, Stockholm time, ICS/calendar links, mock slot packing.                            |
+| `src/booking/adapters/`                 | Booking availability plus shared DB-owned barber/photo/service catalog; live Supabase vs empty local/mock adapters.      |
+| `src/mybookings/`                       | Permanent customer-link request, appointment history/cancellation, server-backed session/autofill, formatting, adapters. |
+| `src/about/`                            | About CMS overlay, gallery, reviews/domain/gateway adapter.                                                              |
+| `src/site/`                             | Site chrome/facts, CMS, JSON-LD, Realtime, and browser-storage consent.                                                  |
+| `src/admin/`                            | Authenticated admin client/auth lifecycle/shell/domain helpers.                                                          |
+| `src/admin/adapters/`                   | Admin booking/schedule/service/barber/CMS/media/email-template data access.                                              |
+| `src/admin/calendar/`                   | Calendar connection port/status/adapter/hook/UI.                                                                         |
+| `src/admin/views/`                      | Admin tabs: bookings, schedule, services, barbers, site, about, settings, mail, profile.                                 |
+| `src/i18n/`                             | SV/EN public/admin strings.                                                                                              |
+| `src/ui/`                               | Shared dialog/logo/viewport/font/global-style primitives plus lazy-load boundaries and idle scheduling.                  |
+| `src/worker.ts`                         | Uncached hostname/route gateway plus cached public-content entrypoint, assets, metadata, `/llms.txt`, SPA routing.       |
+| `public/.well-known/acp.json`           | Static ACP manifest (`acp`, version `2026-04-17`, HTTPS transport, appointment-booking capability).                      |
+| `public/llms.txt`                       | Checked-in machine-readable fallback; Worker renders dynamic `/llms.txt` when discovery succeeds.                        |
+| `supabase/migrations/`                  | DB source of truth: schema, RLS/grants, RPCs, triggers, outboxes, cron.                                                  |
+| `supabase/functions/`                   | Deno Edge Functions: public gateways, auth mail, Calendar, media, cleanup.                                               |
+| `supabase/functions/_shared/`           | Shared email, Calendar API, external-action execution.                                                                   |
+| `supabase/tests/`                       | pgTAP schema/RLS/RPC/contract/security tests.                                                                            |
+| `tests/unit/`                           | Vitest pure logic, adapters/contracts, scripts, Worker.                                                                  |
+| `tests/integration/`                    | Live local-Supabase auth/RLS/RPC/booking/admin/customer flows.                                                           |
+| `tools/release/`                        | Public-booking expand/contract rollout validation.                                                                       |
+| `tools/backup/`                         | DB/Storage inventory, backup, restore, integrity checks.                                                                 |
+| `tools/e2e/`                            | Public smoke plus source-harness admin history/CMS browser regressions.                                                  |
+| `tools/visual/`                         | Deterministic captures + pixel compare.                                                                                  |
+| `.github/workflows/ci.yml`              | Definitive CI gate.                                                                                                      |
+| `.github/workflows/database-backup.yml` | Scheduled encrypted DB + Storage backup.                                                                                 |
+| `docs/operations/`                      | Booking-gateway rollout + backup/restore runbooks.                                                                       |
 
 ---
 
@@ -123,54 +125,54 @@ Browser
 
 Use this before broad search. **Start** = likely owner/authority; **Next** = immediate neighbors; **Verify** = minimum focused evidence.
 
-| Task / symptom                                  | Start                                                                          | Next                                                                                                                    | Verify                                                                |
-| ----------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Persisted booking price/duration wrong          | current `create_booking()` migration                                           | `services`; `supabaseBooking.ts` only if display also differs                                                           | `tests/integration/booking.test.ts` + relevant pgTAP                  |
-| UI shows wrong service price                    | `BookingFlow.tsx` / service adapter                                            | `supabaseServices.ts`, `services`                                                                                       | pricing/service unit + integration                                    |
-| Live customer sees wrong/missing slot           | DB `available_slots()`                                                         | `supabaseBooking.ts`; schedules/time-off/blocks                                                                         | booking integration + pgTAP availability                              |
-| Offline/mock slot layout wrong                  | `src/booking/slotPacking.ts`                                                   | `localCalendar.ts`, `slots.ts`                                                                                          | `slotPacking.test.ts`, `slots.test.ts`                                |
-| Slot visible but submit says taken              | write-time availability                                                        | concurrent booking/block; `create_booking()` + GiST                                                                     | booking integration + pgTAP transactional availability                |
-| Booking submit fails                            | `supabase/functions/submit-booking/index.ts`                                   | `create_booking_with_limits`, `create_booking`, client adapter                                                          | booking integration + gateway pgTAP                                   |
-| Booking challenge rejected                      | Turnstile/gateway                                                              | browser site key, `TURNSTILE_SECRET`, `submit-booking`                                                                  | gateway integration; live function logs if production                 |
-| Booking rate-limited                            | `create_booking_with_limits()`                                                 | `booking_attempts`, recent `bookings`, `IP_SALT`                                                                        | booking gateway DB tests                                              |
-| Wrong booking hour/DST                          | `stockholmTime.ts`                                                             | DB Stockholm logic in `available_slots` / `create_booking`                                                              | `stockholmTime.test.ts` + integration                                 |
-| Mina bokningar access fails                     | `supabaseMyBookings.ts`                                                        | `publicBookingActions.ts`, `public-booking-actions`, permanent token RPCs/table; legacy challenge/session compatibility | public-action unit + `39_permanent_customer_booking_access_test.sql`  |
-| Optional phone memory ignored or retained       | `src/site/storageConsent.ts`                                                   | consent cookie; delete phone cookie on opt-out                                                                          | `storageConsent.test.ts` + browser smoke                              |
-| Secure-link request/review rate-limited         | `consume_public_action_attempt()`                                              | `public_action_attempts`, `PUBLIC_ACTION_HASH_SALT`                                                                     | public gateway/pgTAP rate-limit tests                                 |
-| Customer cancellation fails                     | `supabaseMyBookings.ts`                                                        | public gateway, `cancel_customer_booking_with_access`, `site_settings.cancellation_policy_hours`                        | public-action unit + `39_permanent_customer_booking_access_test.sql`  |
-| Review rejected unexpectedly                    | `supabaseReviews.ts`                                                           | gateway; empty offline adapter; fake-seed deletion migration                                                            | review gateway + integration/pgTAP + mock review unit                 |
-| Admin login loop                                | `src/admin/auth.ts`                                                            | `AdminApp.tsx`, `profiles`, `account_enabled`, admin client storage                                                     | `adminAuth.test.ts` + auth integration                                |
-| Password reset/email-change link fails          | recovery/email-change parser + route                                           | matching Edge mail function + Auth config                                                                               | recovery/emailChange unit + live config/logs as needed                |
-| Admin recovery/email-change mail rate-limited   | `consume_auth_email_send()`                                                    | `auth_email_rate_limits`                                                                                                | auth mail tests + DB state                                            |
-| Staff invite/account enable/delete fails        | `barberAccountAdmin.ts`                                                        | `admin-create-barber`, `admin-manage-barber`, `profiles`, outbox                                                        | account unit + admin integration                                      |
-| Admin booking grouping wrong                    | `BookingsView.tsx`, `bookingsSections.ts`                                      | `weekOfYear.ts`                                                                                                         | `bookingsSections`, `weekOfYear`                                      |
-| Schedule save conflict                          | `schedulesAdmin.ts`, `scheduleConflicts.ts`                                    | `admin_save_barber_week`                                                                                                | `scheduleConflicts`, `availabilityMutationAdapters`, integration      |
-| Time-off add fails                              | `timeOffAdmin.ts`                                                              | `admin_add_time_off`                                                                                                    | availability-mutation unit + integration                              |
-| Time-off delete fails                           | `timeOffAdmin.ts:deleteTimeOff`                                                | final DELETE RLS/grant                                                                                                  | admin integration + pgTAP RLS                                         |
-| Day-grid block add fails                        | `slotBlocksAdmin.ts`                                                           | `admin_add_slot_block`                                                                                                  | availability-mutation unit + pgTAP                                    |
-| Day-grid unblock fails                          | direct DELETE in `slotBlocksAdmin.ts`                                          | final DELETE RLS/grant                                                                                                  | admin integration + pgTAP                                             |
-| Admin mutation returns `42501`                  | mutation-path classification                                                   | decide direct-RLS vs RPC-only before policy changes                                                                     | relevant integration + pgTAP grant/RLS                                |
-| Public schedule table 403/empty                 | intentional hardening                                                          | use `available_slots()` / discovery instead of anon table read                                                          | pgTAP anon-read restrictions                                          |
-| Barber cannot edit service                      | `servicesAdmin.ts`                                                             | services RLS + current profile link                                                                                     | service validation + barber integration                               |
-| Barber delete fails                             | `barbersAdmin.ts` / `admin-manage-barber`                                      | `admin_delete_barber`, upcoming bookings, cleanup jobs                                                                  | `deleteAdapters` + pgTAP delete-barber                                |
-| Site text/business/logo stale                   | `supabaseSiteChrome.ts`                                                        | `site_content`, `site_settings`, discovery RPC, Realtime publication                                                    | `siteChrome`, `supabaseSiteChrome`, `publicSite`                      |
-| Hydrated UI correct but homepage metadata stale | `src/worker.ts`                                                                | Worker `SUPABASE_*`, `business.ts`, discovery RPC/fallback                                                              | `workerRoutes`, `businessStructuredData`                              |
-| Browser CMS UI stale after update               | `supabaseSiteChromeAdapter.subscribe()`                                        | Realtime publication/tables                                                                                             | `supabaseSiteChrome` + live Realtime config                           |
-| About copy merge wrong                          | `src/about/content/merge.ts`                                                   | About adapter/admin                                                                                                     | `aboutMerge.test.ts`                                                  |
-| Gallery image missing                           | public gallery adapter                                                         | `gallery_images`, Storage object/public URL                                                                             | image adapter + pgTAP storage                                         |
-| Image/logo upload 413/422/fails                 | `upload-image/index.ts`                                                        | media adapter, Storage, internal RPC                                                                                    | `imageUploadAdapters.test.ts`; real function logs for decode/WASM     |
-| Deleted/replaced image remains in Storage       | `external_action_jobs`                                                         | `supabase/functions/external-cleanup/index.ts`, `supabase/functions/_shared/externalActions.ts`                         | externalActions + pgTAP storage outbox                                |
-| Confirmation/cancellation email missing         | `booking_email_delivery_jobs`                                                  | cron → Vault → `send-confirmation` → Resend; failed jobs require owner retry                                            | email tests + DB ledger + live provider/logs                          |
-| 24h reminder missing                            | `booking_reminders`                                                            | eligibility/due → reminder cron → Vault → `send-confirmation`                                                           | reminder pgTAP + email tests                                          |
-| Email template copy wrong                       | `MailView.tsx`, `emailTemplatesAdmin.ts`                                       | `email_template_for_delivery`, `_shared/email.ts`                                                                       | `emailBusiness` + `28_email_templates_test.sql`                       |
-| Calendar connect fails                          | `calendar-oauth-start` / callback                                              | state secret, OAuth config, `calendar_store_token`                                                                      | Calendar unit + function/provider logs                                |
-| New/updated booking not in Google               | durable `booking_calendar_sync_on_change` trigger / `external-action-dispatch` | `calendar_sync_source`, token `last_sync_error`                                                                         | `calendarDeletionOwnership` + `externalActions` + queue/function logs |
-| Cancelled booking remains in Google             | `external_action_jobs`                                                         | cleanup executor, `calendar_forget_event`                                                                               | `calendarDeletionOwnership` + `externalActions`                       |
-| Calendar disconnect stuck                       | `prepare_calendar_disconnect` / tokens                                         | mapped events, pending/blocked jobs, `calendar_disconnect` action                                                       | Calendar/outbox tests + DB state                                      |
-| Backup corrupt/fails                            | `.github/workflows/database-backup.yml`                                        | `tools/backup/*`, backup runbook                                                                                        | `backupScripts.test.ts`                                               |
-| CI supply-chain/pin failure                     | `.github/workflows/ci.yml`                                                     | lockfiles/action SHAs/Deno pin                                                                                          | `ciSupplyChain.test.ts`                                               |
-| DB/integration tests fail only locally          | local stack/env                                                                | reproduce CI Supabase start + local function test env; keep integration files serial                                    | full local pgTAP + integration                                        |
-| Worker/private route issue                      | `src/worker.ts`                                                                | `Root.tsx`, static aliases                                                                                              | `workerRoutes.test.ts` + E2E                                          |
+| Task / symptom                                  | Start                                                      | Next                                                                                                                    | Verify                                                               |
+| ----------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Persisted booking price/duration wrong          | current `create_booking()` migration                       | `services`; `supabaseBooking.ts` only if display also differs                                                           | `tests/integration/booking.test.ts` + relevant pgTAP                 |
+| UI shows wrong service price                    | `BookingFlow.tsx` / `servicesIndex.ts`                     | `supabaseBookingCatalog.ts`, `services`                                                                                 | pricing/service unit + integration                                   |
+| Live customer sees wrong/missing slot           | DB `available_slots()`                                     | `supabaseBooking.ts`; schedules/time-off/blocks                                                                         | booking integration + pgTAP availability                             |
+| Offline/mock slot layout wrong                  | `src/booking/slotPacking.ts`                               | `localCalendar.ts`, `slots.ts`                                                                                          | `slotPacking.test.ts`, `slots.test.ts`                               |
+| Slot visible but submit says taken              | write-time availability                                    | concurrent booking/block; `create_booking()` + GiST                                                                     | booking integration + pgTAP transactional availability               |
+| Booking submit fails                            | `supabase/functions/submit-booking/index.ts`               | `create_booking_with_limits`, `create_booking`, client adapter                                                          | booking integration + gateway pgTAP                                  |
+| Booking challenge rejected                      | Turnstile/gateway                                          | browser site key, `TURNSTILE_SECRET`, `submit-booking`                                                                  | gateway integration; live function logs if production                |
+| Booking rate-limited                            | `create_booking_with_limits()`                             | `booking_attempts`, recent `bookings`, `IP_SALT`                                                                        | booking gateway DB tests                                             |
+| Wrong booking hour/DST                          | `stockholmTime.ts`                                         | DB Stockholm logic in `available_slots` / `create_booking`                                                              | `stockholmTime.test.ts` + integration                                |
+| Mina bokningar access fails                     | `supabaseMyBookings.ts`                                    | `publicBookingActions.ts`, `public-booking-actions`, permanent token RPCs/table; legacy challenge/session compatibility | public-action unit + `39_permanent_customer_booking_access_test.sql` |
+| Customer session/autofill                       | `public-booking-actions`, `customer_http_only_session.sql` | HttpOnly cookie; server-backed profile response; cookies-disabled fallback                                              | gateway contract + browser smoke                                     |
+| Secure-link request/review rate-limited         | `consume_public_action_attempt()`                          | `public_action_attempts`, `PUBLIC_ACTION_HASH_SALT`                                                                     | public gateway/pgTAP rate-limit tests                                |
+| Customer cancellation fails                     | `supabaseMyBookings.ts`                                    | public gateway, `cancel_customer_booking_with_access`, `site_settings.cancellation_policy_hours`                        | public-action unit + `39_permanent_customer_booking_access_test.sql` |
+| Review rejected unexpectedly                    | `supabaseReviews.ts`                                       | gateway; empty offline adapter; fake-seed deletion migration                                                            | review gateway + integration/pgTAP + mock review unit                |
+| Admin login loop                                | `src/admin/auth.ts`                                        | `AdminApp.tsx`, `profiles`, `account_enabled`, admin client storage                                                     | `adminAuth.test.ts` + auth integration                               |
+| Password reset/email-change link fails          | recovery/email-change parser + route                       | matching Edge mail function + Auth config                                                                               | recovery/emailChange unit + live config/logs as needed               |
+| Admin recovery/email-change mail rate-limited   | `consume_auth_email_send()`                                | `auth_email_rate_limits`                                                                                                | auth mail tests + DB state                                           |
+| Staff invite/account enable/delete fails        | `barberAccountAdmin.ts`                                    | `admin-create-barber`, `admin-manage-barber`, `profiles`, outbox                                                        | account unit + admin integration                                     |
+| Admin booking grouping wrong                    | `BookingsView.tsx`, `bookingsSections.ts`                  | `weekOfYear.ts`                                                                                                         | `bookingsSections`, `weekOfYear`                                     |
+| Schedule save conflict                          | `schedulesAdmin.ts`, `scheduleConflicts.ts`                | `admin_save_barber_week`                                                                                                | `scheduleConflicts`, `availabilityMutationAdapters`, integration     |
+| Time-off add fails                              | `timeOffAdmin.ts`                                          | `admin_add_time_off`                                                                                                    | availability-mutation unit + integration                             |
+| Time-off delete fails                           | `timeOffAdmin.ts:deleteTimeOff`                            | final DELETE RLS/grant                                                                                                  | admin integration + pgTAP RLS                                        |
+| Day-grid block add fails                        | `slotBlocksAdmin.ts`                                       | `admin_add_slot_block`                                                                                                  | availability-mutation unit + pgTAP                                   |
+| Day-grid unblock fails                          | direct DELETE in `slotBlocksAdmin.ts`                      | final DELETE RLS/grant                                                                                                  | admin integration + pgTAP                                            |
+| Admin mutation returns `42501`                  | mutation-path classification                               | decide direct-RLS vs RPC-only before policy changes                                                                     | relevant integration + pgTAP grant/RLS                               |
+| Public schedule table 403/empty                 | intentional hardening                                      | use `available_slots()` / discovery instead of anon table read                                                          | pgTAP anon-read restrictions                                         |
+| Barber cannot edit service                      | `servicesAdmin.ts`                                         | services RLS + current profile link                                                                                     | service validation + barber integration                              |
+| Barber delete fails                             | `barbersAdmin.ts` / `admin-manage-barber`                  | `admin_delete_barber`, upcoming bookings, cleanup jobs                                                                  | `deleteAdapters` + pgTAP delete-barber                               |
+| Site text/business/logo stale                   | `supabaseSiteChrome.ts`                                    | `site_content`, `site_settings`, discovery RPC, Realtime publication                                                    | `siteChrome`, `supabaseSiteChrome`, `publicSite`                     |
+| Hydrated UI correct but homepage metadata stale | `src/worker.ts`                                            | Worker `SUPABASE_*`, `business.ts`, discovery RPC/fallback                                                              | `workerRoutes`, `businessStructuredData`                             |
+| Browser CMS UI stale after update               | `supabaseSiteChromeAdapter.subscribe()`                    | Realtime publication/tables                                                                                             | `supabaseSiteChrome` + live Realtime config                          |
+| About copy merge wrong                          | `src/about/content/merge.ts`                               | About adapter/admin                                                                                                     | `aboutMerge.test.ts`                                                 |
+| Gallery image missing                           | public gallery adapter                                     | `gallery_images`, Storage object/public URL                                                                             | image adapter + pgTAP storage                                        |
+| Image/logo upload 413/422/fails                 | `upload-image/index.ts`                                    | media adapter, Storage, internal RPC                                                                                    | `imageUploadAdapters.test.ts`; real function logs for decode/WASM    |
+| Deleted/replaced image remains in Storage       | `external_action_jobs`                                     | `supabase/functions/external-cleanup/index.ts`, `supabase/functions/_shared/externalActions.ts`                         | externalActions + pgTAP storage outbox                               |
+| Confirmation/cancellation email missing         | `booking_email_delivery_jobs`                              | cron → Vault → `send-confirmation` → Resend; failed jobs require owner retry                                            | email tests + DB ledger + live provider/logs                         |
+| 24h reminder missing                            | `booking_reminders`                                        | eligibility/due → reminder cron → Vault → `send-confirmation`                                                           | reminder pgTAP + email tests                                         |
+| Email template copy wrong                       | `MailView.tsx`, `emailTemplatesAdmin.ts`                   | `email_template_for_delivery`, `_shared/email.ts`                                                                       | `emailBusiness` + `28_email_templates_test.sql`                      |
+| Calendar connect fails                          | `calendar-oauth-start` / callback                          | state secret, OAuth config, `calendar_store_token`                                                                      | Calendar unit + function/provider logs                               |
+| New/updated booking not in Google               | **Supabase Database Webhook config first**                 | `calendar-sync`, `calendar_sync_source`, token `last_sync_error`                                                        | `calendarSync` + webhook/function logs                               |
+| Cancelled booking remains in Google             | `external_action_jobs`                                     | cleanup executor, `calendar_forget_event`                                                                               | `calendarDeletionOwnership` + `externalActions`                      |
+| Calendar disconnect stuck                       | `prepare_calendar_disconnect` / tokens                     | mapped events, pending/blocked jobs, `calendar_disconnect` action                                                       | Calendar/outbox tests + DB state                                     |
+| Backup corrupt/fails                            | `.github/workflows/database-backup.yml`                    | `tools/backup/*`, backup runbook                                                                                        | `backupScripts.test.ts`                                              |
+| CI supply-chain/pin failure                     | `.github/workflows/ci.yml`                                 | lockfiles/action SHAs/Deno pin                                                                                          | `ciSupplyChain.test.ts`                                              |
+| DB/integration tests fail only locally          | local stack/env                                            | reproduce CI Supabase start + local function test env; keep integration files serial                                    | full local pgTAP + integration                                       |
+| Worker/private route issue                      | `src/worker.ts`                                            | `Root.tsx`, static aliases                                                                                              | `workerRoutes.test.ts` + E2E                                         |
 
 ---
 
@@ -210,7 +212,7 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | Write authority             | `create_booking_with_limits()` migration: `supabase/migrations/20260813115437_transactional_availability_mutations.sql`; availability hardening: `supabase/migrations/20260824074813_recurring_service_availability.sql`. `src/backend/publicBookingActions.ts` is **not** on submit path.                                                                                                                                                  |
 | DB guarantees               | `create_booking_with_limits`: advisory locks on IP/phone scopes; IP ledger `booking_attempts`; phone count from recent `bookings`. `create_booking`: re-resolve active service + weekday, 15-min grid, schedule/time-off/one-off/recurring-break validation, barber availability advisory lock, insert; GiST exclusion rejects confirmed overlap.                                                                                           |
 | Commercial/time constraints | Client price/duration/service name are not authority. Selected wall clock is anchored with `localWallClockToStockholmIso()`; DB uses `Europe/Stockholm`.                                                                                                                                                                                                                                                                                    |
-| On insert                   | email job trigger; optional reminder row; durable Calendar sync trigger queues `calendar_event_sync`. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                                                                                                |
+| On insert                   | email job trigger; optional reminder row; `booking_calendar_sync_on_change` durable Calendar trigger. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                                                                                                |
 | Verify                      | `slotPacking.test.ts` only for mock; `stockholmTime.test.ts`; `tests/integration/booking.test.ts`; `supabase/tests/11_booking_gateway_db_test.sql`, `32_transactional_availability_test.sql`, `34_public_booking_gateway_contract_test.sql`; `tests/unit/bookingLinks.test.ts`.                                                                                                                                                             |
 
 ### 5.4 Customer self-service: Mina bokningar
@@ -230,7 +232,7 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Files     | `src/about/reviewValidation.ts`; `src/about/reviews/domain.ts`, `src/about/reviews/port.ts` (`port.ts`); `src/about/reviews/adapters/supabaseReviews.ts`; public-action wrapper + gateway. |
 | Read      | Public client directly SELECTs `reviews` rows permitted by `published = true` policy.                                                                                                      |
-| Create    | form → `invokePublicBookingAction({action:'review'})` → Turnstile/rate limit → `create_review()`.                                                                                          |
+| Create    | form → `invokePublicBookingAction({action:'review'})` → Turnstile/rate limit → `create_review_with_access()`.                                                                              |
 | Authority | DB verifies completed-booking eligibility and derives/clamps display name server-side.                                                                                                     |
 | Verify    | `reviewValidation.test.ts`, `reviewGatewayContract.test.ts`, `tests/integration/reviews.test.ts`, pgTAP review gating.                                                                     |
 
@@ -258,39 +260,40 @@ Each block answers: **entry → invocation → authority/state → side effects 
 
 ### 5.8 Admin availability: weekly schedule, time off, slot blocks, recurring breaks
 
-| Axis             | Map                                                                                                                                                                                                                                                                                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Files            | `src/admin/views/ScheduleView.tsx`; `src/admin/views/ScheduleDayGrid.tsx`; `src/admin/time.ts`; `src/admin/scheduleConflicts.ts`; `src/admin/useUnavailabilityConflict.tsx`; `src/admin/adapters/schedulesAdmin.ts`; `src/admin/adapters/timeOffAdmin.ts`; `src/admin/adapters/slotBlocksAdmin.ts`; `src/admin/adapters/recurringBreaksAdmin.ts`. |
-| Weekly schedule  | **No direct authenticated write**. `admin_save_barber_week(p_barber_id text, p_week jsonb, p_allow_existing_bookings boolean)`. `p_week` = exactly seven unique objects `{ weekday, working, start_min, end_min }` covering `0..6`.                                                                                                               |
-| Time off         | ADD through `admin_add_time_off()`; DELETE direct PostgREST+RLS; no UPDATE - edit = delete + add.                                                                                                                                                                                                                                                 |
-| Slot blocks      | ADD through `admin_add_slot_block()`; DELETE direct PostgREST+RLS; immutable/no UPDATE.                                                                                                                                                                                                                                                           |
-| Recurring breaks | ADD/DELETE through `admin_add_recurring_break()` / `admin_delete_recurring_break()`; 15-minute 09:00–18:00 intervals, no overlapping weekly rows, and covered day-grid quarters are inert.                                                                                                                                                        |
-| Constraints      | Transactional save/add detects confirmed-booking conflicts and supports `p_allow_existing_bookings` where applicable; uses availability locking pattern. Anon direct SELECT of schedule tables is removed; public availability uses definer RPCs.                                                                                                 |
-| State            | `barber_schedules`, `barber_time_off`, `barber_slot_blocks`, `barber_recurring_breaks`.                                                                                                                                                                                                                                                           |
-| Verify           | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`, admin integration; pgTAP `15_restrict_anon_schedule_reads`, `32_transactional_availability`, `36_recurring_service_availability`.                                                                                                                                               |
+| Axis             | Map                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Files            | `src/admin/views/ScheduleView.tsx`; `src/admin/views/ScheduleDayGrid.tsx`; `src/admin/ReserveDialog.tsx`; `src/admin/time.ts`; `src/admin/scheduleConflicts.ts`; `src/admin/useUnavailabilityConflict.tsx`; `src/admin/adapters/schedulesAdmin.ts`; `src/admin/adapters/timeOffAdmin.ts`; `src/admin/adapters/slotBlocksAdmin.ts`; `src/admin/adapters/recurringBreaksAdmin.ts`. |
+| Weekly schedule  | **No direct authenticated write**. `admin_save_barber_week(p_barber_id text, p_week jsonb, p_allow_existing_bookings boolean)`. `p_week` = exactly seven unique objects `{ weekday, working, start_min, end_min }` covering `0..6`.                                                                                                                                              |
+| Time off         | ADD through `admin_add_time_off()`; DELETE direct PostgREST+RLS; no UPDATE - edit = delete + add.                                                                                                                                                                                                                                                                                |
+| Slot blocks      | ADD through `admin_add_slot_block()`; DELETE direct PostgREST+RLS; immutable/no UPDATE.                                                                                                                                                                                                                                                                                          |
+| Recurring breaks | ADD/DELETE through `admin_add_recurring_break()` / `admin_delete_recurring_break()`; 15-minute 09:00–18:00 intervals, no overlapping weekly rows, and covered day-grid quarters are inert.                                                                                                                                                                                       |
+| Constraints      | Transactional save/add detects confirmed-booking conflicts and supports `p_allow_existing_bookings` where applicable; uses availability locking pattern. Anon direct SELECT of schedule tables is removed; public availability uses definer RPCs.                                                                                                                                |
+| Manual booking   | `ReserveDialog` accepts blank price as the intentional default, preserves zero/decimal prices, and blocks non-empty values outside the dot-decimal price contract before calling `admin_create_booking()`.                                                                                                                                                                       |
+| State            | `barber_schedules`, `barber_time_off`, `barber_slot_blocks`, `barber_recurring_breaks`.                                                                                                                                                                                                                                                                                          |
+| Verify           | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`, admin integration; pgTAP `15_restrict_anon_schedule_reads`, `32_transactional_availability`, `36_recurring_service_availability`.                                                                                                                                                                              |
 
 ### 5.9 Barbers + services administration
 
-| Axis     | Map                                                                                                                                                                                                                            |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Files    | `src/admin/views/BarbersView.tsx`; `src/admin/views/ServicesView.tsx`; `src/admin/adapters/barbersAdmin.ts`; `src/admin/adapters/servicesAdmin.ts`; `src/admin/serviceValidation.ts`.                                          |
-| Barbers  | Public reads active. Owner create/update = direct PostgREST+owner RLS. Authenticated direct DELETE revoked; delete goes via `admin-manage-barber` → `admin_delete_barber()` for upcoming-booking guard + cleanup coordination. |
-| Services | Public reads active. Owner and linked barber use permitted direct PostgREST+RLS CRUD. Booking insertion always re-resolves service authority server-side.                                                                      |
-| State    | `barbers`, `services`, linked `profiles`.                                                                                                                                                                                      |
-| Verify   | `serviceValidation`, `deleteAdapters`, `barberLinkStatus`, owner/barber integration, pgTAP services/delete-barber.                                                                                                             |
+| Axis     | Map                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Files    | `src/admin/views/BarbersView.tsx`; `src/admin/views/ServicesView.tsx`; `src/admin/adapters/barbersAdmin.ts`; `src/admin/adapters/servicesAdmin.ts`; `src/admin/serviceValidation.ts`.                                                                                                                                                                                                                                                                                                                |
+| Barbers  | Public reads active. Owner create/update = direct PostgREST+owner RLS. Authenticated direct DELETE revoked; delete goes via `admin-manage-barber` → `admin_delete_barber()` for upcoming-booking guard + cleanup coordination.                                                                                                                                                                                                                                                                       |
+| Services | Public reads active. Owner and linked barber read through RLS; ordinary edits use permitted direct PostgREST fields and cannot alter `sort_order`. Create, delete, and reorder use authorized per-barber RPCs with an advisory lock, unique constraint, and zero-based contiguous compaction. Prices are exact `numeric` SEK values with at most two decimals; duration input is normalized to whole minutes before persistence. Booking insertion always re-resolves service authority server-side. |
+| State    | `barbers`, `services`, linked `profiles`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Verify   | `serviceValidation`, `servicesAdmin`, `services.ordering` integration, `deleteAdapters`, `barberLinkStatus`, owner/barber integration, pgTAP services/order/delete-barber.                                                                                                                                                                                                                                                                                                                           |
 
 ### 5.10 Site CMS + About CMS + discovery + SEO
 
-| Axis              | Map                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Files             | `src/site/business.ts` (schema.org `HairSalon` JSON-LD); `src/site/siteChrome.ts`; `src/site/useSiteChrome.ts`; `src/site/adapters/supabaseSiteChrome.ts`; `src/about/content/*`; admin `src/admin/views/SiteView.tsx`, `src/admin/views/HomepageReplicaPreview.tsx`, `src/admin/views/AboutView.tsx`, `src/admin/adapters/siteAdmin.ts`, `src/admin/adapters/aboutAdmin.ts`; `src/worker.ts`; `public/llms.txt`; RPC `public_business_discovery()`. |
-| Data              | `site_content` public copy by key/lang; `site_settings` business/cancellation/SEO/scales; `about_content` About overlay; `public_business_discovery()` returns only whitelisted business facts + active barbers + active service prices + working schedules.                                                                                                                                                                                         |
-| Wire contract     | `src/backend/rpcSchemas.ts:publicBusinessDiscoveryResponse` → `{ settings: Record<string,string>, barbers:[{id,name}], services:[{id,barber_id,price}], schedules:[{barber_id,weekday,start_min,end_min}] }`; weekday `0..6`, `start_min 0..1439`, `end_min 1..1440`.                                                                                                                                                                                |
-| Browser hydration | Initial `site_content` + discovery reads use direct Data API fetches, keeping `supabase-js` off the critical path; About content/roster/gallery/reviews/Turnstile wait until About intersects.                                                                                                                                                                                                                                                       |
-| Realtime          | `useSiteChrome()` starts `supabaseSiteChromeAdapter.subscribe()` during idle time only while the tab is visible, disconnects while hidden, and revalidates before resubscribing. Subscription dynamically imports `supabase-js`, waits for Postgres Changes readiness, then watches `site_content`, `site_settings`, `barbers`, `services`, `barber_schedules`.                                                                                      |
-| Machine discovery | `/llms.txt` is dynamic when discovery succeeds, else checked-in fallback. No ACP discovery claim is published until a conformant official contract and appointment authority exist. `loadDiscovery()` abort/fallback after 1800 ms; dynamic `/llms.txt` cache 300 s.                                                                                                                                                                                 |
-| Worker            | Cached `PublicContent` server-loads discovery for Swedish homepage metadata/JSON-LD + `/llms.txt`; homepage uses `max-age=60, s-maxage=300` only after successful discovery and `no-store` for checked-in fallback. Host canonicalization stays in uncached default entrypoint.                                                                                                                                                                      |
-| Verify            | `siteChrome`, `homepageLogo`, `homepageReplicaPreview`, `businessStructuredData`, `supabaseSiteChrome`, `aboutMerge`, `performanceLifecycle`, `workerRoutes`, `discovery`, `publicSite` integration, `npm run test:e2e`, and `npm run test:e2e:admin`.                                                                                                                                                                                               |
+| Axis              | Map                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Files             | `src/site/business.ts` (schema.org `HairSalon` JSON-LD); `src/site/siteChrome.ts`; `src/site/useSiteChrome.ts`; `src/site/adapters/supabaseSiteChrome.ts`; `src/about/content/*`; admin `src/admin/views/SiteView.tsx`, `src/admin/views/HomepageReplicaPreview.tsx`, `src/admin/views/AboutView.tsx`, `src/admin/adapters/siteAdmin.ts`, `src/admin/adapters/aboutAdmin.ts`; `src/worker.ts`; `public/.well-known/acp.json`; `public/llms.txt`; RPC `public_business_discovery()`. |
+| Data              | `site_content` public copy by key/lang; `site_settings` business/cancellation/SEO/scales; `about_content` About overlay; `public_business_discovery()` returns only whitelisted business facts + active barbers + active service prices + working schedules.                                                                                                                                                                                                                        |
+| Wire contract     | `src/backend/rpcSchemas.ts:publicBusinessDiscoveryResponse` → `{ settings: Record<string,string>, barbers:[{id,name}], services:[{id,barber_id,price}], schedules:[{barber_id,weekday,start_min,end_min}] }`; weekday `0..6`, `start_min 0..1439`, `end_min 1..1440`.                                                                                                                                                                                                               |
+| Browser hydration | Initial `site_content` + discovery reads use direct Data API fetches, keeping `supabase-js` off the critical path; About content/roster/gallery/reviews/Turnstile wait until About intersects.                                                                                                                                                                                                                                                                                      |
+| Realtime          | `useSiteChrome()` starts `supabaseSiteChromeAdapter.subscribe()` during idle time only while the tab is visible, disconnects while hidden, and revalidates before resubscribing. Subscription dynamically imports `supabase-js`, waits for Postgres Changes readiness, then watches `site_content`, `site_settings`, `barbers`, `services`, `barber_schedules`.                                                                                                                     |
+| Machine discovery | ACP manifest is static Asset-binding content, not DB-hydrated. `/llms.txt` is dynamic when discovery succeeds, else checked-in fallback; dynamic page links ACP. `loadDiscovery()` abort/fallback after 1800 ms; dynamic `/llms.txt` cache 300 s.                                                                                                                                                                                                                                   |
+| Worker            | Cached `PublicContent` server-loads discovery for Swedish homepage metadata/JSON-LD + `/llms.txt`; homepage uses `max-age=60, s-maxage=300` only after successful discovery and `no-store` for checked-in fallback. Host canonicalization stays in uncached default entrypoint.                                                                                                                                                                                                     |
+| Verify            | `siteChrome`, `homepageLogo`, `homepageReplicaPreview`, `businessStructuredData`, `supabaseSiteChrome`, `aboutMerge`, `performanceLifecycle`, `workerRoutes`, `discovery`, `publicSite` integration, `npm run test:e2e`, and `npm run test:e2e:admin`.                                                                                                                                                                                                                              |
 
 **`public_business_discovery().settings` SQL whitelist - adding a `site_settings` row alone is insufficient:**
 
@@ -365,25 +368,26 @@ If Worker/email/machine-discovery code needs a new mutable fact, update the SQL 
 
 ### 5.14 Google Calendar synchronization
 
-| Path                | Chain / authority                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Files/state         | UI `src/admin/calendar/CalendarConnectButton.tsx`, `src/admin/calendar/useCalendarSync.ts`, `src/admin/calendar/adapters/supabaseCalendarSync.ts`; server `supabase/functions/_shared/calendar.ts`; functions `calendar-oauth-start`, `calendar-oauth-callback`, `calendar-disconnect`, `external-cleanup`; tables `barber_calendar_tokens`, `calendar_event_map`. |
-| Connect             | authenticated barber → OAuth start → signed HMAC state (`CALENDAR_STATE_SECRET`) → Google consent → callback → verify state + active linked barber → code exchange → `calendar_store_token()` → best-effort `calendar_backfill_source()`. Backfill is future confirmed bookings, not arbitrary history.                                                            |
-| Insert/update       | `booking_calendar_sync_on_change` queues `calendar_event_sync` in the transaction → `external-action-dispatch` → `external-cleanup` claims the action, re-reads authoritative DB state, and performs idempotent Google insert/patch.                                                                                                                               |
-| Cancel/delete       | DB trigger → deduplicated `calendar_event_delete` in `external_action_jobs` → `external-cleanup` → Google delete → `calendar_forget_event()`.                                                                                                                                                                                                                      |
-| Disconnect          | `prepare_calendar_disconnect()` marks pending, queues mapped deletions, then `calendar_disconnect`; executor revokes Google token and deletes token state after cleanup.                                                                                                                                                                                           |
-| External dependency | The durable trigger/outbox is migration-owned. The guarded retirement migration removes the legacy Dashboard Webhook trigger; production deployment and secret maintenance remain operator actions.                                                                                                                                                                |
-| Verify              | `calendarSync.test.ts`, `calendarDeletionOwnership.test.ts`, `externalActions.test.ts`, `38_launch_review_fixes_test.sql`, pgTAP Calendar tests + live queue/function/provider logs.                                                                                                                                                                               |
+| Path                | Chain / authority                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Files/state         | UI `src/admin/calendar/CalendarConnectButton.tsx`, `src/admin/calendar/useCalendarSync.ts`, `src/admin/calendar/adapters/supabaseCalendarSync.ts`; server `supabase/functions/_shared/calendar.ts`; functions `calendar-oauth-start`, `calendar-oauth-callback`, `calendar-sync`, `calendar-disconnect`; tables `barber_calendar_tokens`, `calendar_event_map`.                                                                                                                                                        |
+| Connect             | authenticated barber → OAuth start → signed HMAC state (`CALENDAR_STATE_SECRET`) → Google consent → callback → verify state + active linked barber → code exchange → `calendar_store_token()` → queue future confirmed bookings through `calendar_backfill_source()`. The durable worker owns backfill ordering, including old-map cleanup after an unlinked destination later connects.                                                                                                                               |
+| Insert/update       | `public.bookings` trigger → deduplicated identifier-only `calendar_event_sync` in `external_action_jobs` → Calendar dispatch seam (with explicit fallback only for a missing seam) → `calendar_sync_source(booking_id)` re-reads authoritative name, phone, email, service, and times plus immutable mapped barber/calendar/event identity → delete old Google event → conditional map CAS → destination Google insert/patch. An existing Dashboard Database Webhook may call `calendar-sync` to requeue the same job. |
+| Cancel/delete       | DB trigger → deduplicated `calendar_event_delete` in `external_action_jobs` with an identifier-only barber/calendar/event snapshot → `external-cleanup` → Google delete using the old barber's current server credential → `calendar_forget_event_if_matches()`.                                                                                                                                                                                                                                                       |
+| Disconnect          | `prepare_calendar_disconnect()` marks pending, queues mapped deletions, then `calendar_disconnect`; executor revokes Google token and deletes token state after cleanup.                                                                                                                                                                                                                                                                                                                                               |
+| Repair              | `calendar_authorization_owner_for_job()` assigns authorization recovery to the credential the worker actually attempted: a stale-map sync belongs to the old mapped barber, otherwise to the target barber. `calendar_connection_status()` and `calendar_store_token()` share that predicate; the UI prioritizes same-account reauthorization even while connected, and OAuth/store reject a missing account identity.                                                                                                 |
+| External dependency | Database Webhook binding is Dashboard-managed and cannot be proven from repository files.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Verify              | `calendarSync.test.ts`, `calendarDeletionOwnership.test.ts`, `externalActions.test.ts`, `47_calendar_customer_contact_test.sql`, `49_calendar_reassignment_test.sql`, pgTAP Calendar tests + live webhook/function/provider logs.                                                                                                                                                                                                                                                                                      |
 
 ### 5.15 Durable external-actions outbox
 
 | Axis           | Map                                                                                                                                                                                                                                                                                       |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Files/state    | `supabase/functions/_shared/externalActions.ts`; `supabase/functions/external-cleanup/index.ts`; migration `supabase/migrations/20260813115438_durable_storage_cleanup.sql`; `external_action_jobs`.                                                                                      |
-| Action types   | `storage_object_delete`, `calendar_event_delete`, `calendar_disconnect`, `auth_user_access_sync`, `auth_user_delete`.                                                                                                                                                                     |
+| Files/state    | `supabase/functions/_shared/externalActions.ts`; `supabase/functions/external-cleanup/index.ts`; migrations `supabase/migrations/20260813115438_durable_storage_cleanup.sql` and `20260902005645_calendar_reassignment_cleanup.sql`; `external_action_jobs`.                              |
+| Action types   | `storage_object_delete`, `calendar_event_sync`, `calendar_event_delete`, `calendar_disconnect`, `auth_user_access_sync`, `auth_user_delete`.                                                                                                                                              |
 | Dispatch       | per-minute `external-action-dispatch` → `queue_due_external_actions()` → Vault `external_cleanup_url` + `booking_webhook_secret` → `external-cleanup` → `external_action_for_dispatch()` → execute → `complete_external_action()` / `fail_external_action()` / `block_external_action()`. |
 | Extra behavior | `queue_due_external_actions()` runs orphaned-storage detection before due-job dispatch.                                                                                                                                                                                                   |
-| Scope          | Not used for booking mail, auth mail, Calendar normal insert/update, or synchronous image upload.                                                                                                                                                                                         |
+| Scope          | Not used for booking mail, auth mail, or synchronous image upload.                                                                                                                                                                                                                        |
 
 ### 5.16 High-value dependency direction
 
@@ -430,6 +434,13 @@ send-confirmation
 ├─ mark_booking_email_delivery_recipient
 └─ complete/fail booking job OR mark reminder delivered
 
+calendar-sync / external-cleanup
+├─ Dashboard bookings webhook
+├─ x-webhook-secret
+├─ calendar_sync_source (execution-time authoritative booking re-read)
+├─ _shared/calendar.ts
+└─ calendar_record_event / calendar_record_error
+
 upload-image
 ├─ auth/profile authorization
 ├─ ImageMagick WASM
@@ -466,7 +477,7 @@ Effective state is after **all** migrations, not original grants.
 | `barbers`                            | `id`                   | anon active SELECT; authenticated SELECT per policies             | owner direct create/update RLS; delete `admin_delete_barber()`        |
 | `booking_attempts`                   | bigint PK              | none                                                              | `create_booking_with_limits()` IP ledger                              |
 | `booking_email_delivery_jobs`        | `id`                   | direct table access revoked from API roles including service_role | trigger + dedicated SECURITY DEFINER delivery RPCs                    |
-| `customer_booking_access_challenges` | `id`                   | no API table access                                               | `create_customer_booking_access_request()` / one-time exchange        |
+| `customer_booking_access_challenges` | `id`                   | no API table access                                               | token rotation / one-time exchange RPCs                               |
 | `customer_booking_access_sessions`   | `id`                   | no API table access                                               | service-role scoped list/cancel RPCs                                  |
 | `customer_booking_access_tokens`     | normalized `email`     | no API table access                                               | confirmation ensure/repair + customer-request rotation RPCs           |
 | `booking_reminders`                  | `booking_id`           | direct access revoked from anon/auth/service_role                 | trigger/cron + reminder RPCs                                          |
@@ -477,8 +488,8 @@ Effective state is after **all** migrations, not original grants.
 | `gallery_images`                     | `id`                   | anon/auth SELECT                                                  | `upload-image` internal RPCs                                          |
 | `profiles`                           | Auth user `id`         | self SELECT; owner SELECT-all                                     | provisioning/account RPC/Edge flows; no generic browser CRUD          |
 | `public_action_attempts`             | bigint identity        | none                                                              | `consume_public_action_attempt()`                                     |
-| `reviews`                            | `id`                   | anon/auth SELECT only `published=true`                            | `create_review()` via public gateway                                  |
-| `services`                           | `id`                   | anon active SELECT; authenticated owner/own SELECT                | owner/barber direct CRUD via RLS                                      |
+| `reviews`                            | `id`                   | anon/auth SELECT only `published=true`                            | `create_review_with_access()` via public gateway                      |
+| `services`                           | `id`                   | anon active SELECT; authenticated owner/own SELECT                | reads + ordinary edits via RLS; create/delete/reorder service RPCs    |
 | `site_content`                       | `(key, lang)`          | anon/auth SELECT                                                  | owner direct CRUD via RLS                                             |
 | `site_settings`                      | `key`                  | anon/auth SELECT                                                  | owner direct CRUD via RLS                                             |
 
@@ -486,49 +497,47 @@ Effective state is after **all** migrations, not original grants.
 
 ### 6.2 Public/application RPCs
 
-| Function                                 | Caller                                | Authority / purpose                                         | Latest defining migration                                          |
-| ---------------------------------------- | ------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
-| `available_slots`                        | public/admin adapters                 | live bookable starts                                        | `20260813095409_harden_booking_boundaries_and_action_ledger.sql`   |
-| `create_booking`                         | booking gateway/service role          | service re-resolution + slot validation + insert            | same                                                               |
-| `create_booking_with_limits`             | `submit-booking`                      | transactional submit rate limit + create                    | `20260813115437_transactional_availability_mutations.sql`          |
-| `lookup_booking`                         | legacy service role only              | old phone-keyed upcoming lookup; no frontend caller         | `20260812125009_align_booking_method_responses.sql`                |
-| `list_bookings_by_phone`                 | legacy service role only              | old phone-keyed list; no frontend caller                    | `20260715090000_list_bookings_by_phone.sql`                        |
-| `cancel_booking`                         | legacy service role only              | old phone-keyed cancellation; no frontend caller            | `20260813095409_harden_booking_boundaries_and_action_ledger.sql`   |
-| `create_customer_booking_access_request` | `public-booking-actions` service role | exact phone/email access-link issuance                      | `20260813123851_review_hardening.sql`                              |
-| `exchange_customer_booking_access`       | `public-booking-actions` service role | one-time code to opaque session exchange                    | same                                                               |
-| `ensure_customer_booking_access_token`   | `send-confirmation` service role      | create/reuse permanent token for confirmation mail          | `20260824075454_permanent_customer_booking_access.sql`             |
-| `replace_customer_booking_access_token`  | `send-confirmation` service role      | repair unreadable encrypted token after key change          | same                                                               |
-| `rotate_customer_booking_access_token`   | `public-booking-actions` service role | email-only token rotation + durable email enqueue           | same                                                               |
-| `list_customer_bookings_with_access`     | `public-booking-actions` service role | current permanent token or legacy session history           | same                                                               |
-| `cancel_customer_booking_with_access`    | `public-booking-actions` service role | current permanent token or legacy session + cutoff          | same                                                               |
-| `create_review`                          | public gateway                        | completed-booking review gate                               | `20260702100000_availability_now_filter_and_review_name_clamp.sql` |
-| `public_booking_catalog`                 | public booking adapters               | active barber/photo/service catalog plus canonical weekdays | `20260824092548_public_booking_catalog_service_weekdays.sql`       |
-| `public_business_discovery`              | Worker/public site/server email       | whitelisted business facts                                  | `20260813115439_public_business_discovery.sql`                     |
+| Function                                | Caller                                | Authority / purpose                                         | Latest defining migration                                        |
+| --------------------------------------- | ------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| `available_slots`                       | public/admin adapters                 | live bookable starts                                        | `20260813095409_harden_booking_boundaries_and_action_ledger.sql` |
+| `create_booking`                        | booking gateway/service role          | service re-resolution + slot validation + insert            | same                                                             |
+| `create_booking_with_limits`            | `submit-booking`                      | transactional submit rate limit + create                    | `20260813115437_transactional_availability_mutations.sql`        |
+| `exchange_customer_booking_access`      | `public-booking-actions` service role | one-time code to opaque session exchange                    | same                                                             |
+| `ensure_customer_booking_access_token`  | `send-confirmation` service role      | create/reuse permanent token for confirmation mail          | `20260824075454_permanent_customer_booking_access.sql`           |
+| `replace_customer_booking_access_token` | `send-confirmation` service role      | repair unreadable encrypted token after key change          | same                                                             |
+| `rotate_customer_booking_access_token`  | `public-booking-actions` service role | email-only token rotation + durable email enqueue           | same                                                             |
+| `list_customer_bookings_with_access`    | `public-booking-actions` service role | current permanent token or legacy session history           | same                                                             |
+| `cancel_customer_booking_with_access`   | `public-booking-actions` service role | current permanent token or legacy session + cutoff          | same                                                             |
+| `create_review_with_access`             | `public-booking-actions` service role | completed-booking review gate                               | `20260823174500_close_launch_review_findings.sql`                |
+| `public_booking_catalog`                | public booking adapters               | active barber/photo/service catalog plus canonical weekdays | `20260824092548_public_booking_catalog_service_weekdays.sql`     |
+| `public_business_discovery`             | Worker/public site/server email       | whitelisted business facts                                  | `20260813115439_public_business_discovery.sql`                   |
 
 After contract migration, direct anon execution of customer mutation/lookup RPCs is revoked; gateways retain service-role access. `available_slots()` and discovery remain public read RPCs.
 
 ### 6.3 Admin transactional RPCs
 
-| Function                           | Caller                | Purpose                                         |
-| ---------------------------------- | --------------------- | ----------------------------------------------- |
-| `admin_create_booking`             | `bookingsAdmin.ts`    | authorized manual booking + availability checks |
-| `admin_cancel_booking`             | `bookingsAdmin.ts`    | authorized cancellation                         |
-| `admin_delete_bookings`            | `bookingsAdmin.ts`    | selected history deletion                       |
-| `admin_purge_history`              | `bookingsAdmin.ts`    | owner-only purge                                |
-| `admin_save_barber_week`           | `schedulesAdmin.ts`   | atomic week save + conflict result              |
-| `admin_add_time_off`               | `timeOffAdmin.ts`     | atomic time-off add + conflict result           |
-| `admin_add_slot_block`             | `slotBlocksAdmin.ts`  | atomic block add + conflict result              |
-| `admin_delete_barber`              | `admin-manage-barber` | guarded deletion + cleanup orchestration        |
-| `admin_set_barber_account_enabled` | `admin-manage-barber` | account flag + durable Auth sync                |
-| `set_own_password_changed`         | `src/admin/auth.ts`   | clear caller forced-change flag                 |
+| Function                           | Caller                | Purpose                                           |
+| ---------------------------------- | --------------------- | ------------------------------------------------- |
+| `admin_create_booking`             | `bookingsAdmin.ts`    | authorized manual booking + availability checks   |
+| `admin_cancel_booking`             | `bookingsAdmin.ts`    | authorized cancellation                           |
+| `admin_delete_bookings`            | `bookingsAdmin.ts`    | selected history deletion                         |
+| `admin_purge_history`              | `bookingsAdmin.ts`    | owner-only purge                                  |
+| `admin_save_barber_week`           | `schedulesAdmin.ts`   | atomic week save + conflict result                |
+| `admin_add_time_off`               | `timeOffAdmin.ts`     | atomic time-off add + conflict result             |
+| `admin_add_slot_block`             | `slotBlocksAdmin.ts`  | atomic block add + conflict result                |
+| `admin_create_service`             | `servicesAdmin.ts`    | authorized append at the next per-barber position |
+| `admin_delete_service`             | `servicesAdmin.ts`    | authorized delete + per-barber compaction         |
+| `admin_reorder_service`            | `servicesAdmin.ts`    | authorized atomic one-position reorder            |
+| `admin_delete_barber`              | `admin-manage-barber` | guarded deletion + cleanup orchestration          |
+| `admin_set_barber_account_enabled` | `admin-manage-barber` | account flag + durable Auth sync                  |
+| `set_own_password_changed`         | `src/admin/auth.ts`   | clear caller forced-change flag                   |
 
 ### 6.4 Rate-limit RPCs + exact windows
 
-| Function                        | Ledger                   | Caller                                    |
-| ------------------------------- | ------------------------ | ----------------------------------------- |
-| `consume_public_action_attempt` | `public_action_attempts` | `public-booking-actions`                  |
-| `consume_auth_email_send`       | `auth_email_rate_limits` | recovery/email-change flows               |
-| `recent_booking_count_by_phone` | `bookings`               | booking-limit support / historical helper |
+| Function                        | Ledger                   | Caller                      |
+| ------------------------------- | ------------------------ | --------------------------- |
+| `consume_public_action_attempt` | `public_action_attempts` | `public-booking-actions`    |
+| `consume_auth_email_send`       | `auth_email_rate_limits` | recovery/email-change flows |
 
 | Surface/action             |                     Window |             IP limit | Phone/scope limit | Storage / cleanup                                                |
 | -------------------------- | -------------------------: | -------------------: | ----------------: | ---------------------------------------------------------------- |
@@ -562,7 +571,7 @@ After contract migration, direct anon execution of customer mutation/lookup RPCs
 | ------------------------------- | ------------------------------------------------------------------------------------ |
 | `calendar_connection_status`    | admin Calendar adapter                                                               |
 | `calendar_store_token`          | OAuth callback                                                                       |
-| `calendar_sync_source`          | `external-cleanup`; authoritative booking/token re-read                              |
+| `calendar_sync_source`          | `external-cleanup` + Calendar flows; authoritative booking/token re-read             |
 | `calendar_record_event`         | sync/backfill mapping write                                                          |
 | `calendar_record_error`         | sync/backfill error state                                                            |
 | `calendar_backfill_source`      | OAuth callback future-confirmed backfill                                             |
@@ -595,19 +604,18 @@ After contract migration, direct anon execution of customer mutation/lookup RPCs
 ### 6.8 Authorization/helper residue
 
 - `current_role()`, `current_barber_id()`, `is_owner()`.
-- `taken_slots()` = legacy/public availability helper still present; live public UI uses `available_slots()`.
-- `queue_booking_confirmation()` = **legacy/superseded pre-ledger function**. Later migrations remove calling triggers but leave function defined. Do not extend/reuse; current booking email events use `queue_booking_email_delivery()` + `booking_email_delivery_jobs`.
+- `taken_slots()` = retired superseded availability helper; live public UI uses `available_slots()`.
+- `queue_booking_confirmation()` = retired legacy pre-ledger function. Current booking email events use `queue_booking_email_delivery()` + `booking_email_delivery_jobs`.
 
 ### 6.9 Triggers, cron, external webhook
 
-| Trigger                                   | Table/event                                                | Function                                |
-| ----------------------------------------- | ---------------------------------------------------------- | --------------------------------------- |
-| `booking_calendar_sync_on_change`         | `bookings` AFTER INSERT/UPDATE of Calendar-relevant fields | `queue_booking_calendar_sync()`         |
-| `booking_email_delivery_on_insert`        | `bookings` AFTER INSERT                                    | `queue_booking_email_delivery()`        |
-| `booking_email_delivery_on_status_change` | `bookings` AFTER UPDATE OF status                          | `queue_booking_email_delivery()`        |
-| `booking_reminder_on_insert`              | `bookings` AFTER INSERT                                    | `queue_booking_reminder_after_insert()` |
-| `booking_calendar_cleanup_on_status`      | `bookings` AFTER UPDATE OF status                          | `queue_booking_calendar_cleanup()`      |
-| `booking_calendar_cleanup_on_delete`      | `bookings` AFTER DELETE                                    | `queue_booking_calendar_cleanup()`      |
+| Trigger                                   | Table/event                       | Function                                |
+| ----------------------------------------- | --------------------------------- | --------------------------------------- |
+| `booking_email_delivery_on_insert`        | `bookings` AFTER INSERT           | `queue_booking_email_delivery()`        |
+| `booking_email_delivery_on_status_change` | `bookings` AFTER UPDATE OF status | `queue_booking_email_delivery()`        |
+| `booking_reminder_on_insert`              | `bookings` AFTER INSERT           | `queue_booking_reminder_after_insert()` |
+| `booking_calendar_cleanup_on_status`      | `bookings` AFTER UPDATE OF status | `queue_booking_calendar_cleanup()`      |
+| `booking_calendar_cleanup_on_delete`      | `bookings` AFTER DELETE           | `queue_booking_calendar_cleanup()`      |
 
 Older direct booking-email triggers are dropped by the durable email migration.
 
@@ -619,11 +627,7 @@ Older direct booking-email triggers are dropped by the durable email migration.
 | `external-action-dispatch`        | every minute        | `queue_due_external_actions()`         |
 | `booking-attempt-cleanup`         | hourly at minute 23 | delete booking attempts >2d            |
 
-The guarded retirement migration `20260901213117_retire_legacy_calendar_sync.sql` removes the
-Dashboard-managed `calendar_sync_on_bookings` trigger after checking the migration-owned
-`booking_calendar_sync_on_change` trigger, `queue_calendar_event_sync(uuid)`, the external-action
-outbox, and its dispatch resolver. Verify the trigger is absent in the linked project after the
-operator applies the migration; do not recreate a compatibility webhook.
+**External webhook:** `calendar-sync` expects a Supabase Database Webhook on `public.bookings` INSERT/UPDATE/DELETE. The binding is not represented by migration; verify in the linked project for live Calendar sync.
 
 ### 6.10 State ownership quick index
 
@@ -665,6 +669,7 @@ operator applies the migration; do not recreate a compatibility webhook.
 | `admin-manage-barber`           | authenticated owner        | JWT + owner check                                                                                                                                                    | durable Auth side effects when needed         |
 | Calendar OAuth start/disconnect | authenticated barber       | JWT + linked active barber                                                                                                                                           | deny unauthorized account                     |
 | Calendar callback               | Google redirect            | `verify_jwt=false`; HMAC state + active linked barber                                                                                                                | fail closed invalid/expired state             |
+| `calendar-sync`                 | DB Webhook                 | `verify_jwt=false`; `WEBHOOK_SECRET`; DB re-read                                                                                                                     | 5xx supports webhook retry                    |
 | `send-confirmation`             | DB cron/pg_net             | `verify_jwt=false`; `WEBHOOK_SECRET`; dispatch RPC                                                                                                                   | durable ledger retry/idempotency              |
 | `external-cleanup`              | DB cron/pg_net             | `verify_jwt=false`; `WEBHOOK_SECRET`; dispatch token                                                                                                                 | outbox retry/block                            |
 | `upload-image`                  | authenticated admin        | JWT + role/profile + server decode                                                                                                                                   | reject invalid/oversize before durable DB ref |
@@ -747,7 +752,7 @@ object-src 'none'
 upgrade-insecure-requests
 ```
 
-Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrictive Permissions-Policy, COOP/CORP, DNS-prefetch disabled. `/assets/*` + `/fonts/*`: one-year `immutable` cache. Dynamic homepage starts from Asset response (preserving security headers) but forces no-cache. Successful Worker-generated `/llms.txt` uses its own text/cache headers.
+Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrictive Permissions-Policy, COOP/CORP, DNS-prefetch disabled. `/assets/*` + `/fonts/*`: one-year `immutable` cache. `/.well-known/acp.json`: JSON, one-hour cache. Dynamic homepage starts from Asset response (preserving security headers) but forces no-cache. Successful Worker-generated `/llms.txt` uses its own text/cache headers.
 
 ### 7.8 Edge JWT modes
 
@@ -762,6 +767,7 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | `admin-manage-barber`     |         true |
 | `calendar-oauth-start`    |         true |
 | `calendar-oauth-callback` |        false |
+| `calendar-sync`           |        false |
 | `calendar-disconnect`     |         true |
 | `upload-image`            |         true |
 | `external-cleanup`        |        false |
@@ -793,26 +799,27 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 
 ### 8.3 Change → focused tests
 
-| Change                          | Focused tests                                                                                                                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| booking/contact validation      | `tests/unit/validation.test.ts`                                                                                                                                                                     |
-| mock slot packing               | `slotPacking.test.ts`, `slots.test.ts`                                                                                                                                                              |
-| Stockholm conversion            | `stockholmTime.test.ts`                                                                                                                                                                             |
-| ICS/calendar links              | `calendar.test.ts`, `ics.test.ts`, `bookingLinks.test.ts`                                                                                                                                           |
-| booking catalog + weekdays      | `bookingCatalog.test.ts`, `supabaseServices.test.ts`, `40_public_booking_catalog_test.sql`, public-site integration                                                                                 |
-| lazy/performance lifecycles     | `lazySurface.test.ts`, `performanceLifecycle.test.ts`, `siteChrome.test.ts`, `supabaseSiteChrome.test.ts`, browser smoke                                                                            |
-| public self-service             | `customerAccessToken`, `myBookingsFormat`, `deviceMemory`, `publicBookingActions`, `publicBookingActionAdapters`, `customerAccessSecurityContract`, `39_permanent_customer_booking_access_test.sql` |
-| reviews                         | `reviewValidation`, `reviewGatewayContract`, integration reviews                                                                                                                                    |
-| About CMS merge                 | `aboutMerge.test.ts`                                                                                                                                                                                |
-| admin schedule/conflicts        | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`                                                                                                                                    |
-| admin booking grouping/deletion | `bookingsSections`, `weekOfYear`, `deleteAdapters`                                                                                                                                                  |
-| admin auth/account links        | `adminAuth`, `passwordPolicy`, `recoveryLink`, `emailChangeLink`, `barberAccountAdmin`, `barberLinkStatus`                                                                                          |
-| site CMS/discovery/SEO          | `siteChrome`, `supabaseSiteChrome`, `businessStructuredData`, `discovery`, `workerRoutes`                                                                                                           |
-| image gateway/runtime           | `imageUploadAdapters.test.ts`, `uploadImageDependency.test.ts`, `uploadImageRuntime.test.ts`                                                                                                        |
-| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`                                                                                                               |
-| Google Calendar                 | `calendarSync`, `calendarDeletionOwnership`, `externalActions`                                                                                                                                      |
-| backup scripts                  | `backupScripts.test.ts`                                                                                                                                                                             |
-| CI pins/actions/locks           | `ciSupplyChain.test.ts`                                                                                                                                                                             |
+| Change                          | Focused tests                                                                                                                                                                            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| booking/contact validation      | `tests/unit/validation.test.ts`                                                                                                                                                          |
+| admin service values/order      | `serviceValidation.test.ts`, `reserveDialogContract.test.ts`, `servicesAdmin.test.ts`, `services.ordering.test.ts`, `42_decimal_service_values_test.sql`, `43_service_ordering_test.sql` |
+| mock slot packing               | `slotPacking.test.ts`, `slots.test.ts`                                                                                                                                                   |
+| Stockholm conversion            | `stockholmTime.test.ts`                                                                                                                                                                  |
+| ICS/calendar links              | `calendar.test.ts`, `ics.test.ts`, `bookingLinks.test.ts`                                                                                                                                |
+| booking catalog + weekdays      | `bookingCatalog.test.ts`, `supabaseServices.test.ts`, `40_public_booking_catalog_test.sql`, public-site integration                                                                      |
+| lazy/performance lifecycles     | `lazySurface.test.ts`, `performanceLifecycle.test.ts`, `siteChrome.test.ts`, `supabaseSiteChrome.test.ts`, browser smoke                                                                 |
+| public self-service             | `src/mybookings/`, `publicBookingActions`, `publicBookingActionAdapters`, `39_permanent_customer_booking_access_test.sql`, `45_retire_legacy_customer_lookup_test.sql`                   |
+| reviews                         | `reviewValidation`, `reviewGatewayContract`, integration reviews                                                                                                                         |
+| About CMS merge                 | `aboutMerge.test.ts`                                                                                                                                                                     |
+| admin schedule/conflicts        | `adminTime`, `scheduleConflicts`, `availabilityMutationAdapters`                                                                                                                         |
+| admin booking grouping/deletion | `bookingsSections`, `weekOfYear`, `deleteAdapters`                                                                                                                                       |
+| admin auth/account links        | `adminAuth`, `passwordPolicy`, `recoveryLink`, `emailChangeLink`, `barberAccountAdmin`, `barberLinkStatus`                                                                               |
+| site CMS/discovery/SEO          | `siteChrome`, `supabaseSiteChrome`, `businessStructuredData`, `discovery`, `workerRoutes`                                                                                                |
+| image gateway/runtime           | `imageUploadAdapters.test.ts`, `uploadImageDependency.test.ts`, `uploadImageRuntime.test.ts`                                                                                             |
+| email/outbox/secrets            | `emailBusiness.test.ts`, `webhookSecretContract.test.ts`, `productionSecrets.test.ts`, `46_retire_superseded_booking_contract_test.sql`                                                  |
+| Google Calendar                 | `calendarSync`, `calendarDeletionOwnership`, `externalActions`, `47_calendar_customer_contact_test.sql`                                                                                  |
+| backup scripts                  | `backupScripts.test.ts`                                                                                                                                                                  |
+| CI pins/actions/locks           | `ciSupplyChain.test.ts`                                                                                                                                                                  |
 
 ### 8.4 Actual CI gate
 
@@ -892,7 +899,7 @@ Audit all canonical-origin surfaces together; `VITE_SITE_URL` alone is insuffici
 - `_shared/email.ts` + `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber`: generated links/sending identity where hardcoded.
 - `public-booking-actions/index.ts`: default CORS origins.
 - `src/site/business.ts`: structured-data/canonical defaults.
-- `public/robots.txt`, `public/sitemap.xml`, `public/llms.txt`, `public/privacy.html`, `public/google-calendar.html`.
+- `public/.well-known/acp.json`, `public/robots.txt`, `public/sitemap.xml`, `public/llms.txt`, `public/privacy.html`, `public/google-calendar.html`.
 - runbooks/docs + domain-sensitive tests (`workerRoutes.test.ts`, `emailBusiness.test.ts`).
 - External: Cloudflare custom domain/DNS, Supabase Auth redirects, Resend domain/DKIM/SPF, Google OAuth redirect URIs, Dashboard webhook/origin config.
 
@@ -910,7 +917,7 @@ Search for the **old hostname** before declaring complete.
 | Availability            | `create_booking`, `available_slots`, GiST, transactional availability migrations, `stockholmTime.ts`; client-only fixes are insufficient.                                                                                                                                                                                                   |
 | RLS/grants              | Later migrations revoke earlier direct writes; always inspect final effective state.                                                                                                                                                                                                                                                        |
 | Email                   | Two booking-email ledgers + separate cron dispatchers; both depend on Vault URL/secret + `WEBHOOK_SECRET` parity.                                                                                                                                                                                                                           |
-| Calendar                | Durable booking trigger/outbox owns insert/update; external outbox owns deletion/disconnect. The legacy Dashboard webhook is retired by a guarded migration. Diagnose the durable queue first.                                                                                                                                              |
+| Calendar                | Insert/update requires external webhook; deletion/disconnect requires outbox. Diagnose the right path.                                                                                                                                                                                                                                      |
 | Media deletion          | Keep server + outbox ownership; no direct browser delete shortcuts. Homepage logo replacement/removal is `upload-image` → `site_settings.homepage_logo_path` → durable gallery cleanup.                                                                                                                                                     |
 | Admin account lifecycle | Keep `profiles.account_enabled`, Auth ban/delete state, and durable actions coherent.                                                                                                                                                                                                                                                       |
 | Migrations              | Migrations only. Production booking gateway uses staged expand/deploy/switch/verify/contract, not unrestricted `db push`.                                                                                                                                                                                                                   |
@@ -921,8 +928,10 @@ Authoritative runbook: `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`.
 
 ```text
 1 EXPAND
-  apply through 20260813123852_expand_public_booking_gateway.sql, including 20260813123851_review_hardening.sql
-  legacy direct anon RPC access temporarily coexists with gateways
+  verified linked baseline already includes 20260813123853_contract_public_booking_gateway.sql
+  and continues through 20260827170300_harden_internal_function_privileges.sql
+  use tools/release/public-booking-migration-stages.sh for the exact five reviewed post-baseline migrations
+  direct anon RPC access is already denied; the three retirement functions still exist for service-role gateway compatibility
 
 2 DEPLOY EDGE FUNCTIONS
   run npm run verify:production-secrets -- --project-ref <ref>
@@ -936,8 +945,8 @@ Authoritative runbook: `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`.
   node tools/smoke-live.mjs + runbook production UI/manual checks
 
 5 CONTRACT
-  apply 20260813123853_contract_public_booking_gateway.sql
-  direct anon customer RPC execution revoked
+  use the same explicit selector, applying --include-all only to the staged Contract tree, adding 20260901011632, 20260901011908, and 20260901012503
+  direct anon customer RPC execution remains denied; the three retired function families become absent
 
 6 RE-VERIFY
 ```
@@ -950,22 +959,23 @@ After contract, regranting anonymous mutation/lookup RPC execution is emergency 
 
 ### 10.4 Operational tooling
 
-| Tool                                          | Purpose                                                      |
-| --------------------------------------------- | ------------------------------------------------------------ |
-| `tools/smoke-live.mjs`                        | live Supabase availability/gateway/direct-RPC contract smoke |
-| `tools/release/test-public-booking-stages.sh` | validate expand/contract compatibility locally               |
-| `tools/backup/capture-storage-references.sh`  | capture DB-owned Storage refs                                |
-| `tools/backup/storage-backup.sh`              | export Storage objects + metadata/checksums                  |
-| `tools/backup/storage-restore.sh`             | restore + verify Storage                                     |
-| `tools/backup/verify-backup-tree.sh`          | validate backup structure/manifests/lineage                  |
-| `tools/backup/prepare-migration-history.sql`  | restore migration-lineage prep                               |
-| `tools/e2e/smoke.mjs`                         | Playwright smoke                                             |
-| `tools/e2e/admin-state.mjs`                   | Admin history/delayed-scroll/CMS draft browser regression    |
-| `tools/e2e/admin-harness.html`, `.tsx`        | In-memory Vite source harness for admin browser test         |
-| `tools/visual/capture.mjs`                    | 8 homepage variants plus the Swedish privacy-banner state    |
-| `tools/visual/compare.mjs`                    | pixel compare vs approved baseline                           |
-| `tools/og/render.mjs`                         | social-card generation                                       |
-| `tools/seed-admin-users.mjs`                  | local/admin seed helper                                      |
+| Tool                                               | Purpose                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------ |
+| `tools/smoke-live.mjs`                             | live Supabase availability/gateway/direct-RPC contract smoke |
+| `tools/release/test-public-booking-stages.sh`      | validate expand/contract compatibility locally               |
+| `tools/release/public-booking-migration-stages.sh` | shared explicit migration manifest for rollout and CI        |
+| `tools/backup/capture-storage-references.sh`       | capture DB-owned Storage refs                                |
+| `tools/backup/storage-backup.sh`                   | export Storage objects + metadata/checksums                  |
+| `tools/backup/storage-restore.sh`                  | restore + verify Storage                                     |
+| `tools/backup/verify-backup-tree.sh`               | validate backup structure/manifests/lineage                  |
+| `tools/backup/prepare-migration-history.sql`       | restore migration-lineage prep                               |
+| `tools/e2e/smoke.mjs`                              | Playwright smoke                                             |
+| `tools/e2e/admin-state.mjs`                        | Admin history/delayed-scroll/CMS draft browser regression    |
+| `tools/e2e/admin-harness.html`, `.tsx`             | In-memory Vite source harness for admin browser test         |
+| `tools/visual/capture.mjs`                         | 8 homepage variants plus the Swedish privacy-banner state    |
+| `tools/visual/compare.mjs`                         | pixel compare vs approved baseline                           |
+| `tools/og/render.mjs`                              | social-card generation                                       |
+| `tools/seed-admin-users.mjs`                       | local/admin seed helper                                      |
 
 ### 10.5 Backup properties + restore invariants
 
@@ -976,7 +986,7 @@ Restore authority: `docs/operations/BACKUP_RESTORE.md`. Procedure targets a **ne
 1. Restore `schema.sql` + `data.sql` in one transaction with `session_replication_role = replica`. Backup includes Auth users but excludes Storage metadata; managed roles/project/dashboard config come from new target and are not restored.
 2. Run `tools/backup/prepare-migration-history.sql` **before** `history_data.sql`; it creates the `supabase_migrations` schema/tables if needed and truncates history tables so captured lineage loads cleanly.
 3. Restore Storage bucket metadata and bytes with `tools/backup/storage-restore.sh`, then `--verify-only` for byte count/SHA-256/inventory parity. The reference snapshot includes gallery, barber-photo, and `site_settings.homepage_logo_path` bytes.
-4. Reconfigure Auth URLs/SMTP, Edge secrets, cron, Google/Resend/Cloudflare, and other provider/project state separately.
+4. Reconfigure Auth URLs/SMTP, Edge secrets, cron, Database Webhooks, Google/Resend/Cloudflare, and other provider/project state separately.
 
 `verify-backup-tree.sh` asserts `data.sql` contains `auth.users` but no Storage metadata; `history_data.sql` contains `supabase_migrations.schema_migrations`; Storage archive metadata and bytes are checksummed separately.
 
@@ -986,58 +996,59 @@ Restore authority: `docs/operations/BACKUP_RESTORE.md`. Procedure targets a **ne
 
 Use this instead of grep for first-hop navigation.
 
-| Concept                                    | Canonical path / symbol                                                       |
-| ------------------------------------------ | ----------------------------------------------------------------------------- |
-| Public Supabase configured?                | `src/backend/config.ts:isBackendConfigured`                                   |
-| Public client                              | `src/backend/supabaseClient.ts:getSupabase`                                   |
-| Admin client                               | `src/admin/adminClient.ts:getAdminClient`                                     |
-| Booking port                               | `src/booking/port.ts:BookingPort`                                             |
-| Live booking adapter                       | `src/booking/adapters/supabaseBooking.ts:supabaseBookingAdapter`              |
-| Shared public booking catalog              | `src/booking/adapters/supabaseBookingCatalog.ts` / `public_booking_catalog()` |
-| Service-aware availability                 | `available_slots_for_service`                                                 |
-| Mock availability engine                   | `src/booking/slotPacking.ts:packSlots` via `localCalendar.ts`                 |
-| Live availability                          | DB `available_slots`                                                          |
-| Stockholm wall-time conversion             | `localWallClockToStockholmIso`                                                |
-| Booking submit gateway                     | `supabase/functions/submit-booking/index.ts`                                  |
-| Shared customer gateway wrapper            | `src/backend/publicBookingActions.ts:invokePublicBookingAction`               |
-| Customer gateway                           | `supabase/functions/public-booking-actions/index.ts`                          |
-| Permanent customer token crypto            | `supabase/functions/_shared/customerAccess.ts`                                |
-| Booking rate-limit RPC                     | `create_booking_with_limits`                                                  |
-| Customer action limiter                    | `consume_public_action_attempt`                                               |
-| Admin profile resolve                      | `src/admin/auth.ts:getActiveProfile`                                          |
-| Admin persisted session                    | `src/admin/adminClient.ts` / `knc-admin-auth`                                 |
-| Consent + remembered customer phone        | `storageConsent.ts`; phone cookie only after `functional` consent             |
-| Calendar adapter selector                  | `src/admin/calendar/adapters/index.ts:defaultCalendarSyncPort`                |
-| Schedule transaction                       | `admin_save_barber_week` (`p_week`: JSONB, exactly 7 weekday objects)         |
-| Time-off transaction                       | `admin_add_time_off`                                                          |
-| Slot-block transaction                     | `admin_add_slot_block`                                                        |
-| Public business discovery                  | `public_business_discovery`                                                   |
-| JSON-LD                                    | `src/site/business.ts:buildBusinessStructuredData`                            |
-| Site live hydration                        | `src/site/adapters/supabaseSiteChrome.ts`                                     |
-| Lazy-load boundary                         | `src/ui/LazySurface.tsx:LazySurface`                                          |
-| Media gateway                              | `supabase/functions/upload-image/index.ts`                                    |
-| Email builder                              | `supabase/functions/_shared/email.ts`                                         |
-| Booking-email dispatcher                   | `queue_due_booking_email_deliveries`                                          |
-| Reminder dispatcher                        | `queue_due_booking_reminders`                                                 |
-| Calendar connection status                 | `calendar_connection_status`                                                  |
-| Calendar mapping                           | `public.calendar_event_map`                                                   |
-| Calendar deletion enqueue                  | `queue_calendar_event_deletion`                                               |
-| Legacy booking-email function - do not use | `queue_booking_confirmation`                                                  |
-| External outbox                            | `public.external_action_jobs`                                                 |
-| External action executor                   | `_shared/externalActions.ts:executeExternalAction`                            |
-| Cloudflare hostname gateway/public cache   | `src/worker.ts` default / `PublicContent`                                     |
+| Concept                                  | Canonical path / symbol                                                           |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| Public Supabase configured?              | `src/backend/config.ts:isBackendConfigured`                                       |
+| Public client                            | `src/backend/supabaseClient.ts:getSupabase`                                       |
+| Admin client                             | `src/admin/adminClient.ts:getAdminClient`                                         |
+| Booking port                             | `src/booking/port.ts:BookingPort`                                                 |
+| Live booking adapter                     | `src/booking/adapters/supabaseBooking.ts:supabaseBookingAdapter`                  |
+| Shared public booking catalog            | `src/booking/adapters/supabaseBookingCatalog.ts` / `public_booking_catalog()`     |
+| Service-aware availability               | `available_slots_for_service`                                                     |
+| Mock availability engine                 | `src/booking/slotPacking.ts:packSlots` via `localCalendar.ts`                     |
+| Live availability                        | DB `available_slots`                                                              |
+| Stockholm wall-time conversion           | `localWallClockToStockholmIso`                                                    |
+| Booking submit gateway                   | `supabase/functions/submit-booking/index.ts`                                      |
+| Shared customer gateway wrapper          | `src/backend/publicBookingActions.ts:invokePublicBookingAction`                   |
+| Customer gateway                         | `supabase/functions/public-booking-actions/index.ts`                              |
+| Permanent customer token crypto          | `supabase/functions/_shared/customerAccess.ts`                                    |
+| Booking rate-limit RPC                   | `create_booking_with_limits`                                                      |
+| Customer action limiter                  | `consume_public_action_attempt`                                                   |
+| Admin profile resolve                    | `src/admin/auth.ts:getActiveProfile`                                              |
+| Admin persisted session                  | `src/admin/adminClient.ts` / `knc-admin-auth`                                     |
+| Consent + remembered customer phone      | `storageConsent.ts`; phone cookie only after `functional` consent                 |
+| Calendar adapter selector                | `src/admin/calendar/adapters/index.ts:defaultCalendarSyncPort`                    |
+| Schedule transaction                     | `admin_save_barber_week` (`p_week`: JSONB, exactly 7 weekday objects)             |
+| Time-off transaction                     | `admin_add_time_off`                                                              |
+| Slot-block transaction                   | `admin_add_slot_block`                                                            |
+| Public business discovery                | `public_business_discovery`                                                       |
+| JSON-LD                                  | `src/site/business.ts:buildBusinessStructuredData`                                |
+| Site live hydration                      | `src/site/adapters/supabaseSiteChrome.ts`                                         |
+| Lazy-load boundary                       | `src/ui/LazySurface.tsx:LazySurface`                                              |
+| Media gateway                            | `supabase/functions/upload-image/index.ts`                                        |
+| Email builder                            | `supabase/functions/_shared/email.ts`                                             |
+| Booking-email dispatcher                 | `queue_due_booking_email_deliveries`                                              |
+| Reminder dispatcher                      | `queue_due_booking_reminders`                                                     |
+| Calendar connection status               | `calendar_connection_status`                                                      |
+| Calendar sync gateway                    | durable `booking_calendar_sync_on_change` trigger + `external-cleanup` dispatcher |
+| Calendar mapping                         | `public.calendar_event_map`                                                       |
+| Calendar deletion enqueue                | `queue_calendar_event_deletion`                                                   |
+| Retired booking-email function           | `queue_booking_confirmation`                                                      |
+| External outbox                          | `public.external_action_jobs`                                                     |
+| External action executor                 | `_shared/externalActions.ts:executeExternalAction`                                |
+| Cloudflare hostname gateway/public cache | `src/worker.ts` default / `PublicContent`                                         |
 
 ---
 
-## 12. Documentation Trust / Historical Notes
+## 12. Documentation Trust / Known Drift
 
-| Source                                           | Status / clarification                                                                                                                                                          | Trust instead                                                                  |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `.claude/runtime/SLOT_PACKING_SPEC.md`           | `packSlots()` describes the mock availability path; live availability remains the database `available_slots()` RPC.                                                             | `src/booking/adapters/localCalendar.ts` and live booking adapter/database RPCs |
-| `supabase/functions/send-confirmation/README.md` | Current booking-email ledger, failed owner-review state, recipient progress, and 90-day cleanup language is verified against the function and latest email-delivery migrations. | function + `20260823130000_classify_booking_email_delivery_failures.sql`       |
-| `BACKEND.md`                                     | Current runtime boundary distinguishes the booking-email ledger, external-action outbox, direct Auth mail, and synchronous upload from durable cleanup.                         | current functions, migrations, and operations runbooks                         |
-| `src/admin/adapters/schedulesAdmin.ts`           | Current comments identify the transactional week-save RPC, revoked direct schedule writes, and the database `available_slots()` read authority.                                 | adapter + `20260813115437_transactional_availability_mutations.sql`            |
-| `REVIEW_FINDINGS.md`                             | Archived historical review; its findings and recommendations predate later hardening and are not current implementation or launch-status claims.                                | current code, latest migrations, tests, and `docs/operations/` runbooks        |
+| Source                                                         | Drift                                                                                                                                                                            | Trust instead                                                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| historical Calendar README                                     | Older prose described broader backfill and disconnect behavior. Current code backfills future confirmed and removes mapped events through durable cleanup before token teardown. | current functions + `20260813115438_durable_storage_cleanup.sql`                                                                      |
+| `supabase/functions/send-confirmation/README.md`, `BACKEND.md` | Some prose still models booking trigger → direct function call; `BACKEND.md` also overgeneralizes external outbox coverage.                                                      | current chain: trigger → durable DB job → cron → Vault+pg_net → `send-confirmation`; subsystem ownership in §5                        |
+| `.claude/runtime/SLOT_PACKING_SPEC.md`                         | Any statement that `BookingFlow.tsx` directly consumes `packSlots()` is shorthand for mock mode.                                                                                 | actual: `localCalendar.ts` consumes `slotPacking.ts`; live uses `available_slots()`                                                   |
+| `src/admin/adapters/schedulesAdmin.ts` comments                | Header/JSDoc still describes old direct-upsert/RLS week save.                                                                                                                    | executable `saveWeek()` + `20260813115437_transactional_availability_mutations.sql`; direct authenticated schedule writes are revoked |
+| `REVIEW_FINDINGS.md`                                           | Predates later hardening migrations.                                                                                                                                             | historical context only; current code/migrations/tests                                                                                |
 
 ---
 

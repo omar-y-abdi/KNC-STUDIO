@@ -312,7 +312,7 @@ export function buildBusinessStructuredData(
 
   const prices = facts.services
     .map((service) => service.price)
-    .filter((price) => Number.isInteger(price) && price >= 0)
+    .filter((price) => Number.isFinite(price) && price >= 0 && price <= 100000)
   if (prices.length > 0) {
     const min = Math.min(...prices)
     const max = Math.max(...prices)

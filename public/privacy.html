@@ -94,8 +94,9 @@
         Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information
         när en barberare frivilligt kopplar sitt Google-konto för att spegla sina bokningar till
         Google Calendar. Endast barberare hos studion använder kopplingen och den är aldrig
-        påtvingad. För en synkad bokning skrivs kundens namn, behandling och bokad tid till den
-        tilldelade barberarens kalender. Telefonnummer och e-post skrivs inte till Google Calendar.
+        påtvingad. För att barberaren ska kunna se kunduppgifter i sin egen kalender skrivs kundens
+        namn, telefonnummer och e-postadress tillsammans med behandling och bokad tid till den
+        tilldelade barberarens kalender.
       </p>
 
       <h2>Bokningar, Mina bokningar och e-post</h2>
@@ -108,21 +109,22 @@
       <p>
         Mina bokningar använder en säker, e-postkopplad åtkomstlänk som skickas till bokningens
         e-postadress. Länken har ingen tidsgräns, men en ny begäran om länk för samma e-postadress
-        ersätter och återkallar den tidigare länken. När en giltig länk har öppnats används
-        sessionslagring i samma flik för den nödvändiga behörighetshanteringen. Den används inte för
-        spårning och delas inte mellan webbplatser eller flikar.
+        ersätter och återkallar den tidigare länken. När en giltig länk har öppnats utfärdar servern
+        en nödvändig, ogenomskinlig HttpOnly- och Secure-cookie för en tidsbegränsad session. Den
+        innehåller inga personuppgifter eller bokningstoken och kan inte läsas av JavaScript.
       </p>
 
       <h2>Cookies och annan webblagring</h2>
       <p id="webblagring">
-        Webbplatsen använder inga analys- eller annonscookies och sparar inga valfria cookies på din
-        enhet. Nödvändig sessionslagring används bara efter att du öppnat en giltig Mina
-        bokningar-länk.
+        Webbplatsen använder inga analys- eller annonscookies och sparar inga telefonnummer. Valfri
+        lagring gäller endast ditt val i denna kontroll. Efter giltig e-postlänk används en
+        nödvändig HttpOnly-sessioncookie; om cookies är avstängda kan Mina bokningar inte logga in
+        automatiskt.
       </p>
       <p>
-        Sessionslagringen behövs för den begärda bokningsfunktionen, gäller bara i samma flik och
-        innehåller inte analys- eller annonsidentifierare. Den används inte för spårning och delas
-        inte mellan webbplatser eller flikar.
+        Sessionen upphör och kan återkallas på servern. Kundens namn, telefon, e-post och tidigare
+        bokningsuppgifter hämtas från servern för autofyllning efter autentisering. Ingen PII eller
+        token lagras i webbläsarens localStorage, sessionStorage eller document.cookie.
       </p>
 
       <h2>Publika formulär och bot-skydd (Cloudflare Turnstile)</h2>
@@ -167,10 +169,9 @@
         att visa vilket konto som är anslutet i adminpanelen.
       </p>
       <p>
-        När en bekräftad bokning synkas skickar servern kundens namn, behandling, bokad tid samt
-        start- och sluttid till Google Calendar. Telefonnummer och e-postadress skickas inte till
-        kalendern. Dessa Google-data används inte för annonsering, profilering eller andra
-        orelaterade ändamål.
+        När en bekräftad bokning synkas skickar servern kundens namn, telefonnummer, e-postadress,
+        behandling, bokad tid samt start- och sluttid till Google Calendar. Dessa Google-data
+        används inte för annonsering, profilering eller andra orelaterade ändamål.
       </p>
 
       <h2>Hur data lagras och skyddas</h2>
@@ -217,9 +218,9 @@
           This policy describes how Blade &amp; Blend Studio ("we", "the service") handles
           information when a barber voluntarily connects their Google account to mirror their
           bookings into Google Calendar. Only the studio's barbers use this connection and it is
-          never mandatory. For a synced booking, the customer's name, service, and appointment time
-          are written to the assigned barber's calendar. Phone numbers and email addresses are not
-          written to Google Calendar.
+          never mandatory. To let the barber see the customer details in their own calendar, the
+          customer's name, phone number, and email address, together with the service and
+          appointment time, are written to the assigned barber's calendar.
         </p>
 
         <h2>Bookings, My appointments and email</h2>
@@ -232,21 +233,21 @@
         <p>
           My appointments uses a secure, email-scoped access link sent to the email address on the
           booking. The link has no time limit, but a new link request for the same email address
-          replaces and revokes the previous link. After a valid link is opened, same-tab session
-          storage is used for the necessary credential handling. It is not used for tracking and is
-          not shared across websites or tabs.
+          replaces and revokes the previous link. After a valid link is opened, the server sets a
+          necessary opaque HttpOnly and Secure session cookie. It contains no PII or booking token;
+          cookies disabled means automatic sign-in is unavailable. The server expires and can revoke
+          the session and resolves prior contact and booking details for booking-flow convenience.
         </p>
 
         <h2>Cookies and other browser storage</h2>
         <p id="browser-storage">
           This website does not use analytics or advertising cookies and does not save optional
-          cookies on your device. Necessary session storage is used only after you open a valid My
-          appointments link.
+          cookies on your device. The necessary session cookie is used only after a valid email
+          link.
         </p>
         <p>
-          This storage is required for the requested booking function, applies only in the same tab,
-          and contains no analytics or advertising identifier. It is not used for tracking and is
-          not shared across websites or tabs.
+          No authorization PII or token is stored in localStorage, sessionStorage, or
+          document.cookie.
         </p>
 
         <h2>Public forms and bot protection (Cloudflare Turnstile)</h2>
@@ -294,10 +295,9 @@
           email address is stored to show which account is connected in the admin panel.
         </p>
         <p>
-          When a confirmed booking is synchronized, the server sends the customer's name, service,
-          booked time, and start and end times to Google Calendar. Phone numbers and email addresses
-          are not sent to the calendar. This Google data is not used for advertising, profiling, or
-          other unrelated purposes.
+          When a confirmed booking is synchronized, the server sends the customer's name, phone
+          number, email address, service, booked time, and start and end times to Google Calendar.
+          This Google data is not used for advertising, profiling, or other unrelated purposes.
         </p>
 
         <h2>How data is stored and protected</h2>

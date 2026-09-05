@@ -1,12 +1,12 @@
 -- pgTAP — the edge functions' DB primitives. The submit-booking gateway (PLAN §3): the
--- booking_attempts ledger + recent_booking_count_by_phone counter. The transactional email bridge:
+-- booking_attempts ledger and transactional create_booking_with_limits RPC. The transactional email bridge:
 -- booking_confirmation_details. All are reached AS service_role through PostgREST; with
 -- auto_expose_new_tables OFF, the grants below are what make that work — and what keep anon/authenticated
 -- (and even service_role, for the PII bookings table) on the RPC-only path. (The end-to-end behavior of
 -- both functions is verified separately via curl.)
 
 begin;
-select plan(20);
+select plan(17);
 
 -- booking_attempts: gateway-only ledger. The definer RPC owns access; Data API roles, including the
 -- Edge Function's service_role, cannot read or mutate the ledger directly.
@@ -31,18 +31,6 @@ select ok(
   'anon canNOT INSERT booking_attempts'
 );
 
--- recent_booking_count_by_phone: definer counter, service_role-only (bookings stays RPC-gated PII).
-select ok(
-  pg_catalog.has_function_privilege(
-    'service_role', 'public.recent_booking_count_by_phone(text, timestamptz)', 'execute'),
-  'service_role can execute recent_booking_count_by_phone'
-);
-select ok(
-  not pg_catalog.has_function_privilege(
-    'anon', 'public.recent_booking_count_by_phone(text, timestamptz)', 'execute'),
-  'anon canNOT execute recent_booking_count_by_phone'
-);
-
 select ok(
   pg_catalog.has_function_privilege(
     'service_role',
@@ -64,20 +52,6 @@ select has_index(
   'booking_attempts',
   'booking_attempts_created_at_idx',
   'booking attempt cleanup has a time-first index'
-);
-
--- Functional: it counts only the given phone's bookings within the window.
-insert into public.bookings
-  (barber_id, service_id, service_name, price, duration_min, start_at, end_at,
-   customer_name, method, phone, email, lang)
-values
-  ('hassan','h','Hår',350,45, now() + interval '5 days', now() + interval '5 days' + interval '45 minutes',
-   'Count One','phone','0706660000', null,'sv'),
-  ('hassan','h','Hår',350,45, now() + interval '6 days', now() + interval '6 days' + interval '45 minutes',
-   'Count Two','phone','0706660000', null,'sv');
-select is(
-  public.recent_booking_count_by_phone('0706660000', now() - interval '1 hour'),
-  2, 'recent_booking_count_by_phone counts this phone''s recent bookings (2)'
 );
 
 select set_config(

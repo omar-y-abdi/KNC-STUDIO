@@ -115,8 +115,9 @@ Senast verifierat före review-fixen:
 - Backupkryptering, Storage byte round-trip och restore drill: godkända 2026-08-22.
 - Supabase advisors: 0 errors 2026-08-22.
 
-Advisor-warnings gäller flera befintliga permissive RLS-policies och att `btree_gist` ligger i
-`public`. De ska inte ändras utan nya regressionstester.
+Advisor-warnings gäller flera befintliga permissive RLS-policies. `btree_gist`-varningen har en
+lokalt verifierad, separat migration och pgTAP-regressionstest som flyttar extensionen till
+`extensions` utan att ändra `bookings_no_overlap`; den länkade databasen är fortfarande inte ändrad.
 
 ## Externa lanseringsgrindar
 

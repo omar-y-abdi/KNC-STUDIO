@@ -6,7 +6,6 @@
 import { getSupabase } from '../../../backend/supabaseClient'
 import { invokePublicBookingAction } from '../../../backend/publicBookingActions'
 import { createReviewResponse, parseWith, reviewRow } from '../../../backend/rpcSchemas'
-import { currentCustomerAccessToken } from '../../../mybookings/customerAccessSession'
 import type { Review, ReviewError, ReviewResult, ValidReview } from '../domain'
 import type { ReviewsPort } from '../port'
 
@@ -42,15 +41,16 @@ export const supabaseReviewsAdapter: ReviewsPort = {
     }
   },
 
-  async submit(review: ValidReview, turnstileToken: string): Promise<ReviewResult> {
+  async submit(
+    review: ValidReview,
+    turnstileToken: string,
+    accessToken?: string,
+  ): Promise<ReviewResult> {
     try {
-      const accessToken = currentCustomerAccessToken()
-      if (accessToken === null) return reviewError('no_booking', NO_BOOKING_MESSAGE)
-
       const { data, failed } = await invokePublicBookingAction({
         action: 'review',
         phone: review.phone,
-        accessToken,
+        ...(accessToken === undefined ? {} : { accessToken }),
         rating: review.rating,
         text: review.text,
         turnstileToken,

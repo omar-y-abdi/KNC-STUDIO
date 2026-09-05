@@ -61,8 +61,12 @@ vi.mock('../../src/backend/supabaseClient', () => ({
   }),
 }))
 
-import { supabaseBarbersAdapter } from '../../src/booking/adapters/supabaseBarbers'
-import { supabaseServicesAdapter } from '../../src/booking/adapters/supabaseServices'
+vi.mock('../../src/backend/config', () => ({
+  isBackendConfigured: () => true,
+}))
+
+import { defaultBarbersPort } from '../../src/booking/adapters/barbersIndex'
+import { defaultServicesPort } from '../../src/booking/adapters/servicesIndex'
 import {
   BOOKING_CATALOG_TTL_MS,
   cachedBookingCatalog,
@@ -108,8 +112,8 @@ describe('shared public booking catalog', () => {
     })
 
     const [barbers, services] = await Promise.all([
-      supabaseBarbersAdapter.listActive(),
-      supabaseServicesAdapter.listForBarber(asBarberId('db-barber'), '2040-03-18'),
+      defaultBarbersPort.listActive(),
+      defaultServicesPort.listForBarber(asBarberId('db-barber'), '2040-03-18'),
     ])
 
     expect(rpc).toHaveBeenCalledTimes(1)
@@ -124,7 +128,7 @@ describe('shared public booking catalog', () => {
     expect(services).toEqual([{ id: 'db-service', name: 'Database Service', price: 425, dur: 45 }])
 
     await expect(
-      supabaseServicesAdapter.listForBarber(asBarberId('db-barber'), '2040-03-19'),
+      defaultServicesPort.listForBarber(asBarberId('db-barber'), '2040-03-19'),
     ).resolves.toEqual([])
     expect(rpc).toHaveBeenCalledTimes(1)
   })

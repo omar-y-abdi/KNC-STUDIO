@@ -11,6 +11,12 @@ describe('gallery marquee interaction contract', () => {
     expect(source).toContain('tabIndex={accessible ? 0 : undefined}')
   })
 
+  it('keys selection by physical tile instance so loop clones cannot all highlight', () => {
+    expect(source).toContain('const logicalKey =')
+    expect(source).toContain('const key = `${logicalKey}:${j}`')
+    expect(source).toContain('const selected = props.selectedKey === key')
+  })
+
   it('cancels pointer selection on pointercancel or scrolling and pauses while focused', () => {
     expect(source).toContain('const onPointerCancel =')
     expect(source).toContain('onPointerCancel={onPointerCancel}')

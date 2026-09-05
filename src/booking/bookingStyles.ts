@@ -17,7 +17,6 @@ export interface Palette {
   input: string
   inputLine: string
   closeBg: string
-  tabBg: string
   dot: string
   iconF: string
 }
@@ -33,7 +32,6 @@ export const DARK: Palette = {
   input: '#2c2c2e',
   inputLine: 'rgba(255,255,255,.22)',
   closeBg: 'rgba(255,255,255,.12)',
-  tabBg: 'rgba(255,255,255,.09)',
   dot: 'rgba(255,255,255,.18)',
   iconF: 'invert(1)',
 }
@@ -49,7 +47,6 @@ export const LIGHT: Palette = {
   input: '#ffffff',
   inputLine: 'rgba(0,0,0,.18)',
   closeBg: '#eceae5',
-  tabBg: '#f1f0ec',
   dot: '#e3e2dd',
   iconF: 'none',
 }
@@ -65,23 +62,6 @@ export function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperti
     height: sz + 'px',
     filter: c.iconF,
     opacity: op === undefined ? 1 : op,
-  })
-}
-
-/** Language tab button. */
-export function makeTab(c: Palette): (on: boolean) => JSX.CSSProperties {
-  return (on) => ({
-    border: 'none',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: '12px',
-    fontWeight: 600,
-    padding: '5px 13px',
-    borderRadius: '999px',
-    background: on ? c.card : 'transparent',
-    color: on ? c.text : 'inherit',
-    opacity: on ? 1 : 0.5,
-    boxShadow: on ? '0 1px 2px rgba(0,0,0,.18)' : 'none',
   })
 }
 
@@ -106,7 +86,6 @@ export interface BookingStyles {
   badgeStyle: JSX.CSSProperties
   rootStyle: JSX.CSSProperties
   checkIconStyle: JSX.CSSProperties
-  tabWrapStyle: JSX.CSSProperties
   panelStyle: JSX.CSSProperties
   panelStyleFlush: JSX.CSSProperties
   timePlaceholderStyle: JSX.CSSProperties
@@ -184,7 +163,6 @@ export function buildBookingStyles(
       flexShrink: 0,
       filter: dark ? 'invert(1)' : 'none',
     },
-    tabWrapStyle: { display: 'flex', background: c.tabBg, borderRadius: '999px', padding: '2px' },
     panelStyle: {
       border: '0.5px solid ' + c.line,
       borderRadius: '14px',

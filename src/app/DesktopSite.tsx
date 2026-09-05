@@ -16,6 +16,7 @@ import type { ServicesPort } from '../booking/servicesPort'
 import type { ReviewsPort } from '../about/reviews/port'
 import type { AboutContentPort } from '../about/content/port'
 import type { GalleryPort } from '../about/gallery/port'
+import type { CustomerProfile } from '../mybookings/domain'
 import {
   scalePx,
   type HomepageLogo as HomepageLogoConfig,
@@ -58,6 +59,7 @@ export interface DesktopSiteProps extends ShellProps {
   readonly previewPorts?: DesktopSitePreviewPorts
   /** Embedded replicas scroll inside this host instead of the browser window. */
   readonly scrollRootRef?: RefObject<HTMLDivElement>
+  readonly initialContact?: CustomerProfile
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -340,11 +342,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                   <LazyBookingFlow
                     mode={props.mode}
                     defaultLang={props.lang}
-                    showHeader={false}
                     onMyBookings={props.openMyBookings}
                     popupText={props.bookingPopupText}
                     business={business}
                     showDirections={business.mapsHref !== ''}
+                    {...(props.initialContact === undefined
+                      ? {}
+                      : { initialContact: props.initialContact })}
                     {...(props.previewPorts === undefined
                       ? {}
                       : {

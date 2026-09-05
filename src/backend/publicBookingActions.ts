@@ -8,16 +8,16 @@ export type PublicBookingActionPayload =
       readonly turnstileToken: string
     }
   | { readonly action: 'exchange_access'; readonly accessCode: string }
-  | { readonly action: 'list'; readonly accessToken: string }
+  | { readonly action: 'list'; readonly accessToken?: string }
   | {
       readonly action: 'cancel'
       readonly bookingId: string
-      readonly accessToken: string
+      readonly accessToken?: string
     }
   | {
       readonly action: 'review'
       readonly phone: string
-      readonly accessToken: string
+      readonly accessToken?: string
       readonly rating: number
       readonly text: string
       readonly turnstileToken: string

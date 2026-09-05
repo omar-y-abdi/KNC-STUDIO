@@ -22,7 +22,7 @@ import { parseEmail } from '../booking/validation'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
 import { myBookingsStrings } from '../i18n/index'
-import type { MyBooking, MyBookings } from './domain'
+import type { CustomerProfile, MyBooking, MyBookings } from './domain'
 import { defaultMyBookingsPort } from './adapters/index'
 import type { MyBookingsPort } from './port'
 
@@ -40,6 +40,7 @@ export interface MyBookingsDialogProps {
   readonly port?: MyBookingsPort
   readonly accessToken?: string
   readonly accessError?: boolean
+  readonly onProfile?: (profile: CustomerProfile) => void
 }
 
 export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
@@ -98,6 +99,9 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         return
       }
       setBookings(result.bookings)
+      props.onProfile?.(result.profile)
+      // Initial link token is used only for this request. Subsequent operations use HttpOnly cookie.
+      setAccessToken('')
       setExpandedId(null)
       setCancelFor(null)
       setPastOpen(false)

@@ -26,6 +26,7 @@ import {
 } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
 import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
+import type { CustomerProfile } from '../mybookings/domain'
 
 /** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
 type StyleWithVars = JSX.CSSProperties & Record<`--${string}`, string | number>
@@ -60,6 +61,7 @@ export interface MobileSiteProps {
   readonly aboutScale: SizePreset
   /** Owner-edited policy + confirmation title shown in the booking popups. */
   readonly bookingPopupText: BookingPopupText
+  readonly initialContact?: CustomerProfile
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
@@ -415,11 +417,13 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             <LazyBookingFlow
               mode={props.mode}
               defaultLang={props.lang}
-              showHeader={false}
               onMyBookings={props.openMyBookings}
               popupText={props.bookingPopupText}
               business={business}
               showDirections={business.mapsHref !== ''}
+              {...(props.initialContact === undefined
+                ? {}
+                : { initialContact: props.initialContact })}
             />
           </LazySurface>
         ) : (

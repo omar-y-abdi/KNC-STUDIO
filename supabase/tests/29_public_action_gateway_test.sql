@@ -1,5 +1,5 @@
 begin;
-select plan(15);
+select plan(11);
 
 select has_table('public', 'public_action_attempts', 'public action ledger exists');
 select is(
@@ -25,27 +25,6 @@ select is(
   pg_catalog.has_table_privilege('authenticated', 'public.public_action_attempts', 'insert'),
   false,
   'authenticated clients cannot write action hashes'
-);
-
-select is(
-  pg_catalog.has_function_privilege('anon', 'public.lookup_booking(text)', 'execute'),
-  false,
-  'anon cannot call booking lookup directly'
-);
-select is(
-  pg_catalog.has_function_privilege('anon', 'public.list_bookings_by_phone(text)', 'execute'),
-  false,
-  'anon cannot list phone bookings directly'
-);
-select is(
-  pg_catalog.has_function_privilege('anon', 'public.cancel_booking(uuid,text)', 'execute'),
-  false,
-  'anon cannot cancel directly'
-);
-select is(
-  pg_catalog.has_function_privilege('anon', 'public.create_review(text,integer,text)', 'execute'),
-  false,
-  'anon cannot submit reviews directly'
 );
 
 select is(

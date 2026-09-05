@@ -1,5 +1,5 @@
 begin;
-select plan(7);
+select plan(5);
 
 select is(
   (select count(*) from public.bookings where method = 'sms'),
@@ -23,26 +23,16 @@ select ok(
 
 select ok(
   pg_catalog.pg_get_functiondef(
-    'public.admin_create_booking(text,timestamptz,integer,text,integer,text,text)'::regprocedure
+    'public.admin_create_booking(text,timestamptz,integer,text,numeric,text,text)'::regprocedure
   ) not like '%''sms''%',
   'manual booking RPC contains no SMS method'
 );
 
 select ok(
   pg_catalog.pg_get_functiondef(
-    'public.admin_create_booking(text,timestamptz,integer,text,integer,text,text)'::regprocedure
+    'public.admin_create_booking(text,timestamptz,integer,text,numeric,text,text)'::regprocedure
   ) like '%''phone''%',
   'manual booking RPC stores phone reservations as phone'
-);
-
-select ok(
-  pg_catalog.pg_get_functiondef('public.lookup_booking(text)'::regprocedure) not like '%''sms''%',
-  'lookup RPC contains no legacy SMS response label'
-);
-
-select ok(
-  pg_catalog.pg_get_functiondef('public.cancel_booking(uuid,text)'::regprocedure) not like '%''sms''%',
-  'cancellation RPC contains no legacy SMS response label'
 );
 
 select * from finish();

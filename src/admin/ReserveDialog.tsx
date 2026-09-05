@@ -14,6 +14,7 @@ import { parsePhone } from '../booking/validation'
 import { buildAdminStyles } from './adminStyles'
 import type { Lang } from '../i18n/index'
 import { adminText } from '../i18n/adminStrings'
+import { validateManualReservationPrice } from './serviceValidation'
 
 const TITLE_ID = 'admin-reserve-title'
 
@@ -68,6 +69,7 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
   const [price, setPrice] = useState<string>(() =>
     props.services[0] !== undefined ? String(props.services[0].price) : '',
   )
+  const [priceError, setPriceError] = useState(false)
   const [phone, setPhone] = useState('')
   const [phoneError, setPhoneError] = useState(false)
 
@@ -75,6 +77,7 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
 
   const onServiceChange = (id: string): void => {
     setServiceId(id)
+    setPriceError(false)
     const svc = props.services.find((s2) => s2.id === id)
     if (svc !== undefined) setPrice(String(svc.price))
   }
@@ -109,10 +112,14 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       }
       normalizedPhone = parsed.value
     }
-    const priceNum = Number.parseInt(price, 10)
+    const parsedPrice = validateManualReservationPrice(price)
+    if (!parsedPrice.ok) {
+      setPriceError(true)
+      return
+    }
     props.onSubmit({
       customerName: name.trim() === '' ? t.reserveDefaultName : name.trim(),
-      price: Number.isInteger(priceNum) && priceNum >= 0 ? priceNum : 0,
+      price: parsedPrice.value ?? 0,
       phone: normalizedPhone,
       durationMin: selectedService?.durationMin ?? FALLBACK_DURATION_MIN,
       serviceName: selectedService?.name ?? t.reserveServiceName,
@@ -124,7 +131,11 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
     value: string,
     onInput: (v: string) => void,
     placeholder: string,
-    opts?: { inputMode?: 'tel' | 'numeric'; invalid?: boolean; note?: string | undefined },
+    opts?: {
+      inputMode?: 'tel' | 'numeric' | 'decimal'
+      invalid?: boolean
+      note?: string | undefined
+    },
   ): JSX.Element => (
     <label style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '12px' }}>
       <span style={s.label}>{label}</span>
@@ -133,6 +144,7 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
         value={value}
         placeholder={placeholder}
         inputMode={opts?.inputMode}
+        aria-invalid={opts?.invalid === true}
         onInput={(e) => onInput(e.currentTarget.value)}
       />
       {opts?.note !== undefined ? <span style={s.errorText}>{opts.note}</span> : null}
@@ -185,7 +197,20 @@ export function ReserveDialog(props: ReserveDialogProps): JSX.Element {
       ) : null}
 
       {field(t.reserveName, name, setName, t.reserveNamePh)}
-      {field(t.reservePrice, price, setPrice, t.reservePricePh, { inputMode: 'numeric' })}
+      {field(
+        t.reservePrice,
+        price,
+        (v) => {
+          if (priceError && validateManualReservationPrice(v).ok) setPriceError(false)
+          setPrice(v)
+        },
+        t.reservePricePh,
+        {
+          inputMode: 'decimal',
+          invalid: priceError,
+          note: priceError ? t.reserveErrPrice : undefined,
+        },
+      )}
       {field(
         t.reservePhone,
         phone,

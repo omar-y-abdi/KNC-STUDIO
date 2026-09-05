@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(15);
 
 select ok(
   not pg_catalog.has_function_privilege('anon', 'public.admin_cancel_booking(uuid)', 'execute'),
@@ -50,16 +50,8 @@ select ok(
 );
 
 select ok(
-  not pg_catalog.has_function_privilege('anon', 'public.queue_booking_confirmation()', 'execute'),
-  'anon cannot invoke the legacy booking email trigger function'
-);
-select ok(
-  not pg_catalog.has_function_privilege('authenticated', 'public.queue_booking_confirmation()', 'execute'),
-  'authenticated users cannot invoke the legacy booking email trigger function'
-);
-select ok(
-  not pg_catalog.has_function_privilege('service_role', 'public.queue_booking_confirmation()', 'execute'),
-  'service role cannot invoke the legacy booking email trigger function'
+  pg_catalog.to_regprocedure('public.queue_booking_confirmation()') is null,
+  'the legacy booking email trigger function is retired'
 );
 
 select case

@@ -85,7 +85,6 @@ export interface NewService {
   readonly name: string
   readonly price: number
   readonly durationMin: number
-  readonly sortOrder: number
   /** Defaults to every day; a narrower set is chosen through Specific day(s). */
   readonly availableWeekdays: readonly Weekday[]
 }
@@ -96,7 +95,6 @@ export interface ServiceEdit {
   readonly price: number
   readonly durationMin: number
   readonly active: boolean
-  readonly sortOrder: number
   readonly availableWeekdays: readonly Weekday[]
 }
 

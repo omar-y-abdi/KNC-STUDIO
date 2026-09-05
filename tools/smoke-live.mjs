@@ -9,7 +9,8 @@
 //   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
 //   5. public action gateway — rejects an empty Turnstile token (failed_challenge).
-//   6. lookup_booking RPC    — available during expand; denied after contract.
+//   6. lookup_booking RPC    — denied in both stages because the gateway contract is already live;
+//                              the retirement stage removes the function itself after coexistence.
 //
 // Each check logs PASS/FAIL with the key value it observed. Process exits 1 if ANY
 // check fails, 0 only when every check passes (so CI can gate on it).
@@ -221,15 +222,18 @@ async function checkPublicActionGateway() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 6. Legacy direct access coexists during expand, then disappears at contract.
+// 6. The gateway contract is already live. Expand means "before the three retirement migrations";
+//    contract means "after them". Direct anonymous lookup stays denied in both stages.
 async function checkDirectLookupContract() {
   const { status, json } = await postJson('/rest/v1/rpc/lookup_booking', {
     p_contact: '0700000000',
   })
   const pass =
     PUBLIC_BOOKING_STAGE === 'expand'
-      ? status === 200
-      : status === 401 || status === 403 || status === 404
+      ? status === 401 || status === 403
+      : PUBLIC_BOOKING_STAGE === 'contract'
+        ? status === 404
+        : false
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 

@@ -17,6 +17,9 @@ const isoTimestamp = z.string().datetime({ offset: true })
 
 /** `YYYY-MM-DD` date (PostgREST serializes a `date` column as this). */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+const bookingDurationMin = z.number().finite().int().min(1).max(600)
+const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const sortOrder = z.number().finite().int().min(0)
 
 const lang = z.enum(['sv', 'en'])
 const weekday = z.union([
@@ -163,14 +166,31 @@ export const serviceRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   name: z.string(),
-  price: z.number(),
-  duration_min: z.number(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: serviceDurationMin,
   active: z.boolean(),
-  sort_order: z.number(),
+  sort_order: sortOrder,
   available_weekdays: canonicalWeekdays,
 })
 export type ServiceRow = z.infer<typeof serviceRow>
 export const serviceRows = z.array(serviceRow)
+
+const serviceMutationError = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const createServiceResponse = z.union([
+  z.object({ ok: z.literal(true), row: serviceRow }),
+  serviceMutationError,
+])
+export const deleteServiceResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  serviceMutationError,
+])
+export const reorderServiceResponse = z.union([
+  z.object({ ok: z.literal(true), services: serviceRows }),
+  serviceMutationError,
+])
 
 // --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
 
@@ -319,8 +339,8 @@ export const adminBookingRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   service_name: z.string(),
-  price: z.number(),
-  duration_min: z.number(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: bookingDurationMin,
   start_at: isoTimestamp,
   end_at: isoTimestamp,
   customer_name: z.string(),

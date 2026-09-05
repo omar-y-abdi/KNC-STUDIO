@@ -5,7 +5,7 @@
 -- widening + the overlap guard directly (the authorize arm is covered by 05_admin_rls patterns).
 
 begin;
-select plan(5);
+select plan(4);
 
 -- The widened method check accepts 'walkin' with no contact.
 insert into public.bookings
@@ -24,16 +24,6 @@ select throws_ok(
      values ('hassan','manual','X',0,45, now() + interval '9 days', now() + interval '9 days' + interval '45 min',
              'No Phone','phone', null, null, 'sv') $$,
   '23514', null, 'a phone booking without a phone is still rejected');
-
--- A manual reservation with a phone is visible to list_bookings_by_phone (Mina bokningar).
-insert into public.bookings
-  (barber_id, service_id, service_name, price, duration_min, start_at, end_at, customer_name, method, phone, email, lang)
-values
-  ('victor','manual','Reserverad',350,45, now() + interval '4 days', now() + interval '4 days' + interval '45 min',
-   'Phoned Kund','phone', '0705550000', null, 'sv');
-select is(
-  pg_catalog.jsonb_array_length(public.list_bookings_by_phone('0705550000')->'bookings'), 1,
-  'a manual booking with a phone shows under Mina bokningar');
 
 -- The exclusion constraint still blocks a second confirmed booking overlapping the same barber+time.
 select throws_ok(

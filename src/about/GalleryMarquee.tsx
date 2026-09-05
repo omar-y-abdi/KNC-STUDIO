@@ -330,9 +330,12 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       >
         {tiles.map((j) => {
           const logicalIndex = itemCount > 0 ? j % itemCount : 0
-          const key = usePhotos
+          const logicalKey = usePhotos
             ? (props.photos[logicalIndex]?.id ?? String(logicalIndex))
             : (props.ids[logicalIndex] ?? String(logicalIndex))
+          // The same logical photo appears in loop clones. Selection belongs to the physical tile
+          // instance under the pointer, not every clone with the same photo id.
+          const key = `${logicalKey}:${j}`
           const accessible = j < itemCount
           const selected = props.selectedKey === key
           const tileStyle: JSX.CSSProperties = {

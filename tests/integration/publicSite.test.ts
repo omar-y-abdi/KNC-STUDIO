@@ -1,5 +1,5 @@
 // Public-site DB ports ↔ live stack (ADMIN_SPEC §5 / §7). Drives the REAL public adapters
-// (`supabaseBarbersAdapter`, `supabaseAboutContentAdapter`, `supabaseGalleryAdapter`, and the
+// (`defaultBarbersPort`, `supabaseAboutContentAdapter`, `supabaseGalleryAdapter`, and the
 // `available_slots` path of `supabaseBookingAdapter`) through the ANON RLS path — exactly how the
 // browser reads them — and proves an owner's admin edits surface on the public side:
 //   * BarbersPort returns the seeded ACTIVE roster, ordered; reflects an admin ADD and a HIDE.
@@ -14,7 +14,8 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Client } from 'pg'
-import { supabaseBarbersAdapter } from '../../src/booking/adapters/supabaseBarbers'
+import { defaultBarbersPort } from '../../src/booking/adapters/barbersIndex'
+import { refreshBookingCatalog } from '../../src/booking/adapters/supabaseBookingCatalog'
 import { supabaseAboutContentAdapter } from '../../src/about/content/supabaseAboutContent'
 import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
 import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
@@ -98,10 +99,11 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       // Remove any barber this block added + un-hide the seeded ones it may have toggled.
       await runSql(env, 'delete from public.barbers where id = $1', [ADDED_ID])
       await runSql(env, 'update public.barbers set active = true where id = any($1)', [SEED_IDS])
+      await refreshBookingCatalog()
     })
 
     it('returns the seeded ACTIVE roster, ordered by sort_order', async () => {
-      const roster = await supabaseBarbersAdapter.listActive()
+      const roster = await defaultBarbersPort.listActive()
       const ids = roster.map((r) => r.barber.id)
       // The three seeded barbers are all present and active.
       for (const id of SEED_IDS) expect(ids).toContain(asBarberId(id))
@@ -124,7 +126,8 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
         [ADDED_ID],
       )
 
-      const roster = await supabaseBarbersAdapter.listActive()
+      await refreshBookingCatalog()
+      const roster = await defaultBarbersPort.listActive()
       const ids = roster.map((r) => r.barber.id)
       expect(ids).toContain(asBarberId(ADDED_ID))
       const added = roster.find((r) => r.barber.id === asBarberId(ADDED_ID))
@@ -139,7 +142,8 @@ describe.skipIf(!adminBackendReady())('public-site DB ports (integration)', () =
       if (!env) return
 
       await runSql(env, 'update public.barbers set active = false where id = $1', ['salman'])
-      const roster = await supabaseBarbersAdapter.listActive()
+      await refreshBookingCatalog()
+      const roster = await defaultBarbersPort.listActive()
       const ids = roster.map((r) => r.barber.id)
       expect(ids).not.toContain(asBarberId('salman'))
       // The others remain.

@@ -12,6 +12,9 @@ import { z } from 'zod'
 
 /** ISO-8601 timestamp WITH offset, exactly how PostgREST serializes `timestamptz`. */
 const isoTimestamp = z.string().datetime({ offset: true })
+const bookingDurationMin = z.number().finite().int().min(1).max(600)
+const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const sortOrder = z.number().finite().int().min(0)
 
 /**
  * A 1..5 rating. Modeled as a literal union so the INFERRED type is exactly `1 | 2 | 3 | 4 | 5`,
@@ -80,10 +83,7 @@ export const customerAccessRequestResponse = z.discriminatedUnion('ok', [
   customerAccessRequestErr,
 ])
 
-const customerAccessExchangeOk = z.object({
-  ok: z.literal(true),
-  access_token: z.string().length(64),
-})
+const customerAccessExchangeOk = z.object({ ok: z.literal(true) })
 const customerAccessExchangeErr = z.object({ ok: z.literal(false), error: z.literal('invalid') })
 export const customerAccessExchangeResponse = z.discriminatedUnion('ok', [
   customerAccessExchangeOk,
@@ -96,14 +96,16 @@ const myBookingRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   service_name: z.string(),
-  price: z.number(),
-  duration_min: z.number(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: bookingDurationMin,
   start_at: isoTimestamp,
 })
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  name: z.string().optional(),
   phone: z.string().regex(/^07[0-9]{8}$/),
+  email: z.string().email().optional(),
   bookings: z.array(myBookingRow),
 })
 const listCustomerBookingsErr = z.object({
@@ -180,10 +182,10 @@ export const publicServiceRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   name: z.string(),
-  price: z.number(),
-  duration_min: z.number(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: serviceDurationMin,
   active: z.boolean(),
-  sort_order: z.number(),
+  sort_order: sortOrder,
   available_weekdays: canonicalWeekdays,
 })
 export type PublicServiceRow = z.infer<typeof publicServiceRow>
@@ -214,7 +216,11 @@ export const publicBusinessDiscoveryResponse = z.object({
   settings: z.record(z.string()),
   barbers: z.array(z.object({ id: z.string(), name: z.string() })),
   services: z.array(
-    z.object({ id: z.string(), barber_id: z.string(), price: z.number().int().nonnegative() }),
+    z.object({
+      id: z.string(),
+      barber_id: z.string(),
+      price: z.number().finite().min(0).max(100000),
+    }),
   ),
   schedules: z.array(
     z.object({
