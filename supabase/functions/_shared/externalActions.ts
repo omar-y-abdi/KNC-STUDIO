@@ -220,17 +220,20 @@ function parseCalendarBookingSource(value: unknown): CalendarBookingSource | nul
     barber_id: value.barber_id,
     service_name: value.service_name,
     customer_name: value.customer_name,
-    phone: value.phone,
+    phone: value.phone === null ? null : (value.phone as string),
     email: value.email,
     start_at: value.start_at,
     end_at: value.end_at,
-    refresh_token: value.refresh_token,
-    calendar_id: value.calendar_id,
-    google_event_id: value.google_event_id,
-    mapped_barber_id: value.mapped_barber_id ?? null,
-    mapped_refresh_token: value.mapped_refresh_token ?? null,
-    mapped_calendar_id: value.mapped_calendar_id ?? null,
-    mapped_google_event_id: value.mapped_google_event_id ?? null,
+    refresh_token: value.refresh_token === null ? null : (value.refresh_token as string),
+    calendar_id: value.calendar_id === null ? null : (value.calendar_id as string),
+    google_event_id: value.google_event_id === null ? null : (value.google_event_id as string),
+    mapped_barber_id: typeof value.mapped_barber_id === 'string' ? value.mapped_barber_id : null,
+    mapped_refresh_token:
+      typeof value.mapped_refresh_token === 'string' ? value.mapped_refresh_token : null,
+    mapped_calendar_id:
+      typeof value.mapped_calendar_id === 'string' ? value.mapped_calendar_id : null,
+    mapped_google_event_id:
+      typeof value.mapped_google_event_id === 'string' ? value.mapped_google_event_id : null,
   }
 }
 
@@ -279,16 +282,19 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       barber_id: value.barber_id,
       service_name: value.service_name,
       customer_name: value.customer_name,
-      phone: value.phone,
+      phone: value.phone === null ? null : (value.phone as string),
       start_at: value.start_at,
       end_at: value.end_at,
-      refresh_token: value.refresh_token,
-      calendar_id: value.calendar_id,
-      google_event_id: value.google_event_id,
-      mapped_barber_id: value.mapped_barber_id ?? null,
-      mapped_refresh_token: value.mapped_refresh_token ?? null,
-      mapped_calendar_id: value.mapped_calendar_id ?? null,
-      mapped_google_event_id: value.mapped_google_event_id ?? null,
+      refresh_token: value.refresh_token === null ? null : (value.refresh_token as string),
+      calendar_id: value.calendar_id === null ? null : (value.calendar_id as string),
+      google_event_id: value.google_event_id === null ? null : (value.google_event_id as string),
+      mapped_barber_id: typeof value.mapped_barber_id === 'string' ? value.mapped_barber_id : null,
+      mapped_refresh_token:
+        typeof value.mapped_refresh_token === 'string' ? value.mapped_refresh_token : null,
+      mapped_calendar_id:
+        typeof value.mapped_calendar_id === 'string' ? value.mapped_calendar_id : null,
+      mapped_google_event_id:
+        typeof value.mapped_google_event_id === 'string' ? value.mapped_google_event_id : null,
     }
   }
 
@@ -592,6 +598,9 @@ export async function executeExternalAction(
           // An unlinked destination is a valid no-op only after any old mapped event has been
           // deleted.  It must never create a replacement or write a null credential.
           if (!targetAvailable) return
+          const refreshToken = source.refresh_token
+          const calendarId = source.calendar_id
+          if (refreshToken === null || calendarId === null) return
           if (!runtime.googleClientId || !runtime.googleClientSecret) {
             throw new ExternalActionError(
               'not_configured',
@@ -601,19 +610,19 @@ export async function executeExternalAction(
 
           const event = buildEvent(source)
           const accessToken = await refreshAccessToken(
-            source.refresh_token,
+            refreshToken,
             runtime.googleClientId,
             runtime.googleClientSecret,
           )
           let eventId = targetEvent?.googleEventId ?? null
           if (eventId !== null) {
-            const patched = await patchEvent(accessToken, source.calendar_id, eventId, event)
+            const patched = await patchEvent(accessToken, calendarId, eventId, event)
             if (!patched) eventId = null
           }
           if (eventId === null) {
             eventId = await insertEvent(
               accessToken,
-              source.calendar_id,
+              calendarId,
               googleEventId(action.booking_id),
               event,
             )
@@ -624,7 +633,7 @@ export async function executeExternalAction(
             recorded = await recordCalendarEventIfCurrent(
               action.booking_id,
               source.barber_id,
-              source.calendar_id,
+              calendarId,
               service,
               eventId,
             )
@@ -635,7 +644,7 @@ export async function executeExternalAction(
                 {
                   bookingId: action.booking_id,
                   barberId: source.barber_id,
-                  calendarId: source.calendar_id,
+                  calendarId,
                   googleEventId: eventId,
                 },
                 service,
@@ -651,7 +660,7 @@ export async function executeExternalAction(
             {
               bookingId: action.booking_id,
               barberId: source.barber_id,
-              calendarId: source.calendar_id,
+              calendarId,
               googleEventId: eventId,
             },
             service,
