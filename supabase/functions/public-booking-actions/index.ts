@@ -79,7 +79,7 @@ function sessionCookie(req: Request): string | null {
 }
 
 function sessionCookieHeader(token: string): string {
-  return `${CUSTOMER_SESSION_COOKIE}=${token}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`
+  return `${CUSTOMER_SESSION_COOKIE}=${token}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=None`
 }
 
 function isAction(value: unknown): value is Action {
