@@ -76,6 +76,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const dragging = useRef(false)
   const moved = useRef(false)
   const startX = useRef(0)
+  const startY = useRef(0)
   const startOffset = useRef(0)
   const lastX = useRef(0)
   const lastDx = useRef(0)
@@ -230,6 +231,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     pointerId.current = e.pointerId
     moved.current = false
     startX.current = e.clientX
+    startY.current = e.clientY
     lastX.current = e.clientX
     startOffset.current = offset.current
     if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
@@ -237,7 +239,8 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const onPointerMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
     if (!dragging.current || pointerId.current !== e.pointerId) return
     const dx = e.clientX - startX.current
-    if (Math.abs(dx) > 4) moved.current = true
+    const dy = e.clientY - startY.current
+    if (Math.hypot(dx, dy) > 4) moved.current = true
     lastDx.current = e.clientX - lastX.current
     lastX.current = e.clientX
     offset.current = startOffset.current + dx

@@ -23,6 +23,8 @@ describe('gallery marquee interaction contract', () => {
     expect(source).toContain("document.addEventListener('scroll', onScroll")
     expect(source).toContain('onFocus={onRowFocus}')
     expect(source).toContain('onBlur={onRowBlur}')
+    expect(source).toContain('const dy = e.clientY - startY.current')
+    expect(source).toContain('Math.hypot(dx, dy) > 4')
   })
 
   it('re-anchors the one focusable logical copy when normal motion moved it away', () => {

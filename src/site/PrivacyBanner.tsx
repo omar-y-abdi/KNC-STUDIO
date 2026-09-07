@@ -41,7 +41,7 @@ export function PrivacyBanner({ lang, dark }: PrivacyBannerProps): JSX.Element {
   const text = dark ? '#f5f5f7' : '#1c1c1e'
   const line = dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.12)'
   const muted = dark ? 'rgba(255,255,255,.68)' : 'rgba(0,0,0,.62)'
-  const topOffset = 'calc(env(safe-area-inset-top, 0px) + 76px)'
+  const bottomOffset = 'calc(env(safe-area-inset-bottom, 0px) + 76px)'
   const buttonStyle: JSX.CSSProperties = {
     border: 'none',
     borderRadius: '10px',
@@ -61,8 +61,8 @@ export function PrivacyBanner({ lang, dark }: PrivacyBannerProps): JSX.Element {
         style={{
           position: 'fixed',
           zIndex: 30,
-          right: '12px',
-          top: topOffset,
+          left: '12px',
+          bottom: bottomOffset,
           background: surface,
           color: text,
           border: '.5px solid ' + line,
@@ -88,7 +88,7 @@ export function PrivacyBanner({ lang, dark }: PrivacyBannerProps): JSX.Element {
         position: 'fixed',
         zIndex: 30,
         right: '12px',
-        top: topOffset,
+        bottom: bottomOffset,
         left: '12px',
         maxWidth: '520px',
         marginLeft: 'auto',
