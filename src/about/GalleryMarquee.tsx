@@ -67,6 +67,21 @@ interface MarqueeRowProps {
   readonly onSelect: (key: string) => void
 }
 
+interface PointerEndResolution {
+  readonly shouldSelect: boolean
+  readonly nextDir: 1 | -1
+}
+
+export function resolvePointerEnd(
+  moved: boolean,
+  lastDx: number,
+  currentDir: 1 | -1,
+): PointerEndResolution {
+  if (!moved) return { shouldSelect: true, nextDir: currentDir }
+  if (Math.abs(lastDx) <= 0.4) return { shouldSelect: false, nextDir: currentDir }
+  return { shouldSelect: false, nextDir: lastDx < 0 ? 1 : -1 }
+}
+
 function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   const rowRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -252,10 +267,9 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     const id = pointerId.current
     dragging.current = false
     pointerId.current = null
-    if (moved.current && Math.abs(lastDx.current) > 0.4) {
-      // Keep rolling in the direction the finger was moving.
-      dir.current = lastDx.current < 0 ? 1 : -1
-    } else {
+    const resolution = resolvePointerEnd(moved.current, lastDx.current, dir.current)
+    dir.current = resolution.nextDir
+    if (resolution.shouldSelect) {
       // A tap (no real movement) selects the tile under the pointer. elementFromPoint works even
       // through the pointer capture (e.target would be the captured row, not the tile).
       const node = document.elementFromPoint(e.clientX, e.clientY)
