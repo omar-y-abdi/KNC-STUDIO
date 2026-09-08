@@ -32,9 +32,6 @@ export function getSupabase(): SupabaseClient {
     // security boundary is RLS + SECURITY DEFINER RPCs (so persisting a session would be pointless).
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: false },
-      global: {
-        fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
-      },
     })
   }
   return client

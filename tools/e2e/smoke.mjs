@@ -361,38 +361,30 @@ async function verifyPublicPage(browser, viewport) {
     await page.waitForFunction(
       () => {
         const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
-        return (
-          panel !== null &&
-          Math.abs(panel.getBoundingClientRect().top - (globalThis.window.innerHeight - 61)) <= 1
-        )
+        return panel !== null && Math.abs(panel.getBoundingClientRect().top) <= 1
       },
       undefined,
       { timeout: WAIT_TIMEOUT },
     )
     const initialPanelTop = await panel.evaluate((element) => element.getBoundingClientRect().top)
-    assert(initialPanelTop > 0, 'desktop panel does not begin at the hero lower edge')
+    assert(Math.abs(initialPanelTop) <= 1, 'desktop panel does not begin at the viewport top')
     await page.evaluate(() =>
       globalThis.window.scrollTo({ top: globalThis.window.innerHeight / 2 }),
     )
     await page.waitForFunction(
-      () => {
-        const progress = Number(
+      () =>
+        Math.abs(
           globalThis.document
             .querySelector('[data-testid="desktop-top-panel"]')
-            ?.getAttribute('data-scroll-progress'),
-        )
-        return progress > 0 && progress < 1
-      },
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
       undefined,
       { timeout: WAIT_TIMEOUT },
     )
     const intermediatePanelTop = await panel.evaluate(
       (element) => element.getBoundingClientRect().top,
     )
-    assert(
-      intermediatePanelTop > 0 && intermediatePanelTop < initialPanelTop,
-      'desktop panel did not move continuously toward the top',
-    )
+    assert(Math.abs(intermediatePanelTop) <= 1, 'desktop panel moved away from the viewport top')
     await page.getByRole('button', { name: 'Toggle light/dark' }).click({ timeout: WAIT_TIMEOUT })
     await page.waitForFunction(
       (previousTop) => {
@@ -405,17 +397,13 @@ async function verifyPublicPage(browser, viewport) {
     await page.evaluate(() => globalThis.window.scrollTo({ top: globalThis.window.innerHeight }))
     await page.waitForFunction(
       () =>
-        Number(
+        Math.abs(
           globalThis.document
             .querySelector('[data-testid="desktop-top-panel"]')
-            ?.getAttribute('data-scroll-progress'),
-        ) === 1,
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
       undefined,
       { timeout: WAIT_TIMEOUT },
-    )
-    assert(
-      (await panel.evaluate((element) => element.getBoundingClientRect().top)) <= 1,
-      'desktop panel did not settle at the top before About',
     )
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 140 })
     await page.waitForFunction(
@@ -431,20 +419,13 @@ async function verifyPublicPage(browser, viewport) {
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
     await page.waitForFunction(
       () =>
-        Number(
+        Math.abs(
           globalThis.document
             .querySelector('[data-testid="desktop-top-panel"]')
-            ?.getAttribute('data-scroll-progress'),
-        ) === 0,
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
       undefined,
       { timeout: WAIT_TIMEOUT },
-    )
-    assert(
-      Math.abs(
-        (await panel.evaluate((element) => element.getBoundingClientRect().top)) -
-          (await page.evaluate(() => globalThis.window.innerHeight - 61)),
-      ) <= 1,
-      'desktop panel did not reverse back to the hero lower edge',
     )
     await page.getByRole('button', { name: 'About', exact: true }).click({ timeout: WAIT_TIMEOUT })
     await page.waitForFunction(

@@ -23,7 +23,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
-import { useEffect, useRef } from 'preact/hooks'
+import { useRef } from 'preact/hooks'
 import { EASE } from './shared'
 
 /** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
@@ -66,58 +66,15 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const { c, tx, business, view } = props
   // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
   const booking = view === 'booking'
-  // At home the existing chrome travels from the lower edge of the hero to the compact top panel.
-  // The document remains the scroll source so wheel, keyboard and browser navigation keep their
-  // expected desktop behaviour; only the panel's position is tied to scroll progress.
-  const panelRef = useRef<HTMLDivElement>(null)
   const bookingMounted = useRef(booking)
   if (booking) bookingMounted.current = true
-  useEffect(() => {
-    let frame = 0
-    const sync = (): void => {
-      frame = 0
-      const panel = panelRef.current
-      if (panel === null) return
-      if (booking) {
-        panel.style.setProperty(
-          '--desktop-panel-top',
-          (props.scrollRootRef?.current?.scrollTop ?? 0) + 'px',
-        )
-        panel.dataset['scrollProgress'] = '1.000'
-        return
-      }
-      const scrollRoot = props.scrollRootRef?.current
-      const scrollTop = scrollRoot?.scrollTop ?? window.scrollY
-      const viewportHeight = scrollRoot?.clientHeight ?? window.innerHeight
-      const travel = Math.max(1, viewportHeight - DESKTOP_PANEL_HEIGHT)
-      const progress = Math.min(1, Math.max(0, scrollTop / travel))
-      const visualTop = Math.round((1 - progress) * travel)
-      panel.style.setProperty(
-        '--desktop-panel-top',
-        (scrollRoot === undefined ? visualTop : scrollTop + visualTop) + 'px',
-      )
-      panel.dataset['scrollProgress'] = progress.toFixed(3)
-    }
-    const schedule = (): void => {
-      if (frame === 0) frame = window.requestAnimationFrame(sync)
-    }
-    const scrollTarget = props.scrollRootRef?.current ?? window
-    scrollTarget.addEventListener('scroll', schedule, { passive: true })
-    window.addEventListener('resize', schedule)
-    sync()
-    return () => {
-      scrollTarget.removeEventListener('scroll', schedule)
-      window.removeEventListener('resize', schedule)
-      if (frame !== 0) window.cancelAnimationFrame(frame)
-    }
-  }, [booking, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
 
   const navStyle: JSX.CSSProperties = {
-    position: props.scrollRootRef === undefined ? 'fixed' : 'absolute',
-    top: 'var(--desktop-panel-top, calc(100dvh - 61px))',
+    position: props.scrollRootRef === undefined ? 'fixed' : 'sticky',
+    top: '0',
     left: 0,
     right: 0,
     zIndex: 10,
@@ -229,12 +186,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         WebkitFontSmoothing: 'antialiased',
       }}
     >
-      <div
-        style={navStyle}
-        data-testid="desktop-top-panel"
-        data-scroll-progress={booking ? '1.000' : '0.000'}
-        ref={panelRef}
-      >
+      <div style={navStyle} data-testid="desktop-top-panel" data-scroll-progress="1.000">
         <h1 style={navLogoStyle}>
           <CornerMark height={30} />
         </h1>

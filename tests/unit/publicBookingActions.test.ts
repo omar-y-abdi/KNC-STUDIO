@@ -1,9 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
-
-vi.mock('../../src/backend/supabaseClient', () => ({
-  getSupabase: () => ({ functions: { invoke } }),
+vi.mock('../../src/backend/config', () => ({
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_ANON_KEY: 'test-anon-key',
 }))
 
 import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
@@ -15,7 +14,7 @@ import {
   parseWith,
 } from '../../src/backend/rpcSchemas'
 
-beforeEach(() => invoke.mockReset())
+afterEach(() => vi.unstubAllGlobals())
 
 describe('public booking action gateway client', () => {
   it('accepts every secure customer-access response contract', () => {
@@ -52,13 +51,23 @@ describe('public booking action gateway client', () => {
       lang: 'sv' as const,
       turnstileToken: 'challenge-token',
     }
-    invoke.mockResolvedValue({ data: { ok: true }, error: null })
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
 
     await expect(invokePublicBookingAction(payload)).resolves.toEqual({
       data: { ok: true },
       failed: false,
     })
-    expect(invoke).toHaveBeenCalledWith('public-booking-actions', { body: payload })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://example.supabase.co/functions/v1/public-booking-actions',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      }),
+    )
   })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(
@@ -78,7 +87,7 @@ describe('public booking action gateway client', () => {
   })
 
   it('fails closed on function and transport errors', async () => {
-    invoke.mockResolvedValueOnce({ data: null, error: new Error('denied') })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('', { status: 403 })))
     await expect(
       invokePublicBookingAction({
         action: 'exchange_access',
@@ -86,7 +95,7 @@ describe('public booking action gateway client', () => {
       }),
     ).resolves.toEqual({ data: null, failed: true })
 
-    invoke.mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('offline')))
     await expect(
       invokePublicBookingAction({
         action: 'list',
@@ -94,7 +103,7 @@ describe('public booking action gateway client', () => {
       }),
     ).resolves.toEqual({ data: null, failed: true })
 
-    invoke.mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new Error('offline')))
     await expect(
       invokePublicBookingAction({
         action: 'request_access',
