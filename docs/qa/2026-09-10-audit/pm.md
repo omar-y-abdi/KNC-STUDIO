@@ -152,3 +152,25 @@ Hook requested resolution of failed tests and uncommitted source. Workflow: insp
 - Final read-only Cloudflare check: production remains deployment9ca2d3f8 from2026-09-08, version5f6f21bf at100%. PR builds did not promote production.
 - Source changes committed and pushed with upstream. Only pre-existing user-owned AGENTS.md and2026-08-31 feedback document remain untracked. This final documentation update changes no runtime or test behavior.
 - Remaining release approval and product feedback are explicit in the grouped issues and customer-access operations plan; no production migration, configuration, real-data smoke, mail send or merge performed.
+
+## PR58 review correction plan — solo
+
+User requested all review corrections without subagents. Review5169486874 and F1–F7 read in full; user-owned adversarial review ledger remains untouched. Operational/product decisions retain the review's explicit separate acceptance boundary.
+
+1. F1: serialize reads/writes by admin resource across target changes and remounts; returning A reads after its pending write. Prove persisted price/photo/cancellation state, not response suppression alone.
+2. F4/F5: block initial CMS/gallery mutations until authoritative load succeeds; serialize About-size autosave and show its real pending/error state.
+3. F2: track typed fields separately from verified auto-fill; replace/clear untouched old identity fields and retain actual edits. Correct stale hydration fixtures and prove successful profile arrival.
+4. F3: expose roster readiness to desktop reveal; settle only after catalog data. Test delayed catalog, short viewport, embedded root and absence of later jumps.
+5. F6/F7: provide documented supported local Worker transport; preserve browser cookie/identity and DB concurrency regressions in existing repository test/CI files. New exploratory harness files stay in/tmp.
+6. Correct architectural ownership/RPC pointers and replace overstated evidence claims with current reproducible results.
+7. Self-review each fix; focused verification then full CI, focused commits, push to existing PR. No merge/deploy/production writes.
+
+### Review UI correction evidence
+
+- F1 source schedules reproduced for Services, Profile and Bookings: returning A could act before A's earlier write settled. A module-lifetime resource queue now orders reads and writes through target changes/remounts. Re-entry reads reconcile the committed result instead of hiding it. Separate barber resources remain independent.
+- F4/F5 reproduced: initial Site font controls and gallery uploads enabled before initial state; About autosave overlapped writes. Controls now fail closed until successful load; settings writes are serialized; gallery upload/delete use one resource order.
+- F2 reproduced after successful A hydration: B did not replace untouched A fields. Explicit per-field dirty flags now distinguish typed content from auto-fill, including clearing a field and clearing a profile. About phone follows the same rule.
+- F3 reproduced with native scroll anchoring disabled so the browser cannot hide the missing application reveal. Actual catalog was held beyond the old1200ms deadline; both window and embedded scroll roots failed bounds before and pass after explicit roster readiness. Later layout changes do not trigger a reveal jump.
+- Existing source browser harness now covers20 scenarios: navigation/history, delayed scroll, draft publish; three admin resources across A→B→A, remount and failed first write; Site/gallery initial-load success/failure; customer field ownership; delayed catalog in both roots. It models persisted state and is included in strict TypeScript checking. No /tmp-only assertion is counted as that CI gate.
+- UI gate: 504 unit PASS; strict typecheck, lint and build PASS. Source browser regression suite PASS. Early selector mistakes and Vite module-load reloads were corrected; harness HTML now imports its module before tests mount components.
+- F6/F7 transport/browser/DB concurrency work remains next. These UI results alone do not establish the complete customer release gate.

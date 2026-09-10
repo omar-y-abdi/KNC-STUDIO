@@ -69,7 +69,7 @@ Browser
 │  ├─ uncached default entrypoint: www → apex; private/other route policy
 │  ├─ cached `PublicContent` entrypoint: apex homepage SEO/JSON-LD + dynamic `/llms.txt`
 │  ├─ public HTML aliases; SPA fallback
-│  └─ NOT a reverse proxy for Supabase API traffic
+│  └─ dedicated POST /api/customer-bookings proxy; other Supabase traffic stays direct
 └─ direct Supabase traffic
    ├─ PostgREST / Auth / Realtime / SECURITY DEFINER RPCs / Edge Functions
    ├─ bookings → email trigger → booking_email_delivery_jobs → cron → `send-confirmation` → Resend
@@ -215,6 +215,8 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | On insert                   | email job trigger; optional reminder row; `booking_calendar_sync_on_change` durable Calendar trigger. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                                                                                                |
 | Verify                      | `slotPacking.test.ts` only for mock; `stockholmTime.test.ts`; `tests/integration/booking.test.ts`; `supabase/tests/11_booking_gateway_db_test.sql`, `32_transactional_availability_test.sql`, `34_public_booking_gateway_contract_test.sql`; `tests/unit/bookingLinks.test.ts`.                                                                                                                                                             |
 
+`BookingFlow.onRosterReady` reports actual initial catalog resolution to `DesktopSite`. The reveal may show loading content, but final geometry settlement waits for roster readiness; later layout changes do not restart that reveal. Booking and review auto-fill replace/clear untouched previous-profile values while preserving explicit typed edits, including empty strings.
+
 ### 5.4 Customer self-service: Mina bokningar
 
 | Axis                   | Map                                                                                                                                                                                                                                                                                                                                                         |
@@ -259,6 +261,8 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | Mutations       | `admin_create_booking()` manual phone/walk-in + transactional availability; `admin_cancel_booking()`; `admin_delete_bookings()` selected history; `admin_purge_history()` owner-only. |
 | Authority/state | `bookings`; server RPC authorization/availability for writes.                                                                                                                         |
 | Verify          | `bookingsSections.test.ts`, `weekOfYear.test.ts`, `deleteAdapters.test.ts`, admin integration, pgTAP admin booking/delete.                                                            |
+
+**Pending admin operations:** `src/admin/orderedOperations.ts` orders reads/writes for the same resource beyond view target changes and remounts. Services/photo use per-barber keys; gallery uses per-kind keys; site settings share one key; booking mutations/readbacks share one key because owner purge/all-bookings overlap barber views. A returning view reads after its earlier write commits before exposing mutable controls. This is ordering inside one browser page, not cross-browser conflict control. DB authorization and existing media CAS remain authoritative. The affected views expose typed adapter ports for the in-memory commit-order browser harness.
 
 ### 5.8 Admin availability: weekly schedule, time off, slot blocks, recurring breaks
 
@@ -499,20 +503,21 @@ Effective state is after **all** migrations, not original grants.
 
 ### 6.2 Public/application RPCs
 
-| Function                                | Caller                                | Authority / purpose                                           | Latest defining migration                                        |
-| --------------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `available_slots`                       | public/admin adapters                 | live bookable starts                                          | `20260813095409_harden_booking_boundaries_and_action_ledger.sql` |
-| `create_booking`                        | booking gateway/service role          | service re-resolution + slot validation + insert              | same                                                             |
-| `create_booking_with_limits`            | `submit-booking`                      | transactional submit rate limit + create                      | `20260813115437_transactional_availability_mutations.sql`        |
-| `exchange_customer_booking_access`      | `public-booking-actions` service role | one-time code to opaque session exchange                      | same                                                             |
-| `ensure_customer_booking_access_token`  | `send-confirmation` service role      | create/reuse permanent token for confirmation mail            | `20260824075454_permanent_customer_booking_access.sql`           |
-| `replace_customer_booking_access_token` | `send-confirmation` service role      | repair only the observed generation; reload concurrent winner | `20260910133329_guard_customer_token_repair.sql`                 |
-| `rotate_customer_booking_access_token`  | `public-booking-actions` service role | email-only token rotation + durable email enqueue             | same                                                             |
-| `list_customer_bookings_with_access`    | `public-booking-actions` service role | current permanent token or legacy session history             | same                                                             |
-| `cancel_customer_booking_with_access`   | `public-booking-actions` service role | current permanent token or legacy session + cutoff            | same                                                             |
-| `create_review_with_access`             | `public-booking-actions` service role | completed-booking review gate                                 | `20260823174500_close_launch_review_findings.sql`                |
-| `public_booking_catalog`                | public booking adapters               | active barber/photo/service catalog plus canonical weekdays   | `20260824092548_public_booking_catalog_service_weekdays.sql`     |
-| `public_business_discovery`             | Worker/public site/server email       | whitelisted business facts                                    | `20260813115439_public_business_discovery.sql`                   |
+| Function                                | Caller                                | Authority / purpose                                                   | Latest defining migration                                    |
+| --------------------------------------- | ------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `available_slots`                       | public/admin adapters                 | live bookable starts                                                  | `20260824074813_recurring_service_availability.sql`          |
+| `create_booking`                        | booking gateway/service role          | service re-resolution + slot validation + insert                      | `20260824074813_recurring_service_availability.sql`          |
+| `create_booking_with_limits`            | `submit-booking`                      | transactional submit rate limit + create                              | `20260813115437_transactional_availability_mutations.sql`    |
+| `exchange_customer_booking_access`      | `public-booking-actions` service role | one-time code to opaque session exchange                              | `20260905154608_customer_http_only_session.sql`              |
+| `ensure_customer_booking_access_token`  | `send-confirmation` service role      | create/reuse permanent token for confirmation mail                    | `20260824075454_permanent_customer_booking_access.sql`       |
+| `establish_customer_booking_session`    | `public-booking-actions` service role | current permanent hash to revocable session; serialized with rotation | `20260910130556_serialize_customer_access_sessions.sql`      |
+| `replace_customer_booking_access_token` | `send-confirmation` service role      | repair only the observed generation; reload concurrent winner         | `20260910133329_guard_customer_token_repair.sql`             |
+| `rotate_customer_booking_access_token`  | `public-booking-actions` service role | email-only token rotation + durable email enqueue                     | `20260910130556_serialize_customer_access_sessions.sql`      |
+| `list_customer_bookings_with_access`    | `public-booking-actions` service role | current permanent token or legacy session history                     | `20260910130556_serialize_customer_access_sessions.sql`      |
+| `cancel_customer_booking_with_access`   | `public-booking-actions` service role | current permanent token or legacy session + cutoff                    | `20260824075454_permanent_customer_booking_access.sql`       |
+| `create_review_with_access`             | `public-booking-actions` service role | completed-booking review gate                                         | `20260823174500_close_launch_review_findings.sql`            |
+| `public_booking_catalog`                | public booking adapters               | active barber/photo/service catalog plus canonical weekdays           | `20260824092548_public_booking_catalog_service_weekdays.sql` |
+| `public_business_discovery`             | Worker/public site/server email       | whitelisted business facts                                            | `20260824075236_admin_cms_logo_and_contact_controls.sql`     |
 
 After contract migration, direct anon execution of customer mutation/lookup RPCs is revoked; gateways retain service-role access. `available_slots()` and discovery remain public read RPCs.
 
@@ -633,27 +638,27 @@ Older direct booking-email triggers are dropped by the durable email migration.
 
 ### 6.10 State ownership quick index
 
-| State                          | Storage / owner                              | Authority                                                      |
-| ------------------------------ | -------------------------------------------- | -------------------------------------------------------------- |
-| Booking draft                  | `BookingFlow` component state                | ephemeral                                                      |
-| Public theme/lang/view/dialogs | `App.tsx`                                    | ephemeral                                                      |
-| Current customer access token  | `customer_booking_access_tokens`             | current email bearer credential; encrypted token + lookup hash |
-| Customer session               | `__Host-bladeblend_customer_session`         | first-party HttpOnly session; server-backed profile/access     |
-| Storage consent                | cookie `bladeblend_storage_preferences`      | `essential` or `functional` preference                         |
-| Public auth                    | none persisted                               | intentionally anonymous                                        |
-| Admin session                  | Supabase Auth local storage `knc-admin-auth` | credential/session                                             |
-| Admin role/link                | `auth.users` + `profiles`                    | identity/authorization                                         |
-| Bookings                       | `bookings`                                   | persistence                                                    |
-| Services price/duration        | `services`                                   | commercial truth                                               |
-| Working hours                  | `barber_schedules`                           | schedule truth                                                 |
-| Time off / blocks              | `barber_time_off`, `barber_slot_blocks`      | availability exclusions                                        |
-| Public copy/facts              | CMS tables + discovery RPC                   | mutable site truth                                             |
-| Reviews                        | `reviews`                                    | review records                                                 |
-| Booking email                  | `booking_email_delivery_jobs`                | delivery ledger                                                |
-| Reminder                       | `booking_reminders`                          | reminder ledger                                                |
-| External cleanup               | `external_action_jobs`                       | lifecycle/outbox state                                         |
-| Google connection              | `barber_calendar_tokens`                     | connection/token state                                         |
-| Google mapping                 | `calendar_event_map`                         | booking↔event mapping                                          |
+| State                          | Storage / owner                              | Authority                                                                                |
+| ------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Booking draft                  | `BookingFlow` component state                | typed fields tracked separately; untouched auto-fill follows verified profile; ephemeral |
+| Public theme/lang/view/dialogs | `App.tsx`                                    | ephemeral                                                                                |
+| Current customer access token  | `customer_booking_access_tokens`             | current email bearer credential; encrypted token + lookup hash                           |
+| Customer session               | `__Host-bladeblend_customer_session`         | first-party HttpOnly session; server-backed profile/access                               |
+| Storage consent                | cookie `bladeblend_storage_preferences`      | `essential` or `functional` preference                                                   |
+| Public auth                    | none persisted                               | intentionally anonymous                                                                  |
+| Admin session                  | Supabase Auth local storage `knc-admin-auth` | credential/session                                                                       |
+| Admin role/link                | `auth.users` + `profiles`                    | identity/authorization                                                                   |
+| Bookings                       | `bookings`                                   | persistence                                                                              |
+| Services price/duration        | `services`                                   | commercial truth                                                                         |
+| Working hours                  | `barber_schedules`                           | schedule truth                                                                           |
+| Time off / blocks              | `barber_time_off`, `barber_slot_blocks`      | availability exclusions                                                                  |
+| Public copy/facts              | CMS tables + discovery RPC                   | mutable site truth                                                                       |
+| Reviews                        | `reviews`                                    | review records                                                                           |
+| Booking email                  | `booking_email_delivery_jobs`                | delivery ledger                                                                          |
+| Reminder                       | `booking_reminders`                          | reminder ledger                                                                          |
+| External cleanup               | `external_action_jobs`                       | lifecycle/outbox state                                                                   |
+| Google connection              | `barber_calendar_tokens`                     | connection/token state                                                                   |
+| Google mapping                 | `calendar_event_map`                         | booking↔event mapping                                                                    |
 
 ---
 

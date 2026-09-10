@@ -127,3 +127,66 @@ describe('services admin ordering boundary', () => {
     expect(from).not.toHaveBeenCalled()
   })
 })
+
+// Reads and writes share a resource queue beyond a component's lifetime.
+describe('admin operation ordering', () => {
+  it('a returning read observes the first commit and a later write remains final', async () => {
+    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const events: string[] = []
+    let persistedPrice = 100
+    const first = orderedAdminOperation('test:service-a', async () => {
+      events.push('first started')
+      await gate
+      persistedPrice = 200
+    })
+    const returningRead = orderedAdminOperation('test:service-a', async () => persistedPrice)
+    const second = orderedAdminOperation('test:service-a', async () => {
+      events.push('second started')
+      persistedPrice = 300
+    })
+    try {
+      await Promise.resolve()
+      expect(events).toEqual(['first started'])
+      expect(persistedPrice).toBe(100)
+    } finally {
+      release()
+    }
+    await first
+    expect(await returningRead).toBe(200)
+    await second
+    expect(persistedPrice).toBe(300)
+    expect(events).toEqual(['first started', 'second started'])
+  })
+
+  it('a different barber can proceed while A is pending', async () => {
+    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const first = orderedAdminOperation('test:photo-a', () => gate)
+    try {
+      expect(await orderedAdminOperation('test:photo-b', async () => 'saved B')).toBe('saved B')
+    } finally {
+      release()
+      await first
+    }
+  })
+
+  it('a rejected write releases the resource without hiding the rejection', async () => {
+    const { orderedAdminOperation } = await import('../../src/admin/orderedOperations')
+    const failed = orderedAdminOperation('test:rejected', async () => {
+      throw new Error('write failed')
+    })
+    const next = orderedAdminOperation('test:rejected', async () => 'reloaded')
+    await expect(failed).rejects.toThrow('write failed')
+    await expect(next).resolves.toBe('reloaded')
+    await expect(orderedAdminOperation('test:rejected', async () => 'saved later')).resolves.toBe(
+      'saved later',
+    )
+  })
+})

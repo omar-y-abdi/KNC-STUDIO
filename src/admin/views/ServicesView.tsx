@@ -7,6 +7,7 @@
 // parsing/validation is pure (`parseServiceRow` in ../serviceValidation).
 
 import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { cap, weekdayLabel } from '../../booking/calendar'
 import type { Lang } from '../../i18n/index'
@@ -58,10 +59,22 @@ export interface ServicesViewProps {
   readonly s: AdminStylesBundle
   readonly barberId: AdminBarberId
   readonly barberName: string
+  readonly port?: ServicesViewPort
 }
+
+const defaultServicesPort = {
+  createService,
+  deleteService,
+  listServices,
+  reorderService,
+  updateService,
+}
+export type ServicesViewPort = typeof defaultServicesPort
 
 export function ServicesView(props: ServicesViewProps): JSX.Element {
   const { s, lang } = props
+  const port = props.port ?? defaultServicesPort
+  const resource = `services:${props.barberId}`
   const t = adminText(lang)
 
   const [rows, setRows] = useState<readonly EditRow[]>([])
@@ -109,7 +122,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     addGeneration.current += 1
     setAddBusy(false)
     setAddError(null)
-    void listServices(props.barberId).then((r) => {
+    void orderedAdminOperation(resource, () => port.listServices(props.barberId)).then((r) => {
       if (!active) return
       if (!r.ok) {
         setLoadError(r.error.message)
@@ -124,7 +137,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId])
+  }, [props.barberId, port])
 
   const setField = (id: string, patch: Partial<EditRow>): void => {
     editGeneration.current.set(id, (editGeneration.current.get(id) ?? 0) + 1)
@@ -143,11 +156,13 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     setRowError(null)
     const barberGeneration = barberScope.current.generation
     const generation = editGeneration.current.get(row.id) ?? 0
-    const r = await updateService(row.id, {
-      ...parsed,
-      active: row.active,
-      availableWeekdays: row.availableWeekdays,
-    })
+    const r = await orderedAdminOperation(resource, () =>
+      port.updateService(row.id, {
+        ...parsed,
+        active: row.active,
+        availableWeekdays: row.availableWeekdays,
+      }),
+    )
     if (barberScope.current.generation !== barberGeneration) return
     setBusyId(null)
     if (!r.ok) {
@@ -170,7 +185,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     setRowError(null)
     const barberId = props.barberId
     const barberGeneration = barberScope.current.generation
-    const r = await reorderService(barberId, a.id, dir)
+    const r = await orderedAdminOperation(resource, () => port.reorderService(barberId, a.id, dir))
     if (barberScope.current.generation !== barberGeneration) return
     setBusyId(null)
     if (!r.ok) {
@@ -191,7 +206,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     if (target === null) return
     const barberGeneration = barberScope.current.generation
     setDeleteBusy(true)
-    const r = await deleteService(target.id)
+    const r = await orderedAdminOperation(resource, () => port.deleteService(target.id))
     if (barberScope.current.generation !== barberGeneration) return
     setDeleteBusy(false)
     setPendingDelete(null)
@@ -215,10 +230,12 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     const barberId = props.barberId
     const barberGeneration = barberScope.current.generation
     const generation = addGeneration.current
-    const r = await createService(barberId, {
-      ...parsed,
-      availableWeekdays: nAvailableWeekdays,
-    })
+    const r = await orderedAdminOperation(resource, () =>
+      port.createService(barberId, {
+        ...parsed,
+        availableWeekdays: nAvailableWeekdays,
+      }),
+    )
     if (barberScope.current.generation !== barberGeneration) return
     setAddBusy(false)
     if (!r.ok) {

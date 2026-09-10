@@ -158,10 +158,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
   // error (the phone gate `no_booking`, or a generic invalid/transport failure).
   const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft)
+  const typedPhone = useRef(false)
   useEffect(() => {
-    const phone = props.customerPhone
-    if (phone !== undefined) {
-      setDraft((current) => (current.phone === '' ? { ...current, phone } : current))
+    if (!typedPhone.current) {
+      setDraft((current) => ({ ...current, phone: props.customerPhone ?? '' }))
     }
   }, [props.customerPhone])
   const [errors, setErrors] = useState<ReviewFieldErrors>(NO_REVIEW_ERRORS)
@@ -190,6 +190,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   }
 
   const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    typedPhone.current = true
     setThanks(false)
     setSubmitError(null)
     setErrors((p) => (p.phone ? { ...p, phone: false } : p))
@@ -221,7 +222,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
       const result = await port.submit(parsed.value, turnstileToken)
       if (result.ok) {
         setReviews((prev) => [result.review, ...prev])
-        setDraft(emptyReviewDraft)
+        typedPhone.current = false
+        setDraft({ ...emptyReviewDraft, phone: props.customerPhone ?? '' })
         setErrors(NO_REVIEW_ERRORS)
         setSubmitError(null)
         setThanks(true)

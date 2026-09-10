@@ -23,7 +23,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
-import { useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { EASE } from './shared'
 
 /** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
@@ -68,6 +68,8 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const booking = view === 'booking'
   const bookingMounted = useRef(booking)
   const bookingFoldRef = useRef<HTMLDivElement>(null)
+  const [rosterReady, setRosterReady] = useState(false)
+  const onRosterReady = useCallback(() => setRosterReady(true), [])
   if (booking) bookingMounted.current = true
   useEffect(() => {
     if (!booking) return
@@ -88,7 +90,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       scroll(next)
     }
     const settleWhenStable = (): void => {
-      if (settled || settleRaf !== null) return
+      if (!rosterReady || settled || settleRaf !== null) return
       settleRaf = requestAnimationFrame(() => {
         settleRaf = null
         if (settled) return
@@ -170,7 +172,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       if (delayed !== null) window.clearTimeout(delayed)
       observer?.disconnect()
     }
-  }, [booking, props.scrollRootRef])
+  }, [booking, rosterReady, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
@@ -404,6 +406,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
                     mode={props.mode}
                     defaultLang={props.lang}
                     onMyBookings={props.openMyBookings}
+                    onRosterReady={onRosterReady}
                     popupText={props.bookingPopupText}
                     business={business}
                     showDirections={business.mapsHref !== ''}

@@ -4,7 +4,7 @@
 // Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
@@ -63,12 +63,15 @@ export interface BookingFlowProps {
   /** Current owner-managed business identity used by confirmation calendar/map links. */
   readonly business?: BusinessSettings
   readonly initialContact?: CustomerProfile
+  /** The initial roster has resolved, including a truthful empty/error state. */
+  readonly onRosterReady?: () => void
 }
 
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
+  const typedContact = useRef({ name: false, phone: false, email: false })
   // Port result, per-FIELD validation errors, and the generic SYSTEM/submit error all live
   // OUTSIDE the domain draft. Field errors and the system error are mutually exclusive.
   const [result, setResult] = useState<BookingResult | null>(null)
@@ -90,17 +93,18 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   useEffect(() => {
     const contact = props.initialContact
-    if (contact === undefined) return
-    // Session restoration may finish after typing starts. Never replace customer-entered fields.
+    // Nonempty auto-fill still belongs to its verified profile. Only actual edits survive a
+    // profile switch/clear, including an intentionally emptied field.
     setState((current) => ({
       form: {
-        name: current.form.name || contact.name,
-        phone: current.form.phone || contact.phone,
-        email: current.form.email || contact.email,
+        name: typedContact.current.name ? current.form.name : (contact?.name ?? ''),
+        phone: typedContact.current.phone ? current.form.phone : (contact?.phone ?? ''),
+        email: typedContact.current.email ? current.form.email : (contact?.email ?? ''),
       },
     }))
   }, [props.initialContact])
   const reset = (): void => {
+    typedContact.current = { name: false, phone: false, email: false }
     setResult(null)
     setFieldErrors(NO_FIELD_ERRORS)
     setSubmitError(null)
@@ -148,6 +152,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const clock: Clock = props.clock ?? defaultClock
   const port: BookingPort = props.port ?? defaultBookingPort
   const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
+  useEffect(() => {
+    if (!rosterLoading) props.onRosterReady?.()
+  }, [rosterLoading, props.onRosterReady])
   const today = stockholmWallClockDate(clock())
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
@@ -450,14 +457,17 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     if (e.target === e.currentTarget) reset()
   }
   const onName = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    typedContact.current.name = true
     clearFieldError('name')
     setState((st) => ({ form: { ...st.form, name: e.currentTarget.value } }))
   }
   const onPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    typedContact.current.phone = true
     clearFieldError('phone')
     setState((st) => ({ form: { ...st.form, phone: e.currentTarget.value } }))
   }
   const onEmail = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    typedContact.current.email = true
     clearFieldError('email')
     setState((st) => ({ form: { ...st.form, email: e.currentTarget.value } }))
   }

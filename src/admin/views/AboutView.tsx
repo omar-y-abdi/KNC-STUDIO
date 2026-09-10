@@ -9,6 +9,7 @@
 // these DB values onto its i18n defaults, so edits here show up on the public site.
 
 import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
@@ -227,14 +228,19 @@ function AboutTextEditor(props: {
 
 // --- Gallery --------------------------------------------------------------------------------------
 
-function GalleryManager(props: {
+const defaultGalleryPort = { listGallery, uploadImage, deleteImage }
+export type GalleryManagerPort = typeof defaultGalleryPort
+
+export function GalleryManager(props: {
   readonly dark: boolean
   readonly s: AdminStylesBundle
   readonly lang: Lang
   readonly kind: GalleryKind
   readonly title: string
+  readonly port?: GalleryManagerPort
 }): JSX.Element {
   const { s, kind, lang } = props
+  const port = props.port ?? defaultGalleryPort
   const t = adminText(lang)
   const [images, setImages] = useState<readonly GalleryImage[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -247,28 +253,32 @@ function GalleryManager(props: {
   const fileRef = useRef<HTMLInputElement>(null)
   const altGeneration = useRef(0)
 
-  const reload = async (): Promise<void> => {
-    const result = await listGallery(kind)
-    if (result.ok) {
-      setImages(result.value)
-      setLoadError(null)
-    } else {
-      setLoadError(result.error.message)
-    }
-    setLoaded(true)
-  }
-
+  const resource = `gallery:${kind}`
   useEffect(() => {
-    void reload()
-    // Only `kind` is fixed per instance; reload is intentionally run once on mount.
-  }, [])
+    let active = true
+    setLoaded(false)
+    setLoadError(null)
+    void orderedAdminOperation(resource, () => port.listGallery(kind)).then((result) => {
+      if (!active) return
+      if (result.ok) setImages(result.value)
+      else setLoadError(result.error.message)
+      setLoaded(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [kind, port])
+  const writable = loaded && loadError === null && !busy && !deleteBusy
 
   const onUpload = async (file: File): Promise<void> => {
+    if (!writable) return
     const generation = altGeneration.current
     setBusy(true)
     setNotice(null)
     const nextSort = images.length === 0 ? 0 : Math.max(...images.map((i) => i.sortOrder)) + 1
-    const result = await uploadImage(kind, file, alt.trim(), nextSort)
+    const result = await orderedAdminOperation(resource, () =>
+      port.uploadImage(kind, file, alt.trim(), nextSort),
+    )
     setBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
     if (!result.ok) {
@@ -282,9 +292,9 @@ function GalleryManager(props: {
 
   const onDelete = async (): Promise<void> => {
     const target = pendingDelete
-    if (target === null) return
+    if (target === null || !writable) return
     setDeleteBusy(true)
-    const result = await deleteImage(target)
+    const result = await orderedAdminOperation(resource, () => port.deleteImage(target))
     setDeleteBusy(false)
     setPendingDelete(null)
     if (!result.ok) {
@@ -340,7 +350,7 @@ function GalleryManager(props: {
             type="file"
             accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
             style={{ ...s.input, padding: '7px' }}
-            disabled={busy}
+            disabled={!writable}
             onChange={(e) => {
               const file = e.currentTarget.files?.[0]
               if (file !== undefined) void onUpload(file)
@@ -398,7 +408,12 @@ function GalleryManager(props: {
                 <span style={{ fontSize: '12px', opacity: 0.7, wordBreak: 'break-word' }}>
                   {img.alt === '' ? '—' : img.alt}
                 </span>
-                <button type="button" style={s.dangerBtn} onClick={() => setPendingDelete(img)}>
+                <button
+                  type="button"
+                  style={s.dangerBtn}
+                  disabled={!writable}
+                  onClick={() => setPendingDelete(img)}
+                >
                   {t.aboutGalleryRemove}
                 </button>
               </figcaption>

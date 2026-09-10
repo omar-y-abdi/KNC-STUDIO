@@ -17,6 +17,7 @@
 // recompute from fresh data.
 
 import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { formatWhenLabel } from '../../booking/calendar'
 import { palette } from '../../booking/bookingStyles'
@@ -55,7 +56,11 @@ export interface BookingsViewProps {
   /** Show the barber's own "Koppla kalender" panel — barber view only, NEVER the owner (an owner
    *  cannot consent for a barber's Google account). */
   readonly showCalendarConnect?: boolean
+  readonly port?: BookingsViewPort
 }
+
+const defaultBookingsPort = { cancelBooking, deleteBookings, listBookings, purgeHistory }
+export type BookingsViewPort = typeof defaultBookingsPort
 
 type Load =
   | { readonly kind: 'loading' }
@@ -79,6 +84,7 @@ function weekKey(group: WeekGroup): string {
 }
 
 export function BookingsView(props: BookingsViewProps): JSX.Element {
+  const port = props.port ?? defaultBookingsPort
   const { s, lang } = props
   const t = adminText(lang)
   const narrow = useNarrow()
@@ -115,7 +121,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   const fetchLoad = async (): Promise<Load> => {
     if (!props.allBarbers && props.barberId === null) return { kind: 'ready', bookings: [] }
     const target = props.allBarbers ? undefined : (props.barberId ?? undefined)
-    const result = await listBookings(target)
+    const result = await orderedAdminOperation('bookings', () => port.listBookings(target))
     return result.ok
       ? { kind: 'ready', bookings: result.value }
       : { kind: 'error', message: result.error.message }
@@ -154,7 +160,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId, props.allBarbers])
+  }, [props.barberId, props.allBarbers, port])
 
   // The injectable clock (same "today" source as the schedule views + deterministic screenshots).
   const nowInstant = defaultClock()
@@ -264,7 +270,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     if (target === null) return
     const expectedGeneration = targetScope.current.generation
     setBusy(true)
-    const result = await cancelBooking(target.id)
+    const result = await orderedAdminOperation('bookings', () => port.cancelBooking(target.id))
     if (targetScope.current.generation !== expectedGeneration) return
     setBusy(false)
     setPendingCancel(null)
@@ -295,7 +301,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     }
     const expectedGeneration = targetScope.current.generation
     setClearBusy(true)
-    const result = await deleteBookings(ids)
+    const result = await orderedAdminOperation('bookings', () => port.deleteBookings(ids))
     if (targetScope.current.generation !== expectedGeneration) return
     setClearBusy(false)
     setClearOpen(false)
@@ -312,7 +318,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   const doPurge = async (): Promise<void> => {
     const expectedGeneration = targetScope.current.generation
     setPurgeBusy(true)
-    const result = await purgeHistory()
+    const result = await orderedAdminOperation('bookings', () => port.purgeHistory())
     if (targetScope.current.generation !== expectedGeneration) return
     setPurgeBusy(false)
     setPurgeOpen(false)

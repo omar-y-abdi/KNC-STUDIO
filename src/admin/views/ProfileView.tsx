@@ -4,6 +4,7 @@
 // remove clears it. RLS is the hard backstop. Data effects live here; the render is otherwise pure.
 
 import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
@@ -17,10 +18,16 @@ export interface ProfileViewProps {
   readonly s: AdminStylesBundle
   readonly barberId: AdminBarberId
   readonly barberName: string
+  readonly port?: ProfileViewPort
 }
+
+const defaultProfilePort = { getBarberPhoto, removeBarberPhoto, uploadBarberPhoto }
+export type ProfileViewPort = typeof defaultProfilePort
 
 export function ProfileView(props: ProfileViewProps): JSX.Element {
   const { s, lang } = props
+  const port = props.port ?? defaultProfilePort
+  const resource = `photo:${props.barberId}`
   const t = adminText(lang)
 
   const [storagePath, setStoragePath] = useState<string | null>(null)
@@ -62,7 +69,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
     setPendingDelete(false)
     setDeleteBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
-    void getBarberPhoto(props.barberId).then((r) => {
+    void orderedAdminOperation(resource, () => port.getBarberPhoto(props.barberId)).then((r) => {
       if (!active) return
       if (r.ok) {
         setStoragePath(r.value?.storagePath ?? null)
@@ -76,14 +83,14 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
     return () => {
       active = false
     }
-  }, [props.barberId])
+  }, [props.barberId, port])
 
   const onUpload = async (file: File): Promise<void> => {
     const barberId = props.barberId
     const barberGeneration = barberScope.current.generation
     setBusy(true)
     setNotice(null)
-    const r = await uploadBarberPhoto(barberId, file)
+    const r = await orderedAdminOperation(resource, () => port.uploadBarberPhoto(barberId, file))
     if (barberScope.current.generation !== barberGeneration) return
     setBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
@@ -101,7 +108,9 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
     const barberId = props.barberId
     const barberGeneration = barberScope.current.generation
     setDeleteBusy(true)
-    const r = await removeBarberPhoto(barberId, storagePath)
+    const r = await orderedAdminOperation(resource, () =>
+      port.removeBarberPhoto(barberId, storagePath),
+    )
     if (barberScope.current.generation !== barberGeneration) return
     setDeleteBusy(false)
     setPendingDelete(false)
