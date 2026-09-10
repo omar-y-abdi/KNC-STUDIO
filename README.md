@@ -51,14 +51,15 @@ src/
   backend/              # env "configured?" check, lazy Supabase client seam, Zod RPC schemas
   booking/              # the booking domain:
     domain.ts           #   ADTs — invalid states unrepresentable
-    slots/calendar.ts   # pure functions (no clock, no I/O)
+    calendar.ts         # pure calendar/date functions (no I/O)
+    slotPacking.ts      # pure offline/mock slot packing (live availability is DB-owned)
     validation.ts       #   Zod + branded types (Name / Phone-SE) → Result
     ics.ts              #   RFC5545-correct .ics builder (escaped, injection-safe)
     port.ts             #   BookingPort — the backend seam (interface only)
     adapters/           #   localCalendarAdapter (offline mock) + lazy Supabase adapter
     BookingFlow + sub-components, bookingStyles
   about/                # About section: gallery, DB-driven stylists, reviews (+ ports/adapters)
-  mybookings/           # permanent email-token history/cancel + same-tab access session
+  mybookings/           # permanent email-token history/cancel + first-party HttpOnly session
   admin/                # staff panel: operations + authenticated email/password settings
   i18n/                 # typed sv/en string tables (missing key = compile error)
   ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
@@ -137,6 +138,13 @@ link. Requesting a fresh link rotates it and invalidates the prior link. Transac
 confirmations and cancellations for customer + barber. Supabase Cron
 queues a customer-only reminder one day before start time, but only for bookings created at least
 24 hours in advance; Resend idempotency and a delivery ledger prevent duplicates.
+
+The permanent root-path link remains the customer entry point. The Worker redirects that link into the
+app, and the browser uses same-origin `/api/customer-bookings`; the Worker signs origin, timestamp, IP,
+and body with `CUSTOMER_GATEWAY_SECRET` before forwarding to the Edge gateway. Valid access receives a
+first-party HttpOnly `SameSite=Lax` session cookie. The browser never stores the token in
+`sessionStorage`/`localStorage`, and no phone-memory cookie authorizes access. Current local code does not
+change production until the Worker secret and matching Edge secret are deployed together.
 
 ---
 
