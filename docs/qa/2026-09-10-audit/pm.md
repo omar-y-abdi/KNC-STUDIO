@@ -184,7 +184,7 @@ User requested all review corrections without subagents. Review5169486874 and F1
 - Local transport contract19 PASS; full unit517 PASS before the final test-only proxy-isolation refinement. New HTTP proxy test also checks exact accepted/rejected customer paths, cookie isolation and bearer preservation. Its Vite cache is isolated under/tmp after a shared cache caused504 stale dependency errors in an already-running development server.
 - Runtime npm audit0; dev-tool audit9 (5 high,4 moderate). Remaining tool advisories stay in grouped maintenance feedback. No blanket upgrade or assertion suppression.
 - Historical late-hydration proof lacked required session_proof; equality of fully typed values was vacuous. Prior claim withdrawn in UI audit and issue ledger. Corrected /tmp test now requires a valid profile plus newly auto-filled phone/email while retaining one typed name. Durable browser gate independently proves actual successful hydration and customer switching.
-- CI now runs all three customer browser engines after current-schema DB/integration gates. Final run/commit evidence remains to be recorded; older green CI cannot approve these corrections.
+- CI now runs all three customer browser engines after current-schema DB/integration gates. Review fixes are committed as e25e5ba and be8c0ce and pushed to PR58. [Current CI](https://github.com/omar-y-abdi/KNC-STUDIO/pull/58/checks) is authoritative for the latest pushed head; older green CI cannot approve these corrections.
 - No subagents used for this review. User-owned review/feedback/AGENTS files untouched. Production, mail, merge and product-choice gates unchanged.
 
 ### Solo final local gate
@@ -193,3 +193,5 @@ User requested all review corrections without subagents. Review5169486874 and F1
 - Corrected /tmp late-hydration rerun PASS: typed name retained; previously empty phone/email changed to verified profile values. The old vacuous proof is not retained as approval evidence.
 - No new lint warning or suppression. Formatting is checked for tracked repository files; the blanket local command also inspects untracked user-owned AGENTS.md/review notes, which remain untouched.
 - Self-review checked resource ordering/re-entry, dirty-field ownership, catalog readiness, exact proxy routes/cookie boundaries, actual backend browser transport and transaction-lock assertions. Ordering is page-local; cross-browser admin writes remain server-authorized and are not claimed globally serialized.
+
+- Tracked-file Prettier gate PASS. Corrected test transport uses its own temporary Vite cache; no developer-server dependency cache is overwritten. Source checks and browser gates remain unchanged by this final documentation status update.

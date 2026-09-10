@@ -1,6 +1,6 @@
 # Lanseringsproblem — 10 september
 
-Status: PR58-granskning F1–F7 rättad lokalt, solo. Ny CI-grind återstår; äldre grönt gäller tidigare kod. Produktion oförändrad. Nio samlade problem nedan.
+Status: PR58-granskning F1–F7 rättad och lokalt verifierad, solo. [Aktuell CI-status](https://github.com/omar-y-abdi/KNC-STUDIO/pull/58/checks) gäller senaste push; äldre grönt godkänner inte ny kod. Produktion oförändrad. Nio samlade problem nedan.
 
 ## 1. Kundlänk, återbesök och kunduppgifter — akut
 
