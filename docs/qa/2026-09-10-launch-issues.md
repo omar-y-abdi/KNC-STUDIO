@@ -20,13 +20,13 @@ Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio
 
 **Verifierat:** 25 browserscenarier. Nya utkast bevaras; byte A → B → A och misslyckad bildladdning visar rätt person. Filväljare och bildtexter följer också serverns gränser. Ingen designändring.
 
-## 3. Bokningsknappar och tangentbord fungerar inte pålitligt — viktigt
+## 3. Bokningsknappar, tangentbord och bilddrag fungerar inte pålitligt — viktigt
 
-**Problem:** Boka tid kan öppna formuläret utanför skärmen. Dold bokningspanel kan fortfarande få tangentbordsfokus. Otillgängliga datum ser spärrade ut men är inte korrekt spärrade/namngivna.
+**Problem:** Boka tid kan öppna formuläret utanför skärmen. Dold bokningspanel kan fortfarande få tangentbordsfokus. Otillgängliga datum ser spärrade ut men är inte korrekt spärrade/namngivna. Galleribilder startar webbläsarens egen dragfunktion mitt i sajtens draggest.
 
-**Fixat lokalt:** visning, fokus och datumknappar. Befintlig design behålls.
+**Fixat lokalt:** visning, fokus och datumknappar. Inbyggd bilddragning avstängd i galleriet. Befintlig design behålls.
 
-**Verifierat:** kall sidladdning, små laptopskärmar, minskad rörelse och andra bokningen. Tangentbord, valt datum, återöppning och CMS-förhandsvisning verifierade.
+**Verifierat:** kall sidladdning, små laptopskärmar, minskad rörelse och andra bokningen. Tangentbord, valt datum, återöppning och CMS-förhandsvisning verifierade. Galleritest med laddad bild: fångar dragfelet före fix; grönt efter fix.
 
 ## 4. Integritetsrutan täcker mobilens knappar — feedback
 
@@ -87,7 +87,7 @@ Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio
 
 **Fixat efter hookgranskning:** gamla repoassertioner uppdaterade. Befintliga integrationstester kör nu riktiga Worker → Edge → DB, inklusive kundbyte, återbesök och länkrotation. CI återställer aktuellt schema efter historiska migreringstester.
 
-**CI-häng:** en browserkörning nådde watchdog. Inte återskapat i tio Linux-körningar, inklusive Node 22. Testet får nu fasdiagnos och tidsgränser för CDP/cleanup; ursprunglig orsak inte fastställd.
+**CI-häng:** fasdiagnos pekade på galleriets musdrag. Samtidig inbyggd bilddragning reproducerad och fixad; nytt test fångar felet. Mus/CDP/cleanup har tidsgränser och tydliga fel. Exakt ursprungligt häng kunde inte återskapas lokalt; ny CI måste verifiera hela kedjan.
 
 **Testfiler:** befintliga repo-filer uppdaterade; fristående nya QA-harness ligger kvar i `/tmp` enligt instruktion.
 

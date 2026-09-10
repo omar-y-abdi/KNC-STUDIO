@@ -91,6 +91,56 @@ async function runCdpTouchSequence(client, label, startPoint, movePoints) {
   if (failed) throw failure
 }
 
+async function runMousePointerSequence(page, label, point, sequence) {
+  let mouseDownAttempted = false
+  let failed = false
+  let failure
+  const retainFirstError = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  try {
+    phase(`${label}: mouse move to tile`)
+    await bounded(page.mouse.move(point.x, point.y), 'mouse.move to gallery tile')
+    phase(`${label}: mouse down`)
+    mouseDownAttempted = true
+    await bounded(page.mouse.down(), 'mouse.down on gallery tile')
+    if (sequence === 'drag') {
+      phase(`${label}: mouse drag move`)
+      await bounded(page.mouse.move(point.x + 36, point.y, { steps: 3 }), 'mouse.move gallery drag')
+    } else if (sequence === 'scroll') {
+      phase(`${label}: mouse scroll gesture`)
+      await bounded(
+        page.evaluate(() => {
+          const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
+          if (scrollRoot instanceof globalThis.HTMLElement) {
+            scrollRoot.scrollBy({ top: 40 })
+            scrollRoot.dispatchEvent(new globalThis.Event('scroll'))
+          } else {
+            globalThis.window.scrollBy({ top: 40 })
+            globalThis.document.dispatchEvent(new globalThis.Event('scroll'))
+          }
+        }),
+        'gallery scroll gesture',
+      )
+    }
+  } catch (error) {
+    retainFirstError(error)
+  } finally {
+    if (mouseDownAttempted) {
+      try {
+        phase(`${label}: mouse up cleanup`)
+        await bounded(page.mouse.up(), 'mouse.up gallery cleanup')
+      } catch (error) {
+        retainFirstError(error)
+      }
+    }
+  }
+  if (failed) throw failure
+}
+
 const watchdog = globalThis.setTimeout(() => {
   writeSync(
     2,
@@ -127,27 +177,34 @@ async function scrollMarqueeRowIntoView(page, rowIndex) {
 }
 
 async function marqueeTilePoint(page, rowIndex) {
-  return page.evaluate((index) => {
-    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
-    const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find((candidate) => {
-      const rect = candidate.getBoundingClientRect()
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        rect.right > 0 &&
-        rect.left < globalThis.innerWidth &&
-        rect.bottom > 0 &&
-        rect.top < globalThis.innerHeight
-      )
-    })
-    if (!(row instanceof globalThis.HTMLElement) || !(tile instanceof globalThis.HTMLElement)) {
-      throw new Error(`marquee logical tile ${index} missing`)
-    }
-    const rect = tile.getBoundingClientRect()
-    const key = tile.getAttribute('data-tile-key')
-    if (key === null) throw new Error(`marquee logical tile ${index} has no key`)
-    return { key, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-  }, rowIndex)
+  return bounded(
+    page.evaluate(async (index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find((candidate) => {
+        const rect = candidate.getBoundingClientRect()
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.right > 0 &&
+          rect.left < globalThis.innerWidth &&
+          rect.bottom > 0 &&
+          rect.top < globalThis.innerHeight
+        )
+      })
+      if (!(row instanceof globalThis.HTMLElement) || !(tile instanceof globalThis.HTMLElement)) {
+        throw new Error(`marquee logical tile ${index} missing`)
+      }
+      // Only the visible target must decode; offscreen lazy images may legitimately remain unloaded.
+      const photo = tile.querySelector('img')
+      if (photo !== null) await photo.decode()
+      if (!tile.isConnected) throw new Error('gallery tile changed while its image decoded')
+      const rect = tile.getBoundingClientRect()
+      const key = tile.getAttribute('data-tile-key')
+      if (key === null) throw new Error(`marquee logical tile ${index} has no key`)
+      return { key, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    }, rowIndex),
+    `gallery row ${rowIndex} target image decode`,
+  )
 }
 
 async function marqueeTileState(page, rowIndex, key) {
@@ -252,27 +309,42 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
     }
   }
 
-  phase(`gallery row ${rowIndex} ${sequence}: mouse sequence`)
+  phase(`gallery row ${rowIndex} ${sequence}: locate tile for mouse sequence`)
   const point = await marqueeTilePoint(page, rowIndex)
-  await page.mouse.move(point.x, point.y)
-  await page.mouse.down()
-  try {
-    if (sequence === 'drag') {
-      await page.mouse.move(point.x + 36, point.y, { steps: 3 })
-    } else if (sequence === 'scroll') {
-      await page.evaluate(() => {
-        const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
-        if (scrollRoot instanceof globalThis.HTMLElement) {
-          scrollRoot.scrollBy({ top: 40 })
-          scrollRoot.dispatchEvent(new globalThis.Event('scroll'))
-        } else {
-          globalThis.window.scrollBy({ top: 40 })
-          globalThis.document.dispatchEvent(new globalThis.Event('scroll'))
-        }
-      })
-    }
-  } finally {
-    await page.mouse.up()
+  if (sequence === 'drag') {
+    phase(`gallery row ${rowIndex} ${sequence}: observe native dragstart`)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (!(row instanceof globalThis.HTMLElement)) throw new Error('gallery drag row missing')
+      globalThis.__smokeNativeDragStarts = []
+      globalThis.__smokeNativeDragHandler = (event) => {
+        const target = event.target
+        globalThis.__smokeNativeDragStarts.push(
+          target instanceof globalThis.HTMLElement ? target.tagName : 'unknown',
+        )
+      }
+      row.addEventListener('dragstart', globalThis.__smokeNativeDragHandler, true)
+    }, rowIndex)
+  }
+  await runMousePointerSequence(page, `gallery row ${rowIndex} ${sequence}`, point, sequence)
+  if (sequence === 'drag') {
+    phase(`gallery row ${rowIndex} ${sequence}: assert no native dragstart`)
+    const nativeDragStarts = await page.evaluate(() => globalThis.__smokeNativeDragStarts)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (
+        row instanceof globalThis.HTMLElement &&
+        globalThis.__smokeNativeDragHandler !== undefined
+      ) {
+        row.removeEventListener('dragstart', globalThis.__smokeNativeDragHandler, true)
+      }
+      delete globalThis.__smokeNativeDragHandler
+      delete globalThis.__smokeNativeDragStarts
+    }, rowIndex)
+    assert(
+      nativeDragStarts.length === 0,
+      `native dragstart fired during gallery drag: ${JSON.stringify(nativeDragStarts)}`,
+    )
   }
 
   return { key: point.key, pressed: await marqueeTileState(page, rowIndex, point.key) }

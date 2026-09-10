@@ -390,6 +390,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
                   <img
                     src={photo.url}
                     alt={photo.alt}
+                    draggable={false}
                     style={IMG_STYLE}
                     loading="lazy"
                     decoding="async"

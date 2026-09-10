@@ -135,3 +135,12 @@ Hook requested resolution of failed tests and uncommitted source. Workflow: insp
 - Existing smoke gains phase labels, bounded CDP/cleanup calls, preserved original failures, and nonzero exit if browser cleanup hangs. No assertion removed, retry added or timeout increased.
 - Docker bind mounts of host/tmp appeared empty; original test source was passed over stdin for isolated reproduction. Harnesses/logs remain outside git.
 - Runtime deprecation warning from pinned GitHub Actions is recorded with existing tool-upgrade issue; current runners execute them successfully under forced Node24.
+
+## CI follow-up — native gallery drag
+
+- Run34490185240 isolated the watchdog to `gallery row 1 drag: mouse sequence`; database/integration and Edge checks remained green.
+- Real loaded gallery photos triggered the browser's native image drag alongside the custom pointer gesture. Setting `draggable={false}` removes this conflict without changing layout or intended gallery gestures.
+- Linux Node22.23.2 / Playwright1.61.1: before/after loaded-photo checks recorded two native image drag events before and zero after. Current desktop/mobile public smoke PASS. Re-enabling native dragging in an isolated /tmp test makes the new assertion fail with `native dragstart fired during gallery drag: ["IMG"]`.
+- The original CI watchdog itself did not reproduce locally. Native drag is a proven product bug at the failing phase; final CI remains required before claiming the browser gate fixed.
+- PM rejected a broad image/network wait: it could miss an early response or wait forever for offscreen lazy images. Only the selected visible image now decodes before interaction, under the existing15s deadline.
+- Mouse calls now have deadlines and first-error-preserving release. Nine /tmp fault tests PASS, covering hung movement, press, touch dispatch, release/detach and browser cleanup. No retries, skipped assertions or increased timeouts.
