@@ -127,3 +127,11 @@ Hook requested resolution of failed tests and uncommitted source. Workflow: insp
 - CI historical rollout left old schema installed; workflow now restores all current migrations before full DB/integration suites. Test salt length and shared gateway secret configured correctly. Sol reviewed exact bridge/cleanup/workflow and approved.
 - Hook's workflow/plan evidence: initial audit plan above plus explicit inspect → repair → verify → commit → push PR → CI workflow. Directory breadth reflects requested whole-repository public/admin/database/operations scope.
 - Commit/PR/CI status lives in GitHub; this log records the local gates. Production migration/deploy still awaits explicit approval.
+
+## CI follow-up — browser watchdog
+
+- PR58 created on6f16135; Database and integration and Edge Functions passed run34487973755. Frontend static/unit/build/dry-run passed; public smoke exited124 after180s with no failing phase recorded.
+- Original smoke reproduced successfully ten consecutive times in Linux: five Playwright1.61.1/Chromium149 runs with Node24, five with Node22.23.2 + CI=true. Original hang cause remains unconfirmed; no speculative product change.
+- Existing smoke gains phase labels, bounded CDP/cleanup calls, preserved original failures, and nonzero exit if browser cleanup hangs. No assertion removed, retry added or timeout increased.
+- Docker bind mounts of host/tmp appeared empty; original test source was passed over stdin for isolated reproduction. Harnesses/logs remain outside git.
+- Runtime deprecation warning from pinned GitHub Actions is recorded with existing tool-upgrade issue; current runners execute them successfully under forced Node24.

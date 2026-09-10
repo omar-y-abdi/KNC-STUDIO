@@ -4,11 +4,97 @@ import { writeSync } from 'node:fs'
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
 const WATCHDOG_TIMEOUT = 180_000
+let currentPhase = 'startup'
+
+function phase(label) {
+  currentPhase = label
+}
+
+function describeError(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function bounded(promise, label, timeout = WAIT_TIMEOUT) {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeout}ms (phase: ${currentPhase})`)),
+          timeout,
+        )
+      }),
+    ])
+  } finally {
+    globalThis.clearTimeout(timer)
+  }
+}
+
+async function runCdpTouchSequence(client, label, startPoint, movePoints) {
+  let touchStarted = false
+  let failed = false
+  let failure
+  const retainFirstError = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  try {
+    phase(`${label}: CDP touchStart`)
+    await bounded(
+      client.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [startPoint],
+        modifiers: 0,
+      }),
+      'CDP Input.dispatchTouchEvent touchStart',
+    )
+    touchStarted = true
+    for (const [index, point] of movePoints.entries()) {
+      phase(`${label}: CDP touchMove ${index + 1}`)
+      await bounded(
+        client.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [point],
+          modifiers: 0,
+        }),
+        `CDP Input.dispatchTouchEvent touchMove ${index + 1}`,
+      )
+    }
+  } catch (error) {
+    retainFirstError(error)
+  } finally {
+    if (touchStarted) {
+      try {
+        phase(`${label}: CDP touchEnd cleanup`)
+        await bounded(
+          client.send('Input.dispatchTouchEvent', {
+            type: 'touchEnd',
+            touchPoints: [],
+            modifiers: 0,
+          }),
+          'CDP Input.dispatchTouchEvent touchEnd cleanup',
+        )
+      } catch (error) {
+        retainFirstError(error)
+      }
+    }
+    try {
+      phase(`${label}: CDP detach cleanup`)
+      await bounded(client.detach(), 'CDP session detach cleanup')
+    } catch (error) {
+      retainFirstError(error)
+    }
+  }
+  if (failed) throw failure
+}
 
 const watchdog = globalThis.setTimeout(() => {
   writeSync(
     2,
-    `[browser-smoke watchdog ${new Date().toISOString()}] exceeded ${WATCHDOG_TIMEOUT}ms\n`,
+    `[browser-smoke watchdog ${new Date().toISOString()}] exceeded ${WATCHDOG_TIMEOUT}ms; phase=${currentPhase}\n`,
   )
   process.exit(124)
 }, WATCHDOG_TIMEOUT)
@@ -129,8 +215,10 @@ async function waitForGalleryToSettle(page) {
 }
 
 async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
+  phase(`gallery row ${rowIndex} ${sequence}: locate tile`)
   if (sequence === 'cancel') {
     const point = await marqueeTilePoint(page, rowIndex)
+    phase(`gallery row ${rowIndex} ${sequence}: install listener`)
     await page.evaluate((index) => {
       const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
       if (!(row instanceof globalThis.HTMLElement))
@@ -145,29 +233,13 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
       )
     }, rowIndex)
     const client = await page.context().newCDPSession(page)
-    let touchStarted = false
-    try {
-      await client.send('Input.dispatchTouchEvent', {
-        type: 'touchStart',
-        touchPoints: [{ x: point.x, y: point.y, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
-        modifiers: 0,
-      })
-      touchStarted = true
-      await client.send('Input.dispatchTouchEvent', {
-        type: 'touchMove',
-        touchPoints: [{ x: point.x, y: point.y + 80, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
-        modifiers: 0,
-      })
-    } finally {
-      if (touchStarted) {
-        await client.send('Input.dispatchTouchEvent', {
-          type: 'touchEnd',
-          touchPoints: [],
-          modifiers: 0,
-        })
-      }
-      await client.detach()
-    }
+    await runCdpTouchSequence(
+      client,
+      `gallery row ${rowIndex} ${sequence}`,
+      { x: point.x, y: point.y, radiusX: 1, radiusY: 1, force: 1, id: 37 },
+      [{ x: point.x, y: point.y + 80, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
+    )
+    phase(`gallery row ${rowIndex} ${sequence}: await pointercancel`)
     await page.waitForFunction(() => globalThis.__smokeCancelObserved === true, undefined, {
       timeout: WAIT_TIMEOUT,
     })
@@ -180,6 +252,7 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
     }
   }
 
+  phase(`gallery row ${rowIndex} ${sequence}: mouse sequence`)
   const point = await marqueeTilePoint(page, rowIndex)
   await page.mouse.move(point.x, point.y)
   await page.mouse.down()
@@ -206,6 +279,7 @@ async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
 }
 
 async function verifyPublicPage(browser, viewport) {
+  phase(`public ${viewport.width}x${viewport.height}: create context`)
   const errors = []
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: true })
   context.setDefaultTimeout(WAIT_TIMEOUT)
@@ -213,8 +287,11 @@ async function verifyPublicPage(browser, viewport) {
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
 
+  phase(`public ${viewport.width}x${viewport.height}: goto`)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
+  phase(`public ${viewport.width}x${viewport.height}: wait app`)
   await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
+  phase(`public ${viewport.width}x${viewport.height}: wait fonts`)
   await waitForFonts(page)
 
   assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
@@ -234,6 +311,7 @@ async function verifyPublicPage(browser, viewport) {
     )
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
+  phase(`public ${viewport.width}x${viewport.height}: language toggle`)
   await page
     .getByRole('button', { name: 'EN', exact: true })
     .first()
@@ -246,6 +324,7 @@ async function verifyPublicPage(browser, viewport) {
     'language toggle did not activate English',
   )
 
+  phase(`public ${viewport.width}x${viewport.height}: my bookings dialog`)
   const myBookingsButton = page
     .getByRole('button', { name: 'My appointments', exact: true })
     .first()
@@ -255,6 +334,7 @@ async function verifyPublicPage(browser, viewport) {
   await myBookingsDialog.getByRole('button', { name: 'Close' }).click({ timeout: WAIT_TIMEOUT })
   await myBookingsDialog.waitFor({ state: 'detached', timeout: WAIT_TIMEOUT })
 
+  phase(`public ${viewport.width}x${viewport.height}: gallery setup`)
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
   await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
@@ -439,6 +519,7 @@ async function verifyPublicPage(browser, viewport) {
     await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
   }
 
+  phase(`public ${viewport.width}x${viewport.height}: booking`)
   await page
     .getByRole('button', { name: 'Book appointment', exact: true })
     .first()
@@ -453,10 +534,12 @@ async function verifyPublicPage(browser, viewport) {
     .waitFor({ timeout: WAIT_TIMEOUT })
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
-  await context.close()
+  phase(`public ${viewport.width}x${viewport.height}: context cleanup`)
+  await bounded(context.close(), `public ${viewport.width}x${viewport.height} context.close`)
 }
 
 async function verifyNormalMotionGalleryKeyboard(browser) {
+  phase('normal-motion gallery: create context')
   const context = await browser.newContext({
     viewport: { width: 2400, height: 900 },
     reducedMotion: 'no-preference',
@@ -466,6 +549,7 @@ async function verifyNormalMotionGalleryKeyboard(browser) {
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
 
+  phase('normal-motion gallery: goto')
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
   await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
   await waitForFonts(page)
@@ -496,43 +580,24 @@ async function verifyNormalMotionGalleryKeyboard(browser) {
   const dragDistance = layout.logicalCount * (210 + 14) + 150
   const startX = rowBox.x + rowBox.width - 12
   const endX = Math.max(rowBox.x + 12, startX - dragDistance)
+  phase('normal-motion gallery: create CDP session')
   const client = await page.context().newCDPSession(page)
-  let touchStarted = false
-  try {
-    const y = rowBox.y + rowBox.height / 2
-    await client.send('Input.dispatchTouchEvent', {
-      type: 'touchStart',
-      touchPoints: [{ x: startX, y, radiusX: 1, radiusY: 1, force: 1, id: 88 }],
-      modifiers: 0,
-    })
-    touchStarted = true
-    for (let step = 1; step <= 12; step += 1) {
-      await client.send('Input.dispatchTouchEvent', {
-        type: 'touchMove',
-        touchPoints: [
-          {
-            x: startX + ((endX - startX) * step) / 12,
-            y,
-            radiusX: 1,
-            radiusY: 1,
-            force: 1,
-            id: 88,
-          },
-        ],
-        modifiers: 0,
-      })
-    }
-  } finally {
-    if (touchStarted) {
-      await client.send('Input.dispatchTouchEvent', {
-        type: 'touchEnd',
-        touchPoints: [],
-        modifiers: 0,
-      })
-    }
-    await client.detach()
-  }
+  const y = rowBox.y + rowBox.height / 2
+  await runCdpTouchSequence(
+    client,
+    'normal-motion gallery',
+    { x: startX, y, radiusX: 1, radiusY: 1, force: 1, id: 88 },
+    Array.from({ length: 12 }, (_, index) => ({
+      x: startX + ((endX - startX) * (index + 1)) / 12,
+      y,
+      radiusX: 1,
+      radiusY: 1,
+      force: 1,
+      id: 88,
+    })),
+  )
 
+  phase('normal-motion gallery: focus re-anchor')
   const firstLogicalTile = row.locator('[role="button"]').first()
   const beforeFocus = await firstLogicalTile.boundingBox()
   assert(
@@ -555,29 +620,52 @@ async function verifyNormalMotionGalleryKeyboard(browser) {
     afterFocus !== null && afterFocus.x + afterFocus.width > 0 && afterFocus.x < 2400,
     `normal-motion focus target remained offscreen after re-anchor: ${JSON.stringify(afterFocus)}`,
   )
-  await context.close()
+  phase('normal-motion gallery: context cleanup')
+  await bounded(context.close(), 'normal-motion gallery context.close')
 }
 
 async function verifyStaticEndpoints(page) {
   for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
+    phase(`static endpoint ${path}`)
     const response = await page.request.get(`${baseUrl}${path}`, { timeout: WAIT_TIMEOUT })
     assert(response.status() === 200, `${path} status ${response.status()}`)
   }
 }
 
 let browser
+let testError
+let failurePhase
 try {
+  phase('browser launch')
   browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
+  phase('public desktop')
   await verifyPublicPage(browser, { width: 1280, height: 900 })
+  phase('public mobile')
   await verifyPublicPage(browser, { width: 390, height: 844 })
+  phase('normal-motion gallery')
   await verifyNormalMotionGalleryKeyboard(browser)
+  phase('static endpoints')
   const page = await browser.newPage()
   await verifyStaticEndpoints(page)
-  await page.close()
+  phase('static endpoint page cleanup')
+  await bounded(page.close(), 'static endpoint page.close')
   console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
+} catch (error) {
+  testError = error
+  failurePhase = currentPhase
+  throw error
 } finally {
   if (browser !== undefined) {
-    await browser.close()
+    try {
+      phase('browser cleanup')
+      await bounded(browser.close(), 'browser.close')
+    } catch (error) {
+      writeSync(
+        2,
+        `[browser-smoke cleanup] ${describeError(error)}; original=${testError === undefined ? 'none' : `${describeError(testError)} (phase: ${failurePhase})`}\n`,
+      )
+      process.exit(1)
+    }
   }
   globalThis.clearTimeout(watchdog)
 }

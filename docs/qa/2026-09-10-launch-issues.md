@@ -67,6 +67,7 @@ Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio
 
 - `admin_create_booking` har onödig anonym anropsrätt. Intern behörighetskontroll stoppar bokning; ingen anonym bokning bevisad.
 - Bygg-/testverktyg har 12 kända säkerhetsfynd. Sajten har inga kända fynd i sina runtimeberoenden. Uppgradera i separata verifierade steg.
+- CI använder äldre Actions-runtime. GitHub växlar den automatiskt; uppgradera Actions vid verktygsstädning.
 - Installerad Wrangler kan inte starta projektets compatibility date lokalt. Nyare isolerad version används för verkliga Worker-tester.
 - Avstängt personalkonto lämnar redan hämtad kunddata synlig i öppen flik. Nya DB-anrop nekas. Välj när fliken ska låsas/rensas.
 - Turnstile saknar kontroll av hostname/action och timeout på vissa anrop. Härdning behöver matcha live- och testmiljö.
@@ -85,6 +86,8 @@ Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio
 **Fixat lokalt:** gammal oanvänd mock-logik och tomma lagringsfunktioner borttagna. Beteendetester för hela kedjan tillagda i /tmp; docs uppdaterade och historik märkt. Kontrollerade liveprov efter separat, konkret godkännande.
 
 **Fixat efter hookgranskning:** gamla repoassertioner uppdaterade. Befintliga integrationstester kör nu riktiga Worker → Edge → DB, inklusive kundbyte, återbesök och länkrotation. CI återställer aktuellt schema efter historiska migreringstester.
+
+**CI-häng:** en browserkörning nådde watchdog. Inte återskapat i tio Linux-körningar, inklusive Node 22. Testet får nu fasdiagnos och tidsgränser för CDP/cleanup; ursprunglig orsak inte fastställd.
 
 **Testfiler:** befintliga repo-filer uppdaterade; fristående nya QA-harness ligger kvar i `/tmp` enligt instruktion.
 
