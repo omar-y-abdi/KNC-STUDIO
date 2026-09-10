@@ -195,3 +195,8 @@ User requested all review corrections without subagents. Review5169486874 and F1
 - Self-review checked resource ordering/re-entry, dirty-field ownership, catalog readiness, exact proxy routes/cookie boundaries, actual backend browser transport and transaction-lock assertions. Ordering is page-local; cross-browser admin writes remain server-authorized and are not claimed globally serialized.
 
 - Tracked-file Prettier gate PASS. Corrected test transport uses its own temporary Vite cache; no developer-server dependency cache is overwritten. Source checks and browser gates remain unchanged by this final documentation status update.
+
+### CI correction — Deno workspace lock
+
+- CI caught two stale workspace dependency entries in deno.lock after the Wrangler/types upgrade. Regenerated with pinned Deno2.9.5; diff changes only those two versions. All12 Edge entrypoints PASS locally with `--frozen --node-modules-dir=manual`. CI retains frozen checks and Edge imports.
+- Fresh read-only Cloudflare check: deployment9ca2d3f8 from2026-09-08 still serves version5f6f21bf at100%. PR builds have not promoted production.
