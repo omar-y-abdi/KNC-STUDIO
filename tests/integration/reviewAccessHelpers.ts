@@ -1,5 +1,37 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { withClient } from './_helpers'
+import { customerGateway } from '../../src/mybookings/customerGateway'
+import { readStackEnv, withClient } from './_helpers'
+
+/** Node has no document origin or cookie jar. Execute the real Worker handler, then real Edge/DB. */
+export function installCustomerGatewayFetch(): () => void {
+  const env = readStackEnv()
+  if (env === null) throw new Error('Local Supabase is required for customer gateway integration')
+  const gatewaySecret = process.env.CUSTOMER_GATEWAY_SECRET
+  if (!gatewaySecret) throw new Error('Configure the local CUSTOMER_GATEWAY_SECRET for integration')
+  const actualFetch = globalThis.fetch
+  let cookie: string | null = null
+  globalThis.fetch = async (input, init) => {
+    if (input !== '/api/customer-bookings') return actualFetch(input, init)
+    const headers = new Headers(init?.headers)
+    headers.set('Origin', 'http://127.0.0.1:4173')
+    headers.set('CF-Connecting-IP', '127.0.0.1')
+    if (cookie !== null) headers.set('Cookie', cookie)
+    const response = await customerGateway(
+      new Request(`http://127.0.0.1:4173${input}`, { ...init, headers }),
+      {
+        SUPABASE_URL: env.url,
+        SUPABASE_ANON_KEY: env.anonKey,
+        CUSTOMER_GATEWAY_SECRET: gatewaySecret,
+      },
+    )
+    const setCookie = response.headers.get('Set-Cookie')
+    if (setCookie !== null) cookie = setCookie.split(';')[0] ?? null
+    return response
+  }
+  return () => {
+    globalThis.fetch = actualFetch
+  }
+}
 
 let nextBookingOffsetHours = 2
 
@@ -74,4 +106,35 @@ export async function seedCustomerAccessSession(
   })
 
   return accessToken
+}
+
+/** Remove only this test's credentials/outbox rows; unrelated local identities remain intact. */
+export async function removeCustomerAccessFixtures(
+  dbUrl: string,
+  emails: readonly string[],
+): Promise<void> {
+  const normalized = emails.map((email) => email.trim().toLowerCase())
+  await withClient(dbUrl, async (client) => {
+    await client.query('begin')
+    try {
+      await client.query(
+        `delete from public.external_action_jobs
+        where action_type='customer_access_email_send' and payload->>'challenge_id' in (
+          select id::text from public.customer_booking_access_challenges where lower(email)=any($1)
+        )`,
+        [normalized],
+      )
+      for (const table of [
+        'customer_booking_access_sessions',
+        'customer_booking_access_challenges',
+        'customer_booking_access_tokens',
+      ]) {
+        await client.query(`delete from public.${table} where lower(email)=any($1)`, [normalized])
+      }
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback')
+      throw error
+    }
+  })
 }

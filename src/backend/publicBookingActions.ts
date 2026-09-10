@@ -30,14 +30,11 @@ export async function invokePublicBookingAction(
     return { data: null, failed: true }
   }
   try {
-    // Customer session is an HttpOnly cookie set by this Edge Function. Do not put credentials on
-    // the shared Supabase client: PostgREST uses wildcard CORS and browsers reject it with cookies.
-    const response = await globalThis.fetch(`${SUPABASE_URL}/functions/v1/public-booking-actions`, {
+    // Worker relays only the customer gateway. The session stays first-party and HttpOnly.
+    const response = await globalThis.fetch('/api/customer-bookings', {
       method: 'POST',
-      credentials: 'include',
+      credentials: 'same-origin',
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),

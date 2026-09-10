@@ -22,12 +22,13 @@ describe('public booking action gateway client', () => {
     expect(
       parseWith(customerAccessExchangeResponse, {
         ok: true,
-        access_token: 'a'.repeat(64),
+        session_proof: 'a'.repeat(64),
       }).ok,
     ).toBe(true)
     expect(
       parseWith(listCustomerBookingsResponse, {
         ok: true,
+        session_proof: 'a'.repeat(64),
         phone: '0701234567',
         bookings: [
           {
@@ -61,10 +62,10 @@ describe('public booking action gateway client', () => {
       failed: false,
     })
     expect(fetch).toHaveBeenCalledWith(
-      'https://example.supabase.co/functions/v1/public-booking-actions',
+      '/api/customer-bookings',
       expect.objectContaining({
         method: 'POST',
-        credentials: 'include',
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
       }),
     )

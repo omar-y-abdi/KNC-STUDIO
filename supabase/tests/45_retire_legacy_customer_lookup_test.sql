@@ -56,7 +56,7 @@ select ok(
   'permanent-token ensure remains present'
 );
 select ok(
-  pg_catalog.to_regprocedure('public.replace_customer_booking_access_token(text,text,text,text)') is not null,
+  pg_catalog.to_regprocedure('public.replace_customer_booking_access_token(text,text,text,text,bigint)') is not null,
   'permanent-token replacement remains present'
 );
 select ok(
@@ -99,7 +99,7 @@ select ok(
 select ok(
   pg_catalog.has_function_privilege(
     'service_role',
-    'public.replace_customer_booking_access_token(text,text,text,text)',
+    'public.replace_customer_booking_access_token(text,text,text,text,bigint)',
     'execute'
   ),
   'service role retains permanent-token replacement execution'
@@ -107,7 +107,7 @@ select ok(
 select ok(
   not pg_catalog.has_function_privilege(
     'anon',
-    'public.replace_customer_booking_access_token(text,text,text,text)',
+    'public.replace_customer_booking_access_token(text,text,text,text,bigint)',
     'execute'
   ),
   'anon cannot execute permanent-token replacement directly'

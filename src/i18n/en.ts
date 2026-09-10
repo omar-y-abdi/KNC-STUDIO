@@ -14,6 +14,9 @@ export const bookingEn: BookingStrings = {
   loadingBarbers: 'Loading barbers …',
   noBarbers: 'No barbers are available for booking right now.',
   chooseDate: 'Pick a day',
+  previousMonth: 'Previous month',
+  nextMonth: 'Next month',
+  dateUnavailable: 'Unavailable',
   chooseTime: 'Pick a time',
   chooseService: 'Choose a service',
   loadingServices: 'Loading services …',
@@ -141,6 +144,8 @@ export const myBookingsEn: MyBookingsStrings = {
   accessSent:
     'If the email matches a booking, we will send a new link. The previous link will then stop working.',
   errAccess: 'This link is invalid or has been replaced. Request a new secure link.',
+  loadingBookings: 'Loading bookings …',
+  errCookies: 'Allow cookies for this website, then reopen the email link to manage your bookings.',
   errSystem: 'Could not load your appointments. Please try again.',
   errChallenge: 'Verification failed. Reload the check and try again.',
   errRateLimited: 'Too many attempts. Wait a moment before trying again.',

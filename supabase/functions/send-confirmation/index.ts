@@ -260,10 +260,15 @@ async function message(
   })
 }
 
-function accessCiphertext(value: unknown): string | null {
+function accessTokenRecord(value: unknown): { ciphertext: string; generation: number } | null {
   if (typeof value !== 'object' || value === null) return null
-  const ciphertext = (value as Record<string, unknown>).token_ciphertext
-  return typeof ciphertext === 'string' ? ciphertext : null
+  const { token_ciphertext: ciphertext, generation } = value as Record<string, unknown>
+  return typeof ciphertext === 'string' &&
+    typeof generation === 'number' &&
+    Number.isSafeInteger(generation) &&
+    generation > 0
+    ? { ciphertext, generation }
+    : null
 }
 
 async function customerAccessHref(booking: BookingRow): Promise<string> {
@@ -277,33 +282,36 @@ async function customerAccessHref(booking: BookingRow): Promise<string> {
   const candidate = createCustomerAccessToken()
   const tokenHash = await hashCustomerAccessToken(candidate)
   const tokenCiphertext = await encryptCustomerAccessToken(candidate, accessSecret)
-  const ensured = await client.rpc('ensure_customer_booking_access_token', {
+  const tokenArgs = {
     p_email: booking.email,
     p_phone: booking.phone,
     p_token_hash: tokenHash,
     p_token_ciphertext: tokenCiphertext,
-  })
+  }
+  const ensured = await client.rpc('ensure_customer_booking_access_token', tokenArgs)
   if (ensured.error !== null) throw new Error('customer access token lookup failed')
 
-  const storedCiphertext = accessCiphertext(ensured.data)
-  const storedToken =
-    storedCiphertext === null
-      ? null
-      : await decryptCustomerAccessToken(storedCiphertext, accessSecret)
+  const stored = accessTokenRecord(ensured.data)
+  if (stored === null) throw new Error('customer access token record invalid')
+  const storedToken = await decryptCustomerAccessToken(stored.ciphertext, accessSecret)
   if (storedToken !== null) return customerAccessUrl(storedToken)
 
   // Encryption-key rotation makes the old ciphertext unreadable. Replace only in this recovery
   // case; ordinary subsequent booking emails always reuse the current permanent link.
   const replaced = await client.rpc('replace_customer_booking_access_token', {
-    p_email: booking.email,
-    p_phone: booking.phone,
-    p_token_hash: tokenHash,
-    p_token_ciphertext: tokenCiphertext,
+    ...tokenArgs,
+    p_expected_generation: stored.generation,
   })
-  if (replaced.error !== null || replaced.data !== true) {
-    throw new Error('customer access token recovery failed')
-  }
-  return customerAccessUrl(candidate)
+  if (replaced.error !== null) throw new Error('customer access token recovery failed')
+  if (replaced.data === true) return customerAccessUrl(candidate)
+
+  // A fresh-link request or another email worker won. Reuse its credential; never overwrite it.
+  const current = await client.rpc('ensure_customer_booking_access_token', tokenArgs)
+  const winner = current.error === null ? accessTokenRecord(current.data) : null
+  const winnerToken =
+    winner === null ? null : await decryptCustomerAccessToken(winner.ciphertext, accessSecret)
+  if (winnerToken === null) throw new Error('customer access token recovery failed')
+  return customerAccessUrl(winnerToken)
 }
 
 async function buildMessages(

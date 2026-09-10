@@ -6,8 +6,6 @@ import {
   listCustomerBookingsResponse,
   parseWith,
 } from '../../backend/rpcSchemas'
-import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
-import type { Barber } from '../../booking/domain'
 import { asBarberId } from '../../booking/domain'
 import { stockholmWallClockDate } from '../../booking/stockholmTime'
 import { myBookingsStrings } from '../../i18n/index'
@@ -20,17 +18,6 @@ import type {
   MyBookingsListParams,
   MyBookingsPort,
 } from '../port'
-
-async function barberFromId(id: string): Promise<Barber> {
-  try {
-    const roster = await defaultBarbersPort.listActive()
-    const hit = roster.find((row) => row.barber.id === id)
-    if (hit !== undefined) return hit.barber
-  } catch {
-    // Preserve truthful booking data even when roster hydration fails.
-  }
-  return { id: asBarberId(id), name: id, ig: '' }
-}
 
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
   async requestAccess(
@@ -62,6 +49,13 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       const parsed = parseWith(customerAccessExchangeResponse, data)
       if (!parsed.ok) return { ok: false, error: 'system' }
       if (!parsed.value.ok) return { ok: false, error: parsed.value.error }
+      const session = await invokePublicBookingAction({ action: 'list' })
+      if (session.failed) return { ok: false, error: 'system' }
+      const confirmed = parseWith(listCustomerBookingsResponse, session.data)
+      if (!confirmed.ok) return { ok: false, error: 'system' }
+      if (!confirmed.value.ok || confirmed.value.session_proof !== parsed.value.session_proof) {
+        return { ok: false, error: 'cookies_disabled' }
+      }
       return { ok: true, accessToken: '' }
     } catch {
       return { ok: false, error: 'system' }
@@ -82,13 +76,28 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
         return { ok: false, error: parsed.value.error }
       }
 
+      // Prove the browser retained the HttpOnly cookie before discarding the email credential.
+      if (params.accessToken !== '') {
+        const session = await invokePublicBookingAction({ action: 'list' })
+        if (session.failed) return { ok: false, error: 'system' }
+        const confirmed = parseWith(listCustomerBookingsResponse, session.data)
+        if (!confirmed.ok) return { ok: false, error: 'system' }
+        if (!confirmed.value.ok || confirmed.value.session_proof !== parsed.value.session_proof) {
+          return { ok: false, error: 'cookies_disabled' }
+        }
+      }
+
       const sep = myBookingsStrings(params.lang).atSep
       const bookings: MyBooking[] = []
       for (const row of parsed.value.bookings) {
         const start = new Date(row.start_at)
         bookings.push({
           id: row.id,
-          barber: await barberFromId(row.barber_id),
+          barber: {
+            id: asBarberId(row.barber_id),
+            name: row.barber_name ?? row.barber_id,
+            ig: '',
+          },
           serviceName: row.service_name,
           price: row.price,
           durationMin: row.duration_min,

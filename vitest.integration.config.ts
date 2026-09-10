@@ -24,6 +24,9 @@ if (stack.API_URL !== undefined && stack.ANON_KEY !== undefined) {
   // The test files read these (un-prefixed) from process.env.
   testEnv.SUPABASE_URL = stack.API_URL
   testEnv.SUPABASE_ANON_KEY = stack.ANON_KEY
+  // Must match local/CI Edge configuration; never a production credential.
+  testEnv.CUSTOMER_GATEWAY_SECRET =
+    process.env.CUSTOMER_GATEWAY_SECRET ?? 'ci-customer-gateway-secret-not-for-production'
   if (stack.SERVICE_ROLE_KEY !== undefined)
     testEnv.SUPABASE_SERVICE_ROLE_KEY = stack.SERVICE_ROLE_KEY
   if (stack.DB_URL !== undefined) testEnv.SUPABASE_DB_URL = stack.DB_URL

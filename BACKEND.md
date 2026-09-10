@@ -14,8 +14,12 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
 4. Insert trigger queues a `booking_email_delivery_jobs` row; the one-minute `pg_cron` dispatcher
    invokes `send-confirmation` through a Vault-held URL and shared secret.
 5. Resend emails customer and linked barber. Confirmation/reminder contains the current permanent
-   email-scoped **Mina bokningar** token. Requesting a new link by email rotates it and invalidates
-   the previous token. Phone remains booking contact data and review scope, not a lookup field.
+   email-scoped **Mina bokningar** token. The root-path link enters through the Worker, which redirects
+   into the app; browser actions then use same-origin `/api/customer-bookings`. The Worker signs the
+   origin, timestamp, client IP, and body with `CUSTOMER_GATEWAY_SECRET` before calling the Edge gateway.
+   Valid access receives a first-party HttpOnly `SameSite=Lax` session cookie. Requesting a new link by
+   email rotates the token and invalidates the previous token. Phone remains booking contact data and
+   review scope, not a lookup field.
 
 The `external_action_jobs` outbox covers Calendar actions, Storage cleanup, customer-access email, and
 Auth user lifecycle actions. Booking email delivery has its separate
@@ -38,15 +42,15 @@ VITE_SUPABASE_ANON_KEY=<public-anon-key>
 VITE_TURNSTILE_SITE_KEY=<public-site-key>
 ```
 
-Never expose `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET`, or webhook secrets in
-frontend variables.
+Never expose `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET`, `CUSTOMER_GATEWAY_SECRET`,
+or webhook secrets in frontend variables.
 
 ## Apply backend changes
 
-Do not apply this launch release with one unrestricted `db push`. Follow the expand → Edge deploy →
-frontend switch → verify → contract procedure in
-`docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`. It keeps the currently deployed frontend working
-until protected gateways have been verified.
+For the current customer-access repair, follow
+`docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md`. Apply only its reviewed migrations; deploy
+Edge before the Worker/frontend. `PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` records the earlier gateway
+rollout and must not be replayed as a current deployment checklist.
 
 Required Edge Function secrets:
 
@@ -61,6 +65,7 @@ npx supabase secrets set \
   GOOGLE_OAUTH_CLIENT_ID=<google-client-id> \
   GOOGLE_OAUTH_CLIENT_SECRET=<google-client-secret> \
   CALENDAR_STATE_SECRET=<different-random-long-value> \
+  CUSTOMER_GATEWAY_SECRET=<same-random-long-value-as-Worker> \
   WEBHOOK_SECRET=<random-long-value>
 ```
 
@@ -79,6 +84,10 @@ Cloudflare Worker also needs `SUPABASE_ANON_KEY` as a secret so initial HTML, JS
 ```bash
 printf '%s' '<public-anon-key>' | npx wrangler secret put SUPABASE_ANON_KEY
 ```
+
+The Worker customer proxy also needs the same high-entropy `CUSTOMER_GATEWAY_SECRET` value that the
+`public-booking-actions` Edge Function uses. Missing or mismatched values fail closed; deploy both
+values with the Worker/Edge change.
 
 ## Resend
 
@@ -128,16 +137,34 @@ Production smoke test:
 
 1. Book a test slot with a real test email and phone.
 2. Confirm customer and linked barber each receive one email.
-3. Follow the random root-path customer link; confirm it opens **Mina bokningar** directly.
+3. Follow the random root-path customer link; confirm it opens **Mina bokningar** through the Worker
+   redirect and establishes a first-party HttpOnly session.
 4. Request a fresh link using email only; confirm the previous link reports replacement/expiry.
 5. Cancel the booking and confirm it disappears from upcoming bookings.
 6. After appointment time, confirm review eligibility uses the same phone.
 
+## Local customer verification
+
+See [README local setup](README.md#local-customer-links-and-cookies). Vite dev/preview proxy the
+customer route to the real local Worker; a Vite server alone cannot implement customer sessions.
+`npm run test:e2e -- --customer` runs the actual HTTPS Worker → Edge → PostgreSQL path in Chromium,
+Firefox and WebKit. It verifies host-only HttpOnly cookies, successful profile hydration, shared-cookie
+customer switching, cookie rejection, invalid-link denial and rotation. Only cookie rejection is
+intercepted; those responses still come from the real backend.
+
+Existing `reviews.test.ts` integration cases force overlapping transactions and observe
+`pg_blocking_pids`: permanent/legacy session mint against rotation in both lock orders, plus stale
+ciphertext repair against a newer rotation. Sequential pgTAP checks remain complementary. These
+local/CI gates do not prove inbox delivery, live secrets or deployment state.
+
 ## Free-tier operations
 
 Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an
-encrypted daily database-and-Storage artifact with migration lineage and byte verification; setup and restore drills are documented in
-`docs/operations/BACKUP_RESTORE.md`. Keep migrations in source control. Never upload plaintext dumps.
+encrypted daily database-and-Storage artifact with migration lineage and byte verification only after
+all repository secrets/variables are configured. The 2026-09-10 launch audit recorded scheduled runs
+failing at configuration validation because `SUPABASE_DB_URL` is still missing. Setup and restore drills
+are documented in `docs/operations/BACKUP_RESTORE.md`; keep migrations in source control and never
+upload plaintext dumps.
 
 ## Mock fallback
 

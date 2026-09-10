@@ -1,5 +1,8 @@
 # Performance Launch-Readiness Audit
 
+> Historical snapshot of the baseline below. Results do not establish current production status.
+> Current findings: [docs/qa/2026-09-10-launch-issues.md](docs/qa/2026-09-10-launch-issues.md).
+
 Branch: `perf/launch-readiness-2026-08-28`
 Baseline: `main@f184f10fbe7f87f4510081552520bde0992e9aba`
 Scope: performance plus the explicitly added launch-blocking JPEG upload correctness fix. No unrelated feature, visual, copy, or refactor work.

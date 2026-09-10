@@ -9,7 +9,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:@cloudflare/workers-types@5.20260828.1",
+        "npm:@cloudflare/workers-types@5.20260910.1",
         "npm:@eslint/js@^9.39.4",
         "npm:@imagemagick/magick-wasm@0.0.42",
         "npm:@preact/preset-vite@^2.10.5",
@@ -33,7 +33,7 @@
         "npm:vite@^8.0.12",
         "npm:vitest@^4.1.9",
         "npm:wouter-preact@^3.10.0",
-        "npm:wrangler@^4.120.0",
+        "npm:wrangler@4.131.0",
         "npm:zod@^3.25.76"
       ]
     }

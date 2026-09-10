@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
+import { customerGateway } from './mybookings/customerGateway'
 import {
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
@@ -18,6 +19,7 @@ interface Env {
   ASSETS: StaticAssets
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
+  CUSTOMER_GATEWAY_SECRET?: string
 }
 
 interface WorkerContext {
@@ -347,6 +349,8 @@ export default {
       url.hostname = CANONICAL_HOST
       return new Response(null, { status: 308, headers: { Location: url.toString() } })
     }
+
+    if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
 
     if (url.hostname === CANONICAL_HOST && isCacheablePublicContent(request, url)) {
       return context.exports.PublicContent.fetch(request)

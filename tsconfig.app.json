@@ -35,5 +35,5 @@
     "noPropertyAccessFromIndexSignature": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "tools/e2e/*.tsx"]
 }

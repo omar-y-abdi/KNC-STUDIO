@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 
 export const REQUIRED_EDGE_SECRETS = [
   'CALENDAR_STATE_SECRET',
+  'CUSTOMER_GATEWAY_SECRET',
   'GOOGLE_OAUTH_CLIENT_ID',
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'IP_SALT',

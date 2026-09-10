@@ -83,7 +83,11 @@ export const customerAccessRequestResponse = z.discriminatedUnion('ok', [
   customerAccessRequestErr,
 ])
 
-const customerAccessExchangeOk = z.object({ ok: z.literal(true) })
+const customerSessionProof = z.string().regex(/^[0-9a-f]{64}$/)
+const customerAccessExchangeOk = z.object({
+  ok: z.literal(true),
+  session_proof: customerSessionProof,
+})
 const customerAccessExchangeErr = z.object({ ok: z.literal(false), error: z.literal('invalid') })
 export const customerAccessExchangeResponse = z.discriminatedUnion('ok', [
   customerAccessExchangeOk,
@@ -95,6 +99,7 @@ export const customerAccessExchangeResponse = z.discriminatedUnion('ok', [
 const myBookingRow = z.object({
   id: z.string(),
   barber_id: z.string(),
+  barber_name: z.string().optional(),
   service_name: z.string(),
   price: z.number().finite().min(0).max(100000),
   duration_min: bookingDurationMin,
@@ -103,6 +108,7 @@ const myBookingRow = z.object({
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  session_proof: customerSessionProof,
   name: z.string().optional(),
   phone: z.string().regex(/^07[0-9]{8}$/),
   email: z.string().email().optional(),

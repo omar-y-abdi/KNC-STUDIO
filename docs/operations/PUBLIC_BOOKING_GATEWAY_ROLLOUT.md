@@ -1,5 +1,10 @@
 # Public booking gateway rollout
 
+> **Historical rollout record.** Production already contains this migration sequence through
+> `20260905154608_customer_http_only_session.sql`. Keep steps below for audit/rollback context; do not
+> run them as current deployment instructions. New changes need a fresh plan from current local,
+> linked-database, Edge, and Cloudflare state.
+
 This branch targets a linked database whose gateway contract is already live. The verified remote
 migration history includes `20260813123853_contract_public_booking_gateway.sql` and continues through
 `20260827170300_harden_internal_function_privileges.sql`. This rollout therefore stages the five
@@ -19,8 +24,13 @@ described under Rollback boundary.
 Calendar sync uses durable `calendar_event_sync` jobs. Remove retired deployment with
 `supabase functions delete calendar-sync --project-ref "$PROJECT_REF"` after replacement dispatcher verification.
 Verify removal with `npx supabase functions list --project-ref "$PROJECT_REF" --output-format json` and
-`jq -e 'all(.functions[]; .slug != "calendar-sync")'`. The durable trigger is
-`calendar_sync_on_bookings`; verify Edge/Vault parity before switching traffic.
+`jq -e 'all(.functions[]; .slug != "calendar-sync")'`. Retired Dashboard trigger
+`calendar_sync_on_bookings` must remain absent. Durable trigger is
+`booking_calendar_sync_on_change`; verify Edge/Vault parity before switching traffic.
+
+`calendar-sync` appears below only as retired rollout history. Do not deploy it. Current deployments
+must use the migration-owned trigger plus `external-cleanup` dispatcher and verify the retired
+function is absent.
 
 Never run an unrestricted `db push`, and never apply a retirement migration before the switched
 frontend and the deployed gateway have passed coexistence checks. This runbook is an operational
@@ -127,7 +137,7 @@ static WASM asset, so deploy it with local Docker bundling rather than `--use-ap
 ```bash
 for function in \
   admin-create-barber admin-manage-barber \
-  calendar-disconnect calendar-oauth-callback calendar-oauth-start calendar-sync \
+  calendar-disconnect calendar-oauth-callback calendar-oauth-start \
   external-cleanup public-booking-actions send-confirmation send-email-change \
   send-recovery-email submit-booking; do
   npx supabase functions deploy "$function" --project-ref "$PROJECT_REF" --use-api
@@ -136,8 +146,9 @@ npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
 npx supabase functions list --project-ref "$PROJECT_REF" --output-format json
 ```
 
-Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `calendar-sync`,
-`external-cleanup`, `admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed.
+Verify `submit-booking`, `public-booking-actions`, `send-confirmation`, `external-cleanup`,
+`admin-create-barber`, `admin-manage-barber`, and `upload-image` are deployed. Verify `calendar-sync`
+is absent with the removal check above.
 
 ## 3. Switch frontend
 

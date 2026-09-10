@@ -19,6 +19,50 @@ npm run build      # type-check (tsc -b) + production build to dist/
 npm run preview    # serve the built dist/ locally
 ```
 
+### Local customer links and cookies
+
+Vite serves the UI. Customer history needs the real Worker and Edge Function too. Both `dev` and
+`preview` proxy `/api/customer-bookings` and 64-character customer root links to the loopback Worker
+at `http://127.0.0.1:8787`. Override with `CUSTOMER_GATEWAY_PROXY_URL`; external origins are rejected.
+Host/Origin remain the browser's values so the Worker still enforces same-origin requests.
+
+For repeatable local verification:
+
+```bash
+# Local test values only. This file is ignored by git.
+cat > supabase/functions/.env <<'EOF'
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EOF
+npx supabase start
+npm run test:e2e -- --customer
+```
+
+Use a dedicated local Supabase stack. Preserve any existing local Function env values when adding
+these settings; restart/serve Functions after changing them. The gate requires current migrations
+and installed Playwright Chromium, Firefox and WebKit (`npx playwright install --with-deps`). It
+builds the app in a temporary directory, starts an HTTPS Worker and Vite preview, creates isolated
+customer fixtures, tests actual cookies/profile switching/rotation, and removes its fixtures and
+servers. It sends no provider email and rejects non-loopback database/API addresses. Logs and failed
+screenshots remain in the printed temporary directory.
+
+For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+and matching `CUSTOMER_GATEWAY_SECRET` in ignored `.dev.vars`; add the exact Vite origin to the local
+Edge `PUBLIC_SITE_ORIGINS`. Start `npm run cloudflare:dev -- --local --ip 127.0.0.1 --port 8787` in one
+terminal and `npm run dev` in another. Preview uses the same proxy after `npm run build`.
+
+Cookie acceptance must also be tested with HTTPS. Vite accepts certificate paths in `LOCAL_HTTPS_KEY`
+and `LOCAL_HTTPS_CERT`; both are required. Run Wrangler with matching HTTPS protocol/certificate and
+set `CUSTOMER_GATEWAY_PROXY_URL` accordingly. For HTTPS UI with HTTP local Supabase, set
+`LOCAL_SUPABASE_URL=http://127.0.0.1:54321` and build with
+`VITE_SUPABASE_URL=https://127.0.0.1:<vite-port>/__supabase`. This local TLS bridge avoids WebKit's
+mixed-content rejection and strips Cookie/Set-Cookie while preserving Supabase bearer auth.
+Production routing and cookie policy are unchanged.
+
 ### Scripts
 
 | Script             | What it does                                                              |
@@ -51,14 +95,15 @@ src/
   backend/              # env "configured?" check, lazy Supabase client seam, Zod RPC schemas
   booking/              # the booking domain:
     domain.ts           #   ADTs — invalid states unrepresentable
-    slots/calendar.ts   # pure functions (no clock, no I/O)
+    calendar.ts         # pure calendar/date functions (no I/O)
+    slotPacking.ts      # pure offline/mock slot packing (live availability is DB-owned)
     validation.ts       #   Zod + branded types (Name / Phone-SE) → Result
     ics.ts              #   RFC5545-correct .ics builder (escaped, injection-safe)
     port.ts             #   BookingPort — the backend seam (interface only)
     adapters/           #   localCalendarAdapter (offline mock) + lazy Supabase adapter
     BookingFlow + sub-components, bookingStyles
   about/                # About section: gallery, DB-driven stylists, reviews (+ ports/adapters)
-  mybookings/           # permanent email-token history/cancel + same-tab access session
+  mybookings/           # permanent email-token history/cancel + first-party HttpOnly session
   admin/                # staff panel: operations + authenticated email/password settings
   i18n/                 # typed sv/en string tables (missing key = compile error)
   ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
@@ -137,6 +182,13 @@ link. Requesting a fresh link rotates it and invalidates the prior link. Transac
 confirmations and cancellations for customer + barber. Supabase Cron
 queues a customer-only reminder one day before start time, but only for bookings created at least
 24 hours in advance; Resend idempotency and a delivery ledger prevent duplicates.
+
+The permanent root-path link remains the customer entry point. The Worker redirects that link into the
+app, and the browser uses same-origin `/api/customer-bookings`; the Worker signs origin, timestamp, IP,
+and body with `CUSTOMER_GATEWAY_SECRET` before forwarding to the Edge gateway. Valid access receives a
+first-party HttpOnly `SameSite=Lax` session cookie. The browser never stores the token in
+`sessionStorage`/`localStorage`, and no phone-memory cookie authorizes access. Current local code does not
+change production until the Worker secret and matching Edge secret are deployed together.
 
 ---
 

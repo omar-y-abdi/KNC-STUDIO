@@ -9,6 +9,7 @@
 // these DB values onto its i18n defaults, so edits here show up on the public site.
 
 import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
@@ -78,6 +79,7 @@ function AboutTextEditor(props: {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savedKey, setSavedKey] = useState<string | null>(null)
   const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
 
   useEffect(() => {
     let active = true
@@ -102,9 +104,11 @@ function AboutTextEditor(props: {
   const valueFor = (key: AboutKey, lang: Lang): string => cells.get(cellKey(key, lang)) ?? ''
 
   const setValue = (key: AboutKey, lang: Lang, value: string): void => {
+    const ck = cellKey(key, lang)
+    editGeneration.current.set(ck, (editGeneration.current.get(ck) ?? 0) + 1)
     setCells((prev) => {
       const next = new Map(prev)
-      next.set(cellKey(key, lang), value)
+      next.set(ck, value)
       return next
     })
     setSavedKey(null)
@@ -113,14 +117,18 @@ function AboutTextEditor(props: {
 
   const save = async (key: AboutKey, lang: Lang): Promise<void> => {
     const ck = cellKey(key, lang)
+    const generation = editGeneration.current.get(ck) ?? 0
     setSavingKey(ck)
     setErrorFor(null)
     const result = await saveAbout(key, lang, valueFor(key, lang))
     setSavingKey(null)
     if (!result.ok) {
-      setErrorFor({ key: ck, message: result.error.message })
+      if ((editGeneration.current.get(ck) ?? 0) === generation) {
+        setErrorFor({ key: ck, message: result.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(ck) ?? 0) !== generation) return
     setSavedKey(ck)
   }
 
@@ -193,7 +201,7 @@ function AboutTextEditor(props: {
                           type="button"
                           style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
                           onClick={() => void save(field.key, cellLang)}
-                          disabled={savingKey === ck}
+                          disabled={savingKey !== null}
                         >
                           {savingKey === ck ? t.aboutSaving : t.aboutSave}
                         </button>
@@ -220,14 +228,19 @@ function AboutTextEditor(props: {
 
 // --- Gallery --------------------------------------------------------------------------------------
 
-function GalleryManager(props: {
+const defaultGalleryPort = { listGallery, uploadImage, deleteImage }
+export type GalleryManagerPort = typeof defaultGalleryPort
+
+export function GalleryManager(props: {
   readonly dark: boolean
   readonly s: AdminStylesBundle
   readonly lang: Lang
   readonly kind: GalleryKind
   readonly title: string
+  readonly port?: GalleryManagerPort
 }): JSX.Element {
   const { s, kind, lang } = props
+  const port = props.port ?? defaultGalleryPort
   const t = adminText(lang)
   const [images, setImages] = useState<readonly GalleryImage[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -238,44 +251,50 @@ function GalleryManager(props: {
   const [pendingDelete, setPendingDelete] = useState<GalleryImage | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const altGeneration = useRef(0)
 
-  const reload = async (): Promise<void> => {
-    const result = await listGallery(kind)
-    if (result.ok) {
-      setImages(result.value)
-      setLoadError(null)
-    } else {
-      setLoadError(result.error.message)
-    }
-    setLoaded(true)
-  }
-
+  const resource = `gallery:${kind}`
   useEffect(() => {
-    void reload()
-    // Only `kind` is fixed per instance; reload is intentionally run once on mount.
-  }, [])
+    let active = true
+    setLoaded(false)
+    setLoadError(null)
+    void orderedAdminOperation(resource, () => port.listGallery(kind)).then((result) => {
+      if (!active) return
+      if (result.ok) setImages(result.value)
+      else setLoadError(result.error.message)
+      setLoaded(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [kind, port])
+  const writable = loaded && loadError === null && !busy && !deleteBusy
 
   const onUpload = async (file: File): Promise<void> => {
+    if (!writable) return
+    const generation = altGeneration.current
     setBusy(true)
     setNotice(null)
     const nextSort = images.length === 0 ? 0 : Math.max(...images.map((i) => i.sortOrder)) + 1
-    const result = await uploadImage(kind, file, alt.trim(), nextSort)
+    const result = await orderedAdminOperation(resource, () =>
+      port.uploadImage(kind, file, alt.trim(), nextSort),
+    )
     setBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
     if (!result.ok) {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setAlt('')
+    if (altGeneration.current === generation) setAlt('')
     setNotice({ kind: 'ok', text: t.aboutGalleryUploadedOk })
     setImages((prev) => [...prev, result.value])
   }
 
   const onDelete = async (): Promise<void> => {
     const target = pendingDelete
-    if (target === null) return
+    if (target === null || !writable) return
     setDeleteBusy(true)
-    const result = await deleteImage(target)
+    const result = await orderedAdminOperation(resource, () => port.deleteImage(target))
     setDeleteBusy(false)
     setPendingDelete(null)
     if (!result.ok) {
@@ -313,8 +332,12 @@ function GalleryManager(props: {
             id={`alt-${kind}`}
             type="text"
             style={s.input}
+            maxLength={2000}
             value={alt}
-            onInput={(e) => setAlt(e.currentTarget.value)}
+            onInput={(e) => {
+              altGeneration.current += 1
+              setAlt(e.currentTarget.value)
+            }}
           />
         </div>
         <div>
@@ -325,9 +348,9 @@ function GalleryManager(props: {
             ref={fileRef}
             id={`file-${kind}`}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
             style={{ ...s.input, padding: '7px' }}
-            disabled={busy}
+            disabled={!writable}
             onChange={(e) => {
               const file = e.currentTarget.files?.[0]
               if (file !== undefined) void onUpload(file)
@@ -385,7 +408,12 @@ function GalleryManager(props: {
                 <span style={{ fontSize: '12px', opacity: 0.7, wordBreak: 'break-word' }}>
                   {img.alt === '' ? '—' : img.alt}
                 </span>
-                <button type="button" style={s.dangerBtn} onClick={() => setPendingDelete(img)}>
+                <button
+                  type="button"
+                  style={s.dangerBtn}
+                  disabled={!writable}
+                  onClick={() => setPendingDelete(img)}
+                >
                   {t.aboutGalleryRemove}
                 </button>
               </figcaption>

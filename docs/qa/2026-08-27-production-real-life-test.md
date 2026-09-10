@@ -1,5 +1,8 @@
 # Production real-life test — 2026-08-27
 
+> Historical snapshot of the baseline below. Results do not establish current production status.
+> Current findings: [2026-09-10-launch-issues.md](2026-09-10-launch-issues.md).
+
 ## Scope
 
 - Target: `https://bladeblendstudio.se` and linked production Supabase/Resend/Google Calendar services.

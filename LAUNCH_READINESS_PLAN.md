@@ -2,6 +2,10 @@
 
 **Statusdatum:** 2026-08-23
 
+> **Historisk planbild.** Checklistan och verifieringen nedan är från 2026-08-23. Aktuell launchstatus
+> finns i `docs/qa/2026-09-10-audit/pm.md`, `sol-platform.md` och agentloggarna. Behåll historiken; läs
+> aktuell kod, migrationer, live config och CI innan någon operatörsåtgärd körs.
+
 **Syfte:** verifierad handoff och körordning inför produktionssättning
 
 **Kodstatus:** kodblockerarna från den adversariala launch-reviewn är implementerade. Aktuell head
@@ -26,8 +30,9 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 - Kundens e-post och telefon sparas. **Mina bokningar** och avbokning kräver den aktuella permanenta,
   slumpmässiga tokenen som levereras till bokningens e-postadress. En ny länkbegäran använder bara
   e-post, roterar tokenen atomärt och ogiltigförklarar föregående länk. Telefon används inte som
-  autentiseringshemlighet; samma-flikens sessionslagring är bara en användarbekvämlighet och
-  aldrig en behörighetskälla.
+  autentiseringshemlighet. Worker `/api/customer-bookings` binder origin, timestamp, IP och body med
+  `CUSTOMER_GATEWAY_SECRET`; giltig åtkomst får en first-party HttpOnly `SameSite=Lax`-cookie. Ingen
+  `sessionStorage`, `localStorage` eller telefon-minne ger åtkomst; cookies-disabled visar fallback.
 - Bokningsmetoden använder `email` eller `phone`; SMS-semantik är borttagen.
 - Länkbegäran och recension går via Edge Function med Turnstile och rate limit. Listning och
   avbokning kräver den e-postbundna permanenta tokenen; äldre engångslänkar stöds under migration.
@@ -38,8 +43,8 @@ produktionsdataåtkomst och kan inte lösas enbart i repot.
 - Kundpåminnelse schemaläggs 24 timmar före besöket; bokningar gjorda närmare än 24 timmar får ingen
   påminnelse.
 - Google Calendar create/update/delete är idempotenta och barberarspecifika. Create/update köas i
-  bokningstransaktionen och retryas via external-action-ledgern; Database Webhook är endast en
-  kompatibilitetsväg och inte en correctness dependency.
+  bokningstransaktionen och retryas via external-action-ledgern. Den migration-ägda triggern är
+  correctness-vägen; pensionerad Dashboard Database Webhook/`calendar-sync` är inte en dependency.
 - En bekräftad bokning räknas som aktiv tills `end_at`; historikradering får inte radera ett pågående
   besök efter att `start_at` passerat.
 
@@ -127,8 +132,9 @@ lokalt verifierad, separat migration och pgTAP-regressionstest som flyttar exten
 - [ ] Rensa testbarberare, testbokningar och testrecensioner från produktionsprojektet.
 - [ ] Följ `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` exakt: expand, Edge Functions,
       frontend, live verifiering och först därefter contract. Kör inte ett obegränsat `db push`.
-- [ ] Sätt och verifiera produktionssecrets för Resend, Turnstile, Google OAuth, hash-salt, tillåtna
-      publika origins och cron-anrop. Kör `npm run verify:production-secrets -- --project-ref <ref>`;
+- [ ] Sätt och verifiera produktionssecrets för Resend, Turnstile, Google OAuth, hash-salt,
+      `CUSTOMER_GATEWAY_SECRET`, tillåtna publika origins och cron-anrop. Kör
+      `npm run verify:production-secrets -- --project-ref <ref>`;
       inga secret-värden får ligga i GitHub-loggar eller repot.
 - [ ] Verifiera Supabase Auth Site URL, redirect allowlist, signup-policy, custom SMTP och
       e-postmallar i dashboard.
