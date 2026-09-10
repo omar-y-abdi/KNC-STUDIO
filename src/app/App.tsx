@@ -80,7 +80,7 @@ export function App(): JSX.Element {
   const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
   const [bookingAccess, setBookingAccess] = useState<{
     readonly token?: string
-    readonly failed?: boolean
+    readonly error?: 'invalid' | 'cookies_disabled' | 'system'
   }>({})
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
   useEffect(() => {
@@ -102,7 +102,12 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const { code: accessCode, cleanPath, direct } = consumeBookingAccessLink(window.location.href)
-    if (accessCode === null) return
+    if (accessCode === null) {
+      void defaultMyBookingsPort.list({ accessToken: '', lang: 'sv' }).then((result) => {
+        if (result.ok) setCustomerProfile(result.profile)
+      })
+      return
+    }
     window.history.replaceState(window.history.state, '', cleanPath)
     if (direct) {
       setBookingAccess({ token: accessCode })
@@ -110,7 +115,7 @@ export function App(): JSX.Element {
       return
     }
     void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
-      setBookingAccess(result.ok ? { token: result.accessToken } : { failed: true })
+      setBookingAccess(result.ok ? { token: result.accessToken } : { error: result.error })
       setState({ myBookingsOpen: true })
     })
   }, [])
@@ -323,7 +328,7 @@ export function App(): JSX.Element {
         lang={lang}
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
-        {...(bookingAccess.failed === undefined ? {} : { accessError: bookingAccess.failed })}
+        {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
         onProfile={setCustomerProfile}
       />
     </LazySurface>

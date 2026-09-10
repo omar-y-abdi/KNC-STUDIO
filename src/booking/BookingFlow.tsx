@@ -89,8 +89,16 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   useEffect(() => {
-    if (props.initialContact === undefined) return
-    setState({ form: { ...props.initialContact } })
+    const contact = props.initialContact
+    if (contact === undefined) return
+    // Session restoration may finish after typing starts. Never replace customer-entered fields.
+    setState((current) => ({
+      form: {
+        name: current.form.name || contact.name,
+        phone: current.form.phone || contact.phone,
+        email: current.form.email || contact.email,
+      },
+    }))
   }, [props.initialContact])
   const reset = (): void => {
     setResult(null)
@@ -105,7 +113,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
       showPopup: false,
       booked: false,
       monthOffset: 0,
-      form: { name: '', phone: '', email: '' },
+      form:
+        props.initialContact === undefined
+          ? { name: '', phone: '', email: '' }
+          : { ...props.initialContact },
     })
   }
   const closePopup = (): void => {
@@ -252,6 +263,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           day: '' as string | number,
           cellStyle: { background: 'transparent', border: 'none' } satisfies JSX.CSSProperties,
           onClick: undefined as undefined | (() => void),
+          ariaLabel: undefined as string | undefined,
+          disabled: true,
+          selected: false,
         }
       }
       const cellIso = iso(cell)
@@ -291,6 +305,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         onClick: selectable
           ? () => setState({ dateIso: cellIso, time: null, service: null })
           : undefined,
+        ariaLabel: `${weekdayLabel(lang, cell.getDay())} ${cell.getDate()} ${monthLabel(lang, cell.getMonth())} ${cell.getFullYear()}${selectable ? '' : ` — ${t.dateUnavailable}`}`,
+        disabled: !selectable,
+        selected,
       }
     }),
   )
@@ -518,7 +535,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   return (
     <div style={s.rootStyle}>
       <div style="padding: 18px 22px 26px 22px">
-        <div data-testid="booking-step-barber">
+        <div data-testid="booking-step-barber" data-booking-step="barber">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
             <span style={s.badgeStyle}>1</span>
             <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
@@ -573,27 +590,33 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
               <div style={s.panelStyle}>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                   <button
+                    type="button"
                     onClick={
                       canPrev
                         ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 }))
                         : undefined
                     }
+                    disabled={!canPrev}
+                    aria-label={t.previousMonth}
                     style={navBtn(canPrev)}
                   >
-                    <img src="/icons/chevron.left.svg" alt="prev" style={s.navIconStyle} />
+                    <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
                   </button>
                   <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
                     {monthLabelText}
                   </span>
                   <button
+                    type="button"
                     onClick={
                       canNext
                         ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 }))
                         : undefined
                     }
+                    disabled={!canNext}
+                    aria-label={t.nextMonth}
                     style={navBtn(canNext)}
                   >
-                    <img src="/icons/chevron.right.svg" alt="next" style={s.navIconStyle} />
+                    <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
                   </button>
                 </div>
                 <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
@@ -608,11 +631,23 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                 </div>
                 {calendarWeeks.map((week, wi) => (
                   <div key={wi} style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
-                    {week.map((cell, ci) => (
-                      <button key={ci} onClick={cell.onClick} style={cell.cellStyle}>
-                        {cell.day}
-                      </button>
-                    ))}
+                    {week.map((cell, ci) =>
+                      cell.day === '' ? (
+                        <span key={ci} aria-hidden="true" style={cell.cellStyle}></span>
+                      ) : (
+                        <button
+                          key={ci}
+                          type="button"
+                          onClick={cell.onClick}
+                          disabled={cell.disabled}
+                          aria-label={cell.ariaLabel}
+                          aria-pressed={cell.selected}
+                          style={cell.cellStyle}
+                        >
+                          {cell.day}
+                        </button>
+                      ),
+                    )}
                   </div>
                 ))}
                 <div style="display:flex;gap:14px;margin-top:11px;font-size:11px;opacity:.5;">

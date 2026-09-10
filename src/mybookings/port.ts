@@ -13,7 +13,7 @@ export type MyBookingsAccessRequestResult =
 
 export type MyBookingsAccessExchangeResult =
   | { readonly ok: true; readonly accessToken: string }
-  | { readonly ok: false; readonly error: 'invalid' | 'system' }
+  | { readonly ok: false; readonly error: 'invalid' | 'cookies_disabled' | 'system' }
 
 export interface MyBookingsListParams {
   readonly accessToken: string

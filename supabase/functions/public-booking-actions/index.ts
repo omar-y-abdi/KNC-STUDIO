@@ -4,6 +4,7 @@ import {
   encryptCustomerAccessToken,
   hashCustomerAccessToken,
 } from '../_shared/customerAccess.ts'
+import { verifyCustomerGateway } from '../_shared/customerGatewayAuth.ts'
 
 type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review'
 type Language = 'sv' | 'en'
@@ -64,7 +65,12 @@ function originAllowed(req: Request): boolean {
 function json(req: Request, body: unknown, status = 200, extra?: HeadersInit): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(req), 'content-type': 'application/json', ...extra },
+    headers: {
+      ...corsHeaders(req),
+      'content-type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...extra,
+    },
   })
 }
 
@@ -189,6 +195,10 @@ async function sha256(value: string): Promise<string> {
     .join('')
 }
 
+function customerSessionProof(token: string): Promise<string> {
+  return sha256(`customer-session-proof/v1\n${token.toLowerCase()}`)
+}
+
 async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
   if (token.length === 0) return false
   try {
@@ -254,13 +264,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   let raw: unknown
+  let bodyText: string
   try {
-    raw = await req.json()
+    bodyText = await req.text()
+    raw = JSON.parse(bodyText)
   } catch {
     return json(req, { ok: false, error: 'invalid_payload' }, 400)
   }
   const parsed = parseBody(raw)
   if (parsed === null) return json(req, { ok: false, error: 'invalid_payload' }, 400)
+
+  let ip = clientIp(req)
+  if (req.headers.has('x-customer-gateway-signature') || req.headers.has('x-customer-gateway-ip')) {
+    const forwarded = await verifyCustomerGateway(
+      req,
+      Deno.env.get('CUSTOMER_GATEWAY_SECRET'),
+      bodyText,
+    )
+    if (forwarded === null) return json(req, { ok: false, error: 'origin_not_allowed' }, 403)
+    ip = forwarded
+  }
 
   const protectedAction = parsed.action === 'request_access' || parsed.action === 'review'
   const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
@@ -282,7 +305,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json(req, { ok: false, error: 'system' }, 500)
     }
     return data === true
-      ? json(req, { ok: true }, 200, { 'Set-Cookie': sessionCookieHeader(accessToken) })
+      ? json(req, { ok: true, session_proof: await customerSessionProof(accessToken) }, 200, {
+          'Set-Cookie': sessionCookieHeader(accessToken),
+        })
       : json(req, { ok: false, error: 'invalid' })
   }
 
@@ -290,13 +315,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const existingSession = sessionCookie(req)
     let sessionToken = existingSession
     let setCookie: string | undefined
-    if (sessionToken === null && parsed.accessToken !== undefined) {
+    // An explicit email link selects the customer even when another or expired session exists.
+    if (parsed.accessToken !== undefined) {
       sessionToken = createOpaqueToken()
       const established = await service.rpc('establish_customer_booking_session', {
-        p_access_token: parsed.accessToken,
+        p_access_token: await sha256(parsed.accessToken.toLowerCase()),
         p_session_hash: await sha256(sessionToken),
       })
-      if (established.error || established.data !== true) {
+      if (established.error) {
+        console.error(
+          'public-booking-actions: session establishment failed',
+          established.error.code,
+        )
+        return json(req, { ok: false, error: 'system' }, 500)
+      }
+      if (established.data !== true) {
         return json(req, { ok: false, error: 'access_denied' })
       }
       setCookie = sessionCookieHeader(sessionToken)
@@ -314,45 +347,33 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error(`public-booking-actions: ${parsed.action} access RPC failed`, result.error.code)
       return json(req, { ok: false, error: 'system' }, 500)
     }
+    const responseBody =
+      parsed.action === 'list' &&
+      typeof result.data === 'object' &&
+      result.data !== null &&
+      (result.data as Record<string, unknown>).ok === true
+        ? {
+            ...(result.data as Record<string, unknown>),
+            session_proof: await customerSessionProof(sessionToken),
+          }
+        : result.data
     return json(
       req,
-      result.data,
+      responseBody,
       200,
       setCookie === undefined ? undefined : { 'Set-Cookie': setCookie },
     )
   }
 
   const phone = parsed.phone ?? ''
-  const ip = clientIp(req)
   if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret ?? ''))) {
     return json(req, { ok: false, error: 'failed_challenge' })
   }
 
   let sessionHash: string | null = null
   if (parsed.action === 'review') {
-    const existingSession = sessionCookie(req)
-    if (existingSession !== null) {
-      sessionHash = await sha256(existingSession)
-    } else if (parsed.accessToken !== undefined) {
-      const candidateHash = await sha256(parsed.accessToken)
-      const candidateScope = await service.rpc('customer_booking_access_scope', {
-        p_session_hash: candidateHash,
-      })
-      if (candidateScope.error) return json(req, { ok: false, error: 'system' }, 500)
-      if (scopePhone(candidateScope.data) !== null) {
-        // Integration/non-browser callers may already hold a short-lived session token.
-        sessionHash = candidateHash
-      } else {
-        const sessionToken = createOpaqueToken()
-        const established = await service.rpc('establish_customer_booking_session', {
-          p_access_token: parsed.accessToken,
-          p_session_hash: await sha256(sessionToken),
-        })
-        if (established.error || established.data !== true)
-          return json(req, { ok: false, error: 'no_booking' })
-        sessionHash = await sha256(sessionToken)
-      }
-    }
+    const token = parsed.accessToken ?? sessionCookie(req)
+    if (token !== null) sessionHash = await sha256(token.toLowerCase())
     if (sessionHash === null) return json(req, { ok: false, error: 'no_booking' })
     const scope = await service.rpc('customer_booking_access_scope', {
       p_session_hash: sessionHash,

@@ -91,7 +91,8 @@ jobs:
         run: |
           cat > supabase/functions/.env <<'EOF'
           TURNSTILE_SECRET=1x0000000000000000000000000000000AA
-          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+          CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
           PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173
           PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
           EOF
@@ -99,6 +100,8 @@ jobs:
         run: npx supabase start
       - name: Public booking rollout compatibility
         run: bash tools/release/test-public-booking-stages.sh
+      - name: Restore current schema after historical rollout checks
+        run: npx supabase db reset --local
       - name: pgTAP
         run: npx supabase test db --local
       - name: Adapter integration tests

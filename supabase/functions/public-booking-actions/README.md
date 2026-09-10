@@ -8,6 +8,8 @@ Customer self-service gateway for secure booking access, cancellation, and revie
 - Booking history and cancellation require the current permanent token sent to the exact booking email. Tokens are email-scoped, have no time expiry, and are replaced only by a fresh-link request. Legacy one-time fragment links remain exchangeable during migration.
 - Review submission requires that same live email-possession session. The submitted phone is only a scope cross-check; knowing a customer's phone number is not sufficient to publish a review.
 - Direct anonymous execution of legacy phone-based RPCs is revoked in the rollout contract phase.
+- Browser requests use same-origin `/api/customer-bookings`; Worker forwards only the customer cookie and signs client IP, timestamp, origin and exact body with `CUSTOMER_GATEWAY_SECRET`. Edge verifies signed requests before using the forwarded IP. Direct Edge clients still use the platform IP.
+- Worker relays the HttpOnly Secure session cookie as `SameSite=Lax`. Successful `list`/`exchange_access` responses include a domain-separated `session_proof`; frontend confirms that the cookie-only response matches the newly authenticated session before discarding the URL credential. The proof is not a bearer token.
 - Rate-limit keys store salted SHA-256 hashes, never raw IP addresses, emails, or phone numbers.
 - Allowed browser origins default to `https://bladeblendstudio.se` and `https://www.bladeblendstudio.se`.
 
@@ -25,6 +27,7 @@ Set these before deployment:
 npx supabase secrets set \
   TURNSTILE_SECRET=<cloudflare-secret> \
   PUBLIC_ACTION_HASH_SALT=<random-long-value> \
+  CUSTOMER_GATEWAY_SECRET=<same-random-long-value-as-Worker> \
   RESEND_API_KEY=<active-resend-api-key> \
   PUBLIC_SITE_ORIGINS=https://bladeblendstudio.se,https://www.bladeblendstudio.se
 ```
@@ -33,3 +36,5 @@ npx supabase secrets set \
 `PROJECT_REF=<ref> npm run verify:production-secrets` before deployment; it verifies required Edge
 and Vault names, rejects legacy secret aliases, and checks webhook-secret digest parity without
 printing secret material.
+
+Current deploy order and checks: `docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md`.

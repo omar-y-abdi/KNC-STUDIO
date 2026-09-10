@@ -1,5 +1,37 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { withClient } from './_helpers'
+import { customerGateway } from '../../src/mybookings/customerGateway'
+import { readStackEnv, withClient } from './_helpers'
+
+/** Node has no document origin or cookie jar. Execute the real Worker handler, then real Edge/DB. */
+export function installCustomerGatewayFetch(): () => void {
+  const env = readStackEnv()
+  if (env === null) throw new Error('Local Supabase is required for customer gateway integration')
+  const gatewaySecret = process.env.CUSTOMER_GATEWAY_SECRET
+  if (!gatewaySecret) throw new Error('Configure the local CUSTOMER_GATEWAY_SECRET for integration')
+  const actualFetch = globalThis.fetch
+  let cookie: string | null = null
+  globalThis.fetch = async (input, init) => {
+    if (input !== '/api/customer-bookings') return actualFetch(input, init)
+    const headers = new Headers(init?.headers)
+    headers.set('Origin', 'http://127.0.0.1:4173')
+    headers.set('CF-Connecting-IP', '127.0.0.1')
+    if (cookie !== null) headers.set('Cookie', cookie)
+    const response = await customerGateway(
+      new Request(`http://127.0.0.1:4173${input}`, { ...init, headers }),
+      {
+        SUPABASE_URL: env.url,
+        SUPABASE_ANON_KEY: env.anonKey,
+        CUSTOMER_GATEWAY_SECRET: gatewaySecret,
+      },
+    )
+    const setCookie = response.headers.get('Set-Cookie')
+    if (setCookie !== null) cookie = setCookie.split(';')[0] ?? null
+    return response
+  }
+  return () => {
+    globalThis.fetch = actualFetch
+  }
+}
 
 let nextBookingOffsetHours = 2
 

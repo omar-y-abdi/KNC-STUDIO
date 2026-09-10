@@ -4,7 +4,9 @@ const { invokePublicBookingAction } = vi.hoisted(() => ({
   invokePublicBookingAction: vi.fn(),
 }))
 
-vi.mock('../../src/backend/publicBookingActions', () => ({ invokePublicBookingAction }))
+vi.mock('../../src/backend/publicBookingActions', () => ({
+  invokePublicBookingAction,
+}))
 
 import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
 import type { MyBooking } from '../../src/mybookings/domain'
@@ -23,7 +25,7 @@ describe('public booking action adapter errors', () => {
   beforeEach(() => invokePublicBookingAction.mockReset())
   afterEach(() => vi.unstubAllGlobals())
 
-  it('keeps a successfully proven direct token for same-tab review access', async () => {
+  it('confirms the HttpOnly session without persisting the direct token in browser storage', async () => {
     const values = new Map<string, string>()
     vi.stubGlobal('sessionStorage', {
       getItem: (key: string) => values.get(key) ?? null,
@@ -32,7 +34,12 @@ describe('public booking action adapter errors', () => {
     })
     const token = 'a'.repeat(64)
     invokePublicBookingAction.mockResolvedValue({
-      data: { ok: true, phone: '0701234567', bookings: [] },
+      data: {
+        ok: true,
+        session_proof: 'a'.repeat(64),
+        phone: '0701234567',
+        bookings: [],
+      },
       failed: false,
     })
 
@@ -43,6 +50,9 @@ describe('public booking action adapter errors', () => {
       bookings: { upcoming: [], past: [] },
       profile: { name: '', phone: '0701234567', email: '' },
     })
+    expect(invokePublicBookingAction).toHaveBeenCalledTimes(2)
+    expect(invokePublicBookingAction).toHaveBeenLastCalledWith({ action: 'list' })
+    expect(values.size).toBe(0)
   })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(
@@ -63,6 +73,32 @@ describe('public booking action adapter errors', () => {
         lang: 'sv',
         turnstileToken: 'challenge',
       })
+    },
+  )
+
+  it.each(['direct', 'legacy'] as const)(
+    'rejects a retained old cookie after %s link authentication',
+    async (kind) => {
+      const newlyAuthenticated = {
+        ok: true,
+        session_proof: 'b'.repeat(64),
+        phone: '0701234567',
+        email: 'new@example.test',
+        bookings: [],
+      }
+      invokePublicBookingAction
+        .mockResolvedValueOnce({ data: newlyAuthenticated, failed: false })
+        .mockResolvedValueOnce({
+          data: { ...newlyAuthenticated, session_proof: 'a'.repeat(64) },
+          failed: false,
+        })
+      // Even matching profile details are insufficient: the exact newly minted session must win.
+      const result =
+        kind === 'direct'
+          ? supabaseMyBookingsAdapter.list({ accessToken: 'c'.repeat(64), lang: 'sv' })
+          : supabaseMyBookingsAdapter.exchangeAccess('c'.repeat(64))
+      await expect(result).resolves.toEqual({ ok: false, error: 'cookies_disabled' })
+      expect(invokePublicBookingAction).toHaveBeenLastCalledWith({ action: 'list' })
     },
   )
 

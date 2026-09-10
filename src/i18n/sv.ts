@@ -14,6 +14,9 @@ export const bookingSv: BookingStrings = {
   loadingBarbers: 'Laddar barberare …',
   noBarbers: 'Inga barberare är tillgängliga för bokning just nu.',
   chooseDate: 'Välj en dag',
+  previousMonth: 'Föregående månad',
+  nextMonth: 'Nästa månad',
+  dateUnavailable: 'Ej bokningsbar',
   chooseTime: 'Välj en tid',
   chooseService: 'Välj behandling',
   loadingServices: 'Laddar behandlingar …',
@@ -141,6 +144,9 @@ export const myBookingsSv: MyBookingsStrings = {
   accessSent:
     'Om e-postadressen matchar en bokning skickar vi en ny länk. Den tidigare länken slutar då att fungera.',
   errAccess: 'Länken är ogiltig eller har ersatts. Begär en ny säker länk.',
+  loadingBookings: 'Hämtar bokningar …',
+  errCookies:
+    'Tillåt cookies för den här webbplatsen och öppna mejllänken igen för att hantera dina bokningar.',
   errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
   errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',

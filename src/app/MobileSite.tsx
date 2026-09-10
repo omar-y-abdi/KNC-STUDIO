@@ -427,7 +427,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             />
           </LazySurface>
         ) : (
-          <AboutSection mode={props.mode} lang={props.lang} fontScale={props.aboutScale} />
+          <AboutSection
+            mode={props.mode}
+            lang={props.lang}
+            fontScale={props.aboutScale}
+            {...(props.initialContact === undefined
+              ? {}
+              : { customerPhone: props.initialContact.phone })}
+          />
         )}
       </div>
     </div>

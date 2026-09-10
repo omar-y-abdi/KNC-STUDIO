@@ -23,7 +23,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
-import { useRef } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { EASE } from './shared'
 
 /** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
@@ -67,7 +67,110 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
   const booking = view === 'booking'
   const bookingMounted = useRef(booking)
+  const bookingFoldRef = useRef<HTMLDivElement>(null)
   if (booking) bookingMounted.current = true
+  useEffect(() => {
+    if (!booking) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth'
+    let lastTarget: number | null = null
+    let settled = false
+    let observer: ResizeObserver | null = null
+    let settleRaf: number | null = null
+    let settleFrames = 0
+    let settleDeadline: number | null = null
+    let lastLayout: { top: number; bottom: number; foldHeight: number } | null = null
+    const scrollTo = (target: number, current: number, scroll: (next: number) => void): void => {
+      const next = Math.max(0, target)
+      if (lastTarget !== null && Math.abs(lastTarget - next) < 1 && Math.abs(current - next) < 1)
+        return
+      lastTarget = next
+      scroll(next)
+    }
+    const settleWhenStable = (): void => {
+      if (settled || settleRaf !== null) return
+      settleRaf = requestAnimationFrame(() => {
+        settleRaf = null
+        if (settled) return
+        const fold = bookingFoldRef.current
+        const step = fold?.querySelector<HTMLElement>('[data-booking-step="barber"]')
+        if (fold === null || fold === undefined || step === null || step === undefined) return
+        const box = step.getBoundingClientRect()
+        const foldBox = fold.getBoundingClientRect()
+        const stable =
+          lastLayout !== null &&
+          Math.abs(lastLayout.top - box.top) < 0.5 &&
+          Math.abs(lastLayout.bottom - box.bottom) < 0.5 &&
+          Math.abs(lastLayout.foldHeight - foldBox.height) < 0.5
+        lastLayout = { top: box.top, bottom: box.bottom, foldHeight: foldBox.height }
+        settleFrames = stable ? settleFrames + 1 : 0
+        settleDeadline ??= window.performance.now() + 1200
+        if (settleFrames >= 2 || window.performance.now() >= settleDeadline) {
+          settled = true
+          observer?.disconnect()
+          return
+        }
+        settleWhenStable()
+      })
+    }
+    const reveal = (): void => {
+      const fold = bookingFoldRef.current
+      if (fold === null) return
+      const scrollRoot = props.scrollRootRef?.current
+      const step = fold.querySelector<HTMLElement>('[data-booking-step="barber"]')
+      if (scrollRoot !== undefined && scrollRoot !== null) {
+        const rootBox = scrollRoot.getBoundingClientRect()
+        const foldBox = fold.getBoundingClientRect()
+        const stepBox = step?.getBoundingClientRect()
+        const delta =
+          stepBox === undefined
+            ? foldBox.top - rootBox.top - DESKTOP_PANEL_HEIGHT
+            : stepBox.bottom > rootBox.bottom
+              ? stepBox.bottom - rootBox.bottom
+              : stepBox.top < rootBox.top
+                ? stepBox.top - rootBox.top
+                : 0
+        if (delta !== 0) {
+          scrollTo(scrollRoot.scrollTop + delta, scrollRoot.scrollTop, (top) =>
+            scrollRoot.scrollTo({ top, behavior }),
+          )
+        }
+        if (step !== undefined) settleWhenStable()
+        return
+      }
+      const foldBox = fold.getBoundingClientRect()
+      const stepBox = step?.getBoundingClientRect()
+      const delta =
+        stepBox === undefined
+          ? foldBox.top - DESKTOP_PANEL_HEIGHT
+          : stepBox.bottom > window.innerHeight
+            ? stepBox.bottom - window.innerHeight
+            : stepBox.top < 0
+              ? stepBox.top
+              : 0
+      if (delta !== 0) {
+        scrollTo(window.scrollY + delta, window.scrollY, (top) =>
+          window.scrollTo({ top, behavior }),
+        )
+      }
+      if (step !== undefined) settleWhenStable()
+    }
+    const frame = requestAnimationFrame(reveal)
+    observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            if (!settled) reveal()
+          })
+    if (bookingFoldRef.current !== null) observer?.observe(bookingFoldRef.current)
+    const delayed = observer === null ? window.setTimeout(reveal, 750) : null
+    return () => {
+      cancelAnimationFrame(frame)
+      if (settleRaf !== null) cancelAnimationFrame(settleRaf)
+      if (delayed !== null) window.clearTimeout(delayed)
+      observer?.disconnect()
+    }
+  }, [booking, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
   const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
@@ -219,7 +322,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <main>
         <div
           style={{
-            minHeight: '100dvh',
+            minHeight: booking ? 'auto' : '100dvh',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -275,7 +378,13 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           />
         </div>
         {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
-        <div style={foldStyle(booking)} data-testid="fold-booking">
+        <div
+          ref={bookingFoldRef}
+          style={{ ...foldStyle(booking), scrollMarginTop: DESKTOP_PANEL_HEIGHT + 'px' }}
+          data-testid="fold-booking"
+          inert={!booking}
+          aria-hidden={booking ? undefined : 'true'}
+        >
           <div style={deskFoldInnerStyle}>
             <div
               style={
@@ -318,6 +427,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           <AboutSection
             mode={props.mode}
             lang={props.lang}
+            {...(props.initialContact === undefined
+              ? {}
+              : { customerPhone: props.initialContact.phone })}
             fontScale={props.aboutScale}
             scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
             {...(props.previewPorts === undefined

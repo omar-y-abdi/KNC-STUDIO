@@ -1,5 +1,5 @@
 begin;
-select plan(27);
+select plan(35);
 
 select ok(
   not has_table_privilege('anon', 'public.customer_booking_access_tokens', 'select'),
@@ -217,6 +217,64 @@ select is(
   'Länken gäller tills du begär en ny. Då slutar den tidigare länken att fungera.',
   'Swedish access email states permanent-until-rotated lifecycle'
 );
+
+
+-- Current session/repair contract: permanent links mint sessions, existing sessions never renew.
+set local role service_role;
+select is(
+  public.establish_customer_booking_session(repeat('c', 64), repeat('f', 64)),
+  true,
+  'current permanent lookup hash establishes a session'
+);
+select is(
+  public.establish_customer_booking_session(repeat('f', 64), repeat('1', 64)),
+  false,
+  'an existing session cannot extend its original expiry by minting another session'
+);
+select is(
+  public.replace_customer_booking_access_token(
+    'person@example.test', '0703900002', repeat('9', 64), 'v1.' || repeat('R', 80),
+    (current_setting('test.first_access')::jsonb->>'generation')::bigint
+  ),
+  false,
+  'repair of a stale generation cannot overwrite a freshly requested link'
+);
+reset role;
+select is(
+  (select token_hash from public.customer_booking_access_tokens where email='person@example.test'),
+  repeat('c', 64),
+  'freshly requested token remains authoritative after stale repair'
+);
+select is(
+  (select count(*)::int from public.customer_booking_access_challenges
+   where email='person@example.test' and token_hash=repeat('c', 64)),
+  1,
+  'stale repair preserves the fresh-link email challenge'
+);
+set local role service_role;
+select is(
+  public.replace_customer_booking_access_token(
+    'person@example.test', '0703900002', repeat('9', 64), 'v1.' || repeat('R', 80)
+  ),
+  false,
+  'older callers without a generation fail closed'
+);
+select is(
+  public.replace_customer_booking_access_token(
+    'person@example.test', '0703900002', repeat('9', 64), 'v1.' || repeat('R', 80),
+    (public.ensure_customer_booking_access_token(
+      'person@example.test', '0703900002', repeat('9', 64), 'v1.' || repeat('R', 80)
+    )->>'generation')::bigint
+  ),
+  true,
+  'repair of the observed current generation succeeds'
+);
+select is(
+  public.list_customer_bookings_with_access(repeat('f', 64))->>'error',
+  'access_denied',
+  'successful ciphertext repair invalidates previous sessions'
+);
+reset role;
 
 select * from finish();
 rollback;

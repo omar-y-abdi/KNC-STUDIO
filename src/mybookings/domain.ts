@@ -35,7 +35,7 @@ export interface CustomerProfile {
  */
 export type MyBookingsResult =
   | { readonly ok: true; readonly bookings: MyBookings; readonly profile: CustomerProfile }
-  | { readonly ok: false; readonly error: 'access_denied' | 'system' }
+  | { readonly ok: false; readonly error: 'access_denied' | 'cookies_disabled' | 'system' }
 
 /** Result of cancelling one upcoming booking. */
 export type MyCancelResult =

@@ -62,3 +62,12 @@ After deployment, create one test booking using a real test email. Verify one cu
 linked-barber email, then remove test booking. In SQL Editor, confirm the related job reaches
 `delivered`; temporarily removing `RESEND_API_KEY` must leave a job `failed` with
 `last_error_code = 'not_configured'` in the owner recovery queue instead of retrying indefinitely.
+
+## Permanent-link ciphertext repair
+
+Ordinary confirmation/reminder emails reuse the current encrypted permanent token. If decryption
+fails after a key change, `replace_customer_booking_access_token` must receive the generation read
+by `ensure_customer_booking_access_token`. A concurrent rotation wins: reload/decrypt that winner
+once, or fail for the existing durable retry path. Never replace a newer link unconditionally.
+Apply migration `20260910133329_guard_customer_token_repair.sql` before deploying this function;
+see `docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md`.

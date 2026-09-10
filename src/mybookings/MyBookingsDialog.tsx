@@ -27,7 +27,7 @@ import { defaultMyBookingsPort } from './adapters/index'
 import type { MyBookingsPort } from './port'
 
 type Mode = 'light' | 'dark'
-type Step = 'lookup' | 'sent' | 'list'
+type Step = 'loading' | 'lookup' | 'sent' | 'list'
 
 const BACKDROP_STYLE =
   'position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:60;animation:kncOverlay .2s ease both;overflow:hidden;'
@@ -39,8 +39,8 @@ export interface MyBookingsDialogProps {
   /** Injected seam (default: env-selected; mock adapter when no backend is configured). */
   readonly port?: MyBookingsPort
   readonly accessToken?: string
-  readonly accessError?: boolean
-  readonly onProfile?: (profile: CustomerProfile) => void
+  readonly accessError?: 'invalid' | 'cookies_disabled' | 'system'
+  readonly onProfile?: (profile: CustomerProfile | undefined) => void
 }
 
 export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
@@ -52,11 +52,16 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const red = systemRed(dark)
   const port: MyBookingsPort = props.port ?? defaultMyBookingsPort
 
-  const [step, setStep] = useState<Step>(props.accessToken === undefined ? 'lookup' : 'list')
+  const [step, setStep] = useState<Step>(props.accessError === undefined ? 'loading' : 'lookup')
   const [email, setEmail] = useState<string>('')
   const [emailError, setEmailError] = useState<boolean>(false)
+  const initialErrors = {
+    invalid: t.errAccess,
+    cookies_disabled: t.errCookies,
+    system: t.errSystem,
+  }
   const [systemError, setSystemError] = useState<string | null>(
-    props.accessError === true ? t.errAccess : null,
+    props.accessError === undefined ? null : initialErrors[props.accessError],
   )
   const [busy, setBusy] = useState<boolean>(false)
   const [bookings, setBookings] = useState<MyBookings | null>(null)
@@ -87,15 +92,21 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     if (step === 'lookup') emailInputRef.current?.focus()
   }, [step])
 
-  async function loadBookings(token: string): Promise<void> {
+  async function loadBookings(token: string, restoring = false): Promise<void> {
     setBusy(true)
     setSystemError(null)
     try {
       const result = await port.list({ accessToken: token, lang })
       if (!result.ok) {
+        props.onProfile?.(undefined)
         setAccessToken(null)
         setStep('lookup')
-        setSystemError(result.error === 'access_denied' ? t.errAccess : t.errSystem)
+        const errors = {
+          cookies_disabled: t.errCookies,
+          access_denied: restoring ? null : t.errAccess,
+          system: t.errSystem,
+        }
+        setSystemError(errors[result.error])
         return
       }
       setBookings(result.bookings)
@@ -120,6 +131,8 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
     if (props.accessToken !== undefined) {
       setAccessToken(props.accessToken)
       void loadBookings(props.accessToken)
+    } else if (props.accessError === undefined) {
+      void loadBookings('', true)
     }
   }, [props.accessToken])
 
@@ -446,6 +459,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       </div>
 
       <div style="padding:16px 18px 18px;">
+        {step === 'loading' ? <p role="status">{t.loadingBookings}</p> : null}
         {step === 'lookup' ? (
           <div>
             <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0;">{t.lookupLead}</p>

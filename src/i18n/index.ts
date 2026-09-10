@@ -9,6 +9,9 @@ export interface BookingStrings {
   loadingBarbers: string
   noBarbers: string
   chooseDate: string
+  previousMonth: string
+  nextMonth: string
+  dateUnavailable: string
   chooseTime: string
   chooseService: string
   loadingServices: string
@@ -151,6 +154,8 @@ export interface MyBookingsStrings {
   errEmail: string
   accessSent: string
   errAccess: string
+  errCookies: string
+  loadingBookings: string
   /** Network/parse failure. */
   errSystem: string
   errChallenge: string
