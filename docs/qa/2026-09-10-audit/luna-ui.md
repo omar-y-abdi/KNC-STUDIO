@@ -6,6 +6,8 @@ Branch: `codex/fix-unnoticed-issues`
 
 Baslinje: `88ab39a` (`origin/main` efter fast-forward)
 
+Historisk audit. PR58 F2/F3/F7 hittade brister i nedanstående autofill-/revealbevis; aktuell rättning och verifiering finns i `pm.md`.
+
 Caveman status: hittade 4 riktiga UI-fel. 4 fixade lokalt i tilldelade filer. PrivacyBanner-layout väntar produktbeslut. PM:s kundlänk/sessionfix ligger separat.
 
 ## Täckning
@@ -128,7 +130,7 @@ Efter:
 - Produktion console gav CSP-blockerade inline scripts från Cloudflare injection. UI fortsatte fungera; ingen bevisad kundregression här. Handoff till drift/Cloudflare, ingen UI-fix.
 - Produktion visar test-/stagingkatalog (`k`, placeholders, inga publicerade reviews). Tidigare beslut #22 säger att roster/services ännu inte är finala. PM/ägare hanterar data; UI ändrade inte detta.
 - Direct root customer path test: Worker redirectar till fragment, App städar URL till `/` och öppnar Mina bokningar. Fake token gav korrekt invalid-link text; giltig prod-token testades inte för att inte mutera eller skapa data.
-- Initial-contact race var verklig i tidigare kod: `BookingFlow.tsx` effect skrev över hela form när App session restore kom sent. Nu fyller effect bara tomma fält (`BookingFlow.tsx:91–102`). Sen profilhydrering efter tre manuellt ifyllda fält behåller alla tre; bevis `initial-contact-late-hydration-proof.json`. `reset()` fyller samma profile igen (`BookingFlow.tsx:103–120`), så ny bokning behåller cookie-autofill; bevis `initial-contact-reset-proof.json`.
+- Äldre `initial-contact-late-hydration-proof.json` räknas inte som godkännande: profilen saknade obligatoriskt `session_proof`; lika fält före/efter bevisade inte lyckad hydrering. Solo-review ersätter beviset med giltig profil, ett typat namn och krav på faktiskt autofylld telefon/mejl. Repo-gaten testar dessutom A → B → tom profil och riktigt Worker/Edge/DB-kundbyte. `BookingFlow` använder nu dirty-flagga per fält, inte tomhetskontroll.
 - My Bookings blank loading var verklig före PM:s ändring. Nu visar direct-token delayed test `Hämtar bokningar …` med `role=status`; inget öppet UI-fynd.
 - Session-autofill browser proof: injected profile hydrates first details, typed values submit, `Boka en ny tid` opens second details with same profile values. Bevis: `initial-contact-reset-proof.json`.
 
@@ -142,7 +144,7 @@ Efter:
 - i18n SV/EN parity PASS.
 - Cold lazy booking PASS vid 1280×600 och 1280×720 efter 1,8 s fördröjd chunk; reduced-motion använde `behavior:auto`, första steg fullt synligt.
 - Embedded CMS preview PASS: Bokning scrollar sin egen 580 px scroll-root, stängning gör fold inert, reopen återställer scroll till synligt första steg; inga browser/page errors.
-- Initial-contact sen hydrering/reset PASS: manuella värden skrivs inte över; profile återkommer efter ny bokning.
+- Initial-contact historiskt PASS-påstående återkallat för sen hydrering; se rättelsen ovan och aktuell solo-review i `pm.md`.
 - Dialog focus trap/close, gallery pointer-cancel/clone handling, star keyboard control: befintliga tester PASS.
 
 ## Gaps

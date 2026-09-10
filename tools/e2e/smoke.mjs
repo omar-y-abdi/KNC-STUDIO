@@ -1,5 +1,12 @@
-import { chromium } from 'playwright'
-import { writeSync } from 'node:fs'
+import { chromium, firefox, webkit } from 'playwright'
+import { writeSync, mkdtempSync, openSync, closeSync, writeFileSync, readFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { request as httpsRequest } from 'node:https'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+import { Client } from 'pg'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
@@ -704,24 +711,580 @@ async function verifyStaticEndpoints(page) {
   }
 }
 
+/** Authenticated browser gate against a real local Worker + Edge + PostgreSQL. No provider sends. */
+async function verifyCustomerBrowser() {
+  phase('customer: inspect local stack')
+  const stack = JSON.parse(
+    execFileSync('npx', ['supabase', 'status', '--output', 'json'], { encoding: 'utf8' }),
+  )
+  for (const value of [stack.API_URL, stack.DB_URL]) {
+    assert(
+      ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(value).hostname),
+      'customer browser gate requires loopback Supabase',
+    )
+  }
+  const work = mkdtempSync(join(tmpdir(), 'knc-customer-e2e-'))
+  const assets = join(work, 'dist'),
+    key = join(work, 'localhost.key'),
+    cert = join(work, 'localhost.crt')
+  const port = Number(process.env.CUSTOMER_E2E_PORT ?? '4197')
+  const workerPort = Number(process.env.CUSTOMER_E2E_WORKER_PORT ?? '8797')
+  assert(
+    Number.isInteger(port) && Number.isInteger(workerPort) && port !== workerPort,
+    'distinct local test ports required',
+  )
+  const origin = `https://127.0.0.1:${port}`,
+    workerOrigin = `https://127.0.0.1:${workerPort}`
+  const secret =
+    process.env.CUSTOMER_GATEWAY_SECRET ?? 'ci-customer-gateway-secret-not-for-production'
+  const env = {
+    ...process.env,
+    VITE_SUPABASE_URL: `${origin}/__supabase`,
+    LOCAL_SUPABASE_URL: stack.API_URL,
+    VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
+    VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
+    LOCAL_HTTPS_KEY: key,
+    LOCAL_HTTPS_CERT: cert,
+  }
+  let failed = false,
+    failure
+  const retainFailure = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  const children = []
+  const stopChildren = () => {
+    for (const child of children)
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, 'SIGTERM')
+        } catch {
+          /* already stopped */
+        }
+      }
+  }
+  process.on('exit', stopChildren)
+  const db = new Client({ connectionString: stack.DB_URL, connectionTimeoutMillis: 5000 })
+  let connected = false,
+    fixture
+  const hash = (value) => createHash('sha256').update(value).digest('hex')
+  const removeQueuedMail = async (emails) =>
+    db.query(
+      `delete from public.external_action_jobs
+    where action_type='customer_access_email_send' and payload->>'challenge_id' in (
+      select id::text from public.customer_booking_access_challenges where email=any($1))`,
+      [emails],
+    )
+  const cleanupFixture = async () => {
+    if (!fixture) return
+    await db.query('begin')
+    try {
+      await db.query('set local session_replication_role=replica')
+      await removeQueuedMail(fixture.people.map((person) => person.email))
+      for (const table of [
+        'customer_booking_access_sessions',
+        'customer_booking_access_challenges',
+        'customer_booking_access_tokens',
+      ]) {
+        await db.query(`delete from public.${table} where email=any($1)`, [
+          fixture.people.map((person) => person.email),
+        ])
+      }
+      for (const table of ['bookings', 'services', 'barber_schedules'])
+        await db.query(`delete from public.${table} where barber_id=$1`, [fixture.barber])
+      await db.query('delete from public.barbers where id=$1', [fixture.barber])
+      await db.query('commit')
+      fixture = undefined
+    } catch (error) {
+      await db.query('rollback')
+      throw error
+    }
+  }
+  const start = (name, args, childEnv = process.env) => {
+    const fd = openSync(join(work, `${name}.log`), 'w', 0o600)
+    const child = spawn(process.execPath, args, {
+      env: childEnv,
+      detached: true,
+      stdio: ['ignore', fd, fd],
+    })
+    closeSync(fd)
+    children.push(child)
+    return child
+  }
+  const ready = async (url, child, name) => {
+    for (let attempt = 0; attempt < 150; attempt++) {
+      assert(
+        child.exitCode === null,
+        `${name} exited before readiness: ${readFileSync(join(work, `${name}.log`), 'utf8')}`,
+      )
+      const ok = await new Promise((resolveReady) => {
+        const req = httpsRequest(url, { rejectUnauthorized: false }, (response) => {
+          response.resume()
+          resolveReady(response.statusCode === 200)
+        })
+        req.on('error', () => resolveReady(false))
+        req.setTimeout(1000, () => req.destroy())
+        req.end()
+      })
+      if (ok) return
+      await delay(100)
+    }
+    throw new Error(`${name} did not become ready`)
+  }
+  try {
+    await db.connect()
+    connected = true
+    execFileSync(
+      'openssl',
+      [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-days',
+        '1',
+        '-subj',
+        '/CN=localhost',
+        '-addext',
+        'subjectAltName=DNS:localhost,IP:127.0.0.1',
+      ],
+      { stdio: 'ignore' },
+    )
+    phase('customer: build local frontend')
+    execFileSync('npm', ['run', 'build', '--', '--outDir', assets, '--emptyOutDir'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60000,
+    })
+    const workerConfig = join(work, 'wrangler.jsonc')
+    writeFileSync(
+      workerConfig,
+      JSON.stringify({
+        name: 'knc-customer-browser',
+        main: resolve('src/worker.ts'),
+        compatibility_date: '2026-08-09',
+        vars: { SUPABASE_URL: stack.API_URL },
+        assets: {
+          directory: assets,
+          binding: 'ASSETS',
+          run_worker_first: true,
+          html_handling: 'none',
+          not_found_handling: 'none',
+        },
+      }),
+    )
+    writeFileSync(
+      join(work, '.dev.vars'),
+      `SUPABASE_ANON_KEY=${stack.ANON_KEY}\nCUSTOMER_GATEWAY_SECRET=${secret}\n`,
+      { mode: 0o600 },
+    )
+    phase('customer: start actual Worker and Vite preview')
+    const worker = start('worker', [
+      resolve('node_modules/wrangler/bin/wrangler.js'),
+      'dev',
+      '--config',
+      workerConfig,
+      '--local',
+      '--ip',
+      '127.0.0.1',
+      '--port',
+      String(workerPort),
+      '--inspector-port',
+      '0',
+      '--local-protocol',
+      'https',
+      '--https-key-path',
+      key,
+      '--https-cert-path',
+      cert,
+      '--log-level',
+      'error',
+    ])
+    const preview = start(
+      'preview',
+      [
+        resolve('node_modules/vite/bin/vite.js'),
+        'preview',
+        '--outDir',
+        assets,
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--strictPort',
+      ],
+      env,
+    )
+    await Promise.all([
+      ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
+      ready(origin, preview, 'preview'),
+    ])
+
+    for (const engine of [chromium, firefox, webkit]) {
+      phase(`customer ${engine.name()}: seed isolated fixtures`)
+      const marker = randomUUID(),
+        barber = `e2e-${marker.slice(0, 20)}`,
+        service = randomUUID()
+      const people = ['A', 'B'].map((label) => ({
+        label,
+        token: randomBytes(32).toString('hex'),
+        booking: randomUUID(),
+        name: `Customer ${label}`,
+        phone: `070${String(randomBytes(4).readUInt32BE() % 10000000).padStart(7, '0')}`,
+        email: `${label.toLowerCase()}-${marker}@example.test`,
+      }))
+      fixture = { barber, people }
+      await db.query('begin')
+      try {
+        await db.query('set local session_replication_role=replica')
+        await db.query(
+          "insert into public.barbers(id,name,ig,active,sort_order) values($1,'Customer E2E Barber','e2e',true,999)",
+          [barber],
+        )
+        await db.query(
+          "insert into public.services(id,barber_id,name,price,duration_min,active,sort_order,available_weekdays) values($1,$2,'Customer E2E Cut',100,30,true,0,ARRAY[0,1,2,3,4,5,6])",
+          [service, barber],
+        )
+        await db.query(
+          'insert into public.barber_schedules(barber_id,weekday,working,start_min,end_min) select $1,day,true,540,1080 from generate_series(0,6) day',
+          [barber],
+        )
+        for (const [index, person] of people.entries()) {
+          await db.query(
+            `insert into public.bookings(id,barber_id,service_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status)
+            values($1,$2,$3,$4,100,30,date_trunc('day',now())+interval '90 days'+make_interval(hours => $8),
+            date_trunc('day',now())+interval '90 days 30 minutes'+make_interval(hours => $8),$5,'email',$6,$7,'sv','confirmed')`,
+            [
+              person.booking,
+              barber,
+              service,
+              `Customer ${person.label} appointment`,
+              person.name,
+              person.phone,
+              person.email,
+              10 + index,
+            ],
+          )
+          await db.query(
+            'insert into public.customer_booking_access_tokens(email,phone,token_hash,token_ciphertext) values($1,$2,$3,$4)',
+            [person.email, person.phone, hash(person.token), `v1.${'a'.repeat(80)}`],
+          )
+        }
+        await db.query('commit')
+      } catch (error) {
+        await db.query('rollback')
+        throw error
+      }
+      const [a, b] = people
+      const browser = await engine.launch({ timeout: WAIT_TIMEOUT })
+      const showHistory = async (page, person) => {
+        await page.getByRole('heading', { name: /kommande/i }).waitFor()
+        await page.getByRole('button', { name: /Visa detaljer/ }).click()
+        await page
+          .getByRole('dialog')
+          .getByText(`Customer ${person.label} appointment`, { exact: false })
+          .waitFor()
+        assert(
+          !(await page.getByRole('dialog').innerText()).includes(
+            `Customer ${person.label === 'A' ? 'B' : 'A'} appointment`,
+          ),
+          'mixed customer histories',
+        )
+      }
+      try {
+        for (const width of [1280, 390]) {
+          phase(`customer ${engine.name()} ${width}: permanent link and browser cookie`)
+          const context = await browser.newContext({
+            viewport: { width, height: 844 },
+            ignoreHTTPSErrors: true,
+            reducedMotion: 'reduce',
+          })
+          const page = await context.newPage()
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+          await showHistory(page, a)
+          assert(
+            new URL(page.url()).pathname === '/' && !page.url().includes(a.token),
+            'email credential remains in URL',
+          )
+          const cookie = (await context.cookies()).find(
+            (item) => item.name === '__Host-bladeblend_customer_session',
+          )
+          assert(
+            cookie?.httpOnly &&
+              cookie.secure &&
+              cookie.sameSite === 'Lax' &&
+              cookie.domain === '127.0.0.1' &&
+              cookie.path === '/',
+            'browser did not accept the required first-party cookie',
+          )
+          assert(
+            !(await page.evaluate(() =>
+              globalThis.document.cookie.includes('bladeblend_customer_session'),
+            )),
+            'customer credential readable by JavaScript',
+          )
+          await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+          const dismiss = page.getByRole('button', { name: 'Avvisa valfri lagring', exact: true })
+          if (await dismiss.isVisible()) await dismiss.click()
+          await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+          await showHistory(page, a)
+          await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+          await page.reload({ waitUntil: 'domcontentloaded' })
+          const dismissAgain = page.getByRole('button', {
+            name: 'Avvisa valfri lagring',
+            exact: true,
+          })
+          if (await dismissAgain.isVisible()) await dismissAgain.click()
+          await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+          await showHistory(page, a)
+          if (width === 1280) {
+            phase(
+              `customer ${engine.name()}: shared-cookie customer switch and real profile hydration`,
+            )
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+            await page
+              .getByTestId('booking-barber-option')
+              .filter({ hasText: 'Customer E2E Barber' })
+              .click()
+            const date = new Date(Date.now() + 2 * 86400000)
+            const fmt = (options) =>
+              new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(
+                date,
+              )
+            const dateLabel = `${fmt({ weekday: 'long' })} ${fmt({ day: 'numeric' })} ${fmt({ month: 'long' })} ${fmt({ year: 'numeric' })}`
+            await page.getByRole('button', { name: dateLabel, exact: true }).click()
+            await page
+              .getByTestId('booking-service-option')
+              .filter({ hasText: 'Customer E2E Cut' })
+              .click()
+            await page.getByRole('button', { name: '10:00', exact: true }).click()
+            const fields = page.getByRole('dialog').locator('input')
+            assert(
+              (await fields.nth(0).inputValue()) === a.name &&
+                (await fields.nth(1).inputValue()) === a.phone &&
+                (await fields.nth(2).inputValue()) === a.email,
+              'successful real session hydration did not populate customer A',
+            )
+            await fields.nth(0).fill('Typed name survives')
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            const second = await context.newPage()
+            second.setDefaultTimeout(WAIT_TIMEOUT)
+            await second.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
+            await showHistory(second, b)
+            await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+            await showHistory(page, b)
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            await page.getByRole('button', { name: '10:00', exact: true }).click()
+            assert(
+              (await fields.nth(0).inputValue()) === 'Typed name survives' &&
+                (await fields.nth(1).inputValue()) === b.phone &&
+                (await fields.nth(2).inputValue()) === b.email,
+              'verified customer B retained customer A auto-fill or erased typed input',
+            )
+          }
+          await context.close()
+        }
+        for (const existingCookie of [false, true]) {
+          phase(
+            `customer ${engine.name()}: rejected cookie ${existingCookie ? 'replacement' : 'creation'}`,
+          )
+          const context = await browser.newContext({ ignoreHTTPSErrors: true })
+          const page = await context.newPage()
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          let previous
+          if (existingCookie) {
+            await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+            await showHistory(page, a)
+            previous = (await context.cookies()).find(
+              (item) => item.name === '__Host-bladeblend_customer_session',
+            )
+            assert(previous, 'old-cookie fixture did not establish an actual session')
+          }
+          await context.route('**/api/customer-bookings', async (route) => {
+            const response = await route.fetch(),
+              headers = response.headers()
+            delete headers['set-cookie']
+            await context.clearCookies()
+            if (previous) await context.addCookies([previous])
+            await route.fulfill({ response, headers })
+          })
+          await page.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
+          await page
+            .getByText(
+              'Tillåt cookies för den här webbplatsen och öppna mejllänken igen för att hantera dina bokningar.',
+              { exact: true },
+            )
+            .waitFor()
+          assert(
+            (await page.getByRole('heading', { name: /kommande/i }).count()) === 0,
+            'rejected session cookie exposed a customer history',
+          )
+          await context.close()
+        }
+        phase(`customer ${engine.name()}: invalid link and rotation revocation`)
+        const context = await browser.newContext({ ignoreHTTPSErrors: true })
+        const page = await context.newPage()
+        page.setDefaultTimeout(WAIT_TIMEOUT)
+        await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+        await showHistory(page, a)
+        const invalid = await page.evaluate(async () =>
+          (
+            await fetch('/api/customer-bookings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'list', accessToken: 'f'.repeat(64) }),
+            })
+          ).json(),
+        )
+        assert(
+          invalid.ok === false && invalid.error === 'access_denied',
+          'invalid explicit link fell back to an old cookie',
+        )
+        const cross = await context.request.post(`${origin}/api/customer-bookings`, {
+          headers: { Origin: 'https://attacker.example' },
+          data: { action: 'list' },
+        })
+        assert(cross.status() === 403, 'cross-origin customer request was accepted')
+        const replacement = randomBytes(32).toString('hex')
+        await db.query('begin')
+        try {
+          await db.query('select public.rotate_customer_booking_access_token($1,$2,$3,$4,$5)', [
+            a.email,
+            hash(replacement),
+            `v1.${'b'.repeat(80)}`,
+            replacement,
+            'sv',
+          ])
+          // The browser gate tests revocation, not provider sending. No mail job escapes this transaction.
+          await removeQueuedMail([a.email])
+          await db.query('commit')
+        } catch (error) {
+          await db.query('rollback')
+          throw error
+        }
+        const revoked = await page.evaluate(async () =>
+          (
+            await fetch('/api/customer-bookings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'list' }),
+            })
+          ).json(),
+        )
+        assert(
+          revoked.ok === false && revoked.error === 'access_denied',
+          'rotation left old browser session authorized',
+        )
+        await page.goto(`${origin}/${replacement}`, { waitUntil: 'domcontentloaded' })
+        await showHistory(page, a)
+        await context.close()
+        console.log(
+          `Customer browser passed: ${engine.name()}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation.`,
+        )
+      } catch (error) {
+        retainFailure(error)
+        console.error(`Customer browser failure: ${currentPhase}`)
+        for (const context of browser.contexts())
+          for (const page of context.pages()) {
+            console.error(
+              (
+                await page
+                  .locator('body')
+                  .innerText({ timeout: 3000 })
+                  .catch(() => '')
+              ).slice(-1000),
+            )
+            await page
+              .screenshot({ path: join(work, `${engine.name()}-failure.png`), timeout: 3000 })
+              .catch(() => undefined)
+          }
+      } finally {
+        try {
+          await bounded(browser.close(), `customer ${engine.name()} browser.close`)
+        } catch (error) {
+          retainFailure(error)
+        }
+      }
+      if (failed) break
+      await cleanupFixture()
+    }
+  } catch (error) {
+    retainFailure(error)
+  } finally {
+    if (connected) {
+      try {
+        await cleanupFixture()
+      } catch (error) {
+        retainFailure(error)
+      }
+      try {
+        await db.end()
+      } catch (error) {
+        retainFailure(error)
+      }
+    }
+    stopChildren()
+    const stopped = await Promise.allSettled(
+      children.map((child) =>
+        child.exitCode !== null || child.signalCode !== null
+          ? Promise.resolve()
+          : bounded(
+              new Promise((resolveExit) => child.once('exit', resolveExit)),
+              'local test server cleanup',
+              5000,
+            ),
+      ),
+    )
+    for (const result of stopped)
+      if (result.status === 'rejected') {
+        retainFailure(result.reason)
+        for (const child of children)
+          if (child.pid !== undefined) {
+            try {
+              process.kill(-child.pid, 'SIGKILL')
+            } catch {
+              /* already stopped */
+            }
+          }
+      }
+    process.removeListener('exit', stopChildren)
+    console.log(`Customer browser diagnostics: ${work}`)
+  }
+  if (failed) throw failure
+}
+
 let browser
 let testError
 let failurePhase
 try {
-  phase('browser launch')
-  browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
-  phase('public desktop')
-  await verifyPublicPage(browser, { width: 1280, height: 900 })
-  phase('public mobile')
-  await verifyPublicPage(browser, { width: 390, height: 844 })
-  phase('normal-motion gallery')
-  await verifyNormalMotionGalleryKeyboard(browser)
-  phase('static endpoints')
-  const page = await browser.newPage()
-  await verifyStaticEndpoints(page)
-  phase('static endpoint page cleanup')
-  await bounded(page.close(), 'static endpoint page.close')
-  console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
+  if (process.argv.includes('--customer')) {
+    await verifyCustomerBrowser()
+  } else {
+    phase('browser launch')
+    browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
+    phase('public desktop')
+    await verifyPublicPage(browser, { width: 1280, height: 900 })
+    phase('public mobile')
+    await verifyPublicPage(browser, { width: 390, height: 844 })
+    phase('normal-motion gallery')
+    await verifyNormalMotionGalleryKeyboard(browser)
+    phase('static endpoints')
+    const page = await browser.newPage()
+    await verifyStaticEndpoints(page)
+    phase('static endpoint page cleanup')
+    await bounded(page.close(), 'static endpoint page.close')
+    console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
+  }
 } catch (error) {
   testError = error
   failurePhase = currentPhase

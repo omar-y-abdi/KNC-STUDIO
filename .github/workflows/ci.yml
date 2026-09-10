@@ -93,7 +93,7 @@ jobs:
           TURNSTILE_SECRET=1x0000000000000000000000000000000AA
           PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
           CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
-          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
           PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
           EOF
       - name: Start local Supabase
@@ -106,6 +106,10 @@ jobs:
         run: npx supabase test db --local
       - name: Adapter integration tests
         run: npm run test:integration
+      - name: Install customer browser engines
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Customer browser through local Worker and Edge
+        run: npm run test:e2e -- --customer
       - name: Stop local Supabase
         if: always()
         run: npx supabase stop --no-backup

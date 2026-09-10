@@ -18,6 +18,7 @@ import {
 } from './_helpers'
 import {
   installCustomerGatewayFetch,
+  removeCustomerAccessFixtures,
   seedCustomerAccessSession,
   seedReviewableBooking,
 } from './reviewAccessHelpers'
@@ -43,6 +44,186 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
     sessionCookieToken = null
     const env = readStackEnv()
     if (env) await truncateAll(env.dbUrl)
+  })
+
+  for (const mode of ['permanent', 'legacy'] as const) {
+    for (const first of ['mint', 'rotate'] as const) {
+      it(`${mode} session mint and rotation serialize when ${first} holds the lock first`, async () => {
+        const env = readStackEnv()
+        if (!env) throw new Error('Local Supabase required')
+        const email = `overlap-${uniqueReviewMarker().toLowerCase()}@example.test`,
+          phone = uniquePhone()
+        const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
+        const token = randomBytes(32).toString('hex'),
+          replacement = randomBytes(32).toString('hex')
+        const session = randomBytes(32).toString('hex'),
+          ciphertext = `v1.${'a'.repeat(80)}`
+        const mintFunction =
+          mode === 'permanent'
+            ? 'establish_customer_booking_session'
+            : 'exchange_customer_booking_access'
+        try {
+          await seedReviewableBooking(env.dbUrl, {
+            phone,
+            email,
+            customerName: 'Concurrent customer',
+          })
+          await withClient(env.dbUrl, async (holder) => {
+            await holder.query('select public.ensure_customer_booking_access_token($1,$2,$3,$4)', [
+              email,
+              phone,
+              hash(token),
+              ciphertext,
+            ])
+            if (mode === 'legacy')
+              await holder.query(
+                `insert into public.customer_booking_access_challenges(phone,email,token_hash,expires_at)
+              values($1,$2,$3,now()+interval '1 day')`,
+                [phone, email, hash(token)],
+              )
+            await withClient(env.dbUrl, async (waiter) => {
+              const holderPid = (
+                await holder.query<{ pid: number }>('select pg_backend_pid() as pid')
+              ).rows[0]?.pid
+              const waiterPid = (
+                await waiter.query<{ pid: number }>('select pg_backend_pid() as pid')
+              ).rows[0]?.pid
+              const mint = (client: typeof holder) =>
+                client.query<{ ok: boolean }>(`select public.${mintFunction}($1,$2) as ok`, [
+                  hash(token),
+                  hash(session),
+                ])
+              const rotate = (client: typeof holder) =>
+                client.query<{ ok: boolean }>(
+                  'select public.rotate_customer_booking_access_token($1,$2,$3,$4,$5) as ok',
+                  [email, hash(replacement), ciphertext, replacement, 'sv'],
+                )
+              await holder.query('begin')
+              let pending: ReturnType<typeof mint> | undefined
+              try {
+                expect((await (first === 'mint' ? mint(holder) : rotate(holder))).rows[0]?.ok).toBe(
+                  true,
+                )
+                pending = first === 'mint' ? rotate(waiter) : mint(waiter)
+                void pending.catch(() => undefined) // observed below; avoid an unhandled rejection while checking the lock
+                // Observe PostgreSQL's actual blocker, not a sleep that merely hopes requests overlap.
+                await expect
+                  .poll(
+                    async () => {
+                      const row = await holder.query<{ blocked: boolean }>(
+                        'select $1::int = any(pg_blocking_pids($2::int)) as blocked',
+                        [holderPid, waiterPid],
+                      )
+                      return row.rows[0]?.blocked
+                    },
+                    { timeout: 5000, interval: 20 },
+                  )
+                  .toBe(true)
+                await holder.query('commit')
+                expect((await pending).rows[0]?.ok).toBe(first === 'mint')
+                const scope = await holder.query<{ accepted: boolean }>(
+                  'select exists(select 1 from public.customer_booking_access_scope($1)) as accepted',
+                  [hash(session)],
+                )
+                expect(scope.rows[0]?.accepted).toBe(false)
+                const current = await holder.query<{ token_hash: string }>(
+                  'select token_hash from public.customer_booking_access_tokens where email=$1',
+                  [email],
+                )
+                expect(current.rows[0]?.token_hash).toBe(hash(replacement))
+              } finally {
+                await holder.query('rollback')
+                await pending?.catch(() => undefined)
+              }
+            })
+          })
+        } finally {
+          await removeCustomerAccessFixtures(env.dbUrl, [email])
+        }
+      })
+    }
+  }
+
+  it('ciphertext repair waits for rotation and preserves its newer token and email challenge', async () => {
+    const env = readStackEnv()
+    if (!env) throw new Error('Local Supabase required')
+    const email = `repair-${uniqueReviewMarker().toLowerCase()}@example.test`
+    const phone = uniquePhone()
+    const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
+    const oldToken = randomBytes(32).toString('hex')
+    const replacement = randomBytes(32).toString('hex')
+    const repair = randomBytes(32).toString('hex')
+    const ciphertext = `v1.${'a'.repeat(80)}`
+    try {
+      await seedReviewableBooking(env.dbUrl, { phone, email, customerName: 'Repair overlap' })
+      await withClient(env.dbUrl, async (holder) => {
+        await holder.query('select public.ensure_customer_booking_access_token($1,$2,$3,$4)', [
+          email,
+          phone,
+          hash(oldToken),
+          ciphertext,
+        ])
+        const generation = (
+          await holder.query<{ generation: string }>(
+            'select generation from public.customer_booking_access_tokens where email=$1',
+            [email],
+          )
+        ).rows[0]?.generation
+        expect(generation).toBeDefined()
+        await withClient(env.dbUrl, async (waiter) => {
+          const holderPid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid'))
+            .rows[0]?.pid
+          const waiterPid = (await waiter.query<{ pid: number }>('select pg_backend_pid() as pid'))
+            .rows[0]?.pid
+          let pending: ReturnType<typeof waiter.query<{ ok: boolean }>> | undefined
+          await holder.query('begin')
+          try {
+            expect(
+              (
+                await holder.query<{ ok: boolean }>(
+                  'select public.rotate_customer_booking_access_token($1,$2,$3,$4,$5) as ok',
+                  [email, hash(replacement), ciphertext, replacement, 'sv'],
+                )
+              ).rows[0]?.ok,
+            ).toBe(true)
+            pending = waiter.query<{ ok: boolean }>(
+              'select public.replace_customer_booking_access_token($1,$2,$3,$4,$5) as ok',
+              [email, phone, hash(repair), ciphertext, generation],
+            )
+            void pending.catch(() => undefined)
+            await expect
+              .poll(
+                async () =>
+                  (
+                    await holder.query<{ blocked: boolean }>(
+                      'select $1::int = any(pg_blocking_pids($2::int)) as blocked',
+                      [holderPid, waiterPid],
+                    )
+                  ).rows[0]?.blocked,
+                { timeout: 5000, interval: 20 },
+              )
+              .toBe(true)
+            await holder.query('commit')
+            expect((await pending).rows[0]?.ok).toBe(false)
+            const current = await holder.query<{ token_hash: string; challenge_hash: string }>(
+              `select t.token_hash, c.token_hash as challenge_hash
+               from public.customer_booking_access_tokens t
+               join public.customer_booking_access_challenges c on c.email=t.email
+               where t.email=$1`,
+              [email],
+            )
+            expect(current.rows).toEqual([
+              { token_hash: hash(replacement), challenge_hash: hash(replacement) },
+            ])
+          } finally {
+            await holder.query('rollback')
+            await pending?.catch(() => undefined)
+          }
+        })
+      })
+    } finally {
+      await removeCustomerAccessFixtures(env.dbUrl, [email])
+    }
   })
 
   it('permanent links establish the right cookie session, survive return visits and revoke on rotation', async () => {
@@ -103,22 +284,10 @@ describe.skipIf(!backendReady())('supabaseReviewsAdapter (integration)', () => {
       expect(fresh.ok).toBe(true)
       if (fresh.ok) expect(fresh.profile.email).toBe(identities[1]?.email.toLowerCase())
     } finally {
-      await withClient(env.dbUrl, async (client) => {
-        const emails = identities.map(({ email }) => email.toLowerCase())
-        await client.query(
-          `delete from public.external_action_jobs where action_type='customer_access_email_send'
-           and payload->>'challenge_id' in (
-             select id::text from public.customer_booking_access_challenges where email=any($1)
-           )`,
-          [emails],
-        )
-        for (const table of [
-          'customer_booking_access_sessions',
-          'customer_booking_access_challenges',
-          'customer_booking_access_tokens',
-        ])
-          await client.query(`delete from public.${table} where email=any($1)`, [emails])
-      })
+      await removeCustomerAccessFixtures(
+        env.dbUrl,
+        identities.map(({ email }) => email.toLowerCase()),
+      )
     }
   })
 

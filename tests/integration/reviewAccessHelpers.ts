@@ -107,3 +107,34 @@ export async function seedCustomerAccessSession(
 
   return accessToken
 }
+
+/** Remove only this test's credentials/outbox rows; unrelated local identities remain intact. */
+export async function removeCustomerAccessFixtures(
+  dbUrl: string,
+  emails: readonly string[],
+): Promise<void> {
+  const normalized = emails.map((email) => email.trim().toLowerCase())
+  await withClient(dbUrl, async (client) => {
+    await client.query('begin')
+    try {
+      await client.query(
+        `delete from public.external_action_jobs
+        where action_type='customer_access_email_send' and payload->>'challenge_id' in (
+          select id::text from public.customer_booking_access_challenges where lower(email)=any($1)
+        )`,
+        [normalized],
+      )
+      for (const table of [
+        'customer_booking_access_sessions',
+        'customer_booking_access_challenges',
+        'customer_booking_access_tokens',
+      ]) {
+        await client.query(`delete from public.${table} where lower(email)=any($1)`, [normalized])
+      }
+      await client.query('commit')
+    } catch (error) {
+      await client.query('rollback')
+      throw error
+    }
+  })
+}

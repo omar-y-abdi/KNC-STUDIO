@@ -787,24 +787,29 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 
 ### 8.1 What each layer proves
 
-| Layer              | Command/location                             | Proves                                                                                |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Unit               | `npm test` / targeted `npx vitest run ...`   | pure logic, parsers, adapter contracts, scripts, Worker behavior                      |
-| Integration        | `npm run test:integration`                   | live local Supabase adapter/auth/RPC/RLS flows                                        |
-| pgTAP              | `npx supabase test db --local`               | effective schema, constraints, grants/RLS, functions, gateway contracts               |
-| Edge type check    | CI Deno `2.9.5` loop                         | every `supabase/functions/*/index.ts` checks with frozen lock                         |
-| Browser smoke      | `npm run test:e2e`; `npm run test:e2e:admin` | public interactions; admin history, delayed scroll, role safety, CMS draft publishing |
-| Visual             | `tools/visual/capture.mjs` + `compare.mjs`   | 8 deterministic homepage variants plus the Swedish privacy-banner baseline            |
-| Cloudflare dry run | `npm run deploy:dry-run`                     | build + Wrangler deployment validation                                                |
-| Live smoke         | `node tools/smoke-live.mjs`                  | live Supabase availability/gateway/security; **not** full Worker metadata validation  |
+| Layer              | Command/location                             | Proves                                                                                                                               |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit               | `npm test` / targeted `npx vitest run ...`   | pure logic, parsers, adapter contracts, scripts, Worker behavior                                                                     |
+| Integration        | `npm run test:integration`                   | live local Supabase adapter/auth/RPC/RLS flows                                                                                       |
+| pgTAP              | `npx supabase test db --local`               | effective schema, constraints, grants/RLS, functions, gateway contracts                                                              |
+| Edge type check    | CI Deno `2.9.5` loop                         | every `supabase/functions/*/index.ts` checks with frozen lock                                                                        |
+| Browser smoke      | `npm run test:e2e`; `npm run test:e2e:admin` | public interactions; admin persisted writes across ABA/remount/failure, load gates, customer field ownership, delayed catalog reveal |
+| Customer browser   | `npm run test:e2e -- --customer`             | real HTTPS Worker/Edge/DB; Chromium/Firefox/WebKit cookies, identity switching and revocation                                        |
+| Visual             | `tools/visual/capture.mjs` + `compare.mjs`   | 8 deterministic homepage variants plus the Swedish privacy-banner baseline                                                           |
+| Cloudflare dry run | `npm run deploy:dry-run`                     | build + Wrangler deployment validation                                                                                               |
+| Live smoke         | `node tools/smoke-live.mjs`                  | live Supabase availability/gateway/security; **not** full Worker metadata validation                                                 |
+
+`npm run test:e2e -- --customer` additionally runs the actual HTTPS Worker → Edge → DB in Chromium, Firefox and WebKit. The existing smoke script owns temporary TLS/build/server lifecycle and isolated fixtures. It rejects remote stack URLs; only blocked-cookie acceptance is intercepted, with real backend responses. It proves successful profile hydration/customer switching, cookie acceptance/denial, invalid links and rotation.
 
 ### 8.2 Integration test constraints
 
 `vitest.integration.config.ts`: `fileParallelism: false`, `testTimeout: 30_000`, `hookTimeout: 30_000`. Suites share one local Supabase/PostgreSQL stack and reset shared tables. **Do not enable cross-file concurrency**; truncate/fixture races create misleading failures.
 
-`tests/integration/reviewAccessHelpers.ts` supplies Node integration with an explicit test origin and cookie jar: the real `customerGateway` Worker handler calls the running Edge/DB. Permanent-link/customer-switch/rotation coverage lives in existing `reviews.test.ts`. The local/CI `CUSTOMER_GATEWAY_SECRET` must match the Edge env. CI restores current migrations after historical rollout compatibility checks.
+`tests/integration/reviewAccessHelpers.ts` supplies Node integration with an explicit test origin and cookie jar: the real `customerGateway` Worker handler calls the running Edge/DB. Permanent-link/customer-switch/rotation coverage lives in existing `reviews.test.ts`. The local/CI `CUSTOMER_GATEWAY_SECRET` must match the Edge env. CI restores current migrations after historical rollout compatibility checks. Five concurrency cases in `reviews.test.ts` observe actual `pg_blocking_pids`: permanent/legacy mint versus rotation in both lock orders, and repair versus newer rotation. Credential/outbox cleanup stays scoped to each test identity.
 
 `tests/integration/_helpers.ts` exports `TURNSTILE_TEST_TOKEN = 'integration-test-token'` (`TURNSTILE_TEST_TOKEN`). Local/CI Edge Functions use Cloudflare's official always-pass test secret `1x0000000000000000000000000000000AA`, so normal `siteverify` accepts that token. Reuse the helper token; it is not an application bypass.
+
+Local transport: `vite.config.ts` forwards exact customer API/root-link routes to a validated loopback Worker for dev and preview, preserving Host/Origin and supplying the local socket IP. Optional TLS files enable HTTPS; optional `/__supabase` loopback bridge strips site cookies and upstream Set-Cookie while preserving bearer auth. [README local setup](README.md#local-customer-links-and-cookies) owns commands. Production Worker routing/cookie policy remains separate.
 
 ### 8.3 Change → focused tests
 
@@ -855,8 +860,11 @@ database/integration:
   write local function test env
   npx supabase start
   bash tools/release/test-public-booking-stages.sh
+  npx supabase db reset --local
   npx supabase test db --local
   npm run test:integration
+  install Playwright Chromium/Firefox/WebKit
+  npm run test:e2e -- --customer
   npx supabase stop --no-backup
 ```
 

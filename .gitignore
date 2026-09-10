@@ -30,3 +30,7 @@ coverage
 .vercel
 .wrangler
 .playwright-cli
+
+# Local Worker bindings/secrets
+.dev.vars
+.dev.vars.*

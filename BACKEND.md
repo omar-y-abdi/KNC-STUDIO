@@ -143,6 +143,20 @@ Production smoke test:
 5. Cancel the booking and confirm it disappears from upcoming bookings.
 6. After appointment time, confirm review eligibility uses the same phone.
 
+## Local customer verification
+
+See [README local setup](README.md#local-customer-links-and-cookies). Vite dev/preview proxy the
+customer route to the real local Worker; a Vite server alone cannot implement customer sessions.
+`npm run test:e2e -- --customer` runs the actual HTTPS Worker → Edge → PostgreSQL path in Chromium,
+Firefox and WebKit. It verifies host-only HttpOnly cookies, successful profile hydration, shared-cookie
+customer switching, cookie rejection, invalid-link denial and rotation. Only cookie rejection is
+intercepted; those responses still come from the real backend.
+
+Existing `reviews.test.ts` integration cases force overlapping transactions and observe
+`pg_blocking_pids`: permanent/legacy session mint against rotation in both lock orders, plus stale
+ciphertext repair against a newer rotation. Sequential pgTAP checks remain complementary. These
+local/CI gates do not prove inbox delivery, live secrets or deployment state.
+
 ## Free-tier operations
 
 Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an

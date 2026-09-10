@@ -1,30 +1,30 @@
 # Lanseringsproblem — 10 september
 
-Status: audit och akutfixar granskade. [Kodgrind grön i CI](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/34492423253). Produktion ännu oförändrad. Nio samlade problem nedan.
+Status: PR58-granskning F1–F7 rättad lokalt, solo. Ny CI-grind återstår; äldre grönt gäller tidigare kod. Produktion oförändrad. Nio samlade problem nedan.
 
 ## 1. Kundlänk, återbesök och kunduppgifter — akut
 
 **Problem:** giltiga mejllänkar nekas. Gammal cookie kan vinna över ny länk. Mobilwebbläsare kan blockera sessionscookien. Samtidig länkrotation kan lämna gammal session giltig; tokenreparation kan skriva över nyare länk. Återbesök återställer inte kundåtkomst korrekt.
 
-**Fixat lokalt:** länken kontrolleras rätt; ny länk väljer rätt kund; cookie på sajtens egen domän; gammal åtkomst stängs när ny länk begärs; reparation kan inte ersätta nyare länk; återbesök; tydligt cookie-/laddningsfel; kunduppgifter fyller tomma fält. Barberarnamn följer bokningen även när barberaren inaktiverats.
+**Fixat lokalt:** länken kontrolleras rätt; ny länk väljer rätt kund; cookie på sajtens egen domän; gammal åtkomst stängs när ny länk begärs; reparation kan inte ersätta nyare länk; återbesök; tydligt cookie-/laddningsfel; kundbyte ersätter orörda autofyllda uppgifter; verkliga ändringar bevaras även när fältet tömts. Barberarnamn följer bokningen även när barberaren inaktiverats.
 
-**Verifierat:** 12 browserscenarier i Chromium, Firefox och WebKit; mobil/desktop; samtidiga DB-anrop och separata kunder.
+**Verifierat:** faktisk HTTPS Worker → Edge → DB i Chromium, Firefox och WebKit; mobil/desktop, accepterad/blockerad cookie, lyckad autofill, kundbyte och rotation. Fem överlappande DB-fall kontrollerar riktiga lås och slutdata. Körbart i repo/CI.
 
 **Kvar:** samordnad driftsättning enligt planen. Grön PR/CI krävs före release. Permanenta slumpmässiga rotlänkar bevaras.
 
 ## 2. Admin tappar ändringar eller visar fel barberares data — viktigt
 
-**Problem:** långsam sparning kan skriva över ny text. Svar från barberare A kan hamna i barberare B:s vy.
+**Problem:** långsam sparning kan skriva över ny text. Byte A → B → A kan tappa pågående sparning. CMS/galleri kunde ändras innan startdata laddats.
 
-**Fixat lokalt:** bekräftade race i CMS/mejl/tjänster/bokningar/profilbilder. Nyare utkast och vald barberare måste vinna.
+**Fixat lokalt:** bekräftade race i CMS/mejl/tjänster/bokningar/profilbilder. Läsning och skrivning körs i ordning per resurs, även efter vybyte. CMS/galleri spärras tills startdata lyckats; teckenstorlek visar pågående sparning/fel.
 
-**Verifierat:** 25 browserscenarier. Nya utkast bevaras; byte A → B → A och misslyckad bildladdning visar rätt person. Filväljare och bildtexter följer också serverns gränser. Ingen designändring.
+**Verifierat:** aktuell repo-svit: 20 browserscenarier för admin/autofill/reveal. Testerna kontrollerar sparat pris, bild och bokningsstatus efter vybyte, återmontering och fel. Äldre 25-/tmp-fall ersätter inte denna grind. Ingen designändring.
 
 ## 3. Bokningsknappar, tangentbord och bilddrag fungerar inte pålitligt — viktigt
 
 **Problem:** Boka tid kan öppna formuläret utanför skärmen. Dold bokningspanel kan fortfarande få tangentbordsfokus. Otillgängliga datum ser spärrade ut men är inte korrekt spärrade/namngivna. Galleribilder startar webbläsarens egen dragfunktion mitt i sajtens draggest.
 
-**Fixat lokalt:** visning, fokus och datumknappar. Inbyggd bilddragning avstängd i galleriet. Befintlig design behålls.
+**Fixat lokalt:** visning, fokus och datumknappar. Reveal väntar även på verklig barberarkatalog; långsam laddning testad i både vanlig sida och CMS-scrollruta. Inbyggd bilddragning avstängd i galleriet. Befintlig design behålls.
 
 **Verifierat:** kall sidladdning, små laptopskärmar, minskad rörelse och andra bokningen. Tangentbord, valt datum, återöppning och CMS-förhandsvisning verifierade. Galleritest med laddad bild: fångar dragfelet före fix; grönt efter fix.
 
@@ -66,9 +66,9 @@ Status: audit och akutfixar granskade. [Kodgrind grön i CI](https://github.com/
 ## 7. Säkerhets- och underhållsytan behöver städas — feedback
 
 - `admin_create_booking` har onödig anonym anropsrätt. Intern behörighetskontroll stoppar bokning; ingen anonym bokning bevisad.
-- Bygg-/testverktyg har 12 kända säkerhetsfynd. Sajten har inga kända fynd i sina runtimeberoenden. Uppgradera i separata verifierade steg.
+- Bygg-/testverktyg har 9 kända säkerhetsfynd (5 höga, 4 måttliga). Sajten har inga kända fynd i sina runtimeberoenden. Uppgradera i separata verifierade steg.
 - CI använder äldre Actions-runtime. GitHub växlar den automatiskt; uppgradera Actions vid verktygsstädning.
-- Installerad Wrangler kan inte starta projektets compatibility date lokalt. Nyare isolerad version används för verkliga Worker-tester.
+- **Rättat i PR58:** Wrangler + Worker-typer uppgraderade till kompatibla låsta versioner. Installerad Worker startar nu i repo-gaten.
 - Avstängt personalkonto lämnar redan hämtad kunddata synlig i öppen flik. Nya DB-anrop nekas. Välj när fliken ska låsas/rensas.
 - Turnstile saknar kontroll av hostname/action och timeout på vissa anrop. Härdning behöver matcha live- och testmiljö.
 - `.env` innehåller bara publika värden idag men är versionshanterad. Föreslagen hygien: `.env.example` + lokal konfiguration.
@@ -83,11 +83,13 @@ Status: audit och akutfixar granskade. [Kodgrind grön i CI](https://github.com/
 
 **Problem:** hundratals gröna tester missade trasiga kundlänken. Flera dokument beskriver borttagen kod som aktuell. Ignorerade äldre mejl-/SMS-planer beskriver andra lösningar; aktuell arkitektur måste styra nya ändringar. Riktig Auth-mejlresa, Calendar-koppling och backup/restore saknar ny fullständig liveverifiering.
 
-**Fixat lokalt:** gammal oanvänd mock-logik och tomma lagringsfunktioner borttagna. Beteendetester för hela kedjan tillagda i /tmp; docs uppdaterade och historik märkt. Kontrollerade liveprov efter separat, konkret godkännande.
+**Fixat lokalt:** gammal oanvänd mock-logik och tomma lagringsfunktioner borttagna. Aktuella RPC-pekare rättade. Vite dev/preview har dokumenterad lokal Worker-transport; kundbrowser- och DB-racetester finns nu i befintliga repo-filer och CI. Kontrollerade liveprov kräver separat, konkret godkännande.
 
 **Fixat efter hookgranskning:** gamla repoassertioner uppdaterade. Befintliga integrationstester kör nu riktiga Worker → Edge → DB, inklusive kundbyte, återbesök och länkrotation. CI återställer aktuellt schema efter historiska migreringstester.
 
 **CI-häng rättat:** fasdiagnos pekade på galleriets musdrag. Samtidig inbyggd bilddragning reproducerad och fixad; nytt test fångar felet. Mus/CDP/cleanup har tidsgränser och tydliga fel. Hela CI passerar efter fix. Exakt ursprungligt häng kunde inte återskapas lokalt.
+
+**Granskningsrättelse:** gammalt autofill-test saknade obligatoriskt sessionbevis och kunde passera utan hydrering. Det gamla resultatet är återkallat. Aktuella tester kräver faktiskt fyllda kundfält och rätt kund efter byte.
 
 **Testfiler:** befintliga repo-filer uppdaterade; fristående nya QA-harness ligger kvar i `/tmp` enligt instruktion.
 
