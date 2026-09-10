@@ -1,6 +1,6 @@
 # Lanseringsproblem — 10 september
 
-Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio samlade problem nedan.
+Status: audit och akutfixar granskade. [Kodgrind grön i CI](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/34492423253). Produktion ännu oförändrad. Nio samlade problem nedan.
 
 ## 1. Kundlänk, återbesök och kunduppgifter — akut
 
@@ -87,7 +87,7 @@ Status: audit och lokala akutfixar granskade. Produktion ännu oförändrad. Nio
 
 **Fixat efter hookgranskning:** gamla repoassertioner uppdaterade. Befintliga integrationstester kör nu riktiga Worker → Edge → DB, inklusive kundbyte, återbesök och länkrotation. CI återställer aktuellt schema efter historiska migreringstester.
 
-**CI-häng:** fasdiagnos pekade på galleriets musdrag. Samtidig inbyggd bilddragning reproducerad och fixad; nytt test fångar felet. Mus/CDP/cleanup har tidsgränser och tydliga fel. Exakt ursprungligt häng kunde inte återskapas lokalt; ny CI måste verifiera hela kedjan.
+**CI-häng rättat:** fasdiagnos pekade på galleriets musdrag. Samtidig inbyggd bilddragning reproducerad och fixad; nytt test fångar felet. Mus/CDP/cleanup har tidsgränser och tydliga fel. Hela CI passerar efter fix. Exakt ursprungligt häng kunde inte återskapas lokalt.
 
 **Testfiler:** befintliga repo-filer uppdaterade; fristående nya QA-harness ligger kvar i `/tmp` enligt instruktion.
 

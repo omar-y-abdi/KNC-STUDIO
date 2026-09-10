@@ -144,3 +144,11 @@ Hook requested resolution of failed tests and uncommitted source. Workflow: insp
 - The original CI watchdog itself did not reproduce locally. Native drag is a proven product bug at the failing phase; final CI remains required before claiming the browser gate fixed.
 - PM rejected a broad image/network wait: it could miss an early response or wait forever for offscreen lazy images. Only the selected visible image now decodes before interaction, under the existing15s deadline.
 - Mouse calls now have deadlines and first-error-preserving release. Nine /tmp fault tests PASS, covering hung movement, press, touch dispatch, release/detach and browser cleanup. No retries, skipped assertions or increased timeouts.
+
+## Final code gate
+
+- Code commit `0763e283512a003a2ee7abbc2f28c914c58ece91`, PR58: all three required CI jobs PASS in [run34492423253](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/34492423253). Frontend/public-admin browser/visual gate3m4s; Edge40s; database/integration5m37s. No skipped test or enlarged timeout used to reach green.
+- Unit501, real integration44 and pgTAP957 pass in the current repository suites. Linux visual regression: all8 mobile/desktop × light/dark × Swedish/English views, zero mismatched pixels.
+- Final read-only Cloudflare check: production remains deployment9ca2d3f8 from2026-09-08, version5f6f21bf at100%. PR builds did not promote production.
+- Source changes committed and pushed with upstream. Only pre-existing user-owned AGENTS.md and2026-08-31 feedback document remain untracked. This final documentation update changes no runtime or test behavior.
+- Remaining release approval and product feedback are explicit in the grouped issues and customer-access operations plan; no production migration, configuration, real-data smoke, mail send or merge performed.
