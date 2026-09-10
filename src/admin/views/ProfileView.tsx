@@ -26,16 +26,42 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
   const [storagePath, setStoragePath] = useState<string | null>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [loadedGeneration, setLoadedGeneration] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const barberScope = useRef({ id: props.barberId, generation: 0 })
+  if (barberScope.current.id !== props.barberId) {
+    barberScope.current = {
+      id: props.barberId,
+      generation: barberScope.current.generation + 1,
+    }
+  }
+
+  useEffect(
+    () => () => {
+      barberScope.current = {
+        id: barberScope.current.id,
+        generation: barberScope.current.generation + 1,
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     let active = true
+    const barberGeneration = barberScope.current.generation
     setLoaded(false)
+    setLoadedGeneration(null)
+    setStoragePath(null)
+    setUrl(null)
     setNotice(null)
+    setBusy(false)
+    setPendingDelete(false)
+    setDeleteBusy(false)
+    if (fileRef.current !== null) fileRef.current.value = ''
     void getBarberPhoto(props.barberId).then((r) => {
       if (!active) return
       if (r.ok) {
@@ -44,6 +70,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
       } else {
         setNotice({ kind: 'err', text: r.error.message })
       }
+      setLoadedGeneration(barberGeneration)
       setLoaded(true)
     })
     return () => {
@@ -52,9 +79,12 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
   }, [props.barberId])
 
   const onUpload = async (file: File): Promise<void> => {
+    const barberId = props.barberId
+    const barberGeneration = barberScope.current.generation
     setBusy(true)
     setNotice(null)
-    const r = await uploadBarberPhoto(props.barberId, file)
+    const r = await uploadBarberPhoto(barberId, file)
+    if (barberScope.current.generation !== barberGeneration) return
     setBusy(false)
     if (fileRef.current !== null) fileRef.current.value = ''
     if (!r.ok) {
@@ -68,8 +98,11 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
 
   const onDelete = async (): Promise<void> => {
     if (storagePath === null) return
+    const barberId = props.barberId
+    const barberGeneration = barberScope.current.generation
     setDeleteBusy(true)
-    const r = await removeBarberPhoto(props.barberId, storagePath)
+    const r = await removeBarberPhoto(barberId, storagePath)
+    if (barberScope.current.generation !== barberGeneration) return
     setDeleteBusy(false)
     setPendingDelete(false)
     if (!r.ok) {
@@ -84,6 +117,9 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
     })
   }
 
+  const mutationBusy = busy || deleteBusy
+  const targetLoaded = loaded && loadedGeneration === barberScope.current.generation
+
   return (
     <section style={s.card} aria-labelledby="profile-heading">
       <h2 id="profile-heading" style={s.sectionTitle}>
@@ -91,7 +127,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
       </h2>
       <p style={s.sectionLead}>{t.profileLead}</p>
 
-      {!loaded ? (
+      {!targetLoaded ? (
         <div style={s.emptyState}>{t.profileLoading}</div>
       ) : (
         <div
@@ -137,16 +173,16 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
               style={{
                 ...s.primaryBtn,
                 textAlign: 'center',
-                cursor: busy ? 'default' : 'pointer',
-                opacity: busy ? 0.6 : 1,
+                cursor: mutationBusy ? 'default' : 'pointer',
+                opacity: mutationBusy ? 0.6 : 1,
               }}
             >
               {busy ? t.profileUploading : url !== null ? t.profileReplace : t.profileUpload}
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*"
-                disabled={busy}
+                accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
+                disabled={mutationBusy}
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0]
@@ -158,7 +194,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
               <button
                 type="button"
                 style={s.dangerBtn}
-                disabled={busy}
+                disabled={mutationBusy}
                 onClick={() => setPendingDelete(true)}
               >
                 {t.profileRemove}
@@ -175,7 +211,7 @@ export function ProfileView(props: ProfileViewProps): JSX.Element {
         </div>
       )}
 
-      {pendingDelete ? (
+      {targetLoaded && pendingDelete ? (
         <ConfirmDialog
           dark={props.dark}
           title={t.profileDeleteTitle}

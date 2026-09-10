@@ -7,7 +7,7 @@
 // parsing/validation is pure (`parseServiceRow` in ../serviceValidation).
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { cap, weekdayLabel } from '../../booking/calendar'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
@@ -66,12 +66,22 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
 
   const [rows, setRows] = useState<readonly EditRow[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [loadedGeneration, setLoadedGeneration] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
   const [rowError, setRowError] = useState<{ id: string; msg: string } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<EditRow | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const barberScope = useRef({ id: props.barberId, generation: 0 })
+  const editGeneration = useRef(new Map<string, number>())
+  const addGeneration = useRef(0)
+  if (barberScope.current.id !== props.barberId) {
+    barberScope.current = {
+      id: props.barberId,
+      generation: barberScope.current.generation + 1,
+    }
+  }
 
   const [nName, setNName] = useState('')
   const [nPrice, setNPrice] = useState('')
@@ -83,18 +93,32 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
 
   useEffect(() => {
     let active = true
+    const barberGeneration = barberScope.current.generation
     setLoaded(false)
     setLoadError(null)
     setSavedId(null)
     setRowError(null)
+    setBusyId(null)
+    setPendingDelete(null)
+    setDeleteBusy(false)
+    setNName('')
+    setNPrice('')
+    setNDur('')
+    setNSpecificDays(false)
+    setNAvailableWeekdays(ALL_WEEKDAYS)
+    addGeneration.current += 1
+    setAddBusy(false)
+    setAddError(null)
     void listServices(props.barberId).then((r) => {
       if (!active) return
       if (!r.ok) {
         setLoadError(r.error.message)
+        setLoadedGeneration(barberGeneration)
         setLoaded(true)
         return
       }
       setRows(r.value.map(toEdit))
+      setLoadedGeneration(barberGeneration)
       setLoaded(true)
     })
     return () => {
@@ -103,6 +127,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
   }, [props.barberId])
 
   const setField = (id: string, patch: Partial<EditRow>): void => {
+    editGeneration.current.set(id, (editGeneration.current.get(id) ?? 0) + 1)
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
     setSavedId(null)
     if (rowError?.id === id) setRowError(null)
@@ -116,16 +141,22 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     }
     setBusyId(row.id)
     setRowError(null)
+    const barberGeneration = barberScope.current.generation
+    const generation = editGeneration.current.get(row.id) ?? 0
     const r = await updateService(row.id, {
       ...parsed,
       active: row.active,
       availableWeekdays: row.availableWeekdays,
     })
+    if (barberScope.current.generation !== barberGeneration) return
     setBusyId(null)
     if (!r.ok) {
-      setRowError({ id: row.id, msg: r.error.message })
+      if ((editGeneration.current.get(row.id) ?? 0) === generation) {
+        setRowError({ id: row.id, msg: r.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(row.id) ?? 0) !== generation) return
     setRows((prev) => prev.map((x) => (x.id === row.id ? toEdit(r.value) : x)))
     setSavedId(row.id)
   }
@@ -137,26 +168,31 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     if (a === undefined || b === undefined) return
     setBusyId(a.id)
     setRowError(null)
-    const r = await reorderService(props.barberId, a.id, dir)
+    const barberId = props.barberId
+    const barberGeneration = barberScope.current.generation
+    const r = await reorderService(barberId, a.id, dir)
+    if (barberScope.current.generation !== barberGeneration) return
     setBusyId(null)
     if (!r.ok) {
       setRowError({ id: a.id, msg: t.svcSaveError })
       return
     }
-    const localById = new Map(rows.map((row) => [row.id, row]))
-    setRows(
-      r.value.map((service) => {
+    setRows((current) => {
+      const localById = new Map(current.map((row) => [row.id, row]))
+      return r.value.map((service) => {
         const local = localById.get(service.id)
         return local === undefined ? toEdit(service) : { ...local, sortOrder: service.sortOrder }
-      }),
-    )
+      })
+    })
   }
 
   const confirmDelete = async (): Promise<void> => {
     const target = pendingDelete
     if (target === null) return
+    const barberGeneration = barberScope.current.generation
     setDeleteBusy(true)
     const r = await deleteService(target.id)
+    if (barberScope.current.generation !== barberGeneration) return
     setDeleteBusy(false)
     setPendingDelete(null)
     if (!r.ok) {
@@ -176,21 +212,27 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
     }
     setAddBusy(true)
     setAddError(null)
-    const r = await createService(props.barberId, {
+    const barberId = props.barberId
+    const barberGeneration = barberScope.current.generation
+    const generation = addGeneration.current
+    const r = await createService(barberId, {
       ...parsed,
       availableWeekdays: nAvailableWeekdays,
     })
+    if (barberScope.current.generation !== barberGeneration) return
     setAddBusy(false)
     if (!r.ok) {
-      setAddError(r.error.message)
+      if (addGeneration.current === generation) setAddError(r.error.message)
       return
     }
     setRows((prev) => [...prev, toEdit(r.value)])
-    setNName('')
-    setNPrice('')
-    setNDur('')
-    setNSpecificDays(false)
-    setNAvailableWeekdays(ALL_WEEKDAYS)
+    if (addGeneration.current === generation) {
+      setNName('')
+      setNPrice('')
+      setNDur('')
+      setNSpecificDays(false)
+      setNAvailableWeekdays(ALL_WEEKDAYS)
+    }
   }
 
   const numInput = (value: string, onInput: (v: string) => void, width: string): JSX.Element => (
@@ -253,6 +295,9 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
       })}
     </div>
   )
+
+  const mutationBusy = busyId !== null || deleteBusy || addBusy
+  const targetLoaded = loaded && loadedGeneration === barberScope.current.generation
 
   const serviceRow = (row: EditRow, index: number): JSX.Element => {
     const busy = busyId === row.id
@@ -337,22 +382,27 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
         ) : null}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
-          {iconBtn(t.svcMoveUp, busy || index === 0, () => void move(index, -1), '↑')}
+          {iconBtn(t.svcMoveUp, mutationBusy || index === 0, () => void move(index, -1), '↑')}
           {iconBtn(
             t.svcMoveDown,
-            busy || index === rows.length - 1,
+            mutationBusy || index === rows.length - 1,
             () => void move(index, 1),
             '↓',
           )}
           <button
             type="button"
             style={{ ...s.ghostBtn, opacity: busy ? 0.6 : 1 }}
-            disabled={busy}
+            disabled={mutationBusy}
             onClick={() => void save(row)}
           >
             {busy ? t.svcSaving : t.svcSave}
           </button>
-          <button type="button" style={s.dangerBtn} onClick={() => setPendingDelete(row)}>
+          <button
+            type="button"
+            style={s.dangerBtn}
+            disabled={mutationBusy}
+            onClick={() => setPendingDelete(row)}
+          >
             {t.svcDelete}
           </button>
           {!row.active ? (
@@ -374,9 +424,9 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
       </h2>
       <p style={s.sectionLead}>{t.servicesLead}</p>
 
-      {loadError !== null ? (
+      {loadError !== null && targetLoaded ? (
         <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
-      ) : !loaded ? (
+      ) : !targetLoaded ? (
         <div style={s.emptyState}>{t.svcLoading}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
@@ -411,6 +461,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                   value={nName}
                   placeholder={t.svcNamePh}
                   onInput={(e) => {
+                    addGeneration.current += 1
                     setNName(e.currentTarget.value)
                     setAddError(null)
                   }}
@@ -421,6 +472,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                 {numInput(
                   nPrice,
                   (v) => {
+                    addGeneration.current += 1
                     setNPrice(v)
                     setAddError(null)
                   },
@@ -432,6 +484,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                 {numInput(
                   nDur,
                   (v) => {
+                    addGeneration.current += 1
                     setNDur(v)
                     setAddError(null)
                   },
@@ -450,6 +503,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
                   type="checkbox"
                   checked={nSpecificDays}
                   onInput={(e) => {
+                    addGeneration.current += 1
                     setNSpecificDays(e.currentTarget.checked)
                     if (!e.currentTarget.checked) setNAvailableWeekdays(ALL_WEEKDAYS)
                   }}
@@ -458,8 +512,8 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
               </label>
               <button
                 type="button"
-                style={{ ...s.primaryBtn, opacity: addBusy ? 0.6 : 1 }}
-                disabled={addBusy}
+                style={{ ...s.primaryBtn, opacity: mutationBusy ? 0.6 : 1 }}
+                disabled={mutationBusy}
                 onClick={() => void add()}
               >
                 {addBusy ? t.svcAdding : t.svcAddBtn}
@@ -468,7 +522,10 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
             {nSpecificDays ? (
               <div>
                 <span style={s.label}>{t.svcSpecificDaysLead}</span>
-                {weekdayPicker(nAvailableWeekdays, setNAvailableWeekdays)}
+                {weekdayPicker(nAvailableWeekdays, (value) => {
+                  addGeneration.current += 1
+                  setNAvailableWeekdays(value)
+                })}
               </div>
             ) : null}
             <div aria-live="polite" style={{ minHeight: '18px' }}>
@@ -478,7 +535,7 @@ export function ServicesView(props: ServicesViewProps): JSX.Element {
         </div>
       )}
 
-      {pendingDelete !== null ? (
+      {targetLoaded && pendingDelete !== null ? (
         <ConfirmDialog
           dark={props.dark}
           title={t.svcDeleteTitle}

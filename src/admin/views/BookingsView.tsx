@@ -17,7 +17,7 @@
 // recompute from fresh data.
 
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { formatWhenLabel } from '../../booking/calendar'
 import { palette } from '../../booking/bookingStyles'
 import { defaultClock } from '../../config'
@@ -84,6 +84,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   const narrow = useNarrow()
   const c = palette(props.dark)
   const [load, setLoad] = useState<Load>({ kind: 'loading' })
+  const [loadedGeneration, setLoadedGeneration] = useState<number | null>(null)
   const [activeSection, setActiveSection] = useState<BookingSection>('kommande')
   // Which week tab is active WITHIN the current section; null resolves to the section's first group.
   const [activeWeekKey, setActiveWeekKey] = useState<string | null>(null)
@@ -99,6 +100,14 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   // Owner-only global purge flow.
   const [purgeOpen, setPurgeOpen] = useState(false)
   const [purgeBusy, setPurgeBusy] = useState(false)
+  const targetKey = props.allBarbers ? 'all:*' : `barber:${props.barberId ?? ''}`
+  const targetScope = useRef({ key: targetKey, generation: 0 })
+  if (targetScope.current.key !== targetKey) {
+    targetScope.current = {
+      key: targetKey,
+      generation: targetScope.current.generation + 1,
+    }
+  }
 
   /** Fetch the current target's bookings into a `Load` (owner=all, barber=own; a barber with no id
    *  and not in "all" mode has nothing to show). Shared by the target-change effect and post-mutation
@@ -113,22 +122,34 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   }
 
   /** Re-fetch and replace the list (no loading flicker) after a successful delete/purge. */
-  const reload = async (): Promise<void> => {
-    setLoad(await fetchLoad())
+  const reload = async (expectedGeneration = targetScope.current.generation): Promise<void> => {
+    const next = await fetchLoad()
+    if (targetScope.current.generation === expectedGeneration) setLoad(next)
   }
 
   // Reload whenever the target (barber / all) changes; also reset transient UI so nothing leaks across
   // targets. The initial mount counts as a target change.
   useEffect(() => {
     let active = true
+    const targetGeneration = targetScope.current.generation
     setLoad({ kind: 'loading' })
+    setLoadedGeneration(null)
     setNotice(null)
     setSelected(new Set())
     setActiveSection('kommande')
     setActiveWeekKey(null)
+    setPendingCancel(null)
+    setBusy(false)
+    setClearOpen(false)
+    setClearBusy(false)
+    setPurgeOpen(false)
+    setPurgeBusy(false)
     void (async () => {
       const next = await fetchLoad()
-      if (active) setLoad(next)
+      if (active) {
+        setLoad(next)
+        setLoadedGeneration(targetGeneration)
+      }
     })()
     return () => {
       active = false
@@ -147,9 +168,14 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     wallNow.getDate(),
   ).isoWeekYear
 
+  const visibleLoad: Load =
+    loadedGeneration === targetScope.current.generation ? load : { kind: 'loading' }
   const sections = useMemo<SectionedBookings>(
-    () => (load.kind === 'ready' ? partitionSections(load.bookings, nowMs) : EMPTY_SECTIONS),
-    [load, nowMs],
+    () =>
+      visibleLoad.kind === 'ready'
+        ? partitionSections(visibleLoad.bookings, nowMs)
+        : EMPTY_SECTIONS,
+    [visibleLoad, nowMs],
   )
 
   const activeGroups = sections[activeSection]
@@ -236,8 +262,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
   const doCancel = async (): Promise<void> => {
     const target = pendingCancel
     if (target === null) return
+    const expectedGeneration = targetScope.current.generation
     setBusy(true)
     const result = await cancelBooking(target.id)
+    if (targetScope.current.generation !== expectedGeneration) return
     setBusy(false)
     setPendingCancel(null)
     if (!result.ok) {
@@ -265,8 +293,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
       setClearOpen(false)
       return
     }
+    const expectedGeneration = targetScope.current.generation
     setClearBusy(true)
     const result = await deleteBookings(ids)
+    if (targetScope.current.generation !== expectedGeneration) return
     setClearBusy(false)
     setClearOpen(false)
     if (!result.ok) {
@@ -276,12 +306,14 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     }
     setSelected(new Set())
     setNotice({ kind: 'ok', text: t.bookingsClearedOk })
-    await reload()
+    await reload(expectedGeneration)
   }
 
   const doPurge = async (): Promise<void> => {
+    const expectedGeneration = targetScope.current.generation
     setPurgeBusy(true)
     const result = await purgeHistory()
+    if (targetScope.current.generation !== expectedGeneration) return
     setPurgeBusy(false)
     setPurgeOpen(false)
     if (!result.ok) {
@@ -290,7 +322,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
     }
     setSelected(new Set())
     setNotice({ kind: 'ok', text: t.bookingsPurgedOk })
-    await reload()
+    await reload(expectedGeneration)
   }
 
   // --- Rendering ----------------------------------------------------------------------------------
@@ -520,10 +552,10 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
           ) : null}
         </div>
 
-        {load.kind === 'loading' ? (
+        {visibleLoad.kind === 'loading' ? (
           <div style={s.emptyState}>{t.bookingsLoading}</div>
-        ) : load.kind === 'error' ? (
-          <div style={{ ...s.emptyState, color: s.errorText.color }}>{load.message}</div>
+        ) : visibleLoad.kind === 'error' ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{visibleLoad.message}</div>
         ) : (
           <>
             {/* Section switcher (mirrors the shell's nav: aria-current + subtle active bg) + owner purge. */}
@@ -660,7 +692,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         )}
       </section>
 
-      {pendingCancel !== null ? (
+      {visibleLoad.kind === 'ready' && pendingCancel !== null ? (
         <ConfirmDialog
           dark={props.dark}
           title={t.bookingsCancelDialogTitle}
@@ -676,7 +708,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         />
       ) : null}
 
-      {clearOpen ? (
+      {visibleLoad.kind === 'ready' && clearOpen ? (
         <ConfirmDialog
           dark={props.dark}
           title={t.bookingsClearTitle}
@@ -692,7 +724,7 @@ export function BookingsView(props: BookingsViewProps): JSX.Element {
         />
       ) : null}
 
-      {purgeOpen ? (
+      {visibleLoad.kind === 'ready' && purgeOpen ? (
         <TypeToConfirmDialog
           dark={props.dark}
           title={t.bookingsPurgeTitle}

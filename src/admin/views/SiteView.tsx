@@ -4,7 +4,7 @@
 // owner-only at the RLS layer.
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import {
@@ -106,6 +106,9 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savedKey, setSavedKey] = useState<string | null>(null)
   const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
+  const logoGeneration = useRef(0)
+  const presentationGeneration = useRef(0)
   const [pendingLogo, setPendingLogo] = useState<File | null>(null)
   const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null)
   const [logoBusy, setLogoBusy] = useState<'upload' | 'remove' | null>(null)
@@ -169,9 +172,11 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const business = resolveBusinessSettings(settings)
 
   const setValue = (key: TextField, l: Lang, value: string): void => {
+    const ck = cellKey(key, l)
+    editGeneration.current.set(ck, (editGeneration.current.get(ck) ?? 0) + 1)
     setCells((prev) => {
       const next = new Map(prev)
-      next.set(cellKey(key, l), value)
+      next.set(ck, value)
       return next
     })
     setSavedKey(null)
@@ -181,14 +186,18 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const saveCell = async (key: TextField, l: Lang): Promise<void> => {
     const ck = cellKey(key, l)
     const value = valueFor(key, l)
+    const generation = editGeneration.current.get(ck) ?? 0
     setSavingKey(ck)
     setErrorFor(null)
     const result = await port.saveContent(key, l, value)
     setSavingKey(null)
     if (!result.ok) {
-      setErrorFor({ key: ck, message: result.error.message })
+      if ((editGeneration.current.get(ck) ?? 0) === generation) {
+        setErrorFor({ key: ck, message: result.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(ck) ?? 0) !== generation) return
     if (value.trim() === '') {
       setCells((prev) =>
         new Map(prev).set(
@@ -201,6 +210,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   }
 
   const setSettingValue = (key: SiteSettingKey, value: string): void => {
+    editGeneration.current.set(key, (editGeneration.current.get(key) ?? 0) + 1)
     setSettings((previous) => {
       const next = new Map(previous)
       next.set(key, value)
@@ -221,6 +231,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
             next.get(policyKey) ===
             defaultSiteText(cellLang, business.cancellationPolicyHours, business.name).policy
           ) {
+            editGeneration.current.set(policyKey, (editGeneration.current.get(policyKey) ?? 0) + 1)
             next.set(
               policyKey,
               defaultSiteText(cellLang, nextBusiness.cancellationPolicyHours, nextBusiness.name)
@@ -239,14 +250,18 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     key: SiteSettingKey,
     value: string = settingValue(key),
   ): Promise<void> => {
+    const generation = editGeneration.current.get(key) ?? 0
     setSavingKey(key)
     setErrorFor(null)
     const result = await port.saveSetting(key, value)
     setSavingKey(null)
     if (!result.ok) {
-      setErrorFor({ key, message: result.error.message })
+      if ((editGeneration.current.get(key) ?? 0) === generation) {
+        setErrorFor({ key, message: result.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(key) ?? 0) !== generation) return
     setSettings((previous) =>
       previous.get(key) === value ? new Map(previous).set(key, result.value) : previous,
     )
@@ -303,6 +318,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   }
 
   const selectLogo = (file: File | null): void => {
+    logoGeneration.current += 1
     if (pendingLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(pendingLogoUrl)
     setPendingLogo(file)
     setPendingLogoUrl(file === null ? null : URL.createObjectURL(file))
@@ -317,15 +333,17 @@ export function SiteView(props: SiteViewProps): JSX.Element {
 
   const saveLogo = async (): Promise<void> => {
     if (pendingLogo === null) return
+    const generation = logoGeneration.current
     setLogoBusy('upload')
     setLogoStatus(null)
     const result = await uploadHomepageLogo(pendingLogo, logoPath ?? '')
     setLogoBusy(null)
     if (!result.ok) {
-      setLogoStatus(result.error.message)
+      if (logoGeneration.current === generation) setLogoStatus(result.error.message)
       return
     }
     setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, result.value.path))
+    if (logoGeneration.current !== generation) return
     setPendingLogo(null)
     setPendingLogoUrl(result.value.url)
     setLogoStatus(
@@ -341,15 +359,17 @@ export function SiteView(props: SiteViewProps): JSX.Element {
 
   const deleteLogo = async (): Promise<void> => {
     if (logoPath === null) return
+    const generation = logoGeneration.current
     setLogoBusy('remove')
     setLogoStatus(null)
     const result = await removeHomepageLogo(logoPath)
     setLogoBusy(null)
     if (!result.ok) {
-      setLogoStatus(result.error.message)
+      if (logoGeneration.current === generation) setLogoStatus(result.error.message)
       return
     }
     setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, ''))
+    if (logoGeneration.current !== generation) return
     selectLogo(null)
     setLogoStatus(
       result.value.pending
@@ -363,6 +383,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   }
 
   const savePresentation = async (): Promise<void> => {
+    const generation = presentationGeneration.current
     setPresentationBusy(true)
     setPresentationStatus(null)
     const result = await port.saveSettings([
@@ -372,7 +393,9 @@ export function SiteView(props: SiteViewProps): JSX.Element {
     ])
     setPresentationBusy(false)
     if (!result.ok) {
-      setPresentationStatus(result.error.message)
+      if (presentationGeneration.current === generation) {
+        setPresentationStatus(result.error.message)
+      }
       return
     }
     setSettings((previous) => {
@@ -380,10 +403,15 @@ export function SiteView(props: SiteViewProps): JSX.Element {
       for (const [key, value] of result.value) next.set(key, value)
       return next
     })
-    setPresentationStatus(props.lang === 'sv' ? 'Utseende publicerat.' : 'Presentation published.')
+    if (presentationGeneration.current === generation) {
+      setPresentationStatus(
+        props.lang === 'sv' ? 'Utseende publicerat.' : 'Presentation published.',
+      )
+    }
   }
 
   const updatePresentation = (change: Partial<HomepagePresentationDraft>): void => {
+    presentationGeneration.current += 1
     setPresentationDraft((previous) => ({ ...previous, ...change }))
     setPresentationStatus(null)
   }
@@ -447,7 +475,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
             type="button"
             style={{ ...s.ghostBtn, opacity: savingKey === field.key ? 0.6 : 1 }}
             onClick={() => void saveSetting(field.key)}
-            disabled={savingKey === field.key}
+            disabled={savingKey !== null}
           >
             {savingKey === field.key ? t.aboutSaving : t.aboutSave}
           </button>
@@ -562,7 +590,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                       type="button"
                       style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
                       onClick={() => void saveCell(field, cellLang)}
-                      disabled={savingKey === ck}
+                      disabled={savingKey !== null}
                     >
                       {savingKey === ck ? t.aboutSaving : t.aboutSave}
                     </button>
@@ -615,6 +643,7 @@ export function SiteView(props: SiteViewProps): JSX.Element {
                   style={s.input}
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
+                  disabled={logoBusy !== null}
                   onInput={(event) => selectLogo(event.currentTarget.files?.item(0) ?? null)}
                 />
               </label>

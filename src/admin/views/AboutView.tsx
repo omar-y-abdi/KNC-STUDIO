@@ -78,6 +78,7 @@ function AboutTextEditor(props: {
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [savedKey, setSavedKey] = useState<string | null>(null)
   const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
 
   useEffect(() => {
     let active = true
@@ -102,9 +103,11 @@ function AboutTextEditor(props: {
   const valueFor = (key: AboutKey, lang: Lang): string => cells.get(cellKey(key, lang)) ?? ''
 
   const setValue = (key: AboutKey, lang: Lang, value: string): void => {
+    const ck = cellKey(key, lang)
+    editGeneration.current.set(ck, (editGeneration.current.get(ck) ?? 0) + 1)
     setCells((prev) => {
       const next = new Map(prev)
-      next.set(cellKey(key, lang), value)
+      next.set(ck, value)
       return next
     })
     setSavedKey(null)
@@ -113,14 +116,18 @@ function AboutTextEditor(props: {
 
   const save = async (key: AboutKey, lang: Lang): Promise<void> => {
     const ck = cellKey(key, lang)
+    const generation = editGeneration.current.get(ck) ?? 0
     setSavingKey(ck)
     setErrorFor(null)
     const result = await saveAbout(key, lang, valueFor(key, lang))
     setSavingKey(null)
     if (!result.ok) {
-      setErrorFor({ key: ck, message: result.error.message })
+      if ((editGeneration.current.get(ck) ?? 0) === generation) {
+        setErrorFor({ key: ck, message: result.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(ck) ?? 0) !== generation) return
     setSavedKey(ck)
   }
 
@@ -193,7 +200,7 @@ function AboutTextEditor(props: {
                           type="button"
                           style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
                           onClick={() => void save(field.key, cellLang)}
-                          disabled={savingKey === ck}
+                          disabled={savingKey !== null}
                         >
                           {savingKey === ck ? t.aboutSaving : t.aboutSave}
                         </button>
@@ -238,6 +245,7 @@ function GalleryManager(props: {
   const [pendingDelete, setPendingDelete] = useState<GalleryImage | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const altGeneration = useRef(0)
 
   const reload = async (): Promise<void> => {
     const result = await listGallery(kind)
@@ -256,6 +264,7 @@ function GalleryManager(props: {
   }, [])
 
   const onUpload = async (file: File): Promise<void> => {
+    const generation = altGeneration.current
     setBusy(true)
     setNotice(null)
     const nextSort = images.length === 0 ? 0 : Math.max(...images.map((i) => i.sortOrder)) + 1
@@ -266,7 +275,7 @@ function GalleryManager(props: {
       setNotice({ kind: 'err', text: result.error.message })
       return
     }
-    setAlt('')
+    if (altGeneration.current === generation) setAlt('')
     setNotice({ kind: 'ok', text: t.aboutGalleryUploadedOk })
     setImages((prev) => [...prev, result.value])
   }
@@ -313,8 +322,12 @@ function GalleryManager(props: {
             id={`alt-${kind}`}
             type="text"
             style={s.input}
+            maxLength={2000}
             value={alt}
-            onInput={(e) => setAlt(e.currentTarget.value)}
+            onInput={(e) => {
+              altGeneration.current += 1
+              setAlt(e.currentTarget.value)
+            }}
           />
         </div>
         <div>
@@ -325,7 +338,7 @@ function GalleryManager(props: {
             ref={fileRef}
             id={`file-${kind}`}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
             style={{ ...s.input, padding: '7px' }}
             disabled={busy}
             onChange={(e) => {

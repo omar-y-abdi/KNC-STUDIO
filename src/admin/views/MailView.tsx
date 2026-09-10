@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -118,6 +118,7 @@ export function MailView(props: MailViewProps): JSX.Element {
   const [saving, setSaving] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
   const [failedDeliveries, setFailedDeliveries] = useState<readonly FailedBookingEmailDelivery[]>(
     [],
   )
@@ -128,6 +129,7 @@ export function MailView(props: MailViewProps): JSX.Element {
   const [contactSettings, setContactSettings] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
   )
+  const contactGeneration = useRef(new Map<string, number>())
   const [contactSaving, setContactSaving] = useState<'phone' | 'map' | null>(null)
   const [contactStatus, setContactStatus] = useState<string | null>(null)
 
@@ -160,6 +162,7 @@ export function MailView(props: MailViewProps): JSX.Element {
       : '')
 
   const setContactValue = (key: string, value: string): void => {
+    contactGeneration.current.set(key, (contactGeneration.current.get(key) ?? 0) + 1)
     setContactSettings((previous) => new Map(previous).set(key, value))
     setContactStatus(null)
   }
@@ -183,19 +186,29 @@ export function MailView(props: MailViewProps): JSX.Element {
               value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.mapsHref),
             },
           ]
+    const generations = new Map<string, number>(
+      values.map(({ key }) => [key, contactGeneration.current.get(key) ?? 0]),
+    )
+    const draftIsCurrent = (): boolean =>
+      values.every(({ key }) => (contactGeneration.current.get(key) ?? 0) === generations.get(key))
     setContactSaving(kind)
     setContactStatus(null)
     const result = await saveSiteSettings(values)
     setContactSaving(null)
     if (!result.ok) {
-      setContactStatus(result.error.message)
+      if (draftIsCurrent()) setContactStatus(result.error.message)
       return
     }
     setContactSettings((previous) => {
       const next = new Map(previous)
-      for (const [key, value] of result.value) next.set(key, value)
+      for (const [key, value] of result.value) {
+        if ((contactGeneration.current.get(key) ?? 0) === generations.get(key)) {
+          next.set(key, value)
+        }
+      }
       return next
     })
+    if (!draftIsCurrent()) return
     setContactStatus(
       props.lang === 'sv'
         ? clear
@@ -214,6 +227,7 @@ export function MailView(props: MailViewProps): JSX.Element {
     value: string,
   ): void => {
     const key = rowKey(template, lang)
+    editGeneration.current.set(key, (editGeneration.current.get(key) ?? 0) + 1)
     setRows((previous) => {
       const current = previous.get(key)
       if (current === undefined) return previous
@@ -229,14 +243,18 @@ export function MailView(props: MailViewProps): JSX.Element {
     const key = rowKey(template, lang)
     const row = rows.get(key)
     if (row === undefined) return
+    const generation = editGeneration.current.get(key) ?? 0
     setSaving(key)
     setSaveError(null)
     const result = await saveEmailTemplate(row)
     setSaving(null)
     if (!result.ok) {
-      setSaveError({ key, message: result.error.message })
+      if ((editGeneration.current.get(key) ?? 0) === generation) {
+        setSaveError({ key, message: result.error.message })
+      }
       return
     }
+    if ((editGeneration.current.get(key) ?? 0) !== generation) return
     setRows((previous) => new Map(previous).set(key, result.value))
     setSaved(key)
   }
@@ -537,7 +555,7 @@ export function MailView(props: MailViewProps): JSX.Element {
                         <button
                           type="button"
                           style={{ ...s.primaryBtn, opacity: saving === key ? 0.6 : 1 }}
-                          disabled={saving === key}
+                          disabled={saving !== null}
                           onClick={() => void save(definition.id, lang)}
                         >
                           {saving === key ? t.mailSaving : t.mailSave}
