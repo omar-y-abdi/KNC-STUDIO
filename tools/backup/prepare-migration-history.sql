@@ -1,16 +1,4 @@
-create schema if not exists supabase_migrations authorization postgres;
-
-create table if not exists supabase_migrations.schema_migrations (
-  version text primary key,
-  statements text[],
-  name text
-);
-
-create table if not exists supabase_migrations.seed_files (
-  path text primary key,
-  hash text not null
-);
-
-truncate table
-  supabase_migrations.schema_migrations,
-  supabase_migrations.seed_files;
+-- NEW, DISPOSABLE RESTORE TARGET ONLY. Run in the same transaction as history_schema.sql
+-- and history_data.sql. The archived source schema, not this tool or the target CLI version,
+-- defines migration columns, constraints, and optional seed history.
+drop schema if exists supabase_migrations cascade;

@@ -16,6 +16,7 @@ done
 required_files=(
   schema.sql
   data.sql
+  history_schema.sql
   history_data.sql
   storage/buckets.json
   storage/objects.ndjson
@@ -37,6 +38,8 @@ grep -Fq 'COPY "storage"."objects"' "$input/data.sql" \
   && die 'Storage object metadata must be restored from the Storage archive only'
 grep -Fq 'COPY "supabase_migrations"."schema_migrations"' "$input/history_data.sql" \
   || die 'migration history is absent'
+grep -Fq 'CREATE TABLE IF NOT EXISTS "supabase_migrations"."schema_migrations"' "$input/history_schema.sql" \
+  || die 'migration history schema is absent'
 
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf "$temporary_directory"' EXIT

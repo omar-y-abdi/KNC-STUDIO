@@ -1,7 +1,8 @@
 import { signCustomerGateway } from '../../supabase/functions/_shared/customerGatewayAuth'
-
-const SESSION_COOKIE = '__Host-bladeblend_customer_session'
-const SESSION_VALUE = new RegExp(`^${SESSION_COOKIE}=[0-9a-f]{64}$`)
+import {
+  CUSTOMER_COOKIE_NAMES,
+  customerCookie,
+} from '../../supabase/functions/_shared/customerCookies'
 const MAX_BODY_BYTES = 16_384
 
 /** Same-origin transport keeps the HttpOnly customer cookie first-party, including in Safari. */
@@ -12,6 +13,7 @@ export async function customerGateway(
     readonly SUPABASE_ANON_KEY?: string
     readonly CUSTOMER_GATEWAY_SECRET?: string
   },
+  endpoint: 'public-booking-actions' | 'submit-booking' = 'public-booking-actions',
 ): Promise<Response> {
   const headers = {
     'Content-Type': 'application/json',
@@ -63,12 +65,11 @@ export async function customerGateway(
     Origin: origin,
   })
   // Never forward staff cookies, browser Authorization, or arbitrary proxy destinations.
-  const session = request.headers
-    .get('Cookie')
-    ?.split(';')
-    .map((part) => part.trim())
-    .find((part) => SESSION_VALUE.test(part))
-  if (session) upstreamHeaders.set('Cookie', session)
+  const cookies = CUSTOMER_COOKIE_NAMES.flatMap((name) => {
+    const value = customerCookie(request, name)
+    return value === null ? [] : [`${name}=${value}`]
+  })
+  if (cookies.length > 0) upstreamHeaders.set('Cookie', cookies.join('; '))
   // Cloudflare rewrites CF-Connecting-IP on cross-zone subrequests. Authenticate our own header.
   const ip = request.headers.get('CF-Connecting-IP')
   if (!ip) return error('system', 502)
@@ -77,7 +78,7 @@ export async function customerGateway(
   for (const [name, value] of Object.entries(signed)) upstreamHeaders.set(name, value)
 
   try {
-    const upstream = await fetch(`${env.SUPABASE_URL}/functions/v1/public-booking-actions`, {
+    const upstream = await fetch(`${env.SUPABASE_URL}/functions/v1/${endpoint}`, {
       method: 'POST',
       headers: upstreamHeaders,
       body: textBody,
@@ -89,9 +90,10 @@ export async function customerGateway(
       return error('system', 502)
     }
     const responseHeaders = new Headers(headers)
-    const cookie = upstream.headers.get('Set-Cookie')
-    if (cookie?.startsWith(`${SESSION_COOKIE}=`)) {
-      responseHeaders.set('Set-Cookie', cookie.replace('SameSite=None', 'SameSite=Lax'))
+    for (const cookie of upstream.headers.getSetCookie()) {
+      if (CUSTOMER_COOKIE_NAMES.some((name) => cookie.startsWith(`${name}=`))) {
+        responseHeaders.append('Set-Cookie', cookie.replace('SameSite=None', 'SameSite=Lax'))
+      }
     }
     return new Response(upstream.body, { status: upstream.status, headers: responseHeaders })
   } catch {

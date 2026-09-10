@@ -14,7 +14,7 @@ import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import { FOCUS_CLS } from '../ui/pseudo'
 import type { AboutStrings, Lang } from '../i18n/index'
-import { aboutStrings } from '../i18n/index'
+import { aboutStrings, privacyStrings } from '../i18n/index'
 import { scalePx, type SizePreset } from '../site/siteChrome'
 import { useRoster } from '../booking/useRoster'
 import type { BarbersPort } from '../booking/barbersPort'
@@ -44,6 +44,7 @@ const SALON_IDS: readonly string[] = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 
 const CUT_IDS: readonly string[] = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
 
 export interface AboutSectionProps {
+  readonly onManagePrivacy?: () => void
   readonly mode: Mode
   readonly lang: Lang
   /** Injected reviews seam (default: env-selected; mock adapter when no backend is configured). */
@@ -588,7 +589,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           ) : null}
 
           {props.challengeEnabled === false || !dataActive ? null : (
-            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+            <Turnstile
+              action="review"
+              lang={props.lang}
+              onToken={setTurnstileToken}
+              resetNonce={turnstileNonce}
+            />
           )}
 
           <button
@@ -608,6 +614,22 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           </button>
         </div>
       </div>
+      {props.onManagePrivacy ? (
+        <footer style={{ padding: '24px 0 8px', textAlign: 'center' }}>
+          <a
+            href="#privacy-preferences"
+            class={FOCUS_CLS}
+            aria-label={privacyStrings(props.lang).manageLabel}
+            onClick={(event) => {
+              event.preventDefault()
+              props.onManagePrivacy?.()
+            }}
+            style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+          >
+            {privacyStrings(props.lang).manage}
+          </a>
+        </footer>
+      ) : null}
     </section>
   )
 }

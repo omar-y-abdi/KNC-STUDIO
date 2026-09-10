@@ -1,24 +1,19 @@
-// The real (Supabase) BookingPort adapter. `submit` invokes the protected `submit-booking` Edge
-// gateway; `availability` calls the schedule-aware `available_slots` RPC and returns its AVAILABLE
-// start times VERBATIM (the ascending `"HH:MM"` list the UI renders as selectable chips). Links for a
-// successful submit are built with the EXACT same `buildLinks` the mock uses, so the confirmation
-// modal (.ics + Google Cal + maps) is identical regardless of backend.
-//
-// `available_slots(p_barber_id, p_date, p_duration_min)` is schedule-aware: it returns NOTHING when
-// the barber is off that weekday or on time-off, and otherwise the AVAILABLE start times on a fixed
-// 15-min grid where the service fits (ends by close, overlaps no booking/block) — computed in Europe/Stockholm on
-// the server. So an OFF day yields an empty list here (no times shown), exactly matching "barber off".
-//
-// Boundary discipline: every RPC response is Zod-parsed (never trust the wire) and every failure —
-// transport error or malformed payload — is mapped to an empty list rather than thrown. On a submit
-// failure the UI shows `t.errSubmit`. On an availability error we FAIL CLOSED (show no times rather
-// than wrong ones); create_booking still validates the slot on submit, so a stale read can't confirm
-// an unavailable time.
+// First-party booking transport and server-authoritative availability. Optional device access
+// is proved separately from booking success; contact fields never authenticate customer history.
 
 import { bookingStrings } from '../../i18n/index'
 import { DEFAULT_BUSINESS } from '../../config'
 import { getSupabase } from '../../backend/supabaseClient'
-import { availableSlotsResponse, createBookingResponse, parseWith } from '../../backend/rpcSchemas'
+import {
+  availableSlotsResponse,
+  bookingReceiptResponse,
+  createBookingResponse,
+  listCustomerBookingsResponse,
+  parseWith,
+} from '../../backend/rpcSchemas'
+import { invokePublicBookingAction } from '../../backend/publicBookingActions'
+import { readStoragePreferences } from '../../site/storageConsent'
+import { withCustomerDeviceLock } from '../../mybookings/customerDeviceLock'
 import type { Booking, BookingError, BookingResult } from '../domain'
 import type { AvailabilityParams, BookingPort } from '../port'
 import { localWallClockToStockholmIso } from '../stockholmTime'
@@ -50,38 +45,63 @@ export const supabaseBookingAdapter: BookingPort = {
     business: BusinessSettings = DEFAULT_BUSINESS,
   ): Promise<BookingResult> {
     try {
-      // The browser no longer calls create_booking directly — it POSTs to the `submit-booking` edge
-      // function (the gateway: Turnstile verification + IP/phone rate-limit, then create_booking via
-      // service_role). `functions.invoke` attaches the anon apikey and parses the JSON response; the
-      // gateway returns HTTP 200 with the create_booking Result verbatim (or a rate_limited /
-      // failed_challenge Result), so a `{ok:false}` is a real rejection, not a transport error.
-      const { data, error } = await getSupabase().functions.invoke('submit-booking', {
-        body: {
-          booking: {
-            barberId: booking.barber.id,
-            serviceId: booking.service.id,
-            // H2: `booking.start` is the selected slot in the BROWSER's local components (its wall-clock
-            // reads back "13:30" in any tz). Re-anchor to Europe/Stockholm and send the STRING — sending
-            // the raw Date would let JSON.stringify serialize it in the browser tz and shift the instant.
-            startAt: localWallClockToStockholmIso(booking.start),
-            phone: booking.phone,
-            email: booking.email,
-            lang: booking.lang,
-            customerName: booking.customerName,
-          },
-          turnstileToken: booking.turnstileToken,
-        },
+      return await withCustomerDeviceLock<BookingResult>(async (locked) => {
+        const rememberBookings = locked && readStoragePreferences()?.functional === true
+        const response = await globalThis.fetch('/api/bookings', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify({
+            booking: {
+              barberId: booking.barber.id,
+              serviceId: booking.service.id,
+              // Selected browser wall-clock is anchored to the salon timezone before serialization.
+              startAt: localWallClockToStockholmIso(booking.start),
+              phone: booking.phone,
+              email: booking.email,
+              lang: booking.lang,
+              customerName: booking.customerName,
+            },
+            turnstileToken: booking.turnstileToken,
+            rememberBookings,
+          }),
+        })
+        if (!response.ok) return { ok: false, error: submitError(booking) }
+        const data: unknown = await response.json()
+        const parsed = parseWith(createBookingResponse, data)
+        if (!parsed.ok) return { ok: false, error: submitError(booking) }
+        if (!parsed.value.ok)
+          return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
+
+        let customerAccess: 'ready' | 'email' = 'email'
+        if (rememberBookings) {
+          try {
+            const receipt = bookingReceiptResponse.safeParse(data)
+            if (receipt.success) {
+              const probe = await invokePublicBookingAction({ action: 'list' })
+              const listed = listCustomerBookingsResponse.safeParse(probe.data)
+              if (
+                !probe.failed &&
+                listed.success &&
+                listed.data.ok &&
+                listed.data.receipt_proof === receipt.data.receipt_proof &&
+                listed.data.bookings.some((row) => row.id === receipt.data.booking.id)
+              ) {
+                customerAccess = 'ready'
+              }
+            }
+          } catch {
+            // The booking already exists. Keep success and offer its email link as the fallback.
+          }
+        }
+        return {
+          ok: true,
+          booking,
+          links: buildLinks(booking, new Date(), business),
+          customerAccess,
+        }
       })
-      if (error !== null) return { ok: false, error: submitError(booking) }
-
-      const parsed = parseWith(createBookingResponse, data)
-      if (!parsed.ok) return { ok: false, error: submitError(booking) }
-      if (!parsed.value.ok)
-        return { ok: false, error: bookingErrorFor(booking, parsed.value.error) }
-
-      // Success — build the calendar/map links from the SAME builder the mock uses.
-      const links = buildLinks(booking, new Date(), business)
-      return { ok: true, booking, links }
     } catch {
       return { ok: false, error: submitError(booking) }
     }

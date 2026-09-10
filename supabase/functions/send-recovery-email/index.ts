@@ -5,7 +5,7 @@ import {
   loadEmailTemplate,
   sendViaResend,
 } from '../_shared/email.ts'
-import { verifyTurnstile } from '../_shared/turnstile.ts'
+import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,7 +47,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json({ ok: true })
   const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')
   if (!turnstileSecret) return json({ ok: false, error: 'not_configured' }, 503)
-  if (!(await verifyTurnstile(turnstileToken, clientIp(req), turnstileSecret))) {
+  if (
+    !(await verifyTurnstile(
+      turnstileToken,
+      clientIp(req),
+      turnstileSecret,
+      turnstilePolicy('password_recovery', Deno.env.get('PUBLIC_SITE_ORIGINS')),
+    ))
+  ) {
     return json({ ok: false, error: 'failed_challenge' })
   }
   const url = Deno.env.get('SUPABASE_URL')

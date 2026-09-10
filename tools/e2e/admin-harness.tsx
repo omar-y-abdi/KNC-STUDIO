@@ -1,5 +1,5 @@
-// Vite-only browser harness for admin state and CMS regressions. It imports source modules directly
-// and supplies inert in-memory seams, so no production auth, write adapter, or Supabase request runs.
+// Vite-only browser harness for admin, CMS and public-state regressions. Preview cases use inert
+// ports; actual App/AdminApp cases run their real adapters with all backend I/O intercepted by runner.
 
 import { h, render } from 'preact'
 import { useRef, useState } from 'preact/hooks'
@@ -17,6 +17,8 @@ import { BookingsView, type BookingsViewPort } from '../../src/admin/views/Booki
 import type { AdminBooking, AdminService } from '../../src/admin/types'
 import { GalleryManager, type GalleryManagerPort } from '../../src/admin/views/AboutView'
 import { AdminShell } from '../../src/admin/AdminShell'
+import { AdminApp } from '../../src/admin/AdminApp'
+import { App } from '../../src/app/App'
 import { buildAdminStyles } from '../../src/admin/adminStyles'
 import { palette } from '../../src/booking/bookingStyles'
 import { err, ok } from '../../src/admin/types'
@@ -31,6 +33,20 @@ function root(): Element {
   if (target === null) throw new Error('root missing')
   render(null, target)
   return target
+}
+
+/** Real gate, Auth client and adapters. The browser runner intercepts every backend request. */
+export function mountAdminAppHarness(tab: string): void {
+  const target = root()
+  history.replaceState({}, '', `/admin?tab=${tab}`)
+  render(h(AdminApp, {}), target)
+}
+
+/** Actual root, responsive shells and shared consent state; HTTP and sockets stay inert in runner. */
+export function mountPrivacyHarness(): void {
+  const target = root()
+  history.replaceState({}, '', '/')
+  render(h(App, {}), target)
 }
 
 const owner = {

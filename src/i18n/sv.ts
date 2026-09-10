@@ -80,14 +80,15 @@ export const appSv: AppStrings = {
 
 export const privacySv: PrivacyStrings = {
   title: 'Integritet och lagring',
-  lead: 'Vi använder ingen analys- eller annonslagring. Du kan välja om vi får spara ditt val av valfri lagring.',
+  lead: 'Välj om den här enheten får minnas de bokningar du gör här. Vi använder inga analys- eller annonscookies.',
   privacyLink: 'Läs integritetspolicyn',
   accept: 'Godkänn valfri lagring',
   reject: 'Avvisa valfri lagring',
   preferences: 'Inställningar',
   save: 'Spara val',
   functionalTitle: 'Valfri lagring',
-  functionalLead: 'Används endast för att minnas ditt lagringsval; inget telefonnummer sparas.',
+  functionalLead:
+    'Ger åtkomst på den här enheten till nya bokningar som görs här. Äldre bokningar kräver din mejllänk.',
   necessary:
     'Efter giltig e-postlänk används en nödvändig, säker sessionscookie för att hålla dig inloggad. Utan cookies kan Mina bokningar inte logga in automatiskt.',
   manage: 'Integritet',
@@ -146,7 +147,11 @@ export const myBookingsSv: MyBookingsStrings = {
   errAccess: 'Länken är ogiltig eller har ersatts. Begär en ny säker länk.',
   loadingBookings: 'Hämtar bokningar …',
   errCookies:
-    'Tillåt cookies för den här webbplatsen och öppna mejllänken igen för att hantera dina bokningar.',
+    'Den säkra åtkomsten kunde inte sparas. Öppna mejllänken igen. Kontrollera webbplatsens cookieinställningar om felet kvarstår.',
+  deviceBookingsNote:
+    'Här visas bokningar skapade på den här enheten. Öppna mejllänken för tidigare bokningar.',
+  deviceReady: 'Din bokning finns nu under Mina bokningar på den här enheten.',
+  deviceUnavailable: 'Öppna länken i bekräftelsemejlet för att se dina bokningar.',
   errSystem: 'Kunde inte hämta bokningarna. Försök igen.',
   errChallenge: 'Verifieringen misslyckades. Ladda om kontrollen och försök igen.',
   errRateLimited: 'För många försök. Vänta en stund innan du försöker igen.',

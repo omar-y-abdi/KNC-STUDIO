@@ -41,6 +41,79 @@ beforeEach(() => {
 })
 
 describe('image upload adapters', () => {
+  const image = {
+    id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
+    kind: 'cuts' as const,
+    storagePath: 'cuts/4d3f88f7.webp',
+    alt: 'Cut',
+    sortOrder: 0,
+    url: 'https://example.invalid/image.webp',
+  }
+  const operations = [
+    ['gallery upload', () => uploadImage('cuts', imageFile(), '', 0)],
+    ['profile upload', () => uploadBarberPhoto('hassan', imageFile())],
+    ['logo upload', () => uploadHomepageLogo(imageFile(), '')],
+    ['gallery delete', () => deleteImage(image)],
+    ['profile delete', () => removeBarberPhoto('hassan', 'hassan/photo.webp')],
+    ['logo delete', () => removeHomepageLogo('logo/current.webp')],
+  ] as const
+
+  it.each(operations)('preserves authoritative HTTP failures for %s', async (_name, operation) => {
+    for (const [status, kind] of [
+      [401, 'auth'],
+      [403, 'forbidden'],
+      [400, 'validation'],
+      [413, 'validation'],
+      [422, 'validation'],
+      [500, 'network'],
+    ] as const) {
+      invoke.mockResolvedValue({ data: null, error: { context: new Response(null, { status }) } })
+      await expect(operation()).resolves.toMatchObject({ ok: false, error: { kind } })
+    }
+  })
+
+  it.each(operations)(
+    'treats malformed gateway context as transport failure for %s',
+    async (_name, operation) => {
+      for (const error of [
+        new Error('offline'),
+        { context: null },
+        { context: '401' },
+        { context: { status: '401' } },
+      ]) {
+        invoke.mockResolvedValue({ data: null, error })
+        await expect(operation()).resolves.toMatchObject({ ok: false, error: { kind: 'network' } })
+      }
+    },
+  )
+
+  it.each(operations.filter(([name]) => name.endsWith('delete')))(
+    'does not accept a denied delete as success for %s',
+    async (_name, operation) => {
+      invoke.mockResolvedValue({
+        data: { ok: true, pending: false },
+        error: { context: { status: 403 } },
+      })
+      await expect(operation()).resolves.toMatchObject({ ok: false, error: { kind: 'forbidden' } })
+    },
+  )
+
+  it('keeps the logo optimistic-concurrency explanation for upload and delete', async () => {
+    invoke.mockResolvedValue({ data: null, error: { context: { status: 409 } } })
+    for (const operation of [
+      () => uploadHomepageLogo(imageFile(), ''),
+      () => removeHomepageLogo('logo/current.webp'),
+    ]) {
+      await expect(operation()).resolves.toEqual({
+        ok: false,
+        error: {
+          kind: 'validation',
+          message: 'Logotypen ändrades i en annan flik. Ladda om sidan.',
+        },
+      })
+    }
+  })
+
   it('submits a gallery image through the gateway and returns its parsed response', async () => {
     invoke.mockResolvedValue({
       data: {

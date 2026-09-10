@@ -21,7 +21,11 @@ import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site
 import { paintViewport } from '../ui/paintViewport'
 import { scheduleIdle } from '../ui/idle'
 import { LazySurface } from '../ui/LazySurface'
+import { usePrivacyPreferences } from '../site/usePrivacyPreferences'
 import { PrivacyBanner } from '../site/PrivacyBanner'
+import { readStoragePreferences, subscribeStoragePreferences } from '../site/storageConsent'
+import { invokePublicBookingAction } from '../backend/publicBookingActions'
+import { withCustomerDeviceLock } from '../mybookings/customerDeviceLock'
 import type { CustomerProfile } from '../mybookings/domain'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
@@ -68,6 +72,7 @@ interface AppState {
 }
 
 export function App(): JSX.Element {
+  const privacy = usePrivacyPreferences()
   // Default to the device's light/dark preference (manual toggle still overrides afterwards).
   const [state, setRaw] = useState<AppState>(() => ({
     mode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
@@ -83,6 +88,18 @@ export function App(): JSX.Element {
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
   }>({})
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
+  useEffect(() => {
+    const clearOptionalAccess = (): void => {
+      if (readStoragePreferences()?.functional === false) {
+        // Queue behind any in-flight booking, so its late receipt cannot undo a withdrawn choice.
+        void withCustomerDeviceLock(() =>
+          invokePublicBookingAction({ action: 'forget_device' }),
+        ).catch(() => undefined)
+      }
+    }
+    clearOptionalAccess()
+    return subscribeStoragePreferences(clearOptionalAccess)
+  }, [])
   useEffect(() => {
     const m = window.matchMedia(MOBILE_MQ)
     const h = (e: MediaQueryListEvent): void => setIsMobile(e.matches)
@@ -218,6 +235,7 @@ export function App(): JSX.Element {
     setBookingAccess({})
     setState({ myBookingsOpen: false })
   }
+  const openPrivacy = (): void => privacy.openPreferences()
 
   // --- shared chrome (nav controls) ---
   const chromeIconStyle = chromeIcon(dark)
@@ -338,6 +356,8 @@ export function App(): JSX.Element {
     return (
       <>
         <MobileSite
+          privacy={privacy}
+          onManagePrivacy={openPrivacy}
           mode={state.mode}
           lang={lang}
           tx={tx}
@@ -362,7 +382,7 @@ export function App(): JSX.Element {
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
-        <PrivacyBanner lang={lang} dark={dark} />
+        <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
       </>
     )
   }
@@ -370,6 +390,8 @@ export function App(): JSX.Element {
   return (
     <>
       <DesktopSite
+        privacy={privacy}
+        onManagePrivacy={openPrivacy}
         mode={state.mode}
         lang={lang}
         dark={dark}
@@ -392,7 +414,7 @@ export function App(): JSX.Element {
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
-      <PrivacyBanner lang={lang} dark={dark} />
+      <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
     </>
   )
 }

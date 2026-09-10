@@ -3,6 +3,7 @@ import { writeSync, mkdtempSync, openSync, closeSync, writeFileSync, readFileSyn
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpsRequest } from 'node:https'
+import { createServer as createHttpServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -504,8 +505,7 @@ async function verifyPublicPage(browser, viewport) {
   })
 
   if (viewport.width <= 768) {
-    const scrollRoot = page.getByTestId('mobile-site-scroll')
-    await scrollRoot.evaluate((element) => element.scrollTo({ top: element.clientHeight }))
+    await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
     await page.getByRole('button', { name: 'Back to home' }).waitFor({ timeout: WAIT_TIMEOUT })
     await page.getByRole('button', { name: 'Back to home' }).click({ timeout: WAIT_TIMEOUT })
     await page.waitForFunction(
@@ -770,6 +770,52 @@ async function verifyCustomerBrowser() {
   const db = new Client({ connectionString: stack.DB_URL, connectionTimeoutMillis: 5000 })
   let connected = false,
     fixture
+  // Hosted Supabase adds its own bot cookie. Preserve separate upstream headers so this gate
+  // reproduces production: a Worker using Headers.get would merge Domain=supabase.co into our
+  // __Host cookie and every real browser would reject the customer session.
+  const upstream = createHttpServer(async (request, response) => {
+    try {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      const headers = new globalThis.Headers()
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (value !== undefined && !['host', 'connection', 'content-length'].includes(name)) {
+          headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+        }
+      }
+      const result = await fetch(`${stack.API_URL}${request.url}`, {
+        method: request.method,
+        headers,
+        ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
+        redirect: 'manual',
+      })
+      response.statusCode = result.status
+      const cookies = result.headers.getSetCookie()
+      for (const [name, value] of result.headers) {
+        if (
+          ![
+            'set-cookie',
+            'content-encoding',
+            'content-length',
+            'transfer-encoding',
+            'connection',
+          ].includes(name)
+        ) {
+          response.setHeader(name, value)
+        }
+      }
+      if (request.url?.startsWith('/functions/v1/')) {
+        cookies.push(
+          '__cf_bm=local-provider-fixture; HttpOnly; Secure; Path=/; Domain=supabase.co; Expires=Thu, 10 Sep 2037 22:19:54 GMT',
+        )
+      }
+      if (cookies.length) response.setHeader('Set-Cookie', cookies)
+      response.end(Buffer.from(await result.arrayBuffer()))
+    } catch {
+      response.statusCode = 502
+      response.end('Local upstream unavailable')
+    }
+  })
   const hash = (value) => createHash('sha256').update(value).digest('hex')
   const removeQueuedMail = async (emails) =>
     db.query(
@@ -793,6 +839,29 @@ async function verifyCustomerBrowser() {
           fixture.people.map((person) => person.email),
         ])
       }
+      // This suite creates real bookings. Remove only its outbox/receipt children, including
+      // those whose normal cascade is disabled by the fixture-cleanup transaction.
+      await db.query(
+        `delete from public.customer_booking_receipts where token_hash in (
+        select r.receipt_hash from public.customer_booking_receipt_bookings r
+        join public.bookings b on b.id=r.booking_id where b.barber_id=$1)`,
+        [fixture.barber],
+      )
+      for (const table of [
+        'customer_booking_receipt_bookings',
+        'booking_email_delivery_jobs',
+        'booking_reminders',
+      ])
+        await db.query(
+          `delete from public.${table} where booking_id in (select id from public.bookings where barber_id=$1)`,
+          [fixture.barber],
+        )
+      await db.query(
+        `delete from public.external_action_jobs where payload->>'booking_id' in (select id::text from public.bookings where barber_id=$1)`,
+        [fixture.barber],
+      )
+      if (fixture.attempts.length)
+        await db.query('delete from public.booking_attempts where id=any($1)', [fixture.attempts])
       for (const table of ['bookings', 'services', 'barber_schedules'])
         await db.query(`delete from public.${table} where barber_id=$1`, [fixture.barber])
       await db.query('delete from public.barbers where id=$1', [fixture.barber])
@@ -837,6 +906,12 @@ async function verifyCustomerBrowser() {
   try {
     await db.connect()
     connected = true
+    await new Promise((resolveListen) => upstream.listen(0, '127.0.0.1', resolveListen))
+    const upstreamAddress = upstream.address()
+    assert(
+      upstreamAddress !== null && typeof upstreamAddress === 'object',
+      'upstream test port missing',
+    )
     execFileSync(
       'openssl',
       [
@@ -871,7 +946,7 @@ async function verifyCustomerBrowser() {
         name: 'knc-customer-browser',
         main: resolve('src/worker.ts'),
         compatibility_date: '2026-08-09',
-        vars: { SUPABASE_URL: stack.API_URL },
+        vars: { SUPABASE_URL: `http://127.0.0.1:${upstreamAddress.port}` },
         assets: {
           directory: assets,
           binding: 'ASSETS',
@@ -941,7 +1016,7 @@ async function verifyCustomerBrowser() {
         phone: `070${String(randomBytes(4).readUInt32BE() % 10000000).padStart(7, '0')}`,
         email: `${label.toLowerCase()}-${marker}@example.test`,
       }))
-      fixture = { barber, people }
+      fixture = { barber, people, attempts: [] }
       await db.query('begin')
       try {
         await db.query('set local session_replication_role=replica')
@@ -987,7 +1062,10 @@ async function verifyCustomerBrowser() {
       const browser = await engine.launch({ timeout: WAIT_TIMEOUT })
       const showHistory = async (page, person) => {
         await page.getByRole('heading', { name: /kommande/i }).waitFor()
-        await page.getByRole('button', { name: /Visa detaljer/ }).click()
+        await page
+          .getByRole('button', { name: /Visa detaljer/ })
+          .last()
+          .click()
         await page
           .getByRole('dialog')
           .getByText(`Customer ${person.label} appointment`, { exact: false })
@@ -1121,7 +1199,7 @@ async function verifyCustomerBrowser() {
           await page.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
           await page
             .getByText(
-              'Tillåt cookies för den här webbplatsen och öppna mejllänken igen för att hantera dina bokningar.',
+              'Den säkra åtkomsten kunde inte sparas. Öppna mejllänken igen. Kontrollera webbplatsens cookieinställningar om felet kvarstår.',
               { exact: true },
             )
             .waitFor()
@@ -1131,6 +1209,228 @@ async function verifyCustomerBrowser() {
           )
           await context.close()
         }
+        phase(`customer ${engine.name()}: two fresh tabs book and share one optional receipt`)
+        const receiptContext = await browser.newContext({
+          viewport: { width: 390, height: 844 },
+          ignoreHTTPSErrors: true,
+          reducedMotion: 'reduce',
+        })
+        const receiptPages = await Promise.all([receiptContext.newPage(), receiptContext.newPage()])
+        const bookingDate = new Date(Date.now() + 3 * 86400000)
+        const datePart = (options) =>
+          new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(
+            bookingDate,
+          )
+        const bookingDateLabel = `${datePart({ weekday: 'long' })} ${datePart({ day: 'numeric' })} ${datePart({ month: 'long' })} ${datePart({ year: 'numeric' })}`
+        const prepareBooking = async (page, person, time, consent) => {
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          await page.goto(origin, { waitUntil: 'domcontentloaded' })
+          const choose = page.getByRole('button', {
+            name: consent ? 'Godkänn valfri lagring' : 'Avvisa valfri lagring',
+            exact: true,
+          })
+          if (await choose.isVisible()) await choose.click()
+          await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+          await page
+            .getByTestId('booking-barber-option')
+            .filter({ hasText: 'Customer E2E Barber' })
+            .click()
+          await page.getByRole('button', { name: bookingDateLabel, exact: true }).click()
+          await page
+            .getByTestId('booking-service-option')
+            .filter({ hasText: 'Customer E2E Cut' })
+            .click()
+          await page.getByRole('button', { name: time, exact: true }).click()
+          const fields = page.getByRole('dialog').locator('input:not([type="hidden"])')
+          assert(
+            (await fields.nth(0).inputValue()) === '' &&
+              (await fields.nth(1).inputValue()) === '' &&
+              (await fields.nth(2).inputValue()) === '',
+            'device or unverified contact prefilled private customer data',
+          )
+          await fields.nth(0).fill(person.name)
+          await fields.nth(1).fill(person.phone)
+          await fields.nth(2).fill(person.email)
+        }
+        // Sequential preparation, simultaneous submit: both tabs start with no receipt cookie.
+        await prepareBooking(receiptPages[0], a, '11:00', true)
+        await prepareBooking(receiptPages[1], a, '11:30', true)
+        assert(
+          !(await receiptContext.cookies()).some(
+            (item) => item.name === '__Host-bladeblend_booking_receipts',
+          ),
+          'fresh context unexpectedly has receipt',
+        )
+        const listFrom = (page) =>
+          page.evaluate(async () =>
+            (
+              await fetch('/api/customer-bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'list' }),
+              })
+            ).json(),
+          )
+        const submitBooking = async (page) => {
+          const response = page.waitForResponse(
+            (r) => new URL(r.url()).pathname === '/api/bookings' && r.request().method() === 'POST',
+          )
+          await page
+            .getByRole('dialog')
+            .getByRole('button', { name: 'Boka tid', exact: true })
+            .click()
+          const body = await (await response).json()
+          assert(body.ok === true, `real booking failed: ${body.error ?? 'invalid result'}`)
+          // Track this fixture's exact IP-attempt rows without truncating unrelated local data.
+          const attempts = await db.query(
+            `select id from public.booking_attempts where created_at = (select created_at from public.bookings where id=$1) and ip_hash=$2`,
+            [body.booking.id, hash('127.0.0.1' + 'ci-booking-ip-salt-not-for-production')],
+          )
+          fixture.attempts.push(...attempts.rows.map((row) => row.id))
+          return body
+        }
+        const receipts = await Promise.all(receiptPages.map(submitBooking))
+        for (const page of receiptPages)
+          await page
+            .getByText('Din bokning finns nu under Mina bokningar på den här enheten.', {
+              exact: true,
+            })
+            .waitFor()
+        const deviceCookie = (await receiptContext.cookies()).find(
+          (item) => item.name === '__Host-bladeblend_booking_receipts',
+        )
+        assert(
+          deviceCookie?.httpOnly &&
+            deviceCookie.secure &&
+            deviceCookie.sameSite === 'Lax' &&
+            deviceCookie.path === '/' &&
+            deviceCookie.domain === '127.0.0.1',
+          'browser rejected/failed to protect optional receipt',
+        )
+        assert(
+          receipts[0].receipt_proof === receipts[1].receipt_proof,
+          'simultaneous first bookings lost their shared collection',
+        )
+        const receiptList = await listFrom(receiptPages[0])
+        assert(
+          receiptList.ok &&
+            receiptList.authority === 'device' &&
+            !('email' in receiptList) &&
+            !('phone' in receiptList) &&
+            !('name' in receiptList),
+          'device receipt became verified identity',
+        )
+        assert(
+          receiptList.bookings.length === 2 &&
+            receipts.every((item) =>
+              receiptList.bookings.some((booking) => booking.id === item.booking.id),
+            ),
+          'receipt omitted a concurrent booking or imported older email history',
+        )
+        await receiptPages[0]
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Mina bokningar', exact: true })
+          .click()
+        await receiptPages[0]
+          .getByText(
+            'Här visas bokningar skapade på den här enheten. Öppna mejllänken för tidigare bokningar.',
+            { exact: true },
+          )
+          .waitFor()
+        assert(
+          (await receiptPages[0].getByRole('button', { name: /Visa detaljer/ }).count()) === 2,
+          'confirmation did not open both new bookings immediately',
+        )
+        const refused = await receiptPages[0].evaluate(
+          async (bookingId) =>
+            (
+              await fetch('/api/customer-bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'cancel', bookingId }),
+              })
+            ).json(),
+          a.booking,
+        )
+        assert(refused.ok === false, 'device receipt cancelled an older booking at the same email')
+        await receiptPages[0]
+          .getByRole('button', { name: /Visa detaljer/ })
+          .first()
+          .click()
+        await receiptPages[0]
+          .getByRole('button', { name: 'Avboka tid', exact: true })
+          .first()
+          .click()
+        const confirmCancel = receiptPages[0].getByRole('button', {
+          name: 'Ja, avboka tid',
+          exact: true,
+        })
+        if (await confirmCancel.isVisible()) await confirmCancel.click()
+        await receiptPages[0].getByText('Tiden är avbokad.', { exact: true }).waitFor()
+        assert(
+          (await listFrom(receiptPages[0])).bookings.length === 1,
+          'device cancellation did not persist',
+        )
+
+        phase(`customer ${engine.name()}: withdrawing optional storage removes only receipt access`)
+        const preferencesPage = await receiptContext.newPage()
+        await preferencesPage.goto(origin, { waitUntil: 'domcontentloaded' })
+        await preferencesPage
+          .getByRole('link', { name: 'Hantera integritetsinställningar', exact: true })
+          .click()
+        await preferencesPage.getByRole('checkbox', { name: /Valfri lagring/ }).uncheck()
+        const forgot = preferencesPage.waitForResponse(
+          (r) =>
+            new URL(r.url()).pathname === '/api/customer-bookings' &&
+            r.request().postDataJSON()?.action === 'forget_device',
+        )
+        await preferencesPage.getByRole('button', { name: 'Spara val', exact: true }).click()
+        await forgot
+        assert(
+          !(await receiptContext.cookies()).some(
+            (item) => item.name === '__Host-bladeblend_booking_receipts',
+          ),
+          'withdrawal retained optional credential',
+        )
+        assert(
+          (await listFrom(preferencesPage)).error === 'access_denied',
+          'withdrawal retained receipt authority',
+        )
+        assert(
+          (
+            await db.query(
+              'select count(*)::int as count from public.bookings where id=any($1::uuid[])',
+              [receipts.map((item) => item.booking.id)],
+            )
+          ).rows[0].count === 2,
+          'withdrawal deleted customer bookings',
+        )
+        await receiptContext.close()
+
+        phase(`customer ${engine.name()}: rejected consent still books without optional cookie`)
+        const rejectedContext = await browser.newContext({
+          ignoreHTTPSErrors: true,
+          reducedMotion: 'reduce',
+        })
+        const rejectedPage = await rejectedContext.newPage()
+        await prepareBooking(rejectedPage, b, '12:00', false)
+        const rejectedBooking = await submitBooking(rejectedPage)
+        await rejectedPage
+          .getByText('Öppna länken i bekräftelsemejlet för att se dina bokningar.', { exact: true })
+          .waitFor()
+        assert(
+          !rejectedBooking.receipt_proof &&
+            !(await rejectedContext.cookies()).some(
+              (item) => item.name === '__Host-bladeblend_booking_receipts',
+            ),
+          'rejected storage issued optional receipt',
+        )
+        assert(
+          (await listFrom(rejectedPage)).error === 'access_denied',
+          'rejected consent authenticated submitted contact',
+        )
+        await rejectedContext.close()
+
         phase(`customer ${engine.name()}: invalid link and rotation revocation`)
         const context = await browser.newContext({ ignoreHTTPSErrors: true })
         const page = await context.newPage()
@@ -1189,7 +1489,7 @@ async function verifyCustomerBrowser() {
         await showHistory(page, a)
         await context.close()
         console.log(
-          `Customer browser passed: ${engine.name()}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation.`,
+          `Customer browser passed: ${engine.name()}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation, concurrent first bookings, consent and device cancellation.`,
         )
       } catch (error) {
         retainFailure(error)
@@ -1221,6 +1521,8 @@ async function verifyCustomerBrowser() {
   } catch (error) {
     retainFailure(error)
   } finally {
+    upstream.closeAllConnections()
+    await new Promise((resolveClose) => upstream.close(resolveClose))
     if (connected) {
       try {
         await cleanupFixture()

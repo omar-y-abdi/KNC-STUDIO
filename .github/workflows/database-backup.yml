@@ -82,6 +82,10 @@ jobs:
             --exclude "storage.vector_indexes"
           npx supabase db dump \
             --db-url "$DATABASE_URL" \
+            --file "$plaintext/history_schema.sql" \
+            --schema supabase_migrations
+          npx supabase db dump \
+            --db-url "$DATABASE_URL" \
             --file "$plaintext/history_data.sql" \
             --use-copy \
             --data-only \

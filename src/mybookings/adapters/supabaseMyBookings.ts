@@ -53,7 +53,11 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
       if (session.failed) return { ok: false, error: 'system' }
       const confirmed = parseWith(listCustomerBookingsResponse, session.data)
       if (!confirmed.ok) return { ok: false, error: 'system' }
-      if (!confirmed.value.ok || confirmed.value.session_proof !== parsed.value.session_proof) {
+      if (
+        !confirmed.value.ok ||
+        confirmed.value.authority !== 'verified' ||
+        confirmed.value.session_proof !== parsed.value.session_proof
+      ) {
         return { ok: false, error: 'cookies_disabled' }
       }
       return { ok: true, accessToken: '' }
@@ -78,11 +82,16 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
 
       // Prove the browser retained the HttpOnly cookie before discarding the email credential.
       if (params.accessToken !== '') {
+        if (parsed.value.authority !== 'verified') return { ok: false, error: 'access_denied' }
         const session = await invokePublicBookingAction({ action: 'list' })
         if (session.failed) return { ok: false, error: 'system' }
         const confirmed = parseWith(listCustomerBookingsResponse, session.data)
         if (!confirmed.ok) return { ok: false, error: 'system' }
-        if (!confirmed.value.ok || confirmed.value.session_proof !== parsed.value.session_proof) {
+        if (
+          !confirmed.value.ok ||
+          confirmed.value.authority !== 'verified' ||
+          confirmed.value.session_proof !== parsed.value.session_proof
+        ) {
           return { ok: false, error: 'cookies_disabled' }
         }
       }
@@ -105,8 +114,12 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
           whenLabel: formatRowLabel(params.lang, stockholmWallClockDate(start), sep),
         })
       }
+      if (parsed.value.authority === 'device') {
+        return { ok: true, authority: 'device', bookings: splitByTime(bookings, new Date()) }
+      }
       return {
         ok: true,
+        authority: 'verified',
         bookings: splitByTime(bookings, new Date()),
         profile: {
           name: parsed.value.name ?? '',

@@ -6,6 +6,8 @@ vi.mock('../../src/backend/config', () => ({
 }))
 
 import { invokePublicBookingAction } from '../../src/backend/publicBookingActions'
+import { supabaseBookingAdapter } from '../../src/booking/adapters/supabaseBooking'
+import { asBarberId, type Booking } from '../../src/booking/domain'
 import {
   customerAccessExchangeResponse,
   customerAccessRequestResponse,
@@ -113,5 +115,162 @@ describe('public booking action gateway client', () => {
         turnstileToken: 'challenge-token',
       }),
     ).resolves.toEqual({ data: null, failed: true })
+  })
+})
+
+describe('booking receipt registration', () => {
+  const bookingId = '4d3f88f7-5e08-4d03-abfa-9604816f5614'
+  const proof = 'a'.repeat(64)
+  const booking: Booking = {
+    barber: { id: asBarberId('receipt-test'), name: 'Receipt Test', ig: '' },
+    service: { id: 'service', name: 'Haircut', price: 300, dur: 30 },
+    start: new Date(2040, 2, 14, 13, 30),
+    end: new Date(2040, 2, 14, 14),
+    customerName: 'Receipt Test',
+    phone: '0701234567',
+    email: 'receipt@example.test',
+    lang: 'sv',
+    turnstileToken: 'challenge',
+  }
+  const row = {
+    id: bookingId,
+    barber_id: 'receipt-test',
+    service_name: 'Haircut',
+    price: 300,
+    duration_min: 30,
+    start_at: '2040-03-14T12:30:00.000Z',
+  }
+  function browser(cookie: string, lock = true): void {
+    vi.stubGlobal('document', { cookie })
+    vi.stubGlobal(
+      'navigator',
+      lock ? { locks: { request: (_name: string, task: () => Promise<unknown>) => task() } } : {},
+    )
+  }
+  function success(receipt = true): Response {
+    return Response.json({
+      ok: true,
+      booking: { id: bookingId },
+      ...(receipt ? { receipt_proof: proof } : {}),
+    })
+  }
+
+  it.each(['', 'bladeblend_storage_preferences=essential'])(
+    'does not automatically remember without accepted storage (%s)',
+    async (cookie) => {
+      browser(cookie)
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => success())
+      vi.stubGlobal('fetch', fetch)
+      expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+        ok: true,
+        customerAccess: 'email',
+      })
+      expect(fetch).toHaveBeenCalledOnce()
+      expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string).rememberBookings).toBe(false)
+    },
+  )
+
+  it('books safely without Web Locks and does not promise receipt retention', async () => {
+    browser('bladeblend_storage_preferences=functional', false)
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => success())
+    vi.stubGlobal('fetch', fetch)
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'email',
+    })
+    expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string).rememberBookings).toBe(false)
+  })
+
+  it('confirms the exact receipt and new booking through the first-party cookie', async () => {
+    browser('bladeblend_storage_preferences=functional')
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(success())
+      .mockResolvedValueOnce(
+        Response.json({
+          ok: true,
+          authority: 'device',
+          session_proof: proof,
+          receipt_proof: proof,
+          bookings: [row],
+        }),
+      )
+    vi.stubGlobal('fetch', fetch)
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'ready',
+    })
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/bookings',
+      expect.objectContaining({ credentials: 'same-origin' }),
+    )
+    expect(JSON.parse(fetch.mock.calls[0]?.[1]?.body as string).rememberBookings).toBe(true)
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/customer-bookings',
+      expect.objectContaining({ body: '{"action":"list"}' }),
+    )
+  })
+
+  it.each([
+    { receipt_proof: 'b'.repeat(64), bookings: [row] },
+    { receipt_proof: proof, bookings: [] },
+    { receipt_proof: undefined, bookings: [row] },
+  ])('does not mistake an old full session for the intended receipt', async (observed) => {
+    browser('bladeblend_storage_preferences=functional')
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(success())
+      .mockResolvedValueOnce(
+        Response.json({
+          ok: true,
+          authority: 'verified',
+          session_proof: proof,
+          phone: '0701234567',
+          ...observed,
+        }),
+      )
+    vi.stubGlobal('fetch', fetch)
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'email',
+    })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves successful booking when receipt setup or proof fails', async () => {
+    browser('bladeblend_storage_preferences=functional')
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(success(false))
+      .mockResolvedValueOnce(success())
+      .mockRejectedValueOnce(new Error('cookie proof offline'))
+    vi.stubGlobal('fetch', fetch)
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'email',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'email',
+    })
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(fetch.mock.calls.filter(([url]) => url === '/api/bookings')).toHaveLength(2)
+  })
+
+  it('falls back before a denied lock without submitting twice', async () => {
+    browser('bladeblend_storage_preferences=functional')
+    vi.stubGlobal('navigator', {
+      locks: { request: () => Promise.reject(new Error('lock denied')) },
+    })
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => success())
+    vi.stubGlobal('fetch', fetch)
+    expect(await supabaseBookingAdapter.submit(booking)).toMatchObject({
+      ok: true,
+      customerAccess: 'email',
+    })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 })

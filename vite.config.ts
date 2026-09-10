@@ -49,6 +49,7 @@ export default defineConfig(({ mode }) => {
   }
   const proxy: Record<string, ProxyOptions> = {
     '^/api/customer-bookings(?:\\?.*)?$': customerGateway,
+    '^/api/bookings(?:\\?.*)?$': customerGateway,
     '^/[0-9a-f]{64}(?:\\?.*)?$': customerGateway,
   }
   // Optional local-only TLS bridge for browsers that reject HTTPS -> HTTP loopback fetches.

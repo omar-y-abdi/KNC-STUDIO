@@ -433,7 +433,9 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const sumPrice = S.service ? S.service.price + ' kr' : ''
 
   const f = S.form
-  const bookDisabled = !(f.name.trim() && f.phone.trim() && f.email.trim())
+  const bookDisabled =
+    !(f.name.trim() && f.phone.trim() && f.email.trim()) ||
+    (turnstileConfigured && turnstileToken === '')
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
@@ -792,7 +794,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           onBackdropClick={onPopupBackdrop}
           turnstile={
             turnstileConfigured ? (
-              <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+              <Turnstile
+                action="booking"
+                lang={lang}
+                onToken={setTurnstileToken}
+                resetNonce={turnstileNonce}
+              />
             ) : null
           }
         />
@@ -804,6 +811,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           s={s}
           closeLabel={myBookingsStrings(lang).ariaClose}
           confirmSentLine={confirmSentLine}
+          {...(result?.ok && result.customerAccess
+            ? {
+                customerAccessNote:
+                  result.customerAccess === 'ready'
+                    ? myBookingsStrings(lang).deviceReady
+                    : myBookingsStrings(lang).deviceUnavailable,
+              }
+            : {})}
           sumBarber={sumBarber}
           sumWhen={sumWhen}
           sumService={sumService}

@@ -1,3 +1,4 @@
+import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 // submit-booking — Supabase Edge Function (Deno) — the public booking GATEWAY (PLAN §3).
 //
 // The browser (anon) no longer calls create_booking directly. It POSTs here. This function:
@@ -16,9 +17,18 @@
 // returns HTTP 200 with { ok:false, error }. Non-2xx is reserved for true faults: a bad JSON body (400)
 // or an unhandled exception (500).
 //
-// Run locally: npx supabase functions serve submit-booking --no-verify-jwt --env-file supabase/functions/.env
+// Run locally: npx supabase functions serve --no-verify-jwt --env-file supabase/functions/.env
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { verifyCustomerGateway } from '../_shared/customerGatewayAuth.ts'
+import { createCustomerAccessToken, hashCustomerAccessToken } from '../_shared/customerAccess.ts'
+import {
+  CUSTOMER_RECEIPT_COOKIE,
+  CUSTOMER_SESSION_COOKIE,
+  customerCookie,
+  customerCookieHeader,
+  customerCookieProof,
+} from '../_shared/customerCookies.ts'
 
 // --- CORS -------------------------------------------------------------------------------------
 
@@ -38,8 +48,6 @@ const IP_WINDOW_SECONDS = 10 * 60 // 10 minutes
 const MAX_PER_PHONE = 5 // max bookings per phone within PHONE_WINDOW_MS
 const PHONE_WINDOW_SECONDS = 24 * 60 * 60 // 24 hours
 
-const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
-
 // --- Types ------------------------------------------------------------------------------------
 
 interface BookingInput {
@@ -53,7 +61,12 @@ interface BookingInput {
 }
 
 type ParseResult =
-  | { readonly ok: true; readonly booking: BookingInput; readonly turnstileToken: string }
+  | {
+      readonly ok: true
+      readonly booking: BookingInput
+      readonly turnstileToken: string
+      readonly rememberBookings: boolean
+    }
   | { readonly ok: false; readonly error: string }
 
 // --- Validation (boundary; never trust the request body) --------------------------------------
@@ -94,6 +107,7 @@ function parseRequest(raw: unknown): ParseResult {
 
   return {
     ok: true,
+    rememberBookings: root.rememberBookings === true,
     turnstileToken: token,
     booking: {
       barberId: r.barberId,
@@ -109,10 +123,15 @@ function parseRequest(raw: unknown): ParseResult {
 
 // --- Helpers ----------------------------------------------------------------------------------
 
-function json(body: unknown, status: number): Response {
+function json(body: unknown, status: number, cookie?: string): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
+    headers: {
+      ...corsHeaders,
+      'content-type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...(cookie ? { 'Set-Cookie': cookie } : {}),
+    },
   })
 }
 
@@ -133,21 +152,6 @@ function clientIp(req: Request): string {
 
 // Turnstile siteverify. Configuration is checked before this helper; missing/invalid tokens and
 // verification failures all fail closed.
-async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
-  if (token === '') return false
-  try {
-    const form = new URLSearchParams()
-    form.set('secret', secret)
-    form.set('response', token)
-    if (ip && ip !== 'unknown') form.set('remoteip', ip)
-    const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: form })
-    const data = (await res.json()) as { success?: boolean }
-    return data.success === true
-  } catch (err) {
-    console.error('submit-booking: Turnstile verify error:', err)
-    return false
-  }
-}
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
@@ -162,8 +166,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   // Parse + validate the body. Bad JSON / wrong shape is a true client fault -> non-2xx.
   let raw: unknown
+  let bodyText: string
   try {
-    raw = await req.json()
+    bodyText = await req.text()
+    raw = JSON.parse(bodyText)
   } catch {
     return json({ ok: false, error: 'invalid_json' }, 400)
   }
@@ -171,7 +177,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!parsed.ok) {
     return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
   }
-  const { booking, turnstileToken } = parsed
+  const { booking, turnstileToken, rememberBookings } = parsed
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -183,10 +189,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
 
-  const ip = clientIp(req)
+  let ip = clientIp(req)
+  let firstParty = false
+  if (req.headers.has('x-customer-gateway-signature') || req.headers.has('x-customer-gateway-ip')) {
+    const forwarded = await verifyCustomerGateway(
+      req,
+      Deno.env.get('CUSTOMER_GATEWAY_SECRET'),
+      bodyText,
+    )
+    if (forwarded === null) return json({ ok: false, error: 'origin_not_allowed' }, 403)
+    ip = forwarded
+    firstParty = true
+  }
 
   // 1. Turnstile — server-side challenge, fail-closed.
-  const challengeOk = await verifyTurnstile(turnstileToken, ip, turnstileSecret)
+  const challengeOk = await verifyTurnstile(
+    turnstileToken,
+    ip,
+    turnstileSecret,
+    turnstilePolicy('booking', Deno.env.get('PUBLIC_SITE_ORIGINS')),
+  )
   if (!challengeOk) {
     return json({ ok: false, error: 'failed_challenge' }, 200)
   }
@@ -213,7 +235,45 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (rpc.error) throw rpc.error
 
-    // The RPC returns the same booking Result plus rate_limited; pass it through unchanged.
+    // Receipt failure can never undo a successful booking or turn it into a failed submit.
+    if (
+      firstParty &&
+      rememberBookings &&
+      rpc.data?.ok === true &&
+      typeof rpc.data.booking?.id === 'string'
+    ) {
+      try {
+        const existing = customerCookie(req, CUSTOMER_RECEIPT_COOKIE)
+        const session = customerCookie(req, CUSTOMER_SESSION_COOKIE)
+        const candidate = createCustomerAccessToken()
+        const receipt = await supabase.rpc('append_customer_booking_receipt', {
+          p_booking_id: rpc.data.booking.id,
+          p_existing_hash: existing === null ? null : await hashCustomerAccessToken(existing),
+          p_new_hash: await hashCustomerAccessToken(candidate),
+          p_session_hash: session === null ? null : await hashCustomerAccessToken(session),
+        })
+        if (
+          !receipt.error &&
+          typeof receipt.data?.existing === 'boolean' &&
+          Number.isInteger(receipt.data.max_age) &&
+          receipt.data.max_age > 0 &&
+          receipt.data.max_age <= 2592000
+        ) {
+          const token = receipt.data.existing && existing !== null ? existing : candidate
+          return json(
+            { ...rpc.data, receipt_proof: await customerCookieProof(token, 'receipt') },
+            200,
+            customerCookieHeader(CUSTOMER_RECEIPT_COOKIE, token, receipt.data.max_age),
+          )
+        }
+        console.error(
+          'submit-booking: receipt unavailable',
+          receipt.error?.code ?? 'invalid_result',
+        )
+      } catch {
+        console.error('submit-booking: receipt unavailable')
+      }
+    }
     return json(rpc.data, 200)
   } catch (err) {
     console.error('submit-booking: unhandled error:', err)

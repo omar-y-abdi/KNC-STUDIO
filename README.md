@@ -22,7 +22,7 @@ npm run preview    # serve the built dist/ locally
 ### Local customer links and cookies
 
 Vite serves the UI. Customer history needs the real Worker and Edge Function too. Both `dev` and
-`preview` proxy `/api/customer-bookings` and 64-character customer root links to the loopback Worker
+`preview` proxy `/api/bookings`, `/api/customer-bookings` and 64-character customer root links to the loopback Worker
 at `http://127.0.0.1:8787`. Override with `CUSTOMER_GATEWAY_PROXY_URL`; external origins are rejected.
 Host/Origin remain the browser's values so the Worker still enforces same-origin requests.
 
@@ -34,6 +34,7 @@ cat > supabase/functions/.env <<'EOF'
 TURNSTILE_SECRET=1x0000000000000000000000000000000AA
 PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
 CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+IP_SALT=ci-booking-ip-salt-not-for-production
 PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
 PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EOF
@@ -188,7 +189,11 @@ app, and the browser uses same-origin `/api/customer-bookings`; the Worker signs
 and body with `CUSTOMER_GATEWAY_SECRET` before forwarding to the Edge gateway. Valid access receives a
 first-party HttpOnly `SameSite=Lax` session cookie. The browser never stores the token in
 `sessionStorage`/`localStorage`, and no phone-memory cookie authorizes access. Current local code does not
-change production until the Worker secret and matching Edge secret are deployed together.
+change production until deployed. Optional functional storage adds a separate, server-issued receipt
+for newly created booking IDs only. It does not authenticate the entered contact or expand into old
+history. Rejecting/withdrawing optional storage preserves the essential email-link session.
+
+Current release order and rollback: [customer device access](docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md).
 
 ---
 

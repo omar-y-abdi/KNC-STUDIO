@@ -111,20 +111,25 @@
         e-postadress. Länken har ingen tidsgräns, men en ny begäran om länk för samma e-postadress
         ersätter och återkallar den tidigare länken. När en giltig länk har öppnats utfärdar servern
         en nödvändig, ogenomskinlig HttpOnly- och Secure-cookie för en tidsbegränsad session. Den
-        innehåller inga personuppgifter eller bokningstoken och kan inte läsas av JavaScript.
+        innehåller inte namn, telefonnummer, mejladress eller mejllänkens token och kan inte läsas
+        av JavaScript.
       </p>
 
       <h2>Cookies och annan webblagring</h2>
       <p id="webblagring">
-        Webbplatsen använder inga analys- eller annonscookies och sparar inga telefonnummer. Valfri
-        lagring gäller endast ditt val i denna kontroll. Efter giltig e-postlänk används en
-        nödvändig HttpOnly-sessioncookie; om cookies är avstängda kan Mina bokningar inte logga in
-        automatiskt.
+        Webbplatsen använder inga analys- eller annonscookies. Ditt lagringsval sparas i upp till
+        ett år. Om du godkänner valfri lagring får den här enheten en säker HttpOnly-cookie som ger
+        åtkomst till nya bokningar du gör här. Den innehåller inga kontaktuppgifter och gäller i
+        högst 30 dagar. Den ger inte åtkomst till äldre bokningar genom inskrivet mejl eller
+        telefon. Du kan återkalla valet via Integritet på startsidan eller länken längst ned i Om
+        oss. Då tas enhetsåtkomsten bort, medan bokningarna finns kvar.
       </p>
       <p>
-        Sessionen upphör och kan återkallas på servern. Kundens namn, telefon, e-post och tidigare
-        bokningsuppgifter hämtas från servern för autofyllning efter autentisering. Ingen PII eller
-        token lagras i webbläsarens localStorage, sessionStorage eller document.cookie.
+        Efter giltig e-postlänk används en separat, nödvändig HttpOnly-sessioncookie i högst 30
+        dagar. Kundens namn, telefon, e-post och tidigare bokningsuppgifter hämtas från servern
+        efter autentisering. Inga kunduppgifter eller åtkomstbevis sparas i localStorage eller
+        sessionStorage, och JavaScript kan inte läsa åtkomstcookies. Om webbläsaren blockerar
+        cookies kan den säkra inloggningen inte sparas.
       </p>
 
       <h2>Publika formulär och bot-skydd (Cloudflare Turnstile)</h2>
@@ -234,20 +239,26 @@
           My appointments uses a secure, email-scoped access link sent to the email address on the
           booking. The link has no time limit, but a new link request for the same email address
           replaces and revokes the previous link. After a valid link is opened, the server sets a
-          necessary opaque HttpOnly and Secure session cookie. It contains no PII or booking token;
-          cookies disabled means automatic sign-in is unavailable. The server expires and can revoke
-          the session and resolves prior contact and booking details for booking-flow convenience.
+          necessary opaque HttpOnly and Secure session cookie. It contains no name, phone number,
+          email address or email-link token; cookies disabled means automatic sign-in is
+          unavailable. The server expires and can revoke the session and resolves prior contact and
+          booking details for booking-flow convenience.
         </p>
 
         <h2>Cookies and other browser storage</h2>
         <p id="browser-storage">
-          This website does not use analytics or advertising cookies and does not save optional
-          cookies on your device. The necessary session cookie is used only after a valid email
-          link.
+          This website uses no analytics or advertising cookies. Your storage choice is remembered
+          for up to one year. With functional storage enabled, a secure HttpOnly cookie gives this
+          device access to new bookings created here for up to 30 days. It contains no contact
+          details and does not grant earlier history based on entered email or phone. You can
+          withdraw your choice through Privacy on the home page or the link at the bottom of About.
+          Withdrawal removes device access while preserving your bookings.
         </p>
         <p>
-          No authorization PII or token is stored in localStorage, sessionStorage, or
-          document.cookie.
+          A valid email link establishes a separate, necessary HttpOnly session for up to 30 days.
+          No customer contact data or access credentials are stored in localStorage or
+          sessionStorage; JavaScript cannot read the access cookies. Blocking browser cookies
+          prevents the secure sign-in from being saved.
         </p>
 
         <h2>Public forms and bot protection (Cloudflare Turnstile)</h2>

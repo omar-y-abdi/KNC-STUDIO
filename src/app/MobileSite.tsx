@@ -13,6 +13,8 @@ import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HomepageLogo } from '../site/HomepageLogo'
+import { PrivacyManageButton } from '../site/PrivacyBanner'
+import type { PrivacyControls } from '../site/usePrivacyPreferences'
 import type { AppStrings, Lang } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
@@ -62,6 +64,8 @@ export interface MobileSiteProps {
   /** Owner-edited policy + confirmation title shown in the booking popups. */
   readonly bookingPopupText: BookingPopupText
   readonly initialContact?: CustomerProfile
+  readonly privacy?: PrivacyControls
+  readonly onManagePrivacy?: () => void
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
@@ -71,13 +75,19 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   // container advances, exposing the always-mounted About section below.
   const inSection = view === 'booking'
   const scrollRoot = useRef<HTMLDivElement>(null)
+  const privacyOpen =
+    props.privacy !== undefined && (props.privacy.preferences === null || props.privacy.expanded)
   const [collapse, setCollapse] = useState(0)
   const scrollFrame = useRef<number | null>(null)
-  const collapseLimit = (): number => Math.max(0, (scrollRoot.current?.clientHeight ?? 0) - 112)
+  const collapseLimit = (): number => Math.max(0, window.innerHeight - 112)
   const compactPanel = inSection || collapse > 0
   const syncCollapse = (): void => {
     if (inSection) return
-    const next = Math.min(collapseLimit(), Math.max(0, scrollRoot.current?.scrollTop ?? 0))
+    const limit = collapseLimit()
+    const scrolled = Math.max(0, scrollRoot.current?.scrollTop ?? 0)
+    // Leave the whole hero scrollable above an open privacy panel, then retain the normal
+    // compact navigation once About begins. The spacer preserves the document position.
+    const next = privacyOpen ? (scrolled >= limit ? limit : 0) : Math.min(limit, scrolled)
     setCollapse((current) => (current === next ? current : next))
   }
   const onScroll = (): void => {
@@ -100,11 +110,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         scrollFrame.current = null
       }
     }
-  }, [inSection])
+  }, [inSection, privacyOpen])
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
+  const heroOpacity = inSection
+    ? 0
+    : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -174,8 +187,10 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
     // the screen's TRUE vertical centre instead of the centre of the area below the top row.
     padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
-    opacity: inSection ? 0 : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45)),
-    pointerEvents: inSection || collapse > 24 ? 'none' : 'auto',
+    opacity: heroOpacity,
+    // Visible controls remain usable throughout the fade. Disabling at 24px left almost opaque
+    // buttons untappable when a browser restored scroll/focus after closing the privacy notice.
+    pointerEvents: heroOpacity === 0 ? 'none' : 'auto',
     transition: inSection ? 'opacity .34s ease' : undefined,
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
@@ -227,7 +242,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         position: 'relative',
         // Fixed viewport scroll container. Home keeps the full hero in normal flow while its sticky
         // panel compresses with scroll; booking starts with the compact panel and replaces About.
-        height: '100dvh',
+        height: 'calc(100dvh - var(--privacy-overlay-space, 0px))',
         overflowX: 'hidden',
         overflowY: 'auto',
         background: c.bg,
@@ -239,7 +254,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       onScroll={onScroll}
       data-testid="mobile-site-scroll"
     >
-      <div style={{ ...foldingPanelStyle, position: 'sticky', top: 0, zIndex: 10 }}>
+      <div
+        style={{
+          ...foldingPanelStyle,
+          position: privacyOpen && !compactPanel ? 'relative' : 'sticky',
+          top: 0,
+          zIndex: 10,
+        }}
+      >
         <div style={panelTopStyle}>
           <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}></div>
           <div
@@ -304,7 +326,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           <CornerMark height={26} />
         </div>
 
-        <div style={heroExtrasStyle}>
+        <div style={heroExtrasStyle} inert={heroOpacity === 0}>
           <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
             <HomepageLogo
               logo={props.homepageLogo}
@@ -337,6 +359,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             onOpenCancel={props.openCancel}
             marginTop="16px"
           />
+          {!inSection && props.privacy !== undefined ? (
+            <PrivacyManageButton lang={props.lang} dark={dark} controls={props.privacy} />
+          ) : null}
           <div style={infoBlockStyle}>
             <div
               style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}
@@ -431,6 +456,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             mode={props.mode}
             lang={props.lang}
             fontScale={props.aboutScale}
+            {...(props.onManagePrivacy === undefined
+              ? {}
+              : { onManagePrivacy: props.onManagePrivacy })}
             {...(props.initialContact === undefined
               ? {}
               : { customerPhone: props.initialContact.phone })}

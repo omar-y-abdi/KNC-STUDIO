@@ -1,6 +1,7 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './config'
 
 export type PublicBookingActionPayload =
+  | { readonly action: 'forget_device' }
   | {
       readonly action: 'request_access'
       readonly email: string
@@ -34,6 +35,7 @@ export async function invokePublicBookingAction(
     const response = await globalThis.fetch('/api/customer-bookings', {
       method: 'POST',
       credentials: 'same-origin',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         'Content-Type': 'application/json',
       },
