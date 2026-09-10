@@ -3,7 +3,6 @@ import { useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { privacyStrings } from '../i18n/index'
 import {
-  clearFunctionalStorage,
   readStoragePreferences,
   saveStoragePreferences,
   type StoragePreferences,
@@ -27,7 +26,6 @@ export function PrivacyBanner({ lang, dark }: PrivacyBannerProps): JSX.Element {
 
   const save = (next: StoragePreferences): void => {
     saveStoragePreferences(next)
-    if (!next.functional) clearFunctionalStorage()
     setSaved(next)
     setShowPreferences(false)
   }

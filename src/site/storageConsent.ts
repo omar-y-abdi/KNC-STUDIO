@@ -53,12 +53,3 @@ export function saveStoragePreferences(preferences: StoragePreferences): void {
     // Cookies may be disabled; in that case no optional data is retained.
   }
 }
-
-export function functionalStorageAllowed(): boolean {
-  return readStoragePreferences()?.functional === true
-}
-
-export function clearFunctionalStorage(): void {
-  // There is no optional customer-data cookie to clear. The preference cookie remains so the
-  // visible privacy control can reflect the visitor's choice.
-}
