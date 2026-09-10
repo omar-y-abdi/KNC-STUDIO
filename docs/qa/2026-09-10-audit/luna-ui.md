@@ -1,7 +1,9 @@
 # Publik UI-audit — Luna Max
 
-Datum: 2026-09-10  
-Branch: `codex/fix-unnoticed-issues`  
+Datum: 2026-09-10
+
+Branch: `codex/fix-unnoticed-issues`
+
 Baslinje: `88ab39a` (`origin/main` efter fast-forward)
 
 Caveman status: hittade 4 riktiga UI-fel. 4 fixade lokalt i tilldelade filer. PrivacyBanner-layout väntar produktbeslut. PM:s kundlänk/sessionfix ligger separat.

@@ -1,7 +1,9 @@
 # Luna Max — hygien- och Ponytail-audit
 
-Datum: 2026-09-10  
-Branch: `codex/fix-unnoticed-issues`  
+Datum: 2026-09-10
+
+Branch: `codex/fix-unnoticed-issues`
+
 Ägare: Luna Max (hygien/docs)
 
 ## Omfattning
