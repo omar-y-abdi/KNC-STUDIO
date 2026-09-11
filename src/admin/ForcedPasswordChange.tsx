@@ -5,7 +5,7 @@
 // Flow: new + confirm inputs → `validateNewPassword(next, confirm)`
 //   → `setOwnPasswordKeepSession(next)` (keeps session — barber lands in the panel, not /login)
 //   → `clearMustChangePassword()` (clears the flag via the SECURITY DEFINER RPC)
-//   → `props.onDone()` (parent flips the gate to `authed`).
+//   → `props.onDone()` (parent revalidates the authoritative profile before opening the panel).
 //
 // A sign-out affordance is present if the barber wants to exit instead.
 
@@ -23,7 +23,7 @@ import { useTheme } from './useTheme'
 export interface ForcedPasswordChangeProps {
   /** The active UI language (threaded from AdminApp — `useTheme` is per-instance). */
   readonly lang: Lang
-  /** Called after the password is changed and the flag is cleared — parent enters the panel. */
+  /** Called after both writes; parent revalidates the profile before entering the panel. */
   readonly onDone: () => void
   /** Called if the barber chooses to sign out instead of completing the change. */
   readonly onSignOut: () => void
@@ -44,9 +44,13 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
   const [confirm, setConfirm] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const nextRef = useRef<HTMLInputElement>(null)
+  const active = useRef(true)
 
   useEffect(() => {
     nextRef.current?.focus()
+    return () => {
+      active.current = false
+    }
   }, [])
 
   const onSubmit = async (e: JSX.TargetedEvent<HTMLFormElement>): Promise<void> => {
@@ -63,6 +67,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
 
     // Step 1: update the password (stay signed in).
     const pwResult = await setOwnPasswordKeepSession(next)
+    if (!active.current) return
     if (!pwResult.ok) {
       setStatus({ kind: 'error', message: pwResult.error.message })
       return
@@ -70,6 +75,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
 
     // Step 2: clear the forced-change flag in the DB.
     const clearResult = await clearMustChangePassword()
+    if (!active.current) return
     if (!clearResult.ok) {
       // The password was changed but the flag is still set — the gate will show again on next
       // login, but the barber can now use their new password. Surface a soft message.
@@ -77,7 +83,7 @@ export function ForcedPasswordChange(props: ForcedPasswordChangeProps): JSX.Elem
       return
     }
 
-    // Both steps succeeded — enter the panel.
+    // Both steps succeeded — revalidate before entering the panel.
     props.onDone()
   }
 

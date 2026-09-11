@@ -16,6 +16,7 @@ export interface ConfirmationDialogProps {
   readonly s: BookingStyles
   readonly closeLabel: string
   readonly confirmSentLine: string
+  readonly customerAccessNote?: string
   readonly sumBarber: string
   readonly sumWhen: string
   readonly sumService: string
@@ -61,6 +62,13 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
         <div style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto;">
           {props.confirmSentLine}
         </div>
+        {props.customerAccessNote ? (
+          <p
+            style={{ fontSize: '13px', lineHeight: 1.45, margin: '12px auto 0', maxWidth: '300px' }}
+          >
+            {props.customerAccessNote}
+          </p>
+        ) : null}
       </div>
       <div style={s.confirmSummaryStyle}>
         <div style="display:flex;justify-content:space-between;font-size:14px;">

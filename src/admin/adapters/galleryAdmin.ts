@@ -7,12 +7,12 @@ import {
 } from '../adminSchemas'
 import type { AdminResult, GalleryImage, GalleryKind } from '../types'
 import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
 
 const BUCKET = 'gallery'
 const READ_ERROR = 'Kunde inte läsa galleriet.'
 const WRITE_ERROR = 'Kunde inte ladda upp bilden. Försök igen.'
 const DELETE_ERROR = 'Kunde inte ta bort bilden. Försök igen.'
-const AUTH_ERROR = 'Din session har gått ut. Logga in igen.'
 const VALIDATION_ERROR = 'Bilden uppfyller inte kraven.'
 const FORBIDDEN_ERROR = 'Endast ägaren kan ladda upp bilder.'
 
@@ -32,17 +32,6 @@ function toImage(
     sortOrder: row.sort_order,
     url,
   }
-}
-
-function uploadError<T>(error: unknown): AdminResult<T> {
-  const status =
-    typeof error === 'object' && error !== null && 'context' in error
-      ? (error as { context?: { status?: unknown } }).context?.status
-      : undefined
-  if (status === 401) return err('auth', AUTH_ERROR)
-  if (status === 403) return err('forbidden', FORBIDDEN_ERROR)
-  if (status === 400 || status === 413 || status === 422) return err('validation', VALIDATION_ERROR)
-  return err('network', WRITE_ERROR)
 }
 
 export async function listGallery(
@@ -79,7 +68,12 @@ export async function uploadImage(
 
   try {
     const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
-    if (error !== null) return uploadError(error)
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: WRITE_ERROR,
+        forbidden: FORBIDDEN_ERROR,
+        validation: VALIDATION_ERROR,
+      })
 
     const parsed = parseWith(uploadGalleryImageResponse, data)
     if (!parsed.ok) return err('malformed', WRITE_ERROR)
@@ -101,7 +95,12 @@ export async function deleteImage(
         storagePath: image.storagePath,
       },
     })
-    if (error !== null && data === null) return err('network', DELETE_ERROR)
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: DELETE_ERROR,
+        forbidden: 'Endast ägaren kan ta bort bilder.',
+        validation: 'Bilden kunde inte tas bort. Ladda om sidan.',
+      })
     const parsed = parseWith(imageDeleteResponse, data)
     if (!parsed.ok) return err('malformed', DELETE_ERROR)
     return ok({ pending: parsed.value.pending })

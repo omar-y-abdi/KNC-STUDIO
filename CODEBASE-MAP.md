@@ -190,6 +190,10 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | State                      | Public UI state is ephemeral in `App.tsx`; no public persisted auth state.                                                                                                                                                                                                                                                                 |
 | Verify                     | `tests/unit/workerRoutes.test.ts`, `lazySurface.test.ts`, `performanceLifecycle.test.ts`; `npm run test:e2e`; visual regression.                                                                                                                                                                                                           |
 
+**Consent:** initial Godkänn/Avvisa and opened preferences are fixed at the viewport bottom across
+sections on both desktop/mobile. After choosing, only the hero has the small reopen control; About
+has a footer link. `usePrivacyPreferences.ts` owns shared state through layout changes.
+
 ### 5.2 Public adapter selection / dual runtime
 
 | Axis                   | Map                                                                                                                                                                                                                                                                                                                            |
@@ -208,12 +212,25 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | UI/files                    | `src/booking/BookingFlow.tsx`; `src/booking/DetailsDialog.tsx`; `src/booking/ConfirmationDialog.tsx`; `src/booking/validation.ts`; `src/booking/Turnstile.tsx`; `src/booking/adapters/supabaseBooking.ts`; `src/booking/stockholmTime.ts`; mock `src/booking/adapters/localCalendar.ts` / `src/booking/slotPacking.ts`.                                                                                                                     |
 | Catalog read                | `App` idle-preloads `supabaseBookingCatalog.ts` → one `public_booking_catalog()` RPC → active barbers, photo paths, active services, and each service's canonical `available_weekdays`. Roster/service adapters share the TTL/in-flight cache; consumer-owned Realtime starts only while listeners exist, waits for Postgres Changes readiness, then refreshes to close missed-edit gaps. No named barber/service frontend fallback exists. |
 | Live read                   | `BookingFlow` filters catalog services by selected local date, then `BookingPort.availability()` → `supabaseBookingAdapter.availability()` → `available_slots_for_service(barber_id,date,service_id)` → `available_slots()` → active barber + working schedule + time off + one-off/recurring breaks + confirmed bookings → ascending `HH:MM`.                                                                                              |
-| Submit                      | `BookingFlow` → `supabaseBooking.ts` → `functions.invoke('submit-booking')` → parse/normalize → Turnstile → SHA-256(trusted `cf-connecting-ip` + `IP_SALT`) → `create_booking_with_limits()` → `create_booking()` → `bookings`.                                                                                                                                                                                                             |
-| Write authority             | `create_booking_with_limits()` migration: `supabase/migrations/20260813115437_transactional_availability_mutations.sql`; availability hardening: `supabase/migrations/20260824074813_recurring_service_availability.sql`. `src/backend/publicBookingActions.ts` is **not** on submit path.                                                                                                                                                  |
+| Submit                      | `BookingFlow` → `supabaseBooking.ts` → same-origin `/api/bookings` → signed Worker relay → `submit-booking` → parse/normalize → Turnstile → SHA-256(trusted `cf-connecting-ip` + `IP_SALT`) → `create_booking_with_limits()` → `create_booking()` → `bookings`.                                                                                                                                                                             |
+| Write authority             | `create_booking_with_limits()` migration: `supabase/migrations/20260813115437_transactional_availability_mutations.sql`; availability hardening: `supabase/migrations/20260824074813_recurring_service_availability.sql`. `src/backend/publicBookingActions.ts` proves the optional receipt after the successful submit.                                                                                                                    |
 | DB guarantees               | `create_booking_with_limits`: advisory locks on IP/phone scopes; IP ledger `booking_attempts`; phone count from recent `bookings`. `create_booking`: re-resolve active service + weekday, 15-min grid, schedule/time-off/one-off/recurring-break validation, barber availability advisory lock, insert; GiST exclusion rejects confirmed overlap.                                                                                           |
 | Commercial/time constraints | Client price/duration/service name are not authority. Selected wall clock is anchored with `localWallClockToStockholmIso()`; DB uses `Europe/Stockholm`.                                                                                                                                                                                                                                                                                    |
 | On insert                   | email job trigger; optional reminder row; `booking_calendar_sync_on_change` durable Calendar trigger. Browser shows confirmation + ICS/Google Calendar link.                                                                                                                                                                                                                                                                                |
 | Verify                      | `slotPacking.test.ts` only for mock; `stockholmTime.test.ts`; `tests/integration/booking.test.ts`; `supabase/tests/11_booking_gateway_db_test.sql`, `32_transactional_availability_test.sql`, `34_public_booking_gateway_contract_test.sql`; `tests/unit/bookingLinks.test.ts`.                                                                                                                                                             |
+
+**Device access:** `src/mybookings/customerDeviceLock.ts` serializes submit/probe/withdrawal through
+one browser Web Lock. `20260910214200_customer_device_booking_receipts.sql` owns hashed receipt
+credentials, exact booking-ID grants, fixed expiry, authorized list/cancel, and revocation. A verified
+email session only imports grants bound to that verified email; device authority never returns a
+verified profile or grants review/linking rights. `_shared/customerCookies.ts` owns the two allowed
+cookie names and non-bearer proofs. Worker forwards separate `getSetCookie()` values, filtering out
+provider cookies such as `__cf_bm`; never join Set-Cookie headers.
+
+**Challenge:** `_shared/turnstile.ts` is the shared verifier for booking, customer-link request, review
+and recovery. Exact configured hostname/action, token length, HTTP success, and8s deadline. Official
+test credentials work only with all-loopback configured hosts. `Turnstile.tsx` retries failed script
+loads and recreates expired widgets; booking submit waits for a token. See current release runbook.
 
 `BookingFlow.onRosterReady` reports actual initial catalog resolution to `DesktopSite`. The reveal may show loading content, but final geometry settlement waits for roster readiness; later layout changes do not restart that reveal. Booking and review auto-fill replace/clear untouched previous-profile values while preserving explicit typed edits, including empty strings.
 
@@ -261,6 +278,11 @@ Each block answers: **entry → invocation → authority/state → side effects 
 | Mutations       | `admin_create_booking()` manual phone/walk-in + transactional availability; `admin_cancel_booking()`; `admin_delete_bookings()` selected history; `admin_purge_history()` owner-only. |
 | Authority/state | `bookings`; server RPC authorization/availability for writes.                                                                                                                         |
 | Verify          | `bookingsSections.test.ts`, `weekOfYear.test.ts`, `deleteAdapters.test.ts`, admin integration, pgTAP admin booking/delete.                                                            |
+
+**Admin session:** `useAdminSession.ts` owns server role/enabled checks, focus/visibility refresh,
+confirmed-revocation clearing, and transient failure handling. `adminClient.ts` binds data requests to
+the accepted principal; `auth.ts` isolates password verification/update from the main persisted client.
+`adapters/mediaGateway.ts` centralizes upload/delete status mapping.
 
 **Pending admin operations:** `src/admin/orderedOperations.ts` orders reads/writes for the same resource beyond view target changes and remounts. Services/photo use per-barber keys; gallery uses per-kind keys; site settings share one key; booking mutations/readbacks share one key because owner purge/all-bookings overlap barber views. A returning view reads after its earlier write commits before exposing mutable controls. This is ordering inside one browser page, not cross-browser conflict control. DB authorization and existing media CAS remain authoritative. The affected views expose typed adapter ports for the in-memory commit-order browser harness.
 
@@ -799,7 +821,7 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | Cloudflare dry run | `npm run deploy:dry-run`                     | build + Wrangler deployment validation                                                                                               |
 | Live smoke         | `node tools/smoke-live.mjs`                  | live Supabase availability/gateway/security; **not** full Worker metadata validation                                                 |
 
-`npm run test:e2e -- --customer` additionally runs the actual HTTPS Worker → Edge → DB in Chromium, Firefox and WebKit. The existing smoke script owns temporary TLS/build/server lifecycle and isolated fixtures. It rejects remote stack URLs; only blocked-cookie acceptance is intercepted, with real backend responses. It proves successful profile hydration/customer switching, cookie acceptance/denial, invalid links and rotation.
+`npm run test:e2e -- --customer` additionally runs the actual HTTPS Worker → Edge → DB in Chromium, Firefox and WebKit. The existing smoke script owns temporary TLS/build/server lifecycle and isolated fixtures. It rejects remote stack URLs; only blocked-cookie acceptance is intercepted, with real backend responses. It proves successful profile hydration/customer switching, cookie acceptance/denial, invalid links, rotation, concurrent first bookings, optional receipt scope, withdrawal and cancellation.
 
 ### 8.2 Integration test constraints
 
@@ -934,7 +956,7 @@ Search for the **old hostname** before declaring complete.
 | Availability            | `create_booking`, `available_slots`, GiST, transactional availability migrations, `stockholmTime.ts`; client-only fixes are insufficient.                                                                                                                                                                                                   |
 | RLS/grants              | Later migrations revoke earlier direct writes; always inspect final effective state.                                                                                                                                                                                                                                                        |
 | Email                   | Two booking-email ledgers + separate cron dispatchers; both depend on Vault URL/secret + `WEBHOOK_SECRET` parity.                                                                                                                                                                                                                           |
-| Calendar                | Insert/update requires external webhook; deletion/disconnect requires outbox. Diagnose the right path.                                                                                                                                                                                                                                      |
+| Calendar                | Create/update/delete/disconnect use the durable outbox. Legacy `calendar-sync` is not a DB dependency; remove deployed function only after live replacement checks.                                                                                                                                                                         |
 | Media deletion          | Keep server + outbox ownership; no direct browser delete shortcuts. Homepage logo replacement/removal is `upload-image` → `site_settings.homepage_logo_path` → durable gallery cleanup.                                                                                                                                                     |
 | Admin account lifecycle | Keep `profiles.account_enabled`, Auth ban/delete state, and durable actions coherent.                                                                                                                                                                                                                                                       |
 | Migrations              | Migrations only. Production booking gateway uses staged expand/deploy/switch/verify/contract, not unrestricted `db push`.                                                                                                                                                                                                                   |
@@ -1001,11 +1023,11 @@ Scheduled workflow: daily `02:17 UTC`; dumps schema/data/migration history; expo
 Restore authority: `docs/operations/BACKUP_RESTORE.md`. Procedure targets a **newly-created Supabase project only**, never an existing environment:
 
 1. Restore `schema.sql` + `data.sql` in one transaction with `session_replication_role = replica`. Backup includes Auth users but excludes Storage metadata; managed roles/project/dashboard config come from new target and are not restored.
-2. Run `tools/backup/prepare-migration-history.sql` **before** `history_data.sql`; it creates the `supabase_migrations` schema/tables if needed and truncates history tables so captured lineage loads cleanly.
+2. In one transaction, run `tools/backup/prepare-migration-history.sql`, `history_schema.sql`, then `history_data.sql`. The preparation removes only the disposable target's migration schema; the archived source defines every lineage column and constraint, independent of target CLI version.
 3. Restore Storage bucket metadata and bytes with `tools/backup/storage-restore.sh`, then `--verify-only` for byte count/SHA-256/inventory parity. The reference snapshot includes gallery, barber-photo, and `site_settings.homepage_logo_path` bytes.
 4. Reconfigure Auth URLs/SMTP, Edge secrets, cron, Database Webhooks, Google/Resend/Cloudflare, and other provider/project state separately.
 
-`verify-backup-tree.sh` asserts `data.sql` contains `auth.users` but no Storage metadata; `history_data.sql` contains `supabase_migrations.schema_migrations`; Storage archive metadata and bytes are checksummed separately.
+`verify-backup-tree.sh` asserts `data.sql` contains `auth.users` but no Storage metadata; both history files contain `supabase_migrations.schema_migrations`; Storage archive metadata and bytes are checksummed separately. Keep cron/external dispatch disabled during restore drills.
 
 ---
 

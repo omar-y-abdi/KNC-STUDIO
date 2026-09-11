@@ -1,5 +1,5 @@
 begin;
-select plan(35);
+select plan(67);
 
 select ok(
   not has_table_privilege('anon', 'public.customer_booking_access_tokens', 'select'),
@@ -275,6 +275,66 @@ select is(
   'successful ciphertext repair invalidates previous sessions'
 );
 reset role;
+
+select ok(not has_table_privilege('anon','public.customer_booking_receipts','select'), 'device receipt secrets are not public');
+select ok(not has_table_privilege('service_role','public.customer_booking_receipt_bookings','select'), 'receipt grants use narrow RPCs');
+select ok(not has_function_privilege('service_role','public.customer_device_booking_ids(text,text)','execute'), 'internal receipt predicate cannot be called directly');
+select ok(not has_function_privilege('anon','public.append_customer_booking_receipt(uuid,text,text,text)','execute'), 'public callers cannot manufacture receipt grants');
+
+insert into public.barbers(id,name) values('device-receipt','Device receipt');
+insert into public.bookings(id,barber_id,service_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status)
+values
+('3a000000-0000-4000-8000-000000000001','device-receipt','s','Old A',100,30,'2099-04-01 10:00Z','2099-04-01 10:30Z','A old','email','0704100001','receipt-a@example.test','sv','confirmed'),
+('3a000000-0000-4000-8000-000000000002','device-receipt','s','New A',100,30,'2099-04-02 10:00Z','2099-04-02 10:30Z','A new','email','0704100002','receipt-a@example.test','sv','confirmed'),
+('3a000000-0000-4000-8000-000000000003','device-receipt','s','Other B',100,30,'2099-04-03 10:00Z','2099-04-03 10:30Z','B','email','0704100002','receipt-b@example.test','sv','confirmed'),
+('3a000000-0000-4000-8000-000000000004','device-receipt','s','Guest X',100,30,'2099-04-04 10:00Z','2099-04-04 10:30Z','X','email','0704100003','receipt-x@example.test','sv','confirmed');
+insert into public.customer_booking_access_sessions(phone,email,token_hash,expires_at) values
+('0704100002','receipt-a@example.test',repeat('1a',32),now()+interval '1 day'),
+('0704100002','receipt-a@example.test',repeat('2a',32),now()+interval '1 day'),
+('0704100002','receipt-b@example.test',repeat('1b',32),now()+interval '1 day');
+
+set local role service_role;
+select is(public.append_customer_booking_receipt('3a000000-0000-4000-8000-000000000002',null,repeat('1c',32),null)->>'existing','false','first successful booking creates its own receipt');
+select is(public.list_customer_bookings_for_browser(null,repeat('1c',32))->>'authority','device','anonymous receipt has explicit device authority');
+select ok(not (public.list_customer_bookings_for_browser(null,repeat('1c',32)) ? 'phone'), 'device receipt does not return a verified contact profile');
+select is(jsonb_path_query_array(public.list_customer_bookings_for_browser(null,repeat('1c',32)), '$.bookings[*].id'), '["3a000000-0000-4000-8000-000000000002"]'::jsonb, 'same email never expands receipt to older bookings');
+select is((select count(*)::int from public.customer_booking_access_scope(repeat('1c',32))),0,'receipt does not become full email authority');
+select is(public.create_review_with_access(repeat('1c',32),'0704100002',5,'No proof')->>'error','no_booking','receipt cannot authorize a review');
+select is(public.cancel_customer_booking_for_browser('3a000000-0000-4000-8000-000000000001',null,repeat('1c',32))->>'error','not_found','receipt cannot cancel older booking at the same email');
+select is(public.cancel_customer_booking_for_browser('3a000000-0000-4000-8000-000000000003',null,repeat('1c',32))->>'error','not_found','shared phone does not let a receipt cancel another customer');
+select is(public.append_customer_booking_receipt('3a000000-0000-4000-8000-000000000002',repeat('1c',32),repeat('2c',32),null)->>'existing','true','repeated registration keeps the existing live collection');
+reset role;
+select is((select count(*)::int from public.customer_booking_receipt_bookings where receipt_hash=repeat('1c',32)),1,'duplicate append does not duplicate grants');
+set local role service_role;
+select is(public.append_customer_booking_receipt('3a000000-0000-4000-8000-000000000004',repeat('1c',32),repeat('3c',32),repeat('1a',32))->>'existing','true','verified A session attaches only its newly created guest booking');
+select is(jsonb_array_length(public.list_customer_bookings_for_browser(repeat('1a',32),repeat('1c',32))->'bookings'),3,'A sees own verified history and A-bound receipt');
+select is(jsonb_path_query_array(public.list_customer_bookings_for_browser(repeat('1b',32),repeat('1c',32)), '$.bookings[*].id'), '["3a000000-0000-4000-8000-000000000003"]'::jsonb,'B login never imports A or anonymous receipts');
+select is(jsonb_array_length(public.list_customer_bookings_for_browser(repeat('2a',32),repeat('1c',32))->'bookings'),3,'renewed session for the same A retains its receipt grants');
+select is(jsonb_array_length(public.list_customer_bookings_for_browser(repeat('ff',32),repeat('1c',32))->'bookings'),2,'without valid full session only separately authorized device IDs remain');
+select is(public.cancel_customer_booking_for_browser('3a000000-0000-4000-8000-000000000004',repeat('1b',32),repeat('1c',32))->>'error','not_found','B cannot cancel an A-bound guest receipt');
+select is(public.cancel_customer_booking_for_browser('3a000000-0000-4000-8000-000000000002',null,repeat('1c',32))->>'ok','true','device can cancel the exact booking it created within policy');
+reset role;
+update public.customer_booking_receipts set expires_at=now()+interval '1 hour' where token_hash=repeat('1c',32);
+set local role service_role;
+select cmp_ok((public.append_customer_booking_receipt('3a000000-0000-4000-8000-000000000004',repeat('1c',32),repeat('5c',32),repeat('1a',32))->>'max_age')::integer,'<=',3600,'cookie lifetime never outlives an existing receipt');
+reset role;
+update public.customer_booking_receipts set expires_at=now()-interval '1 second' where token_hash=repeat('1c',32);
+set local role service_role;
+select is(public.list_customer_bookings_for_browser(null,repeat('1c',32))->>'error','access_denied','expired device receipt grants no access');
+select is(public.append_customer_booking_receipt('3a000000-0000-4000-8000-000000000004',repeat('1c',32),repeat('4c',32),null)->>'existing','false','a new booking replaces an expired receipt with fresh authority');
+select is(jsonb_array_length(public.list_customer_bookings_for_browser(null,repeat('4c',32))->'bookings'),1,'new receipt does not resurrect the expired collection');
+reset role;
+select public.cleanup_customer_booking_access();
+select is((select count(*)::int from public.customer_booking_receipts where token_hash=repeat('1c',32)),0,'scheduled cleanup deletes expired receipts');
+select is((select count(*)::int from public.customer_booking_receipt_bookings where receipt_hash=repeat('1c',32)),0,'cleanup also deletes expired ID grants');
+
+set local role service_role;
+select lives_ok($$select public.forget_customer_booking_receipt(repeat('4c',32))$$, 'withdrawing consent revokes the optional receipt');
+select is(public.list_customer_bookings_for_browser(null,repeat('4c',32))->>'error','access_denied','forgotten receipt cannot authorize history');
+select lives_ok($$select public.forget_customer_booking_receipt(repeat('4c',32))$$, 'repeated withdrawal remains safe');
+reset role;
+select is((select count(*)::int from public.customer_booking_receipt_bookings where receipt_hash=repeat('4c',32)),0,'withdrawal deletes all receipt grants');
+select is((select count(*)::int from public.bookings where barber_id='device-receipt'),4,'withdrawing optional storage preserves every customer booking');
 
 select * from finish();
 rollback;

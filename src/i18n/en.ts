@@ -80,14 +80,15 @@ export const appEn: AppStrings = {
 
 export const privacyEn: PrivacyStrings = {
   title: 'Privacy and storage',
-  lead: 'We use no analytics or advertising storage. You can choose whether we may remember your storage choice.',
+  lead: 'Choose whether this device may remember bookings you make here. We use no analytics or advertising cookies.',
   privacyLink: 'Read the privacy policy',
   accept: 'Accept optional storage',
   reject: 'Reject optional storage',
   preferences: 'Preferences',
   save: 'Save choices',
   functionalTitle: 'Optional storage',
-  functionalLead: 'Used only to remember your storage choice; no phone number is stored.',
+  functionalLead:
+    'Keeps access on this device to new bookings made here. Earlier bookings require your email link.',
   necessary:
     'After a valid email link, a necessary secure session cookie keeps you signed in. Without cookies, My appointments cannot sign you in automatically.',
   manage: 'Privacy',
@@ -145,7 +146,12 @@ export const myBookingsEn: MyBookingsStrings = {
     'If the email matches a booking, we will send a new link. The previous link will then stop working.',
   errAccess: 'This link is invalid or has been replaced. Request a new secure link.',
   loadingBookings: 'Loading bookings …',
-  errCookies: 'Allow cookies for this website, then reopen the email link to manage your bookings.',
+  errCookies:
+    'Secure access could not be saved. Reopen the email link. Check this website’s cookie settings if the problem continues.',
+  deviceBookingsNote:
+    'These bookings were created on this device. Open your email link for earlier appointments.',
+  deviceReady: 'Your booking is now available in My appointments on this device.',
+  deviceUnavailable: 'Open the link in your confirmation email to view your appointments.',
   errSystem: 'Could not load your appointments. Please try again.',
   errChallenge: 'Verification failed. Reload the check and try again.',
   errRateLimited: 'Too many attempts. Wait a moment before trying again.',

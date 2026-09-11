@@ -15,10 +15,10 @@ describe('password recovery Turnstile contract', () => {
     const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
 
     ordered(source, [
-      "import { verifyTurnstile } from '../_shared/turnstile.ts'",
+      "from '../_shared/turnstile.ts'",
       "typeof body.turnstileToken === 'string'",
       "Deno.env.get('TURNSTILE_SECRET')",
-      'verifyTurnstile(turnstileToken',
+      'await verifyTurnstile(',
       "service.rpc('consume_auth_email_send'",
     ])
   })
@@ -27,7 +27,7 @@ describe('password recovery Turnstile contract', () => {
     const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
 
     const failedChallenge = source.indexOf("return json({ ok: false, error: 'failed_challenge' })")
-    const challengeCheck = source.indexOf('if (!(await verifyTurnstile(')
+    const challengeCheck = source.indexOf('await verifyTurnstile(')
 
     expect(failedChallenge).toBeGreaterThan(challengeCheck)
     expect(source).not.toContain('return json({ ok: true })\n  }\n  const url')
@@ -36,7 +36,7 @@ describe('password recovery Turnstile contract', () => {
   it('does not require delivery configuration before rejecting a challenge', () => {
     const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
     const secret = source.indexOf("const turnstileSecret = Deno.env.get('TURNSTILE_SECRET')")
-    const verify = source.indexOf('if (!(await verifyTurnstile(')
+    const verify = source.indexOf('await verifyTurnstile(')
     const serviceConfig = source.indexOf("const url = Deno.env.get('SUPABASE_URL')")
     const resendConfig = source.indexOf("const resendKey = Deno.env.get('RESEND_API_KEY')")
 

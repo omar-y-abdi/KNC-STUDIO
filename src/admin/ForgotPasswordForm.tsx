@@ -138,6 +138,8 @@ export function ForgotPasswordForm(props: ForgotPasswordFormProps): JSX.Element 
         </div>
 
         <Turnstile
+          action="password_recovery"
+          lang={props.lang}
           onToken={setTurnstileToken}
           onError={onChallengeError}
           resetNonce={turnstileNonce}

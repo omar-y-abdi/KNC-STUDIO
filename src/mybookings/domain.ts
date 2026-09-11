@@ -34,7 +34,18 @@ export interface CustomerProfile {
  * Result of listing email-scoped customer bookings.
  */
 export type MyBookingsResult =
-  | { readonly ok: true; readonly bookings: MyBookings; readonly profile: CustomerProfile }
+  | {
+      readonly ok: true
+      readonly authority: 'verified'
+      readonly bookings: MyBookings
+      readonly profile: CustomerProfile
+    }
+  | {
+      readonly ok: true
+      readonly authority: 'device'
+      readonly bookings: MyBookings
+      readonly profile?: never
+    }
   | { readonly ok: false; readonly error: 'access_denied' | 'cookies_disabled' | 'system' }
 
 /** Result of cancelling one upcoming booking. */

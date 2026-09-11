@@ -6,7 +6,7 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
 ## Runtime flow
 
 1. Browser posts name, phone, email, barber, service ID, start time, language, and Turnstile token to
-   `submit-booking`.
+   same-origin `/api/bookings`; the Worker relays only to `submit-booking`.
 2. Gateway fails closed unless Turnstile and IP-salt secrets are configured, applies coarse IP/phone
    limits, then calls `create_booking` with the service-role key.
 3. Database derives service name, price, and duration from active `services`; browser values cannot
@@ -20,6 +20,13 @@ Auth email; Cloudflare Turnstile for booking abuse protection. Frontend runs on 
    Valid access receives a first-party HttpOnly `SameSite=Lax` session cookie. Requesting a new link by
    email rotates the token and invalidates the previous token. Phone remains booking contact data and
    review scope, not a lookup field.
+
+After an accepted functional-storage choice, a successful first-party booking also receives an
+independent HttpOnly device-receipt cookie. It grants only the exact new booking IDs; submitted email
+or phone never grants earlier history. Browser Web Locks serialize initial receipt creation across
+tabs. The browser verifies receipt proof and the new booking ID before showing immediate access.
+Cookie/probe failure keeps booking success and offers the email link. Withdrawing consent deletes
+receipt authority; the essential email-verified session and booking rows remain separate.
 
 The `external_action_jobs` outbox covers Calendar actions, Storage cleanup, customer-access email, and
 Auth user lifecycle actions. Booking email delivery has its separate
@@ -47,10 +54,10 @@ or webhook secrets in frontend variables.
 
 ## Apply backend changes
 
-For the current customer-access repair, follow
-`docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md`. Apply only its reviewed migrations; deploy
-Edge before the Worker/frontend. `PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` records the earlier gateway
-rollout and must not be replayed as a current deployment checklist.
+For the current cookie/receipt release, follow
+`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md`. The earlier
+`CUSTOMER_ACCESS_REPAIR_2026-09-10.md` describes PR58, already released. The historical
+`PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` must not be replayed as a current deployment checklist.
 
 Required Edge Function secrets:
 
@@ -149,7 +156,8 @@ See [README local setup](README.md#local-customer-links-and-cookies). Vite dev/p
 customer route to the real local Worker; a Vite server alone cannot implement customer sessions.
 `npm run test:e2e -- --customer` runs the actual HTTPS Worker → Edge → PostgreSQL path in Chromium,
 Firefox and WebKit. It verifies host-only HttpOnly cookies, successful profile hydration, shared-cookie
-customer switching, cookie rejection, invalid-link denial and rotation. Only cookie rejection is
+customer switching, cookie rejection, invalid-link denial, rotation, concurrent booking receipts,
+consent withdrawal and device cancellation. Only cookie rejection is
 intercepted; those responses still come from the real backend.
 
 Existing `reviews.test.ts` integration cases force overlapping transactions and observe

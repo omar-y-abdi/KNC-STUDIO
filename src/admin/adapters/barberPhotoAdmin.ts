@@ -7,28 +7,17 @@ import {
 } from '../adminSchemas'
 import type { AdminBarberId, AdminResult } from '../types'
 import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
 
 const BUCKET = 'barber-photos'
 const READ_ERROR = 'Kunde inte läsa profilbilden.'
 const WRITE_ERROR = 'Kunde inte ladda upp bilden. Försök igen.'
 const DELETE_ERROR = 'Kunde inte ta bort bilden. Försök igen.'
 const FORBIDDEN = 'Du har inte behörighet för detta.'
-const AUTH_ERROR = 'Din session har gått ut. Logga in igen.'
 const VALIDATION_ERROR = 'Bilden uppfyller inte kraven.'
 
 function publicUrl(storagePath: string): string {
   return getAdminClient().storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl
-}
-
-function uploadError<T>(error: unknown): AdminResult<T> {
-  const status =
-    typeof error === 'object' && error !== null && 'context' in error
-      ? (error as { context?: { status?: unknown } }).context?.status
-      : undefined
-  if (status === 401) return err('auth', AUTH_ERROR)
-  if (status === 403) return err('forbidden', FORBIDDEN)
-  if (status === 400 || status === 413 || status === 422) return err('validation', VALIDATION_ERROR)
-  return err('network', WRITE_ERROR)
 }
 
 export async function getBarberPhoto(
@@ -61,7 +50,12 @@ export async function uploadBarberPhoto(
 
   try {
     const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
-    if (error !== null) return uploadError(error)
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: WRITE_ERROR,
+        forbidden: FORBIDDEN,
+        validation: VALIDATION_ERROR,
+      })
 
     const parsed = parseWith(uploadBarberPhotoResponse, data)
     if (!parsed.ok) return err('malformed', WRITE_ERROR)
@@ -79,7 +73,12 @@ export async function removeBarberPhoto(
     const { data, error } = await getAdminClient().functions.invoke('upload-image', {
       body: { action: 'delete', kind: 'barber_photo', barberId, storagePath },
     })
-    if (error !== null && data === null) return err('network', DELETE_ERROR)
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: DELETE_ERROR,
+        forbidden: FORBIDDEN,
+        validation: 'Bilden kunde inte tas bort. Ladda om sidan.',
+      })
     const parsed = parseWith(imageDeleteResponse, data)
     if (!parsed.ok) return err('malformed', DELETE_ERROR)
     return ok({ pending: parsed.value.pending })

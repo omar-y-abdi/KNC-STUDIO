@@ -1,4 +1,4 @@
-// The `/admin` gate. On mount it resolves the active session's profile:
+// The `/admin` gate. Its session lifecycle resolves and revalidates the active profile:
 //   - no session / no profile -> redirect to `/login` (the public login screen handles sign-in).
 //   - backend unconfigured -> redirect to `/login` (which shows the "not configured" notice).
 //   - resolved -> render the role's `AdminShell`.
@@ -9,15 +9,11 @@
 
 import type { JSX } from 'preact'
 import { lazy } from 'preact/compat'
-import { useEffect, useState } from 'preact/hooks'
 import { useLocation } from 'wouter-preact'
-import { isBackendConfigured } from '../backend/config'
 import { palette } from '../booking/bookingStyles'
 import { adminText } from '../i18n/adminStrings'
-import { getActiveProfile, signOut } from './auth'
-import { clearAdminNavigationState } from './navigationState'
 import { useTheme } from './useTheme'
-import type { AdminProfile } from './types'
+import { useAdminSession } from './useAdminSession'
 import { LazySurface } from '../ui/LazySurface'
 
 const AdminShell = lazy(() =>
@@ -27,51 +23,10 @@ const ForcedPasswordChange = lazy(() =>
   import('./ForcedPasswordChange').then((module) => ({ default: module.ForcedPasswordChange })),
 )
 
-type Gate =
-  | { readonly kind: 'checking' }
-  | { readonly kind: 'forced_change'; readonly profile: AdminProfile }
-  | { readonly kind: 'authed'; readonly profile: AdminProfile }
-  | { readonly kind: 'redirecting' }
-
 export function AdminApp(): JSX.Element {
   const theme = useTheme()
   const [, navigate] = useLocation()
-  const [gate, setGate] = useState<Gate>({ kind: 'checking' })
-
-  useEffect(() => {
-    let active = true
-    void (async () => {
-      if (!isBackendConfigured()) {
-        if (active) setGate({ kind: 'redirecting' })
-        navigate('/login', { replace: true })
-        return
-      }
-      const result = await getActiveProfile()
-      if (!active) return
-      if (result.ok) {
-        if (result.value.mustChangePassword) {
-          setGate({ kind: 'forced_change', profile: result.value })
-        } else {
-          setGate({ kind: 'authed', profile: result.value })
-        }
-      } else {
-        setGate({ kind: 'redirecting' })
-        navigate('/login', { replace: true })
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [navigate])
-
-  const onSignOut = async (): Promise<void> => {
-    if (gate.kind === 'authed' || gate.kind === 'forced_change') {
-      clearAdminNavigationState(sessionStorage, gate.profile.userId)
-    }
-    await signOut()
-    setGate({ kind: 'redirecting' })
-    navigate('/login', { replace: true })
-  }
+  const { gate, error, revalidate, onSignOut } = useAdminSession(navigate)
 
   const c = palette(theme.dark)
   const t = adminText(theme.lang)
@@ -86,11 +41,10 @@ export function AdminApp(): JSX.Element {
         minHeight="100vh"
       >
         <ForcedPasswordChange
+          key={gate.profile.userId}
           lang={theme.lang}
-          onDone={() =>
-            setGate({ kind: 'authed', profile: { ...gate.profile, mustChangePassword: false } })
-          }
-          onSignOut={() => void onSignOut()}
+          onDone={revalidate}
+          onSignOut={onSignOut}
         />
       </LazySurface>
     )
@@ -112,26 +66,43 @@ export function AdminApp(): JSX.Element {
           opacity: 0.7,
         }}
       >
-        {t.lazyLoading}
+        {gate.kind === 'unavailable' ? (
+          <div role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={revalidate}>
+              {t.lazyReload}
+            </button>
+          </div>
+        ) : (
+          t.lazyLoading
+        )}
       </div>
     )
   }
 
   return (
-    <LazySurface
-      loadingLabel={t.lazyLoading}
-      errorLabel={t.lazyError}
-      retryLabel={t.lazyReload}
-      minHeight="100vh"
-    >
-      <AdminShell
-        profile={gate.profile}
-        dark={theme.dark}
-        lang={theme.lang}
-        toggleMode={theme.toggleMode}
-        setLang={theme.setLang}
-        onSignOut={() => void onSignOut()}
-      />
-    </LazySurface>
+    <>
+      {error === null ? null : (
+        <p role="status" style={{ color: c.text, padding: '12px 20px', margin: 0 }}>
+          {error}
+        </p>
+      )}
+      <LazySurface
+        loadingLabel={t.lazyLoading}
+        errorLabel={t.lazyError}
+        retryLabel={t.lazyReload}
+        minHeight="100vh"
+      >
+        <AdminShell
+          key={`${gate.profile.userId}:${gate.profile.role}:${gate.profile.barberId ?? ''}`}
+          profile={gate.profile}
+          dark={theme.dark}
+          lang={theme.lang}
+          toggleMode={theme.toggleMode}
+          setLang={theme.setLang}
+          onSignOut={onSignOut}
+        />
+      </LazySurface>
+    </>
   )
 }

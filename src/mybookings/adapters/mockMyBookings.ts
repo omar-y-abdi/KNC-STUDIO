@@ -29,6 +29,7 @@ export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookin
       void params
       return Promise.resolve({
         ok: true,
+        authority: 'verified',
         bookings: { upcoming: [], past: [] },
         profile: { name: '', phone: '', email: '' },
       })

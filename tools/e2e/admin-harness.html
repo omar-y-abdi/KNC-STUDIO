@@ -9,6 +9,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.turnstile = { render: () => 'test', remove: () => {}, reset: () => {} }
+    </script>
     <script type="module" src="./admin-harness.tsx"></script>
   </body>
 </html>

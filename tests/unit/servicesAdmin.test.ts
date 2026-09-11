@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ok } from '../../src/admin/types'
 
 const { from, rpc, insert, update, remove, select, single, eq } = vi.hoisted(() => ({
   from: vi.fn(),
@@ -142,11 +143,13 @@ describe('admin operation ordering', () => {
       events.push('first started')
       await gate
       persistedPrice = 200
+      return ok(undefined)
     })
-    const returningRead = orderedAdminOperation('test:service-a', async () => persistedPrice)
+    const returningRead = orderedAdminOperation('test:service-a', async () => ok(persistedPrice))
     const second = orderedAdminOperation('test:service-a', async () => {
       events.push('second started')
       persistedPrice = 300
+      return ok(undefined)
     })
     try {
       await Promise.resolve()
@@ -156,7 +159,7 @@ describe('admin operation ordering', () => {
       release()
     }
     await first
-    expect(await returningRead).toBe(200)
+    expect(await returningRead).toEqual(ok(200))
     await second
     expect(persistedPrice).toBe(300)
     expect(events).toEqual(['first started', 'second started'])
@@ -168,9 +171,14 @@ describe('admin operation ordering', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const first = orderedAdminOperation('test:photo-a', () => gate)
+    const first = orderedAdminOperation('test:photo-a', async () => {
+      await gate
+      return ok(undefined)
+    })
     try {
-      expect(await orderedAdminOperation('test:photo-b', async () => 'saved B')).toBe('saved B')
+      expect(await orderedAdminOperation('test:photo-b', async () => ok('saved B'))).toEqual(
+        ok('saved B'),
+      )
     } finally {
       release()
       await first
@@ -182,11 +190,44 @@ describe('admin operation ordering', () => {
     const failed = orderedAdminOperation('test:rejected', async () => {
       throw new Error('write failed')
     })
-    const next = orderedAdminOperation('test:rejected', async () => 'reloaded')
+    const next = orderedAdminOperation('test:rejected', async () => ok('reloaded'))
     await expect(failed).rejects.toThrow('write failed')
-    await expect(next).resolves.toBe('reloaded')
-    await expect(orderedAdminOperation('test:rejected', async () => 'saved later')).resolves.toBe(
-      'saved later',
-    )
+    await expect(next).resolves.toEqual(ok('reloaded'))
+    await expect(
+      orderedAdminOperation('test:rejected', async () => ok('saved later')),
+    ).resolves.toEqual(ok('saved later'))
+  })
+
+  it('drops old queued intent at session end while a new session still reads after the in-flight commit', async () => {
+    const { orderedAdminOperation, invalidateAdminOperations } =
+      await import('../../src/admin/orderedOperations')
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let persisted = 'before'
+    const first = orderedAdminOperation('test:session', async () => {
+      await gate
+      persisted = 'committed A'
+      return ok(undefined)
+    })
+    const oldWrite = vi.fn(async () => {
+      persisted = 'old A intent'
+      return ok(undefined)
+    })
+    const queued = orderedAdminOperation('test:session', oldWrite)
+    await Promise.resolve()
+    try {
+      invalidateAdminOperations()
+      const readB = orderedAdminOperation('test:session', async () => ok(persisted))
+      release()
+      expect(await queued).toMatchObject({ ok: false, error: { kind: 'auth' } })
+      expect(oldWrite).not.toHaveBeenCalled()
+      expect(await readB).toEqual(ok('committed A'))
+    } finally {
+      release()
+      await first
+      await queued
+    }
   })
 })

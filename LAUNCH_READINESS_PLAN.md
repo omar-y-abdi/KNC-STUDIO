@@ -3,7 +3,7 @@
 **Statusdatum:** 2026-08-23
 
 > **Historisk planbild.** Checklistan och verifieringen nedan är från 2026-08-23. Aktuell launchstatus
-> finns i `docs/qa/2026-09-10-audit/pm.md`, `sol-platform.md` och agentloggarna. Behåll historiken; läs
+> finns i `docs/qa/2026-09-11-launch-issues.md` och `docs/qa/2026-09-10-launch-completion/pm.md`. Behåll historiken; läs
 > aktuell kod, migrationer, live config och CI innan någon operatörsåtgärd körs.
 
 **Syfte:** verifierad handoff och körordning inför produktionssättning

@@ -5,23 +5,18 @@ import { getAdminClient } from '../adminClient'
 import { imageDeleteResponse, parseWith, uploadHomepageLogoResponse } from '../adminSchemas'
 import type { AdminResult } from '../types'
 import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
 
 const WRITE_ERROR = 'Kunde inte spara logotypen. Försök igen.'
 const DELETE_ERROR = 'Kunde inte ta bort logotypen. Försök igen.'
 
 function mapGatewayError<T>(error: unknown, fallback: string): AdminResult<T> {
-  const status =
-    typeof error === 'object' && error !== null && 'context' in error
-      ? (error as { context?: { status?: unknown } }).context?.status
-      : undefined
-  if (status === 401) return err('auth', 'Din session har gått ut. Logga in igen.')
-  if (status === 403) return err('forbidden', 'Endast ägaren kan ändra logotypen.')
-  if (status === 400 || status === 413 || status === 422) {
-    return err('validation', 'Logotypen måste vara en giltig bild inom storleksgränsen.')
-  }
-  if (status === 409)
-    return err('validation', 'Logotypen ändrades i en annan flik. Ladda om sidan.')
-  return err('network', fallback)
+  return mediaGatewayError(error, {
+    fallback,
+    forbidden: 'Endast ägaren kan ändra logotypen.',
+    validation: 'Logotypen måste vara en giltig bild inom storleksgränsen.',
+    conflict: 'Logotypen ändrades i en annan flik. Ladda om sidan.',
+  })
 }
 
 export interface UploadedHomepageLogo {
@@ -64,7 +59,7 @@ export async function removeHomepageLogo(
     const { data, error } = await getAdminClient().functions.invoke('upload-image', {
       body: { action: 'delete', kind: 'site_logo', storagePath: path },
     })
-    if (error !== null && data === null) return mapGatewayError(error, DELETE_ERROR)
+    if (error !== null) return mapGatewayError(error, DELETE_ERROR)
     const parsed = parseWith(imageDeleteResponse, data)
     if (!parsed.ok) return err('malformed', DELETE_ERROR)
     return ok({ pending: parsed.value.pending })

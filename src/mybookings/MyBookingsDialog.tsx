@@ -65,6 +65,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   )
   const [busy, setBusy] = useState<boolean>(false)
   const [bookings, setBookings] = useState<MyBookings | null>(null)
+  const [deviceOnly, setDeviceOnly] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(props.accessToken ?? null)
 
   // List-view local state.
@@ -110,6 +111,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         return
       }
       setBookings(result.bookings)
+      setDeviceOnly(result.authority === 'device')
       props.onProfile?.(result.profile)
       // Initial link token is used only for this request. Subsequent operations use HttpOnly cookie.
       setAccessToken('')
@@ -459,6 +461,11 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       </div>
 
       <div style="padding:16px 18px 18px;">
+        {step === 'list' && deviceOnly ? (
+          <p style={{ fontSize: '13px', lineHeight: 1.45, opacity: 0.7, margin: '0 0 14px' }}>
+            {t.deviceBookingsNote}
+          </p>
+        ) : null}
         {step === 'loading' ? <p role="status">{t.loadingBookings}</p> : null}
         {step === 'lookup' ? (
           <div>
@@ -478,7 +485,12 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                 {systemError}
               </p>
             ) : null}
-            <Turnstile onToken={setTurnstileToken} resetNonce={turnstileNonce} />
+            <Turnstile
+              action="customer_access"
+              lang={lang}
+              onToken={setTurnstileToken}
+              resetNonce={turnstileNonce}
+            />
             <button
               onClick={lookupDisabled ? undefined : onLookupClick}
               disabled={lookupDisabled}

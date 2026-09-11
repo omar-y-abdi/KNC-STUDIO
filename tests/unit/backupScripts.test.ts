@@ -1,4 +1,6 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import { promisify } from 'node:util'
 import {
   chmodSync,
   mkdtempSync,
@@ -43,6 +45,10 @@ function fixture(): string {
   mkdirSync(join(root, 'storage', 'objects'), { recursive: true })
   writeFileSync(join(root, 'schema.sql'), 'CREATE TABLE IF NOT EXISTS "public"."bookings" ();\n')
   writeFileSync(join(root, 'data.sql'), 'COPY "auth"."users" FROM stdin;\n')
+  writeFileSync(
+    join(root, 'history_schema.sql'),
+    'CREATE TABLE IF NOT EXISTS "supabase_migrations"."schema_migrations" ("version" text, "created_by" text, "idempotency_key" text, "rollback" text[]);\n',
+  )
   writeFileSync(
     join(root, 'history_data.sql'),
     'COPY "supabase_migrations"."schema_migrations" FROM stdin;\n',
@@ -110,6 +116,24 @@ describe('backup archive contract', () => {
   it('fails closed when migration history is missing', () => {
     const root = fixture()
     writeFileSync(join(root, 'history_data.sql'), '')
+    expect(() =>
+      command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
+    ).toThrow()
+  })
+
+  it('rejects data-only migration history even when its checksum is valid', () => {
+    const root = fixture()
+    rmSync(join(root, 'history_schema.sql'))
+    refreshManifest(root)
+    expect(() =>
+      command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
+    ).toThrow()
+  })
+
+  it('rejects a history schema without the source migration table', () => {
+    const root = fixture()
+    writeFileSync(join(root, 'history_schema.sql'), 'CREATE SCHEMA supabase_migrations;\n')
+    refreshManifest(root)
     expect(() =>
       command('bash', ['tools/backup/verify-backup-tree.sh', root], process.cwd()),
     ).toThrow()
@@ -225,6 +249,95 @@ describe('Storage backup authentication', () => {
   })
 })
 
+describe('Storage restore against the HTTP contract', () => {
+  async function restore(options: {
+    readonly exists?: boolean
+    readonly verifyOnly?: boolean
+    readonly missingCode?: string
+  }): Promise<{ readonly created: number; readonly error: unknown; readonly stdout: string }> {
+    const root = fixture()
+    const bucket = { id: 'gallery', name: 'gallery', public: false }
+    writeFileSync(join(root, 'storage', 'buckets.json'), JSON.stringify([bucket]))
+    writeFileSync(join(root, 'storage', 'objects.ndjson'), '')
+    let exists = options.exists ?? false
+    let created = 0
+    const server = createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json')
+      if (request.method === 'GET' && request.url === '/storage/v1/bucket/gallery') {
+        response.statusCode = exists ? 200 : 400
+        response.end(
+          JSON.stringify(exists ? bucket : { code: options.missingCode ?? 'NoSuchBucket' }),
+        )
+      } else if (request.method === 'POST' && request.url === '/storage/v1/bucket/') {
+        created += 1
+        exists = true
+        response.end('{}')
+      } else if (request.method === 'GET' && request.url === '/storage/v1/bucket') {
+        response.end(JSON.stringify(exists ? [bucket] : []))
+      } else if (request.method === 'POST' && request.url === '/storage/v1/object/list/gallery') {
+        response.end('[]')
+      } else {
+        response.statusCode = 500
+        response.end('{}')
+      }
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('Missing test port')
+    try {
+      const result = await promisify(execFile)(
+        'bash',
+        [
+          'tools/backup/storage-restore.sh',
+          '--input',
+          join(root, 'storage'),
+          ...(options.verifyOnly ? ['--verify-only'] : []),
+        ],
+        {
+          env: {
+            ...process.env,
+            SUPABASE_URL: `http://127.0.0.1:${address.port}`,
+            SUPABASE_STORAGE_SECRET_KEY: 'sb_secret_restore_test',
+          },
+        },
+      )
+      return { created, error: null, stdout: result.stdout }
+    } catch (error) {
+      return { created, error, stdout: '' }
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    }
+  }
+
+  it('creates a missing bucket from Supabase HTTP 400 NoSuchBucket', async () => {
+    const result = await restore({})
+    expect(result.error).toBeNull()
+    expect(result.created).toBe(1)
+    expect(result.stdout).toContain('Storage restore verification passed')
+  })
+
+  it('verifies existing buckets without requiring permission to write', async () => {
+    const result = await restore({ exists: true, verifyOnly: true })
+    expect(result.error).toBeNull()
+    expect(result.created).toBe(0)
+    expect(result.stdout).toContain('Storage restore verification passed')
+  })
+
+  it('does not treat an unrelated HTTP 400 as a missing bucket', async () => {
+    const result = await restore({ missingCode: 'InvalidRequest' })
+    expect(result.error).not.toBeNull()
+    expect(result.created).toBe(0)
+  })
+
+  it('still refuses existing buckets during a write restore', async () => {
+    const result = await restore({ exists: true })
+    expect(result.error).not.toBeNull()
+    expect(result.created).toBe(0)
+  })
+})
+
 describe('database Storage reference snapshot', () => {
   function fakePsqlRoot(output: string): {
     readonly root: string
@@ -292,19 +405,5 @@ describe('database Storage reference snapshot', () => {
         fixture.env,
       ),
     ).toThrow()
-  })
-})
-
-describe('migration history restore contract', () => {
-  it('bootstraps a brand-new target before loading history data', () => {
-    const sql = readFileSync('tools/backup/prepare-migration-history.sql', 'utf8')
-
-    expect(sql).toContain('create schema if not exists supabase_migrations authorization postgres;')
-    expect(sql).toContain('create table if not exists supabase_migrations.schema_migrations')
-    expect(sql).toContain('version text primary key')
-    expect(sql).toContain('statements text[]')
-    expect(sql).toContain('create table if not exists supabase_migrations.seed_files')
-    expect(sql).toContain('path text primary key')
-    expect(sql).toContain('truncate table')
   })
 })

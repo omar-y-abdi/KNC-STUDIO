@@ -84,6 +84,11 @@ export const customerAccessRequestResponse = z.discriminatedUnion('ok', [
 ])
 
 const customerSessionProof = z.string().regex(/^[0-9a-f]{64}$/)
+/** Optional post-booking access is parsed separately so its failure never undoes booking success. */
+export const bookingReceiptResponse = z.object({
+  receipt_proof: customerSessionProof,
+  booking: z.object({ id: z.string().uuid() }),
+})
 const customerAccessExchangeOk = z.object({
   ok: z.literal(true),
   session_proof: customerSessionProof,
@@ -108,18 +113,28 @@ const myBookingRow = z.object({
 
 const listCustomerBookingsOk = z.object({
   ok: z.literal(true),
+  authority: z.literal('verified').default('verified'),
   session_proof: customerSessionProof,
+  receipt_proof: customerSessionProof.optional(),
   name: z.string().optional(),
   phone: z.string().regex(/^07[0-9]{8}$/),
   email: z.string().email().optional(),
+  bookings: z.array(myBookingRow),
+})
+const listDeviceBookingsOk = z.object({
+  ok: z.literal(true),
+  authority: z.literal('device'),
+  session_proof: customerSessionProof,
+  receipt_proof: customerSessionProof,
   bookings: z.array(myBookingRow),
 })
 const listCustomerBookingsErr = z.object({
   ok: z.literal(false),
   error: z.literal('access_denied'),
 })
-export const listCustomerBookingsResponse = z.discriminatedUnion('ok', [
+export const listCustomerBookingsResponse = z.union([
   listCustomerBookingsOk,
+  listDeviceBookingsOk,
   listCustomerBookingsErr,
 ])
 export type ListCustomerBookingsResponse = z.infer<typeof listCustomerBookingsResponse>

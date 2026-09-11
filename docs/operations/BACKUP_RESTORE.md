@@ -10,7 +10,7 @@ Actions artifact for 30 days.
 The encrypted bundle contains:
 
 - `schema.sql` and `data.sql` for application data and Auth users, excluding Storage metadata;
-- `history_data.sql` for `supabase_migrations` lineage;
+- `history_schema.sql` and `history_data.sql` for the exact `supabase_migrations` structure and lineage;
 - `storage/buckets.json`, dynamically inventoried from every current standard bucket;
 - `storage/objects.ndjson`, containing every object path, byte size, SHA-256 checksum, and content
   metadata;
@@ -93,6 +93,7 @@ psql \
   --single-transaction \
   --variable ON_ERROR_STOP=1 \
   --file tools/backup/prepare-migration-history.sql \
+  --file /tmp/bladeblend-restore/history_schema.sql \
   --file /tmp/bladeblend-restore/history_data.sql \
   --dbname "$NEW_SUPABASE_DATABASE_URL"
 
@@ -111,6 +112,14 @@ bash tools/backup/storage-restore.sh \
 unset SUPABASE_STORAGE_SECRET_KEY
 rm -rf /tmp/bladeblend-restore /tmp/bladeblend-restore.tar.gz
 ```
+
+Migration restore replaces only the new target's `supabase_migrations` schema, in one transaction.
+Source columns and constraints travel with the archive; managed Supabase metadata such as
+`created_by`, `idempotency_key`, and `rollback` must not be guessed from the installed CLI version.
+Archives created before this change lack `history_schema.sql`: obtain the matching source history
+schema before restoring lineage. Do not silently discard unknown columns or mark a data-only archive
+as fully restore-tested. Keep cron and external job dispatch disabled throughout the drill; only
+configure production provider credentials after restore validation and the intended cutover.
 
 After byte verification, configure Auth URLs and SMTP, deploy Edge Functions and secrets, recreate
 Cron jobs, configure third-party integrations, and rotate credentials before traffic reaches the

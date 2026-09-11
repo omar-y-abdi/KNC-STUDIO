@@ -27,7 +27,7 @@ describe('buildIcs', () => {
     expect(ics).toContain('\r\n')
     expect(ics.startsWith('BEGIN:VCALENDAR')).toBe(true)
     expect(ics).toContain('BEGIN:VEVENT')
-    expect(ics.endsWith('END:VCALENDAR')).toBe(true)
+    expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true)
   })
   it('escapes commas in LOCATION (the original prototype did not — the bug this fixes)', () => {
     expect(ics).toContain('LOCATION:KNC Studio\\, Geijersgatan 10\\, 411 34 Göteborg')
@@ -43,5 +43,44 @@ describe('buildIcs', () => {
     expect(evil).not.toMatch(/[\r\n]X-EVIL:/)
     // The CRLF is folded into the escaped value instead:
     expect(evil).toContain('SUMMARY:ok\\nX-EVIL:1')
+  })
+
+  it.each([74, 75, 76, 149, 150, 151])(
+    'folds a %i-octet logical line at the RFC boundary',
+    (bytes) => {
+      const summary = 'x'.repeat(bytes - 'SUMMARY:'.length)
+      const result = buildIcs({ ...event, summary })
+      const physical = result.split('\r\n')
+      for (const line of physical)
+        expect(new TextEncoder().encode(line).byteLength).toBeLessThanOrEqual(75)
+      expect(result.replace(/\r\n[ \t]/g, '')).toContain(`SUMMARY:${summary}\r\n`)
+      const start = physical.findIndex((line) => line.startsWith('SUMMARY:'))
+      expect(physical[start]).toHaveLength(Math.min(bytes, 75))
+      expect(physical[start + 1]?.startsWith(' ')).toBe(bytes > 75)
+    },
+  )
+
+  it('folds every escaped TEXT property by UTF-8 octets without splitting code points or injecting fields', () => {
+    const text = `${'Åäö💈'.repeat(30)},;\\\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Injected`
+    const result = buildIcs({
+      ...event,
+      uid: text,
+      summary: text,
+      location: text,
+      description: text,
+    })
+    const encoded = new TextEncoder().encode(result)
+    const roundTrip = new TextDecoder('utf-8', { fatal: true }).decode(encoded)
+    const unfolded = roundTrip.replace(/\r\n[ \t]/g, '')
+    for (const line of result.split('\r\n')) {
+      expect(new TextEncoder().encode(line).byteLength).toBeLessThanOrEqual(75)
+      expect(line).not.toContain('\uFFFD')
+    }
+    for (const property of ['UID', 'SUMMARY', 'LOCATION', 'DESCRIPTION']) {
+      expect(unfolded).toContain(`${property}:${escapeIcsText(text)}\r\n`)
+    }
+    expect(unfolded.match(/^BEGIN:VEVENT$/gm)).toHaveLength(1)
+    expect(unfolded.match(/^END:VEVENT$/gm)).toHaveLength(1)
+    expect(unfolded).not.toMatch(/^SUMMARY:Injected/m)
   })
 })

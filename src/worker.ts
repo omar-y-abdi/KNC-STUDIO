@@ -351,6 +351,7 @@ export default {
     }
 
     if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
+    if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
 
     if (url.hostname === CANONICAL_HOST && isCacheablePublicContent(request, url)) {
       return context.exports.PublicContent.fetch(request)

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
 import { createServer as createViteServer } from 'vite'
 import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
+import { customerGateway } from '../../src/mybookings/customerGateway'
 
 describe('customer booking access links', () => {
   it('consumes permanent random root-path links as direct access tokens', () => {
@@ -66,12 +67,13 @@ describe('customer booking access links', () => {
 
   it('uses an opaque HttpOnly session cookie rather than browser storage for return visits', () => {
     const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
+    const cookies = readFileSync('supabase/functions/_shared/customerCookies.ts', 'utf8')
     const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
     const client = readFileSync('src/backend/supabaseClient.ts', 'utf8')
     const actionClient = readFileSync('src/backend/publicBookingActions.ts', 'utf8')
-    expect(gateway).toContain('__Host-bladeblend_customer_session')
-    expect(gateway).toContain('HttpOnly; Secure; SameSite=None')
-    expect(gateway).toContain('sessionCookie(req)')
+    expect(cookies).toContain('__Host-bladeblend_customer_session')
+    expect(cookies).toContain('HttpOnly; Secure; SameSite=None')
+    expect(gateway).toContain('customerCookie(req, CUSTOMER_SESSION_COOKIE)')
     expect(gateway).not.toContain('customer_email')
     expect(adapter).not.toContain('sessionStorage')
     expect(client).not.toContain("credentials: 'include'")
@@ -92,6 +94,49 @@ describe('customer booking access links', () => {
       "ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se'",
     )
   })
+})
+
+describe('production customer response cookies', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each([false, true])(
+    'isolates the session from Supabase bot cookies (provider first=%s)',
+    async (providerFirst) => {
+      const session = `__Host-bladeblend_customer_session=${'a'.repeat(64)}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=None`
+      const provider =
+        '__cf_bm=provider-cookie; HttpOnly; Secure; Path=/; Domain=supabase.co; Expires=Thu, 10 Sep 2026 22:19:54 GMT'
+      const headers = new Headers({ 'Content-Type': 'application/json' })
+      for (const cookie of providerFirst ? [provider, session] : [session, provider])
+        headers.append('Set-Cookie', cookie)
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response('{"ok":true}', { headers })),
+      )
+      const response = await customerGateway(
+        new Request('https://bladeblendstudio.se/api/customer-bookings', {
+          method: 'POST',
+          headers: {
+            Origin: 'https://bladeblendstudio.se',
+            'Content-Type': 'application/json',
+            'CF-Connecting-IP': '203.0.113.10',
+          },
+          body: JSON.stringify({ action: 'list', accessToken: 'b'.repeat(64) }),
+        }),
+        {
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'anon',
+          CUSTOMER_GATEWAY_SECRET: 'secret'.repeat(8),
+        },
+      )
+      expect(response.status).toBe(200)
+      expect(response.headers.getSetCookie()).toEqual([
+        session.replace('SameSite=None', 'SameSite=Lax'),
+      ])
+      expect(response.headers.get('Set-Cookie')).not.toContain('Domain=')
+      expect(response.headers.get('Set-Cookie')).not.toContain('__cf_bm')
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+    },
+  )
 })
 
 async function localTransportConfig() {
@@ -117,6 +162,7 @@ describe('local first-party transport boundaries', () => {
       expect(config.server?.proxy).toEqual(config.preview?.proxy)
       expect(Object.keys(config.server?.proxy ?? {})).toEqual([
         '^/api/customer-bookings(?:\\?.*)?$',
+        '^/api/bookings(?:\\?.*)?$',
         '^/[0-9a-f]{64}(?:\\?.*)?$',
       ])
       for (const route of Object.values(config.server?.proxy ?? {})) {

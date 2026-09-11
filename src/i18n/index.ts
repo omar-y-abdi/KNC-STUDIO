@@ -155,6 +155,9 @@ export interface MyBookingsStrings {
   accessSent: string
   errAccess: string
   errCookies: string
+  deviceBookingsNote: string
+  deviceReady: string
+  deviceUnavailable: string
   loadingBookings: string
   /** Network/parse failure. */
   errSystem: string

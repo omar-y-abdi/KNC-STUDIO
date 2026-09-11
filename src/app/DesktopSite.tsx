@@ -5,6 +5,8 @@ import { AboutSection } from '../about/AboutSection'
 import { HeroLinks } from '../about/HeroLinks'
 import { CornerMark } from '../ui/logos/CornerMark'
 import { HomepageLogo } from '../site/HomepageLogo'
+import { PrivacyManageButton } from '../site/PrivacyBanner'
+import type { PrivacyControls } from '../site/usePrivacyPreferences'
 import type { AppStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
@@ -60,6 +62,8 @@ export interface DesktopSiteProps extends ShellProps {
   /** Embedded replicas scroll inside this host instead of the browser window. */
   readonly scrollRootRef?: RefObject<HTMLDivElement>
   readonly initialContact?: CustomerProfile
+  readonly privacy?: PrivacyControls
+  readonly onManagePrivacy?: () => void
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
@@ -289,6 +293,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         color: c.text,
         fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
         WebkitFontSmoothing: 'antialiased',
+        paddingBottom: 'var(--privacy-overlay-space, 0px)',
       }}
     >
       <div style={navStyle} data-testid="desktop-top-panel" data-scroll-progress="1.000">
@@ -324,6 +329,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       <main>
         <div
           style={{
+            position: 'relative',
             minHeight: booking ? 'auto' : '100dvh',
             display: 'flex',
             flexDirection: 'column',
@@ -378,6 +384,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             onOpenCancel={props.openCancel}
             marginTop="20px"
           />
+          {!booking && props.privacy !== undefined ? (
+            <PrivacyManageButton lang={props.lang} dark={props.dark} controls={props.privacy} />
+          ) : null}
         </div>
         {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
         <div
@@ -435,6 +444,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
               : { customerPhone: props.initialContact.phone })}
             fontScale={props.aboutScale}
             scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
+            {...(props.onManagePrivacy === undefined
+              ? {}
+              : { onManagePrivacy: props.onManagePrivacy })}
             {...(props.previewPorts === undefined
               ? {}
               : {

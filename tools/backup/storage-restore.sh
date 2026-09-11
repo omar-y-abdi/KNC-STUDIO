@@ -159,9 +159,17 @@ ensure_bucket() {
   storage_require_no_redirect "$response_headers" || die "redirect refused while inspecting target bucket $bucket_id"
   rm -f "$response_headers"
 
+  # Storage uses HTTP 400 with its machine-readable NoSuchBucket code for a missing bucket.
+  # Never reinterpret another validation/authentication failure as permission to create one.
+  if [[ "$status" == 400 ]] && jq -e '.code == "NoSuchBucket"' "$response" >/dev/null 2>&1; then
+    status=404
+  fi
+
   case "$status" in
     200)
-      "$allow_existing_buckets" || die "target bucket already exists: $bucket_id; pass --allow-existing-buckets only for a new database-restored target"
+      if [[ "$verify_only" == false && "$allow_existing_buckets" == false ]]; then
+        die "target bucket already exists: $bucket_id; pass --allow-existing-buckets only for a new database-restored target"
+      fi
       expected="$(normalized_bucket <<<"$bucket")"
       actual="$(normalized_bucket < "$response")"
       [[ "$expected" == "$actual" ]] || die "target bucket configuration differs: $bucket_id"

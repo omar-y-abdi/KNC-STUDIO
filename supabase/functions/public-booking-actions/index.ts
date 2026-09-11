@@ -1,3 +1,4 @@
+import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   createCustomerAccessToken,
@@ -5,8 +6,15 @@ import {
   hashCustomerAccessToken,
 } from '../_shared/customerAccess.ts'
 import { verifyCustomerGateway } from '../_shared/customerGatewayAuth.ts'
+import {
+  CUSTOMER_SESSION_COOKIE,
+  CUSTOMER_RECEIPT_COOKIE,
+  customerCookie,
+  customerCookieHeader,
+  customerCookieProof,
+} from '../_shared/customerCookies.ts'
 
-type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review'
+type Action = 'request_access' | 'exchange_access' | 'list' | 'cancel' | 'review' | 'forget_device'
 type Language = 'sv' | 'en'
 
 interface ParsedAction {
@@ -32,9 +40,7 @@ const LIMITS: Readonly<Record<'request_access' | 'review', Limit>> = {
   review: { windowSecs: 86400, perIp: 5, perPhone: 2 },
 }
 
-const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const DEFAULT_ORIGINS = ['https://bladeblendstudio.se', 'https://www.bladeblendstudio.se']
-const CUSTOMER_SESSION_COOKIE = '__Host-bladeblend_customer_session'
 
 function allowedOrigins(): readonly string[] {
   const configured = Deno.env.get('PUBLIC_SITE_ORIGINS')
@@ -74,27 +80,14 @@ function json(req: Request, body: unknown, status = 200, extra?: HeadersInit): R
   })
 }
 
-function sessionCookie(req: Request): string | null {
-  const cookie = req.headers.get('cookie') ?? ''
-  const match = cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${CUSTOMER_SESSION_COOKIE}=`))
-  const value = match?.slice(CUSTOMER_SESSION_COOKIE.length + 1) ?? null
-  return opaqueToken(value) ? value : null
-}
-
-function sessionCookieHeader(token: string): string {
-  return `${CUSTOMER_SESSION_COOKIE}=${token}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=None`
-}
-
 function isAction(value: unknown): value is Action {
   return (
     value === 'request_access' ||
     value === 'exchange_access' ||
     value === 'list' ||
     value === 'cancel' ||
-    value === 'review'
+    value === 'review' ||
+    value === 'forget_device'
   )
 }
 
@@ -125,6 +118,7 @@ function parseBody(raw: unknown): ParsedAction | null {
   if (typeof raw !== 'object' || raw === null) return null
   const body = raw as Record<string, unknown>
   if (!isAction(body.action)) return null
+  if (body.action === 'forget_device') return { action: body.action }
 
   if (body.action === 'exchange_access') {
     return opaqueToken(body.accessCode)
@@ -193,24 +187,6 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
-}
-
-function customerSessionProof(token: string): Promise<string> {
-  return sha256(`customer-session-proof/v1\n${token.toLowerCase()}`)
-}
-
-async function verifyTurnstile(token: string, ip: string, secret: string): Promise<boolean> {
-  if (token.length === 0) return false
-  try {
-    const form = new URLSearchParams({ secret, response: token })
-    if (ip !== 'unknown') form.set('remoteip', ip)
-    const response = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: form })
-    if (!response.ok) return false
-    const result = (await response.json()) as { success?: boolean }
-    return result.success === true
-  } catch {
-    return false
-  }
 }
 
 function serviceClient(url: string, key: string) {
@@ -294,6 +270,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const service = serviceClient(supabaseUrl, serviceKey)
+  if (parsed.action === 'forget_device') {
+    const receipt = customerCookie(req, CUSTOMER_RECEIPT_COOKIE)
+    if (receipt !== null) {
+      const { error } = await service.rpc('forget_customer_booking_receipt', {
+        p_receipt_hash: await sha256(receipt),
+      })
+      if (error) console.error('public-booking-actions: receipt revocation failed', error.code)
+    }
+    // Clear optional device access even during a database outage; email-link sessions are separate.
+    return json(req, { ok: true }, 200, {
+      'Set-Cookie': customerCookieHeader(CUSTOMER_RECEIPT_COOKIE, '', 0),
+    })
+  }
   if (parsed.action === 'exchange_access') {
     const accessToken = createOpaqueToken()
     const { data, error } = await service.rpc('exchange_customer_booking_access', {
@@ -305,14 +294,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json(req, { ok: false, error: 'system' }, 500)
     }
     return data === true
-      ? json(req, { ok: true, session_proof: await customerSessionProof(accessToken) }, 200, {
-          'Set-Cookie': sessionCookieHeader(accessToken),
-        })
+      ? json(
+          req,
+          { ok: true, session_proof: await customerCookieProof(accessToken, 'session') },
+          200,
+          {
+            'Set-Cookie': customerCookieHeader(CUSTOMER_SESSION_COOKIE, accessToken),
+          },
+        )
       : json(req, { ok: false, error: 'invalid' })
   }
 
   if (parsed.action === 'list' || parsed.action === 'cancel') {
-    const existingSession = sessionCookie(req)
+    const existingSession = customerCookie(req, CUSTOMER_SESSION_COOKIE)
+    const receiptToken = customerCookie(req, CUSTOMER_RECEIPT_COOKIE)
     let sessionToken = existingSession
     let setCookie: string | undefined
     // An explicit email link selects the customer even when another or expired session exists.
@@ -332,16 +327,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (established.data !== true) {
         return json(req, { ok: false, error: 'access_denied' })
       }
-      setCookie = sessionCookieHeader(sessionToken)
+      setCookie = customerCookieHeader(CUSTOMER_SESSION_COOKIE, sessionToken)
     }
-    if (sessionToken === null) return json(req, { ok: false, error: 'access_denied' })
-    const accessHash = await sha256(sessionToken)
+    if (sessionToken === null && receiptToken === null)
+      return json(req, { ok: false, error: 'access_denied' })
+    const accessHash = sessionToken === null ? null : await sha256(sessionToken)
+    const receiptHash = receiptToken === null ? null : await sha256(receiptToken)
     const result =
       parsed.action === 'list'
-        ? await service.rpc('list_customer_bookings_with_access', { p_session_hash: accessHash })
-        : await service.rpc('cancel_customer_booking_with_access', {
+        ? await service.rpc('list_customer_bookings_for_browser', {
+            p_session_hash: accessHash,
+            p_receipt_hash: receiptHash,
+          })
+        : await service.rpc('cancel_customer_booking_for_browser', {
             p_booking_id: parsed.bookingId,
             p_session_hash: accessHash,
+            p_receipt_hash: receiptHash,
           })
     if (result.error) {
       console.error(`public-booking-actions: ${parsed.action} access RPC failed`, result.error.code)
@@ -354,7 +355,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       (result.data as Record<string, unknown>).ok === true
         ? {
             ...(result.data as Record<string, unknown>),
-            session_proof: await customerSessionProof(sessionToken),
+            session_proof:
+              (result.data as Record<string, unknown>).authority === 'verified' &&
+              sessionToken !== null
+                ? await customerCookieProof(sessionToken, 'session')
+                : await customerCookieProof(receiptToken ?? '', 'receipt'),
+            ...(receiptToken !== null &&
+            (result.data as Record<string, unknown>).receipt_active === true
+              ? { receipt_proof: await customerCookieProof(receiptToken, 'receipt') }
+              : {}),
           }
         : result.data
     return json(
@@ -366,13 +375,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   const phone = parsed.phone ?? ''
-  if (!(await verifyTurnstile(parsed.turnstileToken ?? '', ip, turnstileSecret ?? ''))) {
+  if (
+    !(await verifyTurnstile(
+      parsed.turnstileToken ?? '',
+      ip,
+      turnstileSecret ?? '',
+      turnstilePolicy(
+        parsed.action === 'request_access' ? 'customer_access' : 'review',
+        Deno.env.get('PUBLIC_SITE_ORIGINS'),
+      ),
+    ))
+  ) {
     return json(req, { ok: false, error: 'failed_challenge' })
   }
 
   let sessionHash: string | null = null
   if (parsed.action === 'review') {
-    const token = parsed.accessToken ?? sessionCookie(req)
+    const token = parsed.accessToken ?? customerCookie(req, CUSTOMER_SESSION_COOKIE)
     if (token !== null) sessionHash = await sha256(token.toLowerCase())
     if (sessionHash === null) return json(req, { ok: false, error: 'no_booking' })
     const scope = await service.rpc('customer_booking_access_scope', {

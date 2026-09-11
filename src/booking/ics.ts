@@ -58,10 +58,24 @@ export interface IcsEvent {
 
 const PRODID = '-//Blade & Blend Studio//Booking//EN'
 
-/**
- * Build a complete VCALENDAR string with CRLF line endings (RFC5545). Long-line folding is
- * intentionally omitted (values here are short); escaping is applied to every TEXT field.
- */
+/** Fold escaped content at 75 UTF-8 octets, counting the continuation space and keeping code points. */
+function foldContentLine(line: string): string {
+  const encoder = new TextEncoder()
+  let folded = ''
+  let bytes = 0
+  for (const character of line) {
+    const size = encoder.encode(character).byteLength
+    if (bytes + size > 75) {
+      folded += '\r\n '
+      bytes = 1
+    }
+    folded += character
+    bytes += size
+  }
+  return folded
+}
+
+/** Build a complete RFC5545 VCALENDAR: escaped TEXT, folded UTF-8 lines and final CRLF. */
 export function buildIcs(event: IcsEvent): string {
   const lines: readonly string[] = [
     'BEGIN:VCALENDAR',
@@ -79,5 +93,5 @@ export function buildIcs(event: IcsEvent): string {
     'END:VEVENT',
     'END:VCALENDAR',
   ]
-  return lines.join('\r\n')
+  return lines.map(foldContentLine).join('\r\n') + '\r\n'
 }

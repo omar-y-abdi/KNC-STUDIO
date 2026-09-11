@@ -116,5 +116,10 @@ export type BookingError =
 
 /** Result of submitting a booking through a `BookingPort`. */
 export type BookingResult =
-  | { readonly ok: true; readonly booking: Booking; readonly links: BookingLinks }
+  | {
+      readonly ok: true
+      readonly booking: Booking
+      readonly links: BookingLinks
+      readonly customerAccess?: 'ready' | 'email'
+    }
   | { readonly ok: false; readonly error: BookingError }

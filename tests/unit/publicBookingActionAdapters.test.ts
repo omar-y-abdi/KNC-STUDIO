@@ -48,11 +48,52 @@ describe('public booking action adapter errors', () => {
     ).resolves.toEqual({
       ok: true,
       bookings: { upcoming: [], past: [] },
+      authority: 'verified',
       profile: { name: '', phone: '0701234567', email: '' },
     })
     expect(invokePublicBookingAction).toHaveBeenCalledTimes(2)
     expect(invokePublicBookingAction).toHaveBeenLastCalledWith({ action: 'list' })
     expect(values.size).toBe(0)
+  })
+
+  it('keeps a device receipt separate from verified profile and autofill', async () => {
+    invokePublicBookingAction.mockResolvedValue({
+      failed: false,
+      data: {
+        ok: true,
+        authority: 'device',
+        session_proof: 'a'.repeat(64),
+        receipt_proof: 'a'.repeat(64),
+        bookings: [],
+        name: 'Untrusted profile',
+        phone: '0701234567',
+        email: 'someone@example.test',
+      },
+    })
+    await expect(supabaseMyBookingsAdapter.list({ accessToken: '', lang: 'sv' })).resolves.toEqual({
+      ok: true,
+      authority: 'device',
+      bookings: { upcoming: [], past: [] },
+    })
+  })
+
+  it('never substitutes a receipt for an explicit email credential', async () => {
+    invokePublicBookingAction.mockResolvedValue({
+      failed: false,
+      data: {
+        ok: true,
+        authority: 'device',
+        session_proof: 'a'.repeat(64),
+        receipt_proof: 'a'.repeat(64),
+        bookings: [],
+      },
+    })
+    await expect(
+      supabaseMyBookingsAdapter.list({ accessToken: 'a'.repeat(64), lang: 'sv' }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'access_denied',
+    })
   })
 
   it.each(['failed_challenge', 'rate_limited'] as const)(
