@@ -221,9 +221,10 @@ export function App(): JSX.Element {
   const scrollMobToHero = (): void => {
     setState({ view: 'home' })
     window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
-        ?.scrollTo({ top: 0, behavior: 'smooth' })
+      document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
+        top: 0,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
     })
   }
   const openMyBookings = (): void => {
