@@ -27,7 +27,7 @@ import {
   type SizePreset,
 } from '../site/siteChrome'
 import type { Mode, ShellPalette, View } from './shared'
-import { EASE, PANEL_COMPACT, PANEL_FULL } from './shared'
+import { EASE, PANEL_COMPACT, PANEL_FULL, useReducedMotion } from './shared'
 import type { CustomerProfile } from '../mybookings/domain'
 
 /** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
@@ -70,6 +70,7 @@ export interface MobileSiteProps {
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
   const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
+  const reduceMotion = useReducedMotion()
   const view = props.view
   // Booking collapses immediately. On home the same panel collapses continuously as its scroll
   // container advances, exposing the always-mounted About section below.
@@ -128,9 +129,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
     height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
-    transition: inSection
-      ? 'height .66s ' + EASE + ', border-radius .3s ease'
-      : 'border-radius .3s ease',
+    transition: reduceMotion
+      ? 'none'
+      : inSection
+        ? 'height .66s ' + EASE + ', border-radius .3s ease'
+        : 'border-radius .3s ease',
     '--mob-text': c.text,
     '--mob-muted': mobMutedColor,
     '--mob-icon': c.iconF,
@@ -160,7 +163,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     left: '22px',
     opacity: compactPanel ? 1 : 0,
     pointerEvents: 'none',
-    transition: 'opacity .4s ease',
+    transition: reduceMotion ? 'none' : 'opacity .4s ease',
   }
   const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
   const expandChevStyle: JSX.CSSProperties = {
@@ -191,7 +194,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     // Visible controls remain usable throughout the fade. Disabling at 24px left almost opaque
     // buttons untappable when a browser restored scroll/focus after closing the privacy notice.
     pointerEvents: heroOpacity === 0 ? 'none' : 'auto',
-    transition: inSection ? 'opacity .34s ease' : undefined,
+    transition: reduceMotion ? 'none' : inSection ? 'opacity .34s ease' : undefined,
   }
   const heroBtnDarkStyle: JSX.CSSProperties = {
     alignSelf: 'stretch',
@@ -271,7 +274,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               justifyContent: 'space-between',
               gap: '10px',
               marginTop: phoneShift,
-              transition: 'margin-top .6s ' + EASE,
+              transition: reduceMotion ? 'none' : 'margin-top .6s ' + EASE,
             }}
           >
             {business.phoneTel === '' || business.phoneDisplay === '' ? (

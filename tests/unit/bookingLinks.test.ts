@@ -17,6 +17,8 @@ const HASSAN: Barber = {
 const HAIRCUT: ServiceItem = { id: 'h', name: 'Hårklippning', price: 350, dur: 45 }
 const BUSINESS: BusinessSettings = {
   name: 'Northside Barbers',
+  legalName: '',
+  organizationNumber: '',
   email: 'hello@northside.example',
   phoneDisplay: '08-123 45 67',
   phoneTel: '+4681234567',

@@ -22,9 +22,11 @@ import { parseEmail } from '../booking/validation'
 import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
 import type { Lang } from '../i18n/index'
 import { myBookingsStrings } from '../i18n/index'
+import { customerEmailLinkStrings } from '../i18n/customerEmailLinkStrings'
 import type { CustomerProfile, MyBooking, MyBookings } from './domain'
 import { defaultMyBookingsPort } from './adapters/index'
 import type { MyBookingsPort } from './port'
+import { CustomerEmailLink } from './CustomerEmailLink'
 
 type Mode = 'light' | 'dark'
 type Step = 'loading' | 'lookup' | 'sent' | 'list'
@@ -41,9 +43,34 @@ export interface MyBookingsDialogProps {
   readonly accessToken?: string
   readonly accessError?: 'invalid' | 'cookies_disabled' | 'system'
   readonly onProfile?: (profile: CustomerProfile | undefined) => void
+  readonly emailLinkCode?: string | null
 }
 
 export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
+  const owner = useRef({
+    port: props.port,
+    token: props.accessToken,
+    error: props.accessError,
+    key: 0,
+  })
+  if (
+    owner.current.port !== props.port ||
+    owner.current.token !== props.accessToken ||
+    owner.current.error !== props.accessError
+  ) {
+    owner.current = {
+      port: props.port,
+      token: props.accessToken,
+      error: props.accessError,
+      key: owner.current.key + 1,
+    }
+  }
+  // A changed credential or port starts a fresh dialog session, clearing prior customer data and
+  // invalidating its asynchronous work before the new session can render.
+  return <MyBookingsSession key={owner.current.key} {...props} />
+}
+
+function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const lang = props.lang
   const t = myBookingsStrings(lang)
   const dark = props.mode === 'dark'
@@ -65,8 +92,18 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   )
   const [busy, setBusy] = useState<boolean>(false)
   const [bookings, setBookings] = useState<MyBookings | null>(null)
+  const [profile, setProfile] = useState<CustomerProfile | null>(null)
   const [deviceOnly, setDeviceOnly] = useState(false)
   const [accessToken, setAccessToken] = useState<string | null>(props.accessToken ?? null)
+  const lifetime = useRef({ active: true, read: 0, reading: false, request: false, cancel: false })
+  useEffect(() => {
+    const owner = lifetime.current
+    owner.active = true
+    return () => {
+      owner.active = false
+      owner.read++
+    }
+  }, [])
 
   // List-view local state.
   const [pastOpen, setPastOpen] = useState<boolean>(false)
@@ -94,12 +131,24 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   }, [step])
 
   async function loadBookings(token: string, restoring = false): Promise<void> {
+    const owner = lifetime.current
+    if (!owner.active) return
+    const read = ++owner.read
+    owner.reading = true
+    const current = (): boolean => owner.active && read === owner.read
     setBusy(true)
     setSystemError(null)
     try {
       const result = await port.list({ accessToken: token, lang })
+      if (!current()) return
       if (!result.ok) {
+        if (result.error === 'system' && bookings !== null) {
+          setSystemError(t.errSystem)
+          return
+        }
         props.onProfile?.(undefined)
+        setProfile(null)
+        setBookings(null)
         setAccessToken(null)
         setStep('lookup')
         const errors = {
@@ -112,6 +161,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       }
       setBookings(result.bookings)
       setDeviceOnly(result.authority === 'device')
+      setProfile(result.authority === 'verified' ? result.profile : null)
       props.onProfile?.(result.profile)
       // Initial link token is used only for this request. Subsequent operations use HttpOnly cookie.
       setAccessToken('')
@@ -121,11 +171,21 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       setNotice(null)
       setStep('list')
     } catch {
+      if (!current()) return
+      if (bookings !== null) {
+        setSystemError(t.errSystem)
+        return
+      }
+      props.onProfile?.(undefined)
+      setProfile(null)
       setAccessToken(null)
       setStep('lookup')
       setSystemError(t.errSystem)
     } finally {
-      setBusy(false)
+      if (current()) {
+        owner.reading = false
+        setBusy(false)
+      }
     }
   }
 
@@ -139,11 +199,16 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   }, [props.accessToken])
 
   async function requestAccess(): Promise<void> {
+    const owner = lifetime.current
+    if (!owner.active || owner.request) return
     const parsedEmail = parseEmail(email)
     if (!parsedEmail.ok) {
       setEmailError(!parsedEmail.ok)
       return
     }
+    owner.request = true
+    owner.read++
+    owner.reading = false
     setBusy(true)
     setSystemError(null)
     try {
@@ -152,17 +217,21 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         lang,
         turnstileToken,
       })
+      if (!owner.active) return
       if (result.ok) {
         setStep('sent')
       } else {
         setSystemError(actionError(result.error, t.errSystem))
       }
     } catch {
-      setSystemError(t.errSystem)
+      if (owner.active) setSystemError(t.errSystem)
     } finally {
-      setBusy(false)
-      setTurnstileToken('')
-      setTurnstileNonce((nonce) => nonce + 1)
+      owner.request = false
+      if (owner.active) {
+        setBusy(false)
+        setTurnstileToken('')
+        setTurnstileNonce((nonce) => nonce + 1)
+      }
     }
   }
 
@@ -176,6 +245,12 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   const onLookupClick = (): void => void requestAccess()
 
   const onChangeDetails = (): void => {
+    lifetime.current.read++
+    lifetime.current.reading = false
+    props.onProfile?.(undefined)
+    setProfile(null)
+    setBookings(null)
+    setBusy(false)
     setStep('lookup')
     setSystemError(null)
     setEmailError(false)
@@ -195,6 +270,9 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
   }
 
   const onConfirmCancel = async (b: MyBooking): Promise<void> => {
+    const owner = lifetime.current
+    if (!owner.active || owner.cancel) return
+    owner.cancel = true
     setCancelBusy(true)
     setCancelError(null)
     try {
@@ -203,21 +281,29 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
         return
       }
       const result = await port.cancel(b, accessToken)
+      if (!owner.active) return
       if (!result.ok) {
         setCancelError(result.error === 'access_denied' ? t.errAccess : t.errCancel)
         return
       }
       // Drop the cancelled booking from the upcoming list; surface a brief confirmation note.
+      const reload = owner.reading
+      owner.read++
+      owner.reading = false
+      setBusy(false)
       setBookings((prev) =>
         prev === null ? prev : { ...prev, upcoming: prev.upcoming.filter((x) => x.id !== b.id) },
       )
       setCancelFor(null)
       setExpandedId(null)
       setNotice(t.cancelledNote)
+      // A merge-triggered list read may have captured this booking before cancellation committed.
+      if (reload) void loadBookings('')
     } catch {
-      setCancelError(t.errCancel)
+      if (owner.active) setCancelError(t.errCancel)
     } finally {
-      setCancelBusy(false)
+      owner.cancel = false
+      if (owner.active) setCancelBusy(false)
     }
   }
 
@@ -461,6 +547,16 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
       </div>
 
       <div style="padding:16px 18px 18px;">
+        {props.emailLinkCode !== undefined && step !== 'loading' ? (
+          <CustomerEmailLink
+            lang={lang}
+            dark={dark}
+            port={port}
+            profile={step === 'list' ? profile : null}
+            code={props.emailLinkCode}
+            onLinked={() => void loadBookings('')}
+          />
+        ) : null}
         {step === 'list' && deviceOnly ? (
           <p style={{ fontSize: '13px', lineHeight: 1.45, opacity: 0.7, margin: '0 0 14px' }}>
             {t.deviceBookingsNote}
@@ -519,6 +615,22 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 
         {step === 'list' && bookings !== null ? (
           <div style="display:flex;flex-direction:column;gap:16px;">
+            {systemError !== null ? (
+              <div>
+                <p role="alert" style={{ ...s.submitErrorStyle, margin: '0 0 8px' }}>
+                  {systemError}
+                </p>
+                <button
+                  type="button"
+                  class={FOCUS_CLS}
+                  style={s.bookBtnStyle}
+                  disabled={busy}
+                  onClick={() => void loadBookings('')}
+                >
+                  {customerEmailLinkStrings(lang).refresh}
+                </button>
+              </div>
+            ) : null}
             {notice !== null ? (
               <div
                 style={{
@@ -584,6 +696,16 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
                 </button>
                 {pastOpen ? bookings.past.map((b) => bookingRow(b, false)) : null}
               </section>
+            ) : null}
+
+            {props.emailLinkCode === undefined && profile !== null ? (
+              <CustomerEmailLink
+                lang={lang}
+                dark={dark}
+                port={port}
+                profile={profile}
+                onLinked={() => void loadBookings('')}
+              />
             ) : null}
 
             <div style="display:flex;justify-content:center;padding-top:2px;">

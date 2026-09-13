@@ -21,7 +21,7 @@ export interface Palette {
   iconF: string
 }
 
-export const DARK: Palette = {
+const DARK: Palette = {
   bg: '#1c1c1e',
   card: '#262629',
   subtle: '#2c2c2e',
@@ -36,7 +36,7 @@ export const DARK: Palette = {
   iconF: 'invert(1)',
 }
 
-export const LIGHT: Palette = {
+const LIGHT: Palette = {
   bg: '#ffffff',
   card: '#ffffff',
   subtle: '#f6f6f4',
@@ -56,7 +56,7 @@ export function palette(dark: boolean): Palette {
 }
 
 /** Icon sizing/filter helper. */
-export function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperties {
+function makeIc(c: Palette): (sz: number, op?: number) => JSX.CSSProperties {
   return (sz, op) => ({
     width: sz + 'px',
     height: sz + 'px',

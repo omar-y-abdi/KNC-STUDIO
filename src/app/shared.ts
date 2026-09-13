@@ -2,6 +2,7 @@
 // DesktopSite and MobileSite read identical values (no per-file drift).
 
 import type { JSX } from 'preact'
+import { useEffect, useState } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import type { BusinessSettings } from '../site/siteChrome'
 
@@ -52,7 +53,23 @@ export function shellPalette(dark: boolean): ShellPalette {
 }
 
 export function mobMuted(dark: boolean): string {
-  return dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)'
+  return dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'
+}
+
+/** Keep shell animation preferences current when the operating-system setting changes. */
+export function useReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)'
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  )
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const sync = (): void => setReduced(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+  return reduced
 }
 
 export function mobBtnBg(dark: boolean): string {

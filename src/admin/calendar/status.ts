@@ -1,21 +1,20 @@
 // Pure boundary parser: the `calendar_connection_status()` RPC returns an untyped jsonb object, so we
 // validate it into a `CalendarStatus` here (never trust the wire shape). Kept dependency-free so it is
-// unit-tested directly (tests/unit/calendar.test.ts).
+// unit-tested directly (tests/unit/calendarSync.test.ts).
 
 import type { CalendarStatus } from './port'
 
-const DISCONNECTED: CalendarStatus = {
-  connected: false,
-  disconnectPending: false,
-  repairRequired: false,
-  googleEmail: null,
-  lastSyncError: null,
-}
-
-/** Validate the RPC payload into a `CalendarStatus`. Anything malformed collapses to "disconnected". */
-export function parseCalendarStatus(raw: unknown): CalendarStatus {
-  if (typeof raw !== 'object' || raw === null) return DISCONNECTED
+/** Malformed responses are unavailable status, never evidence of a completed disconnect. */
+export function parseCalendarStatus(raw: unknown): CalendarStatus | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
+  if (typeof r['connected'] !== 'boolean') return null
+  for (const key of ['disconnect_pending', 'repair_required']) {
+    if (key in r && typeof r[key] !== 'boolean') return null
+  }
+  for (const key of ['google_email', 'last_sync_error']) {
+    if (key in r && r[key] !== null && typeof r[key] !== 'string') return null
+  }
   return {
     connected: r['connected'] === true,
     disconnectPending: r['disconnect_pending'] === true,

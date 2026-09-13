@@ -2,7 +2,7 @@
 
 > Public online appointment booking for a barbershop in Göteborg, Sweden.
 
-Blade & Blend Studio is a single-page barbershop website. A visitor picks a barber, chooses a day and time, selects a service, and books an appointment online. The site is bilingual (Swedish by default, English available) and adapts between an editorial desktop layout and a Material-style mobile layout. The public site is a single page; the only other routes are the staff login and admin panel.
+Blade & Blend Studio is a single-page barbershop website. A visitor picks a barber, chooses a day and time, selects a service, and books an appointment online. The site is bilingual (Swedish by default, English available) and adapts between an editorial desktop layout and a Material-style mobile layout. The public site is a single page; public information pages describe privacy and booking terms. Staff routes require authentication and are not public content.
 
 ## Contact
 - Current address, phone, staff, hours, and price range are generated from the public CMS data when served in production.
@@ -10,3 +10,4 @@ Blade & Blend Studio is a single-page barbershop website. A visitor picks a barb
 ## Pages
 - [Blade & Blend Studio](https://bladeblendstudio.se/): Home and online booking
 - [Privacy Policy](https://bladeblendstudio.se/privacy): Data handling and Google Calendar disclosure
+- [Booking terms](https://bladeblendstudio.se/terms): Booking, cancellation and contact

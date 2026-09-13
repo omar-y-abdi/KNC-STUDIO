@@ -569,6 +569,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   <button
                     key={b.id}
                     data-testid="booking-barber-option"
+                    aria-pressed={b.selected}
                     onClick={b.onSelect}
                     style={b.cardStyle}
                   >

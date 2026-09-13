@@ -39,6 +39,8 @@ export interface BookingStrings {
   emailPh: string
   book: string
   policy: string
+  termsLink: string
+  termsLinkLabel: string
   bookedTitle: string
   /** Confirmation sentence template. `{email}` and legacy `{phone}` tokens are interpolated. */
   confirmSent: string
@@ -97,6 +99,9 @@ export interface PrivacyStrings {
 
 /** Strings for the "Om oss" / About section. */
 export interface AboutStrings {
+  /** Static legal links at the bottom of the About section. */
+  termsLink: string
+  privacyLink: string
   /** Section eyebrow + heading + intro paragraph. */
   eyebrow: string
   heading: string
@@ -104,9 +109,11 @@ export interface AboutStrings {
   /** Salon photo gallery. */
   galleryTitle: string
   galleryAlt: string
+  galleryLoading: string
+  galleryEmpty: string
+  galleryUnavailable: string
   /** Stylists block. */
   stylistsTitle: string
-  stylistAvatarAlt: string
   /** Customer-cuts gallery. */
   cutsTitle: string
   cutsAlt: string

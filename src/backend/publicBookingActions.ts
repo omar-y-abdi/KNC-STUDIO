@@ -1,6 +1,13 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './config'
 
 export type PublicBookingActionPayload =
+  | {
+      readonly action: 'request_link'
+      readonly email: string
+      readonly sourceEmail: string
+      readonly lang: 'sv' | 'en'
+    }
+  | { readonly action: 'confirm_link'; readonly linkCode: string }
   | { readonly action: 'forget_device' }
   | {
       readonly action: 'request_access'

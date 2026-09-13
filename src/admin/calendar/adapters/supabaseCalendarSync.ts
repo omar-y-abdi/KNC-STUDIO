@@ -26,7 +26,8 @@ export const supabaseCalendarSyncPort: CalendarSyncPort = {
     try {
       const { data, error } = await getAdminClient().rpc('calendar_connection_status')
       if (error !== null) return err('network', GENERIC)
-      return ok(parseCalendarStatus(data))
+      const status = parseCalendarStatus(data)
+      return status === null ? err('network', GENERIC) : ok(status)
     } catch {
       return err('network', GENERIC)
     }

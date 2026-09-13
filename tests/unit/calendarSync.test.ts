@@ -6,7 +6,7 @@
 // cleanly in Node/vitest as well as in the Deno edge runtime.
 
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildEvent,
   googleEventId,
@@ -21,6 +21,17 @@ import {
   withGoogleRetry,
 } from '../../supabase/functions/_shared/calendar'
 import { parseCalendarStatus } from '../../src/admin/calendar/status'
+
+const { calendarStatusRpc } = vi.hoisted(() => ({ calendarStatusRpc: vi.fn() }))
+
+vi.mock('../../src/admin/adminClient', () => ({
+  getAdminClient: () => ({
+    rpc: calendarStatusRpc,
+    functions: { invoke: vi.fn() },
+  }),
+}))
+
+import { supabaseCalendarSyncPort } from '../../src/admin/calendar/adapters/supabaseCalendarSync'
 
 const SECRET = 'unit-test-state-secret'
 const NOW_MS = 1_700_000_000_000
@@ -246,21 +257,19 @@ describe('parseCalendarStatus', () => {
     })
   })
 
-  it('defaults to disconnected on junk', () => {
-    expect(parseCalendarStatus(null)).toEqual({
-      connected: false,
-      disconnectPending: false,
-      repairRequired: false,
-      googleEmail: null,
-      lastSyncError: null,
-    })
-    expect(parseCalendarStatus({ connected: 'yes' })).toEqual({
-      connected: false,
-      disconnectPending: false,
-      repairRequired: false,
-      googleEmail: null,
-      lastSyncError: null,
-    })
+  it('returns null when the required connected flag is missing or malformed', () => {
+    expect(parseCalendarStatus(null)).toBeNull()
+    expect(parseCalendarStatus({})).toBeNull()
+    expect(parseCalendarStatus({ connected: 'yes' })).toBeNull()
+    expect(parseCalendarStatus({ connected: null })).toBeNull()
+  })
+
+  it('rejects malformed supplied optional fields instead of coercing them', () => {
+    expect(parseCalendarStatus({ connected: true, disconnect_pending: 'false' })).toBeNull()
+    expect(parseCalendarStatus({ connected: true, repair_required: 0 })).toBeNull()
+    expect(parseCalendarStatus({ connected: true, google_email: false })).toBeNull()
+    expect(parseCalendarStatus({ connected: true, last_sync_error: 503 })).toBeNull()
+    expect(parseCalendarStatus({ connected: true, google_email: undefined })).toBeNull()
   })
 
   it('parses durable disconnect state', () => {
@@ -306,6 +315,44 @@ describe('parseCalendarStatus', () => {
     expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
       'boom',
     )
+  })
+
+  it('keeps omitted legacy optional flags and nullable strings at their defaults', () => {
+    expect(parseCalendarStatus({ connected: false })).toEqual({
+      connected: false,
+      disconnectPending: false,
+      repairRequired: false,
+      googleEmail: null,
+      lastSyncError: null,
+    })
+  })
+})
+
+describe('supabaseCalendarSyncPort.status', () => {
+  beforeEach(() => calendarStatusRpc.mockReset())
+
+  it('maps malformed RPC status to a network error instead of success-disconnected', async () => {
+    calendarStatusRpc.mockResolvedValue({ data: { connected: 'yes' }, error: null })
+
+    await expect(supabaseCalendarSyncPort.status()).resolves.toMatchObject({
+      ok: false,
+      error: { kind: 'network' },
+    })
+  })
+
+  it('keeps a valid disconnected RPC status as a successful value', async () => {
+    calendarStatusRpc.mockResolvedValue({ data: { connected: false }, error: null })
+
+    await expect(supabaseCalendarSyncPort.status()).resolves.toEqual({
+      ok: true,
+      value: {
+        connected: false,
+        disconnectPending: false,
+        repairRequired: false,
+        googleEmail: null,
+        lastSyncError: null,
+      },
+    })
   })
 })
 

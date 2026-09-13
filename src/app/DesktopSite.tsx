@@ -1,4 +1,4 @@
-// Desktop (WEBB · Editorial) layout — nav + hero + collapsible booking fold + footer.
+// Desktop (WEBB · Editorial) layout — nav + hero with business info + collapsible booking fold.
 
 import type { JSX, RefObject } from 'preact'
 import { AboutSection } from '../about/AboutSection'
@@ -26,7 +26,7 @@ import {
 } from '../site/siteChrome'
 import type { ShellProps, View } from './shared'
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
-import { EASE } from './shared'
+import { EASE, useReducedMotion } from './shared'
 
 /** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
 export interface DesktopSitePreviewPorts {
@@ -68,6 +68,7 @@ export interface DesktopSiteProps extends ShellProps {
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   const { c, tx, business, view } = props
+  const reduceMotion = useReducedMotion()
   // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
   const booking = view === 'booking'
   const bookingMounted = useRef(booking)
@@ -146,13 +147,19 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
       }
       const foldBox = fold.getBoundingClientRect()
       const stepBox = step?.getBoundingClientRect()
+      const privacySpace =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--privacy-overlay-space'),
+        ) || 0
+      const visibleBottom = Math.max(DESKTOP_PANEL_HEIGHT, window.innerHeight - privacySpace)
       const delta =
         stepBox === undefined
           ? foldBox.top - DESKTOP_PANEL_HEIGHT
-          : stepBox.bottom > window.innerHeight
-            ? stepBox.bottom - window.innerHeight
-            : stepBox.top < 0
-              ? stepBox.top
+          : stepBox.height > visibleBottom - DESKTOP_PANEL_HEIGHT ||
+              stepBox.top < DESKTOP_PANEL_HEIGHT
+            ? stepBox.top - DESKTOP_PANEL_HEIGHT
+            : stepBox.bottom > visibleBottom
+              ? stepBox.bottom - visibleBottom
               : 0
       if (delta !== 0) {
         scrollTo(window.scrollY + delta, window.scrollY, (top) =>
@@ -265,10 +272,14 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
     display: 'grid',
     gridTemplateRows: open ? '1fr' : '0fr',
     opacity: open ? 1 : 0,
-    transition: 'grid-template-rows .58s ' + EASE + ', opacity .42s ease',
+    transition: reduceMotion ? 'none' : 'grid-template-rows .58s ' + EASE + ', opacity .42s ease',
   })
   const deskFoldInnerStyle: JSX.CSSProperties = { overflow: 'hidden', minHeight: 0 }
-  const footerStyle: JSX.CSSProperties = {
+  const heroInfoStyle: JSX.CSSProperties = {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -276,7 +287,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
     borderTop: '.5px solid ' + c.line,
     background: c.footer,
     fontSize: scalePx(13, props.homepageScale) + 'px',
-    opacity: 0.6,
+    opacity: 0.65,
     flex: 'none',
     flexWrap: 'wrap',
     gap: '8px',
@@ -349,7 +360,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
               fontSize: scalePx(13, props.homepageScale) + 'px',
               fontWeight: 600,
               letterSpacing: '1.5px',
-              opacity: 0.45,
+              opacity: 0.65,
               margin: '0 0 30px',
               color: 'inherit',
             }}
@@ -387,6 +398,10 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           {!booking && props.privacy !== undefined ? (
             <PrivacyManageButton lang={props.lang} dark={props.dark} controls={props.privacy} />
           ) : null}
+          <div style={heroInfoStyle}>
+            <span>{tx.hours}</span>
+            <span>{tx.addr}</span>
+          </div>
         </div>
         {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
         <div
@@ -459,11 +474,6 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           />
         ) : null}
       </main>
-
-      <div style={footerStyle}>
-        <span>{tx.hours}</span>
-        <span>{tx.addr}</span>
-      </div>
     </div>
   )
 }

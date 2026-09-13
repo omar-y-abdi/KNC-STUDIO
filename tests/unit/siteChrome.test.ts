@@ -145,6 +145,8 @@ describe('business settings', () => {
       'homepage_logo_scale',
       'homepage_logo_style',
       'business_name',
+      'business_legal_name',
+      'business_org_number',
       'business_email',
       'business_phone_display',
       'business_phone_tel',
@@ -164,6 +166,8 @@ describe('business settings', () => {
     const business = resolveBusinessSettings(
       new Map([
         [BUSINESS_SETTING_KEYS.name, 'Northside Barbers'],
+        [BUSINESS_SETTING_KEYS.legalName, 'Northside Company AB'],
+        [BUSINESS_SETTING_KEYS.organizationNumber, '556016-0680'],
         [BUSINESS_SETTING_KEYS.email, 'hello@northside.example'],
         [BUSINESS_SETTING_KEYS.phoneDisplay, '08-123 45 67'],
         [BUSINESS_SETTING_KEYS.phoneTel, '+4681234567'],
@@ -181,6 +185,8 @@ describe('business settings', () => {
 
     expect(business).toEqual({
       name: 'Northside Barbers',
+      legalName: 'Northside Company AB',
+      organizationNumber: '556016-0680',
       email: 'hello@northside.example',
       phoneDisplay: '08-123 45 67',
       phoneTel: '+4681234567',

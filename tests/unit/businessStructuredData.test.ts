@@ -115,3 +115,31 @@ describe('business structured data', () => {
     expect(data).not.toHaveProperty('hasMap')
   })
 })
+
+describe('legal business identity', () => {
+  it('keeps legal defaults empty and exposes only saved legal identity in JSON-LD', () => {
+    const empty = resolveBusinessSettings(new Map())
+    const facts = { barbers: [], services: [], schedules: [] }
+    expect(empty.legalName).toBe('')
+    expect(empty.organizationNumber).toBe('')
+    expect(buildBusinessStructuredData(empty, facts, 'https://example.test')).not.toHaveProperty(
+      'legalName',
+    )
+    expect(buildBusinessStructuredData(empty, facts, 'https://example.test')).not.toHaveProperty(
+      'identifier',
+    )
+    const saved = resolveBusinessSettings(
+      new Map([
+        ['business_legal_name', ' Saved Company AB '],
+        ['business_org_number', '556016-0680'],
+      ]),
+    )
+    const data = buildBusinessStructuredData(saved, facts, 'https://example.test')
+    expect(data.legalName).toBe('Saved Company AB')
+    expect(data.identifier).toEqual({
+      '@type': 'PropertyValue',
+      propertyID: 'SE:Organisationsnummer',
+      value: '556016-0680',
+    })
+  })
+})

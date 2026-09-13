@@ -1,8 +1,7 @@
 // "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
 // the desktop and mobile layouts. Minimal/editorial on desktop, M3 cards on mobile (it simply uses
-// the booking palette + 14px radii, so it reads native in both shells). All photos are tasteful
-// placeholders (PlaceholderPhoto); bio copy comes from i18n/DB overlays while displayed reviews
-// come only from published review records.
+// the booking palette + 14px radii, so it reads native in both shells). Photos and reviews come
+// from published records; bio copy comes from i18n/DB overlays.
 //
 // The review form goes through the injectable `ReviewsPort` (default: env-selected — Supabase when
 // configured, an empty offline port otherwise). A valid server submission is prepended locally; the
@@ -38,11 +37,6 @@ type Mode = 'light' | 'dark'
 /** The id the "Om oss" hero link scroll-targets. */
 export const ABOUT_SECTION_ID = 'om-oss'
 
-// Placeholder photo ids — the placeholder tiles + their keys when there are no DB photos. Module-
-// scope constants (stable identities) so they aren't reallocated on every render.
-const SALON_IDS: readonly string[] = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
-const CUT_IDS: readonly string[] = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7']
-
 export interface AboutSectionProps {
   readonly onManagePrivacy?: () => void
   readonly mode: Mode
@@ -53,7 +47,7 @@ export interface AboutSectionProps {
   readonly barbersPort?: BarbersPort
   /** Injected About-copy seam — the editable section copy overlay (default: env-selected). */
   readonly aboutContentPort?: AboutContentPort
-  /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = placeholders). */
+  /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = empty). */
   readonly galleryPort?: GalleryPort
   /** Owner-set font-size preset for the section's editorial header (default 'md' = 1.0×). */
   readonly fontScale?: SizePreset
@@ -130,7 +124,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
   const { roster } = useRoster(props.barbersPort, dataActive)
 
-  // Gallery photos per kind: empty under the mock (placeholder tiles), Storage URLs under a backend.
+  // Distinguish loading, unpublished galleries and read failures; only real photos are interactive.
   const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
   const cutPhotos = useGallery('cuts', props.galleryPort, dataActive)
 
@@ -379,16 +373,22 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it).
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
         <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
-        <div style={fullBleedStyle}>
-          <GalleryMarquee
-            ids={SALON_IDS}
-            photos={salonPhotos}
-            glyph="camera"
-            alt={tx.galleryAlt}
-            c={c}
-            dark={dark}
-          />
-        </div>
+        {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
+          </div>
+        ) : (
+          <p
+            role="status"
+            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+          >
+            {salonPhotos.status === 'loading'
+              ? tx.galleryLoading
+              : salonPhotos.status === 'error'
+                ? tx.galleryUnavailable
+                : tx.galleryEmpty}
+          </p>
+        )}
 
         {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
@@ -413,13 +413,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                     }}
                   />
                 ) : (
-                  <PlaceholderPhoto
-                    c={c}
-                    dark={dark}
-                    glyph="person"
-                    alt={tx.stylistAvatarAlt}
-                    ratio="1 / 1"
-                  />
+                  <PlaceholderPhoto c={c} dark={dark} />
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
@@ -448,18 +442,24 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           })}
         </div>
 
-        {/* Customer-cuts gallery — same interactive marquee, scissors glyph. Full-bleed too. */}
+        {/* Customer-cuts gallery — the same interactive photo marquee. Full-bleed too. */}
         <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
-        <div style={fullBleedStyle}>
-          <GalleryMarquee
-            ids={CUT_IDS}
-            photos={cutPhotos}
-            glyph="scissors"
-            alt={tx.cutsAlt}
-            c={c}
-            dark={dark}
-          />
-        </div>
+        {cutPhotos.status === 'ready' && cutPhotos.photos.length > 0 ? (
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
+          </div>
+        ) : (
+          <p
+            role="status"
+            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+          >
+            {cutPhotos.status === 'loading'
+              ? tx.galleryLoading
+              : cutPhotos.status === 'error'
+                ? tx.galleryUnavailable
+                : tx.galleryEmpty}
+          </p>
+        )}
 
         {/* Reviews */}
         <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
@@ -614,8 +614,31 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           </button>
         </div>
       </div>
-      {props.onManagePrivacy ? (
-        <footer style={{ padding: '24px 0 8px', textAlign: 'center' }}>
+      <footer
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: '8px 18px',
+          padding: '24px 0 8px',
+          textAlign: 'center',
+        }}
+      >
+        <a
+          href="/terms"
+          class={FOCUS_CLS}
+          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+        >
+          {tx.termsLink}
+        </a>
+        <a
+          href="/privacy"
+          class={FOCUS_CLS}
+          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+        >
+          {tx.privacyLink}
+        </a>
+        {props.onManagePrivacy ? (
           <a
             href="#privacy-preferences"
             class={FOCUS_CLS}
@@ -628,8 +651,8 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           >
             {privacyStrings(props.lang).manage}
           </a>
-        </footer>
-      ) : null}
+        ) : null}
+      </footer>
     </section>
   )
 }

@@ -11,6 +11,12 @@ import type { MyBookingsAccessRequestParams, MyBookingsListParams, MyBookingsPor
 import { mockMyBookingsAdapter } from './mockMyBookings'
 
 const lazySupabaseMyBookingsPort: MyBookingsPort = {
+  requestEmailLink: (email, lang, sourceEmail) =>
+    import('./supabaseMyBookings').then((m) =>
+      m.supabaseMyBookingsAdapter.requestEmailLink(email, lang, sourceEmail),
+    ),
+  confirmEmailLink: (code) =>
+    import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.confirmEmailLink(code)),
   requestAccess: (params: MyBookingsAccessRequestParams) =>
     import('./supabaseMyBookings').then((m) => m.supabaseMyBookingsAdapter.requestAccess(params)),
   exchangeAccess: (accessCode: string) =>

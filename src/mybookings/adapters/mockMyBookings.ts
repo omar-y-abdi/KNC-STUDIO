@@ -19,6 +19,8 @@ import type {
 export function makeMockMyBookingsAdapter(clock: Clock = defaultClock): MyBookingsPort {
   void clock
   return {
+    requestEmailLink: () => Promise.resolve({ ok: false, error: 'access_denied' }),
+    confirmEmailLink: () => Promise.resolve({ ok: false, error: 'access_denied' }),
     requestAccess(): Promise<MyBookingsAccessRequestResult> {
       return Promise.resolve({ ok: true })
     },

@@ -3,7 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Integritetspolicy — Blade &amp; Blend Studio</title>
+    <title id="legal-title">Integritetspolicy</title>
+    <meta
+      id="legal-description"
+      name="description"
+      content="Så hanterar salongen bokningsuppgifter, cookies, e-post och kalenderkoppling. Läs om dina rättigheter och kontakta salongen."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta id="legal-og-title" property="og:title" content="Integritet och cookies" />
+    <meta property="og:description" content="Bokningsuppgifter, cookies och dina rättigheter." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bladeblendstudio.se/privacy" />
+    <meta property="og:image" content="https://bladeblendstudio.se/og-image.png" />
+    <meta id="legal-image-alt" property="og:image:alt" content="Salongen" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://bladeblendstudio.se/privacy" />
     <style>
@@ -69,6 +82,13 @@
         padding: 0.1em 0.35em;
         border-radius: 5px;
       }
+      dt {
+        font-weight: 600;
+      }
+      dd {
+        margin: 0 0 0.75rem;
+        overflow-wrap: anywhere;
+      }
       hr {
         border: none;
         border-top: 1px solid var(--line);
@@ -85,18 +105,23 @@
   </head>
   <body>
     <main>
+      <nav aria-label="Brödsmulor">
+        <a href="/">Hem</a> / <span aria-current="page">Integritet</span>
+      </nav>
       <!-- ===================== SVENSKA ===================== -->
       <p class="lang">Svenska</p>
       <h1>Integritetspolicy</h1>
-      <p class="updated">Blade &amp; Blend Studio · Senast uppdaterad 1 september 2026</p>
+      <p class="updated">
+        <span data-business-name>salongen</span> · Senast uppdaterad 13 september 2026
+      </p>
 
       <p>
-        Denna policy beskriver hur Blade &amp; Blend Studio ("vi", "tjänsten") hanterar information
-        när en barberare frivilligt kopplar sitt Google-konto för att spegla sina bokningar till
-        Google Calendar. Endast barberare hos studion använder kopplingen och den är aldrig
-        påtvingad. För att barberaren ska kunna se kunduppgifter i sin egen kalender skrivs kundens
-        namn, telefonnummer och e-postadress tillsammans med behandling och bokad tid till den
-        tilldelade barberarens kalender.
+        Denna policy beskriver hur <span data-business-name>salongen</span> hanterar kundbokningar,
+        kontaktuppgifter, webblagring och personalens frivilliga koppling till Google Calendar.
+        Endast barberare hos studion använder kopplingen och den är aldrig påtvingad. För att
+        barberaren ska kunna se kunduppgifter i sin egen kalender skrivs kundens namn, telefonnummer
+        och e-postadress tillsammans med behandling och bokad tid till den tilldelade barberarens
+        kalender.
       </p>
 
       <h2>Bokningar, Mina bokningar och e-post</h2>
@@ -116,6 +141,11 @@
       </p>
 
       <h2>Cookies och annan webblagring</h2>
+      <p>
+        Har du flera e-postadresser kan du själv koppla ihop dem under Mina bokningar. Du måste
+        bekräfta båda adresserna via nya mejl. Då visas deras tidigare och framtida bokningar
+        tillsammans. Ett gemensamt telefonnummer räcker aldrig för att koppla ihop bokningshistorik.
+      </p>
       <p id="webblagring">
         Webbplatsen använder inga analys- eller annonscookies. Ditt lagringsval sparas i upp till
         ett år. Om du godkänner valfri lagring får den här enheten en säker HttpOnly-cookie som ger
@@ -135,18 +165,25 @@
       <h2>Publika formulär och bot-skydd (Cloudflare Turnstile)</h2>
       <p>
         Publik bokning, omdömen och begäran om en ny Mina bokningar-länk skyddas mot automatiserad
-        spam och missbruk med Cloudflare Turnstile. Verifieringen körs osynligt i bakgrunden när ett
-        skyddat formulär visas eller skickas — det finns ingen ruta att bocka i och ingen
-        pusselutmaning. För detta kan Cloudflare behandla teknisk information om din enhet och
-        webbläsare för att avgöra om förfrågan sannolikt kommer från en människa. Turnstile använder
-        inte denna information för att spåra dig mellan webbplatser eller för annonsering.
-        Cloudflares behandling beskrivs i
+        spam och missbruk med Cloudflare Turnstile. Verifieringen körs när ett skyddat formulär
+        visas eller skickas. Cloudflare kan be dig bekräfta att du är en människa. För detta kan
+        Cloudflare behandla teknisk information om din enhet och webbläsare för att avgöra om
+        förfrågan sannolikt kommer från en människa. Turnstile använder inte denna information för
+        att spåra dig mellan webbplatser eller för annonsering. Cloudflares behandling beskrivs i
         <a
           href="https://www.cloudflare.com/turnstile-privacy-policy/"
           target="_blank"
           rel="noopener noreferrer"
           >Cloudflares Turnstile Privacy Addendum</a
         >.
+      </p>
+
+      <h2>Drift och besöksstatistik</h2>
+      <p>
+        Cloudflare visar sammanställd trafik- och felstatistik för webbplatsens drift. Cloudflare
+        Web Analytics kan också mäta laddningstider på startsidan, integritetssidan och
+        villkorssidan för besök utanför EU. Webbläsarmätningen är avstängd för EU-besök. Den
+        använder inga analyscookies och omfattar inte adminsidor eller kundernas bokningsuppgifter.
       </p>
 
       <h2>Vilken Google-data vi använder</h2>
@@ -198,8 +235,7 @@
 
       <h2>Google Limited Use</h2>
       <p>
-        Blade &amp; Blend Studios användning och överföring av information som mottagits från Google
-        API:er följer
+        Salongens användning och överföring av information som mottagits från Google API:er följer
         <a
           href="https://developers.google.com/terms/api-services-user-data-policy"
           target="_blank"
@@ -208,24 +244,60 @@
         >, inklusive kraven på begränsad användning (Limited Use).
       </p>
 
-      <h2>Kontakt</h2>
-      <p>Frågor om denna policy eller din data: kontakta Blade &amp; Blend Studio.</p>
+      <h2>Ansvar, rättslig grund och dina rättigheter</h2>
+      <div id="legal-business-details-sv"></div>
+      <p>
+        <span data-business-controller="sv">Salongen</span> ansvarar för kundernas
+        bokningsuppgifter. Bokningar och transaktionsmejl behövs för att fullgöra bokningsavtalet.
+        Missbruksskydd och drift grundas på berättigat intresse av en säker tjänst. Valfri
+        enhetslagring grundas på ditt samtycke; ett återkallat samtycke påverkar inte redan gjord
+        behandling.
+      </p>
+      <p>
+        Bokningshistorik ligger kvar tills salongen raderar den. Salongen behöver bedöma fortsatt
+        behov för kundservice, reklamationer och eventuella rättsliga skyldigheter. Tekniska
+        åtkomstbevis rensas separat efter sin giltighetstid. Krypterade säkerhetskopior har en
+        separat rullande lagringstid.
+      </p>
+      <p>
+        Du kan begära tillgång, rättelse, radering, begränsning eller överföring av dina uppgifter,
+        och invända mot behandling som grundas på berättigat intresse. Rättigheterna gäller med de
+        begränsningar som följer av lag. Kontakta salongen via
+        <span data-business-contact
+          ><a href="/">kontaktuppgifterna på startsidan / home page contact details</a></span
+        >. Du kan även
+        <a href="https://www.imy.se/privatperson/utfora-arenden/lamna-ett-klagomal/"
+          >lämna klagomål till IMY</a
+        >.
+      </p>
+      <p>
+        Supabase, Cloudflare och Resend behandlar uppgifter för databas, säker drift och
+        mejlleverans. Google får bokningsuppgifter när ansvarig barberare har anslutit sin kalender.
+        Dessa leverantörer kan behandla uppgifter utanför EU/EES. Kontakta salongen för information
+        om tillämpliga överföringsskydd och personuppgiftsbiträden.
+      </p>
+      <p>
+        <a href="/#privacy-preferences">Ändra cookieinställningar</a> ·
+        <a href="/terms">Bokningsvillkor</a>
+      </p>
 
       <hr />
 
       <!-- ===================== ENGLISH ===================== -->
       <section lang="en">
         <p class="lang">English</p>
-        <h1>Privacy Policy</h1>
-        <p class="updated">Blade &amp; Blend Studio · Last updated 1 September 2026</p>
+        <h2>Privacy Policy</h2>
+        <p class="updated">
+          <span data-business-name>salongen</span> · Last updated 13 September 2026
+        </p>
 
         <p>
-          This policy describes how Blade &amp; Blend Studio ("we", "the service") handles
-          information when a barber voluntarily connects their Google account to mirror their
-          bookings into Google Calendar. Only the studio's barbers use this connection and it is
-          never mandatory. To let the barber see the customer details in their own calendar, the
-          customer's name, phone number, and email address, together with the service and
-          appointment time, are written to the assigned barber's calendar.
+          This policy describes how <span data-business-name>salongen</span> handles appointments,
+          customer contact details, browser storage and staff connections to Google Calendar. Only
+          the studio's barbers use this connection and it is never mandatory. To let the barber see
+          the customer details in their own calendar, the customer's name, phone number, and email
+          address, together with the service and appointment time, are written to the assigned
+          barber's calendar.
         </p>
 
         <h2>Bookings, My appointments and email</h2>
@@ -246,6 +318,11 @@
         </p>
 
         <h2>Cookies and other browser storage</h2>
+        <p>
+          You can connect your own email addresses in My appointments by confirming fresh messages
+          sent to both addresses. Their earlier and future bookings are then shown together. A
+          shared phone number never connects booking histories.
+        </p>
         <p id="browser-storage">
           This website uses no analytics or advertising cookies. Your storage choice is remembered
           for up to one year. With functional storage enabled, a secure HttpOnly cookie gives this
@@ -264,12 +341,12 @@
         <h2>Public forms and bot protection (Cloudflare Turnstile)</h2>
         <p>
           Public booking, reviews, and requests for a new My appointments link are protected against
-          automated spam and abuse with Cloudflare Turnstile. Verification runs invisibly in the
-          background when a protected form is shown or submitted — there is no checkbox to tick and
-          no puzzle challenge. To do this, Cloudflare may process technical information about your
-          device and browser to determine whether the request is likely to come from a human.
-          Turnstile does not use this information to track you across sites or for advertising.
-          Cloudflare's processing is described in
+          automated spam and abuse with Cloudflare Turnstile. Verification runs when a protected
+          form is shown or submitted. Cloudflare may ask you to confirm that you are human. To do
+          this, Cloudflare may process technical information about your device and browser to
+          determine whether the request is likely to come from a human. Turnstile does not use this
+          information to track you across sites or for advertising. Cloudflare's processing is
+          described in
           <a
             href="https://www.cloudflare.com/turnstile-privacy-policy/"
             target="_blank"
@@ -313,6 +390,12 @@
 
         <h2>How data is stored and protected</h2>
         <p>
+          Cloudflare provides aggregate traffic and error statistics for website operation.
+          Cloudflare Web Analytics may also measure loading times on the home, privacy and terms
+          pages for visits outside the EU. Browser measurement is disabled for EU visits, uses no
+          analytics cookies and excludes admin pages and customer booking details.
+        </p>
+        <p>
           The connection stores a Google <em>refresh token</em>. It is held encrypted at rest by our
           database provider (Supabase), is accessible only by the service's server (never by the
           browser or any other barber), and is used solely to sync bookings into that barber's own
@@ -330,8 +413,7 @@
 
         <h2>Google Limited Use</h2>
         <p>
-          Blade &amp; Blend Studio's use and transfer of information received from Google APIs will
-          adhere to the
+          The salon's use and transfer of information received from Google APIs will adhere to the
           <a
             href="https://developers.google.com/terms/api-services-user-data-policy"
             target="_blank"
@@ -340,8 +422,40 @@
           >, including the Limited Use requirements.
         </p>
 
-        <h2>Contact</h2>
-        <p>Questions about this policy or your data: contact Blade &amp; Blend Studio.</p>
+        <h2>Responsibility and your rights</h2>
+        <div id="legal-business-details-en"></div>
+        <p>
+          <span data-business-controller="en">The salon</span> is responsible for customer booking
+          data. Bookings and transactional email are needed to perform the booking agreement. Abuse
+          prevention and operations rely on the legitimate interest of running a secure service.
+          Optional device storage requires consent, which you may withdraw without affecting earlier
+          processing.
+        </p>
+        <p>
+          Booking history remains until the salon deletes it. The salon must assess continued need
+          for customer service, complaints and legal obligations. Access credentials expire
+          separately; encrypted backups have their own rolling retention period.
+        </p>
+        <p>
+          You may request access, correction, deletion, restriction or portability, and object to
+          processing based on legitimate interests, subject to legal exceptions. Contact
+          <span data-business-contact
+            ><a href="/">kontaktuppgifterna på startsidan / home page contact details</a></span
+          >. You may also
+          <a href="https://www.imy.se/en/individuals/forms-and-e-services/file-a-gdpr-complaint/"
+            >complain to IMY</a
+          >.
+        </p>
+        <p>
+          Supabase, Cloudflare and Resend process data for the database, secure operation and email.
+          Google receives booking details when the assigned barber connects a calendar. These
+          providers may process data outside the EU/EEA. Ask the salon about applicable transfer
+          safeguards and processors.
+        </p>
+        <p>
+          <a href="/#privacy-preferences">Change cookie settings</a> ·
+          <a href="/terms">Booking terms</a>
+        </p>
       </section>
     </main>
   </body>

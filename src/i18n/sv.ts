@@ -40,6 +40,8 @@ export const bookingSv: BookingStrings = {
   email: 'E-post',
   emailPh: 'namn@exempel.se',
   book: 'Boka tid',
+  termsLink: 'Läs bokningsvillkoren',
+  termsLinkLabel: 'Läs bokningsvillkoren (öppnas i ny flik)',
   policy:
     'Vid bokning accepterar du att avbokning måste ske senast {hours} timmar före besöket. Sen avbokning eller utebliven tid ger {businessName} rätt att debitera för den bokade tiden.',
   bookedTitle: 'Tack — din tid är bokad!',
@@ -96,16 +98,20 @@ export const privacySv: PrivacyStrings = {
 }
 
 export const aboutSv: AboutStrings = {
+  termsLink: 'Villkor',
+  privacyLink: 'Integritetspolicy',
   eyebrow: 'OM OSS',
   heading: 'Hantverk, inte bara en klippning',
   intro:
     'Vi tar oss tid med varje besök — ren fade, skarpa kanter och ett skägg som sitter. Lugn lokal, bra musik och barberare som kan sitt yrke.',
   galleryTitle: 'I salongen',
-  galleryAlt: 'Bild från salongen (platshållare)',
+  galleryAlt: 'Bild från salongen',
+  galleryLoading: 'Hämtar bilder …',
+  galleryEmpty: 'Inga bilder publicerade ännu.',
+  galleryUnavailable: 'Bilderna kan inte hämtas just nu.',
   stylistsTitle: 'Barberarna',
-  stylistAvatarAlt: 'Porträtt (platshållare)',
   cutsTitle: 'Jobb vi gjort',
-  cutsAlt: 'Kundklippning (platshållare)',
+  cutsAlt: 'Kundklippning',
   reviewsTitle: 'Omdömen',
   reviewsLoading: 'Hämtar publicerade omdömen …',
   reviewsEmpty: 'Inga publicerade omdömen ännu.',

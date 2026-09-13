@@ -1,7 +1,4 @@
-// The gallery swap point. Supabase when configured, the offline mock (empty lists → placeholder
-// tiles) otherwise — chosen ONCE at module load. With no `VITE_SUPABASE_*` the gallery is
-// byte-identical to today (placeholders) and resolves immediately. The Supabase adapter is reached
-// through a LAZY proxy (dynamic import on first call) so supabase-js stays out of the public path.
+// Choose the live public gallery or an empty offline gallery; load Supabase lazily.
 
 import { isBackendConfigured } from '../../backend/config'
 import type { GalleryKind, GalleryPhoto, GalleryPort } from './port'
@@ -15,6 +12,3 @@ const lazySupabaseGalleryPort: GalleryPort = {
 export const defaultGalleryPort: GalleryPort = isBackendConfigured()
   ? lazySupabaseGalleryPort
   : mockGalleryAdapter
-
-/** True when the gallery comes from the offline mock (i.e. no backend) — render placeholders. */
-export const galleryIsMock = !isBackendConfigured()

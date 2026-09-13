@@ -249,10 +249,10 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
       .getByRole('button', { name: /cancel booking/i })
       .click()
   }
-  await page.waitForFunction(
-    async () =>
-      (await import('/tools/e2e/admin-harness.tsx')).adminMutationControl('snapshot').writes === 1,
+  const readMutation = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).adminMutationControl,
   )
+  await page.waitForFunction((read) => read('snapshot').writes === 1, readMutation)
   if (reentry === 'remount') await mutationControl(page, 'remount')
   else {
     await mutationControl(page, 'target', 'b')
@@ -285,11 +285,7 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
     )
     await page.getByLabel('Price (kr)', { exact: true }).first().fill('300')
     await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await page.waitForFunction(
-      async () =>
-        (await import('/tools/e2e/admin-harness.tsx')).adminMutationControl('snapshot').writes ===
-        2,
-    )
+    await page.waitForFunction((read) => read('snapshot').writes === 2, readMutation)
     assert(
       (await mutationControl(page, 'snapshot')).price === 300,
       'older service price overwrote newer persisted intent',
@@ -324,6 +320,7 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
       'cancellation never persisted',
     )
   }
+  await readMutation.dispose()
 }
 
 async function hydrationControl(page, action) {
@@ -367,12 +364,11 @@ async function verifyInitialHydration(page, kind, failLoad = false) {
     ),
   )
   if (kind === 'site') {
-    await control.selectOption('sm')
-    await page.waitForFunction(
-      async () =>
-        (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl('snapshot').writes ===
-        1,
+    const readHydration = await page.evaluateHandle(
+      async () => (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl,
     )
+    await control.selectOption('sm')
+    await page.waitForFunction((read) => read('snapshot').writes === 1, readHydration)
     assert(await control.isDisabled(), 'About autosave permits out-of-order writes')
     await hydrationControl(page, 'write')
     await page.waitForFunction(
@@ -381,11 +377,8 @@ async function verifyInitialHydration(page, kind, failLoad = false) {
           ?.disabled,
     )
     await control.selectOption('xl')
-    await page.waitForFunction(
-      async () =>
-        (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl('snapshot').writes ===
-        2,
-    )
+    await page.waitForFunction((read) => read('snapshot').writes === 2, readHydration)
+    await readHydration.dispose()
     assert(
       (await hydrationControl(page, 'snapshot')).about === 'xl',
       'published About size differs from final selection',
@@ -497,6 +490,1037 @@ async function verifyContactOwnership(page, kind) {
     await contactControl(page, 'a')
     await page.waitForTimeout(100)
     assert((await phone.inputValue()) === '0703333333', 'review auto-fill overwrote typed phone')
+  }
+}
+
+async function verifyBookingTerms(page, lang) {
+  await page.setViewportSize(
+    lang === 'sv' ? { width: 320, height: 568 } : { width: 1280, height: 720 },
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page
+    .context()
+    .route('**/terms', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<h1>Terms destination</h1>' }),
+    )
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  const strings = await page.evaluate(async (lang) => {
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountContactHarness('booking', lang)
+    return (await import('/src/i18n/index.ts')).bookingStrings(lang)
+  }, lang)
+  const barber = page.getByTestId('booking-barber-option')
+  await barber.focus()
+  await page.keyboard.press('Enter')
+  assert(
+    (await barber.getAttribute('aria-pressed')) === 'true',
+    'Keyboard barber selection is not exposed',
+  )
+  await page.getByRole('button', { name: /14 september 2026/i }).click()
+  await page.getByTestId('booking-service-option').click()
+  await page.getByRole('button', { name: '10:00', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  const name = dialog.locator('input[type="text"]')
+  await name.fill('Preserved booking draft')
+  const link = dialog.getByRole('link', { name: strings.termsLinkLabel, exact: true })
+  assert(
+    (await link.getAttribute('href')) === '/terms' &&
+      (await link.getAttribute('target')) === '_blank',
+    'Final booking terms do not preserve the draft in a separate tab',
+  )
+  const opened = page.waitForEvent('popup')
+  await link.focus()
+  await page.keyboard.press('Enter')
+  const popup = await opened
+  await popup.getByRole('heading', { name: 'Terms destination' }).waitFor()
+  await popup.close()
+  assert(
+    (await name.inputValue()) === 'Preserved booking draft',
+    'Reading terms lost the booking draft',
+  )
+}
+
+function calendarStatusResult(overrides = {}) {
+  return {
+    ok: true,
+    value: {
+      connected: false,
+      disconnectPending: false,
+      repairRequired: false,
+      googleEmail: null,
+      lastSyncError: null,
+      ...overrides,
+    },
+  }
+}
+
+function calendarErrorResult(message = 'Synthetic Calendar status failure') {
+  return { ok: false, error: { kind: 'network', message } }
+}
+
+async function mountCalendarHarness(page, lang = 'en', mode = 'component') {
+  // Preact schedules passive effects through the module's original timer reference. Let the first
+  // effect run on a resumed fake clock, then pause at the observed instant before exact timer checks.
+  await page.clock.resume()
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async ({ lang: currentLang, mode: currentMode }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCalendarHarness(currentLang, currentMode),
+    { lang, mode },
+  )
+  await page.getByTestId('calendar-harness').waitFor()
+  await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+  return page.evaluate(async (currentLang) => {
+    const { adminText } = await import('/src/i18n/adminStrings.ts')
+    return adminText(currentLang)
+  }, lang)
+}
+
+async function calendarControl(page, action, port = 'a', index = 0, result) {
+  const snapshot = await page.evaluate(
+    async ({
+      action: currentAction,
+      port: currentPort,
+      index: currentIndex,
+      result: currentResult,
+    }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).calendarControl(
+        currentAction,
+        currentPort,
+        currentIndex,
+        currentResult,
+      ),
+    { action, port, index, result },
+  )
+  if (action !== 'snapshot') await page.clock.fastForward(1)
+  return snapshot
+}
+
+async function calendarCalls(page, field, port) {
+  const snapshot = await calendarControl(page, 'snapshot')
+  return snapshot?.[field]?.[port] ?? 0
+}
+
+async function waitCalendarCalls(page, field, port, count, label) {
+  const control = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).calendarControl,
+  )
+  try {
+    await page.waitForFunction(
+      ({ control: read, field: currentField, port: currentPort, count: expected }) => {
+        const snapshot = read('snapshot')
+        return (snapshot?.[currentField]?.[currentPort] ?? 0) >= expected
+      },
+      { control, field, port, count },
+      { timeout: 5_000 },
+    )
+  } catch {
+    throw new Error(`${label}: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`)
+  } finally {
+    await control.dispose()
+  }
+}
+
+async function setCalendarVisibility(page, state) {
+  await page.evaluate((next) => {
+    Object.defineProperty(globalThis.document, 'visibilityState', {
+      configurable: true,
+      value: next,
+    })
+    globalThis.document.dispatchEvent(new globalThis.Event('visibilitychange'))
+  }, state)
+}
+
+async function verifyCalendarSync(page) {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00.000Z') })
+
+  // Disconnect acknowledgement is immediately visible as pending, then the authoritative status
+  // read and the visible 15s poll are the only paths that may clear it.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'barber@example.test' }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarConnected }).waitFor()
+    await page.getByRole('button', { name: t.calendarDisconnect, exact: true }).click()
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'disconnect mutation missing')
+    await calendarControl(page, 'resolve-disconnect', 'a', 0, { ok: true })
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      2,
+      'acknowledged disconnect did not refresh status',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      1,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 2,
+      `Calendar status read unexpectedly duplicated before the 15s poll: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`,
+    )
+    // calendarControl advances one millisecond to flush Preact; the interval began at the
+    // acknowledgement tick, so 14_998 more milliseconds is the strict pre-15s boundary.
+    await page.clock.fastForward(14_998)
+    const beforePoll = await calendarCalls(page, 'statusCalls', 'a')
+    assert(
+      beforePoll === 2,
+      `Calendar pending poll ran before its visible 15s deadline: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`,
+    )
+    await page.clock.fastForward(1)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'visible 15s Calendar poll missing')
+    await calendarControl(page, 'resolve-status', 'a', 2, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+  }
+
+  // Hidden pages do not poll. Returning to visible and receiving focus each request a fresh read.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'visibility scenario initial read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    await setCalendarVisibility(page, 'hidden')
+    await page.clock.fastForward(30_000)
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 1,
+      'Hidden Calendar page continued polling',
+    )
+    await setCalendarVisibility(page, 'visible')
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      2,
+      'visibilitychange did not refresh Calendar',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      1,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.waitForTimeout(0)
+    await page.evaluate(() => globalThis.window.dispatchEvent(new globalThis.Event('focus')))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'focus did not refresh Calendar')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+  }
+
+  // An initial status failure must remain unknown and offer retry. A later read failure preserves
+  // the last known status while exposing the localized status error.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'status-error initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarErrorResult())
+    await page.getByRole('status').filter({ hasText: t.calendarStatusUnavailable }).waitFor()
+    await page.getByRole('alert').filter({ hasText: t.calendarStatusError }).waitFor()
+    await page.getByRole('button', { name: t.calendarRefresh, exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.calendarConnect, exact: true }).count()) === 0 &&
+        (await page.getByRole('button', { name: t.calendarDisconnect, exact: true }).count()) === 0,
+      'Initial Calendar status error exposed a false connected/disconnected action',
+    )
+    await page.getByRole('button', { name: t.calendarRefresh, exact: true }).click()
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'Calendar retry did not read status')
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    assert(
+      (await page.getByRole('alert').count()) === 0,
+      'Recovered Calendar status kept the error',
+    )
+    await page.evaluate(() => globalThis.window.dispatchEvent(new globalThis.Event('focus')))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'later Calendar status read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarErrorResult('Later status failure'),
+    )
+    await page.getByRole('alert').filter({ hasText: t.calendarStatusError }).waitFor()
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    await page.getByRole('status').filter({ hasText: 'Google Calendar' }).waitFor()
+  }
+
+  // A read has a 10s deadline and late completion cannot resurrect a stale status. Retry recovers.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'deadline initial read missing')
+    await page.clock.fastForward(9_000)
+    assert(
+      (await page.getByTestId('calendar-loading').textContent()) === 'true',
+      'Calendar status read timed out before 10s',
+    )
+    // The read starts in the passive effect just before the helper pauses the clock; allow a small
+    // deterministic margin after the 10s deadline without weakening the 9s pre-deadline assertion.
+    await page.clock.fastForward(2_000)
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-loading"]')?.textContent ===
+          'false' &&
+        globalThis.document.querySelector('[data-testid="calendar-error"]')?.textContent ===
+          'status',
+    )
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'unknown',
+      'Timed-out Calendar read invented a disconnected state',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'late@example.test' }),
+    )
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'unknown',
+      'Late timed-out Calendar response wrote back into state',
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'deadline retry read missing')
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+  }
+
+  // Reads coalesce and are fenced against an action. Port A -> B and unmount also fence late data.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'race initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult({ connected: true }))
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'true',
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'coalesced Calendar read missing')
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 2,
+      'Two same-turn Calendar refreshes started two status reads',
+    )
+    await calendarControl(page, 'invoke-disconnect')
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'hook disconnect mutation missing')
+    await calendarControl(page, 'resolve-disconnect', 'a', 0, { ok: true })
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-pending"]')?.textContent ===
+        'true',
+    )
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      3,
+      'hook disconnect acknowledgement read missing',
+    )
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-pending').textContent()) === 'true',
+      'Stale read before disconnect overwrote acknowledged pending state',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 4, 'port-race pending read missing')
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'b')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'port B initial read missing')
+    await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+    await calendarControl(page, 'resolve-status', 'a', 3, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'false',
+      'Late port A Calendar response overwrote port B state',
+    )
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'a')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 5, 'port A remount read missing')
+    await calendarControl(page, 'unmount')
+    await calendarControl(page, 'resolve-status', 'a', 4, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-harness').count()) === 0,
+      'Calendar late response recreated UI after unmount',
+    )
+  }
+
+  // A late connect URL may not navigate after a port switch or unmount. A fresh port may still
+  // start its own action independently.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'connect-race initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+    await calendarControl(page, 'invoke-connect')
+    await waitCalendarCalls(page, 'connectCalls', 'a', 1, 'connect-race mutation missing')
+    const beforeSwitch = page.url()
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'b')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'connect-race port B read missing')
+    await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
+    await calendarControl(page, 'resolve-connect', 'a', 0, {
+      ok: true,
+      value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=stale',
+    })
+    await page.waitForTimeout(100)
+    assert(page.url() === beforeSwitch, 'Late port A connect URL navigated after port switch')
+
+    await calendarControl(page, 'invoke-connect')
+    await waitCalendarCalls(page, 'connectCalls', 'b', 1, 'port B connect mutation missing')
+    await calendarControl(page, 'unmount')
+    await calendarControl(page, 'resolve-connect', 'b', 0, {
+      ok: true,
+      value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=unmounted',
+    })
+    await page.waitForTimeout(100)
+    assert(page.url() === beforeSwitch, 'Late connect URL navigated after component unmount')
+  }
+
+  // Action guards are synchronous and action promises have no read deadline/overlap timeout.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'connect guard initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, t.calendarConnect)
+    await waitCalendarCalls(page, 'connectCalls', 'a', 1, 'connect mutation missing')
+    assert(
+      (await calendarCalls(page, 'connectCalls', 'a')) === 1,
+      'Two same-turn connect clicks started two mutations',
+    )
+    await page.clock.fastForward(10_000)
+    assert(
+      (await calendarCalls(page, 'connectCalls', 'a')) === 1,
+      'Connect action was replaced after a 10s deadline',
+    )
+    await calendarControl(page, 'resolve-connect', 'a', 0, calendarErrorResult('connect failed'))
+    await page.getByRole('alert').filter({ hasText: t.calendarActionError }).waitFor()
+
+    const disconnectT = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'disconnect guard initial read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'barber@example.test' }),
+    )
+    await page.getByRole('button', { name: disconnectT.calendarDisconnect, exact: true }).waitFor()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, disconnectT.calendarDisconnect)
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'disconnect mutation missing')
+    assert(
+      (await calendarCalls(page, 'disconnectCalls', 'a')) === 1,
+      'Two same-turn disconnect clicks started two mutations',
+    )
+    await page.clock.fastForward(10_000)
+    assert(
+      (await calendarCalls(page, 'disconnectCalls', 'a')) === 1,
+      'Disconnect action was replaced after a 10s deadline',
+    )
+    await calendarControl(
+      page,
+      'resolve-disconnect',
+      'a',
+      0,
+      calendarErrorResult('disconnect failed'),
+    )
+    await page.getByRole('alert').filter({ hasText: disconnectT.calendarActionError }).waitFor()
+  }
+}
+
+function customerVerifiedResult(email = 'source@example.test', aliases = [email]) {
+  return {
+    ok: true,
+    authority: 'verified',
+    bookings: { upcoming: [], past: [] },
+    profile: {
+      name: 'Verified Customer',
+      phone: '0701234567',
+      email,
+      emails: aliases,
+      phones: ['0701234567'],
+    },
+  }
+}
+
+function customerDeviceResult() {
+  return {
+    ok: true,
+    authority: 'device',
+    bookings: { upcoming: [], past: [] },
+  }
+}
+
+function customerUpcomingResult(email = 'source@example.test') {
+  return {
+    ...customerVerifiedResult(email),
+    bookings: {
+      upcoming: [
+        {
+          id: 'customer-booking-a',
+          barber: { id: 'customer-barber', name: 'Test Barber', ig: '' },
+          serviceName: 'Haircut',
+          price: 300,
+          durationMin: 30,
+          start: '2026-09-14T10:00:00.000Z',
+          whenLabel: 'Monday 14 September at 10:00',
+        },
+      ],
+      past: [],
+    },
+  }
+}
+
+function customerErrorResult(error = 'system') {
+  return { ok: false, error }
+}
+
+let customerHarnessVisit = 0
+
+async function mountCustomerHarness(page, lang = 'en', code, accessToken = '') {
+  await page.setViewportSize({ width: 320, height: 568 })
+  customerHarnessVisit += 1
+  await page.goto(
+    `${baseUrl}/tools/e2e/admin-harness.html?customer-harness=${customerHarnessVisit}`,
+    { waitUntil: 'domcontentloaded' },
+  )
+  await page.evaluate(
+    async ({ lang: currentLang, code: currentCode, accessToken: currentToken }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCustomerHarness(
+        currentLang,
+        currentCode,
+        currentToken,
+      ),
+    { lang, code, accessToken },
+  )
+  await page.getByRole('dialog').waitFor()
+  await waitCustomerCalls(page, 'listCalls', 'a', 1, 'customer initial list read missing')
+}
+
+async function customerControl(page, action, port = 'a', index = 0, result) {
+  const snapshot = await page.evaluate(
+    async ({
+      action: currentAction,
+      port: currentPort,
+      index: currentIndex,
+      result: currentResult,
+    }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).customerControl(
+        currentAction,
+        currentPort,
+        currentIndex,
+        currentResult,
+      ),
+    { action, port, index, result },
+  )
+  await page.waitForTimeout(0)
+  return snapshot
+}
+
+async function customerSnapshot(page) {
+  return customerControl(page, 'snapshot')
+}
+
+async function waitCustomerCalls(page, field, port, count, label) {
+  // Import before polling: a Promise itself is truthy to Playwright's polling predicate.
+  const control = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).customerControl,
+  )
+  try {
+    await page.waitForFunction(
+      ({ control: read, field: currentField, port: currentPort, count: expected }) => {
+        const snapshot = read('snapshot')
+        return (snapshot?.[currentField]?.[currentPort] ?? 0) >= expected
+      },
+      { control, field, port, count },
+      { timeout: 5_000 },
+    )
+  } catch {
+    throw new Error(`${label}: ${JSON.stringify(await customerSnapshot(page))}`)
+  } finally {
+    await control.dispose()
+  }
+}
+
+async function installCustomerAppRoutes(page) {
+  const origin = new URL(baseUrl).origin
+  const actions = []
+  const consoleOutput = []
+  const pageErrors = []
+  page.on('console', (message) => consoleOutput.push(message.text()))
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const reply = (body, status = 200) =>
+      route.fulfill({
+        status,
+        headers: { 'Content-Type': 'application/json' },
+        body: status === 204 ? undefined : JSON.stringify(body),
+      })
+    if (url.origin === origin && url.pathname === '/api/customer-bookings') {
+      const body = request.postDataJSON()
+      actions.push(body)
+      if (body.action === 'list')
+        return reply({
+          ok: true,
+          authority: 'verified',
+          session_proof: 'a'.repeat(64),
+          name: 'Verified Customer',
+          phone: '0701234567',
+          email: 'source@example.test',
+          emails: ['source@example.test', 'old@example.test'],
+          phones: ['0701234567'],
+          bookings: [],
+        })
+      if (body.action === 'confirm_link') return reply({ ok: true, status: 'waiting' })
+      if (body.action === 'request_link') return reply({ ok: true, status: 'queued' })
+      return reply({ ok: false, error: 'access_denied' })
+    }
+    if (url.origin === origin) return route.continue()
+    if (request.method() === 'OPTIONS') return reply(null, 204)
+    if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+      return reply({
+        barbers: [],
+        services: [],
+      })
+    if (url.pathname === '/rest/v1/rpc/public_business_discovery')
+      return reply({ settings: {}, barbers: [], services: [], schedules: [] })
+    if (url.pathname.startsWith('/rest/v1/')) return reply([])
+    pageErrors.push(`Unexpected customer request: ${request.method()} ${url.origin}${url.pathname}`)
+    return route.abort()
+  })
+  return { actions, consoleOutput, pageErrors }
+}
+
+async function verifyCustomerEmail(page) {
+  await mountCustomerHarness(page)
+  const t = await page.evaluate(async () =>
+    (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('en'),
+  )
+
+  // Verified authority exposes aliases and the manage control. The source email passed to the
+  // port is the server-verified profile email, and same-turn submit/Enter cannot duplicate it.
+  {
+    await customerControl(
+      page,
+      'resolve-list',
+      'a',
+      0,
+      customerVerifiedResult('source@example.test', ['source@example.test', 'old@example.test']),
+    )
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: t.manage, exact: true }).click()
+    await dialog.getByText('old@example.test', { exact: true }).waitFor()
+    const email = dialog.getByLabel(t.email, { exact: true })
+    await email.fill('target@example.test')
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, t.request)
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'email-link request mutation missing')
+    let snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.requestCalls.a === 1 &&
+        snapshot.requestArgs.a[0]?.email === 'target@example.test' &&
+        snapshot.requestArgs.a[0]?.lang === 'en' &&
+        snapshot.requestArgs.a[0]?.sourceEmail === 'source@example.test',
+      `request payload did not use the verified source email: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await dialog.getByRole('status').filter({ hasText: t.queued }).waitFor()
+    assert(
+      (await dialog.getByRole('button', { name: t.request, exact: true }).count()) === 0,
+      'queued email-link request left a submit button available',
+    )
+    await email.press('Enter')
+    await page.waitForTimeout(100)
+    snapshot = await customerSnapshot(page)
+    assert(snapshot.requestCalls.a === 1, 'Enter duplicated a completed email-link request')
+
+    await email.fill('second-target@example.test')
+    await dialog.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(
+      page,
+      'requestCalls',
+      'a',
+      2,
+      'second explicit email-link request missing',
+    )
+    await customerControl(page, 'resolve-request', 'a', 1, { ok: true, status: 'already_linked' })
+    await dialog.getByRole('status').filter({ hasText: t.alreadyLinked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'already-linked result did not refresh list')
+    snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.listParams.a[1]?.accessToken === '',
+      `already-linked refresh did not use the cookie session: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-list', 'a', 1, customerVerifiedResult())
+  }
+
+  // Device authority and a verified response without a real profile email expose no link action.
+  {
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerDeviceResult())
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.manage, exact: true }).count()) === 0,
+      'device authority exposed email-link controls',
+    )
+    assert(
+      (await customerSnapshot(page)).requestCalls.a === 0,
+      'device path attempted email linking',
+    )
+
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, {
+      ...customerVerifiedResult(),
+      profile: { ...customerVerifiedResult().profile, email: '', emails: [] },
+    })
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.manage, exact: true }).count()) === 0,
+      'empty verified profile exposed email-link controls',
+    )
+    assert(
+      (await customerSnapshot(page)).requestCalls.a === 0,
+      'empty profile attempted email linking',
+    )
+  }
+
+  // Confirmation is explicit, binds to the current code/session, surfaces wrong-session guidance,
+  // and refreshes the list/profile after waiting -> linked.
+  {
+    const wrongSessionCode = 'd'.repeat(64)
+    await mountCustomerHarness(page, 'en', wrongSessionCode)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('heading', { name: t.confirmTitle, exact: true }).waitFor()
+    assert((await customerSnapshot(page)).confirmCalls.a === 0, 'confirm_link ran on mount')
+    await dialog.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'confirm-link mutation missing')
+    assert(
+      (await customerSnapshot(page)).confirmCodes.a[0] === wrongSessionCode,
+      'confirm-link did not use the supplied code',
+    )
+    await customerControl(page, 'resolve-confirm', 'a', 0, customerErrorResult('access_denied'))
+    await dialog.getByRole('alert').filter({ hasText: t.accessDenied }).waitFor()
+    assert(
+      (await customerSnapshot(page)).listCalls.a === 1,
+      'wrong-session confirmation refreshed data',
+    )
+
+    const waitingCode = 'e'.repeat(64)
+    await mountCustomerHarness(page, 'en', waitingCode)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'waiting confirmation mutation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'waiting' })
+    await page.getByRole('status').filter({ hasText: t.waiting }).waitFor()
+
+    const linkedCode = 'f'.repeat(64)
+    await customerControl(page, 'set-code', 'a', 0, linkedCode)
+    await page.getByRole('button', { name: t.confirm, exact: true }).waitFor()
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 2, 'linked confirmation mutation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 1, { ok: true, status: 'linked' })
+    await page.getByRole('status').filter({ hasText: t.linked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'linked result did not refresh list/profile')
+    await customerControl(
+      page,
+      'resolve-list',
+      'a',
+      1,
+      customerVerifiedResult('refreshed@example.test'),
+    )
+    await page.getByText('refreshed@example.test', { exact: true }).waitFor()
+  }
+
+  // Cancellation is serialized with reads: a stale list response may not resurrect the booking,
+  // and two same-turn confirmations produce one port mutation.
+  {
+    const bookingsText = await page.evaluate(async () =>
+      (await import('/src/i18n/index.ts')).myBookingsStrings('en'),
+    )
+    await mountCustomerHarness(page, 'en', '9'.repeat(64))
+    await customerControl(page, 'resolve-list', 'a', 0, customerUpcomingResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'cancel ordering confirmation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'linked' })
+    await page.getByRole('status').filter({ hasText: t.linked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'cancel ordering linked reload missing')
+    const booking = page.getByRole('button', {
+      name: /Monday 14 September at 10:00/,
+    })
+    await booking.click()
+    await page.getByRole('button', { name: bookingsText.cancelBtn, exact: true }).click()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, bookingsText.cancelConfirmYes)
+    await waitCustomerCalls(page, 'cancelCalls', 'a', 1, 'cancel mutation missing')
+    let snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.cancelCalls.a === 1 && snapshot.cancelIds.a[0] === 'customer-booking-a',
+      `same-turn cancellation was duplicated or targeted the wrong booking: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-cancel', 'a', 0, { ok: true, id: 'customer-booking-a' })
+    await waitCustomerCalls(page, 'listCalls', 'a', 3, 'post-cancel reload missing')
+    await customerControl(page, 'resolve-list', 'a', 1, customerUpcomingResult())
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('button', { name: /Monday 14 September at 10:00/ }).count()) === 0,
+      'stale in-flight list response resurrected the cancelled booking',
+    )
+    await customerControl(page, 'resolve-list', 'a', 2, customerVerifiedResult())
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.listParams.a[2]?.accessToken === '',
+      `post-cancel reload did not use the cookie session: ${JSON.stringify(snapshot)}`,
+    )
+  }
+
+  // Port changes, code nonce changes and unmount invalidate late action responses.
+  {
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.manage, exact: true }).click()
+    await page.getByLabel(t.email, { exact: true }).fill('late@example.test')
+    await page.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'port-fence request missing')
+    await customerControl(page, 'switch-port', 'b')
+    await waitCustomerCalls(page, 'listCalls', 'b', 1, 'port B list read missing')
+    await customerControl(page, 'resolve-list', 'b', 0, customerVerifiedResult('b@example.test'))
+    await page.getByRole('button', { name: t.manage, exact: true }).waitFor()
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('status').filter({ hasText: t.queued }).count()) === 0,
+      'late port A request response wrote into port B UI',
+    )
+    assert((await customerSnapshot(page)).requestCalls.b === 0, 'port B inherited port A action')
+
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.manage, exact: true }).click()
+    await page.getByLabel(t.email, { exact: true }).fill('unmounted@example.test')
+    await page.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'unmount-fence request missing')
+    await customerControl(page, 'unmount')
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('dialog').count()) === 0,
+      'late response recreated an unmounted dialog',
+    )
+
+    const nonceA = '1'.repeat(64)
+    const nonceB = '2'.repeat(64)
+    await mountCustomerHarness(page, 'en', nonceA)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'nonce A confirmation missing')
+    await customerControl(page, 'set-code', 'a', 0, nonceB)
+    await page.getByRole('button', { name: t.confirm, exact: true }).waitFor()
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'waiting' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('status').filter({ hasText: t.waiting }).count()) === 0,
+      'late nonce A response wrote into nonce B UI',
+    )
+  }
+
+  // The real App consumes email-link proofs at initial mount and hashchange. Mixed booking tokens
+  // are removed without invoking exchange_access or confirm_link, and the proof never reaches
+  // storage, DOM text, or console output.
+  {
+    const appState = await installCustomerAppRoutes(page)
+    const appT = await page.evaluate(async () =>
+      (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('sv'),
+    )
+    const codeA = '3'.repeat(64)
+    const codeB = '4'.repeat(64)
+    const legacy = '5'.repeat(64)
+    await page.setViewportSize({ width: 320, height: 568 })
+    await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+    await page.evaluate(() => {
+      globalThis.document.cookie = 'bladeblend_storage_preferences=essential; Path=/'
+    })
+    await page.evaluate(
+      async (href) => (await import('/tools/e2e/admin-harness.tsx')).mountActualAppHarness(href),
+      `/?booking_access=${legacy}#email_link=${codeA}&booking_token=${'6'.repeat(64)}&keep=1`,
+    )
+    await page.getByRole('heading', { name: appT.confirmTitle, exact: true }).waitFor()
+    await page.waitForFunction(() => !globalThis.location.href.includes('email_link'))
+    const initialLeak = await page.evaluate(
+      (code) => ({
+        href: globalThis.location.href,
+        storage: JSON.stringify({
+          local: Object.keys(globalThis.localStorage).map((key) => [
+            key,
+            globalThis.localStorage.getItem(key),
+          ]),
+          session: Object.keys(globalThis.sessionStorage).map((key) => [
+            key,
+            globalThis.sessionStorage.getItem(key),
+          ]),
+        }),
+        dom: globalThis.document.documentElement.outerHTML.includes(code),
+      }),
+      codeA,
+    )
+    assert(
+      initialLeak.href.endsWith('/#keep=1'),
+      `initial App link cleanup failed: ${JSON.stringify(initialLeak)}`,
+    )
+    assert(
+      !initialLeak.href.includes('booking_access') && !initialLeak.href.includes('booking_token'),
+      'mixed booking credential survived URL cleanup',
+    )
+    assert(
+      !initialLeak.storage.includes(codeA) && !initialLeak.dom,
+      'email-link proof leaked into storage or DOM',
+    )
+    assert(
+      !appState.actions.some(
+        (body) => body.action === 'exchange_access' || body.action === 'confirm_link',
+      ),
+      `email-link mount auto-called a credential action: ${JSON.stringify(appState.actions)}`,
+    )
+
+    await page.evaluate((code) => {
+      globalThis.location.hash = `email_link=${code}&booking_token=${'7'.repeat(64)}&keep=2`
+    }, codeB)
+    await page.waitForFunction(() => globalThis.location.href.endsWith('/#keep=2'))
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('[aria-label="Bekräfta mejlkoppling"]') !== null,
+    )
+    const hashLeak = await page.evaluate(
+      (code) => ({
+        href: globalThis.location.href,
+        storage: JSON.stringify({
+          local: Object.keys(globalThis.localStorage).map((key) => [
+            key,
+            globalThis.localStorage.getItem(key),
+          ]),
+          session: Object.keys(globalThis.sessionStorage).map((key) => [
+            key,
+            globalThis.sessionStorage.getItem(key),
+          ]),
+        }),
+        dom: globalThis.document.documentElement.outerHTML.includes(code),
+      }),
+      codeB,
+    )
+    assert(!hashLeak.storage.includes(codeB) && !hashLeak.dom, 'hashchange email-link proof leaked')
+    assert(
+      !appState.actions.some(
+        (body) => body.action === 'exchange_access' || body.action === 'confirm_link',
+      ),
+      `hashchange auto-called a credential action: ${JSON.stringify(appState.actions)}`,
+    )
+    assert(
+      !appState.consoleOutput.some((message) => message.includes(codeA) || message.includes(codeB)),
+      'email-link proof leaked to console',
+    )
+    assert(
+      appState.pageErrors.length === 0,
+      `actual App customer hash flow errored: ${appState.pageErrors.join('; ')}`,
+    )
+    await page.screenshot({
+      path: '/tmp/knc-ui-2026-09-13/customer-email-app-hash-320.png',
+      fullPage: false,
+    })
+  }
+
+  // Long valid source email remains readable at the requested 320px confirmation width.
+  {
+    const longEmail = 'verylongsourceaddresswithoutbreaks1234567890@example.test'
+    const aliases = [longEmail, 'another.long.alias.for.mobile@example.test']
+    await mountCustomerHarness(page, 'en', '8'.repeat(64))
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult(longEmail, aliases))
+    await page.getByRole('heading', { name: t.confirmTitle, exact: true }).waitFor()
+    const dimensions = await page.getByRole('dialog').evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    await page.screenshot({
+      path: '/tmp/knc-ui-2026-09-13/customer-email-confirm-320.png',
+      fullPage: false,
+    })
+    assert(
+      dimensions.scrollWidth <= dimensions.clientWidth,
+      `customer confirmation overflow at 320px: ${JSON.stringify(dimensions)}`,
+    )
   }
 }
 
@@ -1079,7 +2103,23 @@ async function verifyPrivacy(
     if (url.origin === origin) return route.continue()
     if (request.method() === 'OPTIONS') return reply(null, 204)
     if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
-      return reply({ barbers: [], services: [] })
+      return reply({
+        barbers: [
+          {
+            id: 'privacy-barber',
+            name: 'UI Test Barber',
+            ig: '',
+            role_sv: '',
+            role_en: '',
+            bio_sv: '',
+            bio_en: '',
+            active: true,
+            sort_order: 0,
+            photo_path: null,
+          },
+        ],
+        services: [],
+      })
     if (url.pathname === '/rest/v1/rpc/public_business_discovery')
       return reply({ settings: {}, barbers: [], services: [], schedules: [] })
     if (request.method() === 'GET' && url.pathname.startsWith('/rest/v1/')) return reply([])
@@ -1089,11 +2129,13 @@ async function verifyPrivacy(
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   const strings = await page.evaluate(async (lang) => {
     ;(await import('/tools/e2e/admin-harness.tsx')).mountPrivacyHarness()
-    const { appStrings, privacyStrings, myBookingsStrings } = await import('/src/i18n/index.ts')
+    const { appStrings, privacyStrings, myBookingsStrings, aboutStrings } =
+      await import('/src/i18n/index.ts')
     return {
       app: appStrings(lang),
       privacy: privacyStrings(lang),
       bookings: myBookingsStrings(lang),
+      about: aboutStrings(lang),
     }
   }, lang)
   if (lang === 'en') await page.getByRole('button', { name: 'EN', exact: true }).click()
@@ -1119,6 +2161,79 @@ async function verifyPrivacy(
       `Privacy panel is not fixed at the viewport bottom: ${context}`,
     )
   }
+  const assertDesktopHeroInfo = async (label) => {
+    if (page.viewportSize().width <= 768) return
+    const geometry = await page.getByText(strings.app.hours, { exact: true }).evaluate((hours) => {
+      const info = hours.parentElement
+      const hero = globalThis.document.querySelector('main')?.firstElementChild
+      if (info === null || hero === null || hero === undefined) return null
+      return {
+        inHero: hero.contains(info),
+        heroBottom: hero.getBoundingClientRect().bottom,
+        infoBottom: info.getBoundingClientRect().bottom,
+      }
+    })
+    assert(
+      geometry !== null &&
+        geometry.inHero &&
+        Math.abs(geometry.infoBottom - geometry.heroBottom) <= 1,
+      `Opening hours/address left the hero bottom (${label}): ${JSON.stringify(geometry)}`,
+    )
+  }
+  const textContrast = async (locator) =>
+    locator.evaluate((element) => {
+      const rgba = (color) => {
+        const values = color.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 0]
+        return [values[0], values[1], values[2], values[3] ?? 1]
+      }
+      const over = (front, back) => {
+        const alpha = front[3] + back[3] * (1 - front[3])
+        return alpha === 0
+          ? [0, 0, 0, 0]
+          : [
+              ...front
+                .slice(0, 3)
+                .map((value, i) => (value * front[3] + back[i] * back[3] * (1 - front[3])) / alpha),
+              alpha,
+            ]
+      }
+      let foreground = rgba(globalThis.getComputedStyle(element).color)
+      let background = [0, 0, 0, 0]
+      for (let node = element; node !== null; node = node.parentElement) {
+        const style = globalThis.getComputedStyle(node)
+        foreground = over(foreground, rgba(style.backgroundColor))
+        background = over(background, rgba(style.backgroundColor))
+        foreground[3] *= Number(style.opacity)
+        background[3] *= Number(style.opacity)
+      }
+      const luminance = (color) =>
+        over(color, [255, 255, 255, 1])
+          .slice(0, 3)
+          .map((value) => {
+            value /= 255
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+          })
+          .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0)
+      const l1 = luminance(foreground),
+        l2 = luminance(background)
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+    })
+  const infoText = page
+    .getByText(strings.app.hours, { exact: true })
+    .locator('..')
+    .locator(':scope > span')
+  assert((await infoText.count()) === 2, 'Hero opening hours/address are missing')
+  for (const label of [
+    ...(await infoText.all()),
+    ...(width > 768 ? [page.getByText(strings.app.kicker, { exact: true })] : []),
+  ]) {
+    const ratio = await textContrast(label)
+    assert(
+      ratio >= 4.5,
+      `Public small text contrast is ${ratio.toFixed(2)}:1: ${await label.textContent()}`,
+    )
+  }
+  await assertDesktopHeroInfo('initial home')
   await assertFixedNotice('initial hero')
   const heroManage = page.locator(`button[aria-label="${strings.privacy.manageLabel}"]`)
   assert((await heroManage.count()) === 0, 'Hero reopening control appeared before a choice')
@@ -1145,6 +2260,74 @@ async function verifyPrivacy(
   await book.click()
   await page.getByTestId('booking-step-barber').waitFor()
   await assertFixedNotice('booking')
+  await assertDesktopHeroInfo('booking open')
+  const barberOption = page.getByTestId('booking-barber-option')
+  await barberOption.waitFor()
+  const animatedShell =
+    width > 768
+      ? page.getByTestId('fold-booking')
+      : page.getByTestId('mobile-site-scroll').locator(':scope > div').first()
+  assert(
+    await animatedShell.evaluate((element) =>
+      globalThis
+        .getComputedStyle(element)
+        .transitionDuration.split(',')
+        .every((duration) => Number.parseFloat(duration) === 0),
+    ),
+    'Shell still animates with reduced motion',
+  )
+  await page.waitForFunction(() => {
+    const option = globalThis.document
+      .querySelector('[data-testid="booking-barber-option"]')
+      ?.getBoundingClientRect()
+    const panel = globalThis.document.getElementById('privacy-preferences')?.getBoundingClientRect()
+    return (
+      option !== undefined && panel !== undefined && option.top >= 0 && option.bottom <= panel.top
+    )
+  })
+  await barberOption.click()
+  assert(
+    (await barberOption.getAttribute('aria-pressed')) === 'true',
+    'Visible first booking option was not selectable above the cookie panel',
+  )
+
+  const currentScroll = () =>
+    page.evaluate(
+      () =>
+        globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop ??
+        globalThis.scrollY,
+    )
+  const scrollBeforeMotionChange = await currentScroll()
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForFunction((desktop) => {
+    const shell = desktop
+      ? globalThis.document.querySelector('[data-testid="fold-booking"]')
+      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+    return (
+      shell !== null &&
+      globalThis
+        .getComputedStyle(shell)
+        .transitionDuration.split(',')
+        .some((duration) => Number.parseFloat(duration) > 0)
+    )
+  }, width > 768)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.waitForFunction((desktop) => {
+    const shell = desktop
+      ? globalThis.document.querySelector('[data-testid="fold-booking"]')
+      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+    return (
+      shell !== null &&
+      globalThis
+        .getComputedStyle(shell)
+        .transitionDuration.split(',')
+        .every((duration) => Number.parseFloat(duration) === 0)
+    )
+  }, width > 768)
+  assert(
+    Math.abs((await currentScroll()) - scrollBeforeMotionChange) < 1,
+    'Changing motion preference restarted the booking reveal',
+  )
   assert((await heroManage.count()) === 0, 'Hero reopening control appeared in booking')
   assert((await choice()) === null, 'Opening booking changed storage permission')
   if (width < 768)
@@ -1154,6 +2337,20 @@ async function verifyPrivacy(
   const manage = page.getByRole('link', { name: strings.privacy.manageLabel, exact: true })
   await manage.scrollIntoViewIfNeeded()
   await assertFixedNotice('About')
+  for (const [href, label] of [
+    ['/terms', strings.about.termsLink],
+    ['/privacy', strings.about.privacyLink],
+  ]) {
+    const link = page.locator('#om-oss footer').getByRole('link', { name: label, exact: true })
+    assert((await link.getAttribute('href')) === href, `Missing localized About link: ${href}`)
+    await link.focus()
+    assert(
+      await link.evaluate((element) => element === globalThis.document.activeElement),
+      `About link is not keyboard focusable: ${href}`,
+    )
+  }
+
+  await assertDesktopHeroInfo('scrolled to About')
   if (width < 768) {
     await page.getByRole('button', { name: strings.app.ariaBackHome, exact: true }).click()
     await page.waitForFunction(
@@ -1216,6 +2413,7 @@ async function verifyPrivacy(
   await page.setViewportSize({ width: width < 768 ? 1280 : 390, height: 844 })
   await page.getByTestId(width < 768 ? 'desktop-top-panel' : 'mobile-site-scroll').waitFor()
   assert((await notice.count()) === 0, 'Changing layout forgot the saved choice')
+  await assertDesktopHeroInfo('layout change')
   await manage.scrollIntoViewIfNeeded()
   await manage.click()
   await functional.waitFor()
@@ -1281,6 +2479,9 @@ try {
     ]),
     ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
     ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
+    ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
+    verifyCalendarSync,
+    verifyCustomerEmail,
     ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
   ]) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })

@@ -16,8 +16,6 @@
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { Palette } from '../booking/bookingStyles'
-import { PlaceholderPhoto } from './PlaceholderPhoto'
-import type { PlaceholderGlyph } from './PlaceholderPhoto'
 import type { GalleryPhoto } from './gallery/port'
 
 function prefersReducedMotion(): boolean {
@@ -40,7 +38,7 @@ const IMG_STYLE: JSX.CSSProperties = {
   display: 'block',
 }
 
-/** Wrapper for a real photo tile — mirrors PlaceholderPhoto's surface (4/3, 14px radius, border). */
+/** Original gallery tile geometry: 4/3, 14px radius, hairline border. */
 function photoWrapStyle(c: Palette): JSX.CSSProperties {
   return {
     position: 'relative',
@@ -53,13 +51,10 @@ function photoWrapStyle(c: Palette): JSX.CSSProperties {
 }
 
 interface MarqueeRowProps {
-  readonly ids: readonly string[]
-  /** Real photos for this row (Storage-backed). Empty ⇒ render placeholder tiles (the mock path). */
+  /** Real Storage-backed photos for this row. */
   readonly photos: readonly GalleryPhoto[]
   readonly initialDir: 1 | -1
   readonly c: Palette
-  readonly dark: boolean
-  readonly glyph: PlaceholderGlyph
   readonly alt: string
   /** This row pauses while one of its tiles is selected (so the highlighted tile stays put). */
   readonly paused: boolean
@@ -103,10 +98,8 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     pausedRef.current = props.paused
   }, [props.paused])
 
-  // One tile per item (a real photo when present, else a placeholder id). The set is repeated to
-  // form a seamless loop; the transform wraps on ONE loop-half's width.
-  const usePhotos = props.photos.length > 0
-  const itemCount = usePhotos ? props.photos.length : props.ids.length
+  // Repeat real photos into a seamless loop; the transform wraps on one loop-half's width.
+  const itemCount = props.photos.length
 
   // Repeat the photo set enough times that ONE loop-half always spans at least the row's full width.
   // A short photo list otherwise leaves a wide screen half-empty — tiles bunch on one side with a
@@ -131,7 +124,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   useLayoutEffect(() => {
     const el = trackRef.current
     if (el) half.current = el.scrollWidth / 2
-  }, [props.ids, props.photos, perHalf])
+  }, [props.photos, perHalf])
 
   // Wrap the offset back into (-half, 0] so the loop is endless in either direction.
   const wrap = (): void => {
@@ -347,9 +340,10 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       >
         {tiles.map((j) => {
           const logicalIndex = itemCount > 0 ? j % itemCount : 0
-          const logicalKey = usePhotos
-            ? (props.photos[logicalIndex]?.id ?? String(logicalIndex))
-            : (props.ids[logicalIndex] ?? String(logicalIndex))
+          const photo = props.photos[logicalIndex]
+          if (photo === undefined) return null
+          const logicalKey = photo.id
+          const alt = photo.alt.trim() || props.alt
           // The same logical photo appears in loop clones. Selection belongs to the physical tile
           // instance under the pointer, not every clone with the same photo id.
           const key = `${logicalKey}:${j}`
@@ -369,8 +363,6 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
               ? '0 0 0 2px ' + props.c.text + ',0 12px 28px rgba(0,0,0,.28)'
               : '0 0 0 0 rgba(0,0,0,0)',
           }
-          // Real photo for this tile (cycled by index across the two copies) or a placeholder.
-          const photo = usePhotos ? props.photos[logicalIndex] : undefined
           return (
             <div
               key={String(j)}
@@ -380,31 +372,19 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
               tabIndex={accessible ? 0 : undefined}
               aria-hidden={accessible ? undefined : 'true'}
               aria-pressed={accessible ? selected : undefined}
-              aria-label={accessible ? (photo ? photo.alt : props.alt) : undefined}
+              aria-label={accessible ? alt : undefined}
               onKeyDown={accessible ? onTileKey(key) : undefined}
             >
-              {photo ? (
-                // Same wrapper geometry as PlaceholderPhoto (4/3, 14px radius, hairline border) so
-                // swapping a real image in causes NO layout shift; the image covers the tile.
-                <div style={photoWrapStyle(props.c)}>
-                  <img
-                    src={photo.url}
-                    alt={photo.alt}
-                    draggable={false}
-                    style={IMG_STYLE}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
-              ) : (
-                <PlaceholderPhoto
-                  c={props.c}
-                  dark={props.dark}
-                  glyph={props.glyph}
-                  alt={props.alt}
-                  ratio="4 / 3"
+              <div style={photoWrapStyle(props.c)}>
+                <img
+                  src={photo.url}
+                  alt={alt}
+                  draggable={false}
+                  style={IMG_STYLE}
+                  loading="lazy"
+                  decoding="async"
                 />
-              )}
+              </div>
             </div>
           )
         })}
@@ -414,49 +394,39 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 }
 
 export interface GalleryMarqueeProps {
-  /** Stable tile ids (the placeholder count + keys when there are no real photos). */
-  readonly ids: readonly string[]
-  /** Real Storage-backed photos. Empty/omitted ⇒ placeholder tiles (byte-identical to today). */
-  readonly photos?: readonly GalleryPhoto[]
-  readonly glyph: PlaceholderGlyph
+  /** Real Storage-backed photos; an empty list renders no interactive rows. */
+  readonly photos: readonly GalleryPhoto[]
   readonly alt: string
   readonly c: Palette
-  readonly dark: boolean
 }
 
 /** Two counter-scrolling rows of the same photos (row 2 reversed so they don't move in lock-step). */
-export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element {
+export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
   const [selected, setSelected] = useState<{ row: 0 | 1; key: string } | null>(null)
   const select =
     (row: 0 | 1) =>
     (key: string): void =>
       setSelected((cur) => (cur && cur.row === row && cur.key === key ? null : { row, key }))
 
-  const photos = props.photos ?? []
-  const rowB = [...props.ids].reverse()
+  const photos = props.photos
+  if (photos.length === 0) return null
   const photosB = [...photos].reverse()
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <MarqueeRow
-        ids={props.ids}
         photos={photos}
         initialDir={1}
         c={props.c}
-        dark={props.dark}
-        glyph={props.glyph}
         alt={props.alt}
         paused={selected?.row === 0}
         selectedKey={selected && selected.row === 0 ? selected.key : null}
         onSelect={select(0)}
       />
       <MarqueeRow
-        ids={rowB}
         photos={photosB}
         initialDir={-1}
         c={props.c}
-        dark={props.dark}
-        glyph={props.glyph}
         alt={props.alt}
         paused={selected?.row === 1}
         selectedKey={selected && selected.row === 1 ? selected.key : null}

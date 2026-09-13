@@ -28,7 +28,16 @@ export interface CustomerProfile {
   readonly name: string
   readonly phone: string
   readonly email: string
+  readonly emails?: readonly string[]
+  readonly phones?: readonly string[]
 }
+
+export type CustomerEmailLinkResult =
+  | { readonly ok: true; readonly status: 'queued' | 'already_linked' | 'waiting' | 'linked' }
+  | {
+      readonly ok: false
+      readonly error: 'access_denied' | 'invalid' | 'stale' | 'rate_limited' | 'system'
+    }
 
 /**
  * Result of listing email-scoped customer bookings.

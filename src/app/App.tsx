@@ -5,14 +5,14 @@
 // passed down so both layouts render identical controls.
 
 import type { JSX } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
 import { preloadBookingCatalog } from '../booking/adapters/barbersIndex'
 import { preloadBookingFlow } from '../booking/lazyBookingFlow'
 import { ABOUT_SECTION_ID } from '../about/AboutSection'
-import { consumeBookingAccessLink } from '../mybookings/accessLink'
+import { consumeBookingAccessLink, type BookingAccessLink } from '../mybookings/accessLink'
 import { defaultMyBookingsPort } from '../mybookings/adapters/index'
 import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
 import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
@@ -36,11 +36,12 @@ function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
 }
 
-export function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
+function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
   const business = chrome.business
   const seo = business.seo[lang]
   document.documentElement.lang = lang
   document.title = seo.title
+  setMeta('meta[name="robots"]', 'index, follow, max-image-preview:large')
   setMeta('meta[name="description"]', seo.description)
   setMeta('meta[property="og:site_name"]', business.name)
   setMeta('meta[property="og:title"]', seo.title)
@@ -48,6 +49,14 @@ export function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
   setMeta('meta[property="og:image:alt"]', business.name)
   setMeta('meta[name="twitter:title"]', seo.title)
   setMeta('meta[name="twitter:description"]', seo.description)
+
+  let canonicalElement = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+  if (canonicalElement === null) {
+    canonicalElement = document.createElement('link')
+    canonicalElement.rel = 'canonical'
+    canonicalElement.href = `${import.meta.env.VITE_SITE_URL || window.location.origin}/`
+    document.head.appendChild(canonicalElement)
+  }
 
   const canonical = document
     .querySelector<HTMLLinkElement>('link[rel="canonical"]')
@@ -71,8 +80,19 @@ interface AppState {
   readonly myBookingsOpen: boolean
 }
 
+function takeCustomerAccessLink(): BookingAccessLink {
+  const link = consumeBookingAccessLink(window.location.href)
+  if (link.code !== null || link.emailLinkCode !== undefined) {
+    window.history.replaceState(window.history.state, '', link.cleanPath)
+  }
+  return link
+}
+
 export function App(): JSX.Element {
   const privacy = usePrivacyPreferences()
+  useEffect(() => {
+    if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
+  }, [privacy.openPreferences])
   // Default to the device's light/dark preference (manual toggle still overrides afterwards).
   const [state, setRaw] = useState<AppState>(() => ({
     mode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
@@ -87,6 +107,11 @@ export function App(): JSX.Element {
     readonly token?: string
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
   }>({})
+  // Consume credentials before the dialog mounts. Mailbox-link proofs stay in memory and can never
+  // enter the existing automatic booking-token exchange path.
+  const [initialAccess] = useState(takeCustomerAccessLink)
+  const [emailLinkCode, setEmailLinkCode] = useState<string | null | undefined>(undefined)
+  const accessSequence = useRef(0)
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
   useEffect(() => {
     const clearOptionalAccess = (): void => {
@@ -118,23 +143,59 @@ export function App(): JSX.Element {
   )
 
   useEffect(() => {
-    const { code: accessCode, cleanPath, direct } = consumeBookingAccessLink(window.location.href)
-    if (accessCode === null) {
-      void defaultMyBookingsPort.list({ accessToken: '', lang: 'sv' }).then((result) => {
-        if (result.ok) setCustomerProfile(result.profile)
-      })
-      return
+    let active = true
+    const acceptLink = (link: BookingAccessLink, restoreProfile = false): void => {
+      const sequence = ++accessSequence.current
+      const current = (): boolean => active && sequence === accessSequence.current
+      if (link.emailLinkCode !== undefined) {
+        setCustomerProfile(undefined)
+        setBookingAccess({})
+        setEmailLinkCode(link.emailLinkCode)
+        preloadMyBookingsDialog()
+        setState({ myBookingsOpen: true })
+        return
+      }
+      if (link.code === null) {
+        if (restoreProfile) {
+          void defaultMyBookingsPort
+            .list({ accessToken: '', lang: 'sv' })
+            .then((result) => {
+              if (current() && result.ok) setCustomerProfile(result.profile)
+            })
+            .catch(() => undefined)
+        }
+        return
+      }
+      setCustomerProfile(undefined)
+      setEmailLinkCode(undefined)
+      if (link.direct) {
+        setBookingAccess({ token: link.code })
+        setState({ myBookingsOpen: true })
+        return
+      }
+      void defaultMyBookingsPort
+        .exchangeAccess(link.code)
+        .then((result) => {
+          if (!current()) return
+          setBookingAccess(result.ok ? { token: result.accessToken } : { error: result.error })
+          setState({ myBookingsOpen: true })
+        })
+        .catch(() => {
+          if (!current()) return
+          setBookingAccess({ error: 'system' })
+          setState({ myBookingsOpen: true })
+        })
     }
-    window.history.replaceState(window.history.state, '', cleanPath)
-    if (direct) {
-      setBookingAccess({ token: accessCode })
-      setState({ myBookingsOpen: true })
-      return
+    acceptLink(initialAccess, true)
+    const onHashChange = (): void => {
+      const link = takeCustomerAccessLink()
+      if (link.code !== null || link.emailLinkCode !== undefined) acceptLink(link)
     }
-    void defaultMyBookingsPort.exchangeAccess(accessCode).then((result) => {
-      setBookingAccess(result.ok ? { token: result.accessToken } : { error: result.error })
-      setState({ myBookingsOpen: true })
-    })
+    window.addEventListener('hashchange', onHashChange)
+    return () => {
+      active = false
+      window.removeEventListener('hashchange', onHashChange)
+    }
   }, [])
 
   const dark = state.mode === 'dark'
@@ -228,12 +289,16 @@ export function App(): JSX.Element {
     })
   }
   const openMyBookings = (): void => {
+    accessSequence.current++
     preloadMyBookingsDialog()
     setBookingAccess({})
+    setEmailLinkCode(undefined)
     setState({ myBookingsOpen: true })
   }
   const closeMyBookings = (): void => {
+    accessSequence.current++
     setBookingAccess({})
+    setEmailLinkCode(undefined)
     setState({ myBookingsOpen: false })
   }
   const openPrivacy = (): void => privacy.openPreferences()
@@ -343,11 +408,13 @@ export function App(): JSX.Element {
       retryLabel={tx.lazyReload}
     >
       <LazyMyBookingsDialog
+        key={accessSequence.current}
         mode={state.mode}
         lang={lang}
         onClose={closeMyBookings}
         {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
         {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
+        {...(emailLinkCode === undefined ? {} : { emailLinkCode })}
         onProfile={setCustomerProfile}
       />
     </LazySurface>

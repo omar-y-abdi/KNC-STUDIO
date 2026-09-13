@@ -1,6 +1,4 @@
-// The offline (mock) GalleryPort: returns an EMPTY list for either kind, so the About section keeps
-// its existing placeholder tiles (PlaceholderPhoto) — byte-identical to today. Resolves
-// synchronously-wrapped so the gallery paints immediately (no flash, no layout shift).
+// Offline gallery has no published photos.
 
 import type { GalleryPhoto, GalleryPort } from './port'
 

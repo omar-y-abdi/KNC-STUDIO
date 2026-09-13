@@ -41,6 +41,55 @@ describe('customer booking access links', () => {
     })
   })
 
+  it('prioritises a valid email-link proof and strips every other credential', () => {
+    const rootToken = 'b'.repeat(64)
+    const emailLink = 'A'.repeat(64)
+    const parsed = consumeBookingAccessLink(
+      `https://bladeblendstudio.se/${rootToken}/?booking_access=legacy#booking_token=fragment&email_link=${emailLink}&booking_access=hash&keep=1`,
+    )
+
+    expect(parsed).toMatchObject({
+      code: null,
+      direct: false,
+      emailLinkCode: emailLink.toLowerCase(),
+    })
+    expect(parsed.cleanPath).toBe('/#keep=1')
+    for (const credential of [rootToken, 'legacy', 'fragment', emailLink.toLowerCase()])
+      expect(parsed.cleanPath).not.toContain(credential)
+    expect(parsed.cleanPath).not.toContain('booking_access')
+    expect(parsed.cleanPath).not.toContain('booking_token')
+    expect(parsed.cleanPath).not.toContain('email_link')
+  })
+
+  it.each(['short', 'g'.repeat(64), 'not-a-token', ''])(
+    'returns a null email-link proof for malformed supplied credentials (%s)',
+    (value) => {
+      const parsed = consumeBookingAccessLink(
+        `https://bladeblendstudio.se/?booking_access=legacy#email_link=${encodeURIComponent(value)}&keep=1`,
+      )
+      expect(parsed).toEqual({
+        code: null,
+        cleanPath: '/#keep=1',
+        direct: false,
+        emailLinkCode: null,
+      })
+    },
+  )
+
+  it('rejects duplicate email-link proofs instead of choosing one', () => {
+    const code = 'c'.repeat(64)
+    expect(
+      consumeBookingAccessLink(
+        `https://bladeblendstudio.se/#email_link=${code}&email_link=${code}`,
+      ),
+    ).toEqual({
+      code: null,
+      cleanPath: '/',
+      direct: false,
+      emailLinkCode: null,
+    })
+  })
+
   it('sends permanent root links through the durable external-action worker', () => {
     const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
     const worker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
@@ -74,7 +123,9 @@ describe('customer booking access links', () => {
     expect(cookies).toContain('__Host-bladeblend_customer_session')
     expect(cookies).toContain('HttpOnly; Secure; SameSite=None')
     expect(gateway).toContain('customerCookie(req, CUSTOMER_SESSION_COOKIE)')
-    expect(gateway).not.toContain('customer_email')
+    expect(gateway).not.toContain('customer_email=')
+    expect(gateway).not.toContain('body.customer_email')
+    expect(gateway).not.toContain('customer_email:')
     expect(adapter).not.toContain('sessionStorage')
     expect(client).not.toContain("credentials: 'include'")
     expect(client).not.toContain("credentials: 'same-origin'")

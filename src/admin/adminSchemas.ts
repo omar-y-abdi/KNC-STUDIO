@@ -77,7 +77,7 @@ export const barberRows = z.array(barberRow)
 
 // --- barber_schedules ----------------------------------------------------------------------------
 
-export const scheduleRow = z.object({
+const scheduleRow = z.object({
   barber_id: z.string(),
   // Literal union so the inferred `weekday` is exactly `0|1|…|6` (structurally `Weekday`), letting
   // the adapter map a parsed row straight into a `DaySchedule` with no cast (cf. `ratingInt`).
@@ -106,7 +106,7 @@ export const saveWeekResponse = z.union([
 
 // --- barber_time_off -----------------------------------------------------------------------------
 
-export const timeOffRow = z.object({
+const timeOffRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   start_date: isoDate,
@@ -123,7 +123,7 @@ export const addTimeOffResponse = z.union([
 
 // --- barber_slot_blocks --------------------------------------------------------------------------
 
-export const slotBlockRow = z.object({
+const slotBlockRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   block_date: isoDate,
@@ -140,7 +140,7 @@ export const addSlotBlockResponse = z.union([
 
 // --- barber_recurring_breaks --------------------------------------------------------------------
 
-export const recurringBreakRow = z.object({
+const recurringBreakRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   weekday,
@@ -194,7 +194,7 @@ export const reorderServiceResponse = z.union([
 
 // --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
 
-export const siteContentRow = z.object({
+const siteContentRow = z.object({
   key: z.string(),
   lang,
   value: z.string(),
@@ -202,7 +202,7 @@ export const siteContentRow = z.object({
 export type SiteContentRowT = z.infer<typeof siteContentRow>
 export const siteContentRows = z.array(siteContentRow)
 
-export const siteSettingRow = z.object({
+const siteSettingRow = z.object({
   key: z.string().min(1).max(40),
   value: z.string().max(500),
 })
@@ -211,7 +211,7 @@ export const siteSettingRows = z.array(siteSettingRow)
 
 // --- email_templates -----------------------------------------------------------------------------
 
-export const emailTemplateName = z.enum([
+const emailTemplateName = z.enum([
   'customer_confirmation',
   'barber_confirmation',
   'customer_cancellation',
@@ -223,7 +223,7 @@ export const emailTemplateName = z.enum([
   'auth_invite',
 ])
 
-export const emailTemplateRow = z.object({
+const emailTemplateRow = z.object({
   template: emailTemplateName,
   lang,
   subject: z.string(),
@@ -296,7 +296,7 @@ export const aboutRows = z.array(aboutRow)
 
 // --- gallery_images ------------------------------------------------------------------------------
 
-export const galleryRow = z.object({
+const galleryRow = z.object({
   id: z.string(),
   kind: z.enum(['salon', 'cuts']),
   storage_path: z.string(),
@@ -335,7 +335,7 @@ export const uploadHomepageLogoResponse = z
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to
 // the owning barber; nullable phone/email per the method.
 
-export const adminBookingRow = z.object({
+const adminBookingRow = z.object({
   id: z.string(),
   barber_id: z.string(),
   service_name: z.string(),

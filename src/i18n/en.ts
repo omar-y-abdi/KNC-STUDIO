@@ -40,6 +40,8 @@ export const bookingEn: BookingStrings = {
   email: 'Email',
   emailPh: 'name@example.com',
   book: 'Book appointment',
+  termsLink: 'Read booking terms',
+  termsLinkLabel: 'Read booking terms (opens in a new tab)',
   policy:
     'By booking you agree that cancellations must be made at least {hours} hours before the visit. Late cancellation or a no‑show entitles {businessName} to charge for the booked time.',
   bookedTitle: 'Thanks — your appointment is booked!',
@@ -96,16 +98,20 @@ export const privacyEn: PrivacyStrings = {
 }
 
 export const aboutEn: AboutStrings = {
+  termsLink: 'Terms',
+  privacyLink: 'Privacy policy',
   eyebrow: 'ABOUT',
   heading: 'Craft, not just a haircut',
   intro:
     'We take our time with every visit — clean fades, sharp lines and a beard that sits right. Calm room, good music and barbers who know their trade.',
   galleryTitle: 'Inside the shop',
-  galleryAlt: 'Photo from the salon (placeholder)',
+  galleryAlt: 'Photo from the salon',
+  galleryLoading: 'Loading photos …',
+  galleryEmpty: 'No photos published yet.',
+  galleryUnavailable: 'Photos cannot be loaded right now.',
   stylistsTitle: 'The barbers',
-  stylistAvatarAlt: 'Portrait (placeholder)',
   cutsTitle: 'Work we’ve done',
-  cutsAlt: 'Customer haircut (placeholder)',
+  cutsAlt: 'Customer haircut',
   reviewsTitle: 'Reviews',
   reviewsLoading: 'Loading published reviews …',
   reviewsEmpty: 'No published reviews yet.',
