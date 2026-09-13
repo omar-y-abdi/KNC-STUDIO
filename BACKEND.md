@@ -73,8 +73,8 @@ development may use the existing mock adapters; it must not silently become a pr
 
 ## Apply backend changes
 
-For the current cookie/receipt release, follow
-`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md`. The earlier
+For the current release, follow `docs/operations/LAUNCH_RELEASE_2026-09-13.md`.
+`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md` records the previous cookie/receipt rollout. The earlier
 `CUSTOMER_ACCESS_REPAIR_2026-09-10.md` describes PR58, already released. The historical
 `PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` must not be replayed as a current deployment checklist.
 
