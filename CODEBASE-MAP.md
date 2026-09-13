@@ -25,31 +25,31 @@ Known drift: **§12**.
 
 ### Hard invariants - do not violate casually
 
-| Area                 | Invariant                                                                                                                                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commercial authority | Booking price/duration/service identity and configured service weekdays are re-resolved from active `public.services`; prices are exact numeric SEK values (maximum two decimals), and browser copies are display/input hints only.                           |
-| Availability         | `available_slots()` is live read authority; write-time authority is `create_booking()` + barber advisory locking + schedule/time-off/one-off/recurring-break checks + confirmed-booking GiST exclusion. A returned slot is not a reservation.                 |
-| Time                 | Business timezone is `Europe/Stockholm`; preserve explicit Stockholm wall-clock conversion across DST.                                                                                                                                                        |
-| Public privilege     | Public mutation/lookup RPCs stay behind `submit-booking` / `public-booking-actions`; do not casually regrant direct anon execution.                                                                                                                           |
-| Customer identity    | Turnstile is bot resistance, not customer authentication. Customer history/cancellation require the current permanent random token delivered to the exact booking email. A fresh email request rotates the email-scoped token; phone never authorizes access. |
-| Rate limits          | Booking submit (`booking_attempts` + recent `bookings`) and public actions (`public_action_attempts`) are separate systems. Auth email has a third ledger: `auth_email_rate_limits`.                                                                          |
-| Admin auth           | Server/DB authorization is authoritative: Supabase Auth + `public.profiles` + RLS/`SECURITY DEFINER`/Edge checks. UI tab/route gating is UX only.                                                                                                             |
-| Mutation model       | Hybrid writes are intentional: simple owner/barber CRUD may be direct PostgREST+RLS; transactional/sensitive/cross-row operations are RPC/Edge-only. Determine the path before changing grants.                                                               |
-| Media                | Gallery/photo/homepage-logo metadata + Storage lifecycle remain server-coordinated through `upload-image` + internal RPCs + cleanup outbox; do not restore direct browser media writes/deletes.                                                               |
-| Email                | Booking email jobs and 24h reminders are **separate ledgers and dispatchers**. Auth email bypasses both and sends directly through Resend.                                                                                                                    |
-| External actions     | `external_action_jobs` is durable but not universal: Calendar insert/update and cleanup use the outbox; booking mail has its own ledger; auth mail is direct; image upload is synchronous.                                                                    |
-| Calendar             | Durable `booking_calendar_sync_on_change` queues insert/update; outbox handles cancel/delete/disconnect. Retired Dashboard webhook/`calendar-sync` are drift checks only.                                                                                     |
-| Secrets              | Every `VITE_*` value is public. Never move service-role keys, Turnstile secret, OAuth client secret, webhook secret, salts, or Resend key into frontend config.                                                                                               |
-| Schema               | Change DB schema/grants/policies/RPCs through migrations. `btree_gist` lives in `extensions`; `bookings_no_overlap` remains the authoritative GiST exclusion. Evaluate effective state after all later revokes/policy replacements.                           |
-| Discovery            | Public business discovery is explicitly whitelisted; add facts deliberately rather than exposing internal tables.                                                                                                                                             |
-| Supabase clients     | Keep public and admin clients isolated: public `persistSession=false`; admin owns persisted `knc-admin-auth`.                                                                                                                                                 |
-| Tests                | Match evidence to claim. Adapter/unit tests do not prove ImageMagick pixels, third-party provider state, Dashboard webhooks, or other live behavior.                                                                                                          |
-| Deployment           | Live webhooks, Vault values, secrets, OAuth/DNS/domain/provider state are outside git and require operational verification.                                                                                                                                   |
-| Availability edits   | Time-off, slot-block, and recurring-break records are add/delete, not in-place update. Preserve transactional add + RLS-scoped delete unless deliberately redesigning.                                                                                        |
-| Browser integrations | `public/_headers` CSP is part of runtime architecture; new browser origins require CSP/header review.                                                                                                                                                         |
-| Browser privacy      | `src/site/storageConsent.ts` records an explicit first-party storage choice. Customer authorization uses only a server-set HttpOnly session cookie; no phone-memory, analytics, or advertising storage is present.                                            |
-| Domain changes       | `VITE_SITE_URL` alone is not the canonical-origin migration surface; see §9.8.                                                                                                                                                                                |
-| Map upkeep           | Update this map when ownership, important paths, RPC contracts, triggers, grants, runtime/deployment topology, or test authority changes.                                                                                                                     |
+| Area                 | Invariant                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commercial authority | Booking price/duration/service identity and configured service weekdays are re-resolved from active `public.services`; prices are exact numeric SEK values (maximum two decimals), and browser copies are display/input hints only.                                                                                           |
+| Availability         | `available_slots()` is live read authority; write-time authority is `create_booking()` + barber advisory locking + schedule/time-off/one-off/recurring-break checks + confirmed-booking GiST exclusion. A returned slot is not a reservation.                                                                                 |
+| Time                 | Business timezone is `Europe/Stockholm`; preserve explicit Stockholm wall-clock conversion across DST.                                                                                                                                                                                                                        |
+| Public privilege     | Public mutation/lookup RPCs stay behind `submit-booking` / `public-booking-actions`; do not casually regrant direct anon execution.                                                                                                                                                                                           |
+| Customer identity    | Turnstile is bot resistance, not customer authentication. Customer history/cancellation require the current permanent random token delivered to the exact booking email. A fresh email request rotates that address’s token. Verified profile aliases require fresh proof from both mailboxes; phone never authorizes access. |
+| Rate limits          | Booking submit (`booking_attempts` + recent `bookings`) and public actions (`public_action_attempts`) are separate systems. Auth email has a third ledger: `auth_email_rate_limits`.                                                                                                                                          |
+| Admin auth           | Server/DB authorization is authoritative: Supabase Auth + `public.profiles` + RLS/`SECURITY DEFINER`/Edge checks. UI tab/route gating is UX only.                                                                                                                                                                             |
+| Mutation model       | Hybrid writes are intentional: simple owner/barber CRUD may be direct PostgREST+RLS; transactional/sensitive/cross-row operations are RPC/Edge-only. Determine the path before changing grants.                                                                                                                               |
+| Media                | Gallery/photo/homepage-logo metadata + Storage lifecycle remain server-coordinated through `upload-image` + internal RPCs + cleanup outbox; do not restore direct browser media writes/deletes.                                                                                                                               |
+| Email                | Booking email jobs and 24h reminders are **separate ledgers and dispatchers**. Auth email bypasses both and sends directly through Resend.                                                                                                                                                                                    |
+| External actions     | `external_action_jobs` is durable but not universal: Calendar insert/update and cleanup use the outbox; booking mail has its own ledger; auth mail is direct; image upload is synchronous.                                                                                                                                    |
+| Calendar             | Durable `booking_calendar_sync_on_change` queues insert/update; outbox handles cancel/delete/disconnect. Retired Dashboard webhook/`calendar-sync` are drift checks only.                                                                                                                                                     |
+| Secrets              | Every `VITE_*` value is public. Never move service-role keys, Turnstile secret, OAuth client secret, webhook secret, salts, or Resend key into frontend config.                                                                                                                                                               |
+| Schema               | Change DB schema/grants/policies/RPCs through migrations. `btree_gist` lives in `extensions`; `bookings_no_overlap` remains the authoritative GiST exclusion. Evaluate effective state after all later revokes/policy replacements.                                                                                           |
+| Discovery            | Public business discovery is explicitly whitelisted; add facts deliberately rather than exposing internal tables.                                                                                                                                                                                                             |
+| Supabase clients     | Keep public and admin clients isolated: public `persistSession=false`; admin owns persisted `knc-admin-auth`.                                                                                                                                                                                                                 |
+| Tests                | Match evidence to claim. Adapter/unit tests do not prove ImageMagick pixels, third-party provider state, Dashboard webhooks, or other live behavior.                                                                                                                                                                          |
+| Deployment           | Live webhooks, Vault values, secrets, OAuth/DNS/domain/provider state are outside git and require operational verification.                                                                                                                                                                                                   |
+| Availability edits   | Time-off, slot-block, and recurring-break records are add/delete, not in-place update. Preserve transactional add + RLS-scoped delete unless deliberately redesigning.                                                                                                                                                        |
+| Browser integrations | `public/_headers` CSP is part of runtime architecture; new browser origins require CSP/header review.                                                                                                                                                                                                                         |
+| Browser privacy      | `src/site/storageConsent.ts` records an explicit first-party storage choice. Customer authorization uses only a server-set HttpOnly session cookie; no phone-memory, analytics, or advertising storage is present.                                                                                                            |
+| Domain changes       | `VITE_SITE_URL` alone is not the canonical-origin migration surface; see §9.8.                                                                                                                                                                                                                                                |
+| Map upkeep           | Update this map when ownership, important paths, RPC contracts, triggers, grants, runtime/deployment topology, or test authority changes.                                                                                                                                                                                     |
 
 ---
 
@@ -59,7 +59,7 @@ Known drift: **§12**.
 
 **Stack:** Preact `10.29.x`; Vite `8.0.x`; TypeScript `6.0.x` (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`, `noPropertyAccessFromIndexSignature`, ES2023); Wouter Preact `3.10.x`; Zod `3.25.x`; Cloudflare Worker + Static Assets; Supabase PostgreSQL/Auth/Storage/Realtime/Edge Functions/pg_cron/pg_net/Vault; Resend; Turnstile; Google OAuth 2.0 + Calendar API v3.
 
-**Dual runtime:** both `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` → live public Supabase adapters. Without both → deterministic/local public-domain mocks, but named barbers/services/history remain empty rather than pretending to be production data. Admin Calendar has its own mock/live selector, but real OAuth/sync requires Supabase.
+**Dual runtime:** both `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` → live public Supabase adapters. Production build fails without both. Local development without both → deterministic/local public-domain mocks, but named barbers/services/history remain empty rather than pretending to be production data. Admin Calendar has its own mock/live selector, but real OAuth/sync requires Supabase.
 
 ```text
 Browser
@@ -182,13 +182,13 @@ Each block answers: **entry → invocation → authority/state → side effects 
 
 ### 5.1 Shell, routes, theme, language, Worker routing
 
-| Axis                       | Map                                                                                                                                                                                                                                                                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Entry/owners               | `src/main.tsx` → `<Root />`; `src/app/Root.tsx`; `src/app/App.tsx`; `src/app/DesktopSite.tsx`; `src/app/MobileSite.tsx`; `src/ui/LazySurface.tsx`; `src/worker.ts`. `App.tsx` owns public theme/lang/view/dialog/metadata-hydration state.                                                                                                 |
-| Client routes              | `/` → App; booking and Mina bokningar load only on demand; `/login`, `/reset`, `/invite`, `/auth/confirm`, `/admin`, `/admin/*` → lazy admin entry whose auth routes, gate/shell, and uncommon tabs split further; unknown client route → `/`.                                                                                             |
-| Worker-only route behavior | Uncached default entrypoint performs canonical `www`→apex before cache and delegates only apex `GET /` + `/llms.txt` to cached `PublicContent`; `/privacy` → `privacy.html`; `/google-calendar` → `google-calendar.html`; private/auth routes get `X-Robots-Tag: noindex, nofollow`; public handler owns assets + SPA fallback + metadata. |
-| State                      | Public UI state is ephemeral in `App.tsx`; no public persisted auth state.                                                                                                                                                                                                                                                                 |
-| Verify                     | `tests/unit/workerRoutes.test.ts`, `lazySurface.test.ts`, `performanceLifecycle.test.ts`; `npm run test:e2e`; visual regression.                                                                                                                                                                                                           |
+| Axis                       | Map                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entry/owners               | `src/main.tsx` → `<Root />`; `src/app/Root.tsx`; `src/app/App.tsx`; `src/app/DesktopSite.tsx`; `src/app/MobileSite.tsx`; `src/ui/LazySurface.tsx`; `src/worker.ts`. `App.tsx` owns public theme/lang/view/dialog/metadata-hydration state.                                                                                                                                                                                    |
+| Client routes              | `/` → App; booking and Mina bokningar load only on demand; `/login`, `/reset`, `/invite`, `/auth/confirm`, `/admin`, `/admin/*` → lazy admin entry whose auth routes, gate/shell, and uncommon tabs split further; random 64-hex customer paths → App; unknown client route → `NotFound` (no redirect).                                                                                                                       |
+| Worker-only route behavior | Uncached default entrypoint performs canonical `www`→apex before cache and delegates only apex `GET /` + `/llms.txt` to cached `PublicContent`; `/privacy` → `privacy.html`; `/terms` → `terms.html`; unknown public routes → branded `404.html` with HTTP 404; `/google-calendar` → `google-calendar.html`; private/auth routes get `X-Robots-Tag: noindex, nofollow`; public handler owns assets + SPA fallback + metadata. |
+| State                      | Public UI state is ephemeral in `App.tsx`; no public persisted auth state.                                                                                                                                                                                                                                                                                                                                                    |
+| Verify                     | `tests/unit/workerRoutes.test.ts`, `lazySurface.test.ts`, `performanceLifecycle.test.ts`; `npm run test:e2e`; visual regression.                                                                                                                                                                                                                                                                                              |
 
 **Consent:** initial Godkänn/Avvisa and opened preferences are fixed at the viewport bottom across
 sections on both desktop/mobile. After choosing, only the hero has the small reopen control; About
@@ -235,6 +235,22 @@ loads and recreates expired widgets; booking submit waits for a token. See curre
 `BookingFlow.onRosterReady` reports actual initial catalog resolution to `DesktopSite`. The reveal may show loading content, but final geometry settlement waits for roster readiness; later layout changes do not restart that reveal. Booking and review auto-fill replace/clear untouched previous-profile values while preserving explicit typed edits, including empty strings.
 
 ### 5.4 Customer self-service: Mina bokningar
+
+**Verified email profiles:** migration `20260913131739_verified_customer_profiles.sql` owns
+`customer_profiles`, `customer_profile_emails`, `customer_email_links` and the request/confirm RPCs.
+Both mailboxes need fresh proof within 30 minutes, from the exact initiating session. Ordered
+profile locks, profile versions and credential generations reject stale/rotated requests; merges
+move the whole verified email group atomically. All list/cancel/review operations use that scope;
+phone never joins histories and receipt grants stay exact-ID/exact-parent-email scoped.
+`CustomerEmailLink.tsx` owns optional management and explicit confirmation; `accessLink.ts` strips
+`#email_link` into memory without exchanging credentials. `_shared/customerEmailLink.ts` builds
+fixed security mail; `externalActions.ts` delivers encrypted outbox proofs with idempotency.
+
+**Durable dispatch lifetime:** `20260913140731_durable_dispatch_request_budget.sql` gives all three
+pg_net dispatchers 30 seconds. `_shared/backgroundTask.ts` retains send-confirmation/external-cleanup
+promises with the native hook when present, preserving HTTP outcomes and database-owned retries.
+Resend 2xx responses require a UUID before any delivery acknowledgement. Calendar UI polls visible
+pending disconnects and refreshes on focus; failed reads preserve known state with manual retry.
 
 | Axis                   | Map                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -332,6 +348,8 @@ homepage_logo_path
 homepage_logo_scale
 homepage_logo_style
 business_name
+business_legal_name
+business_org_number
 business_email
 business_phone_display
 business_phone_tel
@@ -346,9 +364,13 @@ seo_title_en
 seo_description_en
 ```
 
+**Legal pages:** `/terms` and `/privacy` load the same discovery settings on every GET and render company identity, contacts and cancellation timing into HTML. Responses use `no-store`; failed discovery leaves generic copy without stale company/contact assertions. `business_legal_name` and `business_org_number` start blank, are validated by the existing settings trigger and owner RLS, and appear in JSON-LD only when set. The salon owner supplies these in SiteView; empty legal fields are omitted publicly.
+
 If Worker/email/machine-discovery code needs a new mutable fact, update the SQL whitelist **and** wire consumer/schema deliberately.
 
 ### 5.11 Media / secure image processing
+
+**Public gallery:** `gallery/supabaseGallery.ts` rejects failed reads; `gallery/useGallery.ts` exposes loading/ready/error and discards stale responses. About displays noninteractive loading/empty/unavailable text; `GalleryMarquee` renders only published photos and falls back from blank CMS alt to localized labels. Loop clones remain hidden/nonfocusable; missing barber portraits are decorative neutral icons beside their visible names.
 
 | Axis                | Map                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -945,6 +967,10 @@ Audit all canonical-origin surfaces together; `VITE_SITE_URL` alone is insuffici
 Search for the **old hostname** before declaring complete.
 
 ---
+
+### Launch information pages
+
+`src/site/routeMetadata.ts` shares fixed private route titles between Worker and client; arbitrary paths/tokens never enter titles. The Worker removes homepage canonical metadata on private routes. Homepage initial HTML contains readable CMS business/contact text inside `#root`, replaced by Preact at startup. Script-free privacy, terms and 404 pages provide navigation and one h1. `public/info.css` styles terms and 404; sitemap and dynamic/static llms list only public information pages.
 
 ## 10. Deployment, Operations, and Backup
 

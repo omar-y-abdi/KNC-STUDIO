@@ -125,20 +125,21 @@ The booking calendar's "today" comes from a `Clock` (`config.ts`), never a bare 
 
 ## Security posture
 
-This is a static frontend. **Client code is always inspectable** — minification + no shipped
-sourcemaps raises the bar to read it, but nothing in a browser is truly "unbreakable." Real
-enforcement (a booking that cannot be abused) requires a backend; this repo is structured to add one
-without a rewrite (see below). What _is_ hardened here:
+**Client code is always inspectable.** Supabase owns booking rules, access authorization and
+transactional writes; Cloudflare handles the public gateway and static frontend. Minification and
+disabled production source maps reduce transfer and implementation detail exposure, not the need
+for server-side security. Current controls:
 
 - **Strict CSP** (via `public/_headers`): `default-src 'self'`, restricted script/connect/frame hosts,
   `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`, `frame-ancestors 'none'`
   (clickjacking), `upgrade-insecure-requests`. `style-src` allows `'unsafe-inline'` — a deliberate,
   documented trade-off: the design uses inline style attributes (Preact style objects); style
-  injection is low-severity and **scripts remain locked to `'self'`**, which is the meaningful guard.
+  attributes remain necessary; scripts use a restricted self/Cloudflare host allowlist.
 - **Security headers:** one-year HSTS with subdomains, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, a restrictive `Permissions-Policy`, COOP, CORP.
 - **Restricted third-party runtime:** app code and fonts are self-hosted; CSP allows only Supabase and
-  Cloudflare Turnstile endpoints required by booking and authentication.
+  Cloudflare Turnstile endpoints required by booking and authentication, plus Cloudflare's existing
+  cookieless Web Analytics on three public paths outside the EU. Private routes are excluded.
 - **Input validation at the boundary:** all contact details pass Zod smart-constructors
   (`validation.ts`) before a `Booking` is produced. Branded types make a validated value
   impossible to confuse with a raw string.
@@ -175,7 +176,8 @@ The UI depends only on port interfaces. Production requires `VITE_SUPABASE_URL` 
 `public_booking_catalog()` request and invalidate through Realtime; frontend constants never paint
 named barbers or services. The catalog carries each service's weekday set; the client date-filters
 the menu and asks the service-aware availability RPC, while booking writes recheck the same rule.
-An unconfigured build shows honest empty catalog/history states and persists nothing. See `BACKEND.md`
+Unconfigured local development shows empty catalog/history states and persists nothing. Production
+builds fail unless both public Supabase values are supplied. See `BACKEND.md`
 for go-live requirements.
 
 Customer confirmation/reminder email contains the current permanent, email-scoped Mina bokningar
@@ -193,7 +195,12 @@ change production until deployed. Optional functional storage adds a separate, s
 for newly created booking IDs only. It does not authenticate the entered contact or expand into old
 history. Rejecting/withdrawing optional storage preserves the essential email-link session.
 
-Current release order and rollback: [customer device access](docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md).
+Customers may explicitly connect their own email addresses after fresh verification of both
+mailboxes. A verified profile groups their history; sharing a phone number never grants access.
+The profile and device-receipt boundaries are described in [BACKEND.md](BACKEND.md).
+
+Current release order and rollback: [13 September launch release](docs/operations/LAUNCH_RELEASE_2026-09-13.md).
+Earlier device-access rollout: [customer device access](docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md).
 
 ---
 
