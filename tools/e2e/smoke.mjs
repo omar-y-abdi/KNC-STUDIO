@@ -176,6 +176,29 @@ async function waitForFonts(page) {
   }, WAIT_TIMEOUT)
 }
 
+// Exercise the actual gallery adapter/renderer with deterministic image bytes. These routes are
+// scoped to each browser test context: no database rows or public Storage objects are changed.
+async function installGalleryFixtures(page) {
+  const photo = readFileSync(new URL('../../public/og-image.png', import.meta.url))
+  await page.route('**/rest/v1/gallery_images?*', async (route) => {
+    const kind = new URL(route.request().url()).searchParams.get('kind')?.replace('eq.', '')
+    assert(kind === 'salon' || kind === 'cuts', `unexpected gallery kind: ${kind}`)
+    await route.fulfill({
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      json: [0, 1].map((index) => ({
+        id: `smoke-${kind}-${index}`,
+        kind,
+        storage_path: `smoke-fixtures/${kind}-${index}.png`,
+        alt: index === 0 ? '  ' : `Gallery smoke ${kind} photo`,
+        sort_order: index,
+      })),
+    })
+  })
+  await page.route('**/storage/v1/object/public/gallery/smoke-fixtures/*.png', (route) =>
+    route.fulfill({ contentType: 'image/png', body: photo }),
+  )
+}
+
 async function scrollMarqueeRowIntoView(page, rowIndex) {
   await page.evaluate((index) => {
     const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
@@ -366,6 +389,7 @@ async function verifyPublicPage(browser, viewport) {
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(error.message))
+  await installGalleryFixtures(page)
 
   phase(`public ${viewport.width}x${viewport.height}: goto`)
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
@@ -418,7 +442,7 @@ async function verifyPublicPage(browser, viewport) {
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
   await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
-  await page.waitForTimeout(100)
+  await waitForGalleryToSettle(page)
   const marqueeTransforms = await page
     .getByTestId('marquee-track')
     .evaluateAll((tracks) => tracks.map((track) => track.style.transform))
@@ -627,14 +651,15 @@ async function verifyNormalMotionGalleryKeyboard(browser) {
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
+  await installGalleryFixtures(page)
 
   phase('normal-motion gallery: goto')
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
   await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
   await waitForFonts(page)
   await page.locator('#om-oss').scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
-  await scrollMarqueeRowIntoView(page, 0)
   await waitForGalleryToSettle(page)
+  await scrollMarqueeRowIntoView(page, 0)
 
   const row = page.getByTestId('marquee-row').first()
   const layout = await row.evaluate((element) => ({
@@ -1216,10 +1241,12 @@ async function verifyCustomerBrowser() {
           reducedMotion: 'reduce',
         })
         const receiptPages = await Promise.all([receiptContext.newPage(), receiptContext.newPage()])
-        const bookingDate = new Date(Date.now() + 3 * 86400000)
-        const datePart = (options) =>
+        // The supported cancellation cutoff reaches seven days. A fixed 11:00 appointment
+        // three dates ahead can already be inside a 72-hour cutoff in an afternoon run.
+        const bookingDate = new Date(Date.now() + 9 * 86400000)
+        const datePart = (options, date = bookingDate) =>
           new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(
-            bookingDate,
+            date,
           )
         const bookingDateLabel = `${datePart({ weekday: 'long' })} ${datePart({ day: 'numeric' })} ${datePart({ month: 'long' })} ${datePart({ year: 'numeric' })}`
         const prepareBooking = async (page, person, time, consent) => {
@@ -1235,6 +1262,9 @@ async function verifyCustomerBrowser() {
             .getByTestId('booking-barber-option')
             .filter({ hasText: 'Customer E2E Barber' })
             .click()
+          const monthFormat = { year: 'numeric', month: 'numeric' }
+          if (datePart(monthFormat) !== datePart(monthFormat, new Date()))
+            await page.getByRole('button', { name: 'Nästa månad', exact: true }).click()
           await page.getByRole('button', { name: bookingDateLabel, exact: true }).click()
           await page
             .getByTestId('booking-service-option')
@@ -1365,7 +1395,17 @@ async function verifyCustomerBrowser() {
           name: 'Ja, avboka tid',
           exact: true,
         })
-        if (await confirmCancel.isVisible()) await confirmCancel.click()
+        const cancellationResponse = receiptPages[0].waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === '/api/customer-bookings' &&
+            response.request().postDataJSON()?.action === 'cancel',
+        )
+        await confirmCancel.click()
+        const cancellation = await (await cancellationResponse).json()
+        assert(
+          cancellation.ok === true,
+          `device cancellation rejected: ${JSON.stringify(cancellation)}`,
+        )
         await receiptPages[0].getByText('Tiden är avbokad.', { exact: true }).waitFor()
         assert(
           (await listFrom(receiptPages[0])).bookings.length === 1,
@@ -1375,9 +1415,14 @@ async function verifyCustomerBrowser() {
         phase(`customer ${engine.name()}: withdrawing optional storage removes only receipt access`)
         const preferencesPage = await receiptContext.newPage()
         await preferencesPage.goto(origin, { waitUntil: 'domcontentloaded' })
-        await preferencesPage
-          .getByRole('link', { name: 'Hantera integritetsinställningar', exact: true })
-          .click()
+        // Live About content can move this footer between pointerdown and pointerup. This auth
+        // scenario uses the real keyboard action; the About UI gate covers pointer interaction.
+        const preferencesLink = preferencesPage.getByRole('link', {
+          name: 'Hantera integritetsinställningar',
+          exact: true,
+        })
+        await preferencesLink.focus()
+        await preferencesPage.keyboard.press('Enter')
         await preferencesPage.getByRole('checkbox', { name: /Valfri lagring/ }).uncheck()
         const forgot = preferencesPage.waitForResponse(
           (r) =>
@@ -1437,6 +1482,24 @@ async function verifyCustomerBrowser() {
         page.setDefaultTimeout(WAIT_TIMEOUT)
         await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
         await showHistory(page, a)
+        const fullSession = (await context.cookies()).find(
+          (cookie) => cookie.name === '__Host-bladeblend_customer_session',
+        )
+        assert(fullSession !== undefined, 'verified customer session cookie missing')
+        await page.evaluate(async () => {
+          const response = await fetch('/api/customer-bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'forget_device' }),
+          })
+          if (!response.ok || (await response.json()).ok !== true)
+            throw new Error('forget_device did not accept the verified-session request')
+        })
+        assert(
+          (await context.cookies()).find((cookie) => cookie.name === fullSession.name)?.value ===
+            fullSession.value && (await listFrom(page)).authority === 'verified',
+          'forgetting optional device access revoked the full email session',
+        )
         const invalid = await page.evaluate(async () =>
           (
             await fetch('/api/customer-bookings', {

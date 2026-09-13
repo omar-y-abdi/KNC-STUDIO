@@ -119,6 +119,8 @@ const listCustomerBookingsOk = z.object({
   name: z.string().optional(),
   phone: z.string().regex(/^07[0-9]{8}$/),
   email: z.string().email().optional(),
+  emails: z.array(z.string().email()).optional(),
+  phones: z.array(z.string().regex(/^07[0-9]{8}$/)).optional(),
   bookings: z.array(myBookingRow),
 })
 const listDeviceBookingsOk = z.object({
@@ -138,6 +140,17 @@ export const listCustomerBookingsResponse = z.union([
   listCustomerBookingsErr,
 ])
 export type ListCustomerBookingsResponse = z.infer<typeof listCustomerBookingsResponse>
+
+export const customerEmailLinkResponse = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    status: z.enum(['queued', 'already_linked', 'waiting', 'linked']),
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.enum(['access_denied', 'invalid', 'stale', 'rate_limited', 'system']),
+  }),
+])
 
 const customerBookingCancelOk = z.object({ ok: z.literal(true) })
 const customerBookingCancelErr = z.object({
@@ -217,8 +230,8 @@ export const publicBookingCatalogResponse = z.object({
 })
 export type PublicBookingCatalogResponse = z.infer<typeof publicBookingCatalogResponse>
 
-// --- public site_content / site_settings rows (Task 2 §2) ----------------------------------------
-// Editable homepage text (key,lang,value) + non-localized settings (key,value). anon may read both.
+// --- public site_content and business discovery (Task 2 §2) ----------------------------------------
+// Editable homepage text is read directly; business settings, photos, and catalog use public RPCs.
 
 export const siteContentRow = z.object({
   key: z.string(),
@@ -226,12 +239,6 @@ export const siteContentRow = z.object({
   value: z.string(),
 })
 export type SiteContentRow = z.infer<typeof siteContentRow>
-
-export const siteSettingRow = z.object({
-  key: z.string().min(1).max(40),
-  value: z.string().max(500),
-})
-export type SiteSettingRow = z.infer<typeof siteSettingRow>
 
 export const publicBusinessDiscoveryResponse = z.object({
   settings: z.record(z.string()),
@@ -253,15 +260,6 @@ export const publicBusinessDiscoveryResponse = z.object({
   ),
 })
 export type PublicBusinessDiscoveryResponse = z.infer<typeof publicBusinessDiscoveryResponse>
-
-// --- public barber_photos row (Task 2 §3) --------------------------------------------------------
-// One barber's profile-photo path (anon may read; the adapter resolves it to a public Storage URL).
-
-export const barberPhotoRow = z.object({
-  barber_id: z.string(),
-  storage_path: z.string(),
-})
-export type BarberPhotoRow = z.infer<typeof barberPhotoRow>
 
 // --- public about_content row (direct table select) ----------------------------------------------
 // One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.

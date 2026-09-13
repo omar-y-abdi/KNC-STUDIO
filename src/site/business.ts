@@ -2,6 +2,8 @@ import type { Lang } from '../i18n/index'
 
 export const BUSINESS_SETTING_KEYS = {
   name: 'business_name',
+  legalName: 'business_legal_name',
+  organizationNumber: 'business_org_number',
   email: 'business_email',
   phoneDisplay: 'business_phone_display',
   phoneTel: 'business_phone_tel',
@@ -23,6 +25,8 @@ export interface SeoSettings {
 
 export interface BusinessSettings {
   readonly name: string
+  readonly legalName: string
+  readonly organizationNumber: string
   readonly email: string
   readonly phoneDisplay: string
   readonly phoneTel: string
@@ -73,6 +77,8 @@ const DEFAULT_BUSINESS_CITY = 'Göteborg'
 
 export const DEFAULT_BUSINESS: BusinessSettings = {
   name: DEFAULT_BUSINESS_NAME,
+  legalName: '',
+  organizationNumber: '',
   email: 'booking@mail.bladeblendstudio.se',
   street: 'Geijersgatan 10',
   postalCode: '411 34',
@@ -162,6 +168,8 @@ export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): 
       : optionalHttpUrl(configuredMapsHref.trim())
   const base = {
     name,
+    legalName: settings.get(BUSINESS_SETTING_KEYS.legalName)?.trim() ?? '',
+    organizationNumber: settings.get(BUSINESS_SETTING_KEYS.organizationNumber)?.trim() ?? '',
     city,
     email: validEmail(
       settingText(settings, BUSINESS_SETTING_KEYS.email, DEFAULT_BUSINESS.email),
@@ -304,6 +312,14 @@ export function buildBusinessStructuredData(
     availableLanguage: ['sv', 'en'],
   }
 
+  if (business.legalName !== '') structured['legalName'] = business.legalName
+  if (business.organizationNumber !== '') {
+    structured['identifier'] = {
+      '@type': 'PropertyValue',
+      propertyID: 'SE:Organisationsnummer',
+      value: business.organizationNumber,
+    }
+  }
   if (business.phoneTel !== '') structured['telephone'] = business.phoneTel
   if (business.mapsHref !== '') structured['hasMap'] = business.mapsHref
 

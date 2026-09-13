@@ -3,10 +3,13 @@
 -- audited about_content posture (anon read / owner write) and is covered structurally by 05_admin_rls.
 
 begin;
-select plan(11);
+select plan(13);
 
 select is((select count(*)::int from public.site_content), 2, 'site_content has bilingual confirmation defaults');
-select is((select count(*)::int from public.site_settings), 16, 'site_settings has shipped business, SEO, and logo defaults');
+select is((select count(*)::int from public.site_settings), 18, 'site_settings has shipped business, legal identity, SEO, and logo defaults');
+
+select is((select value from public.site_settings where key = 'business_legal_name'), '', 'legal business name defaults to blank rather than the salon name');
+select is((select value from public.site_settings where key = 'business_org_number'), '', 'registration number defaults to blank rather than an invented identity');
 
 -- site_content: (key,lang) PK + lang check + value length.
 insert into public.site_content (key, lang, value) values ('test_kicker', 'sv', 'BARBERSHOP · GÖTEBORG');

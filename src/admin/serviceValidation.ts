@@ -29,7 +29,7 @@ function parseUnsignedDecimal(input: string, maxFractionDigits: number): number 
 }
 
 /** Parse a complete, dot-decimal SEK value without allowing implicit coercion or rounding. */
-export function parseServicePrice(input: string): number | null {
+function parseServicePrice(input: string): number | null {
   const price = parseUnsignedDecimal(input, 2)
   if (price === null || price < 0 || price > 100000) return null
   return price
@@ -46,7 +46,7 @@ export function validateManualReservationPrice(input: string): ManualReservation
 }
 
 /** Parse a complete numeric duration and round it upward to the next whole minute. */
-export function parseServiceDuration(input: string): number | null {
+function parseServiceDuration(input: string): number | null {
   const numericDuration = parseUnsignedDecimal(input, Number.POSITIVE_INFINITY)
   if (numericDuration === null) return null
   const duration = Math.ceil(numericDuration)

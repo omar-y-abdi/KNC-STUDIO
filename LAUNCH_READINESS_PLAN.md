@@ -3,7 +3,7 @@
 **Statusdatum:** 2026-08-23
 
 > **Historisk planbild.** Checklistan och verifieringen nedan är från 2026-08-23. Aktuell launchstatus
-> finns i `docs/qa/2026-09-11-launch-issues.md` och `docs/qa/2026-09-10-launch-completion/pm.md`. Behåll historiken; läs
+> finns i `docs/qa/2026-09-13-launch/issues.md` och `docs/qa/2026-09-13-launch/pm.md`. Behåll historiken; läs
 > aktuell kod, migrationer, live config och CI innan någon operatörsåtgärd körs.
 
 **Syfte:** verifierad handoff och körordning inför produktionssättning
@@ -155,7 +155,7 @@ lokalt verifierad, separat migration och pgTAP-regressionstest som flyttar exten
 
 ## Körordning nästa session
 
-1. Skapa eller välj rent Supabase-produktionsprojekt.
+1. Behåll befintligt produktionsprojekt och verifiera aktuell migrations- och deploystatus.
 2. Konfigurera Auth, SMTP, redirect-URL:er och secrets.
 3. Vänta in full grön CI för aktuell head.
 4. Genomför expand → Edge → frontend → verify → contract enligt public booking-runbooken.

@@ -1,5 +1,5 @@
 import type { Lang } from '../i18n/index'
-import type { MyBooking, MyBookingsResult, MyCancelResult } from './domain'
+import type { CustomerEmailLinkResult, MyBooking, MyBookingsResult, MyCancelResult } from './domain'
 
 export interface MyBookingsAccessRequestParams {
   readonly email: string
@@ -21,6 +21,8 @@ export interface MyBookingsListParams {
 }
 
 export interface MyBookingsPort {
+  requestEmailLink(email: string, lang: Lang, sourceEmail: string): Promise<CustomerEmailLinkResult>
+  confirmEmailLink(code: string): Promise<CustomerEmailLinkResult>
   requestAccess(params: MyBookingsAccessRequestParams): Promise<MyBookingsAccessRequestResult>
   exchangeAccess(accessCode: string): Promise<MyBookingsAccessExchangeResult>
   list(params: MyBookingsListParams): Promise<MyBookingsResult>

@@ -16,7 +16,10 @@ describe('public discovery documents', () => {
 
     expect(homepage).not.toContain('Google Calendar')
     expect(homepage).not.toContain('public-home-fallback')
-    expect(oauthHomepage).toContain('<title>Blade &amp; Blend Studio</title>')
+    expect(oauthHomepage).toContain(
+      '<title>Google Calendar för personal — Blade &amp; Blend Studio</title>',
+    )
+    expect(oauthHomepage).toContain('<meta name="robots" content="noindex, nofollow" />')
     expect(oauthHomepage).toContain('<h1>Blade &amp; Blend Studio</h1>')
     expect(oauthHomepage).toContain('Purpose of Google Calendar access')
     expect(oauthHomepage).toContain('href="/privacy"')

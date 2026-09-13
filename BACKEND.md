@@ -28,6 +28,17 @@ tabs. The browser verifies receipt proof and the new booking ID before showing i
 Cookie/probe failure keeps booking success and offers the email link. Withdrawing consent deletes
 receipt authority; the essential email-verified session and booking rows remain separate.
 
+Verified customers may link their email identities through `request_link` and `confirm_link` on
+the same signed gateway. `customer_profiles` and `customer_profile_emails` group addresses only
+after fresh proofs sent to both mailboxes, confirmed from the exact initiating email session.
+The request binds the displayed source email too, so a cookie changed in another tab fails closed.
+`customer_email_links` retains hashed/encrypted 30-minute proofs, credential generations and profile
+versions. Ordered profile locks make a whole-group merge atomic; rotation and competing merges
+invalidate stale requests. `/#email_link=...` is removed from the URL into component memory and
+requires an explicit button press; opening the URL never exchanges an access credential.
+Verified list/cancel/review share the group scope. Phone collisions never join profiles, and
+device receipts keep their original exact-booking/exact-parent-email boundary.
+
 The `external_action_jobs` outbox covers Calendar actions, Storage cleanup, customer-access email, and
 Auth user lifecycle actions. Booking email delivery has its separate
 `booking_email_delivery_jobs` ledger; Auth email sends directly through Resend; and `upload-image`
@@ -36,6 +47,11 @@ preserves Calendar event identifiers until Google deletion succeeds, and reconci
 bytes left unreferenced for 30 minutes after a failed upload compensation path. Homepage-logo
 replacement uses the same authenticated `upload-image` gateway, `site_settings` path swap, and
 durable gallery cleanup; raw image bytes and service credentials never enter browser config.
+
+The durable dispatchers use a 30-second pg_net request budget. Edge handlers retain their promise
+through the native `EdgeRuntime.waitUntil` hook when available; the database ledgers still own
+retry and completion. Resend HTTP success requires a valid message UUID before delivery is marked.
+Only that provider ID is logged, never message bodies or customer-access links.
 
 ## Public frontend configuration
 
@@ -52,10 +68,13 @@ VITE_TURNSTILE_SITE_KEY=<public-site-key>
 Never expose `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET`, `CUSTOMER_GATEWAY_SECRET`,
 or webhook secrets in frontend variables.
 
+Production builds require both public Supabase values and fail if either is missing. Local
+development may use the existing mock adapters; it must not silently become a production build.
+
 ## Apply backend changes
 
-For the current cookie/receipt release, follow
-`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md`. The earlier
+For the current release, follow `docs/operations/LAUNCH_RELEASE_2026-09-13.md`.
+`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md` records the previous cookie/receipt rollout. The earlier
 `CUSTOMER_ACCESS_REPAIR_2026-09-10.md` describes PR58, already released. The historical
 `PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` must not be replayed as a current deployment checklist.
 
@@ -169,10 +188,11 @@ local/CI gates do not prove inbox delivery, live secrets or deployment state.
 
 Supabase Free has no production backup guarantee. GitHub workflow `database-backup.yml` creates an
 encrypted daily database-and-Storage artifact with migration lineage and byte verification only after
-all repository secrets/variables are configured. The 2026-09-10 launch audit recorded scheduled runs
-failing at configuration validation because `SUPABASE_DB_URL` is still missing. Setup and restore drills
-are documented in `docs/operations/BACKUP_RESTORE.md`; keep migrations in source control and never
-upload plaintext dumps.
+all repository secrets/variables are configured. On 2026-09-13 the owner authorized a database-password
+rotation, `SUPABASE_DB_URL` was configured, and production backup run `34764434644` succeeded.
+Its encrypted artifact passed checksum, decryption and inventory checks. The daily schedule remains
+02:17 UTC; that verified run was manually dispatched. Setup and restore drills are documented in
+`docs/operations/BACKUP_RESTORE.md`; keep migrations in source control and never upload plaintext dumps.
 
 ## Mock fallback
 

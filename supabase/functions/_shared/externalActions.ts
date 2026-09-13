@@ -20,6 +20,7 @@ import {
   sendViaResend,
 } from './email.ts'
 import { customerAccessUrl, decryptCustomerAccessToken } from './customerAccess.ts'
+import { buildCustomerEmailLinkMessage } from './customerEmailLink.ts'
 
 export type StorageBucket = 'gallery' | 'barber-photos'
 
@@ -31,6 +32,14 @@ interface DispatchBase {
 }
 
 export type ExternalAction =
+  | (DispatchBase & {
+      readonly action_type: 'customer_email_link_send'
+      readonly email: string
+      readonly source_email: string
+      readonly target_email: string
+      readonly lang: Language
+      readonly token_ciphertext: string
+    })
   | (DispatchBase & { readonly action_type: 'superseded' })
   | (DispatchBase & {
       readonly action_type: 'storage_object_delete'
@@ -314,6 +323,25 @@ export function parseExternalAction(value: unknown): ExternalAction | null {
       google_event_id: value.google_event_id,
       refresh_token: value.refresh_token,
       calendar_id: value.calendar_id,
+    }
+  }
+
+  if (
+    value.action_type === 'customer_email_link_send' &&
+    nonEmpty(value.email) &&
+    nonEmpty(value.source_email) &&
+    nonEmpty(value.target_email) &&
+    (value.lang === 'sv' || value.lang === 'en') &&
+    customerAccessCiphertext(value.token_ciphertext)
+  ) {
+    return {
+      ...base,
+      action_type: value.action_type,
+      email: value.email,
+      source_email: value.source_email,
+      target_email: value.target_email,
+      lang: value.lang,
+      token_ciphertext: value.token_ciphertext,
     }
   }
 
@@ -745,6 +773,41 @@ export async function executeExternalAction(
       }
       return
     }
+    case 'customer_email_link_send': {
+      if (!runtime.resendApiKey || !runtime.customerAccessHashSalt) {
+        throw new ExternalActionError('not_configured', 'Email runtime is not configured')
+      }
+      const code = await decryptCustomerAccessToken(
+        action.token_ciphertext,
+        runtime.customerAccessHashSalt,
+      )
+      if (code === null)
+        throw new ExternalActionError(
+          'customer_link_decrypt_failed',
+          'Email proof could not be decrypted',
+          false,
+        )
+      const business = await loadEmailBusiness(service as unknown as SupabaseClient)
+      const message = buildCustomerEmailLinkMessage({
+        to: action.email,
+        sourceEmail: action.source_email,
+        targetEmail: action.target_email,
+        token: code,
+        business,
+        lang: action.lang,
+      })
+      try {
+        await sendViaResend(message, runtime.resendApiKey, `customer-email-link/${action.id}`)
+      } catch (error) {
+        const failureCode = resendDeliveryFailureCode(error)
+        throw new ExternalActionError(
+          failureCode,
+          'Customer email link delivery failed',
+          failureCode !== 'send_failed_permanent',
+        )
+      }
+      return
+    }
     case 'customer_access_email_send': {
       if (!runtime.resendApiKey || !runtime.customerAccessHashSalt) {
         throw new ExternalActionError('not_configured', 'Resend runtime is not configured')
@@ -786,7 +849,7 @@ export async function executeExternalAction(
         const failureCode = resendDeliveryFailureCode(error)
         throw new ExternalActionError(
           failureCode,
-          error instanceof Error ? error.message : 'Customer access email failed',
+          'Customer access email delivery failed',
           failureCode !== 'send_failed_permanent',
         )
       }

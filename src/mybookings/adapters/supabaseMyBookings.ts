@@ -2,6 +2,7 @@ import { invokePublicBookingAction } from '../../backend/publicBookingActions'
 import {
   customerAccessExchangeResponse,
   customerAccessRequestResponse,
+  customerEmailLinkResponse,
   customerBookingCancelResponse,
   listCustomerBookingsResponse,
   parseWith,
@@ -20,6 +21,21 @@ import type {
 } from '../port'
 
 export const supabaseMyBookingsAdapter: MyBookingsPort = {
+  async requestEmailLink(email, lang, sourceEmail) {
+    const result = await invokePublicBookingAction({
+      action: 'request_link',
+      email,
+      lang,
+      sourceEmail,
+    })
+    const parsed = parseWith(customerEmailLinkResponse, result.data)
+    return result.failed || !parsed.ok ? { ok: false, error: 'system' } : parsed.value
+  },
+  async confirmEmailLink(linkCode) {
+    const result = await invokePublicBookingAction({ action: 'confirm_link', linkCode })
+    const parsed = parseWith(customerEmailLinkResponse, result.data)
+    return result.failed || !parsed.ok ? { ok: false, error: 'system' } : parsed.value
+  },
   async requestAccess(
     params: MyBookingsAccessRequestParams,
   ): Promise<MyBookingsAccessRequestResult> {
@@ -125,6 +141,8 @@ export const supabaseMyBookingsAdapter: MyBookingsPort = {
           name: parsed.value.name ?? '',
           phone: parsed.value.phone,
           email: parsed.value.email ?? '',
+          emails: parsed.value.emails ?? (parsed.value.email ? [parsed.value.email] : []),
+          phones: parsed.value.phones ?? [parsed.value.phone],
         },
       }
     } catch {

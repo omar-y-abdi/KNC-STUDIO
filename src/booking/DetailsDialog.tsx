@@ -129,6 +129,18 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         </div>
 
         <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>
+        <p style="font-size:12px;line-height:1.5;margin:0 0 14px;">
+          <a
+            href="/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t.termsLinkLabel}
+            class={FOCUS_CLS}
+            style="color:inherit;text-underline-offset:3px;"
+          >
+            {t.termsLink}
+          </a>
+        </p>
 
         {props.turnstile !== null ? (
           <div style="display:flex;justify-content:center;margin:0 0 14px;">{props.turnstile}</div>

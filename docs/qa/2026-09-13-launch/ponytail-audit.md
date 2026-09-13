@@ -1,0 +1,20 @@
+# Ponytail audit — 2026-09-13
+
+Scope: repository ownership/index, Knip candidate graph, actual imports, Supabase entrypoints, CLI/browser entrypoints, dependencies, lazy/mock adapters and mutation/security seams. Complexity-only pass; no runtime correctness, compliance or launch-readiness guarantee. Candidate source: `/tmp/knc-sep13-knip.json`. Source baseline captured immediately before this pass in `/tmp/knc-ponytail-before.json`; earlier and parallel launch changes are excluded from this pass's counts.
+
+- delete: Removed unused `seedFinishedBooking` and its obsolete contract comment; zero callers in src/tests/tools, current review fixtures use `seedReviewableBooking`; no executed test removed. `tests/integration/_helpers.ts`: **-33 lines**.
+- delete: Removed unused `memorySessionStorage`; zero callers in src/tests/tools, current integration access uses the real Worker/Edge cookie path. `tests/integration/reviewAccessHelpers.ts`: **-24 lines**.
+- delete: Removed unused `siteSettingRow`/`SiteSettingRow` and `barberPhotoRow`/`BarberPhotoRow`; all references were their definitions/inferences, while discovery and booking-catalog schemas remain authoritative; explicitly released by PM after backend verification. `src/backend/rpcSchemas.ts`: **-15 lines**.
+- shrink: Made 19 implementation-only exports private: ten admin row/schema constants; DARK/LIGHT/makeIc; emptyContactForm; formatIcsUtc; parseServicePrice/parseServiceDuration; ADMIN_NARROW_MQ; updateDocumentMetadata. Confirmed references are inside their owning modules only; validators, type exports and runtime behavior remain. Seven source modules including admin chrome: **0 line delta**.
+- yagni: Removed unused `useNarrow(query)` variability; all four callers use the fixed admin 760px breakpoint. Listener setup/removal and SSR fallback retained. `src/admin/chrome.tsx`: **0 line delta**.
+- native: Excluded only generated `.wrangler/tmp/**` through ESLint's existing ignore mechanism; authored source and browser harness remain linted. Removes the generated-code false-error source without disabling any lint rule. `eslint.config.js`: **+8 lines** after formatting.
+
+Rejected candidates: Supabase function directories are named in `supabase/config.toml`; backgroundTask is imported by send-confirmation/external-cleanup; admin-harness.tsx is loaded through HTML and dynamic browser imports; GalleryManager is imported by that harness; seed/smoke/OG/visual tools are real command entrypoints. No entrypoint file was deleted. Generated Supabase temporary runtime files are not source-cleanup targets.
+
+Retained architecture: actual local/mock and Supabase implementations justify public adapter ports; lazy import proxies keep runtime libraries off the initial page; orderedAdminOperation protects pending writes/session lifetimes; schema validators preserve trusted boundaries; injected browser ports support adversarial tests. No replacement abstraction, cache, dependency or framework was added.
+
+Dependency review: ImageMagick serves the Edge upload pipeline; Playwright serves browser/visual tools; pixelmatch/pngjs serve image comparison; terser is configured in Vite; Supabase/router/Preact/Zod are active runtime seams. No removable dependency was proven. Customer backend and migrations were otherwise unchanged; storage-consent and other customer security candidates were left intact.
+
+Verification performed: focused ESLint on all touched TS/TSX/config/helper files PASS; ESLint API confirms generated Wrangler JS ignored while src/worker.ts and tools/e2e/admin-harness.tsx are not ignored; six unit files (ICS, service validation, booking links, service weekdays, email schema, booking accessibility) **35/35 PASS**; four subsequent schema-consumer files (booking catalog, Supabase site chrome, business structured data, Worker routes) **47/47 PASS**. Full build/lint/integration/browser checks remain PM/Luna's gate.
+
+net: **-64 source/config/helper lines, 0 dependencies removed** (-72 deleted source/helper lines +8 ESLint config lines); this audit document is reported separately. No estimated runtime/bundle/time savings.

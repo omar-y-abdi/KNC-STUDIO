@@ -10,7 +10,7 @@
 //   `/invite`      -> staff invitation landing (lazy)
 //   `/auth/confirm` -> email-change confirmation landing (lazy)
 //   `/admin` + sub -> the panel (lazy, gated)
-//   anything else  -> redirect to `/`
+//   unknown routes -> visible not-found page
 //
 // wouter's `<Route>` adds no wrapper element, so on `/` the rendered tree is just `<App/>` — the same
 // DOM the old `render(<App/>)` produced. The lazy admin chunk is fetched only when a user actually
@@ -19,8 +19,11 @@
 import type { JSX } from 'preact'
 import { lazy } from 'preact/compat'
 import { Suspense } from 'preact/compat'
-import { Redirect, Route, Switch } from 'wouter-preact'
+import { Route, Switch, useLocation } from 'wouter-preact'
+import { useEffect } from 'preact/hooks'
+import { privatePageTitle } from '../site/routeMetadata'
 import { App } from './App'
+import { NotFound } from './NotFound'
 
 // One dynamic import for the whole admin surface (login + panel share this chunk).
 const AdminEntry = lazy(() => import('../admin/index'))
@@ -45,6 +48,14 @@ function AdminFallback(): JSX.Element {
 }
 
 export function Root(): JSX.Element {
+  const [pathname] = useLocation()
+  useEffect(() => {
+    const title = privatePageTitle(pathname)
+    if (title !== null) {
+      document.title = title
+      document.querySelector('meta[name="robots"]')?.setAttribute('content', 'noindex, nofollow')
+    }
+  }, [pathname])
   return (
     <>
       <Switch>
@@ -91,11 +102,15 @@ export function Root(): JSX.Element {
 
         {/* Permanent customer tokens are random one-segment paths. The production Worker redirects
             them into a fragment before assets load; this route preserves direct Vite/dev visits. */}
-        <Route path="/:customerAccessToken" component={App} />
+        <Route path="/:customerAccessToken">
+          {(params) =>
+            /^[0-9a-f]{64}$/i.test(params.customerAccessToken) ? <App /> : <NotFound />
+          }
+        </Route>
 
-        {/* Unknown -> home. */}
+        {/* Unknown -> not found; the Worker supplies HTTP 404 on direct requests. */}
         <Route>
-          <Redirect to="/" />
+          <NotFound />
         </Route>
       </Switch>
     </>

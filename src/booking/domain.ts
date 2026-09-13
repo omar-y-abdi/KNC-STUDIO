@@ -48,7 +48,7 @@ export interface ContactForm {
 }
 
 /** Empty contact form. */
-export const emptyContactForm: ContactForm = { name: '', phone: '', email: '' }
+const emptyContactForm: ContactForm = { name: '', phone: '', email: '' }
 
 /**
  * The full mutable-by-replacement booking draft — the `BookingFlow` `state` object.

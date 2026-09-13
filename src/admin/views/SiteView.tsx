@@ -505,6 +505,19 @@ export function SiteView(props: SiteViewProps): JSX.Element {
   const businessFields: readonly SettingField[] = [
     { key: BUSINESS_SETTING_KEYS.name, label: t.siteFieldBusinessName, maxLength: 120 },
     {
+      key: BUSINESS_SETTING_KEYS.legalName,
+      label: lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name',
+      maxLength: 160,
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.organizationNumber,
+      label:
+        lang === 'sv'
+          ? 'Organisationsnummer (10 siffror)'
+          : 'Swedish registration number (10 digits)',
+      maxLength: 11,
+    },
+    {
       key: BUSINESS_SETTING_KEYS.email,
       label: t.siteFieldBusinessEmail,
       maxLength: 254,
@@ -814,6 +827,11 @@ export function SiteView(props: SiteViewProps): JSX.Element {
           {t.siteBusinessTitle}
         </h2>
         <p style={s.sectionLead}>{t.siteBusinessLead}</p>
+        <p style={s.sectionLead}>
+          {lang === 'sv'
+            ? 'Företagsuppgifterna publiceras i bokningsvillkor, integritetspolicy och sökdata. Ange det registrerade företagsnamnet och organisationsnumret. Tomma juridikfält visas inte.'
+            : 'Business details appear in booking terms, the privacy policy and search data. Enter the registered business name and registration number. Blank legal fields are omitted.'}
+        </p>
         {loadError !== null ? (
           <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
         ) : !loaded ? (

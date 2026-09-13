@@ -49,7 +49,7 @@ describe('public booking action adapter errors', () => {
       ok: true,
       bookings: { upcoming: [], past: [] },
       authority: 'verified',
-      profile: { name: '', phone: '0701234567', email: '' },
+      profile: { name: '', phone: '0701234567', email: '', emails: [], phones: ['0701234567'] },
     })
     expect(invokePublicBookingAction).toHaveBeenCalledTimes(2)
     expect(invokePublicBookingAction).toHaveBeenLastCalledWith({ action: 'list' })

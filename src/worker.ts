@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
+import { privatePageTitle } from './site/routeMetadata'
 import {
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
@@ -36,6 +37,7 @@ const SITE_URL = `https://${CANONICAL_HOST}`
 
 const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
   '/privacy': '/privacy.html',
+  '/terms': '/terms.html',
   '/google-calendar': '/google-calendar.html',
 }
 
@@ -199,7 +201,10 @@ function replaceMetaContent(html: string, id: string, value: string): string {
   const bounds = tagBounds(html, id)
   if (bounds === null) return html
   const tag = html.slice(bounds.start, bounds.end + 1)
-  const updated = tag.replace(/content=(['"])[\s\S]*?\1/i, `content="${escapeAttribute(value)}"`)
+  const updated = tag.replace(
+    /content=(['"])[\s\S]*?\1/i,
+    () => `content="${escapeAttribute(value)}"`,
+  )
   return `${html.slice(0, bounds.start)}${updated}${html.slice(bounds.end + 1)}`
 }
 
@@ -215,7 +220,115 @@ export function renderHomepageMetadata(html: string, discovery: BusinessDiscover
   rendered = replaceMetaContent(rendered, 'business-og-image-alt', business.name)
   rendered = replaceMetaContent(rendered, 'business-twitter-title', seo.title)
   rendered = replaceMetaContent(rendered, 'business-twitter-description', seo.description)
-  return replaceJsonScript(rendered, 'business-json-ld', structured)
+  rendered = replaceJsonScript(rendered, 'business-json-ld', structured)
+  // Readable first response, including when scripts fail or are disabled. Preact replaces this
+  // mount content on startup; business facts come from the same source as the visible shell.
+  return replaceElementContent(
+    rendered,
+    'root',
+    `<main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
+      `<p>${escapeElementText(formatBusinessAddress(business))}</p>` +
+      `<p><a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a></p>` +
+      '<p>Aktivera JavaScript för att välja behandling och boka tid online.</p>' +
+      '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main>',
+  )
+}
+
+export function renderPrivateMetadata(html: string, pathname: string): string {
+  const title = privatePageTitle(pathname)
+  if (title === null) return html
+  let rendered = replaceElementText(html, 'business-title', title)
+  for (const id of ['business-og-title', 'business-twitter-title']) {
+    rendered = replaceMetaContent(rendered, id, title)
+  }
+  for (const id of ['business-og-description', 'business-twitter-description']) {
+    rendered = replaceMetaContent(
+      rendered,
+      id,
+      'Inloggning och administration för salongens personal.',
+    )
+  }
+  const route = pathname.startsWith('/admin') ? '/admin' : withoutTrailingSlash(pathname)
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:url"[^>]*content=")[^"]*(")/i,
+    `$1${SITE_URL}${route}$2`,
+  )
+  rendered = replaceMetaContent(
+    rendered,
+    'business-description',
+    'Inloggning och administration för salongens personal.',
+  )
+  rendered = rendered
+    .replace(/<link\b[^>]*rel="canonical"[^>]*>/i, '')
+    .replace(/(<meta\b[^>]*name="robots"[^>]*content=")[^"]*(")/i, '$1noindex, nofollow$2')
+  return rendered
+}
+
+/** Legal pages are rendered from the same owner CMS as the booking UI, without a cached identity. */
+export function renderLegalMetadata(
+  html: string,
+  pathname: '/terms' | '/privacy',
+  business: BusinessSettings | null,
+): string {
+  if (business === null) return html
+  const title = `${pathname === '/terms' ? 'Bokningsvillkor' : 'Integritet och cookies'} — ${business.name}`
+  let rendered = replaceElementText(html, 'legal-title', title)
+  rendered = replaceMetaContent(rendered, 'legal-og-title', title)
+  rendered = replaceMetaContent(rendered, 'legal-image-alt', business.name)
+  rendered = replaceMetaContent(
+    rendered,
+    'legal-description',
+    pathname === '/terms'
+      ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
+      : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
+  )
+  rendered = rendered.replaceAll(
+    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
+    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  )
+  rendered = rendered.replaceAll(
+    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
+    (_match, lang: string) =>
+      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
+  )
+  const contact =
+    business.email === ''
+      ? '<a href="/">Kontakt / Contact</a>'
+      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
+  rendered = rendered.replaceAll(
+    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
+    () => `<span data-business-contact>${contact}</span>`,
+  )
+  for (const lang of ['sv', 'en'] as const) {
+    const rows: readonly (readonly [string, string])[] = [
+      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
+      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
+      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
+      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
+      [lang === 'sv' ? 'E-post' : 'Email', business.email],
+      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
+    ]
+    const details = rows
+      .filter(([, value]) => value !== '')
+      .map(
+        ([label, value]) =>
+          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
+      )
+      .join('')
+    rendered = replaceElementContent(
+      rendered,
+      `legal-business-details-${lang}`,
+      `<dl>${details}</dl>`,
+    )
+    rendered = replaceElementText(
+      rendered,
+      `cancellation-policy-${lang}`,
+      lang === 'sv'
+        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
+        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
+    )
+  }
+  return rendered
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -247,6 +360,7 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
     '## Pages',
     `- [${business.name}](${SITE_URL}/): Home and online booking`,
     `- [Privacy Policy](${SITE_URL}/privacy): Data handling and Google Calendar disclosure`,
+    `- [Booking terms](${SITE_URL}/terms): Booking, cancellation and contact`,
     '',
   )
   return lines.join('\n')
@@ -256,6 +370,16 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
+
+  if (pathname === '/404.html') {
+    const missing = await serveAsset(request, env, '/404.html')
+    return withNoIndex(
+      new Response(request.method === 'HEAD' ? null : missing.body, {
+        status: 404,
+        headers: missing.headers,
+      }),
+    )
+  }
 
   const customerAccessToken = customerAccessTokenFromPath(pathname)
   if (customerAccessToken !== null && (request.method === 'GET' || request.method === 'HEAD')) {
@@ -294,10 +418,28 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return redirectTo(url, canonicalPath)
   }
 
+  if (pathname === '/index.html') return redirectTo(url, '/')
   const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
   const dynamicHomepage = pathname === '/' && request.method === 'GET'
-  const asset = await serveAsset(request, env, assetPath, dynamicHomepage)
+  const dynamicLegal =
+    (pathname === '/terms' || pathname === '/privacy') &&
+    (request.method === 'GET' || request.method === 'HEAD')
+  const asset = await serveAsset(request, env, assetPath, dynamicHomepage || dynamicLegal)
   if (asset.status !== 404) {
+    if (dynamicLegal) {
+      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const headers = new Headers(asset.headers)
+      headers.delete('Content-Length')
+      headers.delete('ETag')
+      headers.delete('Last-Modified')
+      headers.set('Cache-Control', 'no-store')
+      return new Response(
+        request.method === 'HEAD'
+          ? null
+          : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
+        { status: asset.status, headers },
+      )
+    }
     if (dynamicHomepage) {
       const loadedDiscovery = await loadDiscovery(env)
       const discovery = loadedDiscovery ?? {
@@ -324,7 +466,28 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   if (request.method === 'GET' || request.method === 'HEAD') {
     if (isSpaPath(pathname)) {
       const index = await serveAsset(request, env, '/index.html')
-      return isNoIndexPath(pathname) ? withNoIndex(index) : index
+      const headers = new Headers(index.headers)
+      headers.set('Cache-Control', 'no-store')
+      headers.delete('ETag')
+      headers.delete('Content-Length')
+      return withNoIndex(
+        new Response(
+          request.method === 'HEAD' ? null : renderPrivateMetadata(await index.text(), pathname),
+          { status: index.status, headers },
+        ),
+      )
+    }
+    // Never turn unknown URLs into a successful homepage (soft 404).
+    if (!pathname.startsWith('/api/')) {
+      const missing = await serveAsset(request, env, '/404.html')
+      if (missing.ok) {
+        return withNoIndex(
+          new Response(request.method === 'HEAD' ? null : missing.body, {
+            status: 404,
+            headers: missing.headers,
+          }),
+        )
+      }
     }
   }
 

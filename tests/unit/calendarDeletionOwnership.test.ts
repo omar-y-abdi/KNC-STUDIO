@@ -1,5 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { CalendarConnectButton } from '../../src/admin/calendar/CalendarConnectButton'
+import { useCalendarSync } from '../../src/admin/calendar/useCalendarSync'
+import { buildAdminStyles } from '../../src/admin/adminStyles'
+import { palette } from '../../src/booking/bookingStyles'
+import { adminText } from '../../src/i18n/adminStrings'
+
+vi.mock('../../src/admin/calendar/useCalendarSync', () => ({ useCalendarSync: vi.fn() }))
 
 const calendarCallback = readFileSync('supabase/functions/calendar-oauth-callback/index.ts', 'utf8')
 const calendarBackfill = readFileSync('supabase/functions/_shared/calendarBackfill.ts', 'utf8')
@@ -16,7 +23,24 @@ const reassignmentMigration = readFileSync(
   'supabase/migrations/20260902005645_calendar_reassignment_cleanup.sql',
   'utf8',
 )
-const calendarConnectButton = readFileSync('src/admin/calendar/CalendarConnectButton.tsx', 'utf8')
+interface RenderedNode {
+  readonly type?: unknown
+  readonly props?: { readonly children?: unknown; readonly [key: string]: unknown }
+}
+
+function elements(node: unknown): readonly RenderedNode[] {
+  if (Array.isArray(node)) return node.flatMap(elements)
+  if (typeof node !== 'object' || node === null) return []
+  const vnode = node as RenderedNode
+  return [vnode, ...elements(vnode.props?.children)]
+}
+
+function content(node: unknown): string {
+  if (Array.isArray(node)) return node.map(content).join('')
+  if (typeof node === 'string') return node
+  if (typeof node !== 'object' || node === null) return ''
+  return content((node as RenderedNode).props?.children)
+}
 
 describe('Calendar external-action ownership', () => {
   it('keeps deletion durable and makes the legacy webhook a sync-queue compatibility path', () => {
@@ -88,17 +112,44 @@ describe('Calendar external-action ownership', () => {
     )
   })
 
-  it('shows connected Calendar repair and reauthorization before ordinary connected actions', () => {
-    expect(calendarConnectButton).toContain(
-      'const repairRequired = status?.repairRequired === true',
-    )
-    expect(calendarConnectButton).toContain('connected && repairRequired')
-    expect(calendarConnectButton).toContain('t.calendarRepairHint')
-    expect(calendarConnectButton).toContain('t.calendarRepairAccess')
-    expect(calendarConnectButton.indexOf('repairRequired')).toBeLessThan(
-      calendarConnectButton.indexOf('calendarOpenApp'),
-    )
-    expect(calendarConnectButton).toContain('connected ? (')
+  it.each([
+    { connected: true, disconnectPending: false },
+    { connected: false, disconnectPending: true },
+  ])('offers reauthorization before ordinary actions for repair state %j', (state) => {
+    const connect = vi.fn().mockResolvedValue(undefined)
+    const disconnect = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(useCalendarSync).mockReturnValue({
+      status: {
+        ...state,
+        repairRequired: true,
+        googleEmail: 'barber@example.test',
+        lastSyncError: null,
+      },
+      loading: false,
+      busy: false,
+      error: null,
+      connect,
+      disconnect,
+      refresh: vi.fn().mockResolvedValue(undefined),
+    })
+    const tree = CalendarConnectButton({
+      s: buildAdminStyles(palette(false), false),
+      dark: false,
+      lang: 'sv',
+    })
+    const t = adminText('sv')
+    expect(content(tree)).toContain(t.calendarRepairHint)
+    expect(content(tree)).not.toContain(t.calendarOpenApp)
+    const buttons = elements(tree).filter((node) => node.type === 'button')
+    const repair = buttons.find((node) => content(node) === t.calendarRepairAccess)
+    expect(repair).toBeDefined()
+    expect(repair?.props?.disabled).toBe(false)
+    expect(buttons.some((node) => content(node) === t.calendarDisconnect)).toBe(false)
+    const onClick = repair?.props?.onClick
+    expect(typeof onClick).toBe('function')
+    if (typeof onClick === 'function') onClick()
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(disconnect).not.toHaveBeenCalled()
   })
 
   it('uses the Calendar dispatcher first and falls back to the generic seam only when absent', () => {

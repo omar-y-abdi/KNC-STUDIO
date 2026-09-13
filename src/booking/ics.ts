@@ -27,7 +27,7 @@ export function formatIcsLocal(dt: Date): string {
 }
 
 /** Format a `Date` as a UTC `YYYYMMDDTHHMMSSZ` stamp (used for DTSTAMP). */
-export function formatIcsUtc(dt: Date): string {
+function formatIcsUtc(dt: Date): string {
   const p = (n: number): string => String(n).padStart(2, '0')
   return (
     String(dt.getUTCFullYear()) +

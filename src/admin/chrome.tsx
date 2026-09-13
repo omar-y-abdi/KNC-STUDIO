@@ -17,20 +17,20 @@ import type { Lang } from '../i18n/index'
 import { palette } from '../booking/bookingStyles'
 
 /** The admin surface's single mobile breakpoint (matches the `.knc-admin-*` CSS media query). */
-export const ADMIN_NARROW_MQ = '(max-width: 760px)'
+const ADMIN_NARROW_MQ = '(max-width: 760px)'
 
-/** Reactive matchMedia: true when the viewport matches `query`. SSR-safe (defaults to false). */
-export function useNarrow(query: string = ADMIN_NARROW_MQ): boolean {
+/** Reactive matchMedia: true when the viewport matches the admin breakpoint. SSR-safe (defaults to false). */
+export function useNarrow(): boolean {
   const [narrow, setNarrow] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-    return window.matchMedia(query).matches
+    return window.matchMedia(ADMIN_NARROW_MQ).matches
   })
   useEffect(() => {
-    const mql = window.matchMedia(query)
+    const mql = window.matchMedia(ADMIN_NARROW_MQ)
     const onChange = (e: MediaQueryListEvent): void => setNarrow(e.matches)
     mql.addEventListener('change', onChange)
     return () => mql.removeEventListener('change', onChange)
-  }, [query])
+  }, [])
   return narrow
 }
 

@@ -1,8 +1,4 @@
-// The "backend-ready" seam for the public PHOTO GALLERY. A `GalleryPort` lists the Storage-backed
-// images for a kind (salon | cuts) with their resolved public URLs. The About section's
-// `GalleryMarquee` renders real `<img>` tiles from these when present; with none (or no backend) it
-// falls back to the existing placeholder tiles. The mock returns EMPTY lists (placeholders), so the
-// section is byte-identical to today.
+// Public gallery photos, loaded from Storage-backed metadata or an empty offline catalog.
 
 /** Which gallery a set of images belongs to. */
 export type GalleryKind = 'salon' | 'cuts'
@@ -16,9 +12,6 @@ export interface GalleryPhoto {
 }
 
 export interface GalleryPort {
-  /**
-   * The images for `kind`, in display order. Resolves to an EMPTY list under the mock (the About
-   * section then renders placeholder tiles); reads `gallery_images` (by `sort_order`) under Supabase.
-   */
+  /** Images for `kind` in display order; empty means none published, rejection means unavailable. */
   list(kind: GalleryKind): Promise<readonly GalleryPhoto[]>
 }

@@ -7,6 +7,7 @@ import {
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
+import { retainTaskUntilSettled } from '../_shared/backgroundTask.ts'
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -29,7 +30,7 @@ function parseRequest(
     : null
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
 
   const expectedSecret = Deno.env.get('WEBHOOK_SECRET')
@@ -77,7 +78,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_dispatch_token: parsed.dispatchToken,
     })
   } else {
-    console.error('external-cleanup: Calendar dispatch lookup failed', calendarContext.error.code)
+    console.error('external-cleanup: Calendar dispatch lookup failed', {
+      status: calendarContext.status,
+      code: calendarContext.error.code || 'transport_error',
+      message: calendarContext.error.message.slice(0, 240),
+    })
     return json({ ok: false, error: 'database_failed' }, 500)
   }
   if (context.error !== null) {
@@ -136,4 +141,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'database_failed' }, 500)
   }
   return json({ ok: true, status: 'completed', action: action.action_type })
-})
+}
+
+Deno.serve((req: Request) => retainTaskUntilSettled(handleRequest(req)))

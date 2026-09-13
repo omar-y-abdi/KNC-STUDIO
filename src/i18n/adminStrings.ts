@@ -163,6 +163,10 @@ export interface AdminStrings {
   readonly calendarRepairHint: string
   readonly calendarHint: string
   readonly calendarLoading: string
+  readonly calendarRefresh: string
+  readonly calendarStatusUnavailable: string
+  readonly calendarStatusError: string
+  readonly calendarActionError: string
   readonly calendarSyncErrorPrefix: string
   readonly calendarOpenApp: string
   readonly ariaSelectBarber: string
@@ -672,12 +676,18 @@ const SV: AdminStrings = {
   calendarConnected: 'Kalender kopplad',
   calendarDisconnect: 'Koppla loss',
   calendarDisconnecting: 'Kopplar loss…',
-  calendarDisconnectPending: 'Bokningar tas bort säkert innan Google-kopplingen stängs.',
+  calendarDisconnectPending:
+    'Det kan ta några minuter. Kalenderhändelser tas bort säkert innan Google-kopplingen stängs.',
   calendarRepairAccess: 'Återställ Google-åtkomst',
   calendarRepairHint:
     'Google-åtkomsten har upphört. Koppla samma konto igen så att kalenderhändelserna kan tas bort.',
   calendarHint: 'Få dina bokningar direkt i Google Calendar-appen (iPhone + Android).',
   calendarLoading: 'Laddar kalenderstatus…',
+  calendarRefresh: 'Kontrollera status',
+  calendarStatusUnavailable: 'Kalenderstatus är okänd',
+  calendarStatusError: 'Kunde inte hämta aktuell kalenderstatus. Försök igen.',
+  calendarActionError:
+    'Kunde inte bekräfta kalenderåtgärden. Kontrollera status innan du försöker igen.',
   calendarSyncErrorPrefix: 'Senaste synk misslyckades:',
   calendarOpenApp: 'Öppna Google Calendar',
   ariaSelectBarber: 'Välj barberare att hantera',
@@ -1159,12 +1169,18 @@ const EN: AdminStrings = {
   calendarConnected: 'Calendar connected',
   calendarDisconnect: 'Disconnect',
   calendarDisconnecting: 'Disconnecting…',
-  calendarDisconnectPending: 'Bookings are removed safely before the Google connection closes.',
+  calendarDisconnectPending:
+    'This can take a few minutes. Calendar events are removed safely before the Google connection closes.',
   calendarRepairAccess: 'Restore Google access',
   calendarRepairHint:
     'Google access has expired. Reconnect the same account so its calendar events can be removed.',
   calendarHint: 'Get your bookings straight into the Google Calendar app (iPhone + Android).',
   calendarLoading: 'Loading calendar status…',
+  calendarRefresh: 'Check status',
+  calendarStatusUnavailable: 'Calendar status is unknown',
+  calendarStatusError: 'Could not retrieve the current calendar status. Please try again.',
+  calendarActionError:
+    'Could not confirm the calendar action. Check its status before trying again.',
   calendarSyncErrorPrefix: 'Last sync failed:',
   calendarOpenApp: 'Open Google Calendar',
   ariaSelectBarber: 'Select barber to manage',

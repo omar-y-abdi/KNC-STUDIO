@@ -7,19 +7,21 @@ import { palette } from '../../booking/bookingStyles'
 import type { Lang } from '../../i18n/index'
 import { adminText } from '../../i18n/adminStrings'
 import type { AdminStylesBundle } from '../views/viewTypes'
+import type { CalendarSyncPort } from './port'
 import { useCalendarSync } from './useCalendarSync'
 
 export interface CalendarConnectButtonProps {
   readonly s: AdminStylesBundle
   readonly dark: boolean
   readonly lang: Lang
+  readonly port?: CalendarSyncPort
 }
 
 export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.Element {
   const { s } = props
   const t = adminText(props.lang)
   const c = palette(props.dark)
-  const cal = useCalendarSync()
+  const cal = useCalendarSync(props.port)
 
   const box: JSX.CSSProperties = {
     border: '0.5px solid ' + c.line,
@@ -35,45 +37,48 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
   }
 
   const heading = (main: string, sub: string | null): JSX.Element => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+    <div
+      role="status"
+      style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}
+    >
       <span style={{ fontSize: '14px', fontWeight: 700 }}>{main}</span>
       {sub !== null ? <span style={{ ...s.mutedText, fontSize: '12.5px' }}>{sub}</span> : null}
     </div>
   )
 
-  if (cal.loading) {
-    return <div style={box}>{heading(t.calendarLoading, null)}</div>
-  }
-
   const status = cal.status
   const connected = status?.connected === true
   const disconnectPending = status?.disconnectPending === true
   const repairRequired = status?.repairRequired === true
+  const disabled = cal.busy || cal.loading
 
   return (
     <div style={box}>
-      {connected && repairRequired
-        ? heading('✓ ' + t.calendarConnected, t.calendarRepairHint)
-        : connected
-          ? heading('✓ ' + t.calendarConnected, status?.googleEmail ?? null)
-          : disconnectPending
+      {status === null
+        ? heading(cal.loading ? t.calendarLoading : t.calendarStatusUnavailable, null)
+        : disconnectPending
+          ? heading(
+              t.calendarDisconnecting,
+              repairRequired ? t.calendarRepairHint : t.calendarDisconnectPending,
+            )
+          : connected
             ? heading(
-                t.calendarDisconnecting,
-                repairRequired ? t.calendarRepairHint : t.calendarDisconnectPending,
+                '✓ ' + t.calendarConnected,
+                repairRequired ? t.calendarRepairHint : status.googleEmail,
               )
             : heading('Google Calendar', t.calendarHint)}
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
-        {repairRequired ? (
+        {status === null ? null : repairRequired ? (
           <button
             type="button"
-            style={{ ...s.primaryBtn, opacity: cal.busy ? 0.6 : 1 }}
-            disabled={cal.busy}
+            style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
+            disabled={disabled}
             onClick={() => void cal.connect()}
           >
             {cal.busy ? t.calendarConnecting : t.calendarRepairAccess}
           </button>
-        ) : connected ? (
+        ) : disconnectPending ? null : connected ? (
           <>
             <a
               href="https://calendar.google.com"
@@ -90,24 +95,38 @@ export function CalendarConnectButton(props: CalendarConnectButtonProps): JSX.El
             </a>
             <button
               type="button"
-              style={{ ...s.ghostBtn, opacity: cal.busy ? 0.6 : 1 }}
-              disabled={cal.busy}
+              style={{ ...s.ghostBtn, opacity: disabled ? 0.6 : 1 }}
+              disabled={disabled}
               onClick={() => void cal.disconnect()}
             >
               {cal.busy ? t.calendarDisconnecting : t.calendarDisconnect}
             </button>
           </>
-        ) : disconnectPending ? null : (
+        ) : (
           <button
             type="button"
-            style={{ ...s.primaryBtn, opacity: cal.busy ? 0.6 : 1 }}
-            disabled={cal.busy}
+            style={{ ...s.primaryBtn, opacity: disabled ? 0.6 : 1 }}
+            disabled={disabled}
             onClick={() => void cal.connect()}
           >
             {cal.busy ? t.calendarConnecting : t.calendarConnect}
           </button>
         )}
-        {cal.error !== null ? <span style={s.errorText}>{cal.error}</span> : null}
+        {disconnectPending || cal.error !== null ? (
+          <button
+            type="button"
+            style={{ ...s.ghostBtn, opacity: disabled ? 0.6 : 1 }}
+            disabled={disabled}
+            onClick={() => void cal.refresh()}
+          >
+            {cal.loading ? t.calendarLoading : t.calendarRefresh}
+          </button>
+        ) : null}
+        {cal.error !== null ? (
+          <span role="alert" style={s.errorText}>
+            {cal.error === 'status' ? t.calendarStatusError : t.calendarActionError}
+          </span>
+        ) : null}
         {connected && status !== null && status.lastSyncError !== null ? (
           <span style={s.errorText}>
             {t.calendarSyncErrorPrefix} {status.lastSyncError}
