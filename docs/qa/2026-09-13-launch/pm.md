@@ -71,7 +71,10 @@ Ingen ny bred audit startas efter slutkontrollen.
 
 - Gemensamt: 614 unit, 991 DB-assertions, lint, typecheck/build och deploy dry-run gröna.
 - Publik browsergate grön. Galleri-tester använder egna bildfixturer, ingen ändrad tomgalleri-UI.
-- Linux-bildjämförelse: alla åtta vyer gröna mot befintliga baselines; inga gränser/bilder ändrade.
+- Linux-bildjämförelse lokal: åtta gröna. Första CI-körningen stoppade enbart fyra desktopbilder.
+  Luna granskade samtliga par: endast godkänd hero-textkontrast och hero-botten skiljer.
+  Fyra desktopreferenser uppdaterade; mobilbilder och 0,1-procentsgräns oförändrade.
+  Samma CI-körning klarade alla funktionella browserfall, DB, integration och Edge.
 - Luna: 320/390/1440 px kundruta och galleri loading/empty/error/ready visuellt godkända.
 - Full adminsvit hittade fel i testets synkronisering: Promise räknades som sant före startad request.
   Produktens kundisolering intakt; sju async-predikat korrigerade. Alla 43 polling-anrop inventerade. Riktat väntordningsprov samt full adminsvit gröna: 41 Chromium + 5 Firefox + 5 WebKit.
