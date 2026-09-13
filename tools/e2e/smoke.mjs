@@ -1487,11 +1487,13 @@ async function verifyCustomerBrowser() {
         )
         assert(fullSession !== undefined, 'verified customer session cookie missing')
         await page.evaluate(async () => {
-          await fetch('/api/customer-bookings', {
+          const response = await fetch('/api/customer-bookings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'forget_device' }),
           })
+          if (!response.ok || (await response.json()).ok !== true)
+            throw new Error('forget_device did not accept the verified-session request')
         })
         assert(
           (await context.cookies()).find((cookie) => cookie.name === fullSession.name)?.value ===
