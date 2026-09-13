@@ -85,3 +85,13 @@ Ingen ny bred audit startas efter slutkontrollen.
 Fysisk iPhone Safari inte omprovad. Lokal WebKit och riktig Chrome/Gmail ger avgränsade bevis.
 Tidigare Firefox-overlay intermittent; fulla kundflödet passerade utan UI-ändring.
 Inga frågor om salongs-/juridikdata till utvecklaren; klientens CMS är rätt plats.
+
+## Firefox — sista CI-korrigering
+
+- Andra CI-körningen klarade frontend/bilder och DB/integration men missade footeraktivering i Firefox.
+- Exakt CI-eventsekvens kunde inte återskapas. Kontrollerat prov visade att sen kataloginladdning kan
+  flytta länken mellan pointerdown/up. Mountad consent-state återställs inte och SSR var inte orsaken.
+- Cookieprovet aktiverar länken med fokus + Enter. Separata pointerprov kvar; ingen produktkod ändrad.
+- Ny full kundkörning grön i Chromium, Firefox och WebKit. Återkallat enhetskvitto tas bort; verifierad
+  sessionscookie och historik består. Inga retries, sleeps eller timeoutökningar.
+- CI sparar vid fel endast angivna PNG-screenshots/bilddiffar, aldrig hela temporära mappar eller nycklar.

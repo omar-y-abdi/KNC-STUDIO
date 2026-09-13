@@ -169,3 +169,32 @@ Slutverifiering efter samtliga sex korrigeringar:
 `BASE_URL=http://127.0.0.1:4188 npm run test:e2e:admin` **PASS, exit 0** — 41 Chromiumscenarier,
 fem Firefox-privacyfall och fem WebKit-privacyfall. Logg `/tmp/knc-final-admin-sync-e2e.log`.
 Scoped ESLint, scriptsyntax, Prettier och diffcheck PASS. Inga kvarvarande async-predikat i grinden.
+
+## PR 60: Firefox-integritetslänk vid återkallelse
+
+Senaste CI-fel: job `103751367029`, head `97c1405`,
+`/tmp/knc-pr60-final-db-failure.log`: efter klick på Abouts integritetslänk saknades checkboxen.
+SSR-fallbacken innehåller inte länken med detta aria-label; testet hade hittat en Preact-renderad
+länk. Varken källkod eller riktad browsertrace visade att en öppnad panel senare nollställdes.
+Det ursprungliga CI-klickets eventsekvens finns inte i loggen och har inte återskapats exakt.
+
+En kontrollerad Firefox-repro visar samma felklass: `public_booking_catalog` hålls tills
+pointerdown på Aboutlänken; rosterhydrering under en 150 ms fysisk knapptryckning flyttar footern.
+Trace: pointerdown på A ”Integritet”, pointerup på DIV, slutligt click på SECTION. Ingen handler
+på länken anropas och checkboxen uteblir. Samma katalogfördröjning med fokus + Enter ger click på
+rätt A och öppnar panelen. Tryckfördröjningen finns endast i den negativa /tmp-repron, inte i grinden.
+Bevis: `/tmp/knc-ui-2026-09-13/firefox-privacy-hydration.mjs` och motsvarande `.json`.
+
+Endast `tools/e2e/smoke.mjs` ändrad: authprovets footer aktiveras med fokus + Enter, enligt samma
+verkliga tangentbordsflöde som annan UI-verifiering. Separata About-pointertester bevarade.
+Befintliga assertions kontrollerar checkbox → `forget_device` → borttagen receipt-cookie,
+nekad receipt-åtkomst och bevarade bokningar. Den senare verifierade kundfasen kontrollerar också
+att `forget_device` bevarar full sessionscookie och verifierad historik.
+
+Riktad verklig Firefox-körning av receipt/withdrawal/rotation PASS via lokal Worker → Edge → DB:
+`/tmp/knc-customer-firefox-privacy-green.log`. Tre isolerade mountprov PASS; inga belägg för
+SSR-/mount- eller consent-statefel. Ingen produktkod, generell retry, sleep eller timeout ändrad.
+
+Slutlig fullkörning (en gång efter fix): `npm run test:e2e -- --customer` **PASS, exit 0**,
+Chromium + Firefox + WebKit inklusive withdrawal och bevarad full session.
+Logg `/tmp/knc-pr60-customer-final-green.log`. Scoped ESLint, Prettier och diffcheck PASS.

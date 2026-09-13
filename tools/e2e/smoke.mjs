@@ -1415,9 +1415,14 @@ async function verifyCustomerBrowser() {
         phase(`customer ${engine.name()}: withdrawing optional storage removes only receipt access`)
         const preferencesPage = await receiptContext.newPage()
         await preferencesPage.goto(origin, { waitUntil: 'domcontentloaded' })
-        await preferencesPage
-          .getByRole('link', { name: 'Hantera integritetsinställningar', exact: true })
-          .click()
+        // Live About content can move this footer between pointerdown and pointerup. This auth
+        // scenario uses the real keyboard action; the About UI gate covers pointer interaction.
+        const preferencesLink = preferencesPage.getByRole('link', {
+          name: 'Hantera integritetsinställningar',
+          exact: true,
+        })
+        await preferencesLink.focus()
+        await preferencesPage.keyboard.press('Enter')
         await preferencesPage.getByRole('checkbox', { name: /Valfri lagring/ }).uncheck()
         const forgot = preferencesPage.waitForResponse(
           (r) =>
@@ -1477,6 +1482,22 @@ async function verifyCustomerBrowser() {
         page.setDefaultTimeout(WAIT_TIMEOUT)
         await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
         await showHistory(page, a)
+        const fullSession = (await context.cookies()).find(
+          (cookie) => cookie.name === '__Host-bladeblend_customer_session',
+        )
+        assert(fullSession !== undefined, 'verified customer session cookie missing')
+        await page.evaluate(async () => {
+          await fetch('/api/customer-bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'forget_device' }),
+          })
+        })
+        assert(
+          (await context.cookies()).find((cookie) => cookie.name === fullSession.name)?.value ===
+            fullSession.value && (await listFrom(page)).authority === 'verified',
+          'forgetting optional device access revoked the full email session',
+        )
         const invalid = await page.evaluate(async () =>
           (
             await fetch('/api/customer-bookings', {
