@@ -480,7 +480,23 @@ export async function sendViaResend(
       html: message.html,
     }),
   })
-  if (response.ok) return
+  if (response.ok) {
+    const accepted: unknown = await response.json().catch(() => null)
+    const id =
+      typeof accepted === 'object' && accepted !== null
+        ? (accepted as Record<string, unknown>)['id']
+        : null
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new ResendDeliveryError(
+        'transient',
+        response.status,
+        'Resend response missing message identifier',
+      )
+    }
+    // A provider ID permits delivery diagnosis without logging recipients, message text or links.
+    console.info('email provider accepted', { id })
+    return
+  }
   const payload: unknown = await response.json().catch(() => null)
   const providerCode =
     typeof payload === 'object' &&
@@ -488,12 +504,6 @@ export async function sendViaResend(
     typeof (payload as Record<string, unknown>).name === 'string'
       ? String((payload as Record<string, unknown>).name)
       : null
-  const providerMessage =
-    typeof payload === 'object' &&
-    payload !== null &&
-    typeof (payload as Record<string, unknown>).message === 'string'
-      ? String((payload as Record<string, unknown>).message)
-      : 'unknown provider error'
   const retryable =
     response.status === 408 ||
     response.status === 425 ||
@@ -503,7 +513,8 @@ export async function sendViaResend(
   throw new ResendDeliveryError(
     retryable ? 'transient' : 'permanent',
     response.status,
-    `Resend API returned ${response.status}: ${providerMessage.slice(0, 240)}`,
+    // Provider text may echo recipients or message content; no caller should log those details.
+    `Resend API returned ${response.status}`,
   )
 }
 

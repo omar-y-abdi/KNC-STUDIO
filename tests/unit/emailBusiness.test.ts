@@ -168,6 +168,60 @@ describe('Resend delivery failure classification', () => {
     }
   }
 
+  it('accepts only a provider message id and logs no mail PII', async () => {
+    const providerId = '11111111-1111-4111-8111-111111111111'
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ id: providerId }), { status: 202 })),
+    )
+
+    try {
+      await expect(
+        sendViaResend(message, 're_test', 'booking-confirmation/customer/test'),
+      ).resolves.toBeUndefined()
+      expect(info).toHaveBeenCalledWith('email provider accepted', { id: providerId })
+      const log = JSON.stringify(info.mock.calls)
+      expect(log).not.toContain(message.to)
+      expect(log).not.toContain(message.subject)
+      expect(log).not.toContain(message.text)
+      expect(log).not.toContain(message.html)
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  it.each([
+    [
+      'malformed JSON id',
+      () => new Response(JSON.stringify({ id: 'not-a-uuid' }), { status: 200 }),
+      'transient',
+    ],
+    ['HTML body', () => new Response('<html>accepted</html>', { status: 200 }), 'transient'],
+  ] as const)('treats a %s as a retryable send failure', async (_label, response, kind) => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response()),
+    )
+    try {
+      const error = await failureFromSend()
+      expect(error).toMatchObject({ kind, status: 200 })
+      expect(info).not.toHaveBeenCalled()
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  async function failureFromSend(): Promise<unknown> {
+    try {
+      await sendViaResend(message, 're_test', 'booking-confirmation/customer/test')
+      throw new Error('expected Resend request to fail')
+    } catch (error) {
+      return error
+    }
+  }
+
   it('fails terminally for invalid requests and retryably for provider outages', async () => {
     const invalid = await failure(422, 'invalid_from_address')
     const rateLimited = await failure(429, 'rate_limit_exceeded')

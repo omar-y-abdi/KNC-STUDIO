@@ -12,6 +12,7 @@ import {
   type EmailTemplateName,
 } from '../_shared/email.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
+import { retainTaskUntilSettled } from '../_shared/backgroundTask.ts'
 import {
   createCustomerAccessToken,
   customerAccessUrl,
@@ -397,7 +398,7 @@ function json(body: unknown, status: number): Response {
   })
 }
 
-Deno.serve(async (req: Request): Promise<Response> => {
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
   const secret = Deno.env.get('WEBHOOK_SECRET')
   if (!secret) return json({ ok: false, error: 'not_configured' }, 503)
@@ -510,4 +511,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     return json({ ok: false, error: 'send_failed' }, 502)
   }
-})
+}
+
+Deno.serve((req: Request) => retainTaskUntilSettled(handleRequest(req)))
