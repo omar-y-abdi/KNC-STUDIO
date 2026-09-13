@@ -23,8 +23,15 @@ function loopbackOrigin(value: string, name: string): string {
 //  - terser compress+mangle, comments stripped, console/debugger dropped
 //  - opaque hashed asset names
 //  - everything bundled from pinned local deps (no CDN, no runtime third-party)
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  if (command === 'build' && mode === 'production') {
+    for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+      if (!env[name]?.trim()) {
+        throw new Error(`${name} is required: production must not use mock booking adapters`)
+      }
+    }
+  }
   const target = loopbackOrigin(
     env['CUSTOMER_GATEWAY_PROXY_URL'] ?? 'http://127.0.0.1:8787',
     'CUSTOMER_GATEWAY_PROXY_URL',

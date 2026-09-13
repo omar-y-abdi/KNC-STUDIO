@@ -9,7 +9,15 @@ import nounsan from 'eslint-plugin-no-unsanitized'
 export default tseslint.config(
   // `supabase/` is a separate Deno project (edge functions) + SQL/pgTAP; it has its own runtime +
   // globals (Deno, server-side `console`) and is not in the app tsconfig, so it is excluded here.
-  { ignores: ['dist/**', 'node_modules/**', 'tools/visual/**/*.png', 'supabase/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      '.wrangler/tmp/**',
+      'tools/visual/**/*.png',
+      'supabase/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,
