@@ -1,0 +1,1998 @@
+
+===== supabase/functions/_shared/customerEmailLink.ts =====
+import {
+  buildEmailMessage,
+  type EmailBusiness,
+  type EmailLanguage,
+  type EmailMessage,
+} from './email.ts'
+import { isCustomerAccessToken } from './customerAccess.ts'
+
+/** A distinct fragment prevents scanners/navigation from exchanging this proof as a login link. */
+export function customerEmailLinkUrl(token: string): string {
+  if (!isCustomerAccessToken(token)) throw new Error('invalid email link token')
+  return `https://bladeblendstudio.se/#email_link=${token}`
+}
+
+export function buildCustomerEmailLinkMessage(input: {
+  readonly to: string
+  readonly sourceEmail: string
+  readonly targetEmail: string
+  readonly token: string
+  readonly business: EmailBusiness
+  readonly lang: EmailLanguage
+}): EmailMessage {
+  const sv = input.lang === 'sv'
+  return buildEmailMessage({
+    to: input.to,
+    lang: input.lang,
+    business: input.business,
+    ctaHref: customerEmailLinkUrl(input.token),
+    copy: {
+      subject: sv ? 'Bekräfta koppling av dina bokningar' : 'Confirm linking your appointments',
+      preheader: sv
+        ? 'Bekräfta båda mejladresserna för att koppla din historik.'
+        : 'Confirm both email addresses to link your history.',
+      title: sv ? 'Koppla dina bokningar' : 'Link your appointments',
+      intro: sv
+        ? 'Du har begärt att samla alla tidigare och framtida bokningar för dessa mejladresser i en kundprofil. Bekräfta länken i båda mejlen om adresserna tillhör dig.'
+        : 'You requested to combine all past and future appointments for these email addresses in one customer profile. Confirm the link in both emails if both addresses belong to you.',
+      sectionTitle: sv ? 'Mejladresser som kopplas' : 'Email addresses being linked',
+      note: sv
+        ? 'Länkarna gäller i 30 minuter. Öppna dem i webbläsaren där du startade kopplingen och bekräfta med knappen. Om du inte begärde detta, ignorera mejlet. Ingen koppling görs utan båda bekräftelserna.'
+        : 'Links expire after 30 minutes. Open them in the browser where you started and confirm using the button. Ignore this email if you did not request it. Both confirmations are required.',
+      ctaLabel: sv ? 'Granska och bekräfta' : 'Review and confirm',
+      contactLead: sv ? 'Frågor? Kontakta salongen.' : 'Questions? Contact the salon.',
+    },
+    rows: [
+      { label: sv ? 'Nuvarande mejl' : 'Current email', value: input.sourceEmail },
+      { label: sv ? 'Tillagd mejl' : 'Additional email', value: input.targetEmail },
+    ],
+  })
+}
+
+
+===== supabase/functions/_shared/email.ts =====
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+
+export type EmailLanguage = 'sv' | 'en'
+export type EmailTemplateName =
+  | 'customer_confirmation'
+  | 'barber_confirmation'
+  | 'customer_cancellation'
+  | 'barber_cancellation'
+  | 'customer_reminder'
+  | 'customer_booking_access'
+  | 'auth_recovery'
+  | 'auth_email_change'
+  | 'auth_invite'
+
+export interface EmailTemplateCopy {
+  readonly subject: string
+  readonly preheader: string
+  readonly title: string
+  readonly intro: string
+  readonly sectionTitle: string | null
+  readonly note: string
+  readonly ctaLabel: string
+  readonly contactLead: string | null
+}
+
+export interface EmailDetailRow {
+  readonly label: string
+  readonly value: string
+}
+
+export interface EmailMessage {
+  readonly to: string
+  readonly from: string
+  readonly replyTo: string
+  readonly subject: string
+  readonly text: string
+  readonly html: string
+}
+
+export type ResendFailureKind = 'transient' | 'permanent'
+
+export class ResendDeliveryError extends Error {
+  readonly kind: ResendFailureKind
+  readonly status: number
+
+  constructor(kind: ResendFailureKind, status: number, message: string) {
+    super(message)
+    this.name = 'ResendDeliveryError'
+    this.kind = kind
+    this.status = status
+  }
+}
+
+interface EmailBuildInput {
+  readonly to: string
+  readonly lang: EmailLanguage
+  readonly copy: EmailTemplateCopy
+  readonly variables?: Readonly<Record<string, string>>
+  readonly rows?: readonly EmailDetailRow[]
+  readonly ctaHref: string
+  readonly business: EmailBusiness
+}
+
+const SITE_URL = 'https://bladeblendstudio.se'
+const SENDING_MAILBOX = 'booking@mail.bladeblendstudio.se'
+
+export interface EmailBusiness {
+  readonly name: string
+  readonly email: string
+  /** Both are null when the owner intentionally removes phone contact from email CMS. */
+  readonly phoneDisplay: string | null
+  readonly phoneHref: string | null
+  readonly address: string
+  /** Null when map contact is intentionally removed or the value is unsafe. */
+  readonly mapsHref: string | null
+  readonly cancellationPolicyHours: number
+}
+
+const DEFAULTS: Record<EmailTemplateName, Record<EmailLanguage, EmailTemplateCopy>> = {
+  customer_confirmation: {
+    sv: {
+      subject: 'Bokningsbekräftelse',
+      preheader: 'Din tid hos {barber_name} är bokad.',
+      title: 'Din tid är bokad',
+      intro: 'Hej {customer_name},\nTack för din bokning, du är varmt välkommen till oss!',
+      sectionTitle: 'Din bokade tid',
+      note: 'Din tid kan följas under "Mina bokningar", avbokningsvillkor {cancellation_hours}h.',
+      ctaLabel: 'Mina bokningar',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Booking confirmation',
+      preheader: 'Your appointment with {barber_name} is confirmed.',
+      title: 'Your appointment is confirmed',
+      intro: 'Hi {customer_name},\nThank you for your booking. You are warmly welcome to visit us!',
+      sectionTitle: 'Your appointment',
+      note: 'Follow your appointment under "My appointments". Cancellation policy: {cancellation_hours} hours.',
+      ctaLabel: 'My appointments',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  barber_confirmation: {
+    sv: {
+      subject: 'Ny bokning',
+      preheader: 'Ny bokning {booking_date} {booking_time}.',
+      title: 'En ny tid är bokad',
+      intro: '{customer_name} har bokat en tid hos {barber_name}.',
+      sectionTitle: 'Bokningsuppgifter',
+      note: 'Bokningen finns i adminpanelen tillsammans med kundens kontaktuppgifter.',
+      ctaLabel: 'Öppna adminpanelen',
+      contactLead: 'Vid frågor, kontakta studion på',
+    },
+    en: {
+      subject: 'New booking',
+      preheader: 'New booking.',
+      title: 'A new appointment is booked',
+      intro: '{customer_name} booked an appointment.',
+      sectionTitle: 'Booking details',
+      note: 'The booking is available in the admin panel.',
+      ctaLabel: 'Open admin panel',
+      contactLead: 'Questions? Call the studio on',
+    },
+  },
+  customer_cancellation: {
+    sv: {
+      subject: 'Avbokningsbekräftelse',
+      preheader: 'Din tid hos {barber_name} är avbokad.',
+      title: 'Din tid är avbokad',
+      intro: 'Hej {customer_name},\nDin avbokning är bekräftad.',
+      sectionTitle: 'Din avbokade tid',
+      note: 'Tiden är inte längre aktiv under "Mina bokningar".',
+      ctaLabel: 'Boka en ny tid',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Cancellation confirmation',
+      preheader: 'Your appointment with {barber_name} is cancelled.',
+      title: 'Your appointment is cancelled',
+      intro: 'Hi {customer_name},\nYour cancellation is confirmed.',
+      sectionTitle: 'Your cancelled appointment',
+      note: 'The appointment is no longer active under "My appointments".',
+      ctaLabel: 'Book a new appointment',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  barber_cancellation: {
+    sv: {
+      subject: 'Avbokad tid',
+      preheader: 'Avbokad tid {booking_date} {booking_time}.',
+      title: 'En tid har avbokats',
+      intro: '{customer_name}s tid hos {barber_name} har avbokats.',
+      sectionTitle: 'Avbokningsuppgifter',
+      note: 'Tiden har tagits bort från kommande bokningar.',
+      ctaLabel: 'Öppna adminpanelen',
+      contactLead: 'Vid frågor, kontakta studion på',
+    },
+    en: {
+      subject: 'Cancelled appointment',
+      preheader: 'An appointment was cancelled.',
+      title: 'An appointment was cancelled',
+      intro: '{customer_name} cancelled an appointment.',
+      sectionTitle: 'Cancellation details',
+      note: 'The appointment was removed from upcoming bookings.',
+      ctaLabel: 'Open admin panel',
+      contactLead: 'Questions? Call the studio on',
+    },
+  },
+  customer_reminder: {
+    sv: {
+      subject: 'Påminnelse inför din bokning',
+      preheader: 'Din tid hos {barber_name} är i morgon.',
+      title: 'Vi ses i morgon',
+      intro: 'Hej {customer_name},\nDetta är en påminnelse om din bokade tid i morgon.',
+      sectionTitle: 'Din bokade tid',
+      note: 'Behöver du avboka? Öppna "Mina bokningar". Avbokningsvillkor {cancellation_hours}h.',
+      ctaLabel: 'Mina bokningar',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Appointment reminder',
+      preheader: 'Your appointment with {barber_name} is tomorrow.',
+      title: 'See you tomorrow',
+      intro: 'Hi {customer_name},\nThis is a reminder about your appointment tomorrow.',
+      sectionTitle: 'Your appointment',
+      note: 'Need to cancel? Open "My appointments". Cancellation policy: {cancellation_hours} hours.',
+      ctaLabel: 'My appointments',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  customer_booking_access: {
+    sv: {
+      subject: 'Öppna Mina bokningar',
+      preheader: 'Öppna din säkra länk till Mina bokningar.',
+      title: 'Öppna Mina bokningar',
+      intro: 'Använd länken för att se och hantera dina bokade tider.',
+      sectionTitle: null,
+      note: 'Länken gäller tills du begär en ny. Då slutar den tidigare länken att fungera.',
+      ctaLabel: 'Öppna Mina bokningar',
+      contactLead: 'Om du inte begärde länken kan du ignorera detta mejl.',
+    },
+    en: {
+      subject: 'Open My appointments',
+      preheader: 'Open your secure My appointments link.',
+      title: 'Open My appointments',
+      intro: 'Use the link to view and manage your booked appointments.',
+      sectionTitle: null,
+      note: 'This link remains valid until you request a new one. The previous link then stops working.',
+      ctaLabel: 'Open My appointments',
+      contactLead: 'Ignore this email if you did not request the link.',
+    },
+  },
+  auth_recovery: {
+    sv: {
+      subject: 'Återställ lösenord',
+      preheader: 'Välj ett nytt lösenord till ditt konto.',
+      title: 'Återställ ditt lösenord',
+      intro: 'Vi har fått en begäran om att återställa lösenordet för ditt konto.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter. Om du inte begärde återställningen kan du ignorera mejlet.',
+      ctaLabel: 'Välj nytt lösenord',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Reset password',
+      preheader: 'Choose a new password for your account.',
+      title: 'Reset your password',
+      intro: 'We received a request to reset the password for your account.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes. Ignore this email if you did not request the reset.',
+      ctaLabel: 'Choose new password',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+  auth_email_change: {
+    sv: {
+      subject: 'Bekräfta ny e-postadress',
+      preheader: 'Bekräfta din nya e-postadress.',
+      title: 'Bekräfta din nya e-postadress',
+      intro: 'Bekräfta {new_email} som ny e-postadress för ditt konto.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter och kan bara användas en gång. Ignorera mejlet om du inte begärde ändringen.',
+      ctaLabel: 'Bekräfta e-postadress',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Confirm new email address',
+      preheader: 'Confirm your new email address.',
+      title: 'Confirm your new email address',
+      intro: 'Confirm {new_email} as the new email address for your account.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes and can only be used once. Ignore this email if you did not request the change.',
+      ctaLabel: 'Confirm email address',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+  auth_invite: {
+    sv: {
+      subject: 'Din inbjudan till {business_name}',
+      preheader: 'Skapa ditt personliga lösenord och aktivera kontot.',
+      title: 'Välkommen till teamet',
+      intro: 'Du har blivit inbjuden till barberarpanelen hos {business_name}.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter och kan bara användas en gång.',
+      ctaLabel: 'Skapa mitt lösenord',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Your invitation to {business_name}',
+      preheader: 'Create your personal password and activate the account.',
+      title: 'Welcome to the team',
+      intro: 'You have been invited to the barber panel at {business_name}.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes and can only be used once.',
+      ctaLabel: 'Create my password',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+}
+
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function httpUrl(value: unknown): value is string {
+  if (!nonEmpty(value)) return false
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function requiredSetting(settings: Record<string, unknown>, key: string): string {
+  const value = settings[key]
+  if (!nonEmpty(value)) throw new Error(`business setting missing: ${key}`)
+  return value
+}
+
+function optionalSetting(settings: Record<string, unknown>, key: string): string | null {
+  const value = settings[key]
+  return nonEmpty(value) ? value.trim() : null
+}
+
+export async function loadEmailBusiness(client: SupabaseClient): Promise<EmailBusiness> {
+  const { data, error } = await client.rpc('public_business_discovery')
+  if (error || typeof data !== 'object' || data === null) {
+    throw new Error('business discovery unavailable')
+  }
+  const settingsValue = (data as Record<string, unknown>).settings
+  if (typeof settingsValue !== 'object' || settingsValue === null) {
+    throw new Error('business settings unavailable')
+  }
+  const settings = settingsValue as Record<string, unknown>
+  const email = requiredSetting(settings, 'business_email').trim().toLowerCase()
+  const policy = requiredSetting(settings, 'cancellation_policy_hours')
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('business email invalid')
+  if (!/^\d{1,3}$/.test(policy) || Number(policy) < 1 || Number(policy) > 168) {
+    throw new Error('cancellation policy invalid')
+  }
+  const phoneDisplay = optionalSetting(settings, 'business_phone_display')
+  const phone = optionalSetting(settings, 'business_phone_tel')?.replace(/[^+0-9]/g, '') ?? null
+  const canUsePhone = phoneDisplay !== null && phone !== null && /^\+?\d{3,20}$/.test(phone)
+  const mapsHref = optionalSetting(settings, 'business_maps_href')
+  return {
+    name: requiredSetting(settings, 'business_name'),
+    email,
+    phoneDisplay: canUsePhone ? phoneDisplay : null,
+    phoneHref: canUsePhone ? `tel:${phone}` : null,
+    address: `${requiredSetting(settings, 'business_street')}, ${requiredSetting(settings, 'business_postal_code')} ${requiredSetting(settings, 'business_city')}`,
+    mapsHref: mapsHref !== null && httpUrl(mapsHref) ? mapsHref : null,
+    cancellationPolicyHours: Number(policy),
+  }
+}
+
+export async function loadEmailTemplate(
+  client: SupabaseClient,
+  template: EmailTemplateName,
+  lang: EmailLanguage,
+): Promise<EmailTemplateCopy> {
+  const fallback = DEFAULTS[template][lang]
+  const { data, error } = await client.rpc('email_template_for_delivery', {
+    p_template: template,
+    p_lang: lang,
+  })
+  if (error || typeof data !== 'object' || data === null) return fallback
+  const row = data as Record<string, unknown>
+  if (
+    !nonEmpty(row.subject) ||
+    !nonEmpty(row.preheader) ||
+    !nonEmpty(row.title) ||
+    !nonEmpty(row.intro) ||
+    !nonEmpty(row.note) ||
+    !nonEmpty(row.cta_label)
+  )
+    return fallback
+  return {
+    subject: row.subject,
+    preheader: row.preheader,
+    title: row.title,
+    intro: row.intro,
+    sectionTitle: nonEmpty(row.section_title) ? row.section_title : null,
+    note: row.note,
+    ctaLabel: row.cta_label,
+    contactLead: nonEmpty(row.contact_lead) ? row.contact_lead : null,
+  }
+}
+
+export function defaultEmailTemplate(
+  template: EmailTemplateName,
+  lang: EmailLanguage,
+): EmailTemplateCopy {
+  return DEFAULTS[template][lang]
+}
+
+function interpolate(value: string, variables: Readonly<Record<string, string>>): string {
+  return value.replace(/\{([a-z_]+)\}/g, (match, key: string) => variables[key] ?? match)
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function htmlText(value: string): string {
+  return escapeHtml(value).replaceAll('\n', '<br>')
+}
+
+function rowsHtml(rows: readonly EmailDetailRow[]): string {
+  return rows
+    .map(
+      (row, index) =>
+        `<tr><td style="padding:${index === 0 ? '0 0 14px' : '14px 0'};color:#98989d;font-size:14px;line-height:1.45;vertical-align:top;border-bottom:${index === rows.length - 1 ? '0' : '1px solid #424245'}">${escapeHtml(row.label)}</td><td align="right" style="padding:${index === 0 ? '0 0 14px' : '14px 0'};color:#f5f5f7;font-size:15px;font-weight:650;line-height:1.45;vertical-align:top;border-bottom:${index === rows.length - 1 ? '0' : '1px solid #424245'}">${escapeHtml(row.value)}</td></tr>`,
+    )
+    .join('')
+}
+
+export function buildEmailMessage(input: EmailBuildInput): EmailMessage {
+  const variables = { business_name: input.business.name, ...input.variables }
+  const subject = interpolate(input.copy.subject, variables)
+  const preheader = interpolate(input.copy.preheader, variables)
+  const title = interpolate(input.copy.title, variables)
+  const intro = interpolate(input.copy.intro, variables)
+  const sectionTitle =
+    input.copy.sectionTitle === null ? null : interpolate(input.copy.sectionTitle, variables)
+  const note = interpolate(input.copy.note, variables)
+  const ctaLabel = interpolate(input.copy.ctaLabel, variables)
+  const contactLead =
+    input.copy.contactLead === null ? null : interpolate(input.copy.contactLead, variables)
+  const rows = input.rows ?? []
+  const business = input.business
+  const phoneLink =
+    business.phoneHref !== null && business.phoneDisplay !== null
+      ? `<a href="${escapeHtml(business.phoneHref)}" style="color:#f5f5f7;text-decoration:underline;text-decoration-color:#68686d;text-underline-offset:3px;white-space:nowrap">${escapeHtml(business.phoneDisplay)}</a>`
+      : ''
+  const detailBlock =
+    rows.length === 0
+      ? ''
+      : `<p style="margin:0 0 12px;color:#b5b5ba;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">${escapeHtml(sectionTitle ?? '')}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#303033" style="width:100%;background:#303033;border:1px solid #48484b;border-radius:18px;border-collapse:separate;padding:20px 22px">${rowsHtml(rows)}</table>`
+  const contactBlock =
+    contactLead === null || phoneLink === ''
+      ? ''
+      : `<p style="margin:28px 0 0;color:#a9a9ae;font-size:13px;line-height:1.6">${htmlText(contactLead)} ${phoneLink}</p>`
+  const addressLink =
+    business.mapsHref === null
+      ? escapeHtml(business.address)
+      : `<a href="${escapeHtml(business.mapsHref)}" style="color:#98989d;text-decoration:none">${escapeHtml(business.address)}</a>`
+  const footerPhone =
+    business.phoneHref === null || business.phoneDisplay === null
+      ? ''
+      : `<br><a href="${escapeHtml(business.phoneHref)}" style="color:#98989d;text-decoration:none">${escapeHtml(business.phoneDisplay)}</a>`
+  const html = `<!doctype html><html lang="${input.lang}" style="color-scheme:dark;supported-color-schemes:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>${escapeHtml(subject)}</title></head><body bgcolor="#151517" style="margin:0;padding:0;background:#151517;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#151517" style="width:100%;background:#151517"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#1f1f21" style="width:100%;max-width:600px;background:#1f1f21;border:1px solid #39393c;border-radius:28px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px 34px 0"><a href="${SITE_URL}" style="display:inline-block;color:#f5f5f7;text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">BLADE &amp; BLEND</a></td></tr><tr><td style="padding:40px 34px 34px"><h1 style="margin:0;color:#f5f5f7;font-size:32px;font-weight:750;letter-spacing:-.04em;line-height:1.12">${htmlText(title)}</h1><p style="margin:20px 0 32px;color:#d1d1d6;font-size:16px;line-height:1.65">${htmlText(intro)}</p>${detailBlock}<p style="margin:28px 0 22px;color:#b5b5ba;font-size:14px;line-height:1.65">${htmlText(note)}</p><table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#f5f5f7" style="background:#f5f5f7;border-radius:12px"><a href="${escapeHtml(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:#171719;text-decoration:none;font-size:15px;font-weight:750">${escapeHtml(ctaLabel)}</a></td></tr></table>${contactBlock}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid #39393c"><tr><td style="padding-top:22px;color:#737378;font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table></td></tr></table></td></tr></table></body></html>`
+  const text = [
+    title,
+    intro,
+    sectionTitle,
+    ...rows.map((row) => `${row.label}: ${row.value}`),
+    note,
+    `${ctaLabel}: ${input.ctaHref}`,
+    contactLead === null || business.phoneDisplay === null
+      ? null
+      : `${contactLead} ${business.phoneDisplay}`,
+    business.address,
+    business.phoneDisplay,
+  ]
+    .filter((value): value is string => value !== null && value.length > 0)
+    .join('\n\n')
+  return {
+    to: input.to,
+    from: `${business.name} <${SENDING_MAILBOX}>`,
+    replyTo: business.email,
+    subject,
+    text,
+    html,
+  }
+}
+
+export async function sendViaResend(
+  message: EmailMessage,
+  apiKey: string,
+  idempotencyKey: string,
+): Promise<void> {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({
+      from: message.from,
+      reply_to: message.replyTo,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    }),
+  })
+  if (response.ok) {
+    const accepted: unknown = await response.json().catch(() => null)
+    const id =
+      typeof accepted === 'object' && accepted !== null
+        ? (accepted as Record<string, unknown>)['id']
+        : null
+    if (typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new ResendDeliveryError(
+        'transient',
+        response.status,
+        'Resend response missing message identifier',
+      )
+    }
+    // A provider ID permits delivery diagnosis without logging recipients, message text or links.
+    console.info('email provider accepted', { id })
+    return
+  }
+  const payload: unknown = await response.json().catch(() => null)
+  const providerCode =
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as Record<string, unknown>).name === 'string'
+      ? String((payload as Record<string, unknown>).name)
+      : null
+  const retryable =
+    response.status === 408 ||
+    response.status === 425 ||
+    response.status === 429 ||
+    response.status >= 500 ||
+    (response.status === 409 && providerCode === 'concurrent_idempotent_requests')
+  throw new ResendDeliveryError(
+    retryable ? 'transient' : 'permanent',
+    response.status,
+    // Provider text may echo recipients or message content; no caller should log those details.
+    `Resend API returned ${response.status}`,
+  )
+}
+
+export function resendDeliveryFailureCode(
+  error: unknown,
+): 'send_failed_transient' | 'send_failed_permanent' {
+  return error instanceof ResendDeliveryError && error.kind === 'permanent'
+    ? 'send_failed_permanent'
+    : 'send_failed_transient'
+}
+
+export type EmailDeliveryFailureCode = 'send_failed_transient' | 'send_failed_permanent'
+
+export interface EmailDeliveryBatchResult<Kind extends string> {
+  readonly sent: readonly Kind[]
+  readonly failureCode: EmailDeliveryFailureCode | null
+}
+
+function combineDeliveryFailure(
+  current: EmailDeliveryFailureCode | null,
+  next: EmailDeliveryFailureCode,
+): EmailDeliveryFailureCode {
+  return current === 'send_failed_permanent' || next === 'send_failed_permanent'
+    ? 'send_failed_permanent'
+    : 'send_failed_transient'
+}
+
+export async function deliverEmailBatch<Entry extends { readonly kind: string }>(
+  entries: readonly Entry[],
+  deliver: (entry: Entry) => Promise<void>,
+  persistDelivered: (entry: Entry) => Promise<boolean>,
+): Promise<EmailDeliveryBatchResult<Entry['kind']>> {
+  const sent: Entry['kind'][] = []
+  let failureCode: EmailDeliveryFailureCode | null = null
+
+  for (const entry of entries) {
+    try {
+      await deliver(entry)
+    } catch (error) {
+      failureCode = combineDeliveryFailure(failureCode, resendDeliveryFailureCode(error))
+      continue
+    }
+
+    try {
+      if (!(await persistDelivered(entry))) {
+        failureCode = combineDeliveryFailure(failureCode, 'send_failed_transient')
+        continue
+      }
+    } catch {
+      failureCode = combineDeliveryFailure(failureCode, 'send_failed_transient')
+      continue
+    }
+
+    sent.push(entry.kind)
+  }
+
+  return { sent, failureCode }
+}
+
+
+===== src/admin/adapters/emailTemplatesAdmin.ts =====
+import type { Lang } from '../../i18n/index'
+import { getAdminClient } from '../adminClient'
+import {
+  emailTemplateRows,
+  failedBookingEmailDeliveryRows,
+  discardFailedBookingEmailDeliveryResponse,
+  parseWith,
+  retryFailedBookingEmailDeliveryResponse,
+} from '../adminSchemas'
+import type { AdminResult } from '../types'
+import { err, ok } from '../types'
+
+export type EmailTemplateName =
+  | 'customer_confirmation'
+  | 'barber_confirmation'
+  | 'customer_cancellation'
+  | 'barber_cancellation'
+  | 'customer_reminder'
+  | 'customer_booking_access'
+  | 'auth_recovery'
+  | 'auth_email_change'
+  | 'auth_invite'
+
+export interface EditableEmailTemplate {
+  readonly template: EmailTemplateName
+  readonly lang: Lang
+  readonly subject: string
+  readonly preheader: string
+  readonly title: string
+  readonly intro: string
+  readonly sectionTitle: string | null
+  readonly note: string
+  readonly ctaLabel: string
+  readonly contactLead: string | null
+}
+
+export interface FailedBookingEmailDelivery {
+  readonly id: string
+  readonly bookingId: string
+  readonly event: 'booking_confirmed' | 'booking_cancelled'
+  readonly attemptCount: number
+  readonly errorCode:
+    | 'not_configured'
+    | 'send_failed'
+    | 'send_failed_transient'
+    | 'send_failed_permanent'
+    | 'message_build_failed'
+    | null
+  readonly failedAt: string | null
+}
+
+const READ_ERROR = 'Kunde inte läsa mejlmallarna.'
+const WRITE_ERROR = 'Kunde inte spara mejlmallen. Försök igen.'
+
+export async function listEmailTemplates(): Promise<AdminResult<readonly EditableEmailTemplate[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('email_templates')
+      .select(
+        'template,lang,subject,preheader,title,intro,section_title,note,cta_label,contact_lead',
+      )
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(emailTemplateRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(
+      parsed.value.map((row) => ({
+        template: row.template,
+        lang: row.lang,
+        subject: row.subject,
+        preheader: row.preheader,
+        title: row.title,
+        intro: row.intro,
+        sectionTitle: row.section_title,
+        note: row.note,
+        ctaLabel: row.cta_label,
+        contactLead: row.contact_lead,
+      })),
+    )
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function saveEmailTemplate(
+  template: EditableEmailTemplate,
+): Promise<AdminResult<EditableEmailTemplate>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('email_templates')
+      .upsert(
+        {
+          template: template.template,
+          lang: template.lang,
+          subject: template.subject,
+          preheader: template.preheader,
+          title: template.title,
+          intro: template.intro,
+          section_title: template.sectionTitle,
+          note: template.note,
+          cta_label: template.ctaLabel,
+          contact_lead: template.contactLead,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'template,lang' },
+      )
+      .select(
+        'template,lang,subject,preheader,title,intro,section_title,note,cta_label,contact_lead',
+      )
+      .single()
+    if (error !== null || data === null) {
+      if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra mejlmallar.')
+      if (error?.code === '23514')
+        return err('validation', 'Kontrollera att alla texter har giltig längd.')
+      return err('network', WRITE_ERROR)
+    }
+    const parsed = parseWith(emailTemplateRows, [data])
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    const row = parsed.value[0]
+    if (row === undefined) return err('malformed', WRITE_ERROR)
+    return ok({
+      template: row.template,
+      lang: row.lang,
+      subject: row.subject,
+      preheader: row.preheader,
+      title: row.title,
+      intro: row.intro,
+      sectionTitle: row.section_title,
+      note: row.note,
+      ctaLabel: row.cta_label,
+      contactLead: row.contact_lead,
+    })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function listFailedBookingEmailDeliveries(): Promise<
+  AdminResult<readonly FailedBookingEmailDelivery[]>
+> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_list_failed_booking_email_deliveries')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(failedBookingEmailDeliveryRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(
+      parsed.value.map((row) => ({
+        id: row.id,
+        bookingId: row.booking_id,
+        event: row.event,
+        attemptCount: row.attempt_count,
+        errorCode: row.last_error_code,
+        failedAt: row.failed_at,
+      })),
+    )
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function retryFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  try {
+    const { data, error } = await getAdminClient().rpc(
+      'admin_retry_failed_booking_email_delivery',
+      {
+        p_id: id,
+      },
+    )
+    if (error !== null || data === null) return err('network', WRITE_ERROR)
+    const parsed = parseWith(retryFailedBookingEmailDeliveryResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return parsed.value.ok
+      ? ok(true)
+      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function discardFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  try {
+    const { data, error } = await getAdminClient().rpc(
+      'admin_discard_failed_booking_email_delivery',
+      { p_id: id },
+    )
+    if (error !== null || data === null) return err('network', WRITE_ERROR)
+    const parsed = parseWith(discardFailedBookingEmailDeliveryResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return parsed.value.ok
+      ? ok(true)
+      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+
+===== supabase/functions/send-confirmation/index.ts =====
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  buildEmailMessage,
+  deliverEmailBatch,
+  defaultEmailTemplate,
+  loadEmailBusiness,
+  loadEmailTemplate,
+  sendViaResend,
+  type EmailDetailRow,
+  type EmailBusiness,
+  type EmailMessage,
+  type EmailTemplateName,
+} from '../_shared/email.ts'
+import { timingSafeEqual } from '../_shared/calendar.ts'
+import { retainTaskUntilSettled } from '../_shared/backgroundTask.ts'
+import {
+  createCustomerAccessToken,
+  customerAccessUrl,
+  decryptCustomerAccessToken,
+  encryptCustomerAccessToken,
+  hashCustomerAccessToken,
+} from '../_shared/customerAccess.ts'
+
+interface WebhookEnvelope {
+  readonly record?: unknown
+  readonly event?: unknown
+}
+type BookingEmailEvent = 'booking_confirmed' | 'booking_cancelled' | 'booking_reminder'
+type DeliveryStatus = 'delivered' | 'skipped' | 'superseded'
+type DeliveryKind = 'customer' | 'barber'
+interface BookingRow {
+  readonly id: string
+  readonly email: string | null
+  readonly phone: string | null
+  readonly customerName: string
+  readonly startAt: string
+  readonly serviceName: string
+  readonly price: number
+  readonly durationMin: number
+  readonly barberName: string
+  readonly barberEmail: string | null
+  readonly lang: 'sv' | 'en'
+  readonly status: 'confirmed' | 'cancelled'
+}
+type RequestResult =
+  | {
+      readonly ok: true
+      readonly id: string | null
+      readonly event: BookingEmailEvent | null
+      readonly deliveryId: string | null
+    }
+  | { readonly ok: false; readonly error: string }
+interface DeliveryJob {
+  readonly bookingId: string
+  readonly event: Exclude<BookingEmailEvent, 'booking_reminder'>
+  readonly sentKinds: readonly DeliveryKind[]
+}
+
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+function nullableString(value: unknown): string | null {
+  return nonEmpty(value) ? value : null
+}
+function isDeliveryKind(value: unknown): value is DeliveryKind {
+  return value === 'customer' || value === 'barber'
+}
+function parseRequest(raw: unknown): RequestResult {
+  if (typeof raw !== 'object' || raw === null)
+    return { ok: false, error: 'payload must be an object' }
+  const envelope = raw as WebhookEnvelope
+  const candidate: unknown = envelope.record === undefined ? raw : envelope.record
+  if (typeof candidate !== 'object' || candidate === null)
+    return { ok: false, error: 'missing record' }
+  const record = candidate as Record<string, unknown>
+  if (nonEmpty(record.delivery_id)) {
+    return { ok: true, id: null, event: null, deliveryId: record.delivery_id }
+  }
+  if (!nonEmpty(record.id)) return { ok: false, error: 'id is required' }
+  const event = record.event ?? envelope.event ?? 'booking_confirmed'
+  if (
+    event !== 'booking_confirmed' &&
+    event !== 'booking_cancelled' &&
+    event !== 'booking_reminder'
+  ) {
+    return { ok: false, error: 'invalid event' }
+  }
+  return { ok: true, id: record.id, event, deliveryId: null }
+}
+
+function serviceClient() {
+  const url = Deno.env.get('SUPABASE_URL')
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  return url && key ? createClient(url, key, { auth: { persistSession: false } }) : null
+}
+
+async function fetchBooking(id: string): Promise<BookingRow | null> {
+  const client = serviceClient()
+  if (client === null) return null
+  const { data, error } = await client.rpc('booking_confirmation_details', { p_id: id })
+  if (error || typeof data !== 'object' || data === null) return null
+  const row = data as Record<string, unknown>
+  if (
+    !nonEmpty(row.id) ||
+    !nonEmpty(row.customer_name) ||
+    !nonEmpty(row.start_at) ||
+    !nonEmpty(row.service_name) ||
+    typeof row.price !== 'number' ||
+    typeof row.duration_min !== 'number' ||
+    !nonEmpty(row.barber_name) ||
+    (row.lang !== 'sv' && row.lang !== 'en') ||
+    (row.status !== 'confirmed' && row.status !== 'cancelled')
+  )
+    return null
+  return {
+    id: row.id,
+    email: nullableString(row.email),
+    phone: nullableString(row.phone),
+    customerName: row.customer_name,
+    startAt: row.start_at,
+    serviceName: row.service_name,
+    price: row.price,
+    durationMin: row.duration_min,
+    barberName: row.barber_name,
+    barberEmail: nullableString(row.barber_email),
+    lang: row.lang,
+    status: row.status,
+  }
+}
+
+async function fetchDelivery(id: string): Promise<DeliveryJob | null | 'unavailable'> {
+  const client = serviceClient()
+  if (client === null) return 'unavailable'
+  const { data, error } = await client.rpc('booking_email_delivery_for_dispatch', { p_id: id })
+  if (error) return 'unavailable'
+  if (typeof data !== 'object' || data === null) return null
+  const row = data as Record<string, unknown>
+  if (!nonEmpty(row.booking_id) || !Array.isArray(row.sent_kinds)) return null
+  if (row.event !== 'booking_confirmed' && row.event !== 'booking_cancelled') return null
+  if (!row.sent_kinds.every(isDeliveryKind)) return null
+  return { bookingId: row.booking_id, event: row.event, sentKinds: row.sent_kinds }
+}
+
+async function completeDelivery(id: string, status: DeliveryStatus): Promise<boolean> {
+  const client = serviceClient()
+  if (client === null) return false
+  const { data, error } = await client.rpc('complete_booking_email_delivery', {
+    p_id: id,
+    p_status: status,
+  })
+  return error === null && data === true
+}
+
+async function failDelivery(
+  id: string,
+  errorCode:
+    'not_configured' | 'message_build_failed' | 'send_failed_transient' | 'send_failed_permanent',
+) {
+  const client = serviceClient()
+  if (client === null) return
+  await client.rpc('fail_booking_email_delivery', { p_id: id, p_error_code: errorCode })
+}
+
+async function markDeliveryRecipient(id: string, kind: DeliveryKind): Promise<boolean> {
+  const client = serviceClient()
+  if (client === null) return false
+  const { data, error } = await client.rpc('mark_booking_email_delivery_recipient', {
+    p_id: id,
+    p_kind: kind,
+  })
+  return error === null && data === true
+}
+
+async function markReminder(id: string): Promise<boolean> {
+  const client = serviceClient()
+  if (client === null) return false
+  const { data, error } = await client.rpc('mark_booking_reminder_delivered', { p_id: id })
+  return error === null && data === true
+}
+
+function formatWhen(booking: BookingRow): { readonly date: string; readonly time: string } {
+  const when = new Date(booking.startAt)
+  const date = new Intl.DateTimeFormat(booking.lang === 'en' ? 'en-GB' : 'sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(when)
+  const time = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(when)
+  return { date, time }
+}
+
+function variables(booking: BookingRow, business: EmailBusiness): Readonly<Record<string, string>> {
+  const when = formatWhen(booking)
+  return {
+    customer_name: booking.customerName,
+    barber_name: booking.barberName,
+    booking_date: when.date,
+    booking_time: when.time,
+    cancellation_hours: String(business.cancellationPolicyHours),
+  }
+}
+
+function customerRows(booking: BookingRow): readonly EmailDetailRow[] {
+  const when = formatWhen(booking)
+  return [
+    { label: booking.lang === 'en' ? 'Barber' : 'Barberare', value: booking.barberName },
+    { label: booking.lang === 'en' ? 'Date' : 'Datum', value: when.date },
+    { label: booking.lang === 'en' ? 'Time' : 'Tid', value: when.time },
+    { label: booking.lang === 'en' ? 'Service' : 'Behandling', value: booking.serviceName },
+    {
+      label: booking.lang === 'en' ? 'Price' : 'Pris',
+      value: booking.lang === 'en' ? `${booking.price} SEK` : `${booking.price} kr`,
+    },
+  ]
+}
+
+function barberRows(booking: BookingRow): readonly EmailDetailRow[] {
+  const when = formatWhen(booking)
+  const contact = [booking.phone, booking.email]
+    .filter((value): value is string => value !== null)
+    .join(' · ')
+  return [
+    { label: 'Datum', value: when.date },
+    { label: 'Tid', value: when.time },
+    { label: 'Kund', value: booking.customerName },
+    { label: 'Behandling', value: booking.serviceName },
+    { label: 'Längd', value: `${booking.durationMin} min` },
+    { label: 'Pris', value: `${booking.price} kr` },
+    { label: 'Kontakt', value: contact },
+  ]
+}
+
+async function message(
+  booking: BookingRow,
+  to: string,
+  templateName: EmailTemplateName,
+  rows: readonly EmailDetailRow[],
+  business: EmailBusiness,
+  ctaHref: string,
+): Promise<EmailMessage> {
+  const client = serviceClient()
+  const lang = templateName.startsWith('barber_') ? 'sv' : booking.lang
+  const copy =
+    client === null
+      ? defaultEmailTemplate(templateName, lang)
+      : await loadEmailTemplate(client, templateName, lang)
+  return buildEmailMessage({
+    to,
+    lang,
+    copy,
+    variables: variables(booking, business),
+    rows,
+    ctaHref,
+    business,
+  })
+}
+
+function accessTokenRecord(value: unknown): { ciphertext: string; generation: number } | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { token_ciphertext: ciphertext, generation } = value as Record<string, unknown>
+  return typeof ciphertext === 'string' &&
+    typeof generation === 'number' &&
+    Number.isSafeInteger(generation) &&
+    generation > 0
+    ? { ciphertext, generation }
+    : null
+}
+
+async function customerAccessHref(booking: BookingRow): Promise<string> {
+  if (booking.email === null || booking.phone === null) {
+    throw new Error('customer access requires booking email and phone')
+  }
+  const client = serviceClient()
+  const accessSecret = Deno.env.get('PUBLIC_ACTION_HASH_SALT')
+  if (client === null || !accessSecret) throw new Error('customer access runtime unavailable')
+
+  const candidate = createCustomerAccessToken()
+  const tokenHash = await hashCustomerAccessToken(candidate)
+  const tokenCiphertext = await encryptCustomerAccessToken(candidate, accessSecret)
+  const tokenArgs = {
+    p_email: booking.email,
+    p_phone: booking.phone,
+    p_token_hash: tokenHash,
+    p_token_ciphertext: tokenCiphertext,
+  }
+  const ensured = await client.rpc('ensure_customer_booking_access_token', tokenArgs)
+  if (ensured.error !== null) throw new Error('customer access token lookup failed')
+
+  const stored = accessTokenRecord(ensured.data)
+  if (stored === null) throw new Error('customer access token record invalid')
+  const storedToken = await decryptCustomerAccessToken(stored.ciphertext, accessSecret)
+  if (storedToken !== null) return customerAccessUrl(storedToken)
+
+  // Encryption-key rotation makes the old ciphertext unreadable. Replace only in this recovery
+  // case; ordinary subsequent booking emails always reuse the current permanent link.
+  const replaced = await client.rpc('replace_customer_booking_access_token', {
+    ...tokenArgs,
+    p_expected_generation: stored.generation,
+  })
+  if (replaced.error !== null) throw new Error('customer access token recovery failed')
+  if (replaced.data === true) return customerAccessUrl(candidate)
+
+  // A fresh-link request or another email worker won. Reuse its credential; never overwrite it.
+  const current = await client.rpc('ensure_customer_booking_access_token', tokenArgs)
+  const winner = current.error === null ? accessTokenRecord(current.data) : null
+  const winnerToken =
+    winner === null ? null : await decryptCustomerAccessToken(winner.ciphertext, accessSecret)
+  if (winnerToken === null) throw new Error('customer access token recovery failed')
+  return customerAccessUrl(winnerToken)
+}
+
+async function buildMessages(
+  event: BookingEmailEvent,
+  booking: BookingRow,
+  business: EmailBusiness,
+): Promise<readonly { kind: DeliveryKind; message: EmailMessage }[]> {
+  const customerCtaHref =
+    booking.email !== null && (event === 'booking_confirmed' || event === 'booking_reminder')
+      ? await customerAccessHref(booking)
+      : 'https://bladeblendstudio.se'
+  const candidates: Array<Promise<{ kind: DeliveryKind; message: EmailMessage }> | null> =
+    event === 'booking_confirmed'
+      ? [
+          booking.email === null
+            ? null
+            : message(
+                booking,
+                booking.email,
+                'customer_confirmation',
+                customerRows(booking),
+                business,
+                customerCtaHref,
+              ).then((message) => ({ kind: 'customer', message })),
+          booking.barberEmail === null
+            ? null
+            : message(
+                booking,
+                booking.barberEmail,
+                'barber_confirmation',
+                barberRows(booking),
+                business,
+                'https://bladeblendstudio.se/admin',
+              ).then((message) => ({ kind: 'barber', message })),
+        ]
+      : event === 'booking_cancelled'
+        ? [
+            booking.email === null
+              ? null
+              : message(
+                  booking,
+                  booking.email,
+                  'customer_cancellation',
+                  customerRows(booking),
+                  business,
+                  customerCtaHref,
+                ).then((message) => ({ kind: 'customer', message })),
+            booking.barberEmail === null
+              ? null
+              : message(
+                  booking,
+                  booking.barberEmail,
+                  'barber_cancellation',
+                  barberRows(booking),
+                  business,
+                  'https://bladeblendstudio.se/admin',
+                ).then((message) => ({ kind: 'barber', message })),
+          ]
+        : [
+            booking.email === null
+              ? null
+              : message(
+                  booking,
+                  booking.email,
+                  'customer_reminder',
+                  customerRows(booking),
+                  business,
+                  customerCtaHref,
+                ).then((message) => ({ kind: 'customer', message })),
+          ]
+  return Promise.all(
+    candidates.filter(
+      (candidate): candidate is Promise<{ kind: DeliveryKind; message: EmailMessage }> =>
+        candidate !== null,
+    ),
+  )
+}
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+async function handleRequest(req: Request): Promise<Response> {
+  if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
+  const secret = Deno.env.get('WEBHOOK_SECRET')
+  if (!secret) return json({ ok: false, error: 'not_configured' }, 503)
+  if (!timingSafeEqual(req.headers.get('x-webhook-secret') ?? '', secret))
+    return json({ ok: false, error: 'unauthorized' }, 401)
+  let raw: unknown
+  try {
+    raw = await req.json()
+  } catch {
+    return json({ ok: false, error: 'invalid_json' }, 400)
+  }
+  const parsed = parseRequest(raw)
+  if (!parsed.ok) return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
+  if (serviceClient() === null) return json({ ok: false, error: 'not_configured' }, 503)
+
+  let bookingId = parsed.id
+  let event = parsed.event
+  let delivery: DeliveryJob | null = null
+  if (parsed.deliveryId !== null) {
+    const fetchedDelivery = await fetchDelivery(parsed.deliveryId)
+    if (fetchedDelivery === 'unavailable')
+      return json({ ok: false, error: 'delivery_unavailable' }, 503)
+    if (fetchedDelivery === null) return json({ ok: true, skipped: 'delivery_not_pending' }, 200)
+    delivery = fetchedDelivery
+    bookingId = delivery.bookingId
+    event = delivery.event
+  }
+  if (bookingId === null || event === null)
+    return json({ ok: false, error: 'invalid_payload' }, 400)
+
+  const booking = await fetchBooking(bookingId)
+  if (booking === null) return json({ ok: false, error: 'booking_not_found' }, 404)
+  const expected = event === 'booking_cancelled' ? 'cancelled' : 'confirmed'
+  if (booking.status !== expected) {
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'superseded')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
+    return json({ ok: true, skipped: 'state_changed' }, 200)
+  }
+
+  let messages: readonly { kind: DeliveryKind; message: EmailMessage }[]
+  try {
+    const client = serviceClient()
+    if (client === null) throw new Error('service client unavailable')
+    const business = await loadEmailBusiness(client)
+    messages = await buildMessages(event, booking, business)
+  } catch {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'message_build_failed')
+    console.error('send-confirmation message build failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'message_build_failed' }, 502)
+  }
+  if (messages.length === 0) {
+    if (event === 'booking_reminder' && !(await markReminder(booking.id))) {
+      return json({ ok: false, error: 'reminder_mark_failed' }, 502)
+    }
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'skipped')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
+    return json({ ok: true, skipped: 'no_recipients' }, 200)
+  }
+  const messagesToSend =
+    delivery === null
+      ? messages
+      : messages.filter((entry) => !delivery.sentKinds.includes(entry.kind))
+  if (messagesToSend.length === 0) {
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
+      return json({ ok: false, error: 'delivery_update_failed' }, 502)
+    return json({ ok: true, event, sent: [] }, 200)
+  }
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  if (!apiKey) {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'not_configured')
+    return json({ ok: false, error: 'not_configured' }, 503)
+  }
+  const scope =
+    event === 'booking_confirmed'
+      ? 'booking-confirmation'
+      : event === 'booking_cancelled'
+        ? 'booking-cancellation'
+        : 'booking-reminder'
+  const batch = await deliverEmailBatch(
+    messagesToSend,
+    (entry) => sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`),
+    (entry) =>
+      parsed.deliveryId === null
+        ? Promise.resolve(true)
+        : markDeliveryRecipient(parsed.deliveryId, entry.kind),
+  )
+  if (batch.failureCode !== null) {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, batch.failureCode)
+    console.error('send-confirmation delivery failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'send_failed' }, 502)
+  }
+
+  try {
+    if (event === 'booking_reminder' && !(await markReminder(booking.id)))
+      throw new Error('reminder mark failed')
+    if (parsed.deliveryId !== null && !(await completeDelivery(parsed.deliveryId, 'delivered')))
+      throw new Error('delivery update failed')
+    return json({ ok: true, event, sent: batch.sent }, 200)
+  } catch {
+    if (parsed.deliveryId !== null) await failDelivery(parsed.deliveryId, 'send_failed_transient')
+    console.error('send-confirmation delivery failed', {
+      event,
+      queued: parsed.deliveryId !== null,
+    })
+    return json({ ok: false, error: 'send_failed' }, 502)
+  }
+}
+
+Deno.serve((req: Request) => retainTaskUntilSettled(handleRequest(req)))
+
+
+===== supabase/functions/upload-image/index.ts =====
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import {
+  Gravity,
+  ImageMagick,
+  MagickFormat,
+  MagickGeometry,
+  initializeImageMagick,
+} from 'npm:@imagemagick/magick-wasm@0.0.42'
+import {
+  executeExternalAction,
+  ExternalActionError,
+  parseExternalAction,
+  type ExternalActionService,
+} from '../_shared/externalActions.ts'
+
+const MAX_INPUT_BYTES = 5 * 1024 * 1024
+const MAX_OUTPUT_BYTES = 512000
+const MAX_PIXELS = 25_000_000
+const GALLERY_LONG_SIDE = 1600
+const PROFILE_SIZE = 800
+const INITIAL_WEBP_QUALITY = 82
+const MIN_WEBP_QUALITY = 55
+const WEBP_QUALITY_STEP = 3
+const BARBER_ID = /^[a-z0-9-]{1,32}$/
+const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
+let imageMagickReady: Promise<void> | null = null
+
+function ensureImageMagickReady(): Promise<void> {
+  imageMagickReady ??= Deno.readFile(new URL('./magick.wasm', import.meta.url)).then((wasm) =>
+    initializeImageMagick(wasm),
+  )
+  return imageMagickReady
+}
+
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+type UploadRequest =
+  | {
+      readonly kind: 'gallery'
+      readonly file: File
+      readonly galleryKind: 'salon' | 'cuts'
+      readonly alt: string
+      readonly sortOrder: number
+    }
+  | {
+      readonly kind: 'barber_photo'
+      readonly file: File
+      readonly barberId: string
+    }
+  | {
+      readonly kind: 'site_logo'
+      readonly file: File
+      readonly expectedPath: string
+    }
+
+type DeleteRequest =
+  | {
+      readonly action: 'delete'
+      readonly kind: 'gallery'
+      readonly id: string
+      readonly storagePath: string
+    }
+  | {
+      readonly action: 'delete'
+      readonly kind: 'barber_photo'
+      readonly barberId: string
+      readonly storagePath: string
+    }
+  | {
+      readonly action: 'delete'
+      readonly kind: 'site_logo'
+      readonly storagePath: string
+    }
+
+const LOGO_PATH =
+  /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
+
+class ImageValidationError extends Error {
+  readonly code: 'unsupported_image' | 'image_too_large' | 'output_too_large'
+
+  constructor(code: 'unsupported_image' | 'image_too_large' | 'output_too_large') {
+    super(code)
+    this.code = code
+  }
+}
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'content-type': 'application/json' },
+  })
+}
+
+function textField(form: FormData, name: string): string | null {
+  const values = form.getAll(name)
+  return values.length === 1 && typeof values[0] === 'string' ? values[0] : null
+}
+
+function fileField(form: FormData): File | null {
+  const values = form.getAll('file')
+  return values.length === 1 && values[0] instanceof File ? values[0] : null
+}
+
+function hasOnlyFields(form: FormData, allowed: readonly string[]): boolean {
+  const allowedFields = new Set(allowed)
+  for (const [name] of form.entries()) {
+    if (!allowedFields.has(name)) return false
+  }
+  return true
+}
+
+function parseInteger(value: string): number | null {
+  if (!/^-?(?:0|[1-9][0-9]*)$/.test(value)) return null
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < -2147483648 || parsed > 2147483647) return null
+  return parsed
+}
+
+function parseUpload(form: FormData): UploadRequest | null {
+  const kind = textField(form, 'kind')
+  const file = fileField(form)
+  if (kind === null || file === null || file.size === 0) return null
+
+  if (kind === 'gallery') {
+    if (!hasOnlyFields(form, ['kind', 'file', 'galleryKind', 'alt', 'sortOrder'])) return null
+    const galleryKind = textField(form, 'galleryKind')
+    const alt = textField(form, 'alt')
+    const sortOrder = textField(form, 'sortOrder')
+    const parsedSortOrder = sortOrder === null ? null : parseInteger(sortOrder)
+    if (
+      (galleryKind !== 'salon' && galleryKind !== 'cuts') ||
+      alt === null ||
+      alt.length > 2000 ||
+      parsedSortOrder === null
+    ) {
+      return null
+    }
+    return { kind, file, galleryKind, alt: alt.trim(), sortOrder: parsedSortOrder }
+  }
+
+  if (kind === 'barber_photo') {
+    if (!hasOnlyFields(form, ['kind', 'file', 'barberId'])) return null
+    const barberId = textField(form, 'barberId')
+    if (barberId === null || !BARBER_ID.test(barberId)) return null
+    return { kind, file, barberId }
+  }
+
+  if (kind === 'site_logo') {
+    if (!hasOnlyFields(form, ['kind', 'file', 'expectedPath'])) return null
+    const expectedPath = textField(form, 'expectedPath')
+    if (expectedPath === null || (expectedPath !== '' && !LOGO_PATH.test(expectedPath))) return null
+    return { kind, file, expectedPath }
+  }
+
+  return null
+}
+
+function parseDelete(value: unknown): DeleteRequest | null {
+  if (typeof value !== 'object' || value === null) return null
+  const body = value as Record<string, unknown>
+  if (body.action !== 'delete' || typeof body.storagePath !== 'string') return null
+  if (body.storagePath.length < 1 || body.storagePath.length > 300) return null
+  if (
+    body.kind === 'gallery' &&
+    typeof body.id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)
+  ) {
+    return { action: body.action, kind: body.kind, id: body.id, storagePath: body.storagePath }
+  }
+  if (body.kind === 'site_logo' && LOGO_PATH.test(body.storagePath)) {
+    return { action: body.action, kind: body.kind, storagePath: body.storagePath }
+  }
+  if (
+    body.kind === 'barber_photo' &&
+    typeof body.barberId === 'string' &&
+    BARBER_ID.test(body.barberId) &&
+    body.storagePath.startsWith(`${body.barberId}/`)
+  ) {
+    return {
+      action: body.action,
+      kind: body.kind,
+      barberId: body.barberId,
+      storagePath: body.storagePath,
+    }
+  }
+  return null
+}
+
+function imageDimensions(image: { readonly width: number; readonly height: number }): {
+  readonly width: number
+  readonly height: number
+} {
+  const width = image.width
+  const height = image.height
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+    throw new ImageValidationError('unsupported_image')
+  }
+  if (width * height > MAX_PIXELS) throw new ImageValidationError('image_too_large')
+  return { width, height }
+}
+
+function encodeWebp(image: {
+  quality: number
+  write(format: MagickFormat, callback: (data: Uint8Array) => void): void
+}): Uint8Array {
+  for (
+    let quality = INITIAL_WEBP_QUALITY;
+    quality >= MIN_WEBP_QUALITY;
+    quality -= WEBP_QUALITY_STEP
+  ) {
+    image.quality = quality
+    const encoded: { value?: Uint8Array } = {}
+    image.write(MagickFormat.WebP, (data) => {
+      // magick-wasm owns this callback buffer and may free/reuse it after the callback returns.
+      // Copy while it is valid before returning bytes to async Storage upload code.
+      encoded.value = new Uint8Array(data)
+    })
+    if (encoded.value !== undefined && encoded.value.byteLength <= MAX_OUTPUT_BYTES) {
+      return encoded.value
+    }
+  }
+  throw new ImageValidationError('output_too_large')
+}
+
+function processImage(input: Uint8Array, kind: UploadRequest['kind']): Uint8Array {
+  let output: Uint8Array | null = null
+  ImageMagick.read(input, (image) => {
+    const optionalOperations = image as unknown as {
+      autoOrient?: () => void
+      strip?: () => void
+    }
+    optionalOperations.autoOrient?.()
+
+    if (!SUPPORTED_FORMATS.has(String(image.format).toUpperCase())) {
+      throw new ImageValidationError('unsupported_image')
+    }
+
+    const { width, height } = imageDimensions(image)
+    if (kind === 'gallery' || kind === 'site_logo') {
+      const longSide = Math.max(width, height)
+      if (longSide > GALLERY_LONG_SIDE) {
+        const scale = GALLERY_LONG_SIDE / longSide
+        image.resize(
+          new MagickGeometry(
+            Math.max(1, Math.round(width * scale)),
+            Math.max(1, Math.round(height * scale)),
+          ),
+        )
+      }
+    } else {
+      const scale = Math.max(PROFILE_SIZE / width, PROFILE_SIZE / height)
+      image.resize(
+        new MagickGeometry(
+          Math.max(PROFILE_SIZE, Math.round(width * scale)),
+          Math.max(PROFILE_SIZE, Math.round(height * scale)),
+        ),
+      )
+      image.crop(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE), Gravity.Center)
+    }
+
+    optionalOperations.strip?.()
+    output = encodeWebp(image)
+  })
+  if (output === null) throw new ImageValidationError('unsupported_image')
+  return output
+}
+
+function isGalleryRow(value: unknown): value is {
+  readonly id: string
+  readonly kind: 'salon' | 'cuts'
+  readonly storage_path: string
+  readonly alt: string
+  readonly sort_order: number
+} {
+  if (typeof value !== 'object' || value === null) return false
+  const row = value as Record<string, unknown>
+  return (
+    typeof row.id === 'string' &&
+    (row.kind === 'salon' || row.kind === 'cuts') &&
+    typeof row.storage_path === 'string' &&
+    typeof row.alt === 'string' &&
+    typeof row.sort_order === 'number' &&
+    Number.isInteger(row.sort_order)
+  )
+}
+
+function isDeletion(value: unknown): value is {
+  readonly ok: true
+  readonly bucket: 'gallery' | 'barber-photos'
+  readonly path: string
+  readonly deletion_id: string
+} {
+  if (typeof value !== 'object' || value === null) return false
+  const row = value as Record<string, unknown>
+  return (
+    row.ok === true &&
+    (row.bucket === 'gallery' || row.bucket === 'barber-photos') &&
+    typeof row.path === 'string' &&
+    typeof row.deletion_id === 'string'
+  )
+}
+
+function isReplacement(value: unknown): value is {
+  readonly ok: true
+  readonly previous_path: string | null
+  readonly deletion_id: string | null
+} {
+  if (typeof value !== 'object' || value === null) return false
+  const row = value as Record<string, unknown>
+  return (
+    row.ok === true &&
+    (row.previous_path === null || typeof row.previous_path === 'string') &&
+    (row.deletion_id === null || typeof row.deletion_id === 'string')
+  )
+}
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405)
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const publicSupabaseUrl = Deno.env.get('PUBLIC_SUPABASE_URL') ?? supabaseUrl
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !publicSupabaseUrl || !anonKey || !serviceKey) {
+    console.error('upload-image: missing Supabase runtime configuration')
+    return json({ ok: false, error: 'not_configured' }, 500)
+  }
+  const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+  const removeObject = async (
+    bucket: 'gallery' | 'barber-photos',
+    path: string,
+    deletionId: string | null = null,
+  ): Promise<boolean> => {
+    if (deletionId !== null) {
+      const claimed = await service.rpc('claim_external_action', { p_id: deletionId })
+      if (claimed.error !== null || claimed.data === null) {
+        console.error('upload-image: failed to claim external deletion action', claimed.error?.code)
+        return false
+      }
+      const action = parseExternalAction(claimed.data)
+      if (
+        action === null ||
+        action.action_type !== 'storage_object_delete' ||
+        action.bucket !== bucket ||
+        action.path !== path
+      ) {
+        console.error('upload-image: invalid external deletion action context')
+        return false
+      }
+      try {
+        await executeExternalAction(action, service as unknown as ExternalActionService, {
+          googleClientId: undefined,
+          googleClientSecret: undefined,
+        })
+      } catch (externalError) {
+        const code =
+          externalError instanceof ExternalActionError
+            ? externalError.code
+            : 'external_action_failed'
+        console.error(
+          `upload-image: failed to remove ${bucket} object`,
+          externalError instanceof Error ? externalError.message : 'unknown',
+        )
+        await service.rpc('fail_external_action', {
+          p_id: action.id,
+          p_dispatch_token: action.dispatch_token,
+          p_error_code: code,
+        })
+        return false
+      }
+      const completed = await service.rpc('complete_external_action', {
+        p_id: action.id,
+        p_dispatch_token: action.dispatch_token,
+      })
+      if (completed.error !== null || completed.data !== true) {
+        console.error('upload-image: failed to complete external deletion action')
+        return false
+      }
+      return true
+    }
+
+    const { error } = await service.storage.from(bucket).remove([path])
+    if (error !== null) {
+      console.error(`upload-image: failed to remove ${bucket} object`, error.message)
+      await service.rpc('internal_queue_storage_deletion', {
+        p_bucket: bucket,
+        p_object_path: path,
+      })
+      return false
+    }
+    return true
+  }
+
+  const authHeader = req.headers.get('authorization') ?? ''
+  const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  if (jwt === '') return json({ ok: false, error: 'unauthorized' }, 401)
+
+  const caller = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: authHeader } },
+  })
+
+  const { data: callerData, error: callerError } = await service.auth.getUser(jwt)
+  if (callerError !== null || callerData.user === null)
+    return json({ ok: false, error: 'unauthorized' }, 401)
+
+  const { data: profile, error: profileError } = await caller
+    .from('profiles')
+    .select('role, barber_id, account_enabled')
+    .eq('id', callerData.user.id)
+    .single()
+  if (profileError !== null || profile === null)
+    return json({ ok: false, error: 'unauthorized' }, 401)
+  if (profile.account_enabled !== true || (profile.role !== 'owner' && profile.role !== 'barber')) {
+    return json({ ok: false, error: 'unauthorized' }, 401)
+  }
+
+  const contentType = req.headers.get('content-type')?.toLowerCase() ?? ''
+  if (contentType.startsWith('application/json')) {
+    let rawDelete: unknown
+    try {
+      rawDelete = await req.json()
+    } catch {
+      return json({ ok: false, error: 'invalid_payload' }, 400)
+    }
+    const deletion = parseDelete(rawDelete)
+    if (deletion === null) return json({ ok: false, error: 'invalid_payload' }, 400)
+    if (
+      (deletion.kind === 'gallery' || deletion.kind === 'site_logo') &&
+      profile.role !== 'owner'
+    ) {
+      return json({ ok: false, error: 'forbidden' }, 403)
+    }
+    if (
+      deletion.kind === 'barber_photo' &&
+      profile.role !== 'owner' &&
+      profile.barber_id !== deletion.barberId
+    ) {
+      return json({ ok: false, error: 'forbidden' }, 403)
+    }
+
+    const queued =
+      deletion.kind === 'gallery'
+        ? await service.rpc('internal_delete_gallery_image', {
+            p_id: deletion.id,
+            p_expected_path: deletion.storagePath,
+          })
+        : deletion.kind === 'barber_photo'
+          ? await service.rpc('internal_delete_barber_photo', {
+              p_barber_id: deletion.barberId,
+              p_expected_path: deletion.storagePath,
+            })
+          : await service.rpc('internal_remove_homepage_logo', {
+              p_expected_path: deletion.storagePath,
+            })
+    if (queued.error !== null) {
+      console.error('upload-image: deletion transaction failed', queued.error.code)
+      return json({ ok: false, error: 'database_failed' }, 500)
+    }
+    if (!isDeletion(queued.data)) {
+      return json({ ok: false, error: 'not_found' }, 404)
+    }
+
+    const removed = await removeObject(
+      queued.data.bucket,
+      queued.data.path,
+      queued.data.deletion_id,
+    )
+    return json({ ok: true, pending: !removed }, removed ? 200 : 202)
+  }
+
+  if (!contentType.startsWith('multipart/form-data')) {
+    return json({ ok: false, error: 'invalid_multipart' }, 400)
+  }
+
+  let form: FormData
+  try {
+    form = await req.formData()
+  } catch {
+    return json({ ok: false, error: 'invalid_multipart' }, 400)
+  }
+  const upload = parseUpload(form)
+  if (upload === null) return json({ ok: false, error: 'invalid_payload' }, 400)
+  if (upload.file.size > MAX_INPUT_BYTES) return json({ ok: false, error: 'file_too_large' }, 413)
+
+  if ((upload.kind === 'gallery' || upload.kind === 'site_logo') && profile.role !== 'owner') {
+    return json({ ok: false, error: 'forbidden' }, 403)
+  }
+  if (
+    upload.kind === 'barber_photo' &&
+    profile.role !== 'owner' &&
+    (profile.barber_id !== upload.barberId || typeof profile.barber_id !== 'string')
+  ) {
+    return json({ ok: false, error: 'forbidden' }, 403)
+  }
+
+  let processed: Uint8Array
+  try {
+    await ensureImageMagickReady()
+  } catch (error) {
+    console.error('upload-image: ImageMagick initialization failed', error)
+    return json({ ok: false, error: 'image_processor_unavailable' }, 500)
+  }
+  try {
+    processed = processImage(new Uint8Array(await upload.file.arrayBuffer()), upload.kind)
+  } catch (error) {
+    if (error instanceof ImageValidationError) {
+      return json({ ok: false, error: error.code }, 422)
+    }
+    console.warn('upload-image: image decode failed', error)
+    return json({ ok: false, error: 'invalid_image' }, 422)
+  }
+
+  const bucket = upload.kind === 'barber_photo' ? 'barber-photos' : 'gallery'
+  const path =
+    upload.kind === 'gallery'
+      ? `${upload.galleryKind}/${crypto.randomUUID()}.webp`
+      : upload.kind === 'barber_photo'
+        ? `${upload.barberId}/${crypto.randomUUID()}.webp`
+        : `logo/${crypto.randomUUID()}.webp`
+
+  let previousPath: string | null = null
+  if (upload.kind === 'barber_photo') {
+    const previous = await caller
+      .from('barber_photos')
+      .select('storage_path')
+      .eq('barber_id', upload.barberId)
+      .maybeSingle()
+    if (
+      previous.error !== null ||
+      (previous.data !== null && typeof previous.data.storage_path !== 'string')
+    ) {
+      console.error('upload-image: could not read existing barber photo', previous.error?.message)
+      return json({ ok: false, error: 'database_failed' }, 500)
+    }
+    previousPath = previous.data?.storage_path ?? null
+  }
+
+  const stored = await service.storage.from(bucket).upload(path, processed, {
+    contentType: 'image/webp',
+    upsert: false,
+  })
+  if (stored.error !== null) {
+    console.error('upload-image: object upload failed', stored.error.message)
+    return json({ ok: false, error: 'storage_failed' }, 500)
+  }
+
+  if (upload.kind === 'gallery') {
+    const inserted = await service.rpc('internal_insert_gallery_image', {
+      p_kind: upload.galleryKind,
+      p_storage_path: path,
+      p_alt: upload.alt,
+      p_sort_order: upload.sortOrder,
+    })
+    if (inserted.error !== null || !isGalleryRow(inserted.data)) {
+      console.error('upload-image: gallery row insert failed', inserted.error?.message)
+      await removeObject(bucket, path)
+      return json({ ok: false, error: 'database_failed' }, 500)
+    }
+    const publicUrl = createClient(publicSupabaseUrl, anonKey)
+      .storage.from(bucket)
+      .getPublicUrl(inserted.data.storage_path).data.publicUrl
+    return json(
+      {
+        ok: true,
+        kind: 'gallery',
+        row: inserted.data,
+        path: inserted.data.storage_path,
+        publicUrl,
+      },
+      200,
+    )
+  }
+
+  if (upload.kind === 'site_logo') {
+    const replaced = await service.rpc('internal_replace_homepage_logo', {
+      p_expected_path: upload.expectedPath,
+      p_new_path: path,
+    })
+    if (replaced.error !== null || !isReplacement(replaced.data)) {
+      console.error('upload-image: homepage logo replace failed', replaced.error?.code)
+      await removeObject(bucket, path)
+      const response =
+        typeof replaced.data === 'object' &&
+        replaced.data !== null &&
+        (replaced.data as Record<string, unknown>).error === 'conflict'
+          ? { status: 409, error: 'conflict' }
+          : { status: 500, error: 'database_failed' }
+      return json({ ok: false, error: response.error }, response.status)
+    }
+    let cleanupPending = false
+    if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
+      cleanupPending = !(await removeObject(
+        bucket,
+        replaced.data.previous_path,
+        replaced.data.deletion_id,
+      ))
+    }
+    const publicUrl = createClient(publicSupabaseUrl, anonKey)
+      .storage.from(bucket)
+      .getPublicUrl(path).data.publicUrl
+    return json({ ok: true, kind: 'site_logo', path, publicUrl, cleanupPending }, 200)
+  }
+
+  const replaced = await service.rpc('internal_replace_barber_photo', {
+    p_barber_id: upload.barberId,
+    p_expected_path: previousPath,
+    p_new_path: path,
+  })
+  if (replaced.error !== null || !isReplacement(replaced.data)) {
+    console.error('upload-image: barber photo replace failed', replaced.error?.code)
+    await removeObject(bucket, path)
+    const response =
+      typeof replaced.data === 'object' &&
+      replaced.data !== null &&
+      (replaced.data as Record<string, unknown>).error === 'conflict'
+        ? { status: 409, error: 'conflict' }
+        : { status: 500, error: 'database_failed' }
+    return json({ ok: false, error: response.error }, response.status)
+  }
+
+  let cleanupPending = false
+  if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
+    cleanupPending = !(await removeObject(
+      bucket,
+      replaced.data.previous_path,
+      replaced.data.deletion_id,
+    ))
+  }
+  const publicUrl = createClient(publicSupabaseUrl, anonKey).storage.from(bucket).getPublicUrl(path)
+    .data.publicUrl
+  return json(
+    {
+      ok: true,
+      kind: 'barber_photo',
+      row: { barber_id: upload.barberId, storage_path: path },
+      path,
+      publicUrl,
+      cleanupPending,
+    },
+    200,
+  )
+})
+
