@@ -1,0 +1,4154 @@
+
+===== src/app/App.tsx =====
+// Root component.
+// Owns state {mode, lang, view, myBookingsOpen}, the isMobile matchMedia switch, and the
+// theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
+// bodies live in their own modules; the shared chrome (toggles, palette) is built here and
+// passed down so both layouts render identical controls.
+
+import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import type { AppStrings, Lang } from '../i18n/index'
+import { appStrings } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
+import { preloadBookingCatalog } from '../booking/adapters/barbersIndex'
+import { preloadBookingFlow } from '../booking/lazyBookingFlow'
+import { ABOUT_SECTION_ID } from '../about/AboutSection'
+import { consumeBookingAccessLink, type BookingAccessLink } from '../mybookings/accessLink'
+import { defaultMyBookingsPort } from '../mybookings/adapters/index'
+import { LazyMyBookingsDialog, preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import { canReplaceDocumentMetadata, useSiteChrome } from '../site/useSiteChrome'
+import { buildBusinessStructuredData } from '../site/business'
+import { formatBusinessAddress, resolveSiteText, type SiteChrome } from '../site/siteChrome'
+import { paintViewport } from '../ui/paintViewport'
+import { scheduleIdle } from '../ui/idle'
+import { LazySurface } from '../ui/LazySurface'
+import { usePrivacyPreferences } from '../site/usePrivacyPreferences'
+import { PrivacyBanner } from '../site/PrivacyBanner'
+import { readStoragePreferences, subscribeStoragePreferences } from '../site/storageConsent'
+import { invokePublicBookingAction } from '../backend/publicBookingActions'
+import { withCustomerDeviceLock } from '../mybookings/customerDeviceLock'
+import type { CustomerProfile } from '../mybookings/domain'
+import { DesktopSite } from './DesktopSite'
+import { MobileSite } from './MobileSite'
+import type { Mode, View } from './shared'
+import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+
+function setMeta(selector: string, content: string): void {
+  document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
+}
+
+function updateDocumentMetadata(chrome: SiteChrome, lang: Lang): void {
+  const business = chrome.business
+  const seo = business.seo[lang]
+  document.documentElement.lang = lang
+  document.title = seo.title
+  setMeta('meta[name="robots"]', 'index, follow, max-image-preview:large')
+  setMeta('meta[name="description"]', seo.description)
+  setMeta('meta[property="og:site_name"]', business.name)
+  setMeta('meta[property="og:title"]', seo.title)
+  setMeta('meta[property="og:description"]', seo.description)
+  setMeta('meta[property="og:image:alt"]', business.name)
+  setMeta('meta[name="twitter:title"]', seo.title)
+  setMeta('meta[name="twitter:description"]', seo.description)
+
+  let canonicalElement = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+  if (canonicalElement === null) {
+    canonicalElement = document.createElement('link')
+    canonicalElement.rel = 'canonical'
+    canonicalElement.href = `${import.meta.env.VITE_SITE_URL || window.location.origin}/`
+    document.head.appendChild(canonicalElement)
+  }
+
+  const canonical = document
+    .querySelector<HTMLLinkElement>('link[rel="canonical"]')
+    ?.getAttribute('href')
+  const siteUrl = canonical?.startsWith('http')
+    ? canonical.replace(/\/$/, '')
+    : window.location.origin
+  const jsonLd = buildBusinessStructuredData(business, chrome.facts, siteUrl)
+  const structuredData = document.querySelector<HTMLScriptElement>('#business-json-ld')
+  if (structuredData !== null) {
+    structuredData.textContent = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
+  }
+}
+
+interface AppState {
+  readonly mode: Mode
+  readonly lang: Lang
+  /** The single active site state — home / booking (drives both layouts). */
+  readonly view: View
+  /** Whether the "Mina bokningar" (my-appointments) popup is open. */
+  readonly myBookingsOpen: boolean
+}
+
+function takeCustomerAccessLink(): BookingAccessLink {
+  const link = consumeBookingAccessLink(window.location.href)
+  if (link.code !== null || link.emailLinkCode !== undefined) {
+    window.history.replaceState(window.history.state, '', link.cleanPath)
+  }
+  return link
+}
+
+export function App(): JSX.Element {
+  const privacy = usePrivacyPreferences()
+  useEffect(() => {
+    if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
+  }, [privacy.openPreferences])
+  // Default to the device's light/dark preference (manual toggle still overrides afterwards).
+  const [state, setRaw] = useState<AppState>(() => ({
+    mode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+    lang: 'sv',
+    view: 'home',
+    myBookingsOpen: false,
+  }))
+  const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
+    setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
+  const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
+  const [bookingAccess, setBookingAccess] = useState<{
+    readonly token?: string
+    readonly error?: 'invalid' | 'cookies_disabled' | 'system'
+  }>({})
+  // Consume credentials before the dialog mounts. Mailbox-link proofs stay in memory and can never
+  // enter the existing automatic booking-token exchange path.
+  const [initialAccess] = useState(takeCustomerAccessLink)
+  const [emailLinkCode, setEmailLinkCode] = useState<string | null | undefined>(undefined)
+  const accessSequence = useRef(0)
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
+  useEffect(() => {
+    const clearOptionalAccess = (): void => {
+      if (readStoragePreferences()?.functional === false) {
+        // Queue behind any in-flight booking, so its late receipt cannot undo a withdrawn choice.
+        void withCustomerDeviceLock(() =>
+          invokePublicBookingAction({ action: 'forget_device' }),
+        ).catch(() => undefined)
+      }
+    }
+    clearOptionalAccess()
+    return subscribeStoragePreferences(clearOptionalAccess)
+  }, [])
+  useEffect(() => {
+    const m = window.matchMedia(MOBILE_MQ)
+    const h = (e: MediaQueryListEvent): void => setIsMobile(e.matches)
+    m.addEventListener('change', h)
+    return () => m.removeEventListener('change', h)
+  }, [])
+
+  useEffect(
+    () =>
+      scheduleIdle(() => {
+        // Warm the first booking interaction without competing with first paint or opening a socket.
+        preloadBookingFlow()
+        preloadBookingCatalog()
+      }),
+    [],
+  )
+
+  useEffect(() => {
+    let active = true
+    const acceptLink = (link: BookingAccessLink, restoreProfile = false): void => {
+      const sequence = ++accessSequence.current
+      const current = (): boolean => active && sequence === accessSequence.current
+      if (link.emailLinkCode !== undefined) {
+        setCustomerProfile(undefined)
+        setBookingAccess({})
+        setEmailLinkCode(link.emailLinkCode)
+        preloadMyBookingsDialog()
+        setState({ myBookingsOpen: true })
+        return
+      }
+      if (link.code === null) {
+        if (restoreProfile) {
+          void defaultMyBookingsPort
+            .list({ accessToken: '', lang: 'sv' })
+            .then((result) => {
+              if (current() && result.ok) setCustomerProfile(result.profile)
+            })
+            .catch(() => undefined)
+        }
+        return
+      }
+      setCustomerProfile(undefined)
+      setEmailLinkCode(undefined)
+      if (link.direct) {
+        setBookingAccess({ token: link.code })
+        setState({ myBookingsOpen: true })
+        return
+      }
+      void defaultMyBookingsPort
+        .exchangeAccess(link.code)
+        .then((result) => {
+          if (!current()) return
+          setBookingAccess(result.ok ? { token: result.accessToken } : { error: result.error })
+          setState({ myBookingsOpen: true })
+        })
+        .catch(() => {
+          if (!current()) return
+          setBookingAccess({ error: 'system' })
+          setState({ myBookingsOpen: true })
+        })
+    }
+    acceptLink(initialAccess, true)
+    const onHashChange = (): void => {
+      const link = takeCustomerAccessLink()
+      if (link.code !== null || link.emailLinkCode !== undefined) acceptLink(link)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => {
+      active = false
+      window.removeEventListener('hashchange', onHashChange)
+    }
+  }, [])
+
+  const dark = state.mode === 'dark'
+  const lang = state.lang
+  // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
+  // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
+  const { chrome, metadataReady } = useSiteChrome(lang)
+  const [initialStructuredData] = useState<string | null>(
+    () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
+  )
+  const business = chrome.business
+  const txBase = appStrings(lang)
+  const siteText = resolveSiteText(
+    chrome.text,
+    lang,
+    business.cancellationPolicyHours,
+    business.name,
+  )
+  const tx: AppStrings = {
+    ...txBase,
+    kicker: siteText.kicker,
+    hours: siteText.hours,
+    addr: formatBusinessAddress(business),
+  }
+  const bookingPopupText: BookingPopupText = siteText
+  const view = state.view
+  // Booking folds the public panel; the homepage itself remains a scrollable hero + About document.
+  const inSection = view === 'booking'
+  const c = shellPalette(dark)
+  const mobMutedColor = mobMuted(dark)
+  const mobBtnBgColor = mobBtnBg(dark)
+
+  // Two different surfaces meet the screen edges:
+  //  - topBar (theme-color): the top header/notch area. CONSTANT per mode.
+  //  - pageBg (html/body, behind the bottom URL bar): follows the content BELOW the header.
+  const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
+  const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
+  useEffect(() => {
+    paintViewport(pageBg, topBar)
+  }, [pageBg, topBar])
+
+  const langMini = (on: boolean): JSX.CSSProperties => ({
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '.3px',
+    padding: '4px 9px',
+    borderRadius: '999px',
+    background: on ? (dark ? '#f5f5f7' : '#1c1c1e') : 'transparent',
+    color: on ? (dark ? '#1c1c1e' : '#fff') : dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.5)',
+  })
+
+  useEffect(() => {
+    if (canReplaceDocumentMetadata(metadataReady, initialStructuredData)) {
+      updateDocumentMetadata(chrome, lang)
+    }
+  }, [chrome, initialStructuredData, lang, metadataReady])
+
+  const setSv = (): void => setState({ lang: 'sv' })
+  const setEn = (): void => setState({ lang: 'en' })
+  const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
+  // Desktop: booking is the only fold. Closing it restores the scrollable homepage/About document.
+  const toggleDeskBooking = (): void =>
+    setState((s) => ({ view: s.view === 'booking' ? 'home' : 'booking' }))
+  const scrollToAbout = (): void => {
+    setState({ view: 'home' })
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(ABOUT_SECTION_ID)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+  // Mobile: the hero becomes the compact header as its own scroll container advances.
+  const openMobBooking = (): void => {
+    setState({ view: 'booking' })
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')
+        ?.scrollTo({ top: 0 })
+    })
+  }
+  const scrollMobToHero = (): void => {
+    setState({ view: 'home' })
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-testid="mobile-site-scroll"]')?.scrollTo({
+        top: 0,
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
+    })
+  }
+  const openMyBookings = (): void => {
+    accessSequence.current++
+    preloadMyBookingsDialog()
+    setBookingAccess({})
+    setEmailLinkCode(undefined)
+    setState({ myBookingsOpen: true })
+  }
+  const closeMyBookings = (): void => {
+    accessSequence.current++
+    setBookingAccess({})
+    setEmailLinkCode(undefined)
+    setState({ myBookingsOpen: false })
+  }
+  const openPrivacy = (): void => privacy.openPreferences()
+
+  // --- shared chrome (nav controls) ---
+  const chromeIconStyle = chromeIcon(dark)
+  const findUsStyle: JSX.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '7px 14px',
+    borderRadius: '999px',
+    border: '.5px solid ' + (dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.16)'),
+    color: c.text,
+    textDecoration: 'none',
+    fontWeight: 600,
+    opacity: 0.92,
+  }
+  const themeTrackStyle: JSX.CSSProperties = {
+    position: 'relative',
+    width: '54px',
+    height: '30px',
+    borderRadius: '999px',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    flex: 'none',
+    background: dark ? 'rgba(120,120,128,.42)' : 'rgba(120,120,128,.26)',
+  }
+  const themeKnobStyle: JSX.CSSProperties = {
+    position: 'absolute',
+    top: '3px',
+    left: dark ? '27px' : '3px',
+    width: '24px',
+    height: '24px',
+    borderRadius: '50%',
+    background: '#fff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 1px 2px rgba(0,0,0,.3)',
+    transition: 'left .32s ' + 'cubic-bezier(.32,.72,0,1)',
+  }
+  const themeKnobIconStyle: JSX.CSSProperties = { width: '14px', height: '14px', opacity: 0.92 }
+  // Split into two full literals (rather than a computed `[dark?'left':'right']` key) so the
+  // typing stays clean — the same single side property is set either way.
+  const themeTrackIconStyle: JSX.CSSProperties = dark
+    ? {
+        position: 'absolute',
+        top: '8px',
+        left: '9px',
+        width: '14px',
+        height: '14px',
+        opacity: 0.5,
+        filter: 'invert(1)',
+      }
+    : {
+        position: 'absolute',
+        top: '8px',
+        right: '9px',
+        width: '14px',
+        height: '14px',
+        opacity: 0.5,
+        filter: 'none',
+      }
+  const themeKnobIconSrc = dark ? '/icons/moon.svg' : '/icons/sun.max.svg'
+  const themeTrackIconSrc = dark ? '/icons/sun.max.svg' : '/icons/moon.svg'
+  const langWrapStyle: JSX.CSSProperties = {
+    display: 'flex',
+    background: dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)',
+    borderRadius: '999px',
+    padding: '2px',
+    flex: 'none',
+  }
+  const svMiniStyle = langMini(lang === 'sv')
+  const enMiniStyle = langMini(lang === 'en')
+
+  const themeToggle = (
+    <button
+      onClick={toggleMode}
+      style={themeTrackStyle}
+      title={tx.ariaTheme}
+      aria-label={tx.ariaTheme}
+    >
+      <img src={themeTrackIconSrc} alt="" style={themeTrackIconStyle} />
+      <span style={themeKnobStyle}>
+        <img src={themeKnobIconSrc} alt="" style={themeKnobIconStyle} />
+      </span>
+    </button>
+  )
+  const langToggle = (
+    <div style={langWrapStyle}>
+      <button onClick={setSv} aria-pressed={lang === 'sv'} style={svMiniStyle}>
+        SV
+      </button>
+      <button onClick={setEn} aria-pressed={lang === 'en'} style={enMiniStyle}>
+        EN
+      </button>
+    </div>
+  )
+
+  const myBookingsDialog = state.myBookingsOpen ? (
+    <LazySurface
+      overlay
+      loadingLabel={tx.lazyMyBookingsLoading}
+      errorLabel={tx.lazyMyBookingsError}
+      retryLabel={tx.lazyReload}
+    >
+      <LazyMyBookingsDialog
+        key={accessSequence.current}
+        mode={state.mode}
+        lang={lang}
+        onClose={closeMyBookings}
+        {...(bookingAccess.token === undefined ? {} : { accessToken: bookingAccess.token })}
+        {...(bookingAccess.error === undefined ? {} : { accessError: bookingAccess.error })}
+        {...(emailLinkCode === undefined ? {} : { emailLinkCode })}
+        onProfile={setCustomerProfile}
+      />
+    </LazySurface>
+  ) : null
+
+  if (isMobile) {
+    return (
+      <>
+        <MobileSite
+          privacy={privacy}
+          onManagePrivacy={openPrivacy}
+          mode={state.mode}
+          lang={lang}
+          tx={tx}
+          {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+          dark={dark}
+          c={c}
+          view={view}
+          mobMutedColor={mobMutedColor}
+          mobBtnBgColor={mobBtnBgColor}
+          business={business}
+          chromeIconStyle={chromeIconStyle}
+          themeToggle={themeToggle}
+          langToggle={langToggle}
+          openMobBooking={openMobBooking}
+          scrollToAbout={scrollToAbout}
+          scrollMobToHero={scrollMobToHero}
+          openCancel={openMyBookings}
+          openMyBookings={openMyBookings}
+          homepageScale={chrome.homepageScale}
+          homepageLogo={chrome.homepageLogo}
+          aboutScale={chrome.aboutScale}
+          bookingPopupText={bookingPopupText}
+        />
+        {myBookingsDialog}
+        <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <DesktopSite
+        privacy={privacy}
+        onManagePrivacy={openPrivacy}
+        mode={state.mode}
+        lang={lang}
+        dark={dark}
+        c={c}
+        business={business}
+        themeToggle={themeToggle}
+        langToggle={langToggle}
+        chromeIconStyle={chromeIconStyle}
+        tx={tx}
+        {...(customerProfile === undefined ? {} : { initialContact: customerProfile })}
+        view={view}
+        toggleDeskBooking={toggleDeskBooking}
+        scrollToAbout={scrollToAbout}
+        findUsStyle={findUsStyle}
+        openCancel={openMyBookings}
+        openMyBookings={openMyBookings}
+        homepageScale={chrome.homepageScale}
+        homepageLogo={chrome.homepageLogo}
+        aboutScale={chrome.aboutScale}
+        bookingPopupText={bookingPopupText}
+      />
+      {myBookingsDialog}
+      <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+    </>
+  )
+}
+
+
+===== src/app/DesktopSite.tsx =====
+// Desktop (WEBB · Editorial) layout — nav + hero with business info + collapsible booking fold.
+
+import type { JSX, RefObject } from 'preact'
+import { AboutSection } from '../about/AboutSection'
+import { HeroLinks } from '../about/HeroLinks'
+import { CornerMark } from '../ui/logos/CornerMark'
+import { HomepageLogo } from '../site/HomepageLogo'
+import { PrivacyManageButton } from '../site/PrivacyBanner'
+import type { PrivacyControls } from '../site/usePrivacyPreferences'
+import type { AppStrings } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
+import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
+import { preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import { LazySurface } from '../ui/LazySurface'
+import type { BookingPort } from '../booking/port'
+import type { BarbersPort } from '../booking/barbersPort'
+import type { ServicesPort } from '../booking/servicesPort'
+import type { ReviewsPort } from '../about/reviews/port'
+import type { AboutContentPort } from '../about/content/port'
+import type { GalleryPort } from '../about/gallery/port'
+import type { CustomerProfile } from '../mybookings/domain'
+import {
+  scalePx,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
+import type { ShellProps, View } from './shared'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { EASE, useReducedMotion } from './shared'
+
+/** Explicit read-only seams for an embedded CMS replica; absent on the public site. */
+export interface DesktopSitePreviewPorts {
+  readonly booking: BookingPort
+  readonly barbers: BarbersPort
+  readonly services: ServicesPort
+  readonly reviews: ReviewsPort
+  readonly aboutContent: AboutContentPort
+  readonly gallery: GalleryPort
+}
+
+const DESKTOP_PANEL_HEIGHT = 61
+
+export interface DesktopSiteProps extends ShellProps {
+  readonly tx: AppStrings
+  readonly view: View
+  readonly toggleDeskBooking: () => void
+  readonly scrollToAbout: () => void
+  readonly findUsStyle: JSX.CSSProperties
+  /** Open the "Avbokning" (cancellation) popup. */
+  readonly openCancel: () => void
+  /** Open the "Mina bokningar" (my-appointments) popup. */
+  readonly openMyBookings: () => void
+  /** Owner-set font-size preset for the homepage editable text (kicker / hours / address). */
+  readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
+  /** Owner-set font-size preset forwarded to the "Om oss" section. */
+  readonly aboutScale: SizePreset
+  /** Owner-edited policy + confirmation title shown in the booking popups. */
+  readonly bookingPopupText: BookingPopupText
+  readonly previewPorts?: DesktopSitePreviewPorts
+  /** Embedded replicas scroll inside this host instead of the browser window. */
+  readonly scrollRootRef?: RefObject<HTMLDivElement>
+  readonly initialContact?: CustomerProfile
+  readonly privacy?: PrivacyControls
+  readonly onManagePrivacy?: () => void
+}
+
+export function DesktopSite(props: DesktopSiteProps): JSX.Element {
+  const { c, tx, business, view } = props
+  const reduceMotion = useReducedMotion()
+  // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
+  const booking = view === 'booking'
+  const bookingMounted = useRef(booking)
+  const bookingFoldRef = useRef<HTMLDivElement>(null)
+  const [rosterReady, setRosterReady] = useState(false)
+  const onRosterReady = useCallback(() => setRosterReady(true), [])
+  if (booking) bookingMounted.current = true
+  useEffect(() => {
+    if (!booking) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth'
+    let lastTarget: number | null = null
+    let settled = false
+    let observer: ResizeObserver | null = null
+    let settleRaf: number | null = null
+    let settleFrames = 0
+    let settleDeadline: number | null = null
+    let lastLayout: { top: number; bottom: number; foldHeight: number } | null = null
+    const scrollTo = (target: number, current: number, scroll: (next: number) => void): void => {
+      const next = Math.max(0, target)
+      if (lastTarget !== null && Math.abs(lastTarget - next) < 1 && Math.abs(current - next) < 1)
+        return
+      lastTarget = next
+      scroll(next)
+    }
+    const settleWhenStable = (): void => {
+      if (!rosterReady || settled || settleRaf !== null) return
+      settleRaf = requestAnimationFrame(() => {
+        settleRaf = null
+        if (settled) return
+        const fold = bookingFoldRef.current
+        const step = fold?.querySelector<HTMLElement>('[data-booking-step="barber"]')
+        if (fold === null || fold === undefined || step === null || step === undefined) return
+        const box = step.getBoundingClientRect()
+        const foldBox = fold.getBoundingClientRect()
+        const stable =
+          lastLayout !== null &&
+          Math.abs(lastLayout.top - box.top) < 0.5 &&
+          Math.abs(lastLayout.bottom - box.bottom) < 0.5 &&
+          Math.abs(lastLayout.foldHeight - foldBox.height) < 0.5
+        lastLayout = { top: box.top, bottom: box.bottom, foldHeight: foldBox.height }
+        settleFrames = stable ? settleFrames + 1 : 0
+        settleDeadline ??= window.performance.now() + 1200
+        if (settleFrames >= 2 || window.performance.now() >= settleDeadline) {
+          settled = true
+          observer?.disconnect()
+          return
+        }
+        settleWhenStable()
+      })
+    }
+    const reveal = (): void => {
+      const fold = bookingFoldRef.current
+      if (fold === null) return
+      const scrollRoot = props.scrollRootRef?.current
+      const step = fold.querySelector<HTMLElement>('[data-booking-step="barber"]')
+      if (scrollRoot !== undefined && scrollRoot !== null) {
+        const rootBox = scrollRoot.getBoundingClientRect()
+        const foldBox = fold.getBoundingClientRect()
+        const stepBox = step?.getBoundingClientRect()
+        const delta =
+          stepBox === undefined
+            ? foldBox.top - rootBox.top - DESKTOP_PANEL_HEIGHT
+            : stepBox.bottom > rootBox.bottom
+              ? stepBox.bottom - rootBox.bottom
+              : stepBox.top < rootBox.top
+                ? stepBox.top - rootBox.top
+                : 0
+        if (delta !== 0) {
+          scrollTo(scrollRoot.scrollTop + delta, scrollRoot.scrollTop, (top) =>
+            scrollRoot.scrollTo({ top, behavior }),
+          )
+        }
+        if (step !== undefined) settleWhenStable()
+        return
+      }
+      const foldBox = fold.getBoundingClientRect()
+      const stepBox = step?.getBoundingClientRect()
+      const privacySpace =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--privacy-overlay-space'),
+        ) || 0
+      const visibleBottom = Math.max(DESKTOP_PANEL_HEIGHT, window.innerHeight - privacySpace)
+      const delta =
+        stepBox === undefined
+          ? foldBox.top - DESKTOP_PANEL_HEIGHT
+          : stepBox.height > visibleBottom - DESKTOP_PANEL_HEIGHT ||
+              stepBox.top < DESKTOP_PANEL_HEIGHT
+            ? stepBox.top - DESKTOP_PANEL_HEIGHT
+            : stepBox.bottom > visibleBottom
+              ? stepBox.bottom - visibleBottom
+              : 0
+      if (delta !== 0) {
+        scrollTo(window.scrollY + delta, window.scrollY, (top) =>
+          window.scrollTo({ top, behavior }),
+        )
+      }
+      if (step !== undefined) settleWhenStable()
+    }
+    const frame = requestAnimationFrame(reveal)
+    observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            if (!settled) reveal()
+          })
+    if (bookingFoldRef.current !== null) observer?.observe(bookingFoldRef.current)
+    const delayed = observer === null ? window.setTimeout(reveal, 750) : null
+    return () => {
+      cancelAnimationFrame(frame)
+      if (settleRaf !== null) cancelAnimationFrame(settleRaf)
+      if (delayed !== null) window.clearTimeout(delayed)
+      observer?.disconnect()
+    }
+  }, [booking, rosterReady, props.scrollRootRef])
+  const lineColor = c.line
+  // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
+  const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
+
+  const navStyle: JSX.CSSProperties = {
+    position: props.scrollRootRef === undefined ? 'fixed' : 'sticky',
+    top: '0',
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    boxSizing: 'border-box',
+    height: DESKTOP_PANEL_HEIGHT + 'px',
+    padding: '15px 30px',
+    background: c.navBg,
+    borderBottom: '.5px solid ' + c.line,
+  }
+  // Nav corner brand (persistent, top-left) — the compact "BNB · BLADE & BLEND" mark.
+  const navLogoStyle: JSX.CSSProperties = { margin: 0, display: 'flex', alignItems: 'center' }
+  // Centered hero mark — the B&B lockup (monogram + ─ STUDIO ─ + tagline). Always visible on desktop
+  // (stays put when a booking/about fold opens below).
+  const heroMarkStyle: JSX.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '22px',
+  }
+  const heroBtnStyle: JSX.CSSProperties = booking
+    ? {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        background: 'transparent',
+        color: c.text,
+        border: '1.5px solid ' + c.text,
+        fontWeight: 600,
+        fontSize: '15px',
+        padding: '11.5px 26.5px',
+        borderRadius: '11px',
+      }
+    : {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        border: 'none',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        background: c.accent,
+        color: c.accentText,
+        fontWeight: 600,
+        fontSize: '15px',
+        padding: '13px 28px',
+        borderRadius: '11px',
+      }
+  // The two hero actions sit on one centered row (same scale). "Mina bokningar" is a softer,
+  // lower-emphasis variant — a slightly different shade than the filled "Boka tid" — so it reads as
+  // the secondary action without competing. Wraps (never overflows) if the viewport is unusually narrow.
+  const heroActionsStyle: JSX.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  }
+  const heroSecondaryBtnStyle: JSX.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    background: c.navBg,
+    color: c.text,
+    border: '.5px solid ' + c.line,
+    fontWeight: 600,
+    fontSize: '15px',
+    padding: '13px 28px',
+    borderRadius: '11px',
+  }
+  // One fold per state — both always mounted, each collapsed to 0fr unless active. Keeping both
+  // mounted means open AND close animate smoothly (no content unmounting mid-collapse), and the
+  // booking fold's render path is byte-identical to before.
+  const foldStyle = (open: boolean): JSX.CSSProperties => ({
+    display: 'grid',
+    gridTemplateRows: open ? '1fr' : '0fr',
+    opacity: open ? 1 : 0,
+    transition: reduceMotion ? 'none' : 'grid-template-rows .58s ' + EASE + ', opacity .42s ease',
+  })
+  const deskFoldInnerStyle: JSX.CSSProperties = { overflow: 'hidden', minHeight: 0 }
+  const heroInfoStyle: JSX.CSSProperties = {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '18px 40px',
+    borderTop: '.5px solid ' + c.line,
+    background: c.footer,
+    fontSize: scalePx(13, props.homepageScale) + 'px',
+    opacity: 0.65,
+    flex: 'none',
+    flexWrap: 'wrap',
+    gap: '8px',
+  }
+
+  return (
+    <div
+      style={{
+        position: props.scrollRootRef === undefined ? undefined : 'relative',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: c.bg,
+        color: c.text,
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+        WebkitFontSmoothing: 'antialiased',
+        paddingBottom: 'var(--privacy-overlay-space, 0px)',
+      }}
+    >
+      <div style={navStyle} data-testid="desktop-top-panel" data-scroll-progress="1.000">
+        <h1 style={navLogoStyle}>
+          <CornerMark height={30} />
+        </h1>
+        <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
+          {business.mapsHref === '' ? null : (
+            <a
+              href={business.mapsHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={props.findUsStyle}
+            >
+              <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
+              {tx.findUs}
+            </a>
+          )}
+          {business.phoneTel === '' || business.phoneDisplay === '' ? null : (
+            <a
+              href={`tel:${business.phoneTel}`}
+              style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
+            >
+              <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
+              {business.phoneDisplay}
+            </a>
+          )}
+          {props.langToggle}
+          {props.themeToggle}
+        </div>
+      </div>
+
+      <main>
+        <div
+          style={{
+            position: 'relative',
+            minHeight: booking ? 'auto' : '100dvh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: booking ? '100px 40px 60px' : '60px 40px 120px',
+            boxSizing: 'border-box',
+            color: 'inherit',
+          }}
+        >
+          <div style={heroMarkStyle} aria-hidden="true">
+            <HomepageLogo logo={props.homepageLogo} layout="desktop" height={300} />
+          </div>
+          <div
+            style={{
+              fontSize: scalePx(13, props.homepageScale) + 'px',
+              fontWeight: 600,
+              letterSpacing: '1.5px',
+              opacity: 0.65,
+              margin: '0 0 30px',
+              color: 'inherit',
+            }}
+          >
+            {tx.kicker}
+          </div>
+          <div style={heroActionsStyle}>
+            <button
+              onClick={props.toggleDeskBooking}
+              onPointerDown={preloadBookingFlow}
+              onFocus={preloadBookingFlow}
+              style={heroBtnStyle}
+              type="button"
+            >
+              {tx.book}
+            </button>
+            <button
+              onClick={props.openMyBookings}
+              onPointerDown={preloadMyBookingsDialog}
+              onFocus={preloadMyBookingsDialog}
+              style={heroSecondaryBtnStyle}
+              type="button"
+            >
+              {tx.myBookings}
+            </button>
+          </div>
+          <HeroLinks
+            aboutLabel={tx.aboutLink}
+            cancelLabel={tx.cancelLink}
+            color={heroLinkColor}
+            onOpenAbout={props.scrollToAbout}
+            onOpenCancel={props.openCancel}
+            marginTop="20px"
+          />
+          {!booking && props.privacy !== undefined ? (
+            <PrivacyManageButton lang={props.lang} dark={props.dark} controls={props.privacy} />
+          ) : null}
+          <div style={heroInfoStyle}>
+            <span>{tx.hours}</span>
+            <span>{tx.addr}</span>
+          </div>
+        </div>
+        {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
+        <div
+          ref={bookingFoldRef}
+          style={{ ...foldStyle(booking), scrollMarginTop: DESKTOP_PANEL_HEIGHT + 'px' }}
+          data-testid="fold-booking"
+          inert={!booking}
+          aria-hidden={booking ? undefined : 'true'}
+        >
+          <div style={deskFoldInnerStyle}>
+            <div
+              style={
+                'border-top:.5px solid ' +
+                lineColor +
+                ';max-width:1180px;margin:0 auto;width:100%;box-sizing:border-box;'
+              }
+            >
+              {bookingMounted.current ? (
+                <LazySurface
+                  loadingLabel={tx.lazyBookingLoading}
+                  errorLabel={tx.lazyBookingError}
+                  retryLabel={tx.lazyReload}
+                  minHeight="280px"
+                >
+                  <LazyBookingFlow
+                    mode={props.mode}
+                    defaultLang={props.lang}
+                    onMyBookings={props.openMyBookings}
+                    onRosterReady={onRosterReady}
+                    popupText={props.bookingPopupText}
+                    business={business}
+                    showDirections={business.mapsHref !== ''}
+                    {...(props.initialContact === undefined
+                      ? {}
+                      : { initialContact: props.initialContact })}
+                    {...(props.previewPorts === undefined
+                      ? {}
+                      : {
+                          port: props.previewPorts.booking,
+                          barbersPort: props.previewPorts.barbers,
+                          servicesPort: props.previewPorts.services,
+                        })}
+                  />
+                </LazySurface>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        {!booking ? (
+          <AboutSection
+            mode={props.mode}
+            lang={props.lang}
+            {...(props.initialContact === undefined
+              ? {}
+              : { customerPhone: props.initialContact.phone })}
+            fontScale={props.aboutScale}
+            scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
+            {...(props.onManagePrivacy === undefined
+              ? {}
+              : { onManagePrivacy: props.onManagePrivacy })}
+            {...(props.previewPorts === undefined
+              ? {}
+              : {
+                  port: props.previewPorts.reviews,
+                  barbersPort: props.previewPorts.barbers,
+                  aboutContentPort: props.previewPorts.aboutContent,
+                  galleryPort: props.previewPorts.gallery,
+                  challengeEnabled: false,
+                })}
+          />
+        ) : null}
+      </main>
+    </div>
+  )
+}
+
+
+===== src/app/MobileSite.tsx =====
+// Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
+//
+// Invariants:
+//  - folding panel: borderRadius `0 0 28px 28px` when booking, flush `0` on homepage;
+//    height PANEL_COMPACT (booking) vs PANEL_FULL (homepage).
+//  - the brand cross-fades between the centered hero lockup (home flow) and the compact CornerMark
+//    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
+//  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
+
+import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { AboutSection } from '../about/AboutSection'
+import { HeroLinks } from '../about/HeroLinks'
+import { CornerMark } from '../ui/logos/CornerMark'
+import { HomepageLogo } from '../site/HomepageLogo'
+import { PrivacyManageButton } from '../site/PrivacyBanner'
+import type { PrivacyControls } from '../site/usePrivacyPreferences'
+import type { AppStrings, Lang } from '../i18n/index'
+import type { BookingPopupText } from '../booking/BookingFlow'
+import { LazyBookingFlow, preloadBookingFlow } from '../booking/lazyBookingFlow'
+import { preloadMyBookingsDialog } from '../mybookings/lazyMyBookingsDialog'
+import { LazySurface } from '../ui/LazySurface'
+import {
+  scalePx,
+  type BusinessSettings,
+  type HomepageLogo as HomepageLogoConfig,
+  type SizePreset,
+} from '../site/siteChrome'
+import type { Mode, ShellPalette, View } from './shared'
+import { EASE, PANEL_COMPACT, PANEL_FULL, useReducedMotion } from './shared'
+import type { CustomerProfile } from '../mybookings/domain'
+
+/** Style object that also defines CSS custom properties (`--mob-*`). Subtype of CSSProperties. */
+type StyleWithVars = JSX.CSSProperties & Record<`--${string}`, string | number>
+
+export interface MobileSiteProps {
+  readonly mode: Mode
+  readonly lang: Lang
+  readonly tx: AppStrings
+  readonly dark: boolean
+  readonly c: ShellPalette
+  readonly view: View
+  readonly mobMutedColor: string
+  readonly mobBtnBgColor: string
+  readonly business: BusinessSettings
+  readonly chromeIconStyle: JSX.CSSProperties
+  readonly themeToggle: JSX.Element
+  readonly langToggle: JSX.Element
+  readonly openMobBooking: () => void
+  /** Scroll the always-mounted About section into view. */
+  readonly scrollToAbout: () => void
+  /** Back chevron — expand the compact panel back into the home hero. */
+  readonly scrollMobToHero: () => void
+  /** Open the "Avbokning" (cancellation) popup. */
+  readonly openCancel: () => void
+  /** Open the "Mina bokningar" (my-appointments) popup. */
+  readonly openMyBookings: () => void
+  /** Owner-set font-size preset for the homepage editable text (opening hours / address). */
+  readonly homepageScale: SizePreset
+  /** Owner-managed logo replacement, bounded scale, and image treatment. */
+  readonly homepageLogo: HomepageLogoConfig
+  /** Owner-set font-size preset forwarded to the "Om oss" section. */
+  readonly aboutScale: SizePreset
+  /** Owner-edited policy + confirmation title shown in the booking popups. */
+  readonly bookingPopupText: BookingPopupText
+  readonly initialContact?: CustomerProfile
+  readonly privacy?: PrivacyControls
+  readonly onManagePrivacy?: () => void
+}
+
+export function MobileSite(props: MobileSiteProps): JSX.Element {
+  const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
+  const reduceMotion = useReducedMotion()
+  const view = props.view
+  // Booking collapses immediately. On home the same panel collapses continuously as its scroll
+  // container advances, exposing the always-mounted About section below.
+  const inSection = view === 'booking'
+  const scrollRoot = useRef<HTMLDivElement>(null)
+  const privacyOpen =
+    props.privacy !== undefined && (props.privacy.preferences === null || props.privacy.expanded)
+  const [collapse, setCollapse] = useState(0)
+  const scrollFrame = useRef<number | null>(null)
+  const collapseLimit = (): number => Math.max(0, window.innerHeight - 112)
+  const compactPanel = inSection || collapse > 0
+  const syncCollapse = (): void => {
+    if (inSection) return
+    const limit = collapseLimit()
+    const scrolled = Math.max(0, scrollRoot.current?.scrollTop ?? 0)
+    // Leave the whole hero scrollable above an open privacy panel, then retain the normal
+    // compact navigation once About begins. The spacer preserves the document position.
+    const next = privacyOpen ? (scrolled >= limit ? limit : 0) : Math.min(limit, scrolled)
+    setCollapse((current) => (current === next ? current : next))
+  }
+  const onScroll = (): void => {
+    if (inSection || scrollFrame.current !== null) return
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null
+      syncCollapse()
+    })
+  }
+  useEffect(() => {
+    const root = scrollRoot.current
+    if (root === null || inSection) return
+    const sync = (): void => syncCollapse()
+    window.addEventListener('resize', sync)
+    sync()
+    return () => {
+      window.removeEventListener('resize', sync)
+      if (scrollFrame.current !== null) {
+        cancelAnimationFrame(scrollFrame.current)
+        scrollFrame.current = null
+      }
+    }
+  }, [inSection, privacyOpen])
+  const chromeIcon = props.chromeIconStyle
+  const phoneShift = compactPanel ? '24px' : '0px'
+  // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
+  const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
+  const heroOpacity = inSection
+    ? 0
+    : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))
+
+  const foldingPanelStyle: StyleWithVars = {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    background: dark ? '#242427' : '#f4f3f0',
+    color: c.text,
+    borderRadius: compactPanel ? '0 0 28px 28px' : '0',
+    height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
+    transition: reduceMotion
+      ? 'none'
+      : inSection
+        ? 'height .66s ' + EASE + ', border-radius .3s ease'
+        : 'border-radius .3s ease',
+    '--mob-text': c.text,
+    '--mob-muted': mobMutedColor,
+    '--mob-icon': c.iconF,
+    '--mob-btn-bg': mobBtnBgColor,
+    '--mob-border': c.line,
+  }
+  // Centered hero mark (home): the full B&B lockup. Fluid width so it never overflows small screens.
+  // Colour follows the theme through currentColor.
+  const heroLockupStyle: JSX.CSSProperties = {
+    margin: '0 0 24px',
+    color: 'var(--mob-text)',
+    width: 'min(300px, 80vw)',
+    height: 'auto',
+    display: 'block',
+  }
+  // Compact corner mark (absolute top-left) — fades in once a section opens, mirroring the pole's
+  // old placement. pointer-events:none so it never blocks the controls beneath it.
+  const headerMarkStyle: JSX.CSSProperties = {
+    position: 'absolute',
+    zIndex: 6,
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    whiteSpace: 'nowrap',
+    color: 'var(--mob-text)',
+    top: 'calc(env(safe-area-inset-top, 0px) + 22px)',
+    left: '22px',
+    opacity: compactPanel ? 1 : 0,
+    pointerEvents: 'none',
+    transition: reduceMotion ? 'none' : 'opacity .4s ease',
+  }
+  const panelTopStyle: JSX.CSSProperties = { flex: 'none', padding: '0 22px 16px' }
+  const expandChevStyle: JSX.CSSProperties = {
+    display: compactPanel ? 'flex' : 'none',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '32px',
+    height: '32px',
+    padding: 0,
+    borderRadius: '50%',
+    border: 'none',
+    cursor: 'pointer',
+    background: mobBtnBgColor,
+  }
+  const heroExtrasStyle: JSX.CSSProperties = {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    textAlign: 'center',
+    // Bottom padding = the top row's height (safe-area + ~76px) so the centered hero block lands on
+    // the screen's TRUE vertical centre instead of the centre of the area below the top row.
+    padding: '0 26px calc(env(safe-area-inset-top, 0px) + 76px)',
+    opacity: heroOpacity,
+    // Visible controls remain usable throughout the fade. Disabling at 24px left almost opaque
+    // buttons untappable when a browser restored scroll/focus after closing the privacy notice.
+    pointerEvents: heroOpacity === 0 ? 'none' : 'auto',
+    transition: reduceMotion ? 'none' : inSection ? 'opacity .34s ease' : undefined,
+  }
+  const heroBtnDarkStyle: JSX.CSSProperties = {
+    alignSelf: 'stretch',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    background: c.accent,
+    color: c.accentText,
+    fontWeight: 600,
+    fontSize: '16px',
+    padding: '15px',
+    borderRadius: '13px',
+  }
+  // Secondary hero action, stacked UNDER "Boka tid" at a smaller scale (shorter, smaller type) and a
+  // softer shade so it reads as secondary. Full-width to align cleanly with the primary above it.
+  const heroSecondaryBtnStyle: JSX.CSSProperties = {
+    alignSelf: 'stretch',
+    marginTop: '10px',
+    border: '.5px solid ' + c.line,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    background: mobBtnBgColor,
+    color: c.text,
+    fontWeight: 600,
+    fontSize: '14px',
+    padding: '12px',
+    borderRadius: '12px',
+  }
+  const infoBlockStyle: JSX.CSSProperties = {
+    position: 'absolute',
+    left: '26px',
+    right: '26px',
+    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 22px)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: '12px',
+  }
+  const m3BodyStyle: JSX.CSSProperties = {
+    background: c.bg,
+    color: c.text,
+    minHeight: 'calc(100dvh - ' + PANEL_COMPACT + ')',
+  }
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        // Fixed viewport scroll container. Home keeps the full hero in normal flow while its sticky
+        // panel compresses with scroll; booking starts with the compact panel and replaces About.
+        height: 'calc(100dvh - var(--privacy-overlay-space, 0px))',
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        background: c.bg,
+        color: c.text,
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+        WebkitFontSmoothing: 'antialiased',
+      }}
+      ref={scrollRoot}
+      onScroll={onScroll}
+      data-testid="mobile-site-scroll"
+    >
+      <div
+        style={{
+          ...foldingPanelStyle,
+          position: privacyOpen && !compactPanel ? 'relative' : 'sticky',
+          top: 0,
+          zIndex: 10,
+        }}
+      >
+        <div style={panelTopStyle}>
+          <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}></div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              marginTop: phoneShift,
+              transition: reduceMotion ? 'none' : 'margin-top .6s ' + EASE,
+            }}
+          >
+            {business.phoneTel === '' || business.phoneDisplay === '' ? (
+              <span />
+            ) : (
+              <a
+                href={`tel:${business.phoneTel}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontSize: '12px',
+                }}
+              >
+                <img
+                  src="/icons/phone.svg"
+                  alt={tx.ariaCall}
+                  style={{
+                    background: 'var(--mob-btn-bg)',
+                    width: '28px',
+                    height: '28px',
+                    padding: '7px',
+                    boxSizing: 'border-box',
+                    borderRadius: '50%',
+                    filter: 'var(--mob-icon)',
+                  }}
+                />
+                {business.phoneDisplay}
+              </a>
+            )}
+            <div style="display:flex;align-items:center;gap:6px;flex:none;">
+              {props.langToggle}
+              {props.themeToggle}
+              <button
+                onClick={props.scrollMobToHero}
+                style={expandChevStyle}
+                title={tx.ariaBackHome}
+              >
+                <img
+                  src="/icons/chevron.down.svg"
+                  alt={tx.ariaBackHome}
+                  style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)' }}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style={headerMarkStyle} aria-hidden="true">
+          <CornerMark height={26} />
+        </div>
+
+        <div style={heroExtrasStyle} inert={heroOpacity === 0}>
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
+            <HomepageLogo
+              logo={props.homepageLogo}
+              layout="mobile"
+              height={190}
+              style={heroLockupStyle}
+            />
+          </h1>
+          <button
+            onClick={props.openMobBooking}
+            onPointerDown={preloadBookingFlow}
+            onFocus={preloadBookingFlow}
+            style={heroBtnDarkStyle}
+          >
+            {tx.book}
+          </button>
+          <button
+            onClick={props.openMyBookings}
+            onPointerDown={preloadMyBookingsDialog}
+            onFocus={preloadMyBookingsDialog}
+            style={heroSecondaryBtnStyle}
+          >
+            {tx.myBookings}
+          </button>
+          <HeroLinks
+            aboutLabel={tx.aboutLink}
+            cancelLabel={tx.cancelLink}
+            color={heroLinkColor}
+            onOpenAbout={props.scrollToAbout}
+            onOpenCancel={props.openCancel}
+            marginTop="16px"
+          />
+          {!inSection && props.privacy !== undefined ? (
+            <PrivacyManageButton lang={props.lang} dark={dark} controls={props.privacy} />
+          ) : null}
+          <div style={infoBlockStyle}>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: scalePx(12, props.homepageScale) + 'px',
+                  color: 'var(--mob-muted)',
+                }}
+              >
+                <img
+                  src="/icons/clock.svg"
+                  alt=""
+                  style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.5 }}
+                />
+                {tx.hours}
+              </span>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: scalePx(12, props.homepageScale) + 'px',
+                  color: 'var(--mob-muted)',
+                }}
+              >
+                <img
+                  src="/icons/mappin.circle.fill.svg"
+                  alt=""
+                  style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.6 }}
+                />
+                {tx.addr}
+              </span>
+            </div>
+            {business.mapsHref === '' ? null : (
+              <a
+                href={business.mapsHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  textDecoration: 'none',
+                  color: 'var(--mob-text)',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  border: '1.8px solid var(--mob-border)',
+                  borderRadius: '999px',
+                  padding: '6px 12px',
+                  opacity: 0.92,
+                  whiteSpace: 'nowrap',
+                  flex: 'none',
+                }}
+              >
+                {tx.findUs}
+                <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Keep panel + spacer at one viewport tall. At max collapse About begins exactly below the
+          compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
+      {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
+      <div style={m3BodyStyle}>
+        {inSection ? (
+          <LazySurface
+            loadingLabel={tx.lazyBookingLoading}
+            errorLabel={tx.lazyBookingError}
+            retryLabel={tx.lazyReload}
+            minHeight="280px"
+          >
+            <LazyBookingFlow
+              mode={props.mode}
+              defaultLang={props.lang}
+              onMyBookings={props.openMyBookings}
+              popupText={props.bookingPopupText}
+              business={business}
+              showDirections={business.mapsHref !== ''}
+              {...(props.initialContact === undefined
+                ? {}
+                : { initialContact: props.initialContact })}
+            />
+          </LazySurface>
+        ) : (
+          <AboutSection
+            mode={props.mode}
+            lang={props.lang}
+            fontScale={props.aboutScale}
+            {...(props.onManagePrivacy === undefined
+              ? {}
+              : { onManagePrivacy: props.onManagePrivacy })}
+            {...(props.initialContact === undefined
+              ? {}
+              : { customerPhone: props.initialContact.phone })}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+===== src/app/shared.ts =====
+// Shared site-shell palette + derived chrome values. Centralises the `c`/`mob*` computations so
+// DesktopSite and MobileSite read identical values (no per-file drift).
+
+import type { JSX } from 'preact'
+import { useEffect, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import type { BusinessSettings } from '../site/siteChrome'
+
+export type Mode = 'light' | 'dark'
+
+/**
+ * Which mutually-exclusive site state is showing. Home always contains the scrollable About section;
+ * pressing "Boka tid" opens the booking fold and removes that section from the document.
+ */
+export type View = 'home' | 'booking'
+
+/** Site-shell palette for a given mode. */
+export interface ShellPalette {
+  bg: string
+  text: string
+  line: string
+  navBg: string
+  footer: string
+  accent: string
+  accentText: string
+  iconF: string
+}
+
+const DARK: ShellPalette = {
+  bg: '#1c1c1e',
+  text: '#f5f5f7',
+  line: 'rgba(255,255,255,.1)',
+  navBg: '#262629',
+  footer: '#161618',
+  accent: '#f5f5f7',
+  accentText: '#1c1c1e',
+  iconF: 'invert(1)',
+}
+
+const LIGHT: ShellPalette = {
+  bg: '#ffffff',
+  text: '#1c1c1e',
+  line: 'rgba(0,0,0,.08)',
+  navBg: '#f1f0ec',
+  footer: '#faf9f6',
+  accent: '#1c1c1e',
+  accentText: '#ffffff',
+  iconF: 'none',
+}
+
+export function shellPalette(dark: boolean): ShellPalette {
+  return dark ? DARK : LIGHT
+}
+
+export function mobMuted(dark: boolean): string {
+  return dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'
+}
+
+/** Keep shell animation preferences current when the operating-system setting changes. */
+export function useReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)'
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  )
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const sync = (): void => setReduced(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+  return reduced
+}
+
+export function mobBtnBg(dark: boolean): string {
+  return dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.06)'
+}
+
+/** Shared easing token for the shell animations. */
+export const EASE = 'cubic-bezier(.32,.72,0,1)'
+export const MOBILE_MQ = '(max-width: 768px)'
+export const PANEL_FULL = '100dvh'
+export const PANEL_COMPACT = '112px'
+
+/** Shared chrome icon style. */
+export function chromeIcon(dark: boolean): JSX.CSSProperties {
+  return { width: '15px', height: '15px', filter: shellPalette(dark).iconF, opacity: 0.7 }
+}
+
+/**
+ * Props every site-shell variant receives. Pre-built `themeToggle`/`langToggle` elements are
+ * passed down so the two layouts render byte-identical chrome.
+ */
+export interface ShellProps {
+  readonly mode: Mode
+  readonly lang: Lang
+  readonly dark: boolean
+  readonly c: ShellPalette
+  readonly business: BusinessSettings
+  readonly themeToggle: JSX.Element
+  readonly langToggle: JSX.Element
+  readonly chromeIconStyle: JSX.CSSProperties
+}
+
+
+===== src/about/AboutSection.tsx =====
+// "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
+// the desktop and mobile layouts. Minimal/editorial on desktop, M3 cards on mobile (it simply uses
+// the booking palette + 14px radii, so it reads native in both shells). Photos and reviews come
+// from published records; bio copy comes from i18n/DB overlays.
+//
+// The review form goes through the injectable `ReviewsPort` (default: env-selected — Supabase when
+// configured, an empty offline port otherwise). A valid server submission is prepended locally; the
+// fallback neither persists nor invents a review.
+
+import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
+import { Turnstile, turnstileConfigured } from '../booking/Turnstile'
+import { FOCUS_CLS } from '../ui/pseudo'
+import type { AboutStrings, Lang } from '../i18n/index'
+import { aboutStrings, privacyStrings } from '../i18n/index'
+import { scalePx, type SizePreset } from '../site/siteChrome'
+import { useRoster } from '../booking/useRoster'
+import type { BarbersPort } from '../booking/barbersPort'
+import { PlaceholderPhoto } from './PlaceholderPhoto'
+import { GalleryMarquee } from './GalleryMarquee'
+import { StarDisplay, StarRating } from './StarRating'
+import type { Rating, Review, ReviewDraft, ReviewError } from './reviews/domain'
+import { emptyReviewDraft } from './reviews/domain'
+import { defaultReviewsPort } from './reviews/adapters/index'
+import type { ReviewsPort } from './reviews/port'
+import { NO_REVIEW_ERRORS, parseReview } from './reviewValidation'
+import type { ReviewFieldErrors } from './reviewValidation'
+import { aboutContentIsMock, defaultAboutContentPort } from './content/index'
+import type { AboutContentPort, AboutOverlay } from './content/port'
+import { mergeAbout, stylistCopyFor } from './content/merge'
+import { useGallery } from './gallery/useGallery'
+import type { GalleryPort } from './gallery/port'
+
+type Mode = 'light' | 'dark'
+
+/** The id the "Om oss" hero link scroll-targets. */
+export const ABOUT_SECTION_ID = 'om-oss'
+
+export interface AboutSectionProps {
+  readonly onManagePrivacy?: () => void
+  readonly mode: Mode
+  readonly lang: Lang
+  /** Injected reviews seam (default: env-selected; mock adapter when no backend is configured). */
+  readonly port?: ReviewsPort
+  /** Injected roster seam — the barbers shown in the stylist cards (default: env-selected). */
+  readonly barbersPort?: BarbersPort
+  /** Injected About-copy seam — the editable section copy overlay (default: env-selected). */
+  readonly aboutContentPort?: AboutContentPort
+  /** Injected gallery seam — the Storage-backed photos (default: env-selected; mock = empty). */
+  readonly galleryPort?: GalleryPort
+  /** Owner-set font-size preset for the section's editorial header (default 'md' = 1.0×). */
+  readonly fontScale?: SizePreset
+  /** CMS replicas disable external challenge I/O; public pages keep it enabled by default. */
+  readonly challengeEnabled?: boolean
+  /** Layout-specific compact panel height to keep the target visible after a hero-link scroll. */
+  readonly scrollMarginTop?: string
+  /** Contact scope from the server-verified customer session; never an authorization secret. */
+  readonly customerPhone?: string
+}
+
+export function AboutSection(props: AboutSectionProps): JSX.Element {
+  const lang = props.lang
+  const base: AboutStrings = aboutStrings(lang)
+  const dark = props.mode === 'dark'
+  const c = palette(dark)
+  const s = buildBookingStyles(c, dark, false)
+  const red = systemRed(dark)
+  const port: ReviewsPort = props.port ?? defaultReviewsPort
+  const sectionRef = useRef<HTMLElement>(null)
+  const deferPublicData =
+    props.port === undefined &&
+    props.barbersPort === undefined &&
+    props.aboutContentPort === undefined &&
+    props.galleryPort === undefined
+  const [dataActive, setDataActive] = useState(!deferPublicData)
+
+  useEffect(() => {
+    if (!deferPublicData) {
+      setDataActive(true)
+      return
+    }
+    const section = sectionRef.current
+    if (section === null || typeof IntersectionObserver === 'undefined') {
+      setDataActive(true)
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setDataActive(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.01 },
+    )
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [deferPublicData])
+
+  // Editable About copy: i18n is the base; a configured backend overlays the 7 DB-editable keys.
+  // Under the mock the overlay stays empty, so `tx` === the i18n copy, byte-identical to today (and
+  // the ~13 non-DB strings — alts, the whole review form, rating labels — always come from i18n).
+  const contentPort: AboutContentPort = props.aboutContentPort ?? defaultAboutContentPort
+  const [overlay, setOverlay] = useState<AboutOverlay>({})
+  useEffect(() => {
+    if (!dataActive || aboutContentIsMock) return // defer public I/O until About enters the viewport
+    let live = true
+    void contentPort
+      .overlay(lang)
+      .then((o) => {
+        if (live) setOverlay(o)
+      })
+      .catch(() => {
+        /* keep the i18n base on error */
+      })
+    return () => {
+      live = false
+    }
+  }, [contentPort, dataActive, lang])
+  const tx: AboutStrings = mergeAbout(base, overlay)
+
+  // The stylist cards' roster (constant under the mock, immediate; DB rows under a backend). The
+  // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
+  const { roster } = useRoster(props.barbersPort, dataActive)
+
+  // Distinguish loading, unpublished galleries and read failures; only real photos are interactive.
+  const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
+  const cutPhotos = useGallery('cuts', props.galleryPort, dataActive)
+
+  // Reviews list: server-published entries only. The offline fallback is intentionally empty.
+  const [reviews, setReviews] = useState<readonly Review[]>([])
+  const [reviewsState, setReviewsState] = useState<'loading' | 'ready' | 'error'>('loading')
+  useEffect(() => {
+    if (!dataActive) return
+    let live = true
+    setReviewsState('loading')
+    void port
+      .list()
+      .then((published) => {
+        if (!live) return
+        setReviews(published)
+        setReviewsState('ready')
+      })
+      .catch(() => {
+        if (live) setReviewsState('error')
+      })
+    return () => {
+      live = false
+    }
+  }, [dataActive, port])
+
+  // Review form state — raw draft + per-field errors + a transient thank-you flag + a submit-level
+  // error (the phone gate `no_booking`, or a generic invalid/transport failure).
+  const [draft, setDraft] = useState<ReviewDraft>(emptyReviewDraft)
+  const typedPhone = useRef(false)
+  useEffect(() => {
+    if (!typedPhone.current) {
+      setDraft((current) => ({ ...current, phone: props.customerPhone ?? '' }))
+    }
+  }, [props.customerPhone])
+  const [errors, setErrors] = useState<ReviewFieldErrors>(NO_REVIEW_ERRORS)
+  const [thanks, setThanks] = useState<boolean>(false)
+  const [submitError, setSubmitError] = useState<ReviewError | null>(null)
+  const [submitting, setSubmitting] = useState<boolean>(false)
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
+  const challengeRequired = props.challengeEnabled !== false && turnstileConfigured
+
+  const submitErrorText = (error: ReviewError): string => {
+    switch (error.kind) {
+      case 'no_booking':
+        return tx.reviewErrNoBooking
+      case 'invalid':
+        return tx.reviewErrInvalid
+      case 'challenge':
+        return tx.reviewErrChallenge
+      case 'rate_limited':
+        return tx.reviewErrRateLimited
+      case 'submit':
+        return tx.reviewErrSubmit
+      case 'unavailable':
+        return tx.reviewErrUnavailable
+    }
+  }
+
+  const setPhone = (e: JSX.TargetedInputEvent<HTMLInputElement>): void => {
+    typedPhone.current = true
+    setThanks(false)
+    setSubmitError(null)
+    setErrors((p) => (p.phone ? { ...p, phone: false } : p))
+    const v = e.currentTarget.value
+    setDraft((d) => ({ ...d, phone: v }))
+  }
+  const setText = (e: JSX.TargetedInputEvent<HTMLTextAreaElement>): void => {
+    setThanks(false)
+    setSubmitError(null)
+    setErrors((p) => (p.text ? { ...p, text: false } : p))
+    const v = e.currentTarget.value
+    setDraft((d) => ({ ...d, text: v }))
+  }
+  const setRating = (r: Rating): void => {
+    setThanks(false)
+    setSubmitError(null)
+    setErrors((p) => (p.rating ? { ...p, rating: false } : p))
+    setDraft((d) => ({ ...d, rating: r }))
+  }
+
+  const submit = async (): Promise<void> => {
+    const parsed = parseReview({ phone: draft.phone, rating: draft.rating, text: draft.text })
+    if (!parsed.ok) {
+      setErrors(parsed.fields)
+      return
+    }
+    setSubmitting(true)
+    try {
+      const result = await port.submit(parsed.value, turnstileToken)
+      if (result.ok) {
+        setReviews((prev) => [result.review, ...prev])
+        typedPhone.current = false
+        setDraft({ ...emptyReviewDraft, phone: props.customerPhone ?? '' })
+        setErrors(NO_REVIEW_ERRORS)
+        setSubmitError(null)
+        setThanks(true)
+      } else {
+        setThanks(false)
+        setSubmitError(result.error)
+      }
+    } finally {
+      setSubmitting(false)
+      setTurnstileToken('')
+      setTurnstileNonce((nonce) => nonce + 1)
+    }
+  }
+  const onSubmitClick = (): void => {
+    void submit()
+  }
+
+  // --- styles (composed from the booking palette so the section matches the site exactly) ---
+  const sectionStyle: JSX.CSSProperties = {
+    background: c.bg,
+    color: c.text,
+    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+    WebkitFontSmoothing: 'antialiased',
+    borderTop: '.5px solid ' + c.line,
+    // Keeps the heading clear of the layout's compact panel after a hero-link scroll.
+    scrollMarginTop: props.scrollMarginTop ?? '112px',
+  }
+  const innerStyle: JSX.CSSProperties = {
+    maxWidth: '1080px',
+    margin: '0 auto',
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '64px 24px 72px',
+  }
+  // Full-bleed breakout for the marquee galleries: span the FULL viewport width so tiles scroll in
+  // from the screen edge, not from inside the centered content column. The standard centered-container
+  // breakout; ancestors clip overflow (desktop fold-inner / mobile shell are overflow:hidden), so it
+  // adds no horizontal page scroll.
+  const fullBleedStyle: JSX.CSSProperties = {
+    width: '100vw',
+    marginLeft: 'calc(50% - 50vw)',
+  }
+  // Owner-set section scale (Task 2 §2) — applied to the editorial header block (eyebrow / heading /
+  // intro). Bounded preset, so even 'xl' stays within the section without overflow.
+  const scale = props.fontScale ?? 'md'
+  const eyebrowStyle: JSX.CSSProperties = {
+    fontSize: scalePx(12, scale) + 'px',
+    fontWeight: 700,
+    letterSpacing: '1.5px',
+    opacity: 0.45,
+    marginBottom: '12px',
+  }
+  const headingStyle: JSX.CSSProperties = {
+    fontFamily: "'Inter Variable'",
+    fontWeight: 600,
+    fontSize: scalePx(34, scale) + 'px',
+    letterSpacing: '-0.8px',
+    lineHeight: 1.1,
+    margin: '0 0 16px',
+  }
+  const introStyle: JSX.CSSProperties = {
+    fontSize: scalePx(16, scale) + 'px',
+    lineHeight: 1.6,
+    opacity: 0.62,
+    maxWidth: '600px',
+    margin: '0 0 8px',
+  }
+  const blockTitleStyle: JSX.CSSProperties = {
+    fontFamily: "'Inter Variable'",
+    fontWeight: 600,
+    fontSize: '20px',
+    letterSpacing: '-0.3px',
+    margin: '48px 0 16px',
+  }
+  const stylistGridStyle: JSX.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: '14px',
+  }
+  const stylistCardStyle: JSX.CSSProperties = {
+    background: c.card,
+    border: '0.5px solid ' + c.line,
+    borderRadius: '14px',
+    padding: '14px',
+    boxShadow: '0 1px 2px rgba(0,0,0,.05)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  }
+  const reviewCardStyle: JSX.CSSProperties = {
+    background: c.card,
+    border: '0.5px solid ' + c.line,
+    borderRadius: '14px',
+    padding: '15px 16px',
+    boxShadow: '0 1px 2px rgba(0,0,0,.05)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  }
+  const reviewsWrapStyle: JSX.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: '12px',
+    marginBottom: '24px',
+  }
+  const formCardStyle: JSX.CSSProperties = {
+    background: c.card,
+    border: '0.5px solid ' + c.line,
+    borderRadius: '14px',
+    padding: '18px',
+    boxShadow: '0 1px 2px rgba(0,0,0,.05)',
+    maxWidth: '520px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  }
+  const labelStyle: JSX.CSSProperties = { fontSize: '12px', fontWeight: 600, opacity: 0.55 }
+  const hintStyle: JSX.CSSProperties = { fontSize: '11.5px', opacity: 0.5, lineHeight: 1.45 }
+  const fieldColStyle: JSX.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '6px' }
+  const textareaBase: JSX.CSSProperties = {
+    border: '.5px solid ' + c.inputLine,
+    borderRadius: '9px',
+    padding: '10px 12px',
+    fontFamily: 'inherit',
+    fontSize: '15px',
+    outline: 'none',
+    background: c.input,
+    color: c.text,
+    resize: 'vertical',
+    minHeight: '88px',
+  }
+  const textareaErr: JSX.CSSProperties = {
+    ...textareaBase,
+    border: '.5px solid ' + red,
+    boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
+  }
+
+  return (
+    <section
+      ref={sectionRef}
+      id={ABOUT_SECTION_ID}
+      style={sectionStyle}
+      aria-labelledby="om-oss-heading"
+    >
+      <div style={innerStyle}>
+        <div style={eyebrowStyle}>{tx.eyebrow}</div>
+        <h2 id="om-oss-heading" style={headingStyle}>
+          {tx.heading}
+        </h2>
+        <p style={introStyle}>{tx.intro}</p>
+
+        {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it).
+            Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
+        <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
+        {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
+          </div>
+        ) : (
+          <p
+            role="status"
+            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+          >
+            {salonPhotos.status === 'loading'
+              ? tx.galleryLoading
+              : salonPhotos.status === 'error'
+                ? tx.galleryUnavailable
+                : tx.galleryEmpty}
+          </p>
+        )}
+
+        {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
+        <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
+        <div style={stylistGridStyle}>
+          {roster.map((entry) => {
+            const b = entry.barber
+            const copy = stylistCopyFor(entry, lang)
+            return (
+              <div key={b.id} style={stylistCardStyle}>
+                {entry.photoUrl !== null ? (
+                  <img
+                    src={entry.photoUrl}
+                    alt={b.name}
+                    loading="lazy"
+                    style={{
+                      width: '100%',
+                      aspectRatio: '1 / 1',
+                      objectFit: 'cover',
+                      borderRadius: '14px',
+                      border: '0.5px solid ' + c.line,
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <PlaceholderPhoto c={c} dark={dark} />
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
+                  <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
+                  {copy ? (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        letterSpacing: '.4px',
+                        opacity: 0.5,
+                        marginTop: '2px',
+                      }}
+                    >
+                      {copy.role}
+                    </span>
+                  ) : null}
+                </div>
+                {copy ? (
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+                    {copy.bio}
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Customer-cuts gallery — the same interactive photo marquee. Full-bleed too. */}
+        <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
+        {cutPhotos.status === 'ready' && cutPhotos.photos.length > 0 ? (
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
+          </div>
+        ) : (
+          <p
+            role="status"
+            style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+          >
+            {cutPhotos.status === 'loading'
+              ? tx.galleryLoading
+              : cutPhotos.status === 'error'
+                ? tx.galleryUnavailable
+                : tx.galleryEmpty}
+          </p>
+        )}
+
+        {/* Reviews */}
+        <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
+        <div style={reviewsWrapStyle}>
+          {reviewsState === 'loading' ? (
+            <p
+              aria-live="polite"
+              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+            >
+              {tx.reviewsLoading}
+            </p>
+          ) : null}
+          {reviewsState === 'error' ? (
+            <p
+              role="status"
+              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
+            >
+              {tx.reviewsUnavailable}
+            </p>
+          ) : null}
+          {reviewsState === 'ready' && reviews.length === 0 ? (
+            <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+              {tx.reviewsEmpty}
+            </p>
+          ) : null}
+          {reviewsState === 'ready'
+            ? reviews.map((r) => (
+                <div key={r.id} style={reviewCardStyle}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
+                    <StarDisplay
+                      rating={r.rating}
+                      c={c}
+                      label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
+                    />
+                  </div>
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
+                    {r.text}
+                  </p>
+                </div>
+              ))
+            : null}
+        </div>
+
+        {/* Leave a review */}
+        <div style={formCardStyle}>
+          <span style={{ fontFamily: "'Inter Variable'", fontWeight: 600, fontSize: '16px' }}>
+            {tx.reviewSubmit}
+          </span>
+
+          <label style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewPhone}</span>
+            <input
+              value={draft.phone}
+              onInput={setPhone}
+              placeholder={tx.reviewPhonePh}
+              type="tel"
+              autoComplete="tel"
+              inputMode="tel"
+              aria-invalid={errors.phone ? 'true' : undefined}
+              style={errors.phone ? s.inputErrorStyle : s.inputStyle}
+              class={FOCUS_CLS}
+            />
+            <span style={hintStyle}>{tx.reviewPhoneHint}</span>
+            {errors.phone ? (
+              <span role="alert" style={s.fieldErrorNoteStyle}>
+                {tx.reviewErrPhone}
+              </span>
+            ) : null}
+          </label>
+
+          <div style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewRating}</span>
+            <StarRating
+              value={draft.rating}
+              onChange={setRating}
+              c={c}
+              groupLabel={tx.ratingGroupLabel}
+              starLabel={(n) => tx.ratingStarLabel.replace('{n}', String(n))}
+              invalid={errors.rating}
+              errorColor={red}
+            />
+            {errors.rating ? (
+              <span role="alert" style={s.fieldErrorNoteStyle}>
+                {tx.reviewErrRating}
+              </span>
+            ) : null}
+          </div>
+
+          <label style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewText}</span>
+            <textarea
+              value={draft.text}
+              onInput={setText}
+              placeholder={tx.reviewTextPh}
+              aria-invalid={errors.text ? 'true' : undefined}
+              style={errors.text ? textareaErr : textareaBase}
+              class={FOCUS_CLS}
+            />
+            {errors.text ? (
+              <span role="alert" style={s.fieldErrorNoteStyle}>
+                {tx.reviewErrText}
+              </span>
+            ) : null}
+          </label>
+
+          {submitError !== null ? (
+            <p role="alert" style={s.submitErrorStyle}>
+              {submitErrorText(submitError)}
+            </p>
+          ) : null}
+
+          {thanks ? (
+            <p
+              role="status"
+              style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}
+            >
+              {tx.reviewThanks}
+            </p>
+          ) : null}
+
+          {props.challengeEnabled === false || !dataActive ? null : (
+            <Turnstile
+              action="review"
+              lang={props.lang}
+              onToken={setTurnstileToken}
+              resetNonce={turnstileNonce}
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={
+              submitting || (challengeRequired && turnstileToken === '') ? undefined : onSubmitClick
+            }
+            disabled={submitting || (challengeRequired && turnstileToken === '')}
+            style={{
+              ...s.bookBtnStyle,
+              opacity: submitting || (challengeRequired && turnstileToken === '') ? 0.5 : 1,
+              cursor:
+                submitting || (challengeRequired && turnstileToken === '') ? 'default' : 'pointer',
+            }}
+          >
+            {tx.reviewSubmit}
+          </button>
+        </div>
+      </div>
+      <footer
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: '8px 18px',
+          padding: '24px 0 8px',
+          textAlign: 'center',
+        }}
+      >
+        <a
+          href="/terms"
+          class={FOCUS_CLS}
+          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+        >
+          {tx.termsLink}
+        </a>
+        <a
+          href="/privacy"
+          class={FOCUS_CLS}
+          style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+        >
+          {tx.privacyLink}
+        </a>
+        {props.onManagePrivacy ? (
+          <a
+            href="#privacy-preferences"
+            class={FOCUS_CLS}
+            aria-label={privacyStrings(props.lang).manageLabel}
+            onClick={(event) => {
+              event.preventDefault()
+              props.onManagePrivacy?.()
+            }}
+            style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
+          >
+            {privacyStrings(props.lang).manage}
+          </a>
+        ) : null}
+      </footer>
+    </section>
+  )
+}
+
+
+===== src/about/GalleryMarquee.tsx =====
+// GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
+//
+// Behaviour (per spec):
+//  - two rows auto-scroll in OPPOSITE directions, looping seamlessly (each row's tiles are rendered
+//    twice and the transform wraps at one copy's width — every tile carries its own trailing margin
+//    so the two copies tile without a seam).
+//  - drag / swipe a row to browse; on release the row keeps scrolling in the DRAG's direction
+//    ("rotate the direction"). Vertical page scrolling is preserved (touch-action: pan-y).
+//  - tap a tile to SELECT it: that row pauses, the tile's frame highlights and it scales up a touch.
+//    Nothing disappears — the other tiles stay. Tap it again, or pick another, to change/clear it.
+//
+// The scroll transform is written straight to the track ref inside requestAnimationFrame, so the
+// motion causes NO React re-renders; only selection (rare) is component state. prefers-reduced-motion
+// disables the auto-scroll (dragging still works).
+
+import type { JSX } from 'preact'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import type { Palette } from '../booking/bookingStyles'
+import type { GalleryPhoto } from './gallery/port'
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+const TILE_W = 210
+const TILE_GAP = 14
+const SPEED = 34 // px per second
+
+/** Image fill for a real gallery tile — covers the wrapper exactly (no letterboxing, no shift). */
+const IMG_STYLE: JSX.CSSProperties = {
+  width: '100%',
+  height: '100%',
+  objectFit: 'cover',
+  display: 'block',
+}
+
+/** Original gallery tile geometry: 4/3, 14px radius, hairline border. */
+function photoWrapStyle(c: Palette): JSX.CSSProperties {
+  return {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: '4 / 3',
+    borderRadius: '14px',
+    overflow: 'hidden',
+    border: '0.5px solid ' + c.line,
+  }
+}
+
+interface MarqueeRowProps {
+  /** Real Storage-backed photos for this row. */
+  readonly photos: readonly GalleryPhoto[]
+  readonly initialDir: 1 | -1
+  readonly c: Palette
+  readonly alt: string
+  /** This row pauses while one of its tiles is selected (so the highlighted tile stays put). */
+  readonly paused: boolean
+  readonly selectedKey: string | null
+  readonly onSelect: (key: string) => void
+}
+
+interface PointerEndResolution {
+  readonly shouldSelect: boolean
+  readonly nextDir: 1 | -1
+}
+
+export function resolvePointerEnd(
+  moved: boolean,
+  lastDx: number,
+  currentDir: 1 | -1,
+): PointerEndResolution {
+  if (!moved) return { shouldSelect: true, nextDir: currentDir }
+  if (Math.abs(lastDx) <= 0.4) return { shouldSelect: false, nextDir: currentDir }
+  return { shouldSelect: false, nextDir: lastDx < 0 ? 1 : -1 }
+}
+
+function MarqueeRow(props: MarqueeRowProps): JSX.Element {
+  const rowRef = useRef<HTMLDivElement>(null)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const offset = useRef(0)
+  const half = useRef(0)
+  const dir = useRef<1 | -1>(props.initialDir)
+  const dragging = useRef(false)
+  const moved = useRef(false)
+  const startX = useRef(0)
+  const startY = useRef(0)
+  const startOffset = useRef(0)
+  const lastX = useRef(0)
+  const lastDx = useRef(0)
+  const pointerId = useRef<number | null>(null)
+  const pausedRef = useRef(props.paused)
+  const reduce = useRef(prefersReducedMotion())
+
+  useEffect(() => {
+    pausedRef.current = props.paused
+  }, [props.paused])
+
+  // Repeat real photos into a seamless loop; the transform wraps on one loop-half's width.
+  const itemCount = props.photos.length
+
+  // Repeat the photo set enough times that ONE loop-half always spans at least the row's full width.
+  // A short photo list otherwise leaves a wide screen half-empty — tiles bunch on one side with a
+  // hard clip and dead space instead of a continuous stream (the reported "clipped/broken" look).
+  // `perHalf` sets are rendered TWICE (the two halves) so the wrap is seamless. Recomputed on resize.
+  const [perHalf, setPerHalf] = useState(1)
+  useLayoutEffect(() => {
+    const el = trackRef.current
+    if (el === null) return
+    const compute = (): void => {
+      const container = el.parentElement !== null ? el.parentElement.clientWidth : 0
+      const base = itemCount * (TILE_W + TILE_GAP)
+      setPerHalf(base > 0 && container > 0 ? Math.max(1, Math.ceil(container / base)) : 1)
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [itemCount])
+
+  const tiles = [...Array(itemCount * perHalf * 2).keys()]
+
+  useLayoutEffect(() => {
+    const el = trackRef.current
+    if (el) half.current = el.scrollWidth / 2
+  }, [props.photos, perHalf])
+
+  // Wrap the offset back into (-half, 0] so the loop is endless in either direction.
+  const wrap = (): void => {
+    const h = half.current
+    if (h <= 0) return
+    if (offset.current <= -h) offset.current += h
+    else if (offset.current > 0) offset.current -= h
+  }
+  const paint = (): void => {
+    const el = trackRef.current
+    if (el) el.style.transform = `translate3d(${offset.current}px,0,0)`
+  }
+
+  const releasePointerCapture = (target: HTMLDivElement | null, id: number | null): void => {
+    if (
+      target !== null &&
+      id !== null &&
+      target.releasePointerCapture &&
+      target.hasPointerCapture(id)
+    ) {
+      target.releasePointerCapture(id)
+    }
+  }
+
+  const cancelPointer = (e?: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current) return
+    const id = pointerId.current
+    dragging.current = false
+    pointerId.current = null
+    moved.current = true
+    lastDx.current = 0
+    releasePointerCapture(e?.currentTarget ?? rowRef.current, id)
+  }
+
+  const onScroll = (): void => {
+    cancelPointer()
+  }
+
+  useEffect(() => {
+    // Capture descendant scroll events too (the mobile site uses an inner scrolling element).
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    return () => document.removeEventListener('scroll', onScroll, true)
+  }, [])
+
+  useEffect(() => {
+    if (reduce.current) return
+    const row = rowRef.current
+    if (row === null) return
+
+    let raf = 0
+    let last = 0
+    let intersecting = false
+    let running = false
+
+    const tick = (t: number): void => {
+      if (!running) return
+      if (last === 0) last = t
+      const dt = Math.min(64, t - last)
+      last = t
+      if (half.current > 0 && !dragging.current && !pausedRef.current) {
+        offset.current -= dir.current * SPEED * (dt / 1000)
+        wrap()
+        paint()
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    const start = (): void => {
+      if (running || document.hidden || !intersecting) return
+      running = true
+      last = 0
+      raf = requestAnimationFrame(tick)
+    }
+    const stop = (): void => {
+      running = false
+      last = 0
+      if (raf !== 0) cancelAnimationFrame(raf)
+      raf = 0
+    }
+
+    const onVisibility = (): void => {
+      if (document.hidden) stop()
+      else start()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    let observer: IntersectionObserver | null = null
+    if (typeof IntersectionObserver === 'undefined') {
+      intersecting = true
+      start()
+    } else {
+      observer = new IntersectionObserver(
+        (entries) => {
+          intersecting = entries.some((entry) => entry.isIntersecting)
+          if (intersecting) start()
+          else stop()
+        },
+        { threshold: 0.01 },
+      )
+      observer.observe(row)
+    }
+
+    return () => {
+      observer?.disconnect()
+      document.removeEventListener('visibilitychange', onVisibility)
+      stop()
+    }
+  }, [])
+
+  const onPointerDown = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (dragging.current) return
+    dragging.current = true
+    pointerId.current = e.pointerId
+    moved.current = false
+    startX.current = e.clientX
+    startY.current = e.clientY
+    lastX.current = e.clientX
+    startOffset.current = offset.current
+    if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current || pointerId.current !== e.pointerId) return
+    const dx = e.clientX - startX.current
+    const dy = e.clientY - startY.current
+    if (Math.hypot(dx, dy) > 4) moved.current = true
+    lastDx.current = e.clientX - lastX.current
+    lastX.current = e.clientX
+    offset.current = startOffset.current + dx
+    wrap()
+    paint()
+  }
+  const onPointerEnd = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current || pointerId.current !== e.pointerId) return
+    const id = pointerId.current
+    dragging.current = false
+    pointerId.current = null
+    const resolution = resolvePointerEnd(moved.current, lastDx.current, dir.current)
+    dir.current = resolution.nextDir
+    if (resolution.shouldSelect) {
+      // A tap (no real movement) selects the tile under the pointer. elementFromPoint works even
+      // through the pointer capture (e.target would be the captured row, not the tile).
+      const node = document.elementFromPoint(e.clientX, e.clientY)
+      const tile = node ? node.closest('[data-tile-key]') : null
+      const key = tile ? tile.getAttribute('data-tile-key') : null
+      if (key !== null) props.onSelect(key)
+    }
+    releasePointerCapture(e.currentTarget, id)
+  }
+
+  const onPointerCancel = (e: JSX.TargetedPointerEvent<HTMLDivElement>): void => {
+    if (pointerId.current !== e.pointerId) return
+    cancelPointer(e)
+  }
+
+  const onRowFocus = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
+    pausedRef.current = true
+    const target = e.target
+    if (!(target instanceof HTMLElement)) return
+    const tile = target.closest<HTMLElement>('[data-tile-key]')
+    if (tile === null || tile.getAttribute('aria-hidden') === 'true') return
+
+    // Only the first logical copy is focusable. Normal motion can carry that copy completely out
+    // of view when perHalf > 1, so put it back at the visible anchor before the keyboard user lands.
+    offset.current = 0
+    paint()
+  }
+
+  const onRowBlur = (e: JSX.TargetedFocusEvent<HTMLDivElement>): void => {
+    const row = rowRef.current
+    if (row !== null && e.relatedTarget instanceof Node && row.contains(e.relatedTarget)) return
+    pausedRef.current = props.paused
+  }
+
+  const onTileKey =
+    (key: string) =>
+    (e: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        props.onSelect(key)
+      }
+    }
+
+  const rowStyle: JSX.CSSProperties = {
+    overflow: 'hidden',
+    padding: '12px 0',
+    cursor: 'grab',
+    touchAction: 'pan-y',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+  }
+  const trackStyle: JSX.CSSProperties = {
+    display: 'flex',
+    width: 'max-content',
+    willChange: 'transform',
+  }
+
+  return (
+    <div
+      ref={rowRef}
+      style={rowStyle}
+      data-testid="marquee-row"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerCancel}
+      onFocus={onRowFocus}
+      onBlur={onRowBlur}
+    >
+      <div
+        ref={trackRef}
+        style={trackStyle}
+        data-testid="marquee-track"
+        data-dir={String(props.initialDir)}
+      >
+        {tiles.map((j) => {
+          const logicalIndex = itemCount > 0 ? j % itemCount : 0
+          const photo = props.photos[logicalIndex]
+          if (photo === undefined) return null
+          const logicalKey = photo.id
+          const alt = photo.alt.trim() || props.alt
+          // The same logical photo appears in loop clones. Selection belongs to the physical tile
+          // instance under the pointer, not every clone with the same photo id.
+          const key = `${logicalKey}:${j}`
+          const accessible = j < itemCount
+          const selected = props.selectedKey === key
+          const tileStyle: JSX.CSSProperties = {
+            flex: 'none',
+            width: TILE_W + 'px',
+            marginRight: TILE_GAP + 'px',
+            borderRadius: '14px',
+            position: 'relative',
+            zIndex: selected ? 2 : 1,
+            cursor: 'pointer',
+            transform: selected ? 'scale(1.08)' : 'scale(1)',
+            transition: 'transform .26s cubic-bezier(.32,.72,0,1), box-shadow .26s ease',
+            boxShadow: selected
+              ? '0 0 0 2px ' + props.c.text + ',0 12px 28px rgba(0,0,0,.28)'
+              : '0 0 0 0 rgba(0,0,0,0)',
+          }
+          return (
+            <div
+              key={String(j)}
+              data-tile-key={key}
+              style={tileStyle}
+              role={accessible ? 'button' : undefined}
+              tabIndex={accessible ? 0 : undefined}
+              aria-hidden={accessible ? undefined : 'true'}
+              aria-pressed={accessible ? selected : undefined}
+              aria-label={accessible ? alt : undefined}
+              onKeyDown={accessible ? onTileKey(key) : undefined}
+            >
+              <div style={photoWrapStyle(props.c)}>
+                <img
+                  src={photo.url}
+                  alt={alt}
+                  draggable={false}
+                  style={IMG_STYLE}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export interface GalleryMarqueeProps {
+  /** Real Storage-backed photos; an empty list renders no interactive rows. */
+  readonly photos: readonly GalleryPhoto[]
+  readonly alt: string
+  readonly c: Palette
+}
+
+/** Two counter-scrolling rows of the same photos (row 2 reversed so they don't move in lock-step). */
+export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
+  const [selected, setSelected] = useState<{ row: 0 | 1; key: string } | null>(null)
+  const select =
+    (row: 0 | 1) =>
+    (key: string): void =>
+      setSelected((cur) => (cur && cur.row === row && cur.key === key ? null : { row, key }))
+
+  const photos = props.photos
+  if (photos.length === 0) return null
+  const photosB = [...photos].reverse()
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <MarqueeRow
+        photos={photos}
+        initialDir={1}
+        c={props.c}
+        alt={props.alt}
+        paused={selected?.row === 0}
+        selectedKey={selected && selected.row === 0 ? selected.key : null}
+        onSelect={select(0)}
+      />
+      <MarqueeRow
+        photos={photosB}
+        initialDir={-1}
+        c={props.c}
+        alt={props.alt}
+        paused={selected?.row === 1}
+        selectedKey={selected && selected.row === 1 ? selected.key : null}
+        onSelect={select(1)}
+      />
+    </div>
+  )
+}
+
+
+===== src/about/HeroLinks.tsx =====
+// The two small underlined hero links rendered under the "Boka tid" button on BOTH layouts:
+//   LEFT  = "Om oss"     → animates to the About state  (onOpenAbout, an action — like Boka tid)
+//   RIGHT = "Avbokning"  → opens the cancellation popup (onOpenCancel, an action)
+// Both are <button>s (state changes, not navigation). Subtle, muted, underlined, theme-aware.
+
+import type { JSX } from 'preact'
+
+export interface HeroLinksProps {
+  readonly aboutLabel: string
+  readonly cancelLabel: string
+  /** Resolved link colour for the current theme (muted text). */
+  readonly color: string
+  /** Animate to the About state (homepage → about fold). */
+  readonly onOpenAbout: () => void
+  readonly onOpenCancel: () => void
+  /** Optional extra top margin (the layouts space this differently). */
+  readonly marginTop?: string
+}
+
+export function HeroLinks(props: HeroLinksProps): JSX.Element {
+  const linkStyle: JSX.CSSProperties = {
+    color: props.color,
+    fontFamily: 'inherit',
+    fontSize: '13px',
+    fontWeight: 500,
+    textDecoration: 'underline',
+    textUnderlineOffset: '3px',
+    textDecorationThickness: '0.5px',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    opacity: 0.75,
+  }
+  const wrapStyle: JSX.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '18px',
+    marginTop: props.marginTop ?? '18px',
+  }
+  return (
+    <div style={wrapStyle}>
+      <button type="button" onClick={props.onOpenAbout} style={linkStyle}>
+        {props.aboutLabel}
+      </button>
+      <span aria-hidden="true" style={{ opacity: 0.3, color: props.color }}>
+        ·
+      </span>
+      <button type="button" onClick={props.onOpenCancel} style={linkStyle}>
+        {props.cancelLabel}
+      </button>
+    </div>
+  )
+}
+
+
+===== src/about/PlaceholderPhoto.tsx =====
+// Decorative neutral avatar when a barber has no published portrait; the adjacent name labels them.
+import type { JSX } from 'preact'
+import type { Palette } from '../booking/bookingStyles'
+
+interface PlaceholderPhotoProps {
+  readonly c: Palette
+  readonly dark: boolean
+}
+
+export function PlaceholderPhoto(props: PlaceholderPhotoProps): JSX.Element {
+  const { c, dark } = props
+  // A soft diagonal gradient between the card and the slightly-deeper subtle surface — reads as a
+  // Material "surface" tile rather than a flat grey box.
+  const gradient = dark
+    ? `linear-gradient(135deg, ${c.subtle} 0%, #1f1f21 100%)`
+    : `linear-gradient(135deg, ${c.subtle} 0%, #ecebe6 100%)`
+  const wrapStyle: JSX.CSSProperties = {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: '1 / 1',
+    borderRadius: '14px',
+    overflow: 'hidden',
+    background: gradient,
+    border: '0.5px solid ' + c.line,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // The glyph is a low-contrast watermark — present but quiet, on-brand.
+    color: dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.18)',
+  }
+  return (
+    <div style={wrapStyle} aria-hidden="true">
+      <svg
+        width="34"
+        height="34"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+      </svg>
+    </div>
+  )
+}
+
+
+===== src/about/StarRating.tsx =====
+// Star rating widgets — a read-only display (for published reviews) and a keyboard-operable
+// selector (for the review form). The selector is a WAI-ARIA radiogroup: arrow keys move the
+// selection, Home/End jump to 1/5, and each star is a focusable radio with an accessible name.
+
+import type { JSX } from 'preact'
+import { useRef } from 'preact/hooks'
+import type { Palette } from '../booking/bookingStyles'
+import type { Rating } from './reviews/domain'
+import { RATINGS } from './reviews/domain'
+
+/** A single star glyph (filled or outline), drawn with `currentColor`. */
+function Star(props: { filled: boolean; size: number }): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={props.size}
+      height={props.size}
+      fill={props.filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      stroke-width={1.5}
+      stroke-linejoin="round"
+      aria-hidden="true"
+      style={{ display: 'block' }}
+    >
+      <path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.9l-5.8 3.05 1.1-6.45-4.7-4.6 6.5-.95z" />
+    </svg>
+  )
+}
+
+export interface StarDisplayProps {
+  readonly rating: Rating
+  readonly c: Palette
+  /** Pre-formatted accessible label, e.g. "Rating: 4 of 5". */
+  readonly label: string
+}
+
+/** Read-only star row for a published review. */
+export function StarDisplay(props: StarDisplayProps): JSX.Element {
+  return (
+    <span
+      role="img"
+      aria-label={props.label}
+      style={{ display: 'inline-flex', gap: '2px', color: props.c.text }}
+    >
+      {RATINGS.map((n) => (
+        <Star key={n} filled={n <= props.rating} size={15} />
+      ))}
+    </span>
+  )
+}
+
+export interface StarRatingProps {
+  readonly value: Rating | null
+  readonly onChange: (r: Rating) => void
+  readonly c: Palette
+  /** `aria-label` for the radiogroup as a whole. */
+  readonly groupLabel: string
+  /** Builds a star's accessible name from its value (e.g. "{n} stars" → "4 stars"). */
+  readonly starLabel: (n: Rating) => string
+  /** Set true after a failed submit to tint unset stars with the error colour. */
+  readonly invalid?: boolean
+  readonly errorColor: string
+}
+
+/**
+ * Keyboard-operable star selector (radiogroup). Roving focus: the selected star (or the first when
+ * none is selected) is in the tab order; arrows/Home/End move and select.
+ */
+export function StarRating(props: StarRatingProps): JSX.Element {
+  const current = props.value
+  // Star button refs (keyed by Rating) so arrow-key changes can move focus to the new radio — the
+  // WAI-ARIA radiogroup pattern: focus tracks the checked option, not the originally-focused star.
+  const starRefs = useRef<Partial<Record<Rating, HTMLButtonElement>>>({})
+  const move = (n: Rating): void => {
+    props.onChange(n)
+    starRefs.current[n]?.focus()
+  }
+
+  const onKeyDown = (e: JSX.TargetedKeyboardEvent<HTMLDivElement>): void => {
+    const cur = current ?? 0
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      move(Math.min(5, cur + 1) as Rating)
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      move(Math.max(1, cur - 1) as Rating)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      move(1)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      move(5)
+    }
+  }
+
+  const baseColor = props.invalid && current === null ? props.errorColor : props.c.text
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label={props.groupLabel}
+      onKeyDown={onKeyDown}
+      style={{ display: 'inline-flex', gap: '4px', color: baseColor }}
+    >
+      {RATINGS.map((n) => {
+        const selected = current !== null && n <= current
+        // Roving tabindex: the checked star (or star 1 when none is set) is the single tab stop.
+        const isTabStop = current === null ? n === 1 : n === current
+        const starStyle: JSX.CSSProperties = {
+          border: 'none',
+          background: 'transparent',
+          padding: '2px',
+          margin: 0,
+          cursor: 'pointer',
+          color: baseColor,
+          opacity: selected ? 1 : 0.32,
+          lineHeight: 0,
+          borderRadius: '6px',
+        }
+        return (
+          <button
+            key={n}
+            ref={(el) => {
+              if (el) starRefs.current[n] = el
+            }}
+            type="button"
+            role="radio"
+            aria-checked={current === n}
+            aria-label={props.starLabel(n)}
+            tabIndex={isTabStop ? 0 : -1}
+            onClick={() => move(n)}
+            style={starStyle}
+          >
+            <Star filled={selected} size={26} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+
+===== src/about/reviewValidation.ts =====
+// Boundary validation for the review form (Zod + Result shape, mirroring booking/validation.ts).
+// The phone parser is reused from the booking validation (same branded `Phone`, Swedish-mobile
+// rule); the review text and rating get their own schemas here. Per-field flags drive the same
+// red-border + note UI. The phone is the review gate — a finished booking is proven by it.
+
+import { z } from 'zod'
+import { parsePhone } from '../booking/validation'
+import type { Rating, ValidReview } from './reviews/domain'
+
+const MAX_TEXT = 600
+
+const textSchema = z
+  .string()
+  .transform((s) => s.trim())
+  .pipe(z.string().min(1, 'Review text is required').max(MAX_TEXT, 'Review text is too long'))
+
+/**
+ * Per-field validity flags — `true` means that field FAILED validation. Drives the per-field red
+ * note in the review form, exactly like the booking form's `FieldErrors`.
+ */
+export interface ReviewFieldErrors {
+  readonly phone: boolean
+  readonly rating: boolean
+  readonly text: boolean
+}
+
+/** No fields flagged — the pristine form. */
+export const NO_REVIEW_ERRORS: ReviewFieldErrors = { phone: false, rating: false, text: false }
+
+/** Result of validating the whole review form. */
+export type ReviewValidation =
+  | { readonly ok: true; readonly value: ValidReview }
+  | { readonly ok: false; readonly fields: ReviewFieldErrors }
+
+/**
+ * Validate the review form, reporting which field(s) failed. Phone is validated with the shared
+ * booking phone parser (Swedish mobile); rating must be chosen; text must be non-empty and within
+ * the length cap.
+ */
+export function parseReview(input: {
+  phone: string
+  rating: Rating | null
+  text: string
+}): ReviewValidation {
+  const phone = parsePhone(input.phone)
+  const rating = input.rating
+  const text = textSchema.safeParse(input.text)
+
+  const fields: ReviewFieldErrors = {
+    phone: !phone.ok,
+    rating: rating === null,
+    text: !text.success,
+  }
+  if (fields.phone || fields.rating || fields.text) {
+    return { ok: false, fields }
+  }
+  // All three guaranteed valid here; re-narrow for the type system (no `!`, no casts of unions).
+  if (!phone.ok || rating === null || !text.success) return { ok: false, fields }
+  return { ok: true, value: { phone: phone.value, rating, text: text.data } }
+}
+
+
+===== src/site/HomepageLogo.tsx =====
+// Shared homepage logo renderer. Defaults preserve existing vector pixels; uploaded logo bytes are
+// server-processed WebP objects from the public gallery bucket and can only receive bounded styling.
+
+import type { JSX } from 'preact'
+import { DeskLockup } from '../ui/logos/DeskLockup'
+import { HeroLockup } from '../ui/logos/HeroLockup'
+import { scalePx, type HomepageLogo } from './siteChrome'
+
+export interface HomepageLogoProps {
+  readonly logo: HomepageLogo
+  readonly layout: 'desktop' | 'mobile'
+  readonly height: number
+  readonly style?: JSX.CSSProperties
+}
+
+export function homepageLogoFilter(style: HomepageLogo['style']): string | undefined {
+  return style === 'monochrome' ? 'grayscale(1) contrast(1.12)' : undefined
+}
+
+export function HomepageLogo(props: HomepageLogoProps): JSX.Element {
+  const height = scalePx(props.height, props.logo.scale)
+  const presentationStyle: JSX.CSSProperties = {
+    ...props.style,
+    filter: homepageLogoFilter(props.logo.style) ?? props.style?.filter,
+  }
+  if (props.logo.url !== null) {
+    return (
+      <img
+        src={props.logo.url}
+        alt="Blade & Blend Studio"
+        style={{
+          ...presentationStyle,
+          display: 'block',
+          height: `${height}px`,
+          maxWidth: 'min(460px, 80vw)',
+          objectFit: 'contain',
+        }}
+      />
+    )
+  }
+  return props.layout === 'desktop' ? (
+    <DeskLockup height={height} style={presentationStyle} />
+  ) : (
+    <HeroLockup height={height} style={presentationStyle} />
+  )
+}
+
+
+===== src/site/PrivacyBanner.tsx =====
+import type { JSX } from 'preact'
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { privacyStrings } from '../i18n/index'
+import type { PrivacyControls } from './usePrivacyPreferences'
+
+export interface PrivacyBannerProps {
+  readonly lang: Lang
+  readonly dark: boolean
+  readonly controls: PrivacyControls
+}
+
+/**
+ * Public ePrivacy controls. No analytics or advertising storage exists in this build. Accepting
+ * permits a first-party receipt for bookings created on this device; rejecting removes no customer data.
+ * Necessary HttpOnly session cookies after email-token authentication remain required by that flow.
+ */
+export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX.Element | null {
+  const tx = privacyStrings(lang)
+  const {
+    preferences: saved,
+    expanded: showPreferences,
+    functional,
+    setFunctional,
+    choose,
+    openPreferences,
+  } = controls
+  const save = choose
+  const panel = useRef<HTMLDivElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const visible = saved === null || showPreferences
+  useLayoutEffect(() => {
+    if (!visible || panel.current === null) return
+    const root = document.documentElement
+    const measure = (): void => {
+      if (panel.current === null) return
+      const bottom = Number.parseFloat(getComputedStyle(panel.current).bottom) || 0
+      root.style.setProperty(
+        '--privacy-overlay-space',
+        `${panel.current.offsetHeight + bottom + 12}px`,
+      )
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(panel.current)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--privacy-overlay-space')
+    }
+  }, [visible])
+  useEffect(() => {
+    if (showPreferences) heading.current?.focus({ preventScroll: true })
+  }, [showPreferences])
+
+  const surface = dark ? '#262629' : '#f1f0ec'
+  const text = dark ? '#f5f5f7' : '#1c1c1e'
+  const line = dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.12)'
+  const muted = dark ? 'rgba(255,255,255,.68)' : 'rgba(0,0,0,.62)'
+  const buttonStyle: JSX.CSSProperties = {
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+    fontSize: '13px',
+    padding: '10px 13px',
+  }
+
+  if (saved !== null && !showPreferences) {
+    return null
+  }
+
+  return (
+    <div
+      ref={panel}
+      id="privacy-preferences"
+      role="region"
+      aria-label={tx.title}
+      style={{
+        position: 'fixed',
+        zIndex: 30,
+        right: '12px',
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+        left: '12px',
+        maxHeight: 'calc(100dvh - 24px)',
+        overflowY: 'auto',
+        boxSizing: 'border-box',
+        maxWidth: '520px',
+        marginLeft: 'auto',
+        background: surface,
+        color: text,
+        border: '.5px solid ' + line,
+        borderRadius: '14px',
+        boxShadow: '0 16px 40px rgba(0,0,0,.20)',
+        padding: '16px',
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+      }}
+    >
+      <h2 ref={heading} tabIndex={-1} style={{ fontSize: '15px', margin: '0 0 7px' }}>
+        {tx.title}
+      </h2>
+      <p style={{ color: muted, fontSize: '13px', lineHeight: 1.5, margin: '0 0 12px' }}>
+        {tx.lead}{' '}
+        <a href="/privacy" style={{ color: text, textUnderlineOffset: '3px' }}>
+          {tx.privacyLink}
+        </a>
+      </p>
+
+      {showPreferences ? (
+        <div style={{ borderTop: '.5px solid ' + line, marginTop: '12px', paddingTop: '12px' }}>
+          <div
+            style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}
+          >
+            <input
+              id="functional-storage"
+              type="checkbox"
+              checked={functional}
+              onInput={(event) => setFunctional(event.currentTarget.checked)}
+            />
+            <label htmlFor="functional-storage" style={{ fontSize: '13px', lineHeight: 1.45 }}>
+              <strong style={{ display: 'block' }}>{tx.functionalTitle}</strong>
+              <span style={{ color: muted }}>{tx.functionalLead}</span>
+            </label>
+          </div>
+          <p style={{ color: muted, fontSize: '12px', lineHeight: 1.45, margin: '0 0 12px' }}>
+            {tx.necessary}
+          </p>
+          <button
+            type="button"
+            onClick={() => save({ functional })}
+            style={{ ...buttonStyle, background: text, color: surface }}
+          >
+            {tx.save}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => save({ functional: true })}
+            style={{ ...buttonStyle, background: text, color: surface }}
+          >
+            {tx.accept}
+          </button>
+          <button
+            type="button"
+            onClick={() => save({ functional: false })}
+            style={{
+              ...buttonStyle,
+              background: 'transparent',
+              color: text,
+              border: '.5px solid ' + line,
+            }}
+          >
+            {tx.reject}
+          </button>
+          <button
+            type="button"
+            onClick={openPreferences}
+            style={{ ...buttonStyle, background: 'transparent', color: text, paddingInline: '4px' }}
+          >
+            {tx.preferences}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Hero-owned reopening control; it scrolls away before About. */
+export function PrivacyManageButton({
+  lang,
+  dark,
+  controls,
+}: PrivacyBannerProps): JSX.Element | null {
+  if (controls.preferences === null) return null
+  const tx = privacyStrings(lang)
+  return (
+    <button
+      type="button"
+      aria-label={tx.manageLabel}
+      disabled={controls.expanded}
+      onClick={(event) => {
+        event.currentTarget.focus()
+        controls.openPreferences()
+      }}
+      style={{
+        position: 'absolute',
+        left: '12px',
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 76px)',
+        background: dark ? '#262629' : '#f1f0ec',
+        color: dark ? '#f5f5f7' : '#1c1c1e',
+        border: '.5px solid ' + (dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.12)'),
+        borderRadius: '999px',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        fontSize: '12px',
+        fontWeight: 600,
+        padding: '8px 11px',
+        boxShadow: '0 5px 18px rgba(0,0,0,.12)',
+      }}
+    >
+      {tx.manage}
+    </button>
+  )
+}
+
+
+===== src/site/business.ts =====
+import type { Lang } from '../i18n/index'
+
+export const BUSINESS_SETTING_KEYS = {
+  name: 'business_name',
+  legalName: 'business_legal_name',
+  organizationNumber: 'business_org_number',
+  email: 'business_email',
+  phoneDisplay: 'business_phone_display',
+  phoneTel: 'business_phone_tel',
+  street: 'business_street',
+  postalCode: 'business_postal_code',
+  city: 'business_city',
+  mapsHref: 'business_maps_href',
+  cancellationPolicyHours: 'cancellation_policy_hours',
+  seo: {
+    sv: { title: 'seo_title_sv', description: 'seo_description_sv' },
+    en: { title: 'seo_title_en', description: 'seo_description_en' },
+  },
+} as const
+
+export interface SeoSettings {
+  readonly title: string
+  readonly description: string
+}
+
+export interface BusinessSettings {
+  readonly name: string
+  readonly legalName: string
+  readonly organizationNumber: string
+  readonly email: string
+  readonly phoneDisplay: string
+  readonly phoneTel: string
+  readonly street: string
+  readonly postalCode: string
+  readonly city: string
+  readonly mapsHref: string
+  readonly cancellationPolicyHours: number
+  readonly seo: Readonly<Record<Lang, SeoSettings>>
+}
+
+export interface BusinessDiscoveryFacts {
+  readonly barbers: readonly { readonly id: string; readonly name: string }[]
+  readonly services: readonly {
+    readonly id: string
+    readonly barberId: string
+    readonly price: number
+  }[]
+  readonly schedules: readonly {
+    readonly barberId: string
+    readonly weekday: number
+    readonly startMin: number
+    readonly endMin: number
+  }[]
+}
+
+export const EMPTY_BUSINESS_FACTS: BusinessDiscoveryFacts = {
+  barbers: [],
+  services: [],
+  schedules: [],
+}
+
+const DEFAULT_SEO_TEMPLATES: Readonly<Record<Lang, SeoSettings>> = {
+  sv: {
+    title: '{business_name} – Barbershop i {city} | Boka tid online',
+    description:
+      '{business_name} är en barbershop i {city}. Välj barberare, behandling och tid och boka online.',
+  },
+  en: {
+    title: '{business_name} – Barbershop in {city} | Book online',
+    description:
+      '{business_name} is a barbershop in {city}. Choose a barber, service, and time and book online.',
+  },
+}
+
+const DEFAULT_BUSINESS_NAME = 'Blade & Blend Studio'
+const DEFAULT_BUSINESS_CITY = 'Göteborg'
+
+export const DEFAULT_BUSINESS: BusinessSettings = {
+  name: DEFAULT_BUSINESS_NAME,
+  legalName: '',
+  organizationNumber: '',
+  email: 'booking@mail.bladeblendstudio.se',
+  street: 'Geijersgatan 10',
+  postalCode: '411 34',
+  city: DEFAULT_BUSINESS_CITY,
+  phoneDisplay: '079‑304 36 71',
+  phoneTel: '0793043671',
+  mapsHref: 'https://maps.apple.com/?q=Geijersgatan%2010,%20G%C3%B6teborg',
+  cancellationPolicyHours: 24,
+  seo: {
+    sv: {
+      title: interpolateSeo(DEFAULT_SEO_TEMPLATES.sv.title, {
+        name: DEFAULT_BUSINESS_NAME,
+        city: DEFAULT_BUSINESS_CITY,
+      }),
+      description: interpolateSeo(DEFAULT_SEO_TEMPLATES.sv.description, {
+        name: DEFAULT_BUSINESS_NAME,
+        city: DEFAULT_BUSINESS_CITY,
+      }),
+    },
+    en: {
+      title: interpolateSeo(DEFAULT_SEO_TEMPLATES.en.title, {
+        name: DEFAULT_BUSINESS_NAME,
+        city: DEFAULT_BUSINESS_CITY,
+      }),
+      description: interpolateSeo(DEFAULT_SEO_TEMPLATES.en.description, {
+        name: DEFAULT_BUSINESS_NAME,
+        city: DEFAULT_BUSINESS_CITY,
+      }),
+    },
+  },
+}
+
+function textOrDefault(value: string | undefined, fallback: string): string {
+  return value?.trim() === '' || value === undefined ? fallback : value
+}
+
+function validEmail(value: string, fallback: string): string {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : fallback
+}
+
+function optionalTelephone(value: string): string {
+  return /^[+0-9][0-9(). -]{2,39}$/.test(value) ? value : ''
+}
+
+function optionalHttpUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? value : ''
+  } catch {
+    return ''
+  }
+}
+
+function settingText(settings: ReadonlyMap<string, string>, key: string, fallback: string): string {
+  return textOrDefault(settings.get(key), fallback)
+}
+
+export function parseCancellationPolicyHours(value: string | null | undefined): number {
+  if (value === null || value === undefined || !/^\d{1,3}$/.test(value)) {
+    return DEFAULT_BUSINESS.cancellationPolicyHours
+  }
+  const hours = Number(value)
+  return hours >= 1 && hours <= 168 ? hours : DEFAULT_BUSINESS.cancellationPolicyHours
+}
+
+function interpolateSeo(value: string, business: Pick<BusinessSettings, 'name' | 'city'>): string {
+  return value.split('{business_name}').join(business.name).split('{city}').join(business.city)
+}
+
+export function resolveBusinessSettings(settings: ReadonlyMap<string, string>): BusinessSettings {
+  const name = settingText(settings, BUSINESS_SETTING_KEYS.name, DEFAULT_BUSINESS.name)
+  const city = settingText(settings, BUSINESS_SETTING_KEYS.city, DEFAULT_BUSINESS.city)
+  const configuredPhoneDisplay = settings.get(BUSINESS_SETTING_KEYS.phoneDisplay)
+  const configuredPhoneTel = settings.get(BUSINESS_SETTING_KEYS.phoneTel)
+  const rawPhoneDisplay =
+    configuredPhoneDisplay === undefined
+      ? DEFAULT_BUSINESS.phoneDisplay
+      : configuredPhoneDisplay.trim()
+  const rawPhoneTel =
+    configuredPhoneTel === undefined ? DEFAULT_BUSINESS.phoneTel : configuredPhoneTel.trim()
+  const phoneTel = optionalTelephone(rawPhoneTel)
+  const phoneDisplay = rawPhoneDisplay === '' || phoneTel === '' ? '' : rawPhoneDisplay
+  const configuredMapsHref = settings.get(BUSINESS_SETTING_KEYS.mapsHref)
+  const mapsHref =
+    configuredMapsHref === undefined
+      ? DEFAULT_BUSINESS.mapsHref
+      : optionalHttpUrl(configuredMapsHref.trim())
+  const base = {
+    name,
+    legalName: settings.get(BUSINESS_SETTING_KEYS.legalName)?.trim() ?? '',
+    organizationNumber: settings.get(BUSINESS_SETTING_KEYS.organizationNumber)?.trim() ?? '',
+    city,
+    email: validEmail(
+      settingText(settings, BUSINESS_SETTING_KEYS.email, DEFAULT_BUSINESS.email),
+      DEFAULT_BUSINESS.email,
+    ),
+    phoneDisplay,
+    phoneTel: phoneDisplay === '' ? '' : phoneTel,
+    street: settingText(settings, BUSINESS_SETTING_KEYS.street, DEFAULT_BUSINESS.street),
+    postalCode: settingText(
+      settings,
+      BUSINESS_SETTING_KEYS.postalCode,
+      DEFAULT_BUSINESS.postalCode,
+    ),
+    mapsHref,
+    cancellationPolicyHours: parseCancellationPolicyHours(
+      settings.get(BUSINESS_SETTING_KEYS.cancellationPolicyHours),
+    ),
+  }
+  return {
+    ...base,
+    seo: {
+      sv: {
+        title: interpolateSeo(
+          settingText(settings, BUSINESS_SETTING_KEYS.seo.sv.title, DEFAULT_SEO_TEMPLATES.sv.title),
+          base,
+        ),
+        description: interpolateSeo(
+          settingText(
+            settings,
+            BUSINESS_SETTING_KEYS.seo.sv.description,
+            DEFAULT_SEO_TEMPLATES.sv.description,
+          ),
+          base,
+        ),
+      },
+      en: {
+        title: interpolateSeo(
+          settingText(settings, BUSINESS_SETTING_KEYS.seo.en.title, DEFAULT_SEO_TEMPLATES.en.title),
+          base,
+        ),
+        description: interpolateSeo(
+          settingText(
+            settings,
+            BUSINESS_SETTING_KEYS.seo.en.description,
+            DEFAULT_SEO_TEMPLATES.en.description,
+          ),
+          base,
+        ),
+      },
+    },
+  }
+}
+
+export function formatBusinessAddress(business: BusinessSettings): string {
+  return `${business.street}, ${business.postalCode} ${business.city}`
+}
+
+const SCHEMA_DAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+function minutesToTime(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
+function openingHours(facts: BusinessDiscoveryFacts): readonly Record<string, unknown>[] {
+  const activeIds = new Set(facts.barbers.map((barber) => barber.id))
+  const byDay = new Map<number, { start: number; end: number }[]>()
+  for (const row of facts.schedules) {
+    if (
+      !activeIds.has(row.barberId) ||
+      !Number.isInteger(row.weekday) ||
+      row.weekday < 0 ||
+      row.weekday > 6 ||
+      !Number.isInteger(row.startMin) ||
+      !Number.isInteger(row.endMin) ||
+      row.startMin < 0 ||
+      row.endMin > 1440 ||
+      row.startMin >= row.endMin
+    )
+      continue
+    const intervals = byDay.get(row.weekday) ?? []
+    intervals.push({ start: row.startMin, end: row.endMin })
+    byDay.set(row.weekday, intervals)
+  }
+
+  const grouped = new Map<string, string[]>()
+  for (const [weekday, intervals] of byDay) {
+    intervals.sort((left, right) => left.start - right.start || left.end - right.end)
+    const merged: { start: number; end: number }[] = []
+    for (const interval of intervals) {
+      const prior = merged.at(-1)
+      if (prior !== undefined && interval.start <= prior.end)
+        prior.end = Math.max(prior.end, interval.end)
+      else merged.push({ ...interval })
+    }
+    for (const interval of merged) {
+      const key = `${minutesToTime(interval.start)}-${minutesToTime(interval.end)}`
+      const day = SCHEMA_DAYS[weekday]
+      if (day === undefined) continue
+      const days = grouped.get(key) ?? []
+      days.push(day)
+      grouped.set(key, days)
+    }
+  }
+
+  return Array.from(grouped, ([key, dayOfWeek]) => {
+    const [opens, closes] = key.split('-') as [string, string]
+    return { '@type': 'OpeningHoursSpecification', dayOfWeek, opens, closes }
+  })
+}
+
+export function buildBusinessStructuredData(
+  business: BusinessSettings,
+  facts: BusinessDiscoveryFacts,
+  siteUrl: string,
+): Record<string, unknown> {
+  const root = siteUrl.replace(/\/$/, '')
+  const structured: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'HairSalon',
+    '@id': `${root}/#business`,
+    name: business.name,
+    url: `${root}/`,
+    image: `${root}/og-image.png`,
+    email: business.email,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: business.street,
+      postalCode: business.postalCode,
+      addressLocality: business.city,
+      addressCountry: 'SE',
+    },
+    availableLanguage: ['sv', 'en'],
+  }
+
+  if (business.legalName !== '') structured['legalName'] = business.legalName
+  if (business.organizationNumber !== '') {
+    structured['identifier'] = {
+      '@type': 'PropertyValue',
+      propertyID: 'SE:Organisationsnummer',
+      value: business.organizationNumber,
+    }
+  }
+  if (business.phoneTel !== '') structured['telephone'] = business.phoneTel
+  if (business.mapsHref !== '') structured['hasMap'] = business.mapsHref
+
+  const hours = openingHours(facts)
+  if (hours.length > 0) structured['openingHoursSpecification'] = hours
+
+  const prices = facts.services
+    .map((service) => service.price)
+    .filter((price) => Number.isFinite(price) && price >= 0 && price <= 100000)
+  if (prices.length > 0) {
+    const min = Math.min(...prices)
+    const max = Math.max(...prices)
+    structured['priceRange'] = min === max ? `${min} kr` : `${min}–${max} kr`
+    structured['currenciesAccepted'] = 'SEK'
+  }
+
+  if (facts.barbers.length > 0) {
+    structured['employee'] = facts.barbers.map((barber) => ({
+      '@type': 'Person',
+      name: barber.name,
+    }))
+  }
+  return structured
+}
+
+
+===== src/site/port.ts =====
+// The "backend-ready" seam for owner-editable public copy (Task 2 §2). A `SiteChromePort` loads the
+// homepage overlay, booking-popup text, business identity, SEO, and font-size presets for one
+// language. Public shells depend on this interface only; implementations are the offline mock
+// (defaults) and Supabase (`site_content` + `site_settings`).
+
+import type { Lang } from '../i18n/index'
+import type { SiteChrome } from './siteChrome'
+
+export interface SiteChromePort {
+  /** The homepage chrome for `lang`, or `null` when backend data is unavailable or malformed. */
+  load(lang: Lang): Promise<SiteChrome | null>
+  /** Subscribe an open public page to owner edits. Omitted by static/offline adapters. */
+  subscribe?(lang: Lang, onChange: (chrome: SiteChrome) => void): () => void
+}
+
+
+===== src/site/routeMetadata.ts =====
+/** Fixed route names only: never place customer credentials or arbitrary paths in metadata. */
+export function privatePageTitle(pathname: string): string | null {
+  const path = pathname.replace(/\/+$/, '')
+  const titles: Readonly<Record<string, string>> = {
+    '/login': 'Logga in',
+    '/reset': 'Återställ lösenord',
+    '/invite': 'Aktivera personalkonto',
+    '/auth/confirm': 'Bekräfta e-postadress',
+    '/admin': 'Adminpanel',
+  }
+  const title = path.startsWith('/admin/') ? 'Adminpanel' : titles[path]
+  return title === undefined ? null : `${title} — Blade & Blend Studio`
+}
+
+
+===== src/site/siteChrome.ts =====
+// Shared model for owner-editable public-site copy, business identity, runtime SEO, and sizing:
+// bilingual homepage text, every non-button booking-dialog string, and two font-size presets.
+//
+// Font size is a BOUNDED preset (never a free px value): four gentle multipliers the client clamps
+// onto each adjustable element's base size, so no choice can overflow or break the layout.
+
+import type { BookingStrings, Lang } from '../i18n/index'
+import { appStrings, bookingStrings } from '../i18n/index'
+import {
+  BUSINESS_SETTING_KEYS,
+  DEFAULT_BUSINESS,
+  EMPTY_BUSINESS_FACTS,
+  type BusinessDiscoveryFacts,
+  type BusinessSettings,
+} from './business'
+
+export {
+  BUSINESS_SETTING_KEYS,
+  formatBusinessAddress,
+  parseCancellationPolicyHours,
+  resolveBusinessSettings,
+  type BusinessDiscoveryFacts,
+  type BusinessSettings,
+  type SeoSettings,
+} from './business'
+
+/** The four allowed font-size presets, smallest → largest. */
+export type SizePreset = 'sm' | 'md' | 'lg' | 'xl'
+export type HomepageLogoStyle = 'classic' | 'monochrome'
+const HOMEPAGE_LOGO_PATH =
+  /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
+
+export interface HomepageLogo {
+  /** Null keeps the shipped vector lockup. A non-null URL is a public, processed gallery object. */
+  readonly url: string | null
+  readonly path: string | null
+  readonly scale: SizePreset
+  readonly style: HomepageLogoStyle
+}
+
+/** Preset → multiplier. Deliberately gentle (0.9…1.25) so even 'xl' cannot overflow the hero/cards. */
+const SCALE: Readonly<Record<SizePreset, number>> = { sm: 0.9, md: 1.0, lg: 1.12, xl: 1.25 }
+
+/** All presets in display order (for the admin dropdown). */
+export const SIZE_PRESETS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl']
+
+/** Narrow an arbitrary string to a `SizePreset`, defaulting to 'md' (1.0×) for anything unknown. */
+export function parseScale(value: string | null | undefined): SizePreset {
+  return value === 'sm' || value === 'lg' || value === 'xl' ? value : 'md'
+}
+
+export function parseHomepageLogoStyle(value: string | null | undefined): HomepageLogoStyle {
+  return value === 'monochrome' ? 'monochrome' : 'classic'
+}
+
+/** Accept only server-generated public gallery logo paths; malformed CMS data falls back to vector. */
+export function parseHomepageLogoPath(value: string | null | undefined): string | null {
+  const path = value?.trim() ?? ''
+  return HOMEPAGE_LOGO_PATH.test(path) ? path : null
+}
+
+/** Scale a base px size by a preset, rounded to a whole px. `md` returns the base unchanged. */
+export function scalePx(basePx: number, preset: SizePreset): number {
+  return Math.round(basePx * SCALE[preset])
+}
+
+export const HOMEPAGE_TEXT_KEYS = ['kicker', 'hours'] as const
+export const BOOKING_DETAILS_TEXT_KEYS = [
+  'yourDetails',
+  'summary',
+  'fBarber',
+  'fWhen',
+  'fService',
+  'fTotal',
+  'name',
+  'namePh',
+  'phone',
+  'phonePh',
+  'policy',
+] as const satisfies readonly (keyof BookingStrings)[]
+export const BOOKING_CONFIRMATION_TEXT_KEYS = [
+  'bookedTitle',
+  'confirmSent',
+  'addToCal',
+] as const satisfies readonly (keyof BookingStrings)[]
+export const BOOKING_POPUP_TEXT_KEYS = [
+  ...BOOKING_DETAILS_TEXT_KEYS,
+  ...BOOKING_CONFIRMATION_TEXT_KEYS,
+] as const
+export type BookingPopupTextKey = (typeof BOOKING_POPUP_TEXT_KEYS)[number]
+
+/** Every `site_content` key stored per language for the public site. */
+export const SITE_TEXT_KEYS = [...HOMEPAGE_TEXT_KEYS, ...BOOKING_POPUP_TEXT_KEYS] as const
+export type SiteTextKey = (typeof SITE_TEXT_KEYS)[number]
+
+/** The DB-editable homepage strings (partial: an unset key keeps its i18n default). Mirrors
+ * `AboutOverlay` — present-or-absent, so it composes under `exactOptionalPropertyTypes`. */
+export type SiteText = Readonly<Partial<Record<SiteTextKey, string>>>
+
+/** Use the i18n default until an owner has entered non-blank replacement copy. */
+export function textOrDefault(value: string | undefined, fallback: string): string {
+  return value?.trim() === '' || value === undefined ? fallback : value
+}
+
+export type ResolvedSiteText = Readonly<Record<SiteTextKey, string>>
+
+/** Current shipped copy, used to prefill admin fields before any owner override exists. */
+export function defaultSiteText(
+  lang: Lang,
+  cancellationPolicyHours: number = DEFAULT_BUSINESS.cancellationPolicyHours,
+  businessName: string = DEFAULT_BUSINESS.name,
+): ResolvedSiteText {
+  const app = appStrings(lang)
+  const booking = bookingStrings(lang)
+  return {
+    kicker: app.kicker,
+    hours: app.hours,
+    yourDetails: booking.yourDetails,
+    summary: booking.summary,
+    fBarber: booking.fBarber,
+    fWhen: booking.fWhen,
+    fService: booking.fService,
+    fTotal: booking.fTotal,
+    name: booking.name,
+    namePh: booking.namePh,
+    phone: booking.phone,
+    phonePh: booking.phonePh,
+    policy: booking.policy
+      .split('{hours}')
+      .join(String(cancellationPolicyHours))
+      .split('{businessName}')
+      .join(businessName),
+    bookedTitle: booking.bookedTitle,
+    confirmSent: booking.confirmSent,
+    addToCal: booking.addToCal,
+  }
+}
+
+/** Overlay saved owner copy while treating missing/blank rows as the shipped localized copy. */
+export function resolveSiteText(
+  text: SiteText,
+  lang: Lang,
+  cancellationPolicyHours: number = DEFAULT_BUSINESS.cancellationPolicyHours,
+  businessName: string = DEFAULT_BUSINESS.name,
+): ResolvedSiteText {
+  const defaults = defaultSiteText(lang, cancellationPolicyHours, businessName)
+  const resolved: Record<SiteTextKey, string> = { ...defaults }
+  for (const key of SITE_TEXT_KEYS) resolved[key] = textOrDefault(text[key], defaults[key])
+  return resolved
+}
+
+/** The full homepage-chrome overlay the public site consumes. */
+export interface SiteChrome {
+  readonly text: SiteText
+  /** Owner-managed business identity, calendar location, policy timing, and runtime SEO. */
+  readonly business: BusinessSettings
+  /** Active public domain facts used by metadata and machine discovery. */
+  readonly facts: BusinessDiscoveryFacts
+  /** Scale for the homepage editable text (kicker / hours / business address). */
+  readonly homepageScale: SizePreset
+  /** Owner-selected homepage logo replacement, bounded scale, and faithful image treatment. */
+  readonly homepageLogo: HomepageLogo
+  /** Scale for the "Om oss" section's editorial copy (eyebrow / heading / intro). */
+  readonly aboutScale: SizePreset
+}
+
+/** The neutral default — empty text overlay + safe business fallbacks + 1.0× scales. */
+export const DEFAULT_CHROME: SiteChrome = {
+  text: {},
+  business: DEFAULT_BUSINESS,
+  facts: EMPTY_BUSINESS_FACTS,
+  homepageScale: 'md',
+  homepageLogo: { path: null, url: null, scale: 'md', style: 'classic' },
+  aboutScale: 'md',
+}
+
+/** The `site_settings` keys the two scales are stored under. */
+export const HOMEPAGE_SCALE_KEY = 'homepage_scale'
+export const ABOUT_SCALE_KEY = 'about_scale'
+export const HOMEPAGE_LOGO_PATH_KEY = 'homepage_logo_path'
+export const HOMEPAGE_LOGO_SCALE_KEY = 'homepage_logo_scale'
+export const HOMEPAGE_LOGO_STYLE_KEY = 'homepage_logo_style'
+
+export const SITE_SETTING_KEYS = [
+  HOMEPAGE_SCALE_KEY,
+  ABOUT_SCALE_KEY,
+  HOMEPAGE_LOGO_PATH_KEY,
+  HOMEPAGE_LOGO_SCALE_KEY,
+  HOMEPAGE_LOGO_STYLE_KEY,
+  BUSINESS_SETTING_KEYS.name,
+  BUSINESS_SETTING_KEYS.legalName,
+  BUSINESS_SETTING_KEYS.organizationNumber,
+  BUSINESS_SETTING_KEYS.email,
+  BUSINESS_SETTING_KEYS.phoneDisplay,
+  BUSINESS_SETTING_KEYS.phoneTel,
+  BUSINESS_SETTING_KEYS.street,
+  BUSINESS_SETTING_KEYS.postalCode,
+  BUSINESS_SETTING_KEYS.city,
+  BUSINESS_SETTING_KEYS.mapsHref,
+  BUSINESS_SETTING_KEYS.cancellationPolicyHours,
+  BUSINESS_SETTING_KEYS.seo.sv.title,
+  BUSINESS_SETTING_KEYS.seo.sv.description,
+  BUSINESS_SETTING_KEYS.seo.en.title,
+  BUSINESS_SETTING_KEYS.seo.en.description,
+] as const
+export type SiteSettingKey = (typeof SITE_SETTING_KEYS)[number]
+
+export const DEFAULT_SITE_SETTINGS: Readonly<Record<SiteSettingKey, string>> = {
+  [HOMEPAGE_SCALE_KEY]: 'md',
+  [ABOUT_SCALE_KEY]: 'md',
+  [HOMEPAGE_LOGO_PATH_KEY]: '',
+  [HOMEPAGE_LOGO_SCALE_KEY]: 'md',
+  [HOMEPAGE_LOGO_STYLE_KEY]: 'classic',
+  [BUSINESS_SETTING_KEYS.name]: DEFAULT_BUSINESS.name,
+  [BUSINESS_SETTING_KEYS.legalName]: DEFAULT_BUSINESS.legalName,
+  [BUSINESS_SETTING_KEYS.organizationNumber]: DEFAULT_BUSINESS.organizationNumber,
+  [BUSINESS_SETTING_KEYS.email]: DEFAULT_BUSINESS.email,
+  [BUSINESS_SETTING_KEYS.phoneDisplay]: DEFAULT_BUSINESS.phoneDisplay,
+  [BUSINESS_SETTING_KEYS.phoneTel]: DEFAULT_BUSINESS.phoneTel,
+  [BUSINESS_SETTING_KEYS.street]: DEFAULT_BUSINESS.street,
+  [BUSINESS_SETTING_KEYS.postalCode]: DEFAULT_BUSINESS.postalCode,
+  [BUSINESS_SETTING_KEYS.city]: DEFAULT_BUSINESS.city,
+  [BUSINESS_SETTING_KEYS.mapsHref]: DEFAULT_BUSINESS.mapsHref,
+  [BUSINESS_SETTING_KEYS.cancellationPolicyHours]: String(DEFAULT_BUSINESS.cancellationPolicyHours),
+  [BUSINESS_SETTING_KEYS.seo.sv.title]: DEFAULT_BUSINESS.seo.sv.title,
+  [BUSINESS_SETTING_KEYS.seo.sv.description]: DEFAULT_BUSINESS.seo.sv.description,
+  [BUSINESS_SETTING_KEYS.seo.en.title]: DEFAULT_BUSINESS.seo.en.title,
+  [BUSINESS_SETTING_KEYS.seo.en.description]: DEFAULT_BUSINESS.seo.en.description,
+}
+
+/** A mutable map is convenient for the Site editor; callers receive a fresh copy every time. */
+export function defaultSiteSettings(): ReadonlyMap<SiteSettingKey, string> {
+  const settings = new Map<SiteSettingKey, string>()
+  for (const key of SITE_SETTING_KEYS) settings.set(key, DEFAULT_SITE_SETTINGS[key])
+  return settings
+}
+
+
+===== src/site/storageConsent.ts =====
+// Browser-storage choices for the public site. The consent cookie only remembers the visitor's
+// optional-storage choice. It permits a server-issued receipt for new bookings on this device;
+// it never authorizes customer history or replaces an essential email-verified session.
+
+export interface StoragePreferences {
+  readonly functional: boolean
+}
+
+export const STORAGE_PREFERENCES_COOKIE = 'bladeblend_storage_preferences'
+export const FUNCTIONAL_PREFERENCES_VALUE = 'functional'
+export const ESSENTIAL_ONLY_PREFERENCES_VALUE = 'essential'
+let sessionChoice: StoragePreferences | undefined
+let cookieAtChoice: string | null = null
+const listeners = new Set<() => void>()
+
+function cookieValue(cookie: string, key: string): string | null {
+  const prefix = key + '='
+  for (const part of cookie.split(';')) {
+    const trimmed = part.trim()
+    if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length)
+  }
+  return null
+}
+
+function secureAttribute(): string {
+  try {
+    return globalThis.location?.protocol === 'https:' ? '; Secure' : ''
+  } catch {
+    return ''
+  }
+}
+
+/** Null means no optional-storage choice has been recorded yet. */
+export function parseStoragePreferences(cookie: string): StoragePreferences | null {
+  const value = cookieValue(cookie, STORAGE_PREFERENCES_COOKIE)
+  if (value === FUNCTIONAL_PREFERENCES_VALUE) return { functional: true }
+  if (value === ESSENTIAL_ONLY_PREFERENCES_VALUE) return { functional: false }
+  return null
+}
+
+function storedValue(): string | null {
+  try {
+    return cookieValue(document.cookie, STORAGE_PREFERENCES_COOKIE)
+  } catch {
+    return null
+  }
+}
+
+/** Live choice, including the current app session when the browser rejects cookie writes. */
+export function readStoragePreferences(): StoragePreferences | null {
+  const value = storedValue()
+  if (sessionChoice !== undefined && value === cookieAtChoice) return sessionChoice
+  sessionChoice = undefined
+  return parseStoragePreferences(`${STORAGE_PREFERENCES_COOKIE}=${value ?? ''}`)
+}
+
+export function subscribeStoragePreferences(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/** Records an explicit optional-storage choice. This never enables analytics or advertising. */
+export function saveStoragePreferences(preferences: StoragePreferences): void {
+  try {
+    const value = preferences.functional
+      ? FUNCTIONAL_PREFERENCES_VALUE
+      : ESSENTIAL_ONLY_PREFERENCES_VALUE
+    document.cookie = `${STORAGE_PREFERENCES_COOKIE}=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secureAttribute()}`
+  } catch {
+    // Keep the explicit choice in this app session even when the browser blocks persistence.
+  }
+  sessionChoice = { functional: preferences.functional }
+  cookieAtChoice = storedValue()
+  for (const listener of listeners) listener()
+}
+
+
+===== src/site/usePrivacyPreferences.ts =====
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import {
+  readStoragePreferences,
+  saveStoragePreferences,
+  subscribeStoragePreferences,
+  type StoragePreferences,
+} from './storageConsent'
+
+export interface PrivacyControls {
+  readonly preferences: StoragePreferences | null
+  readonly expanded: boolean
+  readonly functional: boolean
+  readonly setFunctional: (value: boolean) => void
+  readonly openPreferences: () => void
+  readonly choose: (value: StoragePreferences) => void
+}
+
+/** Shared by the global notice, hero control and About link; survives layout/breakpoint changes. */
+export function usePrivacyPreferences(): PrivacyControls {
+  const [preferences, setPreferences] = useState(readStoragePreferences)
+  const [expanded, setExpanded] = useState(false)
+  const opener = useRef<HTMLElement | null>(null)
+  const [functional, setFunctional] = useState(() => preferences?.functional ?? false)
+  useEffect(() => {
+    const sync = (): void => setPreferences(readStoragePreferences())
+    const unsubscribe = subscribeStoragePreferences(sync)
+    window.addEventListener('focus', sync)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      unsubscribe()
+      window.removeEventListener('focus', sync)
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [])
+  return {
+    preferences,
+    expanded,
+    functional,
+    setFunctional,
+    openPreferences: useCallback(() => {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setFunctional(readStoragePreferences()?.functional ?? false)
+      setExpanded(true)
+    }, []),
+    choose: useCallback((value: StoragePreferences) => {
+      saveStoragePreferences(value)
+      setPreferences(readStoragePreferences())
+      setExpanded(false)
+      requestAnimationFrame(() => {
+        if (opener.current?.isConnected) opener.current.focus({ preventScroll: true })
+      })
+    }, []),
+  }
+}
+
+
+===== src/site/useSiteChrome.ts =====
+// `useSiteChrome` — owner-editable public copy, business identity, SEO, and sizing as React state,
+// refetched per language and updated when the owner changes public CMS/business tables. Realtime is
+// visibility-gated so hidden tabs do not retain a socket; returning to the page also revalidates.
+//
+// Under the MOCK (no backend): `DEFAULT_CHROME` is the immediate, stable value (no flash, no shift) —
+// the site renders from its i18n defaults + 1.0× scale exactly as before. Under a BACKEND: the same
+// default seeds visible content, then the DB overlay replaces it once `load()` resolves
+// (race-guarded, like the roster/availability effects). Metadata is not client-replaced until that
+// language has resolved, preserving complete Worker-rendered JSON-LD when the backend is unavailable.
+
+import { useEffect, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import type { SiteChromePort } from './port'
+import { DEFAULT_CHROME, type SiteChrome } from './siteChrome'
+import { defaultSiteChromePort, siteChromeIsMock } from './adapters/index'
+import { scheduleIdle } from '../ui/idle'
+
+export interface SiteChromeSnapshot {
+  readonly chrome: SiteChrome
+  readonly metadataReady: boolean
+}
+
+interface SiteChromeVisibilityLifecycleOptions {
+  readonly load: () => void
+  readonly subscribe?: () => () => void
+  readonly isHidden: () => boolean
+  readonly schedule: (task: () => void) => () => void
+}
+
+export interface SiteChromeVisibilityLifecycle {
+  readonly start: () => void
+  readonly visibilityChanged: () => void
+  readonly stop: () => void
+}
+
+export function createSiteChromeVisibilityLifecycle(
+  options: SiteChromeVisibilityLifecycleOptions,
+): SiteChromeVisibilityLifecycle {
+  let stopped = false
+  let unsubscribe: (() => void) | undefined
+  let cancelIdle = (): void => undefined
+
+  const stopSubscription = (): void => {
+    cancelIdle()
+    cancelIdle = (): void => undefined
+    unsubscribe?.()
+    unsubscribe = undefined
+  }
+  const startSubscription = (): void => {
+    if (stopped || options.subscribe === undefined || options.isHidden()) return
+    cancelIdle = options.schedule(() => {
+      if (stopped || options.isHidden() || unsubscribe !== undefined) return
+      unsubscribe = options.subscribe?.()
+    })
+  }
+
+  return {
+    start: () => {
+      options.load()
+      startSubscription()
+    },
+    visibilityChanged: () => {
+      if (options.isHidden()) {
+        stopSubscription()
+        return
+      }
+      options.load()
+      startSubscription()
+    },
+    stop: () => {
+      stopped = true
+      stopSubscription()
+    },
+  }
+}
+
+type SiteChromeCache = Readonly<Partial<Record<Lang, SiteChrome>>>
+
+export function resolveSiteChromeSnapshot(
+  cache: SiteChromeCache,
+  lang: Lang,
+  isMock: boolean,
+): SiteChromeSnapshot {
+  const resolved = cache[lang]
+  return {
+    chrome: resolved ?? DEFAULT_CHROME,
+    metadataReady: isMock || resolved !== undefined,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+export function canReplaceDocumentMetadata(
+  metadataReady: boolean,
+  initialStructuredData: string | null,
+): boolean {
+  if (metadataReady) return true
+  if (initialStructuredData === null) return true
+  try {
+    const value: unknown = JSON.parse(initialStructuredData)
+    if (!isRecord(value) || value['@type'] !== 'HairSalon') return true
+    const address = value['address']
+    return !(
+      typeof value['name'] === 'string' &&
+      value['name'].trim() !== '' &&
+      isRecord(address) &&
+      typeof address['streetAddress'] === 'string' &&
+      address['streetAddress'].trim() !== ''
+    )
+  } catch {
+    return true
+  }
+}
+
+export function useSiteChrome(
+  lang: Lang,
+  port: SiteChromePort = defaultSiteChromePort,
+): SiteChromeSnapshot {
+  const [cache, setCache] = useState<SiteChromeCache>(() =>
+    siteChromeIsMock ? { sv: DEFAULT_CHROME, en: DEFAULT_CHROME } : {},
+  )
+
+  useEffect(() => {
+    // Mock: the default IS the answer for both languages; never fetch (no flash/shift).
+    if (siteChromeIsMock) return
+    let cancelled = false
+    const load = (): void => {
+      void port
+        .load(lang)
+        .then((next) => {
+          if (!cancelled && next !== null) setCache((current) => ({ ...current, [lang]: next }))
+        })
+        .catch(() => undefined)
+    }
+    const subscribe = port.subscribe
+    const lifecycle = createSiteChromeVisibilityLifecycle({
+      load,
+      isHidden: () => document.visibilityState === 'hidden',
+      schedule: scheduleIdle,
+      ...(subscribe === undefined
+        ? {}
+        : {
+            subscribe: () =>
+              subscribe.call(port, lang, (next) => {
+                if (!cancelled) setCache((current) => ({ ...current, [lang]: next }))
+              }),
+          }),
+    })
+    const onVisibilityChange = (): void => lifecycle.visibilityChanged()
+
+    lifecycle.start()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      lifecycle.stop()
+    }
+  }, [lang, port])
+
+  return resolveSiteChromeSnapshot(cache, lang, siteChromeIsMock)
+}
+
