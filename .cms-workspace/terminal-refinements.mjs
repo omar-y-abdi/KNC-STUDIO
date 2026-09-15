@@ -11,10 +11,10 @@ const patch = (path, action) => {
 patch('tools/e2e/cms-studio.mjs', source => source
   .replace("import assert from 'node:assert/strict'", "import assert from 'node:assert/strict'\nimport { randomUUID } from 'node:crypto'")
   .replaceAll('crypto.randomUUID()', 'randomUUID()')
-  .replaceAll('location.origin', 'window.location.origin')
-  .replaceAll('navigator.locks', 'window.navigator.locks')
-  .replaceAll('sessionStorage.', 'window.sessionStorage.')
-  .replace(/\binnerWidth\b/g, 'window.innerWidth')
+  .replaceAll('location.origin', 'globalThis.location.origin')
+  .replaceAll('navigator.locks', 'globalThis.navigator.locks')
+  .replaceAll('sessionStorage.', 'globalThis.sessionStorage.')
+  .replace(/\binnerWidth\b/g, 'globalThis.innerWidth')
   .replace('} catch {}', '} catch { /* The local Worker may still be starting. */ }')
   .replaceAll('.catch(() => {})', '.catch(() => undefined)'))
 patch('docs/CMS-IMPLEMENTATION.md', source => source.replace(
