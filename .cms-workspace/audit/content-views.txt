@@ -1,0 +1,2834 @@
+
+===== src/admin/views/SiteView.tsx =====
+// Startsida view (OWNER only) — edit business identity, runtime SEO, homepage text, every non-button
+// string in the booking details/confirmation dialogs, and two font-size presets. Unsaved cells use
+// shipped defaults; saves upsert one row and reach open public pages via Realtime. All writes are
+// owner-only at the RLS layer.
+
+import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
+import {
+  listSiteContent,
+  listSiteSettings,
+  saveSiteContent,
+  saveSiteSetting,
+  saveSiteSettings,
+} from '../adapters/siteAdmin'
+import {
+  homepageLogoPublicUrl,
+  removeHomepageLogo,
+  uploadHomepageLogo,
+} from '../adapters/homepageLogoAdmin'
+import { HomepageLogo } from '../../site/HomepageLogo'
+import { HomepageReplicaPreview } from './HomepageReplicaPreview'
+import {
+  ABOUT_SCALE_KEY,
+  BOOKING_CONFIRMATION_TEXT_KEYS,
+  BOOKING_DETAILS_TEXT_KEYS,
+  BUSINESS_SETTING_KEYS,
+  DEFAULT_SITE_SETTINGS,
+  HOMEPAGE_SCALE_KEY,
+  HOMEPAGE_LOGO_PATH_KEY,
+  HOMEPAGE_LOGO_SCALE_KEY,
+  HOMEPAGE_LOGO_STYLE_KEY,
+  HOMEPAGE_TEXT_KEYS,
+  SITE_TEXT_KEYS,
+  SIZE_PRESETS,
+  defaultSiteSettings,
+  defaultSiteText,
+  parseScale,
+  parseHomepageLogoPath,
+  parseHomepageLogoStyle,
+  resolveBusinessSettings,
+  type HomepageLogo as HomepageLogoConfig,
+  type HomepageLogoStyle,
+  type SizePreset,
+  type SiteSettingKey,
+  type SiteText,
+  type SiteTextKey,
+} from '../../site/siteChrome'
+import type { AdminStylesBundle } from './viewTypes'
+import type { AdminResult, AdminSiteContentCell } from '../types'
+
+const LANGS: readonly Lang[] = ['sv', 'en']
+type TextField = SiteTextKey
+type SettingInputType = 'email' | 'number' | 'tel' | 'text' | 'url'
+
+interface HomepagePresentationDraft {
+  readonly homepageScale: SizePreset
+  readonly logoScale: SizePreset
+  readonly logoStyle: HomepageLogoStyle
+}
+
+interface SettingField {
+  readonly key: SiteSettingKey
+  readonly label: string
+  readonly maxLength: number
+  readonly type?: SettingInputType
+  readonly multiline?: boolean
+  readonly inputMode?: 'numeric'
+}
+
+const cellKey = (key: string, lang: Lang): string => `${key}:${lang}`
+
+export interface SiteViewProps {
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly s: AdminStylesBundle
+  readonly port?: SiteViewPort
+}
+
+export interface SiteViewPort {
+  readonly listContent: () => Promise<AdminResult<readonly AdminSiteContentCell[]>>
+  readonly listSettings: typeof listSiteSettings
+  readonly saveContent: typeof saveSiteContent
+  readonly saveSetting: typeof saveSiteSetting
+  readonly saveSettings: typeof saveSiteSettings
+}
+
+const defaultSiteViewPort: SiteViewPort = {
+  listContent: listSiteContent,
+  listSettings: listSiteSettings,
+  saveContent: saveSiteContent,
+  saveSetting: saveSiteSetting,
+  saveSettings: saveSiteSettings,
+}
+
+export function SiteView(props: SiteViewProps): JSX.Element {
+  const { s, lang } = props
+  const t = adminText(lang)
+  const port = props.port ?? defaultSiteViewPort
+
+  const [cells, setCells] = useState<Map<string, string>>(new Map())
+  const [settings, setSettings] = useState<ReadonlyMap<string, string>>(() => defaultSiteSettings())
+  const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [savedKey, setSavedKey] = useState<string | null>(null)
+  const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
+  const settingWritePending = useRef(false)
+  const logoGeneration = useRef(0)
+  const presentationGeneration = useRef(0)
+  const [pendingLogo, setPendingLogo] = useState<File | null>(null)
+  const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null)
+  const [logoBusy, setLogoBusy] = useState<'upload' | 'remove' | null>(null)
+  const [logoStatus, setLogoStatus] = useState<string | null>(null)
+  const [presentationDraft, setPresentationDraft] = useState<HomepagePresentationDraft>({
+    homepageScale: 'md',
+    logoScale: 'md',
+    logoStyle: 'classic',
+  })
+  const [presentationBusy, setPresentationBusy] = useState(false)
+  const [presentationStatus, setPresentationStatus] = useState<string | null>(null)
+
+  useEffect(
+    () => () => {
+      if (pendingLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(pendingLogoUrl)
+    },
+    [pendingLogoUrl],
+  )
+
+  useEffect(() => {
+    let active = true
+    setLoaded(false)
+    setLoadError(null)
+    void (async () => {
+      const [content, siteSettings] = await Promise.all([
+        port.listContent(),
+        orderedAdminOperation('site:settings', () => port.listSettings()),
+      ])
+      if (!active) return
+      if (!content.ok) {
+        setLoadError(content.error.message)
+        setLoaded(true)
+        return
+      }
+      if (!siteSettings.ok) {
+        setLoadError(siteSettings.error.message)
+        setLoaded(true)
+        return
+      }
+      const map = new Map<string, string>()
+      const business = resolveBusinessSettings(siteSettings.value)
+      for (const cellLang of LANGS) {
+        const defaults = defaultSiteText(cellLang, business.cancellationPolicyHours, business.name)
+        for (const key of SITE_TEXT_KEYS) map.set(cellKey(key, cellLang), defaults[key])
+      }
+      for (const row of content.value) {
+        if (row.value.trim() !== '') map.set(cellKey(row.key, row.lang), row.value)
+      }
+      setCells(map)
+      setSettings(new Map(siteSettings.value))
+      setPresentationDraft({
+        homepageScale: parseScale(siteSettings.value.get(HOMEPAGE_SCALE_KEY)),
+        logoScale: parseScale(siteSettings.value.get(HOMEPAGE_LOGO_SCALE_KEY)),
+        logoStyle: parseHomepageLogoStyle(siteSettings.value.get(HOMEPAGE_LOGO_STYLE_KEY)),
+      })
+      setLoaded(true)
+    })()
+    return () => {
+      active = false
+    }
+  }, [port])
+
+  const valueFor = (key: TextField, l: Lang): string => cells.get(cellKey(key, l)) ?? ''
+  const settingValue = (key: SiteSettingKey): string =>
+    settings.get(key) ?? DEFAULT_SITE_SETTINGS[key]
+  const business = resolveBusinessSettings(settings)
+
+  const setValue = (key: TextField, l: Lang, value: string): void => {
+    const ck = cellKey(key, l)
+    editGeneration.current.set(ck, (editGeneration.current.get(ck) ?? 0) + 1)
+    setCells((prev) => {
+      const next = new Map(prev)
+      next.set(ck, value)
+      return next
+    })
+    setSavedKey(null)
+    setErrorFor(null)
+  }
+
+  const saveCell = async (key: TextField, l: Lang): Promise<void> => {
+    const ck = cellKey(key, l)
+    const value = valueFor(key, l)
+    const generation = editGeneration.current.get(ck) ?? 0
+    setSavingKey(ck)
+    setErrorFor(null)
+    const result = await port.saveContent(key, l, value)
+    setSavingKey(null)
+    if (!result.ok) {
+      if ((editGeneration.current.get(ck) ?? 0) === generation) {
+        setErrorFor({ key: ck, message: result.error.message })
+      }
+      return
+    }
+    if ((editGeneration.current.get(ck) ?? 0) !== generation) return
+    if (value.trim() === '') {
+      setCells((prev) =>
+        new Map(prev).set(
+          ck,
+          defaultSiteText(l, business.cancellationPolicyHours, business.name)[key],
+        ),
+      )
+    }
+    setSavedKey(ck)
+  }
+
+  const setSettingValue = (key: SiteSettingKey, value: string): void => {
+    editGeneration.current.set(key, (editGeneration.current.get(key) ?? 0) + 1)
+    setSettings((previous) => {
+      const next = new Map(previous)
+      next.set(key, value)
+      return next
+    })
+    if (
+      key === BUSINESS_SETTING_KEYS.cancellationPolicyHours ||
+      key === BUSINESS_SETTING_KEYS.name
+    ) {
+      const nextSettings = new Map(settings)
+      nextSettings.set(key, value)
+      const nextBusiness = resolveBusinessSettings(nextSettings)
+      setCells((previous) => {
+        const next = new Map(previous)
+        for (const cellLang of LANGS) {
+          const policyKey = cellKey('policy', cellLang)
+          if (
+            next.get(policyKey) ===
+            defaultSiteText(cellLang, business.cancellationPolicyHours, business.name).policy
+          ) {
+            editGeneration.current.set(policyKey, (editGeneration.current.get(policyKey) ?? 0) + 1)
+            next.set(
+              policyKey,
+              defaultSiteText(cellLang, nextBusiness.cancellationPolicyHours, nextBusiness.name)
+                .policy,
+            )
+          }
+        }
+        return next
+      })
+    }
+    setSavedKey(null)
+    setErrorFor(null)
+  }
+
+  const saveSetting = async (
+    key: SiteSettingKey,
+    value: string = settingValue(key),
+  ): Promise<void> => {
+    if (!loaded || loadError !== null || settingWritePending.current) return
+    settingWritePending.current = true
+    const generation = editGeneration.current.get(key) ?? 0
+    setSavingKey(key)
+    setErrorFor(null)
+    const result = await orderedAdminOperation('site:settings', () => port.saveSetting(key, value))
+    settingWritePending.current = false
+    setSavingKey(null)
+    if (!result.ok) {
+      if ((editGeneration.current.get(key) ?? 0) === generation) {
+        setErrorFor({ key, message: result.error.message })
+      }
+      return
+    }
+    if ((editGeneration.current.get(key) ?? 0) !== generation) return
+    setSettings((previous) =>
+      previous.get(key) === value ? new Map(previous).set(key, result.value) : previous,
+    )
+    setSavedKey(key)
+  }
+
+  const onAboutScale = async (value: SizePreset): Promise<void> => {
+    if (!loaded || loadError !== null || settingWritePending.current) return
+    setSettingValue(ABOUT_SCALE_KEY, value)
+    await saveSetting(ABOUT_SCALE_KEY, value)
+  }
+
+  const fieldLabels: Record<TextField, string> = {
+    kicker: t.siteFieldKicker,
+    hours: t.siteFieldHours,
+    yourDetails: t.siteFieldYourDetails,
+    summary: t.siteFieldSummary,
+    fBarber: t.siteFieldBarberLabel,
+    fWhen: t.siteFieldWhenLabel,
+    fService: t.siteFieldServiceLabel,
+    fTotal: t.siteFieldTotalLabel,
+    name: t.siteFieldNameLabel,
+    namePh: t.siteFieldNamePlaceholder,
+    phone: t.siteFieldPhoneLabel,
+    phonePh: t.siteFieldPhonePlaceholder,
+    policy: t.siteFieldPolicy,
+    bookedTitle: t.siteFieldBookedTitle,
+    confirmSent: t.siteFieldConfirmSent,
+    addToCal: t.siteFieldAddToCal,
+  }
+
+  const sizeLabel: Record<SizePreset, string> = {
+    sm: t.siteSizeSm,
+    md: t.siteSizeMd,
+    lg: t.siteSizeLg,
+    xl: t.siteSizeXl,
+  }
+
+  const publishedHomepageScale = parseScale(settingValue(HOMEPAGE_SCALE_KEY))
+  const aboutScale = parseScale(settingValue(ABOUT_SCALE_KEY))
+  const logoPath = parseHomepageLogoPath(settingValue(HOMEPAGE_LOGO_PATH_KEY))
+  const logo: HomepageLogoConfig = {
+    path: logoPath,
+    url: pendingLogoUrl ?? (logoPath === null ? null : homepageLogoPublicUrl(logoPath)),
+    scale: presentationDraft.logoScale,
+    style: presentationDraft.logoStyle,
+  }
+  const presentationChanged =
+    presentationDraft.homepageScale !== publishedHomepageScale ||
+    presentationDraft.logoScale !== parseScale(settingValue(HOMEPAGE_LOGO_SCALE_KEY)) ||
+    presentationDraft.logoStyle !== parseHomepageLogoStyle(settingValue(HOMEPAGE_LOGO_STYLE_KEY))
+  const previewTextByLang: Readonly<Record<Lang, SiteText>> = {
+    sv: Object.fromEntries(SITE_TEXT_KEYS.map((key) => [key, valueFor(key, 'sv')])) as SiteText,
+    en: Object.fromEntries(SITE_TEXT_KEYS.map((key) => [key, valueFor(key, 'en')])) as SiteText,
+  }
+
+  const selectLogo = (file: File | null): void => {
+    logoGeneration.current += 1
+    if (pendingLogoUrl?.startsWith('blob:')) URL.revokeObjectURL(pendingLogoUrl)
+    setPendingLogo(file)
+    setPendingLogoUrl(file === null ? null : URL.createObjectURL(file))
+    setLogoStatus(
+      file === null
+        ? null
+        : props.lang === 'sv'
+          ? 'Förhandsvisning lokal. Spara för att publicera.'
+          : 'Preview is local. Save to publish.',
+    )
+  }
+
+  const saveLogo = async (): Promise<void> => {
+    if (pendingLogo === null) return
+    const generation = logoGeneration.current
+    setLogoBusy('upload')
+    setLogoStatus(null)
+    const result = await uploadHomepageLogo(pendingLogo, logoPath ?? '')
+    setLogoBusy(null)
+    if (!result.ok) {
+      if (logoGeneration.current === generation) setLogoStatus(result.error.message)
+      return
+    }
+    setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, result.value.path))
+    if (logoGeneration.current !== generation) return
+    setPendingLogo(null)
+    setPendingLogoUrl(result.value.url)
+    setLogoStatus(
+      result.value.cleanupPending
+        ? props.lang === 'sv'
+          ? 'Logotyp sparad. Tidigare fil rensas i bakgrunden.'
+          : 'Logo saved. Previous file will be cleaned up in the background.'
+        : props.lang === 'sv'
+          ? 'Logotyp sparad.'
+          : 'Logo saved.',
+    )
+  }
+
+  const deleteLogo = async (): Promise<void> => {
+    if (logoPath === null) return
+    const generation = logoGeneration.current
+    setLogoBusy('remove')
+    setLogoStatus(null)
+    const result = await removeHomepageLogo(logoPath)
+    setLogoBusy(null)
+    if (!result.ok) {
+      if (logoGeneration.current === generation) setLogoStatus(result.error.message)
+      return
+    }
+    setSettings((previous) => new Map(previous).set(HOMEPAGE_LOGO_PATH_KEY, ''))
+    if (logoGeneration.current !== generation) return
+    selectLogo(null)
+    setLogoStatus(
+      result.value.pending
+        ? props.lang === 'sv'
+          ? 'Logotyp borttagen. Filen rensas i bakgrunden.'
+          : 'Logo removed. File cleanup continues in the background.'
+        : props.lang === 'sv'
+          ? 'Logotyp borttagen.'
+          : 'Logo removed.',
+    )
+  }
+
+  const savePresentation = async (): Promise<void> => {
+    const generation = presentationGeneration.current
+    setPresentationBusy(true)
+    setPresentationStatus(null)
+    const result = await orderedAdminOperation('site:settings', () =>
+      port.saveSettings([
+        { key: HOMEPAGE_LOGO_SCALE_KEY, value: presentationDraft.logoScale },
+        { key: HOMEPAGE_SCALE_KEY, value: presentationDraft.homepageScale },
+        { key: HOMEPAGE_LOGO_STYLE_KEY, value: presentationDraft.logoStyle },
+      ]),
+    )
+    setPresentationBusy(false)
+    if (!result.ok) {
+      if (presentationGeneration.current === generation) {
+        setPresentationStatus(result.error.message)
+      }
+      return
+    }
+    setSettings((previous) => {
+      const next = new Map(previous)
+      for (const [key, value] of result.value) next.set(key, value)
+      return next
+    })
+    if (presentationGeneration.current === generation) {
+      setPresentationStatus(
+        props.lang === 'sv' ? 'Utseende publicerat.' : 'Presentation published.',
+      )
+    }
+  }
+
+  const updatePresentation = (change: Partial<HomepagePresentationDraft>): void => {
+    presentationGeneration.current += 1
+    setPresentationDraft((previous) => ({ ...previous, ...change }))
+    setPresentationStatus(null)
+  }
+
+  const scaleSelect = (
+    label: string,
+    value: SizePreset,
+    onChange: (value: SizePreset) => void,
+    disabled = false,
+  ): JSX.Element => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px' }}>
+      <span style={s.label}>{label}</span>
+      <select
+        style={s.select}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(parseScale(e.currentTarget.value))}
+      >
+        {SIZE_PRESETS.map((p) => (
+          <option key={p} value={p}>
+            {sizeLabel[p]}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+
+  const settingEditor = (field: SettingField): JSX.Element => {
+    const value = settingValue(field.key)
+    const status =
+      savedKey === field.key ? t.aboutSaved : errorFor?.key === field.key ? errorFor.message : null
+    return (
+      <div key={field.key}>
+        <label style={s.label} htmlFor={`setting-${field.key}`}>
+          {field.label}
+        </label>
+        {field.multiline ? (
+          <textarea
+            id={`setting-${field.key}`}
+            style={s.textarea}
+            rows={4}
+            maxLength={field.maxLength}
+            value={value}
+            onInput={(event) => setSettingValue(field.key, event.currentTarget.value)}
+          />
+        ) : (
+          <input
+            id={`setting-${field.key}`}
+            style={s.input}
+            type={field.type ?? 'text'}
+            inputMode={field.inputMode}
+            min={field.type === 'number' ? 1 : undefined}
+            max={field.type === 'number' ? 168 : undefined}
+            maxLength={field.maxLength}
+            value={value}
+            onInput={(event) => setSettingValue(field.key, event.currentTarget.value)}
+          />
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+          <button
+            type="button"
+            style={{ ...s.ghostBtn, opacity: savingKey === field.key ? 0.6 : 1 }}
+            onClick={() => void saveSetting(field.key)}
+            disabled={savingKey !== null}
+          >
+            {savingKey === field.key ? t.aboutSaving : t.aboutSave}
+          </button>
+          <span aria-live="polite">
+            {status !== null ? (
+              <span style={savedKey === field.key ? s.successText : s.errorText}>{status}</span>
+            ) : null}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  const businessFields: readonly SettingField[] = [
+    { key: BUSINESS_SETTING_KEYS.name, label: t.siteFieldBusinessName, maxLength: 120 },
+    {
+      key: BUSINESS_SETTING_KEYS.legalName,
+      label: lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name',
+      maxLength: 160,
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.organizationNumber,
+      label:
+        lang === 'sv'
+          ? 'Organisationsnummer (10 siffror)'
+          : 'Swedish registration number (10 digits)',
+      maxLength: 11,
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.email,
+      label: t.siteFieldBusinessEmail,
+      maxLength: 254,
+      type: 'email',
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.phoneDisplay,
+      label: t.siteFieldBusinessPhoneDisplay,
+      maxLength: 40,
+      type: 'tel',
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.phoneTel,
+      label: t.siteFieldBusinessPhoneTel,
+      maxLength: 40,
+      type: 'tel',
+    },
+    { key: BUSINESS_SETTING_KEYS.street, label: t.siteFieldBusinessStreet, maxLength: 160 },
+    { key: BUSINESS_SETTING_KEYS.postalCode, label: t.siteFieldBusinessPostalCode, maxLength: 24 },
+    { key: BUSINESS_SETTING_KEYS.city, label: t.siteFieldBusinessCity, maxLength: 120 },
+    {
+      key: BUSINESS_SETTING_KEYS.mapsHref,
+      label: t.siteFieldBusinessMapsUrl,
+      maxLength: 500,
+      type: 'url',
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.cancellationPolicyHours,
+      label: t.siteFieldCancellationPolicyHours,
+      maxLength: 3,
+      type: 'number',
+      inputMode: 'numeric',
+    },
+  ]
+
+  const seoFields = (seoLang: Lang): readonly SettingField[] => [
+    {
+      key: BUSINESS_SETTING_KEYS.seo[seoLang].title,
+      label: t.siteFieldSeoTitle,
+      maxLength: 120,
+    },
+    {
+      key: BUSINESS_SETTING_KEYS.seo[seoLang].description,
+      label: t.siteFieldSeoDescription,
+      maxLength: 500,
+      multiline: true,
+    },
+  ]
+
+  const textEditors = (fields: readonly TextField[]): JSX.Element => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
+      {fields.map((field) => (
+        <div key={field}>
+          <h3 style={{ ...s.label, fontSize: '13px' }}>{fieldLabels[field]}</h3>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+              gap: '12px',
+            }}
+          >
+            {LANGS.map((cellLang) => {
+              const ck = cellKey(field, cellLang)
+              return (
+                <div key={ck}>
+                  <label style={s.label} htmlFor={`site-${ck}`}>
+                    {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
+                  </label>
+                  {field === 'policy' || field === 'confirmSent' ? (
+                    <textarea
+                      id={`site-${ck}`}
+                      style={s.textarea}
+                      rows={5}
+                      maxLength={400}
+                      value={valueFor(field, cellLang)}
+                      onInput={(e) => setValue(field, cellLang, e.currentTarget.value)}
+                    />
+                  ) : (
+                    <input
+                      id={`site-${ck}`}
+                      style={s.input}
+                      maxLength={400}
+                      value={valueFor(field, cellLang)}
+                      onInput={(e) => setValue(field, cellLang, e.currentTarget.value)}
+                    />
+                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginTop: '6px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
+                      onClick={() => void saveCell(field, cellLang)}
+                      disabled={savingKey !== null}
+                    >
+                      {savingKey === ck ? t.aboutSaving : t.aboutSave}
+                    </button>
+                    <span aria-live="polite">
+                      {savedKey === ck ? <span style={s.successText}>{t.aboutSaved}</span> : null}
+                      {errorFor?.key === ck ? (
+                        <span style={s.errorText}>{errorFor.message}</span>
+                      ) : null}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
+  return (
+    <>
+      <section style={s.card} aria-labelledby="site-logo-heading">
+        <h2 id="site-logo-heading" style={s.sectionTitle}>
+          {props.lang === 'sv' ? 'Startsidelogotyp' : 'Homepage logo'}
+        </h2>
+        <p style={s.sectionLead}>
+          {props.lang === 'sv'
+            ? 'Byt logotyp, skala den och förhandsvisa före publicering. Standard behåller nuvarande vektorlogotyp.'
+            : 'Replace, scale, and preview before publishing. Standard keeps the current vector lockup.'}
+        </p>
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))',
+                gap: '14px',
+                marginTop: '16px',
+              }}
+            >
+              <label>
+                <span style={s.label}>
+                  {props.lang === 'sv' ? 'Ersätt logotyp' : 'Replace logo'}
+                </span>
+                <input
+                  style={s.input}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
+                  disabled={logoBusy !== null}
+                  onInput={(event) => selectLogo(event.currentTarget.files?.item(0) ?? null)}
+                />
+              </label>
+              {scaleSelect(
+                props.lang === 'sv' ? 'Logotypstorlek' : 'Logo scale',
+                presentationDraft.logoScale,
+                (value) => updatePresentation({ logoScale: value }),
+                presentationBusy,
+              )}
+              {scaleSelect(
+                props.lang === 'sv' ? 'Text under logotyp' : 'Text below logo',
+                presentationDraft.homepageScale,
+                (value) => updatePresentation({ homepageScale: value }),
+                presentationBusy,
+              )}
+              <label
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px' }}
+              >
+                <span style={s.label}>{props.lang === 'sv' ? 'Bildstil' : 'Image style'}</span>
+                <select
+                  style={s.select}
+                  value={presentationDraft.logoStyle}
+                  disabled={presentationBusy}
+                  onChange={(event) =>
+                    updatePresentation({
+                      logoStyle: parseHomepageLogoStyle(event.currentTarget.value),
+                    })
+                  }
+                >
+                  <option value="classic">{props.lang === 'sv' ? 'Standard' : 'Standard'}</option>
+                  <option value="monochrome">
+                    {props.lang === 'sv' ? 'Monokrom' : 'Monochrome'}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '14px',
+              }}
+            >
+              <button
+                type="button"
+                style={{
+                  ...s.primaryBtn,
+                  opacity: pendingLogo === null || logoBusy !== null ? 0.6 : 1,
+                }}
+                disabled={pendingLogo === null || logoBusy !== null}
+                onClick={() => void saveLogo()}
+              >
+                {logoBusy === 'upload'
+                  ? props.lang === 'sv'
+                    ? 'Sparar …'
+                    : 'Saving …'
+                  : props.lang === 'sv'
+                    ? 'Spara logotyp'
+                    : 'Save logo'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={logoPath === null || logoBusy !== null}
+                onClick={() => void deleteLogo()}
+              >
+                {logoBusy === 'remove'
+                  ? props.lang === 'sv'
+                    ? 'Tar bort …'
+                    : 'Removing …'
+                  : props.lang === 'sv'
+                    ? 'Återställ standard'
+                    : 'Restore default'}
+              </button>
+              {logoStatus === null ? null : <span style={s.mutedText}>{logoStatus}</span>}
+              <button
+                type="button"
+                style={{
+                  ...s.ghostBtn,
+                  opacity: presentationChanged && !presentationBusy ? 1 : 0.6,
+                }}
+                disabled={!presentationChanged || presentationBusy}
+                onClick={() => void savePresentation()}
+              >
+                {presentationBusy
+                  ? props.lang === 'sv'
+                    ? 'Publicerar …'
+                    : 'Publishing …'
+                  : props.lang === 'sv'
+                    ? 'Publicera utseende'
+                    : 'Publish presentation'}
+              </button>
+              <span aria-live="polite" style={s.mutedText}>
+                {presentationStatus ??
+                  (props.lang === 'sv'
+                    ? 'Ändringar syns bara i förhandsvisningen tills du publicerar.'
+                    : 'Changes stay in the preview until you publish.')}
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))',
+                gap: '14px',
+                marginTop: '20px',
+              }}
+            >
+              <div>
+                <h3 style={{ ...s.label, fontSize: '13px' }}>
+                  {props.lang === 'sv' ? 'Fokuserad förhandsvisning' : 'Focused preview'}
+                </h3>
+                <div
+                  data-testid="homepage-logo-focused-preview"
+                  style={{
+                    minHeight: '245px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    border: s.input.border,
+                    borderRadius: '13px',
+                    background: props.dark ? '#242427' : '#f4f3f0',
+                    color: props.dark ? '#f5f5f7' : '#1c1c1e',
+                  }}
+                >
+                  <HomepageLogo logo={logo} layout="desktop" height={150} />
+                </div>
+              </div>
+              <div>
+                <h3 style={{ ...s.label, fontSize: '13px' }}>
+                  {props.lang === 'sv'
+                    ? 'Interaktiv startsidereplika'
+                    : 'Interactive homepage replica'}
+                </h3>
+                <HomepageReplicaPreview
+                  dark={props.dark}
+                  lang={props.lang}
+                  settings={settings}
+                  textByLang={previewTextByLang}
+                  homepageScale={presentationDraft.homepageScale}
+                  logo={logo}
+                  aboutScale={aboutScale}
+                  s={s}
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-business-heading">
+        <h2 id="site-business-heading" style={s.sectionTitle}>
+          {t.siteBusinessTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteBusinessLead}</p>
+        <p style={s.sectionLead}>
+          {lang === 'sv'
+            ? 'Företagsuppgifterna publiceras i bokningsvillkor, integritetspolicy och sökdata. Ange det registrerade företagsnamnet och organisationsnumret. Tomma juridikfält visas inte.'
+            : 'Business details appear in booking terms, the privacy policy and search data. Enter the registered business name and registration number. Blank legal fields are omitted.'}
+        </p>
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+              gap: '20px',
+              marginTop: '12px',
+            }}
+          >
+            {businessFields.map(settingEditor)}
+          </div>
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-seo-heading">
+        <h2 id="site-seo-heading" style={s.sectionTitle}>
+          {t.siteSeoTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteSeoLead}</p>
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))',
+              gap: '24px',
+              marginTop: '12px',
+            }}
+          >
+            <div>
+              <h3 style={{ ...s.label, fontSize: '13px' }}>{t.aboutLangSwedish}</h3>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}
+              >
+                {seoFields('sv').map(settingEditor)}
+              </div>
+            </div>
+            <div>
+              <h3 style={{ ...s.label, fontSize: '13px' }}>{t.aboutLangEnglish}</h3>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}
+              >
+                {seoFields('en').map(settingEditor)}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-text-heading">
+        <h2 id="site-text-heading" style={s.sectionTitle}>
+          {t.siteTextTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteTextLead}</p>
+
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          textEditors(HOMEPAGE_TEXT_KEYS)
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-booking-text-heading">
+        <h2 id="site-booking-text-heading" style={s.sectionTitle}>
+          {t.siteBookingTextTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteBookingTextLead}</p>
+
+        {loadError !== null ? (
+          <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+        ) : !loaded ? (
+          <div style={s.emptyState}>{t.siteLoading}</div>
+        ) : (
+          <>
+            <h3 style={{ ...s.sectionTitle, fontSize: '16px', marginTop: '18px' }}>
+              {t.siteBookingDetailsGroup}
+            </h3>
+            {textEditors(BOOKING_DETAILS_TEXT_KEYS)}
+            <h3 style={{ ...s.sectionTitle, fontSize: '16px', marginTop: '28px' }}>
+              {t.siteBookingConfirmationGroup}
+            </h3>
+            {textEditors(BOOKING_CONFIRMATION_TEXT_KEYS)}
+          </>
+        )}
+      </section>
+
+      <section style={s.card} aria-labelledby="site-font-heading">
+        <h2 id="site-font-heading" style={s.sectionTitle}>
+          {t.siteFontTitle}
+        </h2>
+        <p style={s.sectionLead}>{t.siteFontLead}</p>
+        <div
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '12px' }}
+          aria-live="polite"
+        >
+          {scaleSelect(
+            t.siteFontHomepage,
+            presentationDraft.homepageScale,
+            (value) => updatePresentation({ homepageScale: value }),
+            !loaded || loadError !== null || presentationBusy,
+          )}
+          {scaleSelect(
+            t.siteFontAbout,
+            aboutScale,
+            (value) => void onAboutScale(value),
+            !loaded || loadError !== null || savingKey !== null,
+          )}
+          {savingKey === ABOUT_SCALE_KEY ? <span style={s.mutedText}>{t.aboutSaving}</span> : null}
+          {errorFor?.key === ABOUT_SCALE_KEY ? (
+            <span style={s.errorText}>{errorFor.message}</span>
+          ) : null}
+        </div>
+      </section>
+    </>
+  )
+}
+
+
+===== src/admin/views/AboutView.tsx =====
+// About view (OWNER only). Two parts:
+//   1. "Om oss"-text — every editable about_content cell, per key, per language (SV/EN side by side).
+//      Each cell saves independently (upsert) with its own saved/error state.
+//   2. Gallery — manage the two galleries (salon / cuts): upload an image (Storage + row) and delete
+//      one (row + object). Thumbnails use the public Storage URL.
+// All writes are owner-only at the RLS / Storage-policy layer.
+//
+// Data effects isolated here; the forms/tables are otherwise pure. The public About section overlays
+// these DB values onto its i18n defaults, so edits here show up on the public site.
+
+import type { JSX } from 'preact'
+import { orderedAdminOperation } from '../orderedOperations'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
+import { listAbout, saveAbout } from '../adapters/aboutAdmin'
+import { deleteImage, listGallery, uploadImage } from '../adapters/galleryAdmin'
+import { ConfirmDialog } from '../ConfirmDialog'
+import type { AboutKey, AdminStylesBundle, GalleryImage, GalleryKind } from './viewTypes'
+
+export interface AboutViewProps {
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly s: AdminStylesBundle
+}
+
+/** The 7 editable keys, in display order. Labels are resolved per-language from the dictionary. */
+const ABOUT_FIELDS: readonly { key: AboutKey; multiline: boolean }[] = [
+  { key: 'eyebrow', multiline: false },
+  { key: 'heading', multiline: false },
+  { key: 'intro', multiline: true },
+  { key: 'galleryTitle', multiline: false },
+  { key: 'cutsTitle', multiline: false },
+  { key: 'stylistsTitle', multiline: false },
+  { key: 'reviewsTitle', multiline: false },
+]
+
+const LANGS: readonly Lang[] = ['sv', 'en']
+
+/** A `(key,lang)` -> value map for fast lookup + local edits. */
+type CellMap = Map<string, string>
+const cellKey = (key: AboutKey, lang: Lang): string => `${key}:${lang}`
+
+export function AboutView(props: AboutViewProps): JSX.Element {
+  const { s, lang } = props
+  const t = adminText(lang)
+  return (
+    <>
+      <AboutTextEditor s={s} lang={lang} />
+      <GalleryManager
+        dark={props.dark}
+        s={s}
+        lang={lang}
+        kind="salon"
+        title={t.aboutGallerySalonTitle}
+      />
+      <GalleryManager
+        dark={props.dark}
+        s={s}
+        lang={lang}
+        kind="cuts"
+        title={t.aboutGalleryCutsTitle}
+      />
+    </>
+  )
+}
+
+// --- About text -----------------------------------------------------------------------------------
+
+function AboutTextEditor(props: {
+  readonly s: AdminStylesBundle
+  readonly lang: Lang
+}): JSX.Element {
+  const { s, lang } = props
+  const t = adminText(lang)
+  const [cells, setCells] = useState<CellMap>(new Map())
+  const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [savedKey, setSavedKey] = useState<string | null>(null)
+  const [errorFor, setErrorFor] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      const result = await listAbout()
+      if (!active) return
+      if (!result.ok) {
+        setLoadError(result.error.message)
+        setLoaded(true)
+        return
+      }
+      const map: CellMap = new Map()
+      for (const row of result.value) map.set(cellKey(row.key, row.lang), row.value)
+      setCells(map)
+      setLoaded(true)
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const valueFor = (key: AboutKey, lang: Lang): string => cells.get(cellKey(key, lang)) ?? ''
+
+  const setValue = (key: AboutKey, lang: Lang, value: string): void => {
+    const ck = cellKey(key, lang)
+    editGeneration.current.set(ck, (editGeneration.current.get(ck) ?? 0) + 1)
+    setCells((prev) => {
+      const next = new Map(prev)
+      next.set(ck, value)
+      return next
+    })
+    setSavedKey(null)
+    setErrorFor(null)
+  }
+
+  const save = async (key: AboutKey, lang: Lang): Promise<void> => {
+    const ck = cellKey(key, lang)
+    const generation = editGeneration.current.get(ck) ?? 0
+    setSavingKey(ck)
+    setErrorFor(null)
+    const result = await saveAbout(key, lang, valueFor(key, lang))
+    setSavingKey(null)
+    if (!result.ok) {
+      if ((editGeneration.current.get(ck) ?? 0) === generation) {
+        setErrorFor({ key: ck, message: result.error.message })
+      }
+      return
+    }
+    if ((editGeneration.current.get(ck) ?? 0) !== generation) return
+    setSavedKey(ck)
+  }
+
+  const fieldLabels: Record<AboutKey, string> = {
+    eyebrow: t.aboutFieldEyebrow,
+    heading: t.aboutFieldHeading,
+    intro: t.aboutFieldIntro,
+    galleryTitle: t.aboutFieldGalleryTitle,
+    cutsTitle: t.aboutFieldCutsTitle,
+    stylistsTitle: t.aboutFieldStylistsTitle,
+    reviewsTitle: t.aboutFieldReviewsTitle,
+  }
+
+  return (
+    <section style={s.card} aria-labelledby="about-heading">
+      <h2 id="about-heading" style={s.sectionTitle}>
+        {t.aboutTextTitle}
+      </h2>
+      <p style={s.sectionLead}>{t.aboutTextLead}</p>
+
+      {loadError !== null ? (
+        <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+      ) : !loaded ? (
+        <div style={s.emptyState}>{t.aboutLoading}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '12px' }}>
+          {ABOUT_FIELDS.map((field) => (
+            <div key={field.key}>
+              <h3 style={{ ...s.label, fontSize: '13px' }}>{fieldLabels[field.key]}</h3>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+                  gap: '12px',
+                }}
+              >
+                {LANGS.map((cellLang) => {
+                  const ck = cellKey(field.key, cellLang)
+                  return (
+                    <div key={ck}>
+                      <label style={s.label} htmlFor={`about-${ck}`}>
+                        {cellLang === 'sv' ? t.aboutLangSwedish : t.aboutLangEnglish}
+                      </label>
+                      {field.multiline ? (
+                        <textarea
+                          id={`about-${ck}`}
+                          style={s.textarea}
+                          maxLength={2000}
+                          value={valueFor(field.key, cellLang)}
+                          onInput={(e) => setValue(field.key, cellLang, e.currentTarget.value)}
+                        />
+                      ) : (
+                        <input
+                          id={`about-${ck}`}
+                          style={s.input}
+                          maxLength={2000}
+                          value={valueFor(field.key, cellLang)}
+                          onInput={(e) => setValue(field.key, cellLang, e.currentTarget.value)}
+                        />
+                      )}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          marginTop: '6px',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          style={{ ...s.ghostBtn, opacity: savingKey === ck ? 0.6 : 1 }}
+                          onClick={() => void save(field.key, cellLang)}
+                          disabled={savingKey !== null}
+                        >
+                          {savingKey === ck ? t.aboutSaving : t.aboutSave}
+                        </button>
+                        <span aria-live="polite">
+                          {savedKey === ck ? (
+                            <span style={s.successText}>{t.aboutSaved}</span>
+                          ) : null}
+                          {errorFor?.key === ck ? (
+                            <span style={s.errorText}>{errorFor.message}</span>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// --- Gallery --------------------------------------------------------------------------------------
+
+const defaultGalleryPort = { listGallery, uploadImage, deleteImage }
+export type GalleryManagerPort = typeof defaultGalleryPort
+
+export function GalleryManager(props: {
+  readonly dark: boolean
+  readonly s: AdminStylesBundle
+  readonly lang: Lang
+  readonly kind: GalleryKind
+  readonly title: string
+  readonly port?: GalleryManagerPort
+}): JSX.Element {
+  const { s, kind, lang } = props
+  const port = props.port ?? defaultGalleryPort
+  const t = adminText(lang)
+  const [images, setImages] = useState<readonly GalleryImage[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [alt, setAlt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<GalleryImage | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const altGeneration = useRef(0)
+
+  const resource = `gallery:${kind}`
+  useEffect(() => {
+    let active = true
+    setLoaded(false)
+    setLoadError(null)
+    void orderedAdminOperation(resource, () => port.listGallery(kind)).then((result) => {
+      if (!active) return
+      if (result.ok) setImages(result.value)
+      else setLoadError(result.error.message)
+      setLoaded(true)
+    })
+    return () => {
+      active = false
+    }
+  }, [kind, port])
+  const writable = loaded && loadError === null && !busy && !deleteBusy
+
+  const onUpload = async (file: File): Promise<void> => {
+    if (!writable) return
+    const generation = altGeneration.current
+    setBusy(true)
+    setNotice(null)
+    const nextSort = images.length === 0 ? 0 : Math.max(...images.map((i) => i.sortOrder)) + 1
+    const result = await orderedAdminOperation(resource, () =>
+      port.uploadImage(kind, file, alt.trim(), nextSort),
+    )
+    setBusy(false)
+    if (fileRef.current !== null) fileRef.current.value = ''
+    if (!result.ok) {
+      setNotice({ kind: 'err', text: result.error.message })
+      return
+    }
+    if (altGeneration.current === generation) setAlt('')
+    setNotice({ kind: 'ok', text: t.aboutGalleryUploadedOk })
+    setImages((prev) => [...prev, result.value])
+  }
+
+  const onDelete = async (): Promise<void> => {
+    const target = pendingDelete
+    if (target === null || !writable) return
+    setDeleteBusy(true)
+    const result = await orderedAdminOperation(resource, () => port.deleteImage(target))
+    setDeleteBusy(false)
+    setPendingDelete(null)
+    if (!result.ok) {
+      setNotice({ kind: 'err', text: result.error.message })
+      return
+    }
+    setNotice({
+      kind: 'ok',
+      text: result.value.pending ? t.aboutGalleryDeletionPending : t.aboutGalleryDeletedOk,
+    })
+    setImages((prev) => prev.filter((i) => i.id !== target.id))
+  }
+
+  return (
+    <section style={s.card} aria-labelledby={`gallery-${kind}`}>
+      <h2 id={`gallery-${kind}`} style={s.sectionTitle}>
+        {props.title}
+      </h2>
+      <p style={s.sectionLead}>{t.aboutGalleryLead}</p>
+
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          gap: '12px',
+          margin: '14px 0 6px',
+        }}
+      >
+        <div style={{ flex: '1 1 220px', minWidth: '180px' }}>
+          <label htmlFor={`alt-${kind}`} style={s.label}>
+            {t.aboutGalleryAltLabel}
+          </label>
+          <input
+            id={`alt-${kind}`}
+            type="text"
+            style={s.input}
+            maxLength={2000}
+            value={alt}
+            onInput={(e) => {
+              altGeneration.current += 1
+              setAlt(e.currentTarget.value)
+            }}
+          />
+        </div>
+        <div>
+          <label htmlFor={`file-${kind}`} style={s.label}>
+            {t.aboutGalleryFileLabel}
+          </label>
+          <input
+            ref={fileRef}
+            id={`file-${kind}`}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif"
+            style={{ ...s.input, padding: '7px' }}
+            disabled={!writable}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0]
+              if (file !== undefined) void onUpload(file)
+            }}
+          />
+        </div>
+      </div>
+
+      <div aria-live="polite" style={{ minHeight: '18px', marginBottom: '8px' }}>
+        {busy ? <span style={s.mutedText}>{t.aboutGalleryUploading}</span> : null}
+        {notice !== null ? (
+          <span style={notice.kind === 'ok' ? s.successText : s.errorText}>{notice.text}</span>
+        ) : null}
+      </div>
+
+      {loadError !== null ? (
+        <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+      ) : !loaded ? (
+        <div style={s.emptyState}>{t.aboutGalleryLoading}</div>
+      ) : images.length === 0 ? (
+        <div style={s.emptyState}>{t.aboutGalleryEmpty}</div>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))',
+            gap: '12px',
+            marginTop: '8px',
+          }}
+        >
+          {images.map((img) => (
+            <figure
+              key={img.id}
+              style={{ margin: 0, border: s.card.border, borderRadius: '12px', overflow: 'hidden' }}
+            >
+              <img
+                src={img.url}
+                alt={img.alt}
+                style={{
+                  width: '100%',
+                  aspectRatio: '1 / 1',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+                loading="lazy"
+              />
+              <figcaption
+                style={{
+                  padding: '8px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                }}
+              >
+                <span style={{ fontSize: '12px', opacity: 0.7, wordBreak: 'break-word' }}>
+                  {img.alt === '' ? '—' : img.alt}
+                </span>
+                <button
+                  type="button"
+                  style={s.dangerBtn}
+                  disabled={!writable}
+                  onClick={() => setPendingDelete(img)}
+                >
+                  {t.aboutGalleryRemove}
+                </button>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+
+      {pendingDelete !== null ? (
+        <ConfirmDialog
+          dark={props.dark}
+          title={t.aboutGalleryDeleteTitle}
+          body={t.aboutGalleryDeleteBody}
+          confirmLabel={t.aboutGalleryRemove}
+          cancelLabel={t.aboutGalleryDeleteCancel}
+          danger
+          busy={deleteBusy}
+          onConfirm={() => void onDelete()}
+          onClose={() => {
+            if (!deleteBusy) setPendingDelete(null)
+          }}
+        />
+      ) : null}
+    </section>
+  )
+}
+
+
+===== src/admin/views/MailView.tsx =====
+import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../../i18n/index'
+import { adminText } from '../../i18n/adminStrings'
+import { ConfirmDialog } from '../ConfirmDialog'
+import {
+  discardFailedBookingEmailDelivery,
+  listFailedBookingEmailDeliveries,
+  listEmailTemplates,
+  retryFailedBookingEmailDelivery,
+  saveEmailTemplate,
+  type EditableEmailTemplate,
+  type EmailTemplateName,
+  type FailedBookingEmailDelivery,
+} from '../adapters/emailTemplatesAdmin'
+import { listSiteSettings, saveSiteSettings } from '../adapters/siteAdmin'
+import { BUSINESS_SETTING_KEYS, DEFAULT_SITE_SETTINGS } from '../../site/siteChrome'
+import type { AdminStylesBundle } from './viewTypes'
+
+interface MailViewProps {
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly s: AdminStylesBundle
+}
+
+interface TemplateDefinition {
+  readonly id: EmailTemplateName
+  readonly sv: string
+  readonly en: string
+  readonly languages: readonly Lang[]
+  readonly hasSection: boolean
+  readonly placeholders: string
+}
+
+const DEFINITIONS: readonly TemplateDefinition[] = [
+  {
+    id: 'customer_confirmation',
+    sv: 'Bokningsbekräftelse · kund',
+    en: 'Booking confirmation · customer',
+    languages: ['sv', 'en'],
+    hasSection: true,
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
+  },
+  {
+    id: 'barber_confirmation',
+    sv: 'Ny bokning · barberare',
+    en: 'New booking · barber',
+    languages: ['sv'],
+    hasSection: true,
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
+  },
+  {
+    id: 'customer_cancellation',
+    sv: 'Avbokning · kund',
+    en: 'Cancellation · customer',
+    languages: ['sv', 'en'],
+    hasSection: true,
+    placeholders: '{business_name}, {customer_name}, {barber_name}',
+  },
+  {
+    id: 'barber_cancellation',
+    sv: 'Avbokning · barberare',
+    en: 'Cancellation · barber',
+    languages: ['sv'],
+    hasSection: true,
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {booking_date}, {booking_time}',
+  },
+  {
+    id: 'customer_reminder',
+    sv: '24h-påminnelse · kund',
+    en: '24h reminder · customer',
+    languages: ['sv', 'en'],
+    hasSection: true,
+    placeholders: '{business_name}, {customer_name}, {barber_name}, {cancellation_hours}',
+  },
+  {
+    id: 'customer_booking_access',
+    sv: 'Säker länk · kund',
+    en: 'Secure link · customer',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '',
+  },
+  {
+    id: 'auth_recovery',
+    sv: 'Återställ lösenord',
+    en: 'Reset password',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '{business_name}',
+  },
+  {
+    id: 'auth_email_change',
+    sv: 'Bekräfta ny e-post',
+    en: 'Confirm new email',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '{business_name}, {new_email}',
+  },
+  {
+    id: 'auth_invite',
+    sv: 'Inbjudan · barberare',
+    en: 'Invitation · barber',
+    languages: ['sv', 'en'],
+    hasSection: false,
+    placeholders: '{business_name}',
+  },
+]
+
+const rowKey = (template: EmailTemplateName, lang: Lang): string => `${template}:${lang}`
+
+export function MailView(props: MailViewProps): JSX.Element {
+  const { s } = props
+  const t = adminText(props.lang)
+  const [rows, setRows] = useState<Map<string, EditableEmailTemplate>>(new Map())
+  const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<{ key: string; message: string } | null>(null)
+  const editGeneration = useRef(new Map<string, number>())
+  const [failedDeliveries, setFailedDeliveries] = useState<readonly FailedBookingEmailDelivery[]>(
+    [],
+  )
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
+  const [retryingDelivery, setRetryingDelivery] = useState<string | null>(null)
+  const [discardingDelivery, setDiscardingDelivery] = useState<string | null>(null)
+  const [discardTarget, setDiscardTarget] = useState<FailedBookingEmailDelivery | null>(null)
+  const [contactSettings, setContactSettings] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  )
+  const contactGeneration = useRef(new Map<string, number>())
+  const [contactSaving, setContactSaving] = useState<'phone' | 'map' | null>(null)
+  const [contactStatus, setContactStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      const [result, failedResult, settingsResult] = await Promise.all([
+        listEmailTemplates(),
+        listFailedBookingEmailDeliveries(),
+        listSiteSettings(),
+      ])
+      if (!active) return
+      if (!result.ok) setLoadError(result.error.message)
+      else setRows(new Map(result.value.map((row) => [rowKey(row.template, row.lang), row])))
+      if (!failedResult.ok) setDeliveryError(failedResult.error.message)
+      else setFailedDeliveries(failedResult.value)
+      if (!settingsResult.ok) setLoadError(settingsResult.error.message)
+      else setContactSettings(settingsResult.value)
+      setLoaded(true)
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const contactValue = (key: string): string =>
+    contactSettings.get(key) ??
+    (key in DEFAULT_SITE_SETTINGS
+      ? DEFAULT_SITE_SETTINGS[key as keyof typeof DEFAULT_SITE_SETTINGS]
+      : '')
+
+  const setContactValue = (key: string, value: string): void => {
+    contactGeneration.current.set(key, (contactGeneration.current.get(key) ?? 0) + 1)
+    setContactSettings((previous) => new Map(previous).set(key, value))
+    setContactStatus(null)
+  }
+
+  const saveContact = async (kind: 'phone' | 'map', clear = false): Promise<void> => {
+    const values =
+      kind === 'phone'
+        ? [
+            {
+              key: BUSINESS_SETTING_KEYS.phoneDisplay,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.phoneDisplay),
+            },
+            {
+              key: BUSINESS_SETTING_KEYS.phoneTel,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.phoneTel),
+            },
+          ]
+        : [
+            {
+              key: BUSINESS_SETTING_KEYS.mapsHref,
+              value: clear ? '' : contactValue(BUSINESS_SETTING_KEYS.mapsHref),
+            },
+          ]
+    const generations = new Map<string, number>(
+      values.map(({ key }) => [key, contactGeneration.current.get(key) ?? 0]),
+    )
+    const draftIsCurrent = (): boolean =>
+      values.every(({ key }) => (contactGeneration.current.get(key) ?? 0) === generations.get(key))
+    setContactSaving(kind)
+    setContactStatus(null)
+    const result = await saveSiteSettings(values)
+    setContactSaving(null)
+    if (!result.ok) {
+      if (draftIsCurrent()) setContactStatus(result.error.message)
+      return
+    }
+    setContactSettings((previous) => {
+      const next = new Map(previous)
+      for (const [key, value] of result.value) {
+        if ((contactGeneration.current.get(key) ?? 0) === generations.get(key)) {
+          next.set(key, value)
+        }
+      }
+      return next
+    })
+    if (!draftIsCurrent()) return
+    setContactStatus(
+      props.lang === 'sv'
+        ? clear
+          ? 'Borttaget från kommande mejl.'
+          : 'Sparat. Kommande mejl använder uppgifterna.'
+        : clear
+          ? 'Removed from future emails.'
+          : 'Saved. Future emails use these details.',
+    )
+  }
+
+  const update = (
+    template: EmailTemplateName,
+    lang: Lang,
+    field: keyof Omit<EditableEmailTemplate, 'template' | 'lang'>,
+    value: string,
+  ): void => {
+    const key = rowKey(template, lang)
+    editGeneration.current.set(key, (editGeneration.current.get(key) ?? 0) + 1)
+    setRows((previous) => {
+      const current = previous.get(key)
+      if (current === undefined) return previous
+      const next = new Map(previous)
+      next.set(key, { ...current, [field]: value })
+      return next
+    })
+    setSaved(null)
+    setSaveError(null)
+  }
+
+  const save = async (template: EmailTemplateName, lang: Lang): Promise<void> => {
+    const key = rowKey(template, lang)
+    const row = rows.get(key)
+    if (row === undefined) return
+    const generation = editGeneration.current.get(key) ?? 0
+    setSaving(key)
+    setSaveError(null)
+    const result = await saveEmailTemplate(row)
+    setSaving(null)
+    if (!result.ok) {
+      if ((editGeneration.current.get(key) ?? 0) === generation) {
+        setSaveError({ key, message: result.error.message })
+      }
+      return
+    }
+    if ((editGeneration.current.get(key) ?? 0) !== generation) return
+    setRows((previous) => new Map(previous).set(key, result.value))
+    setSaved(key)
+  }
+
+  const retryDelivery = async (id: string): Promise<void> => {
+    setRetryingDelivery(id)
+    setDeliveryError(null)
+    const result = await retryFailedBookingEmailDelivery(id)
+    setRetryingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
+  }
+
+  const discardDelivery = async (id: string): Promise<void> => {
+    setDiscardingDelivery(id)
+    setDeliveryError(null)
+    const result = await discardFailedBookingEmailDelivery(id)
+    setDiscardingDelivery(null)
+    if (!result.ok) {
+      setDeliveryError(result.error.message)
+      return
+    }
+    setFailedDeliveries((previous) => previous.filter((delivery) => delivery.id !== id))
+    setDiscardTarget(null)
+  }
+
+  const field = (
+    row: EditableEmailTemplate,
+    name: keyof Omit<EditableEmailTemplate, 'template' | 'lang'>,
+    label: string,
+    multiline = false,
+  ): JSX.Element => {
+    const value = row[name] ?? ''
+    return (
+      <label style={{ display: 'block' }}>
+        <span style={s.label}>{label}</span>
+        {multiline ? (
+          <textarea
+            style={s.textarea}
+            rows={name === 'intro' || name === 'note' ? 4 : 3}
+            maxLength={800}
+            value={value}
+            onInput={(event) => update(row.template, row.lang, name, event.currentTarget.value)}
+          />
+        ) : (
+          <input
+            style={s.input}
+            maxLength={name === 'preheader' ? 180 : 120}
+            value={value}
+            onInput={(event) => update(row.template, row.lang, name, event.currentTarget.value)}
+          />
+        )}
+      </label>
+    )
+  }
+
+  return (
+    <section style={s.card} aria-labelledby="mail-heading">
+      <h2 id="mail-heading" style={s.sectionTitle}>
+        {t.mailTitle}
+      </h2>
+      <p style={s.sectionLead}>{t.mailLead}</p>
+      {loadError !== null ? (
+        <div style={{ ...s.emptyState, color: s.errorText.color }}>{loadError}</div>
+      ) : !loaded ? (
+        <div style={s.emptyState}>{t.mailLoading}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '26px', marginTop: '24px' }}>
+          <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+            <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+              {props.lang === 'sv' ? 'Kontaktuppgifter i mejl' : 'Email contact details'}
+            </h3>
+            <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+              {props.lang === 'sv'
+                ? 'Delas med Startsida. Tomma värden tas bort från nya mejl; länkar valideras på servern.'
+                : 'Shared with Startsida. Empty values are removed from new emails; links are validated server-side.'}
+            </p>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))',
+                gap: '14px',
+              }}
+            >
+              <label>
+                <span style={s.label}>
+                  {props.lang === 'sv' ? 'Telefon (visas)' : 'Phone (display)'}
+                </span>
+                <input
+                  style={s.input}
+                  type="tel"
+                  maxLength={40}
+                  value={contactValue(BUSINESS_SETTING_KEYS.phoneDisplay)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.phoneDisplay, event.currentTarget.value)
+                  }
+                />
+              </label>
+              <label>
+                <span style={s.label}>{props.lang === 'sv' ? 'Telefonlänk' : 'Phone link'}</span>
+                <input
+                  style={s.input}
+                  type="tel"
+                  maxLength={40}
+                  value={contactValue(BUSINESS_SETTING_KEYS.phoneTel)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.phoneTel, event.currentTarget.value)
+                  }
+                />
+              </label>
+              <label>
+                <span style={s.label}>{props.lang === 'sv' ? 'Kartlänk' : 'Maps link'}</span>
+                <input
+                  style={s.input}
+                  type="url"
+                  maxLength={500}
+                  value={contactValue(BUSINESS_SETTING_KEYS.mapsHref)}
+                  onInput={(event) =>
+                    setContactValue(BUSINESS_SETTING_KEYS.mapsHref, event.currentTarget.value)
+                  }
+                />
+              </label>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '14px',
+              }}
+            >
+              <button
+                type="button"
+                style={{ ...s.primaryBtn, opacity: contactSaving === 'phone' ? 0.6 : 1 }}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('phone')}
+              >
+                {props.lang === 'sv' ? 'Spara telefon' : 'Save phone'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('phone', true)}
+              >
+                {props.lang === 'sv' ? 'Ta bort telefon' : 'Remove phone'}
+              </button>
+              <button
+                type="button"
+                style={{ ...s.primaryBtn, opacity: contactSaving === 'map' ? 0.6 : 1 }}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('map')}
+              >
+                {props.lang === 'sv' ? 'Spara karta' : 'Save map'}
+              </button>
+              <button
+                type="button"
+                style={s.ghostBtn}
+                disabled={contactSaving !== null}
+                onClick={() => void saveContact('map', true)}
+              >
+                {props.lang === 'sv' ? 'Ta bort karta' : 'Remove map'}
+              </button>
+              {contactStatus === null ? null : <span style={s.mutedText}>{contactStatus}</span>}
+            </div>
+          </article>
+          <article style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+            <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+              {props.lang === 'sv' ? 'Misslyckade mejlleveranser' : 'Failed email deliveries'}
+            </h3>
+            <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+              {props.lang === 'sv'
+                ? 'Misslyckade mejl stoppas efter fem tillfälliga fel eller direkt vid permanenta leverans- och konfigurationsfel. Försök igen eller markera leveransen som hanterad.'
+                : 'Emails stop after five transient failures or immediately on permanent delivery and configuration errors. Retry or mark the delivery handled.'}
+            </p>
+            {deliveryError !== null ? <p style={s.errorText}>{deliveryError}</p> : null}
+            {failedDeliveries.length === 0 ? (
+              <p style={{ ...s.mutedText, margin: 0 }}>
+                {props.lang === 'sv'
+                  ? 'Inga misslyckade mejlleveranser.'
+                  : 'No failed email deliveries.'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {failedDeliveries.map((delivery) => (
+                  <div
+                    key={delivery.id}
+                    style={{
+                      border: s.input.border,
+                      borderRadius: '13px',
+                      padding: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '14px',
+                    }}
+                  >
+                    <span style={{ ...s.mutedText, margin: 0 }}>
+                      {delivery.event} · {delivery.errorCode ?? 'unknown'} · {delivery.attemptCount}{' '}
+                      {props.lang === 'sv' ? 'försök' : 'attempts'}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.primaryBtn,
+                          opacity: retryingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => void retryDelivery(delivery.id)}
+                      >
+                        {retryingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Försöker …'
+                            : 'Retrying …'
+                          : props.lang === 'sv'
+                            ? 'Försök igen'
+                            : 'Retry'}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...s.ghostBtn,
+                          opacity: discardingDelivery === delivery.id ? 0.6 : 1,
+                        }}
+                        disabled={
+                          retryingDelivery === delivery.id || discardingDelivery === delivery.id
+                        }
+                        onClick={() => setDiscardTarget(delivery)}
+                      >
+                        {discardingDelivery === delivery.id
+                          ? props.lang === 'sv'
+                            ? 'Hanterar …'
+                            : 'Handling …'
+                          : props.lang === 'sv'
+                            ? 'Markera hanterad'
+                            : 'Mark handled'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+          {DEFINITIONS.map((definition) => (
+            <article key={definition.id} style={{ borderTop: s.card.border, paddingTop: '22px' }}>
+              <h3 style={{ margin: '0 0 5px', fontSize: '17px' }}>
+                {props.lang === 'sv' ? definition.sv : definition.en}
+              </h3>
+              {definition.placeholders === '' ? null : (
+                <p style={{ ...s.mutedText, margin: '0 0 16px' }}>
+                  {t.mailPlaceholderHelp}: <code>{definition.placeholders}</code>
+                </p>
+              )}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))',
+                  gap: '18px',
+                }}
+              >
+                {definition.languages.map((lang) => {
+                  const key = rowKey(definition.id, lang)
+                  const row = rows.get(key)
+                  if (row === undefined) return null
+                  return (
+                    <div
+                      key={key}
+                      style={{
+                        border: s.input.border,
+                        borderRadius: '13px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '13px',
+                      }}
+                    >
+                      <strong style={{ fontSize: '13px' }}>
+                        {lang === 'sv' ? t.mailSwedish : t.mailEnglish}
+                      </strong>
+                      {field(row, 'subject', t.mailSubject)}
+                      {field(row, 'preheader', t.mailPreheader)}
+                      {field(row, 'title', t.mailHeading)}
+                      {field(row, 'intro', t.mailIntro, true)}
+                      {definition.hasSection
+                        ? field(row, 'sectionTitle', t.mailSectionTitle)
+                        : null}
+                      {field(row, 'note', t.mailNote, true)}
+                      {field(row, 'ctaLabel', t.mailButton)}
+                      {field(row, 'contactLead', t.mailContact, true)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button
+                          type="button"
+                          style={{ ...s.primaryBtn, opacity: saving === key ? 0.6 : 1 }}
+                          disabled={saving !== null}
+                          onClick={() => void save(definition.id, lang)}
+                        >
+                          {saving === key ? t.mailSaving : t.mailSave}
+                        </button>
+                        <span aria-live="polite">
+                          {saved === key ? <span style={s.successText}>{t.mailSaved}</span> : null}
+                          {saveError?.key === key ? (
+                            <span style={s.errorText}>{saveError.message}</span>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {discardTarget === null ? null : (
+        <ConfirmDialog
+          dark={props.dark}
+          title={props.lang === 'sv' ? 'Markera mejlet som hanterat?' : 'Mark email handled?'}
+          body={
+            props.lang === 'sv'
+              ? `Leveransen för bokning ${discardTarget.bookingId} kommer inte att skickas igen. Bokningen kan därefter raderas.`
+              : `Delivery for booking ${discardTarget.bookingId} will not be retried. The booking can then be deleted.`
+          }
+          confirmLabel={props.lang === 'sv' ? 'Markera hanterad' : 'Mark handled'}
+          cancelLabel={props.lang === 'sv' ? 'Avbryt' : 'Cancel'}
+          danger={true}
+          busy={discardingDelivery === discardTarget.id}
+          onConfirm={() => void discardDelivery(discardTarget.id)}
+          onClose={() => {
+            if (discardingDelivery === null) setDiscardTarget(null)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+
+===== src/admin/views/HomepageReplicaPreview.tsx =====
+// Owner CMS preview: render the production desktop surface with draft chrome, never a hand-built
+// approximation. Its own local navigation lets an editor inspect the hero, booking fold, and About
+// content without changing the public page.
+
+import type { JSX } from 'preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { DesktopSite } from '../../app/DesktopSite'
+import { chromeIcon, shellPalette, type View } from '../../app/shared'
+import { LangSwitch, ThemeSwitch } from '../chrome'
+import type { AdminStylesBundle } from './viewTypes'
+import { readOnlyHomepagePreviewPorts } from './homepageReplicaPorts'
+import { appStrings, type Lang } from '../../i18n/index'
+import {
+  formatBusinessAddress,
+  resolveBusinessSettings,
+  resolveSiteText,
+  type HomepageLogo,
+  type SiteText,
+  type SizePreset,
+} from '../../site/siteChrome'
+
+const previewPorts = readOnlyHomepagePreviewPorts()
+
+export interface HomepageReplicaPreviewProps {
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly settings: ReadonlyMap<string, string>
+  readonly textByLang: Readonly<Record<Lang, SiteText>>
+  readonly homepageScale: SizePreset
+  readonly logo: HomepageLogo
+  readonly aboutScale: SizePreset
+  readonly s: AdminStylesBundle
+}
+
+type PreviewSurface = View | 'about'
+
+export function HomepageReplicaPreview(props: HomepageReplicaPreviewProps): JSX.Element {
+  const [dark, setDark] = useState(props.dark)
+  const [lang, setLang] = useState<Lang>(props.lang)
+  const [surface, setSurface] = useState<PreviewSurface>('home')
+  const scrollRootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => setDark(props.dark), [props.dark])
+  useEffect(() => setLang(props.lang), [props.lang])
+  useEffect(() => {
+    const scrollRoot = scrollRootRef.current
+    if (scrollRoot === null) return
+    const frame = window.requestAnimationFrame(() => {
+      const target =
+        surface === 'booking'
+          ? scrollRoot.querySelector<HTMLElement>('[data-testid="fold-booking"]')
+          : surface === 'about'
+            ? scrollRoot.querySelector<HTMLElement>('#om-oss')
+            : null
+      if (target === null) {
+        scrollRoot.scrollTo({ top: 0 })
+        return
+      }
+      const hostTop = scrollRoot.getBoundingClientRect().top
+      const targetTop = target.getBoundingClientRect().top
+      scrollRoot.scrollTo({ top: scrollRoot.scrollTop + targetTop - hostTop - 61 })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [surface])
+
+  const view: View = surface === 'booking' ? 'booking' : 'home'
+
+  const c = shellPalette(dark)
+  const business = resolveBusinessSettings(props.settings)
+  const resolvedText = resolveSiteText(
+    props.textByLang[lang],
+    lang,
+    business.cancellationPolicyHours,
+    business.name,
+  )
+  const tx = {
+    ...appStrings(lang),
+    kicker: resolvedText.kicker,
+    hours: resolvedText.hours,
+    addr: formatBusinessAddress(business),
+  }
+  const findUsStyle: JSX.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '7px 14px',
+    borderRadius: '999px',
+    border: `.5px solid ${dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.16)'}`,
+    color: c.text,
+    textDecoration: 'none',
+    fontWeight: 600,
+    opacity: 0.92,
+  }
+
+  return (
+    <div
+      data-testid="homepage-replica-preview"
+      aria-label={lang === 'sv' ? 'Skrivskyddad startsidereplika' : 'Read-only homepage replica'}
+    >
+      <div
+        role="toolbar"
+        aria-label={lang === 'sv' ? 'Förhandsvisningskontroller' : 'Preview controls'}
+        style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}
+      >
+        {(['home', 'booking', 'about'] as const).map((entry) => (
+          <button
+            key={entry}
+            type="button"
+            aria-pressed={surface === entry}
+            onClick={() => setSurface(entry)}
+            style={surface === entry ? props.s.primaryBtn : props.s.ghostBtn}
+          >
+            {entry === 'home'
+              ? lang === 'sv'
+                ? 'Startsida'
+                : 'Home'
+              : entry === 'booking'
+                ? lang === 'sv'
+                  ? 'Bokning'
+                  : 'Booking'
+                : lang === 'sv'
+                  ? 'Om oss'
+                  : 'About'}
+          </button>
+        ))}
+        <LangSwitch lang={lang} setLang={setLang} dark={dark} />
+        <ThemeSwitch
+          dark={dark}
+          onToggle={() => setDark((value) => !value)}
+          label={lang === 'sv' ? 'Byt förhandsvisningstema' : 'Toggle preview theme'}
+        />
+      </div>
+      <div
+        ref={scrollRootRef}
+        data-testid="homepage-replica-scroll"
+        style={{
+          height: '580px',
+          overflow: 'auto',
+          border: dark ? '1px solid rgba(255,255,255,.16)' : '1px solid rgba(0,0,0,.12)',
+          borderRadius: '13px',
+        }}
+      >
+        <div aria-hidden="true" inert style={{ pointerEvents: 'none' }}>
+          <DesktopSite
+            mode={dark ? 'dark' : 'light'}
+            lang={lang}
+            dark={dark}
+            c={c}
+            business={business}
+            chromeIconStyle={chromeIcon(dark)}
+            themeToggle={<ThemeSwitch dark={dark} onToggle={() => undefined} label="Theme" />}
+            langToggle={<LangSwitch lang={lang} setLang={() => undefined} dark={dark} />}
+            tx={tx}
+            view={view}
+            toggleDeskBooking={() =>
+              setSurface((value) => (value === 'booking' ? 'home' : 'booking'))
+            }
+            scrollToAbout={() => setSurface('about')}
+            findUsStyle={findUsStyle}
+            openCancel={() => undefined}
+            openMyBookings={() => undefined}
+            homepageScale={props.homepageScale}
+            homepageLogo={props.logo}
+            aboutScale={props.aboutScale}
+            bookingPopupText={resolvedText}
+            previewPorts={previewPorts}
+            scrollRootRef={scrollRootRef}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+===== src/admin/adminSchemas.ts =====
+// Wire-boundary Zod schemas for the admin data layer — the SAME discipline as
+// `backend/rpcSchemas.ts`: PostgREST/RPC `data` is untyped JSON, so every row and RPC response is
+// validated before the adapter trusts a field. These schemas ARE the contract; a malformed payload
+// fails parsing and the adapter maps it to an `AdminError` (never throws to the UI).
+//
+// Naming: schemas validate the RAW DB shape (snake_case columns). The adapters map a parsed raw row
+// into the camelCase admin domain type (`types.ts`). We re-export `parseWith` from the backend so
+// there is a single parse helper across the app.
+
+import { z } from 'zod'
+
+export { parseWith } from '../backend/rpcSchemas'
+export type { Parsed } from '../backend/rpcSchemas'
+
+/** ISO-8601 timestamp WITH offset (how PostgREST serializes `timestamptz`). */
+const isoTimestamp = z.string().datetime({ offset: true })
+
+/** `YYYY-MM-DD` date (PostgREST serializes a `date` column as this). */
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+const bookingDurationMin = z.number().finite().int().min(1).max(600)
+const serviceDurationMin = z.number().finite().int().min(5).max(600)
+const sortOrder = z.number().finite().int().min(0)
+
+const lang = z.enum(['sv', 'en'])
+const weekday = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6),
+])
+
+const canonicalWeekdays = z
+  .array(weekday)
+  .min(1)
+  .superRefine((weekdays, context) => {
+    for (let index = 1; index < weekdays.length; index += 1) {
+      const previous = weekdays[index - 1]
+      const current = weekdays[index]
+      if (previous !== undefined && current !== undefined && previous >= current) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Expected sorted, unique weekdays',
+        })
+        return
+      }
+    }
+  })
+
+// --- profiles (self-read) ------------------------------------------------------------------------
+
+export const profileRow = z.object({
+  role: z.enum(['owner', 'barber']),
+  barber_id: z.string().nullable(),
+  must_change_password: z.boolean(),
+  account_enabled: z.boolean(),
+})
+export type ProfileRow = z.infer<typeof profileRow>
+
+// --- barbers -------------------------------------------------------------------------------------
+
+export const barberRow = z.object({
+  id: z.string(),
+  name: z.string(),
+  ig: z.string(),
+  role_sv: z.string(),
+  role_en: z.string(),
+  bio_sv: z.string(),
+  bio_en: z.string(),
+  active: z.boolean(),
+  sort_order: z.number(),
+})
+export type BarberRow = z.infer<typeof barberRow>
+export const barberRows = z.array(barberRow)
+
+// --- barber_schedules ----------------------------------------------------------------------------
+
+const scheduleRow = z.object({
+  barber_id: z.string(),
+  // Literal union so the inferred `weekday` is exactly `0|1|…|6` (structurally `Weekday`), letting
+  // the adapter map a parsed row straight into a `DaySchedule` with no cast (cf. `ratingInt`).
+  weekday,
+  working: z.boolean(),
+  start_min: z.number().int().min(0).max(1440),
+  end_min: z.number().int().min(0).max(1440),
+})
+export type ScheduleRow = z.infer<typeof scheduleRow>
+export const scheduleRows = z.array(scheduleRow)
+
+const availabilityMutationConflict = z.object({
+  ok: z.literal(false),
+  error: z.literal('booking_conflict'),
+  booking_ids: z.array(z.string().uuid()),
+})
+const availabilityMutationDenied = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const saveWeekResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+
+// --- barber_time_off -----------------------------------------------------------------------------
+
+const timeOffRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  start_date: isoDate,
+  end_date: isoDate,
+  reason: z.string(),
+})
+export type TimeOffRow = z.infer<typeof timeOffRow>
+export const timeOffRows = z.array(timeOffRow)
+export const addTimeOffResponse = z.union([
+  z.object({ ok: z.literal(true), row: timeOffRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+
+// --- barber_slot_blocks --------------------------------------------------------------------------
+
+const slotBlockRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  block_date: isoDate,
+  start_min: z.number().int().min(0).max(1440),
+  end_min: z.number().int().min(0).max(1440),
+})
+export type SlotBlockRow = z.infer<typeof slotBlockRow>
+export const slotBlockRows = z.array(slotBlockRow)
+export const addSlotBlockResponse = z.union([
+  z.object({ ok: z.literal(true), row: slotBlockRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+
+// --- barber_recurring_breaks --------------------------------------------------------------------
+
+const recurringBreakRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  weekday,
+  start_min: z.number().int().min(540).max(1065),
+  end_min: z.number().int().min(555).max(1080),
+})
+export type RecurringBreakRow = z.infer<typeof recurringBreakRow>
+export const recurringBreakRows = z.array(recurringBreakRow)
+export const addRecurringBreakResponse = z.union([
+  z.object({ ok: z.literal(true), row: recurringBreakRow }),
+  availabilityMutationConflict,
+  availabilityMutationDenied,
+])
+export const deleteRecurringBreakResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  availabilityMutationDenied,
+])
+
+// --- services (admin CRUD) -----------------------------------------------------------------------
+// A per-barber service-menu row (owner=all, barber=own). Maps to `AdminService` in types.ts.
+
+export const serviceRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  name: z.string(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: serviceDurationMin,
+  active: z.boolean(),
+  sort_order: sortOrder,
+  available_weekdays: canonicalWeekdays,
+})
+export type ServiceRow = z.infer<typeof serviceRow>
+export const serviceRows = z.array(serviceRow)
+
+const serviceMutationError = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found', 'invalid', 'duplicate']),
+})
+export const createServiceResponse = z.union([
+  z.object({ ok: z.literal(true), row: serviceRow }),
+  serviceMutationError,
+])
+export const deleteServiceResponse = z.union([
+  z.object({ ok: z.literal(true) }),
+  serviceMutationError,
+])
+export const reorderServiceResponse = z.union([
+  z.object({ ok: z.literal(true), services: serviceRows }),
+  serviceMutationError,
+])
+
+// --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
+
+const siteContentRow = z.object({
+  key: z.string(),
+  lang,
+  value: z.string(),
+})
+export type SiteContentRowT = z.infer<typeof siteContentRow>
+export const siteContentRows = z.array(siteContentRow)
+
+const siteSettingRow = z.object({
+  key: z.string().min(1).max(40),
+  value: z.string().max(500),
+})
+export type SiteSettingRowT = z.infer<typeof siteSettingRow>
+export const siteSettingRows = z.array(siteSettingRow)
+
+// --- email_templates -----------------------------------------------------------------------------
+
+const emailTemplateName = z.enum([
+  'customer_confirmation',
+  'barber_confirmation',
+  'customer_cancellation',
+  'barber_cancellation',
+  'customer_reminder',
+  'customer_booking_access',
+  'auth_recovery',
+  'auth_email_change',
+  'auth_invite',
+])
+
+const emailTemplateRow = z.object({
+  template: emailTemplateName,
+  lang,
+  subject: z.string(),
+  preheader: z.string(),
+  title: z.string(),
+  intro: z.string(),
+  section_title: z.string().nullable(),
+  note: z.string(),
+  cta_label: z.string(),
+  contact_lead: z.string().nullable(),
+})
+export type EmailTemplateRowT = z.infer<typeof emailTemplateRow>
+export const emailTemplateRows = z.array(emailTemplateRow)
+
+export const failedBookingEmailDeliveryRow = z.object({
+  id: z.string().uuid(),
+  booking_id: z.string().uuid(),
+  event: z.enum(['booking_confirmed', 'booking_cancelled']),
+  attempt_count: z.number().int().nonnegative(),
+  last_error_code: z
+    .enum([
+      'not_configured',
+      'send_failed',
+      'send_failed_transient',
+      'send_failed_permanent',
+      'message_build_failed',
+    ])
+    .nullable(),
+  failed_at: isoTimestamp.nullable(),
+})
+export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)
+export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
+export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
+
+// --- barber_photos (Task 2 §3) -------------------------------------------------------------------
+
+export const barberPhotoRowT = z.object({
+  barber_id: z.string(),
+  storage_path: z.string(),
+})
+export type BarberPhotoRowT = z.infer<typeof barberPhotoRowT>
+
+export const uploadBarberPhotoResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('barber_photo'),
+    row: barberPhotoRowT,
+    path: z.string().min(1),
+    publicUrl: z.string().url(),
+  })
+  .refine((response) => response.path === response.row.storage_path)
+
+// --- about_content -------------------------------------------------------------------------------
+
+export const aboutRow = z.object({
+  key: z.enum([
+    'eyebrow',
+    'heading',
+    'intro',
+    'galleryTitle',
+    'cutsTitle',
+    'stylistsTitle',
+    'reviewsTitle',
+  ]),
+  lang,
+  value: z.string(),
+})
+export type AboutContentRow = z.infer<typeof aboutRow>
+export const aboutRows = z.array(aboutRow)
+
+// --- gallery_images ------------------------------------------------------------------------------
+
+const galleryRow = z.object({
+  id: z.string(),
+  kind: z.enum(['salon', 'cuts']),
+  storage_path: z.string(),
+  alt: z.string(),
+  sort_order: z.number(),
+})
+export type GalleryRow = z.infer<typeof galleryRow>
+export const galleryRows = z.array(galleryRow)
+
+export const uploadGalleryImageResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('gallery'),
+    row: galleryRow,
+    path: z.string().min(1),
+    publicUrl: z.string().url(),
+  })
+  .refine((response) => response.path === response.row.storage_path)
+
+export const imageDeleteResponse = z.object({
+  ok: z.literal(true),
+  pending: z.boolean(),
+})
+
+export const uploadHomepageLogoResponse = z
+  .object({
+    ok: z.literal(true),
+    kind: z.literal('site_logo'),
+    path: z.string().regex(/^logo\/[0-9a-f-]{36}\.webp$/),
+    publicUrl: z.string().url(),
+    cleanupPending: z.boolean(),
+  })
+  .refine((response) => response.publicUrl.includes(`/gallery/${response.path}`))
+
+// --- bookings (admin read) -----------------------------------------------------------------------
+// The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to
+// the owning barber; nullable phone/email per the method.
+
+const adminBookingRow = z.object({
+  id: z.string(),
+  barber_id: z.string(),
+  service_name: z.string(),
+  price: z.number().finite().min(0).max(100000),
+  duration_min: bookingDurationMin,
+  start_at: isoTimestamp,
+  end_at: isoTimestamp,
+  customer_name: z.string(),
+  method: z.enum(['phone', 'email', 'walkin']),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  lang,
+  status: z.enum(['confirmed', 'cancelled']),
+})
+export type AdminBookingRow = z.infer<typeof adminBookingRow>
+export const adminBookingRows = z.array(adminBookingRow)
+
+// --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------
+// {ok:true, booking:{...}} | typed authorization/availability/validation error.
+
+const adminCreateOk = z.object({ ok: z.literal(true) })
+const adminCreateErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'invalid', 'slot_taken', 'outside_hours']),
+})
+export const adminCreateBookingResponse = z.discriminatedUnion('ok', [
+  adminCreateOk,
+  adminCreateErr,
+])
+export type AdminCreateBookingResponse = z.infer<typeof adminCreateBookingResponse>
+
+// --- admin_cancel_booking RPC --------------------------------------------------------------------
+// {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'not_found'}
+
+const cancelOk = z.object({
+  ok: z.literal(true),
+  booking: z.object({
+    id: z.string(),
+    barber_id: z.string(),
+    service_name: z.string(),
+    start_at: isoTimestamp,
+    status: z.literal('cancelled'),
+    cancelled_at: isoTimestamp,
+  }),
+})
+const cancelErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found']),
+})
+export const adminCancelResponse = z.discriminatedUnion('ok', [cancelOk, cancelErr])
+export type AdminCancelResponse = z.infer<typeof adminCancelResponse>
+
+// --- admin_delete_barber RPC ---------------------------------------------------------------------
+// Owner-only hard delete. With `p_purge_bookings=false` the RPC REFUSES while the barber still has
+// bookings and echoes the counts so the UI can confirm; `true` deletes the bookings too and reports
+// how many. `ok` alone can't discriminate the two `ok:false` shapes, so this is a plain `z.union`
+// (fail-closed: a `has_bookings` payload missing the counts matches no member and fails parsing).
+//   {ok:true, deleted_bookings:n}
+// | {ok:false, error:'has_bookings', count, past, upcoming}
+// | {ok:false, error:'forbidden'|'not_found'}
+const deleteBarberOk = z.object({
+  ok: z.literal(true),
+  deleted_bookings: z.number().int().nonnegative(),
+  auth_cleanup_pending: z.boolean(),
+})
+const deleteBarberHasBookings = z.object({
+  ok: z.literal(false),
+  error: z.literal('has_bookings'),
+  count: z.number().int().nonnegative(),
+  past: z.number().int().nonnegative(),
+  upcoming: z.number().int().nonnegative(),
+})
+const deleteBarberDenied = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'not_found']),
+})
+const deleteBarberHasUpcoming = z.object({
+  ok: z.literal(false),
+  error: z.literal('has_upcoming'),
+  count: z.number().int().nonnegative(),
+  past: z.number().int().nonnegative(),
+  upcoming: z.number().int().positive(),
+})
+const deleteBarberExternalCleanup = z.object({
+  ok: z.literal(false),
+  error: z.literal('external_cleanup_pending'),
+  calendar_events: z.number().int().nonnegative(),
+})
+const deleteBarberDeliveryPending = z.object({
+  ok: z.literal(false),
+  error: z.literal('delivery_pending'),
+})
+export const adminDeleteBarberResponse = z.union([
+  deleteBarberOk,
+  deleteBarberHasBookings,
+  deleteBarberHasUpcoming,
+  deleteBarberExternalCleanup,
+  deleteBarberDeliveryPending,
+  deleteBarberDenied,
+])
+export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>
+
+// --- admin_delete_bookings RPC -------------------------------------------------------------------
+// Bulk hard delete of bookings by id (owner any barber; a barber only their own). Intended for
+// past/cancelled rows: REFUSES (`has_upcoming`) if any id is still a live upcoming appointment, and
+// rejects an empty selection (`empty`). Reports how many rows were deleted.
+// {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'|'delivery_pending'}
+const deleteBookingsOk = z.object({
+  ok: z.literal(true),
+  count: z.number().int().nonnegative(),
+})
+const deleteBookingsErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['empty', 'forbidden', 'has_upcoming', 'delivery_pending']),
+})
+export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
+  deleteBookingsOk,
+  deleteBookingsErr,
+])
+export type AdminDeleteBookingsResponse = z.infer<typeof adminDeleteBookingsResponse>
+
+// --- admin_purge_history RPC ---------------------------------------------------------------------
+// Owner-only: delete ALL past/cancelled history in one shot, reporting the row count removed.
+// {ok:true, count:n} | {ok:false, error:'forbidden'|'delivery_pending'}
+const purgeHistoryOk = z.object({
+  ok: z.literal(true),
+  count: z.number().int().nonnegative(),
+})
+const purgeHistoryErr = z.object({
+  ok: z.literal(false),
+  error: z.enum(['forbidden', 'delivery_pending']),
+})
+export const adminPurgeHistoryResponse = z.discriminatedUnion('ok', [
+  purgeHistoryOk,
+  purgeHistoryErr,
+])
+export type AdminPurgeHistoryResponse = z.infer<typeof adminPurgeHistoryResponse>
+
+// --- available_slots RPC -------------------------------------------------------------------------
+// `setof text` -> PostgREST returns an array of `HH:MM` strings.
+
+export const availableSlotsResponse = z.array(z.string())
+
+
+===== src/admin/adminClient.ts =====
+// The ADMIN Supabase client seam — a SECOND client instance, DISTINCT from the public
+// `getSupabase()` in `src/backend/supabaseClient.ts`. Two deliberate differences:
+//
+//   1. `persistSession: true` (+ autoRefreshToken) with its OWN `storageKey` — so an owner/barber
+//      stays logged in across reloads WITHOUT touching the public site (which keeps
+//      persistSession:false). The two clients never share session state.
+//   2. It is imported ONLY from lazy-loaded admin code, so `@supabase/supabase-js`'s auth machinery
+//      lands in the admin chunk and never weighs down the public critical path.
+//
+// Security: the browser holds the PUBLIC anon key + (after login) the user's Auth session. RLS +
+// the SECURITY DEFINER helpers/RPCs are the ENTIRE boundary — there is NO service_role here.
+//
+// Effects (creating the network client, reading localStorage) are isolated at this edge; the admin
+// adapters take a ready client from `getAdminClient()` and stay pure transforms of its responses.
+
+import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../backend/config'
+import { captureAdminOperation } from './orderedOperations'
+
+/** A unique storage key so the admin session never collides with anything the public client stores. */
+const ADMIN_STORAGE_KEY = 'knc-admin-auth'
+const memory = new Map<string, string>()
+
+// Web Locks make the compare/remove atomic with every SDK storage write across tabs. Older
+// browsers keep admin sessions per tab; they must not share credentials without that guarantee.
+function storage(): Storage | null {
+  try {
+    return typeof navigator !== 'undefined' && navigator.locks
+      ? globalThis.localStorage
+      : (globalThis.sessionStorage ?? null)
+  } catch {
+    return null
+  }
+}
+function storageRead(key: string): string | null {
+  try {
+    const target = storage()
+    return target === null ? (memory.get(key) ?? null) : target.getItem(key)
+  } catch {
+    return memory.get(key) ?? null
+  }
+}
+function storageWrite(key: string, value: string | null): void {
+  try {
+    const target = storage()
+    if (target !== null) {
+      if (value === null) target.removeItem(key)
+      else target.setItem(key, value)
+    }
+  } catch {
+    // Match the SDK's in-memory fallback when browser storage is unavailable.
+  }
+  if (value === null) memory.delete(key)
+  else memory.set(key, value)
+}
+function withStorageLock<T>(operation: () => T): Promise<T> {
+  return typeof navigator !== 'undefined' && navigator.locks
+    ? navigator.locks.request(`${ADMIN_STORAGE_KEY}:storage`, operation)
+    : Promise.resolve(operation())
+}
+const adminStorage = {
+  getItem: (key: string) => withStorageLock(() => storageRead(key)),
+  setItem: (key: string, value: string) => withStorageLock(() => storageWrite(key, value)),
+  removeItem: (key: string) => withStorageLock(() => storageWrite(key, null)),
+}
+
+/** Clear only the account being signed out, atomically with another tab's SDK sign-in. */
+export function clearStoredAdminSession(userId: string): Promise<void> {
+  return withStorageLock(() => {
+    const saved = storageRead(ADMIN_STORAGE_KEY)
+    if (saved === null) return
+    const parsed: unknown = JSON.parse(saved)
+    if (typeof parsed !== 'object' || parsed === null || !('user' in parsed)) return
+    const user = parsed.user
+    if (typeof user === 'object' && user !== null && 'id' in user && user.id === userId)
+      storageWrite(ADMIN_STORAGE_KEY, null)
+  })
+}
+
+/** Memoized singleton — created on first `getAdminClient()` call, never at import time. */
+let client: SupabaseClient | undefined
+type AdminClient = Pick<SupabaseClient, 'auth' | 'from' | 'rpc' | 'functions' | 'storage'>
+let protectedData:
+  | { readonly userId: string; readonly isCurrent: () => boolean; readonly client: AdminClient }
+  | undefined
+
+/**
+ * The admin Supabase client (lazily created, memoized, session-persisting). Throws a clear error if
+ * called while the backend is unconfigured — the login screen checks `isBackendConfigured()` first
+ * and shows a notice, so this guard only ever fires on misuse.
+ */
+function createAdminClient(
+  persistSession: boolean,
+  accessToken?: () => Promise<string>,
+): SupabaseClient {
+  if (SUPABASE_URL === undefined || SUPABASE_ANON_KEY === undefined) {
+    throw new Error(
+      'Admin backend is not configured: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+    )
+  }
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    ...(accessToken === undefined ? {} : { accessToken }),
+    auth: {
+      persistSession,
+      autoRefreshToken: persistSession,
+      detectSessionInUrl: false,
+      storageKey: persistSession ? ADMIN_STORAGE_KEY : `${ADMIN_STORAGE_KEY}-operation`,
+      ...(persistSession ? { storage: adminStorage } : {}),
+    },
+  })
+}
+
+/** Session establishment/profile verification cannot depend on a previously mounted admin gate. */
+export function getAdminAuthClient(): SupabaseClient {
+  return (client ??= createAdminClient(true))
+}
+
+/**
+ * Capture the verified principal in a data client. The SDK may observe another tab's storage
+ * before delivering its Auth event; each request must check identity and then use the token it
+ * actually checked, never ask the mutable singleton for credentials a second time.
+ */
+export function activateAdminDataClient(userId: string, onSessionChange: () => void): void {
+  if (protectedData?.userId === userId && protectedData.isCurrent()) return
+  const isCurrent = captureAdminOperation()
+  const auth = getAdminAuthClient().auth
+  const data = createAdminClient(false, async () => {
+    if (!isCurrent()) throw new Error('Admin session changed')
+    const result = await auth.getSession()
+    if (!isCurrent()) throw new Error('Admin session changed')
+    if (result.error !== null) {
+      if ([400, 401, 403].includes(result.error.status ?? 0)) onSessionChange()
+      throw new Error('Admin session unavailable')
+    }
+    const session = result.data.session
+    if (session === null || session.user.id !== userId) {
+      onSessionChange()
+      throw new Error('Admin session changed')
+    }
+    return session.access_token
+  })
+  protectedData = {
+    userId,
+    isCurrent,
+    client: {
+      auth,
+      from: data.from.bind(data),
+      rpc: data.rpc.bind(data),
+      functions: data.functions,
+      storage: data.storage,
+    },
+  }
+}
+
+/** Auth stays shared; protected adapters retain the data client's captured principal. */
+export function getAdminClient(): AdminClient {
+  return protectedData?.client ?? getAdminAuthClient()
+}
+
+/** Password responses must not persist or broadcast a session after its UI owner has left. */
+export function createAdminAuthOperationClient(): SupabaseClient['auth'] {
+  return createAdminClient(false).auth
+}
+
