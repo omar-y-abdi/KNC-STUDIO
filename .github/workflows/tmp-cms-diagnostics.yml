@@ -18,38 +18,26 @@ jobs:
           repository: omar-y-abdi/KNC-STUDIO
           github-token: ${{ github.token }}
           path: evidence
-      - name: Inspect native preview and authored frame boundaries
+      - name: Inspect native preview frame state
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          from urllib.parse import urlsplit
-          import json,re
-          def clean(s):
-            s=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted]',s)
-            return re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',s)
-          wanted=('owner-studio-native-preview','custom-page-create-type-locales-theme-publish')
-          for p in sorted(Path('evidence').rglob('*.zip')):
-            if not any(key in p.name for key in wanted): continue
-            print('\nTRACE',p)
-            with ZipFile(p) as z:
-              for name in z.namelist():
-                if not name.endswith(('.network','.trace')): continue
-                for line in z.read(name).decode(errors='replace').splitlines():
-                  try: row=json.loads(line)
-                  except ValueError: continue
-                  if row.get('type')=='console':
-                    print('CONSOLE',clean(json.dumps(row))[:3000])
-                  item=row.get('snapshot',{})
-                  if 'request' not in item: continue
-                  req=item['request']; url=req.get('url',''); parsed=urlsplit(url)
-                  if '/admin/cms/preview' not in url and 'cdnjs.cloudflare.com' not in url: continue
-                  response=item.get('response',{})
-                  headers={h['name'].lower():h['value'] for h in response.get('headers',[])}
-                  result={'url':parsed.scheme+'://'+parsed.netloc+parsed.path,'method':req.get('method'),'status':response.get('status'),'failure':item.get('_failureText'),'location':headers.get('location'),'csp':headers.get('content-security-policy'),'xfo':headers.get('x-frame-options'),'contentType':headers.get('content-type')}
-                  print('NETWORK',clean(json.dumps(result)))
-          print('\nWORKER PREVIEW LINES')
-          for p in Path('evidence').rglob('worker.log'):
-            for line in p.read_text(errors='replace').splitlines():
-              if '/admin/cms/preview' in line or 'error' in line.lower(): print(clean(line))
+          import re
+          needles=['Väntar på redigeringsdokumentet','Laddar adminpanelen','Kunde inte nå servern','Endast ägaren','data-cms-node','cms-preview','cms-studio']
+          p=next(Path('evidence').rglob('owner-studio-native-preview.zip'))
+          print('TRACE',p)
+          with ZipFile(p) as z:
+            for name in z.namelist():
+              data=z.read(name)
+              try: text=data.decode('utf-8')
+              except UnicodeDecodeError: continue
+              hits=[needle for needle in needles if needle in text]
+              if not hits: continue
+              print('\nRESOURCE',name,'HITS',hits)
+              for needle in hits:
+                for match in list(re.finditer(re.escape(needle),text))[:5]:
+                  start=max(0,match.start()-350); end=min(len(text),match.end()+650)
+                  print('---',needle,'---')
+                  print(text[start:end].replace('\n',' ')[:1600])
           PY
