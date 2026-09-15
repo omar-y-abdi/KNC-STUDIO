@@ -1,0 +1,1670 @@
+
+===== src/admin/AdminApp.tsx =====
+// The `/admin` gate. Its session lifecycle resolves and revalidates the active profile:
+//   - no session / no profile -> redirect to `/login` (the public login screen handles sign-in).
+//   - backend unconfigured -> redirect to `/login` (which shows the "not configured" notice).
+//   - resolved -> render the role's `AdminShell`.
+// Sign-out clears the session and routes back to `/login`.
+//
+// This component (and everything it imports) lives behind a dynamic import in `Root`, so none of the
+// admin/auth/supabase-auth code ships on the public critical path.
+
+import type { JSX } from 'preact'
+import { lazy } from 'preact/compat'
+import { useLocation } from 'wouter-preact'
+import { palette } from '../booking/bookingStyles'
+import { adminText } from '../i18n/adminStrings'
+import { useTheme } from './useTheme'
+import { useAdminSession } from './useAdminSession'
+import { LazySurface } from '../ui/LazySurface'
+
+const AdminShell = lazy(() =>
+  import('./AdminShell').then((module) => ({ default: module.AdminShell })),
+)
+const ForcedPasswordChange = lazy(() =>
+  import('./ForcedPasswordChange').then((module) => ({ default: module.ForcedPasswordChange })),
+)
+
+export function AdminApp(): JSX.Element {
+  const theme = useTheme()
+  const [, navigate] = useLocation()
+  const { gate, error, revalidate, onSignOut } = useAdminSession(navigate)
+
+  const c = palette(theme.dark)
+  const t = adminText(theme.lang)
+
+  // Forced first-login gate — blocks the panel until the barber picks a real password.
+  if (gate.kind === 'forced_change') {
+    return (
+      <LazySurface
+        loadingLabel={t.lazyLoading}
+        errorLabel={t.lazyError}
+        retryLabel={t.lazyReload}
+        minHeight="100vh"
+      >
+        <ForcedPasswordChange
+          key={gate.profile.userId}
+          lang={theme.lang}
+          onDone={revalidate}
+          onSignOut={onSignOut}
+        />
+      </LazySurface>
+    )
+  }
+
+  if (gate.kind !== 'authed') {
+    // A minimal, on-brand placeholder while resolving / redirecting (never a flash of admin UI).
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: c.bg,
+          color: c.text,
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+          fontSize: '14px',
+          opacity: 0.7,
+        }}
+      >
+        {gate.kind === 'unavailable' ? (
+          <div role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={revalidate}>
+              {t.lazyReload}
+            </button>
+          </div>
+        ) : (
+          t.lazyLoading
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {error === null ? null : (
+        <p role="status" style={{ color: c.text, padding: '12px 20px', margin: 0 }}>
+          {error}
+        </p>
+      )}
+      <LazySurface
+        loadingLabel={t.lazyLoading}
+        errorLabel={t.lazyError}
+        retryLabel={t.lazyReload}
+        minHeight="100vh"
+      >
+        <AdminShell
+          key={`${gate.profile.userId}:${gate.profile.role}:${gate.profile.barberId ?? ''}`}
+          profile={gate.profile}
+          dark={theme.dark}
+          lang={theme.lang}
+          toggleMode={theme.toggleMode}
+          setLang={theme.setLang}
+          onSignOut={onSignOut}
+        />
+      </LazySurface>
+    </>
+  )
+}
+
+
+===== src/admin/AdminShell.tsx =====
+// The admin shell: left nav (tabs) + a content area and one clean top bar. Role drives the nav: a
+// barber sees operational tabs plus Settings; the owner sees those PLUS {Alla bokningar, Barberare,
+// Om oss} and a barber selector to act on any barber.
+//
+// Identity is kept human: a barber sees just their first name in the top bar — they
+// know their own email and job title. The owner instead sees the barber selector (in the controls
+// row, leftmost), which is the only context that actually matters when acting for someone else.
+//
+// Chrome matches the public site: the brand is the pole logo + tracked wordmark, the theme control
+// is the site's original track/knob switch (ThemeSwitch), and the language toggle is the same mini
+// pill pair the site nav uses.
+//
+// Fully responsive: on narrow screens the sidebar becomes a compact header with the public site's
+// circular down-chevron. It opens a small vertical tab menu instead of forcing a horizontal strip.
+// The top bar scrolls with the page instead of stacking under the sticky header. All controls are
+// buttons (keyboard-operable); the active tab is `aria-current`.
+
+import type { JSX } from 'preact'
+import { lazy, Suspense } from 'preact/compat'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import type { Lang } from '../i18n/index'
+import { adminText } from '../i18n/adminStrings'
+import { palette } from '../booking/bookingStyles'
+import { PoleLogo } from '../ui/PoleLogo'
+import { buildAdminStyles } from './adminStyles'
+import { LangSwitch, ThemeSwitch } from './chrome'
+import { ScheduleView } from './views/ScheduleView'
+import { useBarbers } from './useBarbers'
+import {
+  adminUrlForTab,
+  persistAdminScroll,
+  readAdminScroll,
+  restoreAdminScrollPosition,
+  tabFromAdminUrl,
+  withAdminNavigationHistoryState,
+} from './navigationState'
+import type { AdminBarberId, AdminProfile } from './types'
+
+const BookingsView = lazy(() =>
+  import('./views/BookingsView').then((module) => ({ default: module.BookingsView })),
+)
+const BarbersView = lazy(() =>
+  import('./views/BarbersView').then((module) => ({ default: module.BarbersView })),
+)
+const ServicesView = lazy(() =>
+  import('./views/ServicesView').then((module) => ({ default: module.ServicesView })),
+)
+const ProfileView = lazy(() =>
+  import('./views/ProfileView').then((module) => ({ default: module.ProfileView })),
+)
+const SiteView = lazy(() =>
+  import('./views/SiteView').then((module) => ({ default: module.SiteView })),
+)
+const AboutView = lazy(() =>
+  import('./views/AboutView').then((module) => ({ default: module.AboutView })),
+)
+const SettingsView = lazy(() =>
+  import('./views/SettingsView').then((module) => ({ default: module.SettingsView })),
+)
+const MailView = lazy(() =>
+  import('./views/MailView').then((module) => ({ default: module.MailView })),
+)
+
+export interface AdminShellProps {
+  readonly profile: AdminProfile
+  readonly dark: boolean
+  readonly lang: Lang
+  readonly toggleMode: () => void
+  readonly setLang: (lang: Lang) => void
+  readonly onSignOut: () => void
+}
+
+/** The tabs a barber can see; the owner gets all of them. */
+type Tab =
+  | 'bookings'
+  | 'schedule'
+  | 'services'
+  | 'profile'
+  | 'allBookings'
+  | 'barbers'
+  | 'site'
+  | 'about'
+  | 'settings'
+  | 'mail'
+
+interface TabDef {
+  readonly id: Tab
+  readonly label: string
+  readonly ownerOnly: boolean
+}
+
+export function AdminShell(props: AdminShellProps): JSX.Element {
+  const { profile } = props
+  const isOwner = profile.role === 'owner'
+  const c = palette(props.dark)
+  const s = buildAdminStyles(c, props.dark)
+  const t = adminText(props.lang)
+
+  const TABS: readonly TabDef[] = [
+    { id: 'schedule', label: t.tabSchedule, ownerOnly: false },
+    { id: 'bookings', label: t.tabBookings, ownerOnly: false },
+    { id: 'services', label: t.tabServices, ownerOnly: false },
+    { id: 'profile', label: t.tabProfile, ownerOnly: false },
+    { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
+    { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
+    { id: 'site', label: t.tabSite, ownerOnly: true },
+    { id: 'about', label: t.tabAbout, ownerOnly: true },
+    { id: 'mail', label: t.tabMail, ownerOnly: true },
+    { id: 'settings', label: t.tabSettings, ownerOnly: false },
+  ]
+
+  const visibleTabs = TABS.filter((tab) => isOwner || !tab.ownerOnly)
+  const visibleTabIds = useMemo(() => visibleTabs.map((entry) => entry.id), [isOwner, props.lang])
+  // Schedule first: managing today's availability is the barber's most frequent task.
+  const [tab, setTab] = useState<Tab>(() =>
+    tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule'),
+  )
+  const scrollCaptureGeneration = useRef(0)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [scheduleBlocked, setScheduleBlocked] = useState(false)
+  const navigationLocked = tab === 'schedule' && scheduleBlocked
+
+  const persistScroll = (tabToPersist: Tab, scrollY: number = window.scrollY): void => {
+    const value = Math.max(0, Math.round(scrollY))
+    persistAdminScroll(sessionStorage, profile.userId, tabToPersist, value)
+    window.history.replaceState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: tabToPersist,
+        scrollY: value,
+      }),
+      '',
+      adminUrlForTab(window.location.href, tabToPersist),
+    )
+  }
+
+  const selectTab = (nextTab: Tab): void => {
+    if (nextTab === tab) return
+    persistScroll(tab)
+    scrollCaptureGeneration.current += 1
+    window.history.pushState(
+      withAdminNavigationHistoryState(window.history.state, {
+        userId: profile.userId,
+        tab: nextTab,
+        scrollY: 0,
+      }),
+      '',
+      adminUrlForTab(window.location.href, nextTab),
+    )
+    setTab(nextTab)
+    // Destination restoration owns the scroll. Scrolling here races the outgoing tab listener and
+    // can overwrite its saved position with zero before that effect cleans up.
+  }
+
+  useEffect(() => {
+    if (!navigationLocked) return
+    const preventLeave = (event: BeforeUnloadEvent): void => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', preventLeave)
+    return () => window.removeEventListener('beforeunload', preventLeave)
+  }, [navigationLocked])
+
+  useEffect(() => {
+    let frame: number | null = null
+    const generation = ++scrollCaptureGeneration.current
+    // Preserve a matching browser/session scroll snapshot until the restore effect can reach it.
+    // Writing the current initial `window.scrollY` here would overwrite the only reload evidence.
+    const initialScrollY = readAdminScroll(
+      window.history.state,
+      sessionStorage,
+      profile.userId,
+      tab,
+    )
+    const capture = (): void => {
+      if (frame !== null) return
+      frame = window.requestAnimationFrame(() => {
+        frame = null
+        if (scrollCaptureGeneration.current === generation) persistScroll(tab)
+      })
+    }
+    const flush = (): void => {
+      if (scrollCaptureGeneration.current === generation) persistScroll(tab)
+    }
+    // Initialise an addressable history entry so reload and share preserve the active admin tab.
+    persistScroll(tab, initialScrollY)
+    window.addEventListener('scroll', capture, { passive: true })
+    window.addEventListener('pagehide', flush)
+    return () => {
+      if (scrollCaptureGeneration.current === generation) scrollCaptureGeneration.current += 1
+      if (frame !== null) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', capture)
+      window.removeEventListener('pagehide', flush)
+    }
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const previous = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
+    return () => {
+      window.history.scrollRestoration = previous
+    }
+  }, [])
+
+  useEffect(() => {
+    const restoreY = readAdminScroll(window.history.state, sessionStorage, profile.userId, tab)
+    return restoreAdminScrollPosition(restoreY)
+  }, [profile.userId, tab])
+
+  useEffect(() => {
+    const onPopState = (): void => {
+      const destination = tabFromAdminUrl(window.location.href, visibleTabIds, 'schedule')
+      scrollCaptureGeneration.current += 1
+      setTab(destination)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [visibleTabIds])
+
+  // The roster (for the owner's barber selector + resolving ids -> names in views). A barber doesn't
+  // strictly need it, but the active-roster read is harmless (RLS lets them read active barbers).
+  const { barbers, reload: reloadBarbers } = useBarbers()
+
+  // The barber the owner is acting for. Defaults to the first active barber once the roster loads.
+  // A barber always acts as their own linked id.
+  const [actingBarberId, setActingBarberId] = useState<AdminBarberId | null>(null)
+  const effectiveBarberId: AdminBarberId | null = isOwner
+    ? (actingBarberId ?? barbers.find((b) => b.active)?.id ?? barbers[0]?.id ?? null)
+    : profile.barberId
+
+  const effectiveBarberName = useMemo(() => {
+    const found = barbers.find((b) => b.id === effectiveBarberId)
+    if (found !== undefined) return found.name
+    return effectiveBarberId ?? '—'
+  }, [barbers, effectiveBarberId])
+
+  /** The signed-in barber's first name (identity in the top bar — nothing more is needed). */
+  const firstName = effectiveBarberName.trim().split(/\s+/)[0] ?? effectiveBarberName
+
+  const renderView = (): JSX.Element => {
+    switch (tab) {
+      case 'bookings':
+        return (
+          <BookingsView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            allBarbers={false}
+            barbers={barbers}
+            heading={
+              isOwner
+                ? `${t.bookingsOwnerHeadingPrefix} · ${effectiveBarberName}`
+                : t.bookingsBarberHeading
+            }
+            lead={isOwner ? t.bookingsOwnerLead : t.bookingsBarberLead}
+            showCalendarConnect={!isOwner}
+          />
+        )
+      case 'schedule':
+        return effectiveBarberId === null ? (
+          <section style={s.card}>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+          </section>
+        ) : (
+          <ScheduleView
+            key={effectiveBarberId}
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            barberName={effectiveBarberName}
+            onPersistenceStateChange={setScheduleBlocked}
+          />
+        )
+      case 'services':
+        return effectiveBarberId === null ? (
+          <section style={s.card}>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+          </section>
+        ) : (
+          <ServicesView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            barberName={effectiveBarberName}
+          />
+        )
+      case 'allBookings':
+        return (
+          <BookingsView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={null}
+            allBarbers
+            barbers={barbers}
+            heading={t.tabAllBookings}
+            lead={t.bookingsOwnerLead}
+          />
+        )
+      case 'barbers':
+        return (
+          <BarbersView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            onRosterChanged={() => void reloadBarbers()}
+          />
+        )
+      case 'profile':
+        return effectiveBarberId === null ? (
+          <section style={s.card}>
+            <p style={s.emptyState}>{t.scheduleNoBarber}</p>
+          </section>
+        ) : (
+          <ProfileView
+            dark={props.dark}
+            lang={props.lang}
+            s={s}
+            barberId={effectiveBarberId}
+            barberName={effectiveBarberName}
+          />
+        )
+      case 'site':
+        return <SiteView dark={props.dark} lang={props.lang} s={s} />
+      case 'about':
+        return <AboutView dark={props.dark} lang={props.lang} s={s} />
+      case 'settings':
+        return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
+      case 'mail':
+        return <MailView dark={props.dark} lang={props.lang} s={s} />
+    }
+  }
+
+  const navButton = (def: TabDef): JSX.Element => {
+    const active = def.id === tab
+    return (
+      <button
+        key={def.id}
+        type="button"
+        onClick={() => {
+          if (navigationLocked && !active) return
+          selectTab(def.id)
+          setMobileMenuOpen(false)
+        }}
+        disabled={navigationLocked && !active}
+        aria-current={active ? 'page' : undefined}
+        style={{
+          textAlign: 'left',
+          border: 'none',
+          borderRadius: '9px',
+          padding: '9px 12px',
+          fontFamily: 'inherit',
+          fontSize: '14px',
+          fontWeight: active ? 700 : 500,
+          cursor: navigationLocked && !active ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap',
+          background: active ? c.subtle : 'transparent',
+          color: c.text,
+          opacity: navigationLocked && !active ? 0.4 : active ? 1 : 0.78,
+        }}
+      >
+        {def.label}
+      </button>
+    )
+  }
+
+  return (
+    <div style={s.appShell} class="knc-admin-shell">
+      <nav style={s.sidebar} class="knc-admin-sidebar" aria-label={t.ariaNav}>
+        <button
+          type="button"
+          class="knc-admin-mobile-menu-toggle"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          aria-label={t.ariaNav}
+          aria-controls="admin-nav-tabs"
+          aria-expanded={mobileMenuOpen}
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '32px',
+            height: '32px',
+            padding: 0,
+            borderRadius: '50%',
+            border: 'none',
+            cursor: 'pointer',
+            background: c.closeBg,
+            flex: 'none',
+          }}
+        >
+          <img
+            src="/icons/chevron.down.svg"
+            alt=""
+            aria-hidden="true"
+            style={{
+              width: '13px',
+              height: '13px',
+              filter: c.iconF,
+              transform: mobileMenuOpen ? 'rotate(180deg)' : undefined,
+            }}
+          />
+        </button>
+        <div style={s.brand} class="knc-admin-brand">
+          <PoleLogo uid="admin" style={{ width: '24px', height: '24px', flex: 'none' }} />
+          <span style={{ letterSpacing: '1.5px' }}>BLADE & BLEND STUDIO</span>
+        </div>
+        <div
+          id="admin-nav-tabs"
+          style={s.navList}
+          class={`knc-admin-navlist${mobileMenuOpen ? ' knc-admin-navlist-open' : ''}`}
+        >
+          {visibleTabs.map(navButton)}
+        </div>
+        <button
+          type="button"
+          style={{ ...s.ghostBtn, marginTop: '12px' }}
+          class="knc-admin-signout-bottom"
+          onClick={props.onSignOut}
+          disabled={navigationLocked}
+        >
+          {t.signOut}
+        </button>
+      </nav>
+
+      <main style={s.content}>
+        <header style={s.topbar} class="knc-admin-topbar">
+          {/* Barbers see their first name on the left; the owner's context lives in the selector. */}
+          {!isOwner && (
+            <span style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px' }}>
+              {t.greeting} {firstName}
+            </span>
+          )}
+
+          {/* Controls row: barber selector (owner only, leftmost) then lang · theme · sign-out.
+              All in one flex group so the selector never wraps onto a separate line above them. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {isOwner && (
+              <select
+                style={s.select}
+                value={effectiveBarberId ?? ''}
+                onChange={(e) => setActingBarberId(e.currentTarget.value)}
+                aria-label={t.ariaSelectBarber}
+                disabled={navigationLocked}
+              >
+                {barbers.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                    {b.active ? '' : ' (dold)'}
+                  </option>
+                ))}
+              </select>
+            )}
+            <LangSwitch lang={props.lang} setLang={props.setLang} dark={props.dark} />
+            <ThemeSwitch
+              dark={props.dark}
+              onToggle={props.toggleMode}
+              label={props.dark ? t.themeLight : t.themeDark}
+            />
+            <button
+              type="button"
+              style={s.ghostBtn}
+              class="knc-admin-signout-top"
+              onClick={props.onSignOut}
+              disabled={navigationLocked}
+            >
+              {t.signOut}
+            </button>
+          </div>
+        </header>
+
+        <Suspense
+          fallback={
+            <section style={s.card}>
+              <p style={s.emptyState}>{t.lazyLoading}</p>
+            </section>
+          }
+        >
+          {renderView()}
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
+
+===== src/admin/index.tsx =====
+// The admin ENTRY — the single module `Root` dynamically imports. Login stays in this first admin
+// chunk; reset/invite/confirm routes, authenticated gates, shell, and uncommon views load on demand.
+// The public site (`/`) never statically imports this file or anything under `src/admin/**`, so none
+// of the admin/auth/supabase-auth code ships to visitors.
+//
+// It owns the admin-side routing: `/login` -> the login route, `/admin` (+ any subpath) -> the gated
+// panel. Anything else under this entry falls back to the panel (which itself redirects to /login
+// when unauthenticated).
+
+import type { JSX } from 'preact'
+import { lazy } from 'preact/compat'
+import { Route, Switch } from 'wouter-preact'
+import { LoginRoute } from './LoginRoute'
+import { LazySurface } from '../ui/LazySurface'
+import { adminText } from '../i18n/adminStrings'
+const ResetPasswordRoute = lazy(() =>
+  import('./ResetPasswordRoute').then((module) => ({ default: module.ResetPasswordRoute })),
+)
+const InvitePasswordRoute = lazy(() =>
+  import('./InvitePasswordRoute').then((module) => ({ default: module.InvitePasswordRoute })),
+)
+const EmailChangeConfirmRoute = lazy(() =>
+  import('./EmailChangeConfirmRoute').then((module) => ({
+    default: module.EmailChangeConfirmRoute,
+  })),
+)
+const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: module.AdminApp })))
+
+/** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
+export default function AdminEntry(): JSX.Element {
+  const t = adminText('sv')
+  return (
+    <LazySurface
+      loadingLabel={t.lazyLoading}
+      errorLabel={t.lazyError}
+      retryLabel={t.lazyReload}
+      minHeight="100vh"
+    >
+      <Switch>
+        <Route path="/login" component={LoginRoute} />
+        <Route path="/reset" component={ResetPasswordRoute} />
+        <Route path="/invite" component={InvitePasswordRoute} />
+        <Route path="/auth/confirm" component={EmailChangeConfirmRoute} />
+        <Route path="/admin/:rest*" component={AdminApp} />
+        <Route path="/admin" component={AdminApp} />
+      </Switch>
+    </LazySurface>
+  )
+}
+
+
+===== src/admin/navigationState.ts =====
+// Reload/back-forward state for the authenticated admin shell. URL owns selected tab; sessionStorage
+// owns a per-user/tab scroll fallback. A user id is part of every key so a later admin session cannot
+// inherit another account's view state.
+
+export interface AdminNavigationHistoryState {
+  readonly userId: string
+  readonly tab: string
+  readonly scrollY: number
+}
+
+interface HistoryStateShape {
+  readonly kncAdminNavigation?: AdminNavigationHistoryState
+}
+
+const STORAGE_PREFIX = 'knc-admin-navigation:'
+const TAB_PARAM = 'tab'
+export const ADMIN_SCROLL_RESTORE_TIMEOUT_MS = 15_000
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+export function adminNavigationStorageKey(userId: string, tab: string): string {
+  return `${STORAGE_PREFIX}${encodeURIComponent(userId)}:${encodeURIComponent(tab)}`
+}
+
+export function parseAdminNavigationHistoryState(
+  value: unknown,
+): AdminNavigationHistoryState | null {
+  const navigation = isRecord(value) ? value['kncAdminNavigation'] : null
+  if (!isRecord(navigation)) return null
+  const state = navigation
+  return typeof state['userId'] === 'string' &&
+    state['userId'].length > 0 &&
+    typeof state['tab'] === 'string' &&
+    state['tab'].length > 0 &&
+    nonNegativeInteger(state['scrollY'])
+    ? { userId: state['userId'], tab: state['tab'], scrollY: state['scrollY'] }
+    : null
+}
+
+export function normalizeAdminTab<T extends string>(
+  requested: string | null,
+  visibleTabs: readonly T[],
+  fallback: T,
+): T {
+  return requested !== null && visibleTabs.includes(requested as T) ? (requested as T) : fallback
+}
+
+export function readAdminScroll(
+  historyState: unknown,
+  storage: Pick<Storage, 'getItem'> | null,
+  userId: string,
+  tab: string,
+): number {
+  const inHistory = parseAdminNavigationHistoryState(historyState)
+  if (inHistory?.userId === userId && inHistory.tab === tab) return inHistory.scrollY
+  try {
+    const raw = storage?.getItem(adminNavigationStorageKey(userId, tab))
+    if (raw === null || raw === undefined || !/^\d+$/.test(raw)) return 0
+    const parsed = Number(raw)
+    return Number.isSafeInteger(parsed) ? parsed : 0
+  } catch {
+    return 0
+  }
+}
+
+export function withAdminNavigationHistoryState(
+  existing: unknown,
+  next: AdminNavigationHistoryState,
+): HistoryStateShape & Record<string, unknown> {
+  const prior = isRecord(existing) ? existing : {}
+  return { ...prior, kncAdminNavigation: next }
+}
+
+export function persistAdminScroll(
+  storage: Pick<Storage, 'setItem'> | null,
+  userId: string,
+  tab: string,
+  scrollY: number,
+): void {
+  try {
+    storage?.setItem(
+      adminNavigationStorageKey(userId, tab),
+      String(Math.max(0, Math.round(scrollY))),
+    )
+  } catch {
+    // Private-mode and quota failures only disable convenience restoration.
+  }
+}
+
+/**
+ * Restore a saved document position after a tab mounts. A CMS response may make the document tall
+ * several seconds later, so a ResizeObserver retries whenever height changes. Cleanup happens once
+ * the exact position is reached, the tab unmounts, or the explicit safety deadline expires.
+ */
+export function restoreAdminScrollPosition(scrollY: number): () => void {
+  let stopped = false
+  let frame: number | null = null
+  const restore = (): void => {
+    if (stopped) return
+    window.scrollTo(0, scrollY)
+    if (Math.abs(window.scrollY - scrollY) < 1) stop()
+  }
+  const observer = new ResizeObserver(() => restore())
+  const stop = (): void => {
+    if (stopped) return
+    stopped = true
+    observer.disconnect()
+    window.removeEventListener('load', restore)
+    if (frame !== null) window.cancelAnimationFrame(frame)
+    window.clearTimeout(timeout)
+  }
+  const timeout = window.setTimeout(stop, ADMIN_SCROLL_RESTORE_TIMEOUT_MS)
+
+  observer.observe(document.documentElement)
+  if (document.body !== null) observer.observe(document.body)
+  window.addEventListener('load', restore)
+  frame = window.requestAnimationFrame(restore)
+  return stop
+}
+
+export function clearAdminNavigationState(
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem'> | null,
+  userId: string,
+): void {
+  if (storage === null) return
+  const prefix = `${STORAGE_PREFIX}${encodeURIComponent(userId)}:`
+  try {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index)
+      if (key?.startsWith(prefix)) storage.removeItem(key)
+    }
+  } catch {
+    // Sign-out still succeeds when browser storage cannot be read.
+  }
+}
+
+export function tabFromAdminUrl<T extends string>(
+  url: string,
+  visibleTabs: readonly T[],
+  fallback: T,
+): T {
+  try {
+    return normalizeAdminTab(new URL(url).searchParams.get(TAB_PARAM), visibleTabs, fallback)
+  } catch {
+    return fallback
+  }
+}
+
+export function adminUrlForTab(url: string, tab: string): string {
+  const next = new URL(url)
+  next.searchParams.set(TAB_PARAM, tab)
+  return `${next.pathname}${next.search}${next.hash}`
+}
+
+
+===== src/admin/useAdminSession.ts =====
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
+import { activateAdminDataClient, getAdminClient } from './adminClient'
+import { getActiveProfile, signOut } from './auth'
+import { isBackendConfigured } from '../backend/config'
+import { clearAdminNavigationState } from './navigationState'
+import { invalidateAdminOperations } from './orderedOperations'
+import { err, type AdminProfile, type AdminResult } from './types'
+
+export type AdminGate =
+  | { readonly kind: 'checking' | 'redirecting' | 'unavailable' }
+  | { readonly kind: 'authed' | 'forced_change'; readonly profile: AdminProfile }
+
+function sameAccess(a: AdminProfile, b: AdminProfile): boolean {
+  return (
+    a.userId === b.userId &&
+    a.role === b.role &&
+    a.barberId === b.barberId &&
+    a.mustChangePassword === b.mustChangePassword
+  )
+}
+
+/** One lifecycle owns the protected subtree, revalidation, and its outstanding operation epoch. */
+export function useAdminSession(navigate: (path: string, options: { replace: boolean }) => void) {
+  const [gate, setGate] = useState<AdminGate>({ kind: 'checking' })
+  const [error, setError] = useState<string | null>(null)
+  const actions = useRef({ check: (): void => undefined, leave: (): void => undefined })
+
+  useEffect(() => {
+    let stopped = false
+    let terminal = false
+    let checking = false
+    let repeat = false
+    let sequence = 0
+    let userId: string | null = null
+    let profile: AdminProfile | null = null
+    let controller: AbortController | null = null
+    let scheduled: ReturnType<typeof setTimeout> | undefined
+
+    const discard = (): void => {
+      sequence += 1
+      controller?.abort()
+      controller = null
+      checking = false
+      repeat = false
+      if (scheduled !== undefined) clearTimeout(scheduled)
+      scheduled = undefined
+      invalidateAdminOperations()
+      if (profile !== null) {
+        try {
+          clearAdminNavigationState(sessionStorage, profile.userId)
+        } catch {
+          /* Storage may be unavailable. */
+        }
+      }
+      profile = null
+    }
+
+    const leave = (cleanup: boolean): void => {
+      if (stopped || terminal) return
+      const departingUserId = profile?.userId ?? userId
+      terminal = true
+      discard()
+      setError(null)
+      setGate({ kind: 'redirecting' })
+      // Protected content is gone while Auth can still be waiting on the network. Do not open the
+      // login route early: its returning-session check could otherwise reuse that pending session.
+      if (cleanup) {
+        void signOut(departingUserId ?? undefined).then(() => {
+          if (!stopped) navigate('/login', { replace: true })
+        })
+      } else navigate('/login', { replace: true })
+    }
+
+    const schedule = (): void => {
+      if (stopped || terminal || scheduled !== undefined) return
+      scheduled = setTimeout(() => {
+        scheduled = undefined
+        void check()
+      }, 0)
+    }
+
+    const check = async (): Promise<void> => {
+      if (stopped || terminal) return
+      if (checking) {
+        repeat = true
+        return
+      }
+      checking = true
+      const request = ++sequence
+      const abort = new AbortController()
+      controller = abort
+      const timeout = setTimeout(() => abort.abort(), 10_000)
+      const cancelled = new Promise<AdminResult<AdminProfile>>((resolve) => {
+        abort.signal.addEventListener(
+          'abort',
+          () => resolve(err('network', 'Kunde inte nå servern. Försök igen.')),
+          { once: true },
+        )
+      })
+      const result = await Promise.race([getActiveProfile(abort.signal), cancelled])
+      clearTimeout(timeout)
+      if (stopped || terminal || request !== sequence) return
+      controller = null
+      checking = false
+      if (result.ok) {
+        if (profile !== null && !sameAccess(profile, result.value)) discard()
+        profile = result.value
+        userId = result.value.userId
+        activateAdminDataClient(profile.userId, () => {
+          if (stopped || terminal) return
+          discard()
+          setGate({ kind: 'checking' })
+          schedule()
+        })
+        setError(null)
+        setGate({ kind: profile.mustChangePassword ? 'forced_change' : 'authed', profile })
+      } else if (result.error.kind === 'network') {
+        setError(result.error.message)
+        if (profile === null) setGate({ kind: 'unavailable' })
+      } else {
+        leave(true)
+      }
+      if (repeat) {
+        repeat = false
+        schedule()
+      }
+    }
+
+    actions.current = { check: schedule, leave: () => leave(true) }
+    if (!isBackendConfigured()) {
+      leave(false)
+      return () => {
+        stopped = true
+        discard()
+      }
+    }
+
+    const {
+      data: { subscription },
+    } = getAdminClient().auth.onAuthStateChange((event, session) => {
+      if (stopped || terminal) return
+      if (event === 'SIGNED_OUT') {
+        leave(false)
+        return
+      }
+      if (session !== null) {
+        if (userId !== null && userId !== session.user.id) {
+          discard()
+          setGate({ kind: 'checking' })
+        }
+        userId = session.user.id
+      }
+      // Auth subscribers must stay short; a refresh-triggering read runs outside this callback.
+      schedule()
+    })
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') schedule()
+    }
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === 'knc-admin-auth' || event.key === null) schedule()
+    }
+    window.addEventListener('focus', onVisible)
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisible)
+    const poll = setInterval(onVisible, 30_000)
+    schedule()
+    return () => {
+      stopped = true
+      discard()
+      subscription.unsubscribe()
+      window.removeEventListener('focus', onVisible)
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(poll)
+    }
+  }, [navigate])
+
+  return {
+    gate,
+    error,
+    revalidate: useCallback(() => actions.current.check(), []),
+    onSignOut: useCallback(() => actions.current.leave(), []),
+  }
+}
+
+
+===== src/admin/types.ts =====
+// Admin domain types. Kept SEPARATE from the booking domain on purpose:
+//   - The owner manages an OPEN set of barber ids (add/remove), so an admin barber id is a plain
+//     `AdminBarberId = string` brand — NOT the closed `booking/domain.ts` `BarberId` union (loosening
+//     that union is ADMIN_SPEC §5, out of scope here).
+//   - These mirror the verified DB row shapes (the Zod schemas in `adminSchemas.ts` are the wire
+//     contract that produces them).
+//
+// Everything is immutable (`readonly`) and every fallible operation returns a `Result` (no throws
+// reach the UI — same discipline as the booking adapters' `BookingResult`).
+
+import type { Lang } from '../i18n/index'
+
+/** An open-world barber id (owner can create arbitrary ids matching `^[a-z0-9-]+$`). */
+export type AdminBarberId = string
+
+/** The signed-in user's role + (for a barber) their linked barber id. */
+export type AdminRole = 'owner' | 'barber'
+
+/** Resolved profile of the signed-in user (from `profiles` via RLS self-read). */
+export interface AdminProfile {
+  readonly userId: string
+  readonly email: string
+  readonly role: AdminRole
+  /** The barber this account acts as (null for an owner). */
+  readonly barberId: AdminBarberId | null
+  /** Legacy compatibility gate for accounts provisioned before single-use invitations.
+   * Cleared by `set_own_password_changed()` after the change. */
+  readonly mustChangePassword: boolean
+}
+
+export type BarberAccountState = 'enabled' | 'disabled'
+
+/** A barber row as the admin manages it (the full roster row, incl. inactive for the owner). */
+export interface AdminBarber {
+  readonly id: AdminBarberId
+  readonly name: string
+  readonly ig: string
+  readonly roleSv: string
+  readonly roleEn: string
+  readonly bioSv: string
+  readonly bioEn: string
+  readonly active: boolean
+  readonly sortOrder: number
+}
+
+/** Fields the owner may set when creating a barber. */
+export interface NewBarber {
+  readonly id: AdminBarberId
+  readonly name: string
+  readonly ig: string
+  readonly roleSv: string
+  readonly roleEn: string
+  readonly bioSv: string
+  readonly bioEn: string
+  readonly sortOrder: number
+}
+
+/** Fields the owner may edit on an existing barber (id is the immutable key). */
+export interface BarberEdit {
+  readonly name: string
+  readonly ig: string
+  readonly roleSv: string
+  readonly roleEn: string
+  readonly bioSv: string
+  readonly bioEn: string
+  readonly active: boolean
+  readonly sortOrder: number
+}
+
+/** A per-barber service-menu row as the admin manages it (the full row, incl. inactive). */
+export interface AdminService {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  readonly active: boolean
+  readonly sortOrder: number
+  /** JS getDay() values on which customers may book this service. */
+  readonly availableWeekdays: readonly Weekday[]
+}
+
+/** Fields set when creating a service (barber_id + id come from the call/DB). */
+export interface NewService {
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  /** Defaults to every day; a narrower set is chosen through Specific day(s). */
+  readonly availableWeekdays: readonly Weekday[]
+}
+
+/** Fields editable on an existing service (id is the immutable key). */
+export interface ServiceEdit {
+  readonly name: string
+  readonly price: number
+  readonly durationMin: number
+  readonly active: boolean
+  readonly availableWeekdays: readonly Weekday[]
+}
+
+/** JS getDay() weekday: 0=Sun .. 6=Sat. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+/** One weekday's working state + hours (minutes-from-midnight), matching `barber_schedules`. */
+export interface DaySchedule {
+  readonly weekday: Weekday
+  readonly working: boolean
+  /** Minutes from 00:00 (09:00 = 540). */
+  readonly startMin: number
+  /** Minutes from 00:00 (18:00 = 1080). */
+  readonly endMin: number
+}
+
+/**
+ * The full week as a weekday-indexed list (index === weekday), the unit the editor operates on.
+ * Normalized by `toWeekSchedule` to hold all 7 days in order; consumers guard index access
+ * (`noUncheckedIndexedAccess`) rather than relying on a fixed-length tuple.
+ */
+export type WeekSchedule = readonly DaySchedule[]
+
+export type AvailabilityMutationOutcome<T> =
+  | { readonly kind: 'ok'; readonly value: T }
+  | { readonly kind: 'booking_conflict'; readonly bookingIds: readonly string[] }
+  | { readonly kind: 'error'; readonly error: AdminError }
+
+/** A time-off block (inclusive date range), matching `barber_time_off`. */
+export interface TimeOff {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  /** `YYYY-MM-DD`. */
+  readonly startDate: string
+  /** `YYYY-MM-DD` (inclusive; single day === startDate). */
+  readonly endDate: string
+  readonly reason: string
+}
+
+/**
+ * A walk-in block (minute-granular unavailability on one salon-local date), matching
+ * `barber_slot_blocks`. The panel writes one row per 15-min quarter; the schema allows ranges.
+ */
+export interface SlotBlock {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  /** `YYYY-MM-DD`, salon-local. */
+  readonly date: string
+  /** Minutes from 00:00 (inclusive start of the blocked window). */
+  readonly startMin: number
+  /** Minutes from 00:00 (exclusive end of the blocked window). */
+  readonly endMin: number
+}
+
+/** A weekly locked period, evaluated on the salon-local weekday. */
+export interface RecurringBreak {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  readonly weekday: Weekday
+  readonly startMin: number
+  readonly endMin: number
+}
+
+/** A booking as the admin panel shows it (the full RLS-readable row; owner=all, barber=own). */
+export interface AdminBooking {
+  readonly id: string
+  readonly barberId: AdminBarberId
+  readonly serviceName: string
+  readonly price: number
+  readonly durationMin: number
+  /** Appointment start instant. */
+  readonly startAt: Date
+  /** Appointment end instant. */
+  readonly endAt: Date
+  readonly customerName: string
+  readonly method: 'phone' | 'email' | 'walkin'
+  readonly phone: string | null
+  readonly email: string | null
+  readonly lang: Lang
+  readonly status: 'confirmed' | 'cancelled'
+}
+
+/** One editable About-copy cell (a (key,lang) pair from `about_content`). */
+export type AboutKey =
+  'eyebrow' | 'heading' | 'intro' | 'galleryTitle' | 'cutsTitle' | 'stylistsTitle' | 'reviewsTitle'
+
+export interface AboutRow {
+  readonly key: AboutKey
+  readonly lang: Lang
+  readonly value: string
+}
+
+/** One owner-editable public copy cell, matching `site_content`'s composite key. */
+export interface AdminSiteContentCell {
+  readonly key: string
+  readonly lang: Lang
+  readonly value: string
+}
+
+/** One non-localized owner-editable public setting, matching `site_settings`. */
+export interface AdminSiteSetting {
+  readonly key: string
+  readonly value: string
+}
+
+/** A gallery image row + its resolved public URL (for previews). */
+export type GalleryKind = 'salon' | 'cuts'
+
+export interface GalleryImage {
+  readonly id: string
+  readonly kind: GalleryKind
+  readonly storagePath: string
+  readonly alt: string
+  readonly sortOrder: number
+  /** Resolved public Storage URL (built from the path). */
+  readonly url: string
+}
+
+// --- Result (no throws to the UI) ----------------------------------------------------------------
+
+/** A small typed error: a stable `kind` for branching + a human message for the UI. */
+export interface AdminError {
+  readonly kind:
+    'auth' | 'forbidden' | 'not_found' | 'validation' | 'network' | 'malformed' | 'challenge'
+  readonly message: string
+}
+
+/** Result of any fallible admin operation. */
+export type AdminResult<T> =
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: AdminError }
+
+/** Build an ok result. */
+export function ok<T>(value: T): AdminResult<T> {
+  return { ok: true, value }
+}
+
+/** Build an error result. */
+export function err<T>(kind: AdminError['kind'], message: string): AdminResult<T> {
+  return { ok: false, error: { kind, message } }
+}
+
+// --- Delete outcomes -----------------------------------------------------------------------------
+
+/**
+ * Outcome of `deleteBarber`. NOT an `AdminResult`: the `has_bookings` refusal is a first-class,
+ * structured branch (not a stringly error) so the UI can show a "purge N bookings?" confirmation with
+ * the exact counts. Authorization, transport and parse failures collapse to `error` (an `AdminError`).
+ */
+export type DeleteBarberOutcome =
+  | {
+      readonly kind: 'ok'
+      readonly deletedBookings: number
+      readonly authCleanupPending: boolean
+    }
+  | {
+      readonly kind: 'has_bookings'
+      readonly count: number
+      readonly past: number
+      readonly upcoming: number
+    }
+  | {
+      readonly kind: 'has_upcoming'
+      readonly count: number
+      readonly past: number
+      readonly upcoming: number
+    }
+  | { readonly kind: 'external_cleanup_pending'; readonly calendarEvents: number }
+  | { readonly kind: 'delivery_pending' }
+  | { readonly kind: 'error'; readonly error: AdminError }
+
+
+===== src/app/Root.tsx =====
+// The application router — the single entry rendered by `main.tsx`. It keeps the marketing site
+// EXACTLY as before at `/` (the `App` component is statically imported and rendered with NO wrapper
+// DOM, so the public markup is byte-identical) and LAZY-loads the entire admin surface for `/login`
+// and `/admin/*` so none of the admin/auth/supabase-auth code ships on the public critical path.
+//
+// Routing rules (ADMIN_SPEC §4):
+//   `/`            -> the existing site (unchanged)
+//   `/login`       -> admin login (lazy)
+//   `/reset`       -> password-recovery landing (lazy)
+//   `/invite`      -> staff invitation landing (lazy)
+//   `/auth/confirm` -> email-change confirmation landing (lazy)
+//   `/admin` + sub -> the panel (lazy, gated)
+//   unknown routes -> visible not-found page
+//
+// wouter's `<Route>` adds no wrapper element, so on `/` the rendered tree is just `<App/>` — the same
+// DOM the old `render(<App/>)` produced. The lazy admin chunk is fetched only when a user actually
+// navigates to `/login` or `/admin`.
+
+import type { JSX } from 'preact'
+import { lazy } from 'preact/compat'
+import { Suspense } from 'preact/compat'
+import { Route, Switch, useLocation } from 'wouter-preact'
+import { useEffect } from 'preact/hooks'
+import { privatePageTitle } from '../site/routeMetadata'
+import { App } from './App'
+import { NotFound } from './NotFound'
+
+// One dynamic import for the whole admin surface (login + panel share this chunk).
+const AdminEntry = lazy(() => import('../admin/index'))
+
+/** Lightweight fallback while the admin chunk loads (no admin code; plain neutral text). */
+function AdminFallback(): JSX.Element {
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
+        fontSize: '14px',
+        opacity: 0.6,
+      }}
+    >
+      Laddar …
+    </div>
+  )
+}
+
+export function Root(): JSX.Element {
+  const [pathname] = useLocation()
+  useEffect(() => {
+    const title = privatePageTitle(pathname)
+    if (title !== null) {
+      document.title = title
+      document.querySelector('meta[name="robots"]')?.setAttribute('content', 'noindex, nofollow')
+    }
+  }, [pathname])
+  return (
+    <>
+      <Switch>
+        {/* Public marketing site — unchanged, rendered with no wrapper so DOM stays byte-identical. */}
+        <Route path="/" component={App} />
+
+        {/* Admin surface — lazy-loaded. /login, /reset and /admin/* all resolve inside the admin entry. */}
+        <Route path="/login">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* Password-recovery landing (the email link target). Lazy, same chunk as login. */}
+        <Route path="/reset">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* Staff invitation landing. Token verification waits for an explicit button click. */}
+        <Route path="/invite">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* An email scanner may load this route, but only a real button click consumes the token. */}
+        <Route path="/auth/confirm">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        {/* Match BOTH the bare `/admin` and any subpath. wouter's `:rest*` matches `/admin/...` and
+            `/admin/` but NOT bare `/admin`, so the explicit `/admin` route is required (otherwise a
+            post-login navigate('/admin') falls through to the catch-all and redirects home). */}
+        <Route path="/admin">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+        <Route path="/admin/:rest*">
+          <Suspense fallback={<AdminFallback />}>
+            <AdminEntry />
+          </Suspense>
+        </Route>
+
+        {/* Permanent customer tokens are random one-segment paths. The production Worker redirects
+            them into a fragment before assets load; this route preserves direct Vite/dev visits. */}
+        <Route path="/:customerAccessToken">
+          {(params) =>
+            /^[0-9a-f]{64}$/i.test(params.customerAccessToken) ? <App /> : <NotFound />
+          }
+        </Route>
+
+        {/* Unknown -> not found; the Worker supplies HTTP 404 on direct requests. */}
+        <Route>
+          <NotFound />
+        </Route>
+      </Switch>
+    </>
+  )
+}
+
+
+===== wrangler.jsonc =====
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bladeblendstudio",
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-08-09",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "bladeblendstudio.se",
+      "custom_domain": true,
+    },
+    {
+      "pattern": "www.bladeblendstudio.se",
+      "custom_domain": true,
+    },
+  ],
+  "observability": {
+    "enabled": true,
+  },
+  "cache": {
+    "enabled": false,
+  },
+  "exports": {
+    "default": {
+      "type": "worker",
+      "cache": { "enabled": false },
+    },
+    "PublicContent": {
+      "type": "worker",
+      "cache": { "enabled": true },
+    },
+  },
+  "vars": {
+    "SUPABASE_URL": "https://soktgawvexeumqvtyhda.supabase.co",
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    "html_handling": "none",
+    "run_worker_first": [
+      "/*",
+      "!/assets/*",
+      "!/fonts/*",
+      "!/icons/*",
+      "!/.well-known/*",
+      "!/favicon.svg",
+      "!/icons.svg",
+      "!/og-image.png",
+      "!/robots.txt",
+      "!/sitemap.xml",
+      "!/googlefbf0c3168fbf0af5.html",
+    ],
+  },
+}
+
+
+===== vite.config.ts =====
+import { readFileSync } from 'node:fs'
+import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
+import preact from '@preact/preset-vite'
+
+function loopbackOrigin(value: string, name: string): string {
+  const target = new URL(value)
+  if (
+    !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) ||
+    !['http:', 'https:'].includes(target.protocol) ||
+    target.username ||
+    target.password ||
+    target.pathname !== '/' ||
+    target.search ||
+    target.hash
+  ) {
+    throw new Error(`${name} must be a loopback origin`)
+  }
+  return target.origin
+}
+
+// Hardened production build:
+//  - no sourcemaps shipped (the "obscured" ceiling: minify + mangle, honestly stated)
+//  - terser compress+mangle, comments stripped, console/debugger dropped
+//  - opaque hashed asset names
+//  - everything bundled from pinned local deps (no CDN, no runtime third-party)
+export default defineConfig(({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  if (command === 'build' && mode === 'production') {
+    for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+      if (!env[name]?.trim()) {
+        throw new Error(`${name} is required: production must not use mock booking adapters`)
+      }
+    }
+  }
+  const target = loopbackOrigin(
+    env['CUSTOMER_GATEWAY_PROXY_URL'] ?? 'http://127.0.0.1:8787',
+    'CUSTOMER_GATEWAY_PROXY_URL',
+  )
+  const key = env['LOCAL_HTTPS_KEY']
+  const cert = env['LOCAL_HTTPS_CERT']
+  if (Boolean(key) !== Boolean(cert))
+    throw new Error('Set both LOCAL_HTTPS_KEY and LOCAL_HTTPS_CERT')
+  const https = key && cert ? { key: readFileSync(key), cert: readFileSync(cert) } : undefined
+  const customerGateway: ProxyOptions = {
+    target,
+    // Preserve Host/Origin: the actual Worker must enforce the browser's same-origin boundary.
+    changeOrigin: false,
+    // Only loopback destinations are accepted above; local Worker certificates are self-signed.
+    secure: false,
+    configure(proxy) {
+      proxy.on('proxyReq', (request, incoming) => {
+        // Wrangler has no Cloudflare edge to supply this header. Never trust a browser override.
+        request.setHeader('CF-Connecting-IP', incoming.socket.remoteAddress ?? '127.0.0.1')
+      })
+    },
+  }
+  const proxy: Record<string, ProxyOptions> = {
+    '^/api/customer-bookings(?:\\?.*)?$': customerGateway,
+    '^/api/bookings(?:\\?.*)?$': customerGateway,
+    '^/[0-9a-f]{64}(?:\\?.*)?$': customerGateway,
+  }
+  // Optional local-only TLS bridge for browsers that reject HTTPS -> HTTP loopback fetches.
+  // Supabase bearer auth still uses Authorization; site cookies belong only to our customer gateway.
+  if (env['LOCAL_SUPABASE_URL']) {
+    proxy['^/__supabase(?:/|$)'] = {
+      target: loopbackOrigin(env['LOCAL_SUPABASE_URL'], 'LOCAL_SUPABASE_URL'),
+      changeOrigin: true,
+      secure: false,
+      ws: true,
+      rewrite: (path) => path.replace(/^\/__supabase/, ''),
+      configure(upstream) {
+        upstream.on('proxyReq', (request) => request.removeHeader('cookie'))
+        upstream.on('proxyReqWs', (request) => request.removeHeader('cookie'))
+        upstream.on('proxyRes', (response) => {
+          delete response.headers['set-cookie']
+        })
+      },
+    }
+  }
+  return {
+    plugins: [preact()],
+    server: { proxy, https },
+    preview: { proxy, https },
+    build: {
+      target: 'es2022',
+      sourcemap: false,
+      minify: 'terser',
+      cssMinify: true,
+      terserOptions: {
+        compress: { passes: 2, drop_console: true, drop_debugger: true },
+        mangle: true,
+        format: { comments: false },
+      },
+      rollupOptions: {
+        output: {
+          entryFileNames: 'assets/[hash].js',
+          chunkFileNames: 'assets/[hash].js',
+          assetFileNames: 'assets/[hash][extname]',
+        },
+      },
+    },
+  }
+})
+
+
+===== tsconfig.app.json =====
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "module": "esnext",
+    "lib": ["ES2023", "DOM"],
+    "types": ["vite/client", "@cloudflare/workers-types"],
+    "skipLibCheck": true,
+    "paths": {
+      "react": ["./node_modules/preact/compat/"],
+      "react-dom": ["./node_modules/preact/compat/"]
+    },
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Strictest type safety */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src", "tools/e2e/*.tsx"]
+}
+
+
+===== eslint.config.js =====
+import js from '@eslint/js'
+import tseslint from 'typescript-eslint'
+import security from 'eslint-plugin-security'
+import nounsan from 'eslint-plugin-no-unsanitized'
+
+// Type checking is done by `tsc` (strict). ESLint covers footguns, security smells,
+// and DOM-sink XSS (no-unsanitized). Type-aware rules are intentionally omitted to keep
+// linting fast + stable on the bleeding-edge TS toolchain.
+export default tseslint.config(
+  // `supabase/` is a separate Deno project (edge functions) + SQL/pgTAP; it has its own runtime +
+  // globals (Deno, server-side `console`) and is not in the app tsconfig, so it is excluded here.
+  {
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      '.wrangler/tmp/**',
+      'tools/visual/**/*.png',
+      'supabase/**',
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.strict,
+  ...tseslint.configs.stylistic,
+  {
+    plugins: { security, 'no-unsanitized': nounsan },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/consistent-type-imports': 'error',
+      'no-console': 'error',
+      eqeqeq: ['error', 'always'],
+      'no-unsanitized/method': 'error',
+      'no-unsanitized/property': 'error',
+      'security/detect-eval-with-expression': 'error',
+      'security/detect-unsafe-regex': 'error',
+      'security/detect-non-literal-regexp': 'warn',
+    },
+  },
+  // Tooling + tests run on Node and may use console + Node globals.
+  {
+    files: ['tools/**', 'tests/**', '**/*.config.{js,ts}'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        Buffer: 'readonly',
+        fetch: 'readonly',
+      },
+    },
+    rules: { 'no-console': 'off' },
+  },
+)
+
+
+===== src/site/routeMetadata.ts =====
+/** Fixed route names only: never place customer credentials or arbitrary paths in metadata. */
+export function privatePageTitle(pathname: string): string | null {
+  const path = pathname.replace(/\/+$/, '')
+  const titles: Readonly<Record<string, string>> = {
+    '/login': 'Logga in',
+    '/reset': 'Återställ lösenord',
+    '/invite': 'Aktivera personalkonto',
+    '/auth/confirm': 'Bekräfta e-postadress',
+    '/admin': 'Adminpanel',
+  }
+  const title = path.startsWith('/admin/') ? 'Adminpanel' : titles[path]
+  return title === undefined ? null : `${title} — Blade & Blend Studio`
+}
+
