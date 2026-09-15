@@ -33,7 +33,7 @@ export function integrate(root) {
   useEffect(applyFonts, [fontCss])
   useEffect(() => {
     if (!host.current)`)
-  edit(authored, 'gjs.on(\'canvas:frame:load\', () => {', "gjs.on('canvas:frame:load', () => {\n      applyFonts()")
+  edit(authored, 'const frameLoaded = (): void => {\n      hardenFrame()', "const frameLoaded = (): void => {\n      hardenFrame()\n      applyFonts()")
   edit(authored, '<aside class="cms-authored-inspector">', `<aside class="cms-authored-inspector"><label>Tilldela typsnitt <select aria-label="Tilldela typsnitt" value="" onChange={event => { const component = editor.current?.getSelected(); if (!component) { props.onError('Välj ett textlager först.'); return }; const value = event.currentTarget.value; if (value) component.addStyle({ 'font-family': value }); else component.removeStyle('font-family') }}>{fontOptions(props.presentation).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>`)
   edit('src/admin/cms/Studio.tsx', 'variant={variant} mode={mode}', 'variant={variant} presentation={document.presentation} mode={mode}')
 }
