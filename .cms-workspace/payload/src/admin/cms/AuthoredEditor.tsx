@@ -37,7 +37,7 @@ function liveHtml(editor: Editor, view: LiveView | null): string {
 export function AuthoredEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null), editor = useRef<Editor | null>(null), live = useRef<LiveView | null>(null)
   const current = useRef(props); current.current = props
-  const applying = useRef(false), emitted = useRef(''), [tab, setTab] = useState('style')
+  const applying = useRef(false), emitted = useRef(''), appliedSource = useRef(''), [tab, setTab] = useState('style')
   useEffect(() => {
     if (!host.current) return
     const policy = { siteOrigin: location.origin, storageOrigin: new URL(SUPABASE_URL ?? 'https://unconfigured.invalid').origin, builtAssets: CMS_BUILT_ASSETS }
@@ -79,7 +79,11 @@ export function AuthoredEditor(props: Props): JSX.Element {
         const normalized = validateMarkup(html, css, policy)
         const next = { html: normalized.html, css: { ...current.current.variant.css, [current.current.mode]: css } }
         const key = JSON.stringify(next)
-        if (key !== emitted.current) { emitted.current = key; current.current.onChange(next, live.current ? `page-input:${current.current.identity}` : '') }
+        if (key !== emitted.current) {
+          emitted.current = key
+          appliedSource.current = `${current.current.identity}\0${current.current.mode}\0${key}`
+          current.current.onChange(next, live.current ? `page-input:${current.current.identity}` : '')
+        }
       } catch (error) { current.current.onError(error instanceof Error ? error.message : 'Sidändringen avvisades.') }
     }
     const schedule = (): void => {
@@ -120,13 +124,21 @@ export function AuthoredEditor(props: Props): JSX.Element {
   useEffect(() => {
     const gjs = editor.current
     if (!gjs) return
-    const key = JSON.stringify(props.variant)
-    if (key === emitted.current) return
+    const sourceKey = JSON.stringify(props.variant)
+    const prefix = `${props.identity}\0${props.mode}\0`
+    const targetKey = prefix + sourceKey
+    if (appliedSource.current === targetKey) return
+    if (sourceKey === emitted.current && appliedSource.current.startsWith(prefix)) { appliedSource.current = targetKey; return }
     try {
-      const normalized = validateMarkup(props.variant.html, props.variant.css[props.mode], { siteOrigin: location.origin, storageOrigin: new URL(SUPABASE_URL ?? 'https://unconfigured.invalid').origin, builtAssets: CMS_BUILT_ASSETS })
+      const policy = { siteOrigin: location.origin, storageOrigin: new URL(SUPABASE_URL ?? 'https://unconfigured.invalid').origin, builtAssets: CMS_BUILT_ASSETS }
+      const normalized = validateMarkup(props.variant.html, props.variant.css[props.mode], policy)
       applying.current = true; live.current = null
       gjs.setComponents(normalized.html); gjs.setStyle(props.variant.css[props.mode]); gjs.UndoManager.clear()
-      emitted.current = key
+      const html = liveHtml(gjs, null)
+      const css = gjs.getCss({ keepUnusedStyles: true }) ?? ''
+      const editorState = validateMarkup(html, css, policy)
+      emitted.current = JSON.stringify({ html: editorState.html, css: { ...props.variant.css, [props.mode]: css } })
+      appliedSource.current = targetKey
     } catch (error) { props.onError(error instanceof Error ? error.message : 'Sidan kunde inte läsas.') }
     finally { applying.current = false }
   }, [props.identity, props.variant, props.mode])
