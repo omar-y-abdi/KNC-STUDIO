@@ -1,0 +1,48 @@
+name: Temporary CMS terminal workspace
+on:
+  push:
+    branches: [tmp-knc-cms-terminal-20260915]
+    paths: ['.github/workflows/tmp-terminal-workspace.yml']
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.5
+      - name: Export source and dependency-only workspace
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/cms-terminal"
+          CANDIDATE="$RUNNER_TEMP/cms-candidate"
+          mkdir -p "$OUT"
+          git bundle create "$OUT/repo.bundle" --all
+          git bundle verify "$OUT/repo.bundle"
+          git worktree add --detach "$CANDIDATE" 9a17e4adce3ce3997032a5dc74fd08722fe991bd
+          node .cms-workspace/apply.mjs "$CANDIDATE"
+          cp -a .cms-workspace/payload/. "$CANDIDATE/"
+          cd "$CANDIDATE"
+          npm ci --no-audit --no-fund
+          cp "$(command -v node)" "$OUT/node"
+          cp "$(command -v deno)" "$OUT/deno"
+          tar --exclude=.git --exclude=node_modules --exclude=output --exclude=artifacts --exclude=dist --exclude=.env --exclude='.env.*' --exclude='.dev.vars*' --exclude=supabase/.temp -czf "$OUT/candidate.tar.gz" .
+          tar -czf "$OUT/node_modules.tar.gz" node_modules
+          printf '%s\n' '9a17e4adce3ce3997032a5dc74fd08722fe991bd' > "$OUT/BASE"
+          printf '%s\n' 'd37fee43f4e19183340f69948acb5999f48d4905' > "$OUT/CHECKPOINT"
+          cd "$OUT"
+          sha256sum repo.bundle candidate.tar.gz node_modules.tar.gz node deno > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-terminal-workspace
+          path: ${{ runner.temp }}/cms-terminal/*
+          retention-days: 3
