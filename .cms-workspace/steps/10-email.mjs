@@ -12,7 +12,7 @@ export function integrate(root) {
   if (selected.length !== names.size) throw new Error('Email extraction does not match the pinned renderer')
   let shared = selected.map(node => node.getText(source)).join('\n\n')
   shared = shared.replace('interface EmailBuildInput {', 'export interface EmailBuildInput {\n  readonly previewMode?: CmsMode')
-  shared = shared.replace('export interface EmailTemplateCopy {', 'export interface EmailTemplateCopy {\n  readonly design?: EmailDesign\n  readonly designLogoUrl?: string')
+  shared = shared.replace('export interface EmailTemplateCopy {', 'export interface EmailTemplateCopy {\n  readonly design?: EmailDesign | null\n  readonly designLogoUrl?: string | null')
   shared = shared.replace('  const html = `<!doctype html>', '  const defaultHtml = `<!doctype html>')
   shared = shared.replace('    html,\n', '    html: input.copy.design ? renderDesignedEmail(input, input.copy.design, input.previewMode) : defaultHtml,\n')
   if (!shared.includes('const defaultHtml') || !shared.includes('html: input.copy.design')) throw new Error('Email renderer integration anchor changed')
