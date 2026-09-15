@@ -1,0 +1,4295 @@
+
+===== tools/e2e/admin-state.mjs =====
+import { chromium, firefox, webkit } from 'playwright'
+
+const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4188').replace(/\/$/, '')
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+async function mount(page, name, argument, path, shellMinHeight = '0px') {
+  await page.goto(`${baseUrl}${path}`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async ({ name: exportName, argument: value }) => {
+      const harness = await import('/tools/e2e/admin-harness.tsx')
+      if (exportName === 'navigation') harness.mountAdminNavigationHarness(value)
+      else harness.mountSiteViewHarness()
+    },
+    { name, argument },
+  )
+  await page.evaluate((minHeight) => {
+    const shell = globalThis.document.querySelector('.knc-admin-shell')
+    if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = minHeight
+  }, shellMinHeight)
+}
+
+async function waitForScroll(page, expected, label) {
+  try {
+    await page.waitForFunction(
+      (target) => Math.round(globalThis.window.scrollY) === target,
+      expected,
+      { timeout: 5_000 },
+    )
+  } catch {
+    const actual = await page.evaluate(() => ({
+      scrollY: Math.round(globalThis.window.scrollY),
+      state: globalThis.window.history.state,
+      storage: { ...globalThis.window.sessionStorage },
+    }))
+    throw new Error(`${label}: ${JSON.stringify(actual)}`)
+  }
+}
+
+async function waitForSavedScroll(page, tab, expected) {
+  await page.waitForFunction(
+    ({ expectedTab, expectedScroll }) => {
+      const navigation = globalThis.window.history.state?.kncAdminNavigation
+      return navigation?.tab === expectedTab && navigation.scrollY === expectedScroll
+    },
+    { expectedTab: tab, expectedScroll: expected },
+  )
+}
+
+async function verifyNavigation(page) {
+  await mount(page, 'navigation', 'owner', '/tools/e2e/admin-harness.html?tab=schedule', '22000px')
+  await page.getByRole('button', { name: 'My schedule', exact: true }).waitFor()
+  await waitForSavedScroll(page, 'schedule', 0)
+  await page.evaluate(() => globalThis.window.scrollTo(0, 875))
+  await waitForSavedScroll(page, 'schedule', 875)
+  await page.getByRole('button', { name: 'Mail', exact: true }).click()
+  await waitForScroll(page, 0, 'Mail did not start at top')
+  await waitForSavedScroll(page, 'mail', 0)
+  await page.evaluate(() => globalThis.window.scrollTo(0, 425))
+  await waitForSavedScroll(page, 'mail', 425)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () => {
+    const harness = await import('/tools/e2e/admin-harness.tsx')
+    harness.mountAdminNavigationHarness('owner')
+    const shell = globalThis.document.querySelector('.knc-admin-shell')
+    if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '22000px'
+  })
+  assert(
+    (await page.getByRole('button', { name: 'Mail', exact: true }).getAttribute('aria-current')) ===
+      'page',
+    'Reload did not restore Mail tab',
+  )
+  await waitForScroll(page, 425, 'Reload did not restore Mail scroll')
+  await page.goBack()
+  assert(
+    (await page
+      .getByRole('button', { name: 'My schedule', exact: true })
+      .getAttribute('aria-current')) === 'page',
+    'Back did not restore Schedule tab',
+  )
+  await waitForScroll(page, 875, 'Back did not restore schedule scroll')
+  const backScroll = await page.evaluate(() => Math.round(globalThis.window.scrollY))
+  assert(backScroll === 875, `Back lost schedule scroll: ${backScroll}`)
+  await page.goForward()
+  assert(
+    (await page.getByRole('button', { name: 'Mail', exact: true }).getAttribute('aria-current')) ===
+      'page',
+    'Forward did not restore Mail tab',
+  )
+  await waitForScroll(page, 425, 'Forward did not restore mail scroll')
+  const forwardScroll = await page.evaluate(() => Math.round(globalThis.window.scrollY))
+  assert(forwardScroll === 425, `Forward lost mail scroll: ${forwardScroll}`)
+
+  await mount(page, 'navigation', 'barber', '/tools/e2e/admin-harness.html?tab=mail')
+  assert(
+    (await page.getByRole('button', { name: 'Mail', exact: true }).count()) === 0,
+    'barber restored hidden Mail tab',
+  )
+  assert(
+    (await page
+      .getByRole('button', { name: 'My schedule', exact: true })
+      .getAttribute('aria-current')) === 'page',
+    'barber did not fall back to Schedule',
+  )
+}
+
+async function verifyDelayedRestore(page) {
+  await mount(page, 'navigation', 'owner', '/tools/e2e/admin-harness.html?tab=schedule', '22000px')
+  await waitForSavedScroll(page, 'schedule', 0)
+  await page.evaluate(() => globalThis.window.scrollTo(0, 5000))
+  await waitForSavedScroll(page, 'schedule', 5000)
+  await page.getByRole('button', { name: 'Mail', exact: true }).click()
+  await waitForScroll(page, 0, 'Mail did not start at top before delayed restore')
+  await waitForSavedScroll(page, 'mail', 0)
+  await page.evaluate(() => {
+    const shell = globalThis.document.querySelector('.knc-admin-shell')
+    if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '0px'
+    globalThis.window.scrollTo(0, 0)
+  })
+  await page.goBack()
+  await page.waitForTimeout(10_100)
+  await page.evaluate(() => {
+    const shell = globalThis.document.querySelector('.knc-admin-shell')
+    if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '22000px'
+  })
+  await page.waitForFunction(() => Math.round(globalThis.window.scrollY) === 5000)
+}
+
+async function verifyPresentationDraft(page) {
+  await mount(page, 'site', undefined, '/tools/e2e/admin-harness.html?view=site')
+  await page.getByLabel('Logo scale').waitFor()
+  assert(
+    (await page.locator('script[src*="challenges.cloudflare.com"]').count()) === 0,
+    'read-only CMS replica loaded external Turnstile challenge',
+  )
+  await page.getByLabel('Logo scale').selectOption('xl')
+  await page.getByLabel('Image style').selectOption('monochrome')
+  assert(
+    (await page.evaluate(() => globalThis.window.__adminHarnessWrites?.length ?? -1)) === 0,
+    'draft scale wrote before publish',
+  )
+  const focusedSvg = page.getByTestId('homepage-logo-focused-preview').locator('svg')
+  assert((await focusedSvg.count()) === 1, 'focused logo preview did not render one SVG')
+  assert((await focusedSvg.getAttribute('height')) === '188', 'draft scale did not reach preview')
+  assert(
+    (await focusedSvg.evaluate((element) => globalThis.getComputedStyle(element).filter)).includes(
+      'grayscale(1)',
+    ),
+    'draft monochrome style did not reach focused preview',
+  )
+  const replica = page.getByTestId('homepage-replica-preview')
+  assert(
+    (await replica.getByText('BARBERSHOP · GOTHENBURG', { exact: true }).count()) === 1,
+    'English preview copy missing',
+  )
+  const previewToolbar = page.getByRole('toolbar', { name: 'Preview controls' })
+  await previewToolbar.getByRole('button', { name: 'SV', exact: true }).click()
+  assert(
+    (await replica.getByText('BARBERSHOP · GÖTEBORG', { exact: true }).count()) === 1,
+    'preview language toggle kept wrong-language CMS copy',
+  )
+  const swedishPreviewToolbar = page.getByRole('toolbar', { name: 'Förhandsvisningskontroller' })
+  const replicaScroll = page.getByTestId('homepage-replica-scroll')
+  const replicaPanel = replica.getByTestId('desktop-top-panel')
+  await swedishPreviewToolbar.getByRole('button', { name: 'Om oss', exact: true }).click()
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const about = host?.querySelector('#om-oss')
+    if (!(host instanceof globalThis.HTMLElement) || !(about instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(about.getBoundingClientRect().top - host.getBoundingClientRect().top - 61) <= 1
+  })
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
+  })
+  const [aboutHostBox, aboutPanelBox] = await Promise.all([
+    replicaScroll.boundingBox(),
+    replicaPanel.boundingBox(),
+  ])
+  assert(aboutHostBox !== null && aboutPanelBox !== null, 'replica scroll geometry unavailable')
+  assert(
+    Math.abs(aboutPanelBox.y - aboutHostBox.y) <= 1,
+    `replica panel escaped embedded scroll viewport: ${JSON.stringify({ aboutHostBox, aboutPanelBox })}`,
+  )
+  await swedishPreviewToolbar.getByRole('button', { name: 'Bokning', exact: true }).click()
+  await replica.getByTestId('booking-step-barber').waitFor()
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const booking = host?.querySelector('[data-testid="fold-booking"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(booking instanceof globalThis.HTMLElement))
+      return false
+    const hostRect = host.getBoundingClientRect()
+    const bookingRect = booking.getBoundingClientRect()
+    return bookingRect.top < hostRect.bottom && bookingRect.bottom > hostRect.top + 61
+  })
+  await page.waitForFunction(() => {
+    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
+    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
+    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
+      return false
+    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
+  })
+  await page.getByRole('button', { name: 'Publish presentation', exact: true }).click()
+  const writes = await page.evaluate(
+    () => globalThis.window.__adminHarnessWrites?.map((entry) => Object.fromEntries(entry)) ?? [],
+  )
+  assert(writes.length === 1, 'publish did not write exactly once')
+  assert(writes[0]?.homepage_logo_scale === 'xl', 'published logo scale missing')
+  assert(writes[0]?.homepage_scale === 'md', 'published homepage scale missing')
+  assert(writes[0]?.homepage_logo_style === 'monochrome', 'published logo style missing')
+}
+
+async function mutationControl(page, action, target) {
+  return page.evaluate(
+    async ({ action, target }) => {
+      const harness = await import('/tools/e2e/admin-harness.tsx')
+      return harness.adminMutationControl(action, target)
+    },
+    { action, target },
+  )
+}
+
+async function verifyMutationReentry(page, kind, reentry = 'target', failFirst = false) {
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async ({ kind, failFirst }) => {
+      const harness = await import('/tools/e2e/admin-harness.tsx')
+      harness.mountAdminMutationHarness(kind, failFirst)
+    },
+    { kind, failFirst },
+  )
+  if (kind === 'services') {
+    await page.getByLabel('Price (kr)', { exact: true }).first().fill('200')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+  } else if (kind === 'profile') {
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles({ name: 'first.png', mimeType: 'image/png', buffer: Buffer.from('first') })
+  } else {
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /cancel booking/i })
+      .click()
+  }
+  const readMutation = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).adminMutationControl,
+  )
+  await page.waitForFunction((read) => read('snapshot').writes === 1, readMutation)
+  if (reentry === 'remount') await mutationControl(page, 'remount')
+  else {
+    await mutationControl(page, 'target', 'b')
+    await page.getByRole('heading', { name: /B$/ }).waitFor()
+    await mutationControl(page, 'target', 'a')
+    await page.getByRole('heading', { name: /A$/ }).waitFor()
+  }
+  // Let the target effect run; the original write is still explicitly held before persistence.
+  await page.waitForTimeout(100)
+  const mutable =
+    kind === 'services'
+      ? page.getByRole('button', { name: 'Save', exact: true })
+      : kind === 'profile'
+        ? page.locator('input[type="file"]')
+        : page.getByRole('button', { name: 'Cancel', exact: true })
+  assert(
+    (await mutable.count()) === 0 || (await mutable.first().isDisabled()),
+    `${kind}: returning A allows another mutation before its earlier write settles`,
+  )
+  assert(
+    (await mutationControl(page, 'snapshot')).writes === 1,
+    `${kind}: pending write was duplicated`,
+  )
+  await mutationControl(page, 'release')
+  if (kind === 'services') {
+    await page.waitForFunction(
+      (price) =>
+        [...globalThis.document.querySelectorAll('input')].some((input) => input.value === price),
+      failFirst ? '100' : '200',
+    )
+    await page.getByLabel('Price (kr)', { exact: true }).first().fill('300')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.waitForFunction((read) => read('snapshot').writes === 2, readMutation)
+    assert(
+      (await mutationControl(page, 'snapshot')).price === 300,
+      'older service price overwrote newer persisted intent',
+    )
+    assert(
+      (await page.getByLabel('Price (kr)', { exact: true }).first().inputValue()) === '300',
+      'service UI disagrees with persisted price',
+    )
+  } else if (kind === 'profile') {
+    if (!failFirst) await page.locator('img[src$="#first.png"]').waitFor()
+    else await page.locator('input[type="file"]').waitFor({ state: 'attached' })
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles({ name: 'latest.png', mimeType: 'image/png', buffer: Buffer.from('latest') })
+    await page.locator('img[src$="#latest.png"]').waitFor()
+    assert(
+      (await mutationControl(page, 'snapshot')).photo === 'latest.png',
+      'older upload overwrote newer persisted photo',
+    )
+  } else {
+    if (failFirst) {
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Cancel booking', exact: true })
+        .click()
+    }
+    await page.getByRole('button', { name: /^Cancelled/ }).click()
+    await page.getByText('A customer', { exact: true }).waitFor()
+    assert(
+      (await mutationControl(page, 'snapshot')).status === 'cancelled',
+      'cancellation never persisted',
+    )
+  }
+  await readMutation.dispose()
+}
+
+async function hydrationControl(page, action) {
+  return page.evaluate(
+    async (action) => (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl(action),
+    action,
+  )
+}
+
+async function verifyInitialHydration(page, kind, failLoad = false) {
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async ({ kind, failLoad }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountAdminHydrationHarness(kind, failLoad),
+    { kind, failLoad },
+  )
+  const control =
+    kind === 'site'
+      ? page.locator('label').filter({ hasText: 'About section' }).locator('select')
+      : page.locator('input[type="file"]')
+  await control.waitFor({ state: 'attached' })
+  assert(await control.isDisabled(), `${kind}: control enabled before authoritative load`)
+  if (kind === 'site')
+    assert(
+      await page.locator('#site-font-heading').locator('..').locator('select').first().isDisabled(),
+      'homepage draft editable before hydration',
+    )
+  await hydrationControl(page, 'load')
+  if (failLoad) {
+    await page.getByText('Synthetic load failure', { exact: true }).first().waitFor()
+    assert(await control.isDisabled(), `${kind}: failed hydration enabled mutations`)
+    assert(
+      (await hydrationControl(page, 'snapshot')).writes === 0,
+      'write occurred despite failed hydration',
+    )
+    return
+  }
+  await page.waitForFunction(() =>
+    [...globalThis.document.querySelectorAll('select,input[type="file"]')].some(
+      (input) => !input.disabled,
+    ),
+  )
+  if (kind === 'site') {
+    const readHydration = await page.evaluateHandle(
+      async () => (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl,
+    )
+    await control.selectOption('sm')
+    await page.waitForFunction((read) => read('snapshot').writes === 1, readHydration)
+    assert(await control.isDisabled(), 'About autosave permits out-of-order writes')
+    await hydrationControl(page, 'write')
+    await page.waitForFunction(
+      () =>
+        ![...globalThis.document.querySelectorAll('select')].find((select) => select.value === 'sm')
+          ?.disabled,
+    )
+    await control.selectOption('xl')
+    await page.waitForFunction((read) => read('snapshot').writes === 2, readHydration)
+    await readHydration.dispose()
+    assert(
+      (await hydrationControl(page, 'snapshot')).about === 'xl',
+      'published About size differs from final selection',
+    )
+    assert((await control.inputValue()) === 'xl', 'About size UI differs from published state')
+  } else {
+    await page.locator('#alt-salon').fill('New uploaded photo')
+    await control.setInputFiles({
+      name: 'new.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('new'),
+    })
+    await page.locator('figure img[alt="New uploaded photo"]').waitFor()
+    assert(
+      (await hydrationControl(page, 'snapshot')).gallery === 1,
+      'gallery success lacks persisted upload',
+    )
+    await page.locator('figure').getByRole('button', { name: 'Remove', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click()
+    await page.locator('figure').waitFor({ state: 'detached' })
+    assert(
+      (await hydrationControl(page, 'snapshot')).gallery === 0,
+      'gallery removal did not persist',
+    )
+  }
+}
+
+async function contactControl(page, identity) {
+  await page.evaluate(
+    async (identity) => (await import('/tools/e2e/admin-harness.tsx')).setHarnessContact(identity),
+    identity,
+  )
+}
+async function verifyContactOwnership(page, kind) {
+  await page.route('https://challenges.cloudflare.com/**', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: 'window.turnstile={render:()=>"test",remove:()=>{},reset:()=>{}}',
+    }),
+  )
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async (kind) => (await import('/tools/e2e/admin-harness.tsx')).mountContactHarness(kind),
+    kind,
+  )
+  if (kind === 'booking') {
+    await page.getByTestId('booking-barber-option').click()
+    await page.getByRole('button', { name: 'Monday 14 September 2026', exact: true }).click()
+    await page.getByTestId('booking-service-option').click()
+    await page.getByRole('button', { name: '10:00', exact: true }).click()
+    const inputs = page.getByRole('dialog').locator('input')
+    await inputs.nth(0).fill('Typed name')
+    await contactControl(page, 'a')
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[role="dialog"] input[type="email"]')?.value ===
+        'a@example.test',
+    )
+    assert(
+      (await inputs.nth(0).inputValue()) === 'Typed name',
+      'late successful hydration overwrote typed name',
+    )
+    assert(
+      (await inputs.nth(1).inputValue()) === '0701111111',
+      'late successful hydration never populated untouched phone',
+    )
+    await contactControl(page, 'b')
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[role="dialog"] input[type="email"]')?.value ===
+        'b@example.test',
+    )
+    assert(
+      (await inputs.nth(1).inputValue()) === '0702222222',
+      'customer B retained customer A auto-fill',
+    )
+    await inputs.nth(1).fill('')
+    await contactControl(page, 'a')
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[role="dialog"] input[type="email"]')?.value ===
+        'a@example.test',
+    )
+    assert(
+      (await inputs.nth(1).inputValue()) === '',
+      'explicitly cleared phone was auto-filled again',
+    )
+    await contactControl(page, 'clear')
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('[role="dialog"] input[type="email"]')?.value === '',
+    )
+    assert((await inputs.nth(0).inputValue()) === 'Typed name', 'profile clear deleted typed name')
+    assert((await inputs.nth(1).inputValue()) === '', 'profile clear changed typed empty phone')
+  } else {
+    const phone = page.locator('input[type="tel"]')
+    await contactControl(page, 'a')
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('input[type="tel"]')?.value === '0701111111',
+    )
+    await contactControl(page, 'b')
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('input[type="tel"]')?.value === '0702222222',
+    )
+    await contactControl(page, 'clear')
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('input[type="tel"]')?.value === '',
+    )
+    await phone.fill('0703333333')
+    await contactControl(page, 'a')
+    await page.waitForTimeout(100)
+    assert((await phone.inputValue()) === '0703333333', 'review auto-fill overwrote typed phone')
+  }
+}
+
+async function verifyBookingTerms(page, lang) {
+  await page.setViewportSize(
+    lang === 'sv' ? { width: 320, height: 568 } : { width: 1280, height: 720 },
+  )
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page
+    .context()
+    .route('**/terms', (route) =>
+      route.fulfill({ contentType: 'text/html', body: '<h1>Terms destination</h1>' }),
+    )
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  const strings = await page.evaluate(async (lang) => {
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountContactHarness('booking', lang)
+    return (await import('/src/i18n/index.ts')).bookingStrings(lang)
+  }, lang)
+  const barber = page.getByTestId('booking-barber-option')
+  await barber.focus()
+  await page.keyboard.press('Enter')
+  assert(
+    (await barber.getAttribute('aria-pressed')) === 'true',
+    'Keyboard barber selection is not exposed',
+  )
+  await page.getByRole('button', { name: /14 september 2026/i }).click()
+  await page.getByTestId('booking-service-option').click()
+  await page.getByRole('button', { name: '10:00', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  const name = dialog.locator('input[type="text"]')
+  await name.fill('Preserved booking draft')
+  const link = dialog.getByRole('link', { name: strings.termsLinkLabel, exact: true })
+  assert(
+    (await link.getAttribute('href')) === '/terms' &&
+      (await link.getAttribute('target')) === '_blank',
+    'Final booking terms do not preserve the draft in a separate tab',
+  )
+  const opened = page.waitForEvent('popup')
+  await link.focus()
+  await page.keyboard.press('Enter')
+  const popup = await opened
+  await popup.getByRole('heading', { name: 'Terms destination' }).waitFor()
+  await popup.close()
+  assert(
+    (await name.inputValue()) === 'Preserved booking draft',
+    'Reading terms lost the booking draft',
+  )
+}
+
+function calendarStatusResult(overrides = {}) {
+  return {
+    ok: true,
+    value: {
+      connected: false,
+      disconnectPending: false,
+      repairRequired: false,
+      googleEmail: null,
+      lastSyncError: null,
+      ...overrides,
+    },
+  }
+}
+
+function calendarErrorResult(message = 'Synthetic Calendar status failure') {
+  return { ok: false, error: { kind: 'network', message } }
+}
+
+async function mountCalendarHarness(page, lang = 'en', mode = 'component') {
+  // Preact schedules passive effects through the module's original timer reference. Let the first
+  // effect run on a resumed fake clock, then pause at the observed instant before exact timer checks.
+  await page.clock.resume()
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(
+    async ({ lang: currentLang, mode: currentMode }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCalendarHarness(currentLang, currentMode),
+    { lang, mode },
+  )
+  await page.getByTestId('calendar-harness').waitFor()
+  await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+  return page.evaluate(async (currentLang) => {
+    const { adminText } = await import('/src/i18n/adminStrings.ts')
+    return adminText(currentLang)
+  }, lang)
+}
+
+async function calendarControl(page, action, port = 'a', index = 0, result) {
+  const snapshot = await page.evaluate(
+    async ({
+      action: currentAction,
+      port: currentPort,
+      index: currentIndex,
+      result: currentResult,
+    }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).calendarControl(
+        currentAction,
+        currentPort,
+        currentIndex,
+        currentResult,
+      ),
+    { action, port, index, result },
+  )
+  if (action !== 'snapshot') await page.clock.fastForward(1)
+  return snapshot
+}
+
+async function calendarCalls(page, field, port) {
+  const snapshot = await calendarControl(page, 'snapshot')
+  return snapshot?.[field]?.[port] ?? 0
+}
+
+async function waitCalendarCalls(page, field, port, count, label) {
+  const control = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).calendarControl,
+  )
+  try {
+    await page.waitForFunction(
+      ({ control: read, field: currentField, port: currentPort, count: expected }) => {
+        const snapshot = read('snapshot')
+        return (snapshot?.[currentField]?.[currentPort] ?? 0) >= expected
+      },
+      { control, field, port, count },
+      { timeout: 5_000 },
+    )
+  } catch {
+    throw new Error(`${label}: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`)
+  } finally {
+    await control.dispose()
+  }
+}
+
+async function setCalendarVisibility(page, state) {
+  await page.evaluate((next) => {
+    Object.defineProperty(globalThis.document, 'visibilityState', {
+      configurable: true,
+      value: next,
+    })
+    globalThis.document.dispatchEvent(new globalThis.Event('visibilitychange'))
+  }, state)
+}
+
+async function verifyCalendarSync(page) {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00.000Z') })
+
+  // Disconnect acknowledgement is immediately visible as pending, then the authoritative status
+  // read and the visible 15s poll are the only paths that may clear it.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'barber@example.test' }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarConnected }).waitFor()
+    await page.getByRole('button', { name: t.calendarDisconnect, exact: true }).click()
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'disconnect mutation missing')
+    await calendarControl(page, 'resolve-disconnect', 'a', 0, { ok: true })
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      2,
+      'acknowledged disconnect did not refresh status',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      1,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 2,
+      `Calendar status read unexpectedly duplicated before the 15s poll: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`,
+    )
+    // calendarControl advances one millisecond to flush Preact; the interval began at the
+    // acknowledgement tick, so 14_998 more milliseconds is the strict pre-15s boundary.
+    await page.clock.fastForward(14_998)
+    const beforePoll = await calendarCalls(page, 'statusCalls', 'a')
+    assert(
+      beforePoll === 2,
+      `Calendar pending poll ran before its visible 15s deadline: ${JSON.stringify(await calendarControl(page, 'snapshot'))}`,
+    )
+    await page.clock.fastForward(1)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'visible 15s Calendar poll missing')
+    await calendarControl(page, 'resolve-status', 'a', 2, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+  }
+
+  // Hidden pages do not poll. Returning to visible and receiving focus each request a fresh read.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'visibility scenario initial read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.getByRole('status').filter({ hasText: t.calendarDisconnecting }).waitFor()
+    await setCalendarVisibility(page, 'hidden')
+    await page.clock.fastForward(30_000)
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 1,
+      'Hidden Calendar page continued polling',
+    )
+    await setCalendarVisibility(page, 'visible')
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      2,
+      'visibilitychange did not refresh Calendar',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      1,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await page.waitForTimeout(0)
+    await page.evaluate(() => globalThis.window.dispatchEvent(new globalThis.Event('focus')))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'focus did not refresh Calendar')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+  }
+
+  // An initial status failure must remain unknown and offer retry. A later read failure preserves
+  // the last known status while exposing the localized status error.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'status-error initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarErrorResult())
+    await page.getByRole('status').filter({ hasText: t.calendarStatusUnavailable }).waitFor()
+    await page.getByRole('alert').filter({ hasText: t.calendarStatusError }).waitFor()
+    await page.getByRole('button', { name: t.calendarRefresh, exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.calendarConnect, exact: true }).count()) === 0 &&
+        (await page.getByRole('button', { name: t.calendarDisconnect, exact: true }).count()) === 0,
+      'Initial Calendar status error exposed a false connected/disconnected action',
+    )
+    await page.getByRole('button', { name: t.calendarRefresh, exact: true }).click()
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'Calendar retry did not read status')
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    assert(
+      (await page.getByRole('alert').count()) === 0,
+      'Recovered Calendar status kept the error',
+    )
+    await page.evaluate(() => globalThis.window.dispatchEvent(new globalThis.Event('focus')))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'later Calendar status read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarErrorResult('Later status failure'),
+    )
+    await page.getByRole('alert').filter({ hasText: t.calendarStatusError }).waitFor()
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    await page.getByRole('status').filter({ hasText: 'Google Calendar' }).waitFor()
+  }
+
+  // A read has a 10s deadline and late completion cannot resurrect a stale status. Retry recovers.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'deadline initial read missing')
+    await page.clock.fastForward(9_000)
+    assert(
+      (await page.getByTestId('calendar-loading').textContent()) === 'true',
+      'Calendar status read timed out before 10s',
+    )
+    // The read starts in the passive effect just before the helper pauses the clock; allow a small
+    // deterministic margin after the 10s deadline without weakening the 9s pre-deadline assertion.
+    await page.clock.fastForward(2_000)
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-loading"]')?.textContent ===
+          'false' &&
+        globalThis.document.querySelector('[data-testid="calendar-error"]')?.textContent ===
+          'status',
+    )
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'unknown',
+      'Timed-out Calendar read invented a disconnected state',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'late@example.test' }),
+    )
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'unknown',
+      'Late timed-out Calendar response wrote back into state',
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'deadline retry read missing')
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+  }
+
+  // Reads coalesce and are fenced against an action. Port A -> B and unmount also fence late data.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'race initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult({ connected: true }))
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'true',
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 2, 'coalesced Calendar read missing')
+    assert(
+      (await calendarCalls(page, 'statusCalls', 'a')) === 2,
+      'Two same-turn Calendar refreshes started two status reads',
+    )
+    await calendarControl(page, 'invoke-disconnect')
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'hook disconnect mutation missing')
+    await calendarControl(page, 'resolve-disconnect', 'a', 0, { ok: true })
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-pending"]')?.textContent ===
+        'true',
+    )
+    await waitCalendarCalls(
+      page,
+      'statusCalls',
+      'a',
+      3,
+      'hook disconnect acknowledgement read missing',
+    )
+    await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-pending').textContent()) === 'true',
+      'Stale read before disconnect overwrote acknowledged pending state',
+    )
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      2,
+      calendarStatusResult({ disconnectPending: true }),
+    )
+    await calendarControl(page, 'invoke-refresh')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 4, 'port-race pending read missing')
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'b')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'port B initial read missing')
+    await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+    await calendarControl(page, 'resolve-status', 'a', 3, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-connected').textContent()) === 'false',
+      'Late port A Calendar response overwrote port B state',
+    )
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'a')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'a', 5, 'port A remount read missing')
+    await calendarControl(page, 'unmount')
+    await calendarControl(page, 'resolve-status', 'a', 4, calendarStatusResult({ connected: true }))
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByTestId('calendar-harness').count()) === 0,
+      'Calendar late response recreated UI after unmount',
+    )
+  }
+
+  // A late connect URL may not navigate after a port switch or unmount. A fresh port may still
+  // start its own action independently.
+  {
+    await mountCalendarHarness(page, 'en', 'hook')
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'connect-race initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult())
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="calendar-connected"]')?.textContent ===
+        'false',
+    )
+    await calendarControl(page, 'invoke-connect')
+    await waitCalendarCalls(page, 'connectCalls', 'a', 1, 'connect-race mutation missing')
+    const beforeSwitch = page.url()
+    await page.clock.resume()
+    await calendarControl(page, 'switch-port', 'b')
+    await page.waitForTimeout(25)
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'connect-race port B read missing')
+    await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
+    await calendarControl(page, 'resolve-connect', 'a', 0, {
+      ok: true,
+      value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=stale',
+    })
+    await page.waitForTimeout(100)
+    assert(page.url() === beforeSwitch, 'Late port A connect URL navigated after port switch')
+
+    await calendarControl(page, 'invoke-connect')
+    await waitCalendarCalls(page, 'connectCalls', 'b', 1, 'port B connect mutation missing')
+    await calendarControl(page, 'unmount')
+    await calendarControl(page, 'resolve-connect', 'b', 0, {
+      ok: true,
+      value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=unmounted',
+    })
+    await page.waitForTimeout(100)
+    assert(page.url() === beforeSwitch, 'Late connect URL navigated after component unmount')
+  }
+
+  // Action guards are synchronous and action promises have no read deadline/overlap timeout.
+  {
+    const t = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'connect guard initial read missing')
+    await calendarControl(page, 'resolve-status', 'a', 0, calendarStatusResult())
+    await page.getByRole('button', { name: t.calendarConnect, exact: true }).waitFor()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, t.calendarConnect)
+    await waitCalendarCalls(page, 'connectCalls', 'a', 1, 'connect mutation missing')
+    assert(
+      (await calendarCalls(page, 'connectCalls', 'a')) === 1,
+      'Two same-turn connect clicks started two mutations',
+    )
+    await page.clock.fastForward(10_000)
+    assert(
+      (await calendarCalls(page, 'connectCalls', 'a')) === 1,
+      'Connect action was replaced after a 10s deadline',
+    )
+    await calendarControl(page, 'resolve-connect', 'a', 0, calendarErrorResult('connect failed'))
+    await page.getByRole('alert').filter({ hasText: t.calendarActionError }).waitFor()
+
+    const disconnectT = await mountCalendarHarness(page)
+    await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'disconnect guard initial read missing')
+    await calendarControl(
+      page,
+      'resolve-status',
+      'a',
+      0,
+      calendarStatusResult({ connected: true, googleEmail: 'barber@example.test' }),
+    )
+    await page.getByRole('button', { name: disconnectT.calendarDisconnect, exact: true }).waitFor()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, disconnectT.calendarDisconnect)
+    await waitCalendarCalls(page, 'disconnectCalls', 'a', 1, 'disconnect mutation missing')
+    assert(
+      (await calendarCalls(page, 'disconnectCalls', 'a')) === 1,
+      'Two same-turn disconnect clicks started two mutations',
+    )
+    await page.clock.fastForward(10_000)
+    assert(
+      (await calendarCalls(page, 'disconnectCalls', 'a')) === 1,
+      'Disconnect action was replaced after a 10s deadline',
+    )
+    await calendarControl(
+      page,
+      'resolve-disconnect',
+      'a',
+      0,
+      calendarErrorResult('disconnect failed'),
+    )
+    await page.getByRole('alert').filter({ hasText: disconnectT.calendarActionError }).waitFor()
+  }
+}
+
+function customerVerifiedResult(email = 'source@example.test', aliases = [email]) {
+  return {
+    ok: true,
+    authority: 'verified',
+    bookings: { upcoming: [], past: [] },
+    profile: {
+      name: 'Verified Customer',
+      phone: '0701234567',
+      email,
+      emails: aliases,
+      phones: ['0701234567'],
+    },
+  }
+}
+
+function customerDeviceResult() {
+  return {
+    ok: true,
+    authority: 'device',
+    bookings: { upcoming: [], past: [] },
+  }
+}
+
+function customerUpcomingResult(email = 'source@example.test') {
+  return {
+    ...customerVerifiedResult(email),
+    bookings: {
+      upcoming: [
+        {
+          id: 'customer-booking-a',
+          barber: { id: 'customer-barber', name: 'Test Barber', ig: '' },
+          serviceName: 'Haircut',
+          price: 300,
+          durationMin: 30,
+          start: '2026-09-14T10:00:00.000Z',
+          whenLabel: 'Monday 14 September at 10:00',
+        },
+      ],
+      past: [],
+    },
+  }
+}
+
+function customerErrorResult(error = 'system') {
+  return { ok: false, error }
+}
+
+let customerHarnessVisit = 0
+
+async function mountCustomerHarness(page, lang = 'en', code, accessToken = '') {
+  await page.setViewportSize({ width: 320, height: 568 })
+  customerHarnessVisit += 1
+  await page.goto(
+    `${baseUrl}/tools/e2e/admin-harness.html?customer-harness=${customerHarnessVisit}`,
+    { waitUntil: 'domcontentloaded' },
+  )
+  await page.evaluate(
+    async ({ lang: currentLang, code: currentCode, accessToken: currentToken }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCustomerHarness(
+        currentLang,
+        currentCode,
+        currentToken,
+      ),
+    { lang, code, accessToken },
+  )
+  await page.getByRole('dialog').waitFor()
+  await waitCustomerCalls(page, 'listCalls', 'a', 1, 'customer initial list read missing')
+}
+
+async function customerControl(page, action, port = 'a', index = 0, result) {
+  const snapshot = await page.evaluate(
+    async ({
+      action: currentAction,
+      port: currentPort,
+      index: currentIndex,
+      result: currentResult,
+    }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).customerControl(
+        currentAction,
+        currentPort,
+        currentIndex,
+        currentResult,
+      ),
+    { action, port, index, result },
+  )
+  await page.waitForTimeout(0)
+  return snapshot
+}
+
+async function customerSnapshot(page) {
+  return customerControl(page, 'snapshot')
+}
+
+async function waitCustomerCalls(page, field, port, count, label) {
+  // Import before polling: a Promise itself is truthy to Playwright's polling predicate.
+  const control = await page.evaluateHandle(
+    async () => (await import('/tools/e2e/admin-harness.tsx')).customerControl,
+  )
+  try {
+    await page.waitForFunction(
+      ({ control: read, field: currentField, port: currentPort, count: expected }) => {
+        const snapshot = read('snapshot')
+        return (snapshot?.[currentField]?.[currentPort] ?? 0) >= expected
+      },
+      { control, field, port, count },
+      { timeout: 5_000 },
+    )
+  } catch {
+    throw new Error(`${label}: ${JSON.stringify(await customerSnapshot(page))}`)
+  } finally {
+    await control.dispose()
+  }
+}
+
+async function installCustomerAppRoutes(page) {
+  const origin = new URL(baseUrl).origin
+  const actions = []
+  const consoleOutput = []
+  const pageErrors = []
+  page.on('console', (message) => consoleOutput.push(message.text()))
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const reply = (body, status = 200) =>
+      route.fulfill({
+        status,
+        headers: { 'Content-Type': 'application/json' },
+        body: status === 204 ? undefined : JSON.stringify(body),
+      })
+    if (url.origin === origin && url.pathname === '/api/customer-bookings') {
+      const body = request.postDataJSON()
+      actions.push(body)
+      if (body.action === 'list')
+        return reply({
+          ok: true,
+          authority: 'verified',
+          session_proof: 'a'.repeat(64),
+          name: 'Verified Customer',
+          phone: '0701234567',
+          email: 'source@example.test',
+          emails: ['source@example.test', 'old@example.test'],
+          phones: ['0701234567'],
+          bookings: [],
+        })
+      if (body.action === 'confirm_link') return reply({ ok: true, status: 'waiting' })
+      if (body.action === 'request_link') return reply({ ok: true, status: 'queued' })
+      return reply({ ok: false, error: 'access_denied' })
+    }
+    if (url.origin === origin) return route.continue()
+    if (request.method() === 'OPTIONS') return reply(null, 204)
+    if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+      return reply({
+        barbers: [],
+        services: [],
+      })
+    if (url.pathname === '/rest/v1/rpc/public_business_discovery')
+      return reply({ settings: {}, barbers: [], services: [], schedules: [] })
+    if (url.pathname.startsWith('/rest/v1/')) return reply([])
+    pageErrors.push(`Unexpected customer request: ${request.method()} ${url.origin}${url.pathname}`)
+    return route.abort()
+  })
+  return { actions, consoleOutput, pageErrors }
+}
+
+async function verifyCustomerEmail(page) {
+  await mountCustomerHarness(page)
+  const t = await page.evaluate(async () =>
+    (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('en'),
+  )
+
+  // Verified authority exposes aliases and the manage control. The source email passed to the
+  // port is the server-verified profile email, and same-turn submit/Enter cannot duplicate it.
+  {
+    await customerControl(
+      page,
+      'resolve-list',
+      'a',
+      0,
+      customerVerifiedResult('source@example.test', ['source@example.test', 'old@example.test']),
+    )
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: t.manage, exact: true }).click()
+    await dialog.getByText('old@example.test', { exact: true }).waitFor()
+    const email = dialog.getByLabel(t.email, { exact: true })
+    await email.fill('target@example.test')
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, t.request)
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'email-link request mutation missing')
+    let snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.requestCalls.a === 1 &&
+        snapshot.requestArgs.a[0]?.email === 'target@example.test' &&
+        snapshot.requestArgs.a[0]?.lang === 'en' &&
+        snapshot.requestArgs.a[0]?.sourceEmail === 'source@example.test',
+      `request payload did not use the verified source email: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await dialog.getByRole('status').filter({ hasText: t.queued }).waitFor()
+    assert(
+      (await dialog.getByRole('button', { name: t.request, exact: true }).count()) === 0,
+      'queued email-link request left a submit button available',
+    )
+    await email.press('Enter')
+    await page.waitForTimeout(100)
+    snapshot = await customerSnapshot(page)
+    assert(snapshot.requestCalls.a === 1, 'Enter duplicated a completed email-link request')
+
+    await email.fill('second-target@example.test')
+    await dialog.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(
+      page,
+      'requestCalls',
+      'a',
+      2,
+      'second explicit email-link request missing',
+    )
+    await customerControl(page, 'resolve-request', 'a', 1, { ok: true, status: 'already_linked' })
+    await dialog.getByRole('status').filter({ hasText: t.alreadyLinked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'already-linked result did not refresh list')
+    snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.listParams.a[1]?.accessToken === '',
+      `already-linked refresh did not use the cookie session: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-list', 'a', 1, customerVerifiedResult())
+  }
+
+  // Device authority and a verified response without a real profile email expose no link action.
+  {
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerDeviceResult())
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.manage, exact: true }).count()) === 0,
+      'device authority exposed email-link controls',
+    )
+    assert(
+      (await customerSnapshot(page)).requestCalls.a === 0,
+      'device path attempted email linking',
+    )
+
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, {
+      ...customerVerifiedResult(),
+      profile: { ...customerVerifiedResult().profile, email: '', emails: [] },
+    })
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    assert(
+      (await page.getByRole('button', { name: t.manage, exact: true }).count()) === 0,
+      'empty verified profile exposed email-link controls',
+    )
+    assert(
+      (await customerSnapshot(page)).requestCalls.a === 0,
+      'empty profile attempted email linking',
+    )
+  }
+
+  // Confirmation is explicit, binds to the current code/session, surfaces wrong-session guidance,
+  // and refreshes the list/profile after waiting -> linked.
+  {
+    const wrongSessionCode = 'd'.repeat(64)
+    await mountCustomerHarness(page, 'en', wrongSessionCode)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('heading', { name: t.confirmTitle, exact: true }).waitFor()
+    assert((await customerSnapshot(page)).confirmCalls.a === 0, 'confirm_link ran on mount')
+    await dialog.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'confirm-link mutation missing')
+    assert(
+      (await customerSnapshot(page)).confirmCodes.a[0] === wrongSessionCode,
+      'confirm-link did not use the supplied code',
+    )
+    await customerControl(page, 'resolve-confirm', 'a', 0, customerErrorResult('access_denied'))
+    await dialog.getByRole('alert').filter({ hasText: t.accessDenied }).waitFor()
+    assert(
+      (await customerSnapshot(page)).listCalls.a === 1,
+      'wrong-session confirmation refreshed data',
+    )
+
+    const waitingCode = 'e'.repeat(64)
+    await mountCustomerHarness(page, 'en', waitingCode)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'waiting confirmation mutation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'waiting' })
+    await page.getByRole('status').filter({ hasText: t.waiting }).waitFor()
+
+    const linkedCode = 'f'.repeat(64)
+    await customerControl(page, 'set-code', 'a', 0, linkedCode)
+    await page.getByRole('button', { name: t.confirm, exact: true }).waitFor()
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 2, 'linked confirmation mutation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 1, { ok: true, status: 'linked' })
+    await page.getByRole('status').filter({ hasText: t.linked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'linked result did not refresh list/profile')
+    await customerControl(
+      page,
+      'resolve-list',
+      'a',
+      1,
+      customerVerifiedResult('refreshed@example.test'),
+    )
+    await page.getByText('refreshed@example.test', { exact: true }).waitFor()
+  }
+
+  // Cancellation is serialized with reads: a stale list response may not resurrect the booking,
+  // and two same-turn confirmations produce one port mutation.
+  {
+    const bookingsText = await page.evaluate(async () =>
+      (await import('/src/i18n/index.ts')).myBookingsStrings('en'),
+    )
+    await mountCustomerHarness(page, 'en', '9'.repeat(64))
+    await customerControl(page, 'resolve-list', 'a', 0, customerUpcomingResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'cancel ordering confirmation missing')
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'linked' })
+    await page.getByRole('status').filter({ hasText: t.linked }).waitFor()
+    await waitCustomerCalls(page, 'listCalls', 'a', 2, 'cancel ordering linked reload missing')
+    const booking = page.getByRole('button', {
+      name: /Monday 14 September at 10:00/,
+    })
+    await booking.click()
+    await page.getByRole('button', { name: bookingsText.cancelBtn, exact: true }).click()
+    await page.evaluate((label) => {
+      const button = [...globalThis.document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === label,
+      )
+      button?.click()
+      button?.click()
+    }, bookingsText.cancelConfirmYes)
+    await waitCustomerCalls(page, 'cancelCalls', 'a', 1, 'cancel mutation missing')
+    let snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.cancelCalls.a === 1 && snapshot.cancelIds.a[0] === 'customer-booking-a',
+      `same-turn cancellation was duplicated or targeted the wrong booking: ${JSON.stringify(snapshot)}`,
+    )
+    await customerControl(page, 'resolve-cancel', 'a', 0, { ok: true, id: 'customer-booking-a' })
+    await waitCustomerCalls(page, 'listCalls', 'a', 3, 'post-cancel reload missing')
+    await customerControl(page, 'resolve-list', 'a', 1, customerUpcomingResult())
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('button', { name: /Monday 14 September at 10:00/ }).count()) === 0,
+      'stale in-flight list response resurrected the cancelled booking',
+    )
+    await customerControl(page, 'resolve-list', 'a', 2, customerVerifiedResult())
+    await page.getByText('You have no upcoming appointments.', { exact: true }).waitFor()
+    snapshot = await customerSnapshot(page)
+    assert(
+      snapshot.listParams.a[2]?.accessToken === '',
+      `post-cancel reload did not use the cookie session: ${JSON.stringify(snapshot)}`,
+    )
+  }
+
+  // Port changes, code nonce changes and unmount invalidate late action responses.
+  {
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.manage, exact: true }).click()
+    await page.getByLabel(t.email, { exact: true }).fill('late@example.test')
+    await page.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'port-fence request missing')
+    await customerControl(page, 'switch-port', 'b')
+    await waitCustomerCalls(page, 'listCalls', 'b', 1, 'port B list read missing')
+    await customerControl(page, 'resolve-list', 'b', 0, customerVerifiedResult('b@example.test'))
+    await page.getByRole('button', { name: t.manage, exact: true }).waitFor()
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('status').filter({ hasText: t.queued }).count()) === 0,
+      'late port A request response wrote into port B UI',
+    )
+    assert((await customerSnapshot(page)).requestCalls.b === 0, 'port B inherited port A action')
+
+    await mountCustomerHarness(page)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.manage, exact: true }).click()
+    await page.getByLabel(t.email, { exact: true }).fill('unmounted@example.test')
+    await page.getByRole('button', { name: t.request, exact: true }).click()
+    await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'unmount-fence request missing')
+    await customerControl(page, 'unmount')
+    await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('dialog').count()) === 0,
+      'late response recreated an unmounted dialog',
+    )
+
+    const nonceA = '1'.repeat(64)
+    const nonceB = '2'.repeat(64)
+    await mountCustomerHarness(page, 'en', nonceA)
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult())
+    await page.getByRole('button', { name: t.confirm, exact: true }).click()
+    await waitCustomerCalls(page, 'confirmCalls', 'a', 1, 'nonce A confirmation missing')
+    await customerControl(page, 'set-code', 'a', 0, nonceB)
+    await page.getByRole('button', { name: t.confirm, exact: true }).waitFor()
+    await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'waiting' })
+    await page.waitForTimeout(100)
+    assert(
+      (await page.getByRole('status').filter({ hasText: t.waiting }).count()) === 0,
+      'late nonce A response wrote into nonce B UI',
+    )
+  }
+
+  // The real App consumes email-link proofs at initial mount and hashchange. Mixed booking tokens
+  // are removed without invoking exchange_access or confirm_link, and the proof never reaches
+  // storage, DOM text, or console output.
+  {
+    const appState = await installCustomerAppRoutes(page)
+    const appT = await page.evaluate(async () =>
+      (await import('/src/i18n/customerEmailLinkStrings.ts')).customerEmailLinkStrings('sv'),
+    )
+    const codeA = '3'.repeat(64)
+    const codeB = '4'.repeat(64)
+    const legacy = '5'.repeat(64)
+    await page.setViewportSize({ width: 320, height: 568 })
+    await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+    await page.evaluate(() => {
+      globalThis.document.cookie = 'bladeblend_storage_preferences=essential; Path=/'
+    })
+    await page.evaluate(
+      async (href) => (await import('/tools/e2e/admin-harness.tsx')).mountActualAppHarness(href),
+      `/?booking_access=${legacy}#email_link=${codeA}&booking_token=${'6'.repeat(64)}&keep=1`,
+    )
+    await page.getByRole('heading', { name: appT.confirmTitle, exact: true }).waitFor()
+    await page.waitForFunction(() => !globalThis.location.href.includes('email_link'))
+    const initialLeak = await page.evaluate(
+      (code) => ({
+        href: globalThis.location.href,
+        storage: JSON.stringify({
+          local: Object.keys(globalThis.localStorage).map((key) => [
+            key,
+            globalThis.localStorage.getItem(key),
+          ]),
+          session: Object.keys(globalThis.sessionStorage).map((key) => [
+            key,
+            globalThis.sessionStorage.getItem(key),
+          ]),
+        }),
+        dom: globalThis.document.documentElement.outerHTML.includes(code),
+      }),
+      codeA,
+    )
+    assert(
+      initialLeak.href.endsWith('/#keep=1'),
+      `initial App link cleanup failed: ${JSON.stringify(initialLeak)}`,
+    )
+    assert(
+      !initialLeak.href.includes('booking_access') && !initialLeak.href.includes('booking_token'),
+      'mixed booking credential survived URL cleanup',
+    )
+    assert(
+      !initialLeak.storage.includes(codeA) && !initialLeak.dom,
+      'email-link proof leaked into storage or DOM',
+    )
+    assert(
+      !appState.actions.some(
+        (body) => body.action === 'exchange_access' || body.action === 'confirm_link',
+      ),
+      `email-link mount auto-called a credential action: ${JSON.stringify(appState.actions)}`,
+    )
+
+    await page.evaluate((code) => {
+      globalThis.location.hash = `email_link=${code}&booking_token=${'7'.repeat(64)}&keep=2`
+    }, codeB)
+    await page.waitForFunction(() => globalThis.location.href.endsWith('/#keep=2'))
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('[aria-label="Bekräfta mejlkoppling"]') !== null,
+    )
+    const hashLeak = await page.evaluate(
+      (code) => ({
+        href: globalThis.location.href,
+        storage: JSON.stringify({
+          local: Object.keys(globalThis.localStorage).map((key) => [
+            key,
+            globalThis.localStorage.getItem(key),
+          ]),
+          session: Object.keys(globalThis.sessionStorage).map((key) => [
+            key,
+            globalThis.sessionStorage.getItem(key),
+          ]),
+        }),
+        dom: globalThis.document.documentElement.outerHTML.includes(code),
+      }),
+      codeB,
+    )
+    assert(!hashLeak.storage.includes(codeB) && !hashLeak.dom, 'hashchange email-link proof leaked')
+    assert(
+      !appState.actions.some(
+        (body) => body.action === 'exchange_access' || body.action === 'confirm_link',
+      ),
+      `hashchange auto-called a credential action: ${JSON.stringify(appState.actions)}`,
+    )
+    assert(
+      !appState.consoleOutput.some((message) => message.includes(codeA) || message.includes(codeB)),
+      'email-link proof leaked to console',
+    )
+    assert(
+      appState.pageErrors.length === 0,
+      `actual App customer hash flow errored: ${appState.pageErrors.join('; ')}`,
+    )
+    await page.screenshot({
+      path: '/tmp/knc-ui-2026-09-13/customer-email-app-hash-320.png',
+      fullPage: false,
+    })
+  }
+
+  // Long valid source email remains readable at the requested 320px confirmation width.
+  {
+    const longEmail = 'verylongsourceaddresswithoutbreaks1234567890@example.test'
+    const aliases = [longEmail, 'another.long.alias.for.mobile@example.test']
+    await mountCustomerHarness(page, 'en', '8'.repeat(64))
+    await customerControl(page, 'resolve-list', 'a', 0, customerVerifiedResult(longEmail, aliases))
+    await page.getByRole('heading', { name: t.confirmTitle, exact: true }).waitFor()
+    const dimensions = await page.getByRole('dialog').evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    await page.screenshot({
+      path: '/tmp/knc-ui-2026-09-13/customer-email-confirm-320.png',
+      fullPage: false,
+    })
+    assert(
+      dimensions.scrollWidth <= dimensions.clientWidth,
+      `customer confirmation overflow at 320px: ${JSON.stringify(dimensions)}`,
+    )
+  }
+}
+
+async function verifyDelayedCatalog(page, embedded) {
+  await page.setViewportSize({ width: 1280, height: 600 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  // Disable native scroll anchoring so this proves the application reveal, not browser compensation.
+  await page.addStyleTag({ content: '* { overflow-anchor: none !important; }' })
+  await page.evaluate(
+    async (embedded) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountDelayedCatalogHarness(embedded),
+    embedded,
+  )
+  await page.getByTestId('booking-step-barber').waitFor()
+  await page.evaluate(() => globalThis.document.fonts.ready)
+  // Longer than the former 1200ms geometry deadline. The pending work is catalog data, not JS.
+  await page.waitForTimeout(1600)
+  assert(
+    (await page.getByTestId('booking-barber-option').count()) === 0,
+    'catalog fixture was not delayed',
+  )
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).finishCatalogLoad(),
+  )
+  await page.getByTestId('booking-barber-option').last().waitFor()
+  assert(
+    (await page.getByTestId('booking-barber-option').count()) === 12,
+    'catalog did not hydrate all real controls',
+  )
+  await page.waitForFunction((embedded) => {
+    const box = globalThis.document
+      .querySelector('[data-testid="booking-step-barber"]')
+      .getBoundingClientRect()
+    const host = globalThis.document
+      .querySelector('[data-testid="catalog-scroll-root"]')
+      .getBoundingClientRect()
+    return (
+      box.top >= (embedded ? host.top : 0) &&
+      box.bottom <= (embedded ? host.bottom : globalThis.innerHeight) + 1
+    )
+  }, embedded)
+  await page.waitForTimeout(200)
+  const before = await page.evaluate(
+    (embedded) =>
+      embedded
+        ? globalThis.document.querySelector('[data-testid="catalog-scroll-root"]').scrollTop
+        : globalThis.scrollY,
+    embedded,
+  )
+  await page.evaluate(() => {
+    globalThis.document.querySelector('[data-testid="fold-booking"]').style.paddingBottom = '500px'
+  })
+  await page.waitForTimeout(200)
+  const after = await page.evaluate(
+    (embedded) =>
+      embedded
+        ? globalThis.document.querySelector('[data-testid="catalog-scroll-root"]').scrollTop
+        : globalThis.scrollY,
+    embedded,
+  )
+  assert(Math.abs(before - after) < 1, 'later layout change caused an unsolicited reveal jump')
+}
+
+const AUTH_USER_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const AUTH_USER_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const PRIVATE_CUSTOMER = 'Synthetic customer for admin revocation'
+
+function adminSession(id) {
+  const now = Math.floor(Date.now() / 1000)
+  const email = `${id === AUTH_USER_A ? 'a' : 'b'}@audit.invalid`
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: id,
+      exp: now + 3600,
+      iat: now,
+      role: 'authenticated',
+      email,
+      aud: 'authenticated',
+    }),
+  ).toString('base64url')
+  return {
+    access_token: `${header}.${payload}.synthetic-signature`,
+    refresh_token: `synthetic-refresh-${id}`,
+    expires_at: now + 3600,
+    expires_in: 3600,
+    token_type: 'bearer',
+    user: {
+      id,
+      email,
+      aud: 'authenticated',
+      role: 'authenticated',
+      app_metadata: {},
+      user_metadata: {},
+      created_at: '2026-01-01T00:00:00Z',
+    },
+  }
+}
+
+function gate() {
+  let release
+  const promise = new Promise((resolve) => {
+    release = resolve
+  })
+  return { promise, release }
+}
+
+async function mountRealAdmin(page, tab = 'bookings') {
+  await page.evaluate(async (tab) => {
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountAdminAppHarness(tab)
+  }, tab)
+}
+
+async function verifyAdminSession(page, scenario) {
+  const queuedWrite = ['queued-write', 'notification-gap'].includes(scenario)
+  const holds = { profile: gate(), logout: gate(), presentation: gate(), password: gate() }
+  const state = {
+    enabled: true,
+    mustChangePassword: true,
+    networkFailure: false,
+    calls: [],
+    errors: [],
+    settings: new Map([['business_name', 'Synthetic Studio']]),
+  }
+  const origin = new URL(baseUrl).origin
+  const count = (path) => state.calls.filter((call) => call.path === path).length
+  await page.clock.install()
+  await page.addInitScript(
+    (session) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
+    adminSession(AUTH_USER_A),
+  )
+  if (scenario === 'notification-gap' || scenario === 'late-reset-logout') {
+    await page.addInitScript(() => {
+      const NativeChannel = globalThis.BroadcastChannel
+      globalThis.__heldAuthMessages = []
+      const nativeListen = globalThis.addEventListener.bind(globalThis)
+      globalThis.addEventListener = (type, callback, options) => {
+        if (type !== 'storage') return nativeListen(type, callback, options)
+        return nativeListen(
+          type,
+          (event) => {
+            globalThis.__heldAuthMessages.push(() => callback.call(globalThis, event))
+          },
+          options,
+        )
+      }
+      globalThis.BroadcastChannel = class extends NativeChannel {
+        addEventListener(type, callback, options) {
+          if (type !== 'message' || this.name !== 'knc-admin-auth')
+            return super.addEventListener(type, callback, options)
+          return super.addEventListener(
+            type,
+            (event) => {
+              globalThis.__heldAuthMessages.push(() => callback.call(this, event))
+            },
+            options,
+          )
+        }
+      }
+    })
+  }
+  page.on('pageerror', (error) => state.errors.push(error.message))
+  // Intercept before importing/mounting anything: no real Auth, DB, provider or production writes.
+  await page.context().route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.origin === origin) return route.continue()
+    const reply = (body, status = 200) =>
+      route.fulfill({
+        status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Allow-Methods': '*',
+        },
+        body: status === 204 ? undefined : JSON.stringify(body),
+      })
+    if (request.method() === 'OPTIONS') return reply(null, 204)
+    let body = null
+    try {
+      body = request.postDataJSON()
+    } catch {
+      /* GET has no JSON body. */
+    }
+    let who = null
+    try {
+      who = JSON.parse(
+        Buffer.from(request.headers().authorization.split('.')[1], 'base64url').toString(),
+      ).sub
+    } catch {
+      /* Anonymous requests have no user. */
+    }
+    state.calls.push({ path: url.pathname, method: request.method(), who, body })
+    if (url.pathname === '/auth/v1/logout') {
+      if (scenario === 'slow-signout' || scenario === 'late-reset-logout')
+        await holds.logout.promise
+      return reply(null, 204)
+    }
+    if (url.pathname === '/auth/v1/token') {
+      if (scenario === 'late-settings-password' && body.email.startsWith('a@'))
+        await holds.password.promise
+      return reply(adminSession(body.email.startsWith('b@') ? AUTH_USER_B : AUTH_USER_A))
+    }
+    if (url.pathname === '/auth/v1/user') {
+      if (request.method() === 'PUT' && scenario === 'late-password') await holds.password.promise
+      return reply(adminSession(who ?? AUTH_USER_A).user)
+    }
+    if (url.pathname === '/rest/v1/profiles') {
+      const snapshot = {
+        role: 'owner',
+        barber_id: null,
+        must_change_password:
+          ['late-password', 'password-completes'].includes(scenario) && state.mustChangePassword,
+        account_enabled: state.enabled,
+      }
+      if (scenario === 'late-profile') await holds.profile.promise
+      return state.networkFailure
+        ? reply({ message: 'Temporary transport failure' }, 503)
+        : reply(snapshot)
+    }
+    if (url.pathname === '/rest/v1/barbers')
+      return reply([
+        {
+          id: 'audit-barber',
+          name: 'Audit Barber',
+          ig: '',
+          role_sv: 'Barberare',
+          role_en: 'Barber',
+          bio_sv: '',
+          bio_en: '',
+          active: true,
+          sort_order: 0,
+        },
+      ])
+    if (url.pathname === '/rest/v1/bookings') {
+      if (!who || !state.enabled)
+        return reply({ code: '42501', message: 'Denied by inert authoritative boundary' }, 403)
+      const start = new Date(Date.now() + 3 * 86400_000)
+      return reply([
+        {
+          id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          barber_id: 'audit-barber',
+          service_name: 'Audit service',
+          price: 350,
+          duration_min: 30,
+          start_at: start.toISOString(),
+          end_at: new Date(start.getTime() + 1800_000).toISOString(),
+          customer_name: PRIVATE_CUSTOMER,
+          method: 'email',
+          phone: '0700000055',
+          email: 'customer@audit.invalid',
+          lang: 'sv',
+          status: 'confirmed',
+        },
+      ])
+    }
+    if (url.pathname === '/rest/v1/site_content') return reply([])
+    if (url.pathname === '/rest/v1/rpc/set_own_password_changed') {
+      state.mustChangePassword = false
+      return reply(null)
+    }
+    if (url.pathname === '/rest/v1/site_settings') {
+      if (request.method() === 'GET')
+        return reply([...state.settings].map(([key, value]) => ({ key, value })))
+      if (Array.isArray(body) && queuedWrite) await holds.presentation.promise
+      for (const row of Array.isArray(body) ? body : [body]) state.settings.set(row.key, row.value)
+      return reply(body)
+    }
+    if (url.pathname.startsWith('/rest/v1/')) return reply([])
+    state.errors.push(`Unexpected external request: ${url.origin}${url.pathname}`)
+    return route.abort()
+  })
+  const waitCall = async (predicate) => {
+    const deadline = Date.now() + 10_000
+    while (!state.calls.some(predicate)) {
+      assert(Date.now() < deadline, `Admin ${scenario}: expected request missing`)
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 10))
+    }
+  }
+  const signOut = () =>
+    page.evaluate(async () =>
+      (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signOut({ scope: 'local' }),
+    )
+  const focus = () =>
+    page.evaluate(() => {
+      globalThis.window.dispatchEvent(new globalThis.Event('focus'))
+      globalThis.document.dispatchEvent(new globalThis.Event('visibilitychange'))
+    })
+  const data = page.getByText(PRIVATE_CUSTOMER, { exact: true })
+  try {
+    await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'networkidle' })
+    const configured = await page.evaluate(async () =>
+      (await import('/src/backend/config.ts')).isBackendConfigured(),
+    )
+    assert(
+      configured,
+      'Admin source server requires fake VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY',
+    )
+    await mountRealAdmin(
+      page,
+      queuedWrite ? 'site' : scenario === 'late-settings-password' ? 'settings' : 'bookings',
+    )
+    if (scenario === 'late-reset-logout') {
+      await data.waitFor()
+      await page.evaluate(async () => {
+        const { setNewPassword } = await import('/src/admin/auth.ts')
+        globalThis.__resetResult = null
+        void setNewPassword('Synthetic-new-password-123!').then((result) => {
+          globalThis.__resetResult = result
+        })
+      })
+      await waitCall((call) => call.path === '/auth/v1/logout')
+      const other = await page.context().newPage()
+      try {
+        await other.goto(`${baseUrl}/tools/e2e/admin-harness.html`, {
+          waitUntil: 'domcontentloaded',
+        })
+        const login = await other.evaluate(async () =>
+          (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
+            email: 'b@audit.invalid',
+            password: 'Synthetic-password-123!',
+          }),
+        )
+        assert(
+          login.data.user.id === AUTH_USER_B,
+          'Other tab did not sign in while reset logout waited',
+        )
+        holds.logout.release()
+        await page.waitForFunction(() => globalThis.__resetResult !== null)
+        assert(
+          await page.evaluate(
+            (id) => JSON.parse(globalThis.localStorage.getItem('knc-admin-auth'))?.user.id === id,
+            AUTH_USER_B,
+          ),
+          'Late reset logout cleared the new B session',
+        )
+        assert(
+          state.calls
+            .filter((call) => call.path === '/auth/v1/logout')
+            .every((call) => call.who === AUTH_USER_A),
+          'Reset logout targeted another account',
+        )
+      } finally {
+        await other.close()
+      }
+    } else if (scenario === 'late-profile') {
+      await waitCall((call) => call.path === '/rest/v1/profiles')
+      await signOut()
+      holds.profile.release()
+      await page.waitForTimeout(150)
+      assert(
+        (await page.locator('.knc-admin-shell').count()) === 0,
+        'Stale profile reopened the protected shell after sign-out',
+      )
+      assert(
+        await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
+        'Auth storage survived sign-out',
+      )
+    } else if (scenario === 'late-password' || scenario === 'password-completes') {
+      await page.locator('#fp-next').fill('Synthetic-new-password-123!')
+      await page.locator('#fp-confirm').fill('Synthetic-new-password-123!')
+      await page.locator('form button[type="submit"]').click()
+      await waitCall((call) => call.path === '/auth/v1/user' && call.method === 'PUT')
+      if (scenario === 'password-completes') {
+        await data.waitFor()
+        assert(
+          !state.mustChangePassword,
+          'Successful password flow never cleared the forced-change flag',
+        )
+        assert(count('/auth/v1/logout') === 0, 'Forced change signed out the active staff member')
+      } else {
+        await signOut()
+        holds.password.release()
+        await page.waitForTimeout(150)
+        assert(
+          !state.calls.some((call) => call.path === '/rest/v1/rpc/set_own_password_changed'),
+          'Unmounted forced-change form continued with a later session',
+        )
+        assert(
+          (await page.locator('.knc-admin-shell').count()) === 0,
+          'Late password result reopened protected UI',
+        )
+        assert(
+          await page.evaluate(() => globalThis.localStorage.getItem('knc-admin-auth') === null),
+          'Late password result restored the signed-out session in storage',
+        )
+      }
+    } else if (scenario === 'late-settings-password') {
+      await page.locator('#settings-current-password').fill('Synthetic-old-password-123!')
+      await page.locator('#settings-new-password').fill('Synthetic-new-password-123!')
+      await page.locator('#settings-confirm-password').fill('Synthetic-new-password-123!')
+      await page
+        .locator('form[aria-labelledby="settings-password-heading"] button[type="submit"]')
+        .click()
+      await waitCall((call) => call.path === '/auth/v1/token')
+      const login = await page.evaluate(async () =>
+        (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
+          email: 'b@audit.invalid',
+          password: 'Synthetic-password-123!',
+        }),
+      )
+      assert(login.data.user.id === AUTH_USER_B, 'B did not establish a session')
+      holds.password.release()
+      await page.waitForTimeout(200)
+      assert(
+        await page.evaluate(
+          (id) => JSON.parse(globalThis.localStorage.getItem('knc-admin-auth')).user.id === id,
+          AUTH_USER_B,
+        ),
+        'Late password verification replaced B with the previous A session',
+      )
+      assert(
+        !state.calls.some((call) => call.path === '/auth/v1/user' && call.method === 'PUT'),
+        'Old password intent continued after account change',
+      )
+    } else if (queuedWrite) {
+      await page.getByLabel('Logotypstorlek').selectOption('xl')
+      await page.getByRole('button', { name: 'Publicera utseende', exact: true }).click()
+      await waitCall((call) => Array.isArray(call.body))
+      await page.getByLabel('Företagsnamn', { exact: true }).fill('OLD A INTENT')
+      await page
+        .getByLabel('Företagsnamn', { exact: true })
+        .locator('..')
+        .getByRole('button', { name: 'Spara', exact: true })
+        .click()
+      assert(
+        !state.calls.some((call) => call.body?.key === 'business_name'),
+        'A write was not queued',
+      )
+      if (scenario === 'notification-gap') {
+        const other = await page.context().newPage()
+        try {
+          await other.goto(`${baseUrl}/tools/e2e/admin-harness.html`, {
+            waitUntil: 'domcontentloaded',
+          })
+          const login = await other.evaluate(async () =>
+            (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signInWithPassword({
+              email: 'b@audit.invalid',
+              password: 'Synthetic-password-123!',
+            }),
+          )
+          assert(login.data.user.id === AUTH_USER_B, 'Other tab did not sign in as B')
+          await page.waitForFunction(() => globalThis.__heldAuthMessages.length > 0)
+          assert(
+            await page.evaluate(
+              (id) => JSON.parse(globalThis.localStorage.getItem('knc-admin-auth')).user.id === id,
+              AUTH_USER_B,
+            ),
+            'A tab cannot see the changed shared storage',
+          )
+          holds.presentation.release()
+          const save = page
+            .getByLabel('Företagsnamn', { exact: true })
+            .locator('..')
+            .getByRole('button', { name: 'Spara', exact: true })
+          const deadline = Date.now() + 10_000
+          while (!(await save.isEnabled())) {
+            assert(Date.now() < deadline, 'Queued intent never settled after the first write')
+            await new Promise((resolve) => globalThis.setTimeout(resolve, 10))
+          }
+        } finally {
+          await other.close()
+        }
+      } else {
+        await page.getByRole('button', { name: 'Logga ut', exact: true }).first().click()
+        await page.waitForFunction(() => globalThis.location.pathname === '/login')
+        const login = await page.evaluate(async () =>
+          (await import('/src/admin/auth.ts')).signIn('b@audit.invalid', 'Synthetic-password-123!'),
+        )
+        assert(login.ok && login.value.userId === AUTH_USER_B, 'Second user never signed in')
+        await mountRealAdmin(page, 'site')
+        holds.presentation.release()
+        await page.getByLabel('Företagsnamn', { exact: true }).waitFor()
+      }
+      assert(
+        !state.calls.some((call) => call.body?.key === 'business_name'),
+        'Old A intent was sent under a later account',
+      )
+      assert(
+        state.settings.get('business_name') === 'Synthetic Studio',
+        'Old queued write mutated the inert ledger',
+      )
+      assert(
+        state.settings.get('homepage_logo_scale') === 'xl',
+        'In-flight A write was not reconciled before B read',
+      )
+    } else {
+      await data.waitFor()
+      if (scenario === 'focus') {
+        await page.getByRole('button', { name: 'Avboka', exact: true }).first().click()
+        await page.getByRole('dialog').waitFor()
+      }
+      if (scenario === 'network') {
+        state.networkFailure = true
+        await focus()
+        await page.getByRole('status').filter({ hasText: 'Kunde inte nå servern' }).waitFor()
+        assert(await data.isVisible(), 'Temporary network failure discarded the loaded view')
+        assert(count('/auth/v1/logout') === 0, 'Network failure was treated as revocation')
+        state.networkFailure = false
+      }
+      if (scenario === 'slow-signout') {
+        await page.getByRole('button', { name: 'Logga ut', exact: true }).first().click()
+        await waitCall((call) => call.path === '/auth/v1/logout')
+        await data.waitFor({ state: 'detached' })
+        holds.logout.release()
+      } else if (scenario === 'auth-event') await signOut()
+      else {
+        state.enabled = false
+        if (scenario === 'poll') await page.clock.runFor(30_010)
+        else await focus()
+      }
+      await data.waitFor({ state: 'detached' })
+      await page.waitForFunction(() => globalThis.location.pathname === '/login')
+      assert((await page.getByRole('dialog').count()) === 0, 'Protected dialog survived revocation')
+      assert(
+        await page.evaluate(
+          () =>
+            !Object.keys(globalThis.sessionStorage).some((key) =>
+              key.startsWith('knc-admin-navigation:'),
+            ),
+        ),
+        'User navigation storage survived revocation',
+      )
+      const reads = count('/rest/v1/profiles')
+      await focus()
+      await page.clock.runFor(60_000)
+      assert(
+        count('/rest/v1/profiles') === reads,
+        'Locked gate kept revalidating/reopening the old session',
+      )
+    }
+    assert(state.errors.length === 0, `Admin ${scenario}: ${state.errors.join('; ')}`)
+  } finally {
+    for (const hold of Object.values(holds)) hold.release()
+  }
+}
+
+async function verifyPrivacy(
+  page,
+  { width, height, lang, dark, blocked = false, dismissFirst = false },
+) {
+  await page.setViewportSize({ width, height })
+  await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light', reducedMotion: 'reduce' })
+  if (blocked) {
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis.document, 'cookie', {
+        configurable: true,
+        get: () => '',
+        set: () => {
+          // Browser rejects persistence while the current App can still retain its choice.
+        },
+      })
+    })
+  }
+  const origin = new URL(baseUrl).origin
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.routeWebSocket('**/*', (socket) => socket.close())
+  await page.route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const reply = (body, status = 200) =>
+      route.fulfill({
+        status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Allow-Methods': '*',
+        },
+        body: status === 204 ? undefined : JSON.stringify(body),
+      })
+    if (url.origin === origin && url.pathname === '/api/customer-bookings') {
+      if (request.postDataJSON().action === 'forget_device') return reply({ ok: true })
+      assert(request.postDataJSON().action === 'list', 'Privacy test attempted a customer mutation')
+      return reply({ ok: false, error: 'access_denied' })
+    }
+    if (url.origin === origin) return route.continue()
+    if (request.method() === 'OPTIONS') return reply(null, 204)
+    if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+      return reply({
+        barbers: [
+          {
+            id: 'privacy-barber',
+            name: 'UI Test Barber',
+            ig: '',
+            role_sv: '',
+            role_en: '',
+            bio_sv: '',
+            bio_en: '',
+            active: true,
+            sort_order: 0,
+            photo_path: null,
+          },
+        ],
+        services: [],
+      })
+    if (url.pathname === '/rest/v1/rpc/public_business_discovery')
+      return reply({ settings: {}, barbers: [], services: [], schedules: [] })
+    if (request.method() === 'GET' && url.pathname.startsWith('/rest/v1/')) return reply([])
+    errors.push(`Unexpected privacy request: ${request.method()} ${url.origin}${url.pathname}`)
+    return route.abort()
+  })
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  const strings = await page.evaluate(async (lang) => {
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountPrivacyHarness()
+    const { appStrings, privacyStrings, myBookingsStrings, aboutStrings } =
+      await import('/src/i18n/index.ts')
+    return {
+      app: appStrings(lang),
+      privacy: privacyStrings(lang),
+      bookings: myBookingsStrings(lang),
+      about: aboutStrings(lang),
+    }
+  }, lang)
+  if (lang === 'en') await page.getByRole('button', { name: 'EN', exact: true }).click()
+  const notice = page.getByRole('region', { name: strings.privacy.title, exact: true })
+  await notice.waitFor({ state: 'attached' })
+  const choice = () =>
+    page.evaluate(async () =>
+      (await import('/src/site/storageConsent.ts')).readStoragePreferences(),
+    )
+  assert((await choice()) === null, 'Fresh visitor already had an optional-storage choice')
+  const assertFixedNotice = async (context) => {
+    assert(
+      await notice.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return (
+          globalThis.getComputedStyle(element).position === 'fixed' &&
+          box.top >= 0 &&
+          box.bottom <= globalThis.innerHeight &&
+          globalThis.innerHeight - box.bottom <= 36 &&
+          !globalThis.document.querySelector('#om-oss')?.contains(element)
+        )
+      }),
+      `Privacy panel is not fixed at the viewport bottom: ${context}`,
+    )
+  }
+  const assertDesktopHeroInfo = async (label) => {
+    if (page.viewportSize().width <= 768) return
+    const geometry = await page.getByText(strings.app.hours, { exact: true }).evaluate((hours) => {
+      const info = hours.parentElement
+      const hero = globalThis.document.querySelector('main')?.firstElementChild
+      if (info === null || hero === null || hero === undefined) return null
+      return {
+        inHero: hero.contains(info),
+        heroBottom: hero.getBoundingClientRect().bottom,
+        infoBottom: info.getBoundingClientRect().bottom,
+      }
+    })
+    assert(
+      geometry !== null &&
+        geometry.inHero &&
+        Math.abs(geometry.infoBottom - geometry.heroBottom) <= 1,
+      `Opening hours/address left the hero bottom (${label}): ${JSON.stringify(geometry)}`,
+    )
+  }
+  const textContrast = async (locator) =>
+    locator.evaluate((element) => {
+      const rgba = (color) => {
+        const values = color.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 0]
+        return [values[0], values[1], values[2], values[3] ?? 1]
+      }
+      const over = (front, back) => {
+        const alpha = front[3] + back[3] * (1 - front[3])
+        return alpha === 0
+          ? [0, 0, 0, 0]
+          : [
+              ...front
+                .slice(0, 3)
+                .map((value, i) => (value * front[3] + back[i] * back[3] * (1 - front[3])) / alpha),
+              alpha,
+            ]
+      }
+      let foreground = rgba(globalThis.getComputedStyle(element).color)
+      let background = [0, 0, 0, 0]
+      for (let node = element; node !== null; node = node.parentElement) {
+        const style = globalThis.getComputedStyle(node)
+        foreground = over(foreground, rgba(style.backgroundColor))
+        background = over(background, rgba(style.backgroundColor))
+        foreground[3] *= Number(style.opacity)
+        background[3] *= Number(style.opacity)
+      }
+      const luminance = (color) =>
+        over(color, [255, 255, 255, 1])
+          .slice(0, 3)
+          .map((value) => {
+            value /= 255
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+          })
+          .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0)
+      const l1 = luminance(foreground),
+        l2 = luminance(background)
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+    })
+  const infoText = page
+    .getByText(strings.app.hours, { exact: true })
+    .locator('..')
+    .locator(':scope > span')
+  assert((await infoText.count()) === 2, 'Hero opening hours/address are missing')
+  for (const label of [
+    ...(await infoText.all()),
+    ...(width > 768 ? [page.getByText(strings.app.kicker, { exact: true })] : []),
+  ]) {
+    const ratio = await textContrast(label)
+    assert(
+      ratio >= 4.5,
+      `Public small text contrast is ${ratio.toFixed(2)}:1: ${await label.textContent()}`,
+    )
+  }
+  await assertDesktopHeroInfo('initial home')
+  await assertFixedNotice('initial hero')
+  const heroManage = page.locator(`button[aria-label="${strings.privacy.manageLabel}"]`)
+  assert((await heroManage.count()) === 0, 'Hero reopening control appeared before a choice')
+  const book = page.getByRole('button', { name: strings.app.book, exact: true }).first()
+  const appointments = page
+    .getByRole('button', { name: strings.app.myBookings, exact: true })
+    .first()
+  // Ordinary locator clicks must scroll the real controls clear of the fixed notice.
+  await appointments.click()
+  await page.getByRole('dialog').waitFor()
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: strings.bookings.ariaClose, exact: true })
+    .click()
+  if (dismissFirst) {
+    await notice.getByRole('button', { name: strings.privacy.reject, exact: true }).click()
+    await notice.waitFor({ state: 'detached' })
+    await appointments.click()
+    await page.getByRole('dialog').waitFor()
+    assert((await choice())?.functional === false, 'Dismissal lost the explicit rejection')
+    assert(errors.length === 0, `Privacy dismissal: ${errors.join('; ')}`)
+    return
+  }
+  await book.click()
+  await page.getByTestId('booking-step-barber').waitFor()
+  await assertFixedNotice('booking')
+  await assertDesktopHeroInfo('booking open')
+  const barberOption = page.getByTestId('booking-barber-option')
+  await barberOption.waitFor()
+  const animatedShell =
+    width > 768
+      ? page.getByTestId('fold-booking')
+      : page.getByTestId('mobile-site-scroll').locator(':scope > div').first()
+  assert(
+    await animatedShell.evaluate((element) =>
+      globalThis
+        .getComputedStyle(element)
+        .transitionDuration.split(',')
+        .every((duration) => Number.parseFloat(duration) === 0),
+    ),
+    'Shell still animates with reduced motion',
+  )
+  await page.waitForFunction(() => {
+    const option = globalThis.document
+      .querySelector('[data-testid="booking-barber-option"]')
+      ?.getBoundingClientRect()
+    const panel = globalThis.document.getElementById('privacy-preferences')?.getBoundingClientRect()
+    return (
+      option !== undefined && panel !== undefined && option.top >= 0 && option.bottom <= panel.top
+    )
+  })
+  await barberOption.click()
+  assert(
+    (await barberOption.getAttribute('aria-pressed')) === 'true',
+    'Visible first booking option was not selectable above the cookie panel',
+  )
+
+  const currentScroll = () =>
+    page.evaluate(
+      () =>
+        globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop ??
+        globalThis.scrollY,
+    )
+  const scrollBeforeMotionChange = await currentScroll()
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForFunction((desktop) => {
+    const shell = desktop
+      ? globalThis.document.querySelector('[data-testid="fold-booking"]')
+      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+    return (
+      shell !== null &&
+      globalThis
+        .getComputedStyle(shell)
+        .transitionDuration.split(',')
+        .some((duration) => Number.parseFloat(duration) > 0)
+    )
+  }, width > 768)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.waitForFunction((desktop) => {
+    const shell = desktop
+      ? globalThis.document.querySelector('[data-testid="fold-booking"]')
+      : globalThis.document.querySelector('[data-testid="mobile-site-scroll"] > div')
+    return (
+      shell !== null &&
+      globalThis
+        .getComputedStyle(shell)
+        .transitionDuration.split(',')
+        .every((duration) => Number.parseFloat(duration) === 0)
+    )
+  }, width > 768)
+  assert(
+    Math.abs((await currentScroll()) - scrollBeforeMotionChange) < 1,
+    'Changing motion preference restarted the booking reveal',
+  )
+  assert((await heroManage.count()) === 0, 'Hero reopening control appeared in booking')
+  assert((await choice()) === null, 'Opening booking changed storage permission')
+  if (width < 768)
+    await page.getByRole('button', { name: strings.app.ariaBackHome, exact: true }).click()
+  else await book.click()
+  await page.getByRole('button', { name: strings.app.aboutLink, exact: true }).click()
+  const manage = page.getByRole('link', { name: strings.privacy.manageLabel, exact: true })
+  await manage.scrollIntoViewIfNeeded()
+  await assertFixedNotice('About')
+  for (const [href, label] of [
+    ['/terms', strings.about.termsLink],
+    ['/privacy', strings.about.privacyLink],
+  ]) {
+    const link = page.locator('#om-oss footer').getByRole('link', { name: label, exact: true })
+    assert((await link.getAttribute('href')) === href, `Missing localized About link: ${href}`)
+    await link.focus()
+    assert(
+      await link.evaluate((element) => element === globalThis.document.activeElement),
+      `About link is not keyboard focusable: ${href}`,
+    )
+  }
+
+  await assertDesktopHeroInfo('scrolled to About')
+  if (width < 768) {
+    await page.getByRole('button', { name: strings.app.ariaBackHome, exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop === 0,
+    )
+    assert((await choice()) === null, 'Back navigation required an optional-storage choice')
+    await appointments.click()
+    await page.getByRole('dialog').waitFor()
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: strings.bookings.ariaClose, exact: true })
+      .click()
+    await page.getByRole('button', { name: strings.app.aboutLink, exact: true }).click()
+    await manage.scrollIntoViewIfNeeded()
+    await assertFixedNotice('About after Back navigation')
+  }
+  await manage.focus()
+  await page.keyboard.press('Enter')
+  const heading = notice.getByRole('heading', { name: strings.privacy.title, exact: true })
+  await page.waitForFunction(() => globalThis.document.activeElement?.tagName === 'H2')
+  await assertFixedNotice('preferences opened from About')
+  assert(
+    await heading.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return box.top >= 0 && box.bottom < globalThis.innerHeight
+    }),
+    'Reopened privacy heading was outside the viewport',
+  )
+  const functional = notice.locator('input[type="checkbox"]')
+  assert(!(await functional.isChecked()), 'No-choice preferences started accepted')
+  await functional.check()
+  await notice.getByRole('button', { name: strings.privacy.save, exact: true }).click()
+  await notice.waitFor({ state: 'detached' })
+  assert((await choice())?.functional === true, 'Explicit acceptance did not reach shared getter')
+  await page.waitForFunction(
+    (label) => globalThis.document.activeElement?.getAttribute('aria-label') === label,
+    strings.privacy.manageLabel,
+  )
+  assert(
+    await heroManage.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return (
+        globalThis.getComputedStyle(element).position === 'absolute' &&
+        !globalThis.document.querySelector('#om-oss')?.contains(element) &&
+        (element.closest('[inert]') !== null ||
+          box.bottom <= 0 ||
+          box.top >= globalThis.innerHeight)
+      )
+    }),
+    'Hero reopening control followed the visitor into About',
+  )
+  const cookies = await page.context().cookies()
+  assert(
+    cookies.some((cookie) => cookie.name === 'bladeblend_storage_preferences') === !blocked,
+    'Preference persistence did not match the cookie policy',
+  )
+
+  // Same App state survives the desktop/mobile boundary, including blocked-cookie sessions.
+  await page.setViewportSize({ width: width < 768 ? 1280 : 390, height: 844 })
+  await page.getByTestId(width < 768 ? 'desktop-top-panel' : 'mobile-site-scroll').waitFor()
+  assert((await notice.count()) === 0, 'Changing layout forgot the saved choice')
+  await assertDesktopHeroInfo('layout change')
+  await manage.scrollIntoViewIfNeeded()
+  await manage.click()
+  await functional.waitFor()
+  await assertFixedNotice('preferences after layout change')
+  assert(await functional.isChecked(), 'Reopening after layout change lost accepted choice')
+  await functional.uncheck()
+  await notice.getByRole('button', { name: strings.privacy.save, exact: true }).click()
+  await notice.waitFor({ state: 'detached' })
+  assert((await choice())?.functional === false, 'Explicit rejection became no choice')
+  await page.evaluate(() => {
+    globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
+    globalThis.scrollTo({ top: 0 })
+  })
+  await heroManage.click()
+  await functional.waitFor()
+  assert(!(await functional.isChecked()), 'Hero control lost the rejected preference')
+  await assertFixedNotice('preferences from hero control')
+  await notice.getByRole('button', { name: strings.privacy.save, exact: true }).click()
+  await notice.waitFor({ state: 'detached' })
+  await book.click()
+  await page.getByTestId('booking-step-barber').waitFor()
+  assert((await heroManage.count()) === 0, 'Hero reopening control remained in booking')
+  assert(errors.length === 0, `Privacy ${width}/${lang}: ${errors.join('; ')}`)
+}
+
+const privacyCases = [
+  { width: 320, height: 568, lang: 'sv', dark: false },
+  { width: 390, height: 844, lang: 'sv', dark: true },
+  { width: 360, height: 800, lang: 'en', dark: false, blocked: true },
+  { width: 1280, height: 720, lang: 'en', dark: true },
+  { width: 390, height: 844, lang: 'sv', dark: false, dismissFirst: true },
+]
+
+const browser = await chromium.launch()
+let passed = 0
+try {
+  for (const verify of [
+    verifyNavigation,
+    verifyDelayedRestore,
+    verifyPresentationDraft,
+    ...[
+      'focus',
+      'poll',
+      'auth-event',
+      'slow-signout',
+      'late-profile',
+      'late-password',
+      'password-completes',
+      'late-settings-password',
+      'queued-write',
+      'notification-gap',
+      'late-reset-logout',
+      'network',
+    ].map((scenario) => (page) => verifyAdminSession(page, scenario)),
+    ...['services', 'profile', 'bookings'].flatMap((kind) => [
+      (page) => verifyMutationReentry(page, kind),
+      (page) => verifyMutationReentry(page, kind, 'remount'),
+      (page) => verifyMutationReentry(page, kind, 'target', true),
+    ]),
+    ...['site', 'gallery'].flatMap((kind) => [
+      (page) => verifyInitialHydration(page, kind),
+      (page) => verifyInitialHydration(page, kind, true),
+    ]),
+    ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
+    ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
+    ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
+    verifyCalendarSync,
+    verifyCustomerEmail,
+    ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
+  ]) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+    const page = await context.newPage()
+    page.setDefaultTimeout(10_000)
+    try {
+      await verify(page)
+      passed++
+    } finally {
+      await context.close()
+    }
+  }
+  console.log(
+    `Browser regressions passed (${passed} scenarios): history, draft publish, admin lifecycle/ordering, hydration, customer identity, delayed catalog and responsive privacy controls.`,
+  )
+} finally {
+  await browser.close()
+}
+
+for (const engine of [firefox, webkit]) {
+  const browser = await engine.launch()
+  try {
+    for (const options of privacyCases) {
+      const page = await browser.newPage()
+      page.setDefaultTimeout(10_000)
+      try {
+        await verifyPrivacy(page, options)
+      } finally {
+        await page.close()
+      }
+    }
+    console.log(`Responsive privacy passed (${privacyCases.length} scenarios): ${engine.name()}.`)
+  } finally {
+    await browser.close()
+  }
+}
+
+
+===== tools/e2e/smoke.mjs =====
+import { chromium, firefox, webkit } from 'playwright'
+import { writeSync, mkdtempSync, openSync, closeSync, writeFileSync, readFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { request as httpsRequest } from 'node:https'
+import { createServer as createHttpServer } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+import { Client } from 'pg'
+
+const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
+const WAIT_TIMEOUT = 15_000
+const WATCHDOG_TIMEOUT = 180_000
+let currentPhase = 'startup'
+
+function phase(label) {
+  currentPhase = label
+}
+
+function describeError(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function bounded(promise, label, timeout = WAIT_TIMEOUT) {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeout}ms (phase: ${currentPhase})`)),
+          timeout,
+        )
+      }),
+    ])
+  } finally {
+    globalThis.clearTimeout(timer)
+  }
+}
+
+async function runCdpTouchSequence(client, label, startPoint, movePoints) {
+  let touchStarted = false
+  let failed = false
+  let failure
+  const retainFirstError = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  try {
+    phase(`${label}: CDP touchStart`)
+    await bounded(
+      client.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [startPoint],
+        modifiers: 0,
+      }),
+      'CDP Input.dispatchTouchEvent touchStart',
+    )
+    touchStarted = true
+    for (const [index, point] of movePoints.entries()) {
+      phase(`${label}: CDP touchMove ${index + 1}`)
+      await bounded(
+        client.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [point],
+          modifiers: 0,
+        }),
+        `CDP Input.dispatchTouchEvent touchMove ${index + 1}`,
+      )
+    }
+  } catch (error) {
+    retainFirstError(error)
+  } finally {
+    if (touchStarted) {
+      try {
+        phase(`${label}: CDP touchEnd cleanup`)
+        await bounded(
+          client.send('Input.dispatchTouchEvent', {
+            type: 'touchEnd',
+            touchPoints: [],
+            modifiers: 0,
+          }),
+          'CDP Input.dispatchTouchEvent touchEnd cleanup',
+        )
+      } catch (error) {
+        retainFirstError(error)
+      }
+    }
+    try {
+      phase(`${label}: CDP detach cleanup`)
+      await bounded(client.detach(), 'CDP session detach cleanup')
+    } catch (error) {
+      retainFirstError(error)
+    }
+  }
+  if (failed) throw failure
+}
+
+async function runMousePointerSequence(page, label, point, sequence) {
+  let mouseDownAttempted = false
+  let failed = false
+  let failure
+  const retainFirstError = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  try {
+    phase(`${label}: mouse move to tile`)
+    await bounded(page.mouse.move(point.x, point.y), 'mouse.move to gallery tile')
+    phase(`${label}: mouse down`)
+    mouseDownAttempted = true
+    await bounded(page.mouse.down(), 'mouse.down on gallery tile')
+    if (sequence === 'drag') {
+      phase(`${label}: mouse drag move`)
+      await bounded(page.mouse.move(point.x + 36, point.y, { steps: 3 }), 'mouse.move gallery drag')
+    } else if (sequence === 'scroll') {
+      phase(`${label}: mouse scroll gesture`)
+      await bounded(
+        page.evaluate(() => {
+          const scrollRoot = globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')
+          if (scrollRoot instanceof globalThis.HTMLElement) {
+            scrollRoot.scrollBy({ top: 40 })
+            scrollRoot.dispatchEvent(new globalThis.Event('scroll'))
+          } else {
+            globalThis.window.scrollBy({ top: 40 })
+            globalThis.document.dispatchEvent(new globalThis.Event('scroll'))
+          }
+        }),
+        'gallery scroll gesture',
+      )
+    }
+  } catch (error) {
+    retainFirstError(error)
+  } finally {
+    if (mouseDownAttempted) {
+      try {
+        phase(`${label}: mouse up cleanup`)
+        await bounded(page.mouse.up(), 'mouse.up gallery cleanup')
+      } catch (error) {
+        retainFirstError(error)
+      }
+    }
+  }
+  if (failed) throw failure
+}
+
+const watchdog = globalThis.setTimeout(() => {
+  writeSync(
+    2,
+    `[browser-smoke watchdog ${new Date().toISOString()}] exceeded ${WATCHDOG_TIMEOUT}ms; phase=${currentPhase}\n`,
+  )
+  process.exit(124)
+}, WATCHDOG_TIMEOUT)
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+async function waitForFonts(page) {
+  await page.evaluate((timeout) => {
+    let timer
+    return Promise.race([
+      globalThis.document.fonts.ready,
+      new Promise((_, reject) => {
+        timer = globalThis.setTimeout(
+          () => reject(new Error(`document fonts did not settle within ${timeout}ms`)),
+          timeout,
+        )
+      }),
+    ]).finally(() => globalThis.clearTimeout(timer))
+  }, WAIT_TIMEOUT)
+}
+
+// Exercise the actual gallery adapter/renderer with deterministic image bytes. These routes are
+// scoped to each browser test context: no database rows or public Storage objects are changed.
+async function installGalleryFixtures(page) {
+  const photo = readFileSync(new URL('../../public/og-image.png', import.meta.url))
+  await page.route('**/rest/v1/gallery_images?*', async (route) => {
+    const kind = new URL(route.request().url()).searchParams.get('kind')?.replace('eq.', '')
+    assert(kind === 'salon' || kind === 'cuts', `unexpected gallery kind: ${kind}`)
+    await route.fulfill({
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      json: [0, 1].map((index) => ({
+        id: `smoke-${kind}-${index}`,
+        kind,
+        storage_path: `smoke-fixtures/${kind}-${index}.png`,
+        alt: index === 0 ? '  ' : `Gallery smoke ${kind} photo`,
+        sort_order: index,
+      })),
+    })
+  })
+  await page.route('**/storage/v1/object/public/gallery/smoke-fixtures/*.png', (route) =>
+    route.fulfill({ contentType: 'image/png', body: photo }),
+  )
+}
+
+async function scrollMarqueeRowIntoView(page, rowIndex) {
+  await page.evaluate((index) => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+    if (!(row instanceof globalThis.HTMLElement)) throw new Error(`marquee row ${index} missing`)
+    row.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' })
+  }, rowIndex)
+}
+
+async function marqueeTilePoint(page, rowIndex) {
+  return bounded(
+    page.evaluate(async (index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find((candidate) => {
+        const rect = candidate.getBoundingClientRect()
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.right > 0 &&
+          rect.left < globalThis.innerWidth &&
+          rect.bottom > 0 &&
+          rect.top < globalThis.innerHeight
+        )
+      })
+      if (!(row instanceof globalThis.HTMLElement) || !(tile instanceof globalThis.HTMLElement)) {
+        throw new Error(`marquee logical tile ${index} missing`)
+      }
+      // Only the visible target must decode; offscreen lazy images may legitimately remain unloaded.
+      const photo = tile.querySelector('img')
+      if (photo !== null) await photo.decode()
+      if (!tile.isConnected) throw new Error('gallery tile changed while its image decoded')
+      const rect = tile.getBoundingClientRect()
+      const key = tile.getAttribute('data-tile-key')
+      if (key === null) throw new Error(`marquee logical tile ${index} has no key`)
+      return { key, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    }, rowIndex),
+    `gallery row ${rowIndex} target image decode`,
+  )
+}
+
+async function marqueeTileState(page, rowIndex, key) {
+  return page.evaluate(
+    ({ index, tileKey }) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find(
+        (candidate) => candidate.getAttribute('data-tile-key') === tileKey,
+      )
+      return tile?.getAttribute('aria-pressed') ?? null
+    },
+    { index: rowIndex, tileKey: key },
+  )
+}
+
+async function waitForMarqueeTileState(page, rowIndex, key, state) {
+  await page.waitForFunction(
+    ({ index, tileKey, expected }) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      const tile = [...(row?.querySelectorAll('[role="button"]') ?? [])].find(
+        (candidate) => candidate.getAttribute('data-tile-key') === tileKey,
+      )
+      return tile?.getAttribute('aria-pressed') === expected
+    },
+    { index: rowIndex, tileKey: key, expected: state },
+    { timeout: WAIT_TIMEOUT },
+  )
+}
+
+async function waitForGalleryToSettle(page) {
+  let previousSignature = ''
+  let stableSamples = 0
+  for (let attempt = 0; attempt < 50 && stableSamples < 3; attempt += 1) {
+    const galleryState = await page.evaluate(() => {
+      const rows = [...globalThis.document.querySelectorAll('[data-testid="marquee-row"]')]
+      return {
+        ready:
+          rows.length >= 2 &&
+          rows.every(
+            (row) =>
+              row.querySelector('[role="button"]') !== null &&
+              row.querySelector('[aria-hidden="true"]') !== null,
+          ),
+        signature: rows
+          .map((row) =>
+            [...row.querySelectorAll('[data-tile-key]')]
+              .map(
+                (tile) =>
+                  `${tile.getAttribute('data-tile-key')}:${tile.getAttribute('role')}:${tile.getAttribute('aria-hidden')}`,
+              )
+              .join('|'),
+          )
+          .join('||'),
+      }
+    })
+    if (galleryState.ready && galleryState.signature === previousSignature) {
+      stableSamples += 1
+    } else {
+      stableSamples = 0
+    }
+    previousSignature = galleryState.signature
+    if (stableSamples < 3) await page.waitForTimeout(100)
+  }
+  assert(stableSamples >= 3, 'gallery tiles did not settle before interaction checks')
+}
+
+async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
+  phase(`gallery row ${rowIndex} ${sequence}: locate tile`)
+  if (sequence === 'cancel') {
+    const point = await marqueeTilePoint(page, rowIndex)
+    phase(`gallery row ${rowIndex} ${sequence}: install listener`)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (!(row instanceof globalThis.HTMLElement))
+        throw new Error('gallery pointercancel row missing')
+      globalThis.__smokeCancelObserved = false
+      row.addEventListener(
+        'pointercancel',
+        () => {
+          globalThis.__smokeCancelObserved = true
+        },
+        { capture: true, once: true },
+      )
+    }, rowIndex)
+    const client = await page.context().newCDPSession(page)
+    await runCdpTouchSequence(
+      client,
+      `gallery row ${rowIndex} ${sequence}`,
+      { x: point.x, y: point.y, radiusX: 1, radiusY: 1, force: 1, id: 37 },
+      [{ x: point.x, y: point.y + 80, radiusX: 1, radiusY: 1, force: 1, id: 37 }],
+    )
+    phase(`gallery row ${rowIndex} ${sequence}: await pointercancel`)
+    await page.waitForFunction(() => globalThis.__smokeCancelObserved === true, undefined, {
+      timeout: WAIT_TIMEOUT,
+    })
+    await page.evaluate(() => {
+      delete globalThis.__smokeCancelObserved
+    })
+    return {
+      key: point.key,
+      pressed: await marqueeTileState(page, rowIndex, point.key),
+    }
+  }
+
+  phase(`gallery row ${rowIndex} ${sequence}: locate tile for mouse sequence`)
+  const point = await marqueeTilePoint(page, rowIndex)
+  if (sequence === 'drag') {
+    phase(`gallery row ${rowIndex} ${sequence}: observe native dragstart`)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (!(row instanceof globalThis.HTMLElement)) throw new Error('gallery drag row missing')
+      globalThis.__smokeNativeDragStarts = []
+      globalThis.__smokeNativeDragHandler = (event) => {
+        const target = event.target
+        globalThis.__smokeNativeDragStarts.push(
+          target instanceof globalThis.HTMLElement ? target.tagName : 'unknown',
+        )
+      }
+      row.addEventListener('dragstart', globalThis.__smokeNativeDragHandler, true)
+    }, rowIndex)
+  }
+  await runMousePointerSequence(page, `gallery row ${rowIndex} ${sequence}`, point, sequence)
+  if (sequence === 'drag') {
+    phase(`gallery row ${rowIndex} ${sequence}: assert no native dragstart`)
+    const nativeDragStarts = await page.evaluate(() => globalThis.__smokeNativeDragStarts)
+    await page.evaluate((index) => {
+      const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[index]
+      if (
+        row instanceof globalThis.HTMLElement &&
+        globalThis.__smokeNativeDragHandler !== undefined
+      ) {
+        row.removeEventListener('dragstart', globalThis.__smokeNativeDragHandler, true)
+      }
+      delete globalThis.__smokeNativeDragHandler
+      delete globalThis.__smokeNativeDragStarts
+    }, rowIndex)
+    assert(
+      nativeDragStarts.length === 0,
+      `native dragstart fired during gallery drag: ${JSON.stringify(nativeDragStarts)}`,
+    )
+  }
+
+  return { key: point.key, pressed: await marqueeTileState(page, rowIndex, point.key) }
+}
+
+async function verifyPublicPage(browser, viewport) {
+  phase(`public ${viewport.width}x${viewport.height}: create context`)
+  const errors = []
+  const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: true })
+  context.setDefaultTimeout(WAIT_TIMEOUT)
+  context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
+  const page = await context.newPage()
+  page.on('pageerror', (error) => errors.push(error.message))
+  await installGalleryFixtures(page)
+
+  phase(`public ${viewport.width}x${viewport.height}: goto`)
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
+  phase(`public ${viewport.width}x${viewport.height}: wait app`)
+  await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
+  phase(`public ${viewport.width}x${viewport.height}: wait fonts`)
+  await waitForFonts(page)
+
+  assert((await page.title()).includes('Blade & Blend Studio'), 'public title missing')
+  const overflow = await page.evaluate(
+    () =>
+      globalThis.document.documentElement.scrollWidth -
+      globalThis.document.documentElement.clientWidth,
+  )
+  assert(overflow <= 1, `horizontal overflow: ${overflow}px`)
+
+  const brokenImages = await page
+    .locator('img')
+    .evaluateAll((images) =>
+      images
+        .filter((image) => !image.complete || image.naturalWidth === 0)
+        .map((image) => image.getAttribute('src') ?? '<missing src>'),
+    )
+  assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
+
+  phase(`public ${viewport.width}x${viewport.height}: language toggle`)
+  await page
+    .getByRole('button', { name: 'EN', exact: true })
+    .first()
+    .click({ timeout: WAIT_TIMEOUT })
+  assert(
+    (await page
+      .getByRole('button', { name: 'EN', exact: true })
+      .first()
+      .getAttribute('aria-pressed')) === 'true',
+    'language toggle did not activate English',
+  )
+
+  phase(`public ${viewport.width}x${viewport.height}: my bookings dialog`)
+  const myBookingsButton = page
+    .getByRole('button', { name: 'My appointments', exact: true })
+    .first()
+  await myBookingsButton.click({ timeout: WAIT_TIMEOUT })
+  const myBookingsDialog = page.getByRole('dialog', { name: 'My appointments' })
+  await myBookingsDialog.waitFor({ timeout: WAIT_TIMEOUT })
+  await myBookingsDialog.getByRole('button', { name: 'Close' }).click({ timeout: WAIT_TIMEOUT })
+  await myBookingsDialog.waitFor({ state: 'detached', timeout: WAIT_TIMEOUT })
+
+  phase(`public ${viewport.width}x${viewport.height}: gallery setup`)
+  const about = page.locator('#om-oss')
+  assert((await about.count()) === 1, 'About section is not mounted on the homepage')
+  await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
+  await waitForGalleryToSettle(page)
+  const marqueeTransforms = await page
+    .getByTestId('marquee-track')
+    .evaluateAll((tracks) => tracks.map((track) => track.style.transform))
+  assert(
+    marqueeTransforms.every((transform) => transform === ''),
+    `gallery moved with reduced motion: ${marqueeTransforms.join(', ')}`,
+  )
+  const marqueeSemantics = await page.getByTestId('marquee-row').evaluateAll((rows) =>
+    rows.map((row) => {
+      const tiles = [...row.querySelectorAll('[data-tile-key]')]
+      const selectable = tiles.filter((tile) => tile.getAttribute('role') === 'button')
+      const keys = new Set(selectable.map((tile) => tile.getAttribute('data-tile-key')))
+      const hidden = tiles.filter((tile) => tile.getAttribute('aria-hidden') === 'true')
+      return {
+        tileCount: tiles.length,
+        selectableCount: selectable.length,
+        logicalCount: keys.size,
+        hiddenCount: hidden.length,
+        hiddenFocusableCount: hidden.filter((tile) => tile.hasAttribute('tabindex')).length,
+        hiddenRoleCount: hidden.filter((tile) => tile.hasAttribute('role')).length,
+      }
+    }),
+  )
+  assert(
+    marqueeSemantics.every(
+      (row) =>
+        row.tileCount > 0 &&
+        row.selectableCount === row.logicalCount &&
+        row.hiddenCount === row.tileCount - row.selectableCount &&
+        row.hiddenFocusableCount === 0 &&
+        row.hiddenRoleCount === 0,
+    ),
+    `gallery loop clones remain accessible: ${JSON.stringify(marqueeSemantics)}`,
+  )
+
+  await waitForGalleryToSettle(page)
+  await scrollMarqueeRowIntoView(page, 0)
+  const tap = await dispatchGalleryPointerSequence(page, 0, 'tap')
+  await waitForMarqueeTileState(page, 0, tap.key, 'true')
+  await waitForGalleryToSettle(page)
+
+  await scrollMarqueeRowIntoView(page, 1)
+  const cloneFocused = await page.evaluate(() => {
+    const row = globalThis.document.querySelectorAll('[data-testid="marquee-row"]')[1]
+    const clones = row?.querySelectorAll('[aria-hidden="true"]')
+    if (clones === undefined || clones.length === 0) throw new Error('gallery loop clone missing')
+    return [...clones].some((clone) => {
+      clone.focus()
+      return globalThis.document.activeElement === clone
+    })
+  })
+  assert(!cloneFocused, 'gallery loop clone can receive focus')
+
+  await scrollMarqueeRowIntoView(page, 1)
+  const cancel = await dispatchGalleryPointerSequence(page, 1, 'cancel')
+  assert(cancel.pressed === 'false', 'gallery pointercancel selected a tile')
+  await page.waitForTimeout(50)
+  assert(
+    (await marqueeTileState(page, 1, cancel.key)) === 'false',
+    'gallery pointercancel selected a tile after release',
+  )
+
+  await scrollMarqueeRowIntoView(page, 1)
+  const scroll = await dispatchGalleryPointerSequence(page, 1, 'scroll')
+  assert(scroll.pressed === 'false', 'gallery scroll selected a tile')
+  await page.waitForTimeout(50)
+  assert(
+    (await marqueeTileState(page, 1, scroll.key)) === 'false',
+    'gallery scroll selected a tile after release',
+  )
+
+  await scrollMarqueeRowIntoView(page, 1)
+  const drag = await dispatchGalleryPointerSequence(page, 1, 'drag')
+  assert(drag.pressed === 'false', 'gallery drag selected a tile')
+  await page.waitForTimeout(50)
+  assert(
+    (await marqueeTileState(page, 1, drag.key)) === 'false',
+    'gallery drag selected a tile after release',
+  )
+
+  await page.evaluate(() => {
+    globalThis.window.scrollTo({ top: 0 })
+    globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTo({ top: 0 })
+  })
+
+  if (viewport.width <= 768) {
+    await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
+    await page.getByRole('button', { name: 'Back to home' }).waitFor({ timeout: WAIT_TIMEOUT })
+    await page.getByRole('button', { name: 'Back to home' }).click({ timeout: WAIT_TIMEOUT })
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('[data-testid="mobile-site-scroll"]')?.scrollTop === 0,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+  } else {
+    const panel = page.getByTestId('desktop-top-panel')
+    await page.setViewportSize({ width: viewport.width, height: viewport.height - 80 })
+    await page.waitForFunction(
+      () => {
+        const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
+        return panel !== null && Math.abs(panel.getBoundingClientRect().top) <= 1
+      },
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    const initialPanelTop = await panel.evaluate((element) => element.getBoundingClientRect().top)
+    assert(Math.abs(initialPanelTop) <= 1, 'desktop panel does not begin at the viewport top')
+    await page.evaluate(() =>
+      globalThis.window.scrollTo({ top: globalThis.window.innerHeight / 2 }),
+    )
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          globalThis.document
+            .querySelector('[data-testid="desktop-top-panel"]')
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    const intermediatePanelTop = await panel.evaluate(
+      (element) => element.getBoundingClientRect().top,
+    )
+    assert(Math.abs(intermediatePanelTop) <= 1, 'desktop panel moved away from the viewport top')
+    await page.getByRole('button', { name: 'Toggle light/dark' }).click({ timeout: WAIT_TIMEOUT })
+    await page.waitForFunction(
+      (previousTop) => {
+        const panel = globalThis.document.querySelector('[data-testid="desktop-top-panel"]')
+        return panel !== null && Math.abs(panel.getBoundingClientRect().top - previousTop) <= 1
+      },
+      intermediatePanelTop,
+      { timeout: WAIT_TIMEOUT },
+    )
+    await page.evaluate(() => globalThis.window.scrollTo({ top: globalThis.window.innerHeight }))
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          globalThis.document
+            .querySelector('[data-testid="desktop-top-panel"]')
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    await page.setViewportSize({ width: viewport.width, height: viewport.height - 140 })
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          (globalThis.document
+            .querySelector('[data-testid="desktop-top-panel"]')
+            ?.getBoundingClientRect().top ?? 1) - 0,
+        ) <= 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
+    await page.waitForFunction(
+      () =>
+        Math.abs(
+          globalThis.document
+            .querySelector('[data-testid="desktop-top-panel"]')
+            ?.getBoundingClientRect().top ?? 1,
+        ) <= 1,
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    await page.getByRole('button', { name: 'About', exact: true }).click({ timeout: WAIT_TIMEOUT })
+    await page.waitForFunction(
+      () => {
+        const top = globalThis.document.querySelector('#om-oss')?.getBoundingClientRect().top
+        return top !== undefined && top >= 60 && top <= 62
+      },
+      undefined,
+      { timeout: WAIT_TIMEOUT },
+    )
+    await page.evaluate(() => globalThis.window.scrollTo({ top: 0 }))
+  }
+
+  phase(`public ${viewport.width}x${viewport.height}: booking`)
+  await page
+    .getByRole('button', { name: 'Book appointment', exact: true })
+    .first()
+    .click({ timeout: WAIT_TIMEOUT })
+  assert((await about.count()) === 0, 'About section remains mounted while booking is open')
+  await page.getByTestId('booking-step-barber').waitFor({ timeout: WAIT_TIMEOUT })
+  // Production data may provide options; an intentionally unconfigured test build must show an
+  // honest empty state instead of bundled barber fixtures.
+  await page
+    .locator('[data-testid="booking-barber-option"],[data-testid="booking-barber-empty"]')
+    .first()
+    .waitFor({ timeout: WAIT_TIMEOUT })
+
+  assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
+  phase(`public ${viewport.width}x${viewport.height}: context cleanup`)
+  await bounded(context.close(), `public ${viewport.width}x${viewport.height} context.close`)
+}
+
+async function verifyNormalMotionGalleryKeyboard(browser) {
+  phase('normal-motion gallery: create context')
+  const context = await browser.newContext({
+    viewport: { width: 2400, height: 900 },
+    reducedMotion: 'no-preference',
+    hasTouch: true,
+  })
+  context.setDefaultTimeout(WAIT_TIMEOUT)
+  context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
+  const page = await context.newPage()
+  await installGalleryFixtures(page)
+
+  phase('normal-motion gallery: goto')
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT })
+  await page.locator('#root > :first-child').waitFor({ timeout: WAIT_TIMEOUT })
+  await waitForFonts(page)
+  await page.locator('#om-oss').scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
+  await waitForGalleryToSettle(page)
+  await scrollMarqueeRowIntoView(page, 0)
+
+  const row = page.getByTestId('marquee-row').first()
+  const layout = await row.evaluate((element) => ({
+    physicalCount: element.querySelectorAll('[data-tile-key]').length,
+    logicalCount: element.querySelectorAll('[role="button"]').length,
+    rowWidth: element.getBoundingClientRect().width,
+    rowTop: element.getBoundingClientRect().top,
+  }))
+  assert(
+    layout.physicalCount > layout.logicalCount * 2,
+    `normal-motion gallery did not exercise perHalf > 1: ${JSON.stringify(layout)}`,
+  )
+  await page.waitForFunction(
+    () =>
+      globalThis.document.querySelector('[data-testid="marquee-track"]')?.style.transform !== '',
+    undefined,
+    { timeout: WAIT_TIMEOUT },
+  )
+
+  const rowBox = await row.boundingBox()
+  if (rowBox === null) throw new Error('normal-motion marquee row has no box')
+  const dragDistance = layout.logicalCount * (210 + 14) + 150
+  const startX = rowBox.x + rowBox.width - 12
+  const endX = Math.max(rowBox.x + 12, startX - dragDistance)
+  phase('normal-motion gallery: create CDP session')
+  const client = await page.context().newCDPSession(page)
+  const y = rowBox.y + rowBox.height / 2
+  await runCdpTouchSequence(
+    client,
+    'normal-motion gallery',
+    { x: startX, y, radiusX: 1, radiusY: 1, force: 1, id: 88 },
+    Array.from({ length: 12 }, (_, index) => ({
+      x: startX + ((endX - startX) * (index + 1)) / 12,
+      y,
+      radiusX: 1,
+      radiusY: 1,
+      force: 1,
+      id: 88,
+    })),
+  )
+
+  phase('normal-motion gallery: focus re-anchor')
+  const firstLogicalTile = row.locator('[role="button"]').first()
+  const beforeFocus = await firstLogicalTile.boundingBox()
+  assert(
+    beforeFocus !== null && (beforeFocus.x + beforeFocus.width <= 0 || beforeFocus.x >= 2400),
+    `normal-motion focus target was not advanced past the initial logical set: ${JSON.stringify(beforeFocus)}`,
+  )
+  await firstLogicalTile.focus()
+  await page.waitForFunction(
+    () => {
+      const active = globalThis.document.activeElement
+      if (!(active instanceof globalThis.HTMLElement)) return false
+      const rect = active.getBoundingClientRect()
+      return rect.right > 0 && rect.left < globalThis.innerWidth && rect.bottom > 0
+    },
+    undefined,
+    { timeout: WAIT_TIMEOUT },
+  )
+  const afterFocus = await firstLogicalTile.boundingBox()
+  assert(
+    afterFocus !== null && afterFocus.x + afterFocus.width > 0 && afterFocus.x < 2400,
+    `normal-motion focus target remained offscreen after re-anchor: ${JSON.stringify(afterFocus)}`,
+  )
+  phase('normal-motion gallery: context cleanup')
+  await bounded(context.close(), 'normal-motion gallery context.close')
+}
+
+async function verifyStaticEndpoints(page) {
+  for (const path of ['/robots.txt', '/sitemap.xml', '/privacy']) {
+    phase(`static endpoint ${path}`)
+    const response = await page.request.get(`${baseUrl}${path}`, { timeout: WAIT_TIMEOUT })
+    assert(response.status() === 200, `${path} status ${response.status()}`)
+  }
+}
+
+/** Authenticated browser gate against a real local Worker + Edge + PostgreSQL. No provider sends. */
+async function verifyCustomerBrowser() {
+  phase('customer: inspect local stack')
+  const stack = JSON.parse(
+    execFileSync('npx', ['supabase', 'status', '--output', 'json'], { encoding: 'utf8' }),
+  )
+  for (const value of [stack.API_URL, stack.DB_URL]) {
+    assert(
+      ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(value).hostname),
+      'customer browser gate requires loopback Supabase',
+    )
+  }
+  const work = mkdtempSync(join(tmpdir(), 'knc-customer-e2e-'))
+  const assets = join(work, 'dist'),
+    key = join(work, 'localhost.key'),
+    cert = join(work, 'localhost.crt')
+  const port = Number(process.env.CUSTOMER_E2E_PORT ?? '4197')
+  const workerPort = Number(process.env.CUSTOMER_E2E_WORKER_PORT ?? '8797')
+  assert(
+    Number.isInteger(port) && Number.isInteger(workerPort) && port !== workerPort,
+    'distinct local test ports required',
+  )
+  const origin = `https://127.0.0.1:${port}`,
+    workerOrigin = `https://127.0.0.1:${workerPort}`
+  const secret =
+    process.env.CUSTOMER_GATEWAY_SECRET ?? 'ci-customer-gateway-secret-not-for-production'
+  const env = {
+    ...process.env,
+    VITE_SUPABASE_URL: `${origin}/__supabase`,
+    LOCAL_SUPABASE_URL: stack.API_URL,
+    VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
+    VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
+    LOCAL_HTTPS_KEY: key,
+    LOCAL_HTTPS_CERT: cert,
+  }
+  let failed = false,
+    failure
+  const retainFailure = (error) => {
+    if (!failed) {
+      failed = true
+      failure = error
+    }
+  }
+  const children = []
+  const stopChildren = () => {
+    for (const child of children)
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, 'SIGTERM')
+        } catch {
+          /* already stopped */
+        }
+      }
+  }
+  process.on('exit', stopChildren)
+  const db = new Client({ connectionString: stack.DB_URL, connectionTimeoutMillis: 5000 })
+  let connected = false,
+    fixture
+  // Hosted Supabase adds its own bot cookie. Preserve separate upstream headers so this gate
+  // reproduces production: a Worker using Headers.get would merge Domain=supabase.co into our
+  // __Host cookie and every real browser would reject the customer session.
+  const upstream = createHttpServer(async (request, response) => {
+    try {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      const headers = new globalThis.Headers()
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (value !== undefined && !['host', 'connection', 'content-length'].includes(name)) {
+          headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+        }
+      }
+      const result = await fetch(`${stack.API_URL}${request.url}`, {
+        method: request.method,
+        headers,
+        ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
+        redirect: 'manual',
+      })
+      response.statusCode = result.status
+      const cookies = result.headers.getSetCookie()
+      for (const [name, value] of result.headers) {
+        if (
+          ![
+            'set-cookie',
+            'content-encoding',
+            'content-length',
+            'transfer-encoding',
+            'connection',
+          ].includes(name)
+        ) {
+          response.setHeader(name, value)
+        }
+      }
+      if (request.url?.startsWith('/functions/v1/')) {
+        cookies.push(
+          '__cf_bm=local-provider-fixture; HttpOnly; Secure; Path=/; Domain=supabase.co; Expires=Thu, 10 Sep 2037 22:19:54 GMT',
+        )
+      }
+      if (cookies.length) response.setHeader('Set-Cookie', cookies)
+      response.end(Buffer.from(await result.arrayBuffer()))
+    } catch {
+      response.statusCode = 502
+      response.end('Local upstream unavailable')
+    }
+  })
+  const hash = (value) => createHash('sha256').update(value).digest('hex')
+  const removeQueuedMail = async (emails) =>
+    db.query(
+      `delete from public.external_action_jobs
+    where action_type='customer_access_email_send' and payload->>'challenge_id' in (
+      select id::text from public.customer_booking_access_challenges where email=any($1))`,
+      [emails],
+    )
+  const cleanupFixture = async () => {
+    if (!fixture) return
+    await db.query('begin')
+    try {
+      await db.query('set local session_replication_role=replica')
+      await removeQueuedMail(fixture.people.map((person) => person.email))
+      for (const table of [
+        'customer_booking_access_sessions',
+        'customer_booking_access_challenges',
+        'customer_booking_access_tokens',
+      ]) {
+        await db.query(`delete from public.${table} where email=any($1)`, [
+          fixture.people.map((person) => person.email),
+        ])
+      }
+      // This suite creates real bookings. Remove only its outbox/receipt children, including
+      // those whose normal cascade is disabled by the fixture-cleanup transaction.
+      await db.query(
+        `delete from public.customer_booking_receipts where token_hash in (
+        select r.receipt_hash from public.customer_booking_receipt_bookings r
+        join public.bookings b on b.id=r.booking_id where b.barber_id=$1)`,
+        [fixture.barber],
+      )
+      for (const table of [
+        'customer_booking_receipt_bookings',
+        'booking_email_delivery_jobs',
+        'booking_reminders',
+      ])
+        await db.query(
+          `delete from public.${table} where booking_id in (select id from public.bookings where barber_id=$1)`,
+          [fixture.barber],
+        )
+      await db.query(
+        `delete from public.external_action_jobs where payload->>'booking_id' in (select id::text from public.bookings where barber_id=$1)`,
+        [fixture.barber],
+      )
+      if (fixture.attempts.length)
+        await db.query('delete from public.booking_attempts where id=any($1)', [fixture.attempts])
+      for (const table of ['bookings', 'services', 'barber_schedules'])
+        await db.query(`delete from public.${table} where barber_id=$1`, [fixture.barber])
+      await db.query('delete from public.barbers where id=$1', [fixture.barber])
+      await db.query('commit')
+      fixture = undefined
+    } catch (error) {
+      await db.query('rollback')
+      throw error
+    }
+  }
+  const start = (name, args, childEnv = process.env) => {
+    const fd = openSync(join(work, `${name}.log`), 'w', 0o600)
+    const child = spawn(process.execPath, args, {
+      env: childEnv,
+      detached: true,
+      stdio: ['ignore', fd, fd],
+    })
+    closeSync(fd)
+    children.push(child)
+    return child
+  }
+  const ready = async (url, child, name) => {
+    for (let attempt = 0; attempt < 150; attempt++) {
+      assert(
+        child.exitCode === null,
+        `${name} exited before readiness: ${readFileSync(join(work, `${name}.log`), 'utf8')}`,
+      )
+      const ok = await new Promise((resolveReady) => {
+        const req = httpsRequest(url, { rejectUnauthorized: false }, (response) => {
+          response.resume()
+          resolveReady(response.statusCode === 200)
+        })
+        req.on('error', () => resolveReady(false))
+        req.setTimeout(1000, () => req.destroy())
+        req.end()
+      })
+      if (ok) return
+      await delay(100)
+    }
+    throw new Error(`${name} did not become ready`)
+  }
+  try {
+    await db.connect()
+    connected = true
+    await new Promise((resolveListen) => upstream.listen(0, '127.0.0.1', resolveListen))
+    const upstreamAddress = upstream.address()
+    assert(
+      upstreamAddress !== null && typeof upstreamAddress === 'object',
+      'upstream test port missing',
+    )
+    execFileSync(
+      'openssl',
+      [
+        'req',
+        '-x509',
+        '-newkey',
+        'rsa:2048',
+        '-nodes',
+        '-keyout',
+        key,
+        '-out',
+        cert,
+        '-days',
+        '1',
+        '-subj',
+        '/CN=localhost',
+        '-addext',
+        'subjectAltName=DNS:localhost,IP:127.0.0.1',
+      ],
+      { stdio: 'ignore' },
+    )
+    phase('customer: build local frontend')
+    execFileSync('npm', ['run', 'build', '--', '--outDir', assets, '--emptyOutDir'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 60000,
+    })
+    const workerConfig = join(work, 'wrangler.jsonc')
+    writeFileSync(
+      workerConfig,
+      JSON.stringify({
+        name: 'knc-customer-browser',
+        main: resolve('src/worker.ts'),
+        compatibility_date: '2026-08-09',
+        vars: { SUPABASE_URL: `http://127.0.0.1:${upstreamAddress.port}` },
+        assets: {
+          directory: assets,
+          binding: 'ASSETS',
+          run_worker_first: true,
+          html_handling: 'none',
+          not_found_handling: 'none',
+        },
+      }),
+    )
+    writeFileSync(
+      join(work, '.dev.vars'),
+      `SUPABASE_ANON_KEY=${stack.ANON_KEY}\nCUSTOMER_GATEWAY_SECRET=${secret}\n`,
+      { mode: 0o600 },
+    )
+    phase('customer: start actual Worker and Vite preview')
+    const worker = start('worker', [
+      resolve('node_modules/wrangler/bin/wrangler.js'),
+      'dev',
+      '--config',
+      workerConfig,
+      '--local',
+      '--ip',
+      '127.0.0.1',
+      '--port',
+      String(workerPort),
+      '--inspector-port',
+      '0',
+      '--local-protocol',
+      'https',
+      '--https-key-path',
+      key,
+      '--https-cert-path',
+      cert,
+      '--log-level',
+      'error',
+    ])
+    const preview = start(
+      'preview',
+      [
+        resolve('node_modules/vite/bin/vite.js'),
+        'preview',
+        '--outDir',
+        assets,
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--strictPort',
+      ],
+      env,
+    )
+    await Promise.all([
+      ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
+      ready(origin, preview, 'preview'),
+    ])
+
+    for (const engine of [chromium, firefox, webkit]) {
+      phase(`customer ${engine.name()}: seed isolated fixtures`)
+      const marker = randomUUID(),
+        barber = `e2e-${marker.slice(0, 20)}`,
+        service = randomUUID()
+      const people = ['A', 'B'].map((label) => ({
+        label,
+        token: randomBytes(32).toString('hex'),
+        booking: randomUUID(),
+        name: `Customer ${label}`,
+        phone: `070${String(randomBytes(4).readUInt32BE() % 10000000).padStart(7, '0')}`,
+        email: `${label.toLowerCase()}-${marker}@example.test`,
+      }))
+      fixture = { barber, people, attempts: [] }
+      await db.query('begin')
+      try {
+        await db.query('set local session_replication_role=replica')
+        await db.query(
+          "insert into public.barbers(id,name,ig,active,sort_order) values($1,'Customer E2E Barber','e2e',true,999)",
+          [barber],
+        )
+        await db.query(
+          "insert into public.services(id,barber_id,name,price,duration_min,active,sort_order,available_weekdays) values($1,$2,'Customer E2E Cut',100,30,true,0,ARRAY[0,1,2,3,4,5,6])",
+          [service, barber],
+        )
+        await db.query(
+          'insert into public.barber_schedules(barber_id,weekday,working,start_min,end_min) select $1,day,true,540,1080 from generate_series(0,6) day',
+          [barber],
+        )
+        for (const [index, person] of people.entries()) {
+          await db.query(
+            `insert into public.bookings(id,barber_id,service_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status)
+            values($1,$2,$3,$4,100,30,date_trunc('day',now())+interval '90 days'+make_interval(hours => $8),
+            date_trunc('day',now())+interval '90 days 30 minutes'+make_interval(hours => $8),$5,'email',$6,$7,'sv','confirmed')`,
+            [
+              person.booking,
+              barber,
+              service,
+              `Customer ${person.label} appointment`,
+              person.name,
+              person.phone,
+              person.email,
+              10 + index,
+            ],
+          )
+          await db.query(
+            'insert into public.customer_booking_access_tokens(email,phone,token_hash,token_ciphertext) values($1,$2,$3,$4)',
+            [person.email, person.phone, hash(person.token), `v1.${'a'.repeat(80)}`],
+          )
+        }
+        await db.query('commit')
+      } catch (error) {
+        await db.query('rollback')
+        throw error
+      }
+      const [a, b] = people
+      const browser = await engine.launch({ timeout: WAIT_TIMEOUT })
+      const showHistory = async (page, person) => {
+        await page.getByRole('heading', { name: /kommande/i }).waitFor()
+        await page
+          .getByRole('button', { name: /Visa detaljer/ })
+          .last()
+          .click()
+        await page
+          .getByRole('dialog')
+          .getByText(`Customer ${person.label} appointment`, { exact: false })
+          .waitFor()
+        assert(
+          !(await page.getByRole('dialog').innerText()).includes(
+            `Customer ${person.label === 'A' ? 'B' : 'A'} appointment`,
+          ),
+          'mixed customer histories',
+        )
+      }
+      try {
+        for (const width of [1280, 390]) {
+          phase(`customer ${engine.name()} ${width}: permanent link and browser cookie`)
+          const context = await browser.newContext({
+            viewport: { width, height: 844 },
+            ignoreHTTPSErrors: true,
+            reducedMotion: 'reduce',
+          })
+          const page = await context.newPage()
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+          await showHistory(page, a)
+          assert(
+            new URL(page.url()).pathname === '/' && !page.url().includes(a.token),
+            'email credential remains in URL',
+          )
+          const cookie = (await context.cookies()).find(
+            (item) => item.name === '__Host-bladeblend_customer_session',
+          )
+          assert(
+            cookie?.httpOnly &&
+              cookie.secure &&
+              cookie.sameSite === 'Lax' &&
+              cookie.domain === '127.0.0.1' &&
+              cookie.path === '/',
+            'browser did not accept the required first-party cookie',
+          )
+          assert(
+            !(await page.evaluate(() =>
+              globalThis.document.cookie.includes('bladeblend_customer_session'),
+            )),
+            'customer credential readable by JavaScript',
+          )
+          await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+          const dismiss = page.getByRole('button', { name: 'Avvisa valfri lagring', exact: true })
+          if (await dismiss.isVisible()) await dismiss.click()
+          await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+          await showHistory(page, a)
+          await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+          await page.reload({ waitUntil: 'domcontentloaded' })
+          const dismissAgain = page.getByRole('button', {
+            name: 'Avvisa valfri lagring',
+            exact: true,
+          })
+          if (await dismissAgain.isVisible()) await dismissAgain.click()
+          await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+          await showHistory(page, a)
+          if (width === 1280) {
+            phase(
+              `customer ${engine.name()}: shared-cookie customer switch and real profile hydration`,
+            )
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+            await page
+              .getByTestId('booking-barber-option')
+              .filter({ hasText: 'Customer E2E Barber' })
+              .click()
+            const date = new Date(Date.now() + 2 * 86400000)
+            const fmt = (options) =>
+              new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(
+                date,
+              )
+            const dateLabel = `${fmt({ weekday: 'long' })} ${fmt({ day: 'numeric' })} ${fmt({ month: 'long' })} ${fmt({ year: 'numeric' })}`
+            await page.getByRole('button', { name: dateLabel, exact: true }).click()
+            await page
+              .getByTestId('booking-service-option')
+              .filter({ hasText: 'Customer E2E Cut' })
+              .click()
+            await page.getByRole('button', { name: '10:00', exact: true }).click()
+            const fields = page.getByRole('dialog').locator('input')
+            assert(
+              (await fields.nth(0).inputValue()) === a.name &&
+                (await fields.nth(1).inputValue()) === a.phone &&
+                (await fields.nth(2).inputValue()) === a.email,
+              'successful real session hydration did not populate customer A',
+            )
+            await fields.nth(0).fill('Typed name survives')
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            const second = await context.newPage()
+            second.setDefaultTimeout(WAIT_TIMEOUT)
+            await second.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
+            await showHistory(second, b)
+            await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
+            await showHistory(page, b)
+            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            await page.getByRole('button', { name: '10:00', exact: true }).click()
+            assert(
+              (await fields.nth(0).inputValue()) === 'Typed name survives' &&
+                (await fields.nth(1).inputValue()) === b.phone &&
+                (await fields.nth(2).inputValue()) === b.email,
+              'verified customer B retained customer A auto-fill or erased typed input',
+            )
+          }
+          await context.close()
+        }
+        for (const existingCookie of [false, true]) {
+          phase(
+            `customer ${engine.name()}: rejected cookie ${existingCookie ? 'replacement' : 'creation'}`,
+          )
+          const context = await browser.newContext({ ignoreHTTPSErrors: true })
+          const page = await context.newPage()
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          let previous
+          if (existingCookie) {
+            await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+            await showHistory(page, a)
+            previous = (await context.cookies()).find(
+              (item) => item.name === '__Host-bladeblend_customer_session',
+            )
+            assert(previous, 'old-cookie fixture did not establish an actual session')
+          }
+          await context.route('**/api/customer-bookings', async (route) => {
+            const response = await route.fetch(),
+              headers = response.headers()
+            delete headers['set-cookie']
+            await context.clearCookies()
+            if (previous) await context.addCookies([previous])
+            await route.fulfill({ response, headers })
+          })
+          await page.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
+          await page
+            .getByText(
+              'Den säkra åtkomsten kunde inte sparas. Öppna mejllänken igen. Kontrollera webbplatsens cookieinställningar om felet kvarstår.',
+              { exact: true },
+            )
+            .waitFor()
+          assert(
+            (await page.getByRole('heading', { name: /kommande/i }).count()) === 0,
+            'rejected session cookie exposed a customer history',
+          )
+          await context.close()
+        }
+        phase(`customer ${engine.name()}: two fresh tabs book and share one optional receipt`)
+        const receiptContext = await browser.newContext({
+          viewport: { width: 390, height: 844 },
+          ignoreHTTPSErrors: true,
+          reducedMotion: 'reduce',
+        })
+        const receiptPages = await Promise.all([receiptContext.newPage(), receiptContext.newPage()])
+        // The supported cancellation cutoff reaches seven days. A fixed 11:00 appointment
+        // three dates ahead can already be inside a 72-hour cutoff in an afternoon run.
+        const bookingDate = new Date(Date.now() + 9 * 86400000)
+        const datePart = (options, date = bookingDate) =>
+          new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(
+            date,
+          )
+        const bookingDateLabel = `${datePart({ weekday: 'long' })} ${datePart({ day: 'numeric' })} ${datePart({ month: 'long' })} ${datePart({ year: 'numeric' })}`
+        const prepareBooking = async (page, person, time, consent) => {
+          page.setDefaultTimeout(WAIT_TIMEOUT)
+          await page.goto(origin, { waitUntil: 'domcontentloaded' })
+          const choose = page.getByRole('button', {
+            name: consent ? 'Godkänn valfri lagring' : 'Avvisa valfri lagring',
+            exact: true,
+          })
+          if (await choose.isVisible()) await choose.click()
+          await page.getByRole('button', { name: 'Boka tid', exact: true }).first().click()
+          await page
+            .getByTestId('booking-barber-option')
+            .filter({ hasText: 'Customer E2E Barber' })
+            .click()
+          const monthFormat = { year: 'numeric', month: 'numeric' }
+          if (datePart(monthFormat) !== datePart(monthFormat, new Date()))
+            await page.getByRole('button', { name: 'Nästa månad', exact: true }).click()
+          await page.getByRole('button', { name: bookingDateLabel, exact: true }).click()
+          await page
+            .getByTestId('booking-service-option')
+            .filter({ hasText: 'Customer E2E Cut' })
+            .click()
+          await page.getByRole('button', { name: time, exact: true }).click()
+          const fields = page.getByRole('dialog').locator('input:not([type="hidden"])')
+          assert(
+            (await fields.nth(0).inputValue()) === '' &&
+              (await fields.nth(1).inputValue()) === '' &&
+              (await fields.nth(2).inputValue()) === '',
+            'device or unverified contact prefilled private customer data',
+          )
+          await fields.nth(0).fill(person.name)
+          await fields.nth(1).fill(person.phone)
+          await fields.nth(2).fill(person.email)
+        }
+        // Sequential preparation, simultaneous submit: both tabs start with no receipt cookie.
+        await prepareBooking(receiptPages[0], a, '11:00', true)
+        await prepareBooking(receiptPages[1], a, '11:30', true)
+        assert(
+          !(await receiptContext.cookies()).some(
+            (item) => item.name === '__Host-bladeblend_booking_receipts',
+          ),
+          'fresh context unexpectedly has receipt',
+        )
+        const listFrom = (page) =>
+          page.evaluate(async () =>
+            (
+              await fetch('/api/customer-bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'list' }),
+              })
+            ).json(),
+          )
+        const submitBooking = async (page) => {
+          const response = page.waitForResponse(
+            (r) => new URL(r.url()).pathname === '/api/bookings' && r.request().method() === 'POST',
+          )
+          await page
+            .getByRole('dialog')
+            .getByRole('button', { name: 'Boka tid', exact: true })
+            .click()
+          const body = await (await response).json()
+          assert(body.ok === true, `real booking failed: ${body.error ?? 'invalid result'}`)
+          // Track this fixture's exact IP-attempt rows without truncating unrelated local data.
+          const attempts = await db.query(
+            `select id from public.booking_attempts where created_at = (select created_at from public.bookings where id=$1) and ip_hash=$2`,
+            [body.booking.id, hash('127.0.0.1' + 'ci-booking-ip-salt-not-for-production')],
+          )
+          fixture.attempts.push(...attempts.rows.map((row) => row.id))
+          return body
+        }
+        const receipts = await Promise.all(receiptPages.map(submitBooking))
+        for (const page of receiptPages)
+          await page
+            .getByText('Din bokning finns nu under Mina bokningar på den här enheten.', {
+              exact: true,
+            })
+            .waitFor()
+        const deviceCookie = (await receiptContext.cookies()).find(
+          (item) => item.name === '__Host-bladeblend_booking_receipts',
+        )
+        assert(
+          deviceCookie?.httpOnly &&
+            deviceCookie.secure &&
+            deviceCookie.sameSite === 'Lax' &&
+            deviceCookie.path === '/' &&
+            deviceCookie.domain === '127.0.0.1',
+          'browser rejected/failed to protect optional receipt',
+        )
+        assert(
+          receipts[0].receipt_proof === receipts[1].receipt_proof,
+          'simultaneous first bookings lost their shared collection',
+        )
+        const receiptList = await listFrom(receiptPages[0])
+        assert(
+          receiptList.ok &&
+            receiptList.authority === 'device' &&
+            !('email' in receiptList) &&
+            !('phone' in receiptList) &&
+            !('name' in receiptList),
+          'device receipt became verified identity',
+        )
+        assert(
+          receiptList.bookings.length === 2 &&
+            receipts.every((item) =>
+              receiptList.bookings.some((booking) => booking.id === item.booking.id),
+            ),
+          'receipt omitted a concurrent booking or imported older email history',
+        )
+        await receiptPages[0]
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Mina bokningar', exact: true })
+          .click()
+        await receiptPages[0]
+          .getByText(
+            'Här visas bokningar skapade på den här enheten. Öppna mejllänken för tidigare bokningar.',
+            { exact: true },
+          )
+          .waitFor()
+        assert(
+          (await receiptPages[0].getByRole('button', { name: /Visa detaljer/ }).count()) === 2,
+          'confirmation did not open both new bookings immediately',
+        )
+        const refused = await receiptPages[0].evaluate(
+          async (bookingId) =>
+            (
+              await fetch('/api/customer-bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'cancel', bookingId }),
+              })
+            ).json(),
+          a.booking,
+        )
+        assert(refused.ok === false, 'device receipt cancelled an older booking at the same email')
+        await receiptPages[0]
+          .getByRole('button', { name: /Visa detaljer/ })
+          .first()
+          .click()
+        await receiptPages[0]
+          .getByRole('button', { name: 'Avboka tid', exact: true })
+          .first()
+          .click()
+        const confirmCancel = receiptPages[0].getByRole('button', {
+          name: 'Ja, avboka tid',
+          exact: true,
+        })
+        const cancellationResponse = receiptPages[0].waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === '/api/customer-bookings' &&
+            response.request().postDataJSON()?.action === 'cancel',
+        )
+        await confirmCancel.click()
+        const cancellation = await (await cancellationResponse).json()
+        assert(
+          cancellation.ok === true,
+          `device cancellation rejected: ${JSON.stringify(cancellation)}`,
+        )
+        await receiptPages[0].getByText('Tiden är avbokad.', { exact: true }).waitFor()
+        assert(
+          (await listFrom(receiptPages[0])).bookings.length === 1,
+          'device cancellation did not persist',
+        )
+
+        phase(`customer ${engine.name()}: withdrawing optional storage removes only receipt access`)
+        const preferencesPage = await receiptContext.newPage()
+        await preferencesPage.goto(origin, { waitUntil: 'domcontentloaded' })
+        // Live About content can move this footer between pointerdown and pointerup. This auth
+        // scenario uses the real keyboard action; the About UI gate covers pointer interaction.
+        const preferencesLink = preferencesPage.getByRole('link', {
+          name: 'Hantera integritetsinställningar',
+          exact: true,
+        })
+        await preferencesLink.focus()
+        await preferencesPage.keyboard.press('Enter')
+        await preferencesPage.getByRole('checkbox', { name: /Valfri lagring/ }).uncheck()
+        const forgot = preferencesPage.waitForResponse(
+          (r) =>
+            new URL(r.url()).pathname === '/api/customer-bookings' &&
+            r.request().postDataJSON()?.action === 'forget_device',
+        )
+        await preferencesPage.getByRole('button', { name: 'Spara val', exact: true }).click()
+        await forgot
+        assert(
+          !(await receiptContext.cookies()).some(
+            (item) => item.name === '__Host-bladeblend_booking_receipts',
+          ),
+          'withdrawal retained optional credential',
+        )
+        assert(
+          (await listFrom(preferencesPage)).error === 'access_denied',
+          'withdrawal retained receipt authority',
+        )
+        assert(
+          (
+            await db.query(
+              'select count(*)::int as count from public.bookings where id=any($1::uuid[])',
+              [receipts.map((item) => item.booking.id)],
+            )
+          ).rows[0].count === 2,
+          'withdrawal deleted customer bookings',
+        )
+        await receiptContext.close()
+
+        phase(`customer ${engine.name()}: rejected consent still books without optional cookie`)
+        const rejectedContext = await browser.newContext({
+          ignoreHTTPSErrors: true,
+          reducedMotion: 'reduce',
+        })
+        const rejectedPage = await rejectedContext.newPage()
+        await prepareBooking(rejectedPage, b, '12:00', false)
+        const rejectedBooking = await submitBooking(rejectedPage)
+        await rejectedPage
+          .getByText('Öppna länken i bekräftelsemejlet för att se dina bokningar.', { exact: true })
+          .waitFor()
+        assert(
+          !rejectedBooking.receipt_proof &&
+            !(await rejectedContext.cookies()).some(
+              (item) => item.name === '__Host-bladeblend_booking_receipts',
+            ),
+          'rejected storage issued optional receipt',
+        )
+        assert(
+          (await listFrom(rejectedPage)).error === 'access_denied',
+          'rejected consent authenticated submitted contact',
+        )
+        await rejectedContext.close()
+
+        phase(`customer ${engine.name()}: invalid link and rotation revocation`)
+        const context = await browser.newContext({ ignoreHTTPSErrors: true })
+        const page = await context.newPage()
+        page.setDefaultTimeout(WAIT_TIMEOUT)
+        await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+        await showHistory(page, a)
+        const fullSession = (await context.cookies()).find(
+          (cookie) => cookie.name === '__Host-bladeblend_customer_session',
+        )
+        assert(fullSession !== undefined, 'verified customer session cookie missing')
+        await page.evaluate(async () => {
+          const response = await fetch('/api/customer-bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'forget_device' }),
+          })
+          if (!response.ok || (await response.json()).ok !== true)
+            throw new Error('forget_device did not accept the verified-session request')
+        })
+        assert(
+          (await context.cookies()).find((cookie) => cookie.name === fullSession.name)?.value ===
+            fullSession.value && (await listFrom(page)).authority === 'verified',
+          'forgetting optional device access revoked the full email session',
+        )
+        const invalid = await page.evaluate(async () =>
+          (
+            await fetch('/api/customer-bookings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'list', accessToken: 'f'.repeat(64) }),
+            })
+          ).json(),
+        )
+        assert(
+          invalid.ok === false && invalid.error === 'access_denied',
+          'invalid explicit link fell back to an old cookie',
+        )
+        const cross = await context.request.post(`${origin}/api/customer-bookings`, {
+          headers: { Origin: 'https://attacker.example' },
+          data: { action: 'list' },
+        })
+        assert(cross.status() === 403, 'cross-origin customer request was accepted')
+        const replacement = randomBytes(32).toString('hex')
+        await db.query('begin')
+        try {
+          await db.query('select public.rotate_customer_booking_access_token($1,$2,$3,$4,$5)', [
+            a.email,
+            hash(replacement),
+            `v1.${'b'.repeat(80)}`,
+            replacement,
+            'sv',
+          ])
+          // The browser gate tests revocation, not provider sending. No mail job escapes this transaction.
+          await removeQueuedMail([a.email])
+          await db.query('commit')
+        } catch (error) {
+          await db.query('rollback')
+          throw error
+        }
+        const revoked = await page.evaluate(async () =>
+          (
+            await fetch('/api/customer-bookings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'list' }),
+            })
+          ).json(),
+        )
+        assert(
+          revoked.ok === false && revoked.error === 'access_denied',
+          'rotation left old browser session authorized',
+        )
+        await page.goto(`${origin}/${replacement}`, { waitUntil: 'domcontentloaded' })
+        await showHistory(page, a)
+        await context.close()
+        console.log(
+          `Customer browser passed: ${engine.name()}, mobile/desktop, actual cookie/profile switch, blocked cookies, invalid link, rotation, concurrent first bookings, consent and device cancellation.`,
+        )
+      } catch (error) {
+        retainFailure(error)
+        console.error(`Customer browser failure: ${currentPhase}`)
+        for (const context of browser.contexts())
+          for (const page of context.pages()) {
+            console.error(
+              (
+                await page
+                  .locator('body')
+                  .innerText({ timeout: 3000 })
+                  .catch(() => '')
+              ).slice(-1000),
+            )
+            await page
+              .screenshot({ path: join(work, `${engine.name()}-failure.png`), timeout: 3000 })
+              .catch(() => undefined)
+          }
+      } finally {
+        try {
+          await bounded(browser.close(), `customer ${engine.name()} browser.close`)
+        } catch (error) {
+          retainFailure(error)
+        }
+      }
+      if (failed) break
+      await cleanupFixture()
+    }
+  } catch (error) {
+    retainFailure(error)
+  } finally {
+    upstream.closeAllConnections()
+    await new Promise((resolveClose) => upstream.close(resolveClose))
+    if (connected) {
+      try {
+        await cleanupFixture()
+      } catch (error) {
+        retainFailure(error)
+      }
+      try {
+        await db.end()
+      } catch (error) {
+        retainFailure(error)
+      }
+    }
+    stopChildren()
+    const stopped = await Promise.allSettled(
+      children.map((child) =>
+        child.exitCode !== null || child.signalCode !== null
+          ? Promise.resolve()
+          : bounded(
+              new Promise((resolveExit) => child.once('exit', resolveExit)),
+              'local test server cleanup',
+              5000,
+            ),
+      ),
+    )
+    for (const result of stopped)
+      if (result.status === 'rejected') {
+        retainFailure(result.reason)
+        for (const child of children)
+          if (child.pid !== undefined) {
+            try {
+              process.kill(-child.pid, 'SIGKILL')
+            } catch {
+              /* already stopped */
+            }
+          }
+      }
+    process.removeListener('exit', stopChildren)
+    console.log(`Customer browser diagnostics: ${work}`)
+  }
+  if (failed) throw failure
+}
+
+let browser
+let testError
+let failurePhase
+try {
+  if (process.argv.includes('--customer')) {
+    await verifyCustomerBrowser()
+  } else {
+    phase('browser launch')
+    browser = await chromium.launch({ timeout: WAIT_TIMEOUT })
+    phase('public desktop')
+    await verifyPublicPage(browser, { width: 1280, height: 900 })
+    phase('public mobile')
+    await verifyPublicPage(browser, { width: 390, height: 844 })
+    phase('normal-motion gallery')
+    await verifyNormalMotionGalleryKeyboard(browser)
+    phase('static endpoints')
+    const page = await browser.newPage()
+    await verifyStaticEndpoints(page)
+    phase('static endpoint page cleanup')
+    await bounded(page.close(), 'static endpoint page.close')
+    console.log('Browser smoke passed: desktop, mobile, assets, booking, my-bookings, discovery.')
+  }
+} catch (error) {
+  testError = error
+  failurePhase = currentPhase
+  throw error
+} finally {
+  if (browser !== undefined) {
+    try {
+      phase('browser cleanup')
+      await bounded(browser.close(), 'browser.close')
+    } catch (error) {
+      writeSync(
+        2,
+        `[browser-smoke cleanup] ${describeError(error)}; original=${testError === undefined ? 'none' : `${describeError(testError)} (phase: ${failurePhase})`}\n`,
+      )
+      process.exit(1)
+    }
+  }
+  globalThis.clearTimeout(watchdog)
+}
+
+
+===== vitest.config.ts =====
+import { fileURLToPath } from 'node:url'
+import { defineConfig } from 'vitest/config'
+
+// Unit tests run against the pure domain modules (no DOM). The browser flows are covered
+// separately by the visual-regression gate (tools/visual/).
+export default defineConfig({
+  resolve: {
+    alias: {
+      'cloudflare:workers': fileURLToPath(
+        new URL('./tests/unit/helpers/cloudflareWorkers.ts', import.meta.url),
+      ),
+    },
+  },
+  test: {
+    environment: 'node',
+    include: ['tests/unit/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+    },
+  },
+})
+
+
+===== vitest.integration.config.ts =====
+import { defineConfig } from 'vitest/config'
+import { loadStackEnv } from './tests/integration/loadStackEnv.ts'
+
+// Integration tests run the REAL adapters against the RUNNING local Supabase stack. This config
+// loads the stack's env (URL + keys) at load time by shelling out to `supabase status -o env`, then
+// injects it so:
+//   - the adapters' `getSupabase()`/`getAdminClient()` see `import.meta.env.VITE_SUPABASE_URL/
+//     ANON_KEY` (vitest's `test.env` populates BOTH import.meta.env and process.env in the worker), and
+//   - the test files read `SUPABASE_*` / `DB_URL` / `SERVICE_ROLE_KEY` from `process.env` for the
+//     anon/authenticated driver clients and the superuser connection.
+// The admin globalSetup runs in Vitest's MAIN process (where `test.env` is NOT applied), so it loads
+// the same stack env itself via the shared loader — see globalSetup.admin.ts.
+// If the stack is DOWN (or the CLI is unavailable), the shell-out fails, env stays empty, and every
+// suite self-skips — so plain `npm test` (and CI without Docker) stays green.
+
+const stack = loadStackEnv()
+
+/** Only forward the keys when the stack actually reported them (keeps the skip-guard honest). */
+const testEnv: Record<string, string> = {}
+if (stack.API_URL !== undefined && stack.ANON_KEY !== undefined) {
+  // The adapters read these (VITE_-prefixed) from import.meta.env.
+  testEnv.VITE_SUPABASE_URL = stack.API_URL
+  testEnv.VITE_SUPABASE_ANON_KEY = stack.ANON_KEY
+  // The test files read these (un-prefixed) from process.env.
+  testEnv.SUPABASE_URL = stack.API_URL
+  testEnv.SUPABASE_ANON_KEY = stack.ANON_KEY
+  // Must match local/CI Edge configuration; never a production credential.
+  testEnv.CUSTOMER_GATEWAY_SECRET =
+    process.env.CUSTOMER_GATEWAY_SECRET ?? 'ci-customer-gateway-secret-not-for-production'
+  if (stack.SERVICE_ROLE_KEY !== undefined)
+    testEnv.SUPABASE_SERVICE_ROLE_KEY = stack.SERVICE_ROLE_KEY
+  if (stack.DB_URL !== undefined) testEnv.SUPABASE_DB_URL = stack.DB_URL
+}
+
+export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['tests/integration/**/*.test.ts'],
+    env: testEnv,
+    // Seed the admin test identities (owner + barber auth users + their profiles) once before the
+    // suite, and remove them after. A no-op when the stack env is absent (the suites self-skip).
+    globalSetup: ['tests/integration/globalSetup.admin.ts'],
+    // Real network + a live DB; give each test room and run files serially to keep table-truncation
+    // isolation simple and deterministic (no cross-file races on the shared `bookings`/`reviews`).
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
+    fileParallelism: false,
+  },
+})
+
+
+===== src/admin/views/viewTypes.ts =====
+// Shared type re-exports for the admin views. Keeps each view's import list short and gives the
+// style bundle a stable name (`AdminStylesBundle`) the views reference.
+
+export type { AdminStyles as AdminStylesBundle } from '../adminStyles'
+export type {
+  AboutKey,
+  AdminBarber,
+  AdminBarberId,
+  AdminBooking,
+  AdminService,
+  GalleryImage,
+  GalleryKind,
+  RecurringBreak,
+  SlotBlock,
+  TimeOff,
+  Weekday,
+  WeekSchedule,
+} from '../types'
+
