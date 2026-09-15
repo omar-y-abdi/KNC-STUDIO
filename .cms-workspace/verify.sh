@@ -15,6 +15,12 @@ if [[ "$PHASE" == model ]]; then
   deno check --config supabase/functions/cms-studio/deno.json supabase/functions/cms-studio/index.ts
   exit
 fi
+if [[ "$PHASE" == database ]]; then
+  trap 'npx supabase stop --no-backup || true' EXIT
+  npx supabase start
+  npx supabase test db --local
+  exit
+fi
 if [[ -f "$CONTROL/integrate.mjs" ]]; then node "$CONTROL/integrate.mjs" "$ROOT"; fi
 npm run lint
 npm run typecheck
