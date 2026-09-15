@@ -18,18 +18,32 @@ jobs:
           repository: omar-y-abdi/KNC-STUDIO
           github-token: ${{ github.token }}
           path: evidence
-      - name: Read bounded browser failure state and Worker errors
+      - name: Inspect the captured authentication request boundary
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re,json
-          for p in sorted(Path('evidence').rglob('*')):
-            if p.name=='report.json' or p.name.endswith('-failure.txt'):
-              text=p.read_text()
-              text=re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',text)
-              text=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted token]',text)
-              print('\n===== '+str(p)+' =====\n'+text[:18000])
-            if p.name=='worker.log':
-              lines=p.read_text().splitlines()
-              print('\n===== WORKER DIAGNOSTICS =====\n'+'\n'.join(line for line in lines if any(s in line.lower() for s in ['error','warn','get /admin','get /login']))[-20000:])
+          from zipfile import ZipFile
+          from urllib.parse import urlsplit
+          import json,re
+          def clean(s):
+            s=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted]',s)
+            return re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',s)
+          for p in sorted(Path('evidence').rglob('*trace.zip')):
+            if 'owner-studio' not in p.name: continue
+            print('TRACE',p)
+            with ZipFile(p) as z:
+              for name in z.namelist():
+                if not name.endswith(('.network','.trace')):continue
+                for line in z.read(name).decode().splitlines():
+                  try: row=json.loads(line)
+                  except ValueError:continue
+                  if row.get('type')=='console':
+                    print('CONSOLE',clean(json.dumps(row))[:2200])
+                  item=row.get('snapshot',{})
+                  if 'request' in item:
+                    url=item['request'].get('url',''); parsed=urlsplit(url)
+                    if any(key in url for key in ['54321','/admin','/login']):
+                      result={'url':parsed.scheme+'://'+parsed.netloc+parsed.path,'method':item['request'].get('method'),'status':item.get('response',{}).get('status'),'failure':item.get('_failureText')}
+                      result['csp']=[h['value'] for h in item.get('response',{}).get('headers',[]) if h['name'].lower()=='content-security-policy']
+                      print('NETWORK',clean(json.dumps(result)))
           PY
