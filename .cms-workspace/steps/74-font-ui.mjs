@@ -9,7 +9,7 @@ export function integrate(root) {
   prepend('src/cms/PublicPage.tsx', "import { fontFaceCss } from '../../shared/cms-fonts'\nimport { SUPABASE_URL } from '../backend/config'\n")
   edit('src/cms/PublicPage.tsx', '<CmsMarkup html={content.html}', "<style>{fontFaceCss(value.presentation, SUPABASE_URL ?? 'https://unconfigured.invalid')}</style><CmsMarkup html={content.html}")
   prepend('src/cms/publicWorker.ts', "import { fontFaceCss } from '../../shared/cms-fonts'\n")
-  edit('src/cms/publicWorker.ts', '  const body = renderCmsPage(await shell.text(), page, url, siteOrigin)', "  const base = await shell.text()\n    const faces = fontFaceCss(value?.presentation ?? { fonts: {} } as CmsPresentation, env.SUPABASE_URL ?? siteOrigin)\n    const body = renderCmsPage(base.replace('</head>', `<style>${faces}</style></head>`), page, url, siteOrigin)")
+  edit('src/cms/publicWorker.ts', '  const body = renderCmsPage(await shell.text(), page, url, siteOrigin)', "  const base = await shell.text()\n    const faces = value ? fontFaceCss(value.presentation, env.SUPABASE_URL ?? siteOrigin) : ''\n    const body = renderCmsPage(base.replace('</head>', `<style>${faces}</style></head>`), page, url, siteOrigin)")
   const assets='src/admin/cms/Assets.tsx'
   edit(assets, 'onAssets, choose, replace, purpose', 'onAssets, choose, replace, onFont, purpose')
   edit(assets, 'replace?: (asset: CmsAsset) => void;', 'replace?: (asset: CmsAsset) => void; onFont?: (asset: CmsAsset) => void;')
@@ -34,6 +34,6 @@ export function integrate(root) {
   useEffect(() => {
     if (!host.current)`)
   edit(authored, 'gjs.on(\'canvas:frame:load\', () => {', "gjs.on('canvas:frame:load', () => {\n      applyFonts()")
-  edit(authored, '<div class="cms-authored-toolbar">', `<div class="cms-authored-toolbar"><label>Tilldela typsnitt <select aria-label="Tilldela typsnitt" value="" onChange={event => { const component = editor.current?.getSelected(); if (!component) { props.onError('Välj ett textlager först.'); return }; const value = event.currentTarget.value; if (value) component.addStyle({ 'font-family': value }); else component.removeStyle('font-family') }}>{fontOptions(props.presentation).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>`)
+  edit(authored, '<aside class="cms-authored-inspector">', `<aside class="cms-authored-inspector"><label>Tilldela typsnitt <select aria-label="Tilldela typsnitt" value="" onChange={event => { const component = editor.current?.getSelected(); if (!component) { props.onError('Välj ett textlager först.'); return }; const value = event.currentTarget.value; if (value) component.addStyle({ 'font-family': value }); else component.removeStyle('font-family') }}>{fontOptions(props.presentation).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>`)
   edit('src/admin/cms/Studio.tsx', 'variant={variant} mode={mode}', 'variant={variant} presentation={document.presentation} mode={mode}')
 }
