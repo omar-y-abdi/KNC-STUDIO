@@ -24,9 +24,8 @@ export function integrate(root) {
   write(mobile,result)
   const editor = 'src/admin/cms/AuthoredEditor.tsx'
   edit(editor, 'mode: CmsMode; width: number; locked: boolean', 'mode: CmsMode; width: number; zoom: number; locked: boolean')
-  edit(editor, "const applying = useRef(false)", "const appliedMode = useRef(props.mode)\n  const applying = useRef(false)")
-  edit(editor, 'if (key === emitted.current) return', 'if (key === emitted.current && appliedMode.current === props.mode) return')
-  edit(editor, 'emitted.current = key\n', 'emitted.current = key; appliedMode.current = props.mode\n')
+  const editorSource = read(editor)
+  if (!editorSource.includes("appliedSource = useRef('')") || !editorSource.includes("const prefix = `${props.identity}\\0${props.mode}\\0`")) throw new Error('Authored editor must track the applied source by identity and mode')
   edit(editor, "widthMedia: '767px'", "widthMedia: '768px'")
   edit(editor, "useEffect(() => { const gjs = editor.current; if (gjs) gjs.setDevice(props.width <= 767 ? 'Mobile' : 'Desktop') }, [props.width])", "useEffect(() => {\n    const gjs = editor.current\n    if (!gjs) return\n    const name = props.width <= 768 ? 'Mobile' : 'Desktop'\n    gjs.DeviceManager.get(name)?.set('width', `${props.width}px`)\n    gjs.setDevice(name)\n    gjs.Canvas.setZoom(props.zoom)\n  }, [props.width, props.zoom])")
   edit('src/admin/cms/Studio.tsx', 'variant={variant} mode={mode} width={width}', 'variant={variant} mode={mode} width={width} zoom={zoom}')
