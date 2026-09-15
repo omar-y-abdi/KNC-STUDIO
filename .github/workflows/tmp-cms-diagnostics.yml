@@ -18,7 +18,7 @@ jobs:
           repository: omar-y-abdi/KNC-STUDIO
           github-token: ${{ github.token }}
           path: evidence
-      - name: Inspect the captured authentication request boundary
+      - name: Inspect captured authentication boundary
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -28,8 +28,9 @@ jobs:
           def clean(s):
             s=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted]',s)
             return re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',s)
-          for p in sorted(Path('evidence').rglob('*trace.zip')):
-            if 'owner-studio' not in p.name: continue
+          print('ARTIFACT PATHS', [str(p) for p in Path('evidence').rglob('*') if p.is_file()])
+          for p in sorted(Path('evidence').rglob('*.zip')):
+            if 'owner-studio' not in p.name:continue
             print('TRACE',p)
             with ZipFile(p) as z:
               for name in z.namelist():
