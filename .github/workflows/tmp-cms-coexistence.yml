@@ -1,0 +1,39 @@
+name: Temporary CMS legacy coexistence verification
+on:
+  push:
+    branches: [tmp-knc-cms-build-20260915]
+    paths:
+      - .github/workflows/tmp-cms-coexistence.yml
+      - .cms-workspace/payload/tests/unit/cmsLegacyCoexistence.test.ts
+      - .cms-workspace/steps/20-admin-routing.mjs
+permissions:
+  contents: read
+concurrency:
+  group: cms-legacy-coexistence
+  cancel-in-progress: false
+jobs:
+  coexistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Test current integration against the preserved admin contract
+        run: |
+          set -euo pipefail
+          control="$PWD/.cms-workspace"
+          root="$RUNNER_TEMP/knc-coexistence"
+          git worktree add --detach "$root" 9a17e4adce3ce3997032a5dc74fd08722fe991bd
+          node "$control/apply.mjs" "$root"
+          cp -a "$control/payload/." "$root/"
+          cd "$root"
+          npm ci
+          node "$control/run-integration.mjs" "$root"
+          npm exec vitest -- run tests/unit/cmsLegacyCoexistence.test.ts --reporter=verbose
+          test -z "$(git diff --name-only -- src/admin/views src/admin/adapters src/admin/auth.ts src/admin/useAdminSession.ts src/admin/navigationState.ts)"
+          printf '\nVerified: legacy views, adapters, auth and navigation helpers are unchanged.\n'
