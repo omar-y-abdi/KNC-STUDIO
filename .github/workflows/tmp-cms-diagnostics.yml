@@ -1,0 +1,35 @@
+name: Temporary CMS failure diagnostics
+on:
+  push:
+    branches: [tmp-knc-cms-terminal-20260915]
+    paths: [.github/workflows/tmp-cms-diagnostics.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-final-firefox-evidence
+          run-id: 34982036763
+          repository: omar-y-abdi/KNC-STUDIO
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Read bounded browser failure state and Worker errors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,json
+          for p in sorted(Path('evidence').rglob('*')):
+            if p.name=='report.json' or p.name.endswith('-failure.txt'):
+              text=p.read_text()
+              text=re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',text)
+              text=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted token]',text)
+              print('\n===== '+str(p)+' =====\n'+text[:18000])
+            if p.name=='worker.log':
+              lines=p.read_text().splitlines()
+              print('\n===== WORKER DIAGNOSTICS =====\n'+'\n'.join(line for line in lines if any(s in line.lower() for s in ['error','warn','get /admin','get /login']))[-20000:])
+          PY
