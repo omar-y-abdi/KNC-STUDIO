@@ -8,6 +8,8 @@ export function integrate(root) {
     if (replies.some(reply => reply.status === 503)) {
       const missing = await service.rpc('internal_cms_missing_media', { p_actor: ownerId, p_references: [] })
       console.error('CMS_PUBLICATION_DIAGNOSTIC', JSON.stringify({ missingMediaCode: missing.error?.code, missingMediaMessage: missing.error?.message, missingMediaData: missing.data }))
+      const direct = await service.rpc('internal_cms_publish', { p_actor: ownerId, p_document: first.document, p_base_revision: first.baseRevision, p_base_fingerprint: first.baseFingerprint, p_request_id: first.requestId })
+      console.error('CMS_REST_PUBLICATION_PROBE', JSON.stringify({ code: direct.error?.code, message: direct.error?.message, details: direct.error?.details, hint: direct.error?.hint, committed: !direct.error }))
       await withClient(env.dbUrl, async db => {
         await db.query('begin')
         try {
