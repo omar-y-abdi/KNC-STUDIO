@@ -1,0 +1,67 @@
+name: Temporary CMS database integration
+on:
+  push:
+    branches: [tmp-knc-cms-build-20260915]
+    paths:
+      - .github/workflows/tmp-cms-database.yml
+      - .cms-workspace/db-run.json
+permissions:
+  contents: read
+concurrency:
+  group: temporary-cms-database
+  cancel-in-progress: false
+jobs:
+  database:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Prepare isolated candidate
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/cms-db-candidate"
+          git worktree add --detach "$root" 9a17e4adce3ce3997032a5dc74fd08722fe991bd
+          echo "CANDIDATE=$root" >> "$GITHUB_ENV"
+          node .cms-workspace/apply.mjs "$root"
+          cp -a .cms-workspace/payload/. "$root/"
+          cd "$root"
+          npm ci
+          node "$GITHUB_WORKSPACE/.cms-workspace/run-integration.mjs" "$root"
+          mkdir -p "$RUNNER_TEMP/cms-db-evidence"
+          cat > supabase/functions/.env <<'EOF'
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          IP_SALT=ci-booking-ip-salt-not-for-production
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+          CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+          CMS_ALLOWED_ORIGINS=http://127.0.0.1:4173,http://127.0.0.1:4188
+          PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+          EOF
+      - name: Start isolated Supabase and test all database policies
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npx supabase start > "$RUNNER_TEMP/cms-db-evidence/start.log" 2>&1 || { tail -n 120 "$RUNNER_TEMP/cms-db-evidence/start.log"; exit 1; }
+          npx supabase test db --local 2>&1 | tee "$RUNNER_TEMP/cms-db-evidence/pgtap.log"
+      - name: Run real adapter integration
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run test:integration 2>&1 | tee "$RUNNER_TEMP/cms-db-evidence/integration.log"
+      - name: Retain database evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-database-evidence
+          path: ${{ runner.temp }}/cms-db-evidence/*.log
+          retention-days: 14
+      - name: Stop isolated stack
+        if: always()
+        run: |
+          if test -d "$CANDIDATE"; then cd "$CANDIDATE"; npx supabase stop --no-backup; fi
