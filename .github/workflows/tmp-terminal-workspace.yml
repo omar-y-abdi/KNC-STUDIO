@@ -38,11 +38,11 @@ jobs:
           tar --exclude=.git --exclude=node_modules --exclude=output --exclude=artifacts --exclude=dist --exclude=.env --exclude='.env.*' --exclude='.dev.vars*' --exclude=supabase/.temp -czf "$OUT/candidate.tar.gz" .
           tar -czf "$OUT/node_modules.tar.gz" node_modules
           printf '%s\n' '9a17e4adce3ce3997032a5dc74fd08722fe991bd' > "$OUT/BASE"
-          printf '%s\n' 'd37fee43f4e19183340f69948acb5999f48d4905' > "$OUT/CHECKPOINT"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD > "$OUT/CHECKPOINT"
           cd "$OUT"
           sha256sum repo.bundle candidate.tar.gz node_modules.tar.gz node deno > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: cms-terminal-workspace
+          name: cms-terminal-workspace-current
           path: ${{ runner.temp }}/cms-terminal/*
           retention-days: 3
