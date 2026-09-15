@@ -11,5 +11,8 @@ describe('CMS setup documentation contract', () => {
     expect(setup).toContain('upload-image')
     expect(setup).toContain('VITE_SUPABASE_URL')
     expect(setup).toContain('VITE_SUPABASE_ANON_KEY')
+    expect(setup).toContain('npx supabase functions deploy cms-studio --project-ref "$PROJECT_REF" --use-api')
+    expect(setup).toContain('npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"')
+    expect(setup).not.toContain('npx supabase functions deploy upload-image --project-ref "$PROJECT_REF" --use-api')
   })
 })
