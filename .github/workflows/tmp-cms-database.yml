@@ -54,6 +54,15 @@ jobs:
           set -euo pipefail
           cd "$CANDIDATE"
           npm run test:integration 2>&1 | tee "$RUNNER_TEMP/cms-db-evidence/integration.log"
+      - name: Record correlated non-secret CMS failure codes
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/cms-db-evidence"
+          container="$(docker ps --filter name=supabase_edge_runtime --format '{{.ID}}' | head -n 1)"
+          if test -n "$container"; then
+            docker logs "$container" 2>&1 | grep '"event":"cms_studio_failure"' > "$RUNNER_TEMP/cms-db-evidence/edge-errors.log" || true
+            cat "$RUNNER_TEMP/cms-db-evidence/edge-errors.log"
+          fi
       - name: Retain database evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
