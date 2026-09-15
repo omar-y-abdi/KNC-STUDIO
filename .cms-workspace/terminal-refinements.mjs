@@ -40,8 +40,8 @@ patch('tools/e2e/cms-extended.mjs', source => source
   .replace("await input.setInputFiles({ name, mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNDsAAAAASUVORK5CYII=', 'base64') })", "await input.setInputFiles(fixture)")
   .replace("assert.equal(restored.data.design, null)", "assert.equal(restored.data.design ?? null, null)"))
 patch('src/ui/LazySurface.tsx', source => source.replace(
-  '  static override getDerivedStateFromError(): { failed: boolean } {\n    return { failed: true }\n  }\n',
-  "  static override getDerivedStateFromError(): { failed: boolean } {\n    return { failed: true }\n  }\n\n  override componentDidCatch(error: Error): void {\n    console.error('CMS_LAZY_BOUNDARY_ERROR', error.stack ?? error.message)\n  }\n"))
+  '  override render(): ComponentChildren {',
+  "  override componentDidCatch(error: Error): void {\n    console.error('CMS_LAZY_BOUNDARY_ERROR', error.stack ?? error.message)\n  }\n\n  override render(): ComponentChildren {"))
 patch('docs/CMS-IMPLEMENTATION.md', source => source.replace(
   'Owner navigation becomes Editing, My schedule, My bookings, Services, All bookings, Settings. The existing operational views and account/session gate remain. `/admin/cms/` is owner-only. Barber self-service retains its existing profile and operational permissions. Old owner content links resolve into the studio instead of silently selecting another panel.',
   'The owner receives one additional Editing / Redigering entry at `/admin/cms/`. Every existing admin tab, legacy URL parameter, operational view and account/session gate remains available. No old link is redirected into the studio. Barber self-service keeps its existing profile and operational permissions. The possible later six-entry navigation is explicitly deferred to the separate acceptance and retirement procedure in `docs/CMS-LEGACY-RETIREMENT.md`.'))
