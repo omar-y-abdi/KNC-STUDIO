@@ -28,8 +28,9 @@ describe('native CMS preview boundaries', () => {
 describe('authored canvas mode synchronization', () => {
   const editor = readFileSync('src/admin/cms/AuthoredEditor.tsx', 'utf8')
   it('does not skip applying a new theme just because the document is unchanged', () => {
-    expect(editor).toContain('appliedMode.current === props.mode')
-    expect(editor).toContain('appliedMode.current = props.mode')
+    expect(editor).toContain('const prefix = `${props.identity}\\0${props.mode}\\0`')
+    expect(editor).toContain('appliedSource.current === targetKey')
+    expect(editor).toContain('appliedSource.current = targetKey')
   })
   it('never dereferences a missing GrapesJS frame while its cross-browser canvas is starting', () => {
     expect(editor).toContain('const hardenFrame = (): void =>')
