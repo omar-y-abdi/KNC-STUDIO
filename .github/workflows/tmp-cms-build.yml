@@ -1,0 +1,64 @@
+name: Temporary KNC CMS verification
+on:
+  push:
+    branches: [tmp-knc-cms-build-20260915]
+permissions:
+  contents: write
+concurrency:
+  group: temporary-knc-cms
+  cancel-in-progress: false
+jobs:
+  source-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read pinned source inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess, json, base64, os
+          root=pathlib.Path.cwd()
+          groups={
+            'navigation':['src/admin/AdminApp.tsx','src/admin/AdminShell.tsx','src/admin/index.tsx','src/admin/index.ts','src/admin/navigationState.ts','src/admin/useAdminSession.ts','src/admin/types.ts','src/app/Root.tsx','worker/index.ts','worker.ts','wrangler.jsonc','wrangler.toml','vite.config.ts','tsconfig.app.json','eslint.config.js','src/site/routeMetadata.ts'],
+            'adapters':sorted(str(p) for p in root.glob('src/admin/adapters/*') if p.is_file()),
+            'site': ['src/app/App.tsx','src/app/DesktopSite.tsx','src/app/MobileSite.tsx','src/app/shared.ts']+sorted(str(p) for p in root.glob('src/about/*') if p.is_file())+sorted(str(p) for p in root.glob('src/site/*') if p.is_file()),
+            'profile-views':['src/admin/views/ProfileView.tsx','src/admin/views/BarbersView.tsx','src/admin/views/SettingsView.tsx','src/admin/views/BarberEditor.tsx'],
+            'content-views':['src/admin/views/SiteView.tsx','src/admin/views/AboutView.tsx','src/admin/views/MailView.tsx','src/admin/views/HomepageReplicaPreview.tsx','src/admin/adminSchemas.ts','src/admin/adminClient.ts'],
+            'email':sorted(str(p) for p in root.glob('supabase/functions/_shared/*') if p.is_file() and ('mail' in p.name.lower() or 'template' in p.name.lower()))+['src/admin/adapters/emailTemplatesAdmin.ts','supabase/functions/send-confirmation/index.ts','supabase/functions/upload-image/index.ts'],
+            'test-harness':['tools/e2e/admin-state.mjs','tools/e2e/smoke.mjs','vitest.config.ts','vitest.integration.config.ts','src/admin/views/viewTypes.ts'],
+          }
+          paths=subprocess.check_output(['git','ls-tree','-r','--name-only','9a17e4adce3ce3997032a5dc74fd08722fe991bd'],text=True)
+          reports={'inventory':paths}
+          for group,files in groups.items():
+            out=[]
+            for raw in dict.fromkeys(files):
+              p=root/raw
+              if not p.is_file():continue
+              name=str(p.relative_to(root))
+              out+=['\n===== '+name+' =====\n',p.read_text()+'\n']
+            reports[group]=''.join(out)
+          for name,text in reports.items():
+            path='.cms-workspace/audit/'+name+'.txt'
+            repo=os.environ['GITHUB_REPOSITORY']; branch='tmp-knc-cms-build-20260915'
+            query=subprocess.run(['gh','api',f'repos/{repo}/contents/{path}?ref={branch}'],capture_output=True,text=True)
+            data={'message':'chore: record isolated source audit','branch':branch,'content':base64.b64encode(text.encode()).decode()}
+            if query.returncode==0:data['sha']=json.loads(query.stdout)['sha']
+            subprocess.run(['gh','api','-X','PUT',f'repos/{repo}/contents/{path}','--input','-'],input=json.dumps(data),text=True,check=True,stdout=subprocess.DEVNULL)
+            print(name, len(text), 'bytes')
+          PY
+      - name: Baseline install and verify
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          npm run deploy:dry-run
