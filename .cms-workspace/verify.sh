@@ -10,6 +10,12 @@ if [[ "$PHASE" == red ]]; then
   npm exec vitest -- run tests/unit/cmsContract.test.ts
   exit
 fi
+if [[ "$PHASE" == model ]]; then
+  npm exec vitest -- run tests/unit/cmsModel.test.ts
+  deno check --config supabase/functions/cms-studio/deno.json supabase/functions/cms-studio/index.ts
+  exit
+fi
+if [[ -f "$CONTROL/integrate.mjs" ]]; then node "$CONTROL/integrate.mjs" "$ROOT"; fi
 npm run lint
 npm run typecheck
 npm test
