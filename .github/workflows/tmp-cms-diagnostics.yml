@@ -18,26 +18,27 @@ jobs:
           repository: omar-y-abdi/KNC-STUDIO
           github-token: ${{ github.token }}
           path: evidence
-      - name: Inspect native preview frame state
+      - name: Inspect captured preview frame snapshot
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
-          import re
-          needles=['Väntar på redigeringsdokumentet','Laddar adminpanelen','Kunde inte nå servern','Endast ägaren','data-cms-node','cms-preview','cms-studio']
+          import json
           p=next(Path('evidence').rglob('owner-studio-native-preview.zip'))
-          print('TRACE',p)
           with ZipFile(p) as z:
-            for name in z.namelist():
-              data=z.read(name)
-              try: text=data.decode('utf-8')
-              except UnicodeDecodeError: continue
-              hits=[needle for needle in needles if needle in text]
-              if not hits: continue
-              print('\nRESOURCE',name,'HITS',hits)
-              for needle in hits:
-                for match in list(re.finditer(re.escape(needle),text))[:5]:
-                  start=max(0,match.start()-350); end=min(len(text),match.end()+650)
-                  print('---',needle,'---')
-                  print(text[start:end].replace('\n',' ')[:1600])
+            text=z.read('trace.trace').decode(errors='replace')
+            count=0
+            for line in text.splitlines():
+              try: row=json.loads(line)
+              except ValueError: continue
+              if row.get('type')!='frame-snapshot': continue
+              snap=row.get('snapshot',{})
+              url=snap.get('frameUrl','')
+              if '/admin/cms/preview' not in url: continue
+              count+=1
+              print('\nPREVIEW SNAPSHOT',count,'URL',url,'MAIN',snap.get('isMainFrame'))
+              html=json.dumps(snap.get('html'),ensure_ascii=False)
+              print(html[:12000])
+              print('RESOURCE_OVERRIDES',json.dumps(snap.get('resourceOverrides'),ensure_ascii=False)[:3000])
+            print('TOTAL',count)
           PY
