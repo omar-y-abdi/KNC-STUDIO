@@ -53,8 +53,10 @@ Deploy the new owner CMS boundary and the updated image gateway from the same re
 ```bash
 export PROJECT_REF="<your-supabase-project-ref>"
 npx supabase functions deploy cms-studio --project-ref "$PROJECT_REF" --use-api
-npx supabase functions deploy upload-image --project-ref "$PROJECT_REF" --use-api
+npx supabase functions deploy upload-image --project-ref "$PROJECT_REF"
 ```
+
+`cms-studio` can use API bundling because it has no static runtime asset. `upload-image` must use the local Docker bundler: it ships `supabase/functions/upload-image/magick.wasm`, and `--use-api` must not be used for that deployment.
 
 `cms-studio` requires an authenticated, enabled owner whose forced-password-change gate is clear. Authorization is checked again in PostgreSQL. `upload-image` keeps its existing authenticated image path and adds the owner-only CMS asset path; ImageMagick decoding and `magick.wasm` remain part of that function's deployment.
 
