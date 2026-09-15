@@ -1,0 +1,1938 @@
+
+===== src/admin/adapters/aboutAdmin.ts =====
+// About-content admin adapter (owner-only writes). Reads every (key,lang) cell and upserts edits
+// (PK key+lang). Anon can read; only the owner may write (about_*_owner RLS policies). This adapter
+// powers the admin "Om oss" editor; the public site reads the same table via its own adapter.
+//
+// Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import { aboutRow, aboutRows, parseWith } from '../adminSchemas'
+import type { Lang } from '../../i18n/index'
+import type { AboutKey, AboutRow, AdminResult } from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa innehållet.'
+const WRITE_ERROR = 'Kunde inte spara texten. Försök igen.'
+
+/** Read every about-content cell (both languages, all keys). */
+export async function listAbout(): Promise<AdminResult<readonly AboutRow[]>> {
+  try {
+    const { data, error } = await getAdminClient().from('about_content').select('key,lang,value')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(aboutRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map((r) => ({ key: r.key, lang: r.lang, value: r.value })))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Upsert one cell's value (owner-only). Returns the saved row. */
+export async function saveAbout(
+  key: AboutKey,
+  lang: Lang,
+  value: string,
+): Promise<AdminResult<AboutRow>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('about_content')
+      .upsert({ key, lang, value }, { onConflict: 'key,lang' })
+      .select('key,lang,value')
+      .single()
+    if (error !== null || data === null) {
+      if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra texten.')
+      return err('network', WRITE_ERROR)
+    }
+    const parsed = parseWith(aboutRow, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok({ key: parsed.value.key, lang: parsed.value.lang, value: parsed.value.value })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/barberAccountAdmin.ts =====
+// Adapter for the `admin-create-barber` edge function. The function is OWNER-gated server-side
+// (JWT → profiles.role check); this adapter just packages the call and maps the typed error codes
+// to Swedish user-facing messages. Uses the admin client (anon key + owner session JWT — the edge
+// function receives the Authorization header automatically).
+//
+// Boundary discipline: maps BOTH invoke transport errors and `{ok:false,error}` bodies to an
+// `AdminResult`. Never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import type { AdminResult } from '../types'
+import { err, ok } from '../types'
+
+const GENERIC_ERROR = 'Kunde inte skapa kontot. Försök igen.'
+const ACCESS_ERROR = 'Kunde inte ändra kontoåtkomsten. Försök igen.'
+
+export interface BarberAccessResult {
+  readonly enabled: boolean
+  readonly authSyncPending: boolean
+}
+
+/** Map an edge function error code to a Swedish `AdminResult<void>` error. */
+function mapErrorCode(code: string | undefined): AdminResult<void> {
+  switch (code) {
+    case 'email_taken':
+      return err('validation', 'E-posten används redan.')
+    case 'barber_linked':
+      return err('validation', 'Barberaren har redan ett kopplat konto.')
+    case 'account_active':
+      return err('validation', 'Kontot är redan aktiverat.')
+    case 'email_mismatch':
+      return err('validation', 'Ange e-postadressen som är kopplad till kontot.')
+    case 'invite_send_failed':
+      return err('network', 'Kontot kunde inte bjudas in. Försök igen.')
+    case 'forbidden':
+      return err('forbidden', 'Endast ägaren kan skapa konton.')
+    case 'invalid_payload':
+      return err('validation', 'Ogiltig e-post eller barberare.')
+    default:
+      return err('network', GENERIC_ERROR)
+  }
+}
+
+function mapAccessError(code: string | undefined): AdminResult<BarberAccessResult> {
+  switch (code) {
+    case 'not_linked':
+      return err('not_found', 'Barberaren saknar ett kopplat konto.')
+    case 'forbidden':
+      return err('forbidden', 'Endast ägaren kan ändra kontoåtkomst.')
+    case 'invalid_payload':
+      return err('validation', 'Ogiltig barberare.')
+    default:
+      return err('network', ACCESS_ERROR)
+  }
+}
+
+export async function setBarberAccountAccess(
+  barberId: string,
+  enabled: boolean,
+): Promise<AdminResult<BarberAccessResult>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
+      body: { action: 'set_access', barber_id: barberId, enabled },
+    })
+
+    let payload: unknown = data
+    if (payload === null && error !== null) {
+      try {
+        const response = (error as unknown as { context?: Response }).context
+        if (response === undefined) return err('network', ACCESS_ERROR)
+        payload = await response.json()
+      } catch {
+        return err('network', ACCESS_ERROR)
+      }
+    }
+    if (typeof payload !== 'object' || payload === null) return err('network', ACCESS_ERROR)
+    const row = payload as Record<string, unknown>
+    if (row['ok'] === false) return mapAccessError(row['error'] as string | undefined)
+    if (
+      row['ok'] !== true ||
+      typeof row['account_enabled'] !== 'boolean' ||
+      typeof row['auth_sync_pending'] !== 'boolean'
+    ) {
+      return err('malformed', ACCESS_ERROR)
+    }
+    return ok({
+      enabled: row['account_enabled'],
+      authSyncPending: row['auth_sync_pending'],
+    })
+  } catch {
+    return err('network', ACCESS_ERROR)
+  }
+}
+
+/**
+ * Ask the `admin-create-barber` edge function to provision a Supabase auth login for an existing
+ * barber. The owner's JWT is forwarded automatically by the admin client; the function validates
+ * the role server-side. On success the barber receives a single-use invitation to create a personal
+ * password. No shared credential is created or returned.
+ *
+ * Handles both supabase-js v2 behaviour variants:
+ *   - Some versions return `{ data, error:null }` on 2xx and `{ data:null, error }` on non-2xx.
+ *   - Others may populate `data` even on non-2xx; `data?.ok` is checked first.
+ */
+export async function createBarberAccount(
+  email: string,
+  barberId: string,
+  lang: 'sv' | 'en',
+): Promise<AdminResult<void>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('admin-create-barber', {
+      body: { email, barber_id: barberId, lang },
+    })
+
+    // Check the typed body first — some supabase-js versions return data even on non-2xx.
+    if (data !== null && typeof data === 'object') {
+      const d = data as Record<string, unknown>
+      if (d['ok'] === true) return ok(undefined)
+      if (d['ok'] === false) return mapErrorCode(d['error'] as string | undefined)
+    }
+
+    if (error !== null) {
+      // Non-2xx response: try to read the typed error body from the response context.
+      try {
+        const ctx = (error as unknown as { context?: Response }).context
+        if (ctx !== undefined) {
+          const body = (await ctx.json()) as Record<string, unknown>
+          if (body['ok'] === false) return mapErrorCode(body['error'] as string | undefined)
+        }
+      } catch {
+        // Parse failure — fall through to generic error below.
+      }
+      return err('network', GENERIC_ERROR)
+    }
+
+    // Unexpected: no data, no error.
+    return err('network', GENERIC_ERROR)
+  } catch {
+    return err('network', GENERIC_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/barberPhotoAdmin.ts =====
+import { getAdminClient } from '../adminClient'
+import {
+  barberPhotoRowT,
+  imageDeleteResponse,
+  parseWith,
+  uploadBarberPhotoResponse,
+} from '../adminSchemas'
+import type { AdminBarberId, AdminResult } from '../types'
+import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
+
+const BUCKET = 'barber-photos'
+const READ_ERROR = 'Kunde inte läsa profilbilden.'
+const WRITE_ERROR = 'Kunde inte ladda upp bilden. Försök igen.'
+const DELETE_ERROR = 'Kunde inte ta bort bilden. Försök igen.'
+const FORBIDDEN = 'Du har inte behörighet för detta.'
+const VALIDATION_ERROR = 'Bilden uppfyller inte kraven.'
+
+function publicUrl(storagePath: string): string {
+  return getAdminClient().storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl
+}
+
+export async function getBarberPhoto(
+  barberId: AdminBarberId,
+): Promise<AdminResult<{ storagePath: string; url: string } | null>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barber_photos')
+      .select('barber_id,storage_path')
+      .eq('barber_id', barberId)
+      .maybeSingle()
+    if (error !== null) return err('network', READ_ERROR)
+    if (data === null) return ok(null)
+    const parsed = parseWith(barberPhotoRowT, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok({ storagePath: parsed.value.storage_path, url: publicUrl(parsed.value.storage_path) })
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function uploadBarberPhoto(
+  barberId: AdminBarberId,
+  file: File,
+): Promise<AdminResult<{ storagePath: string; url: string }>> {
+  const form = new FormData()
+  form.set('kind', 'barber_photo')
+  form.set('file', file)
+  form.set('barberId', barberId)
+
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: WRITE_ERROR,
+        forbidden: FORBIDDEN,
+        validation: VALIDATION_ERROR,
+      })
+
+    const parsed = parseWith(uploadBarberPhotoResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok({ storagePath: parsed.value.path, url: parsed.value.publicUrl })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function removeBarberPhoto(
+  barberId: AdminBarberId,
+  storagePath: string,
+): Promise<AdminResult<{ readonly pending: boolean }>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', {
+      body: { action: 'delete', kind: 'barber_photo', barberId, storagePath },
+    })
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: DELETE_ERROR,
+        forbidden: FORBIDDEN,
+        validation: 'Bilden kunde inte tas bort. Ladda om sidan.',
+      })
+    const parsed = parseWith(imageDeleteResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    return ok({ pending: parsed.value.pending })
+  } catch {
+    return err('network', DELETE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/barbersAdmin.ts =====
+// Barbers admin adapter. Reads the roster (the owner sees inactive too, via the
+// `barbers_select_owner` RLS policy); the owner creates/edits/toggles barbers (owner-only write
+// policies). A barber role can READ the roster but every write is RLS-denied — the UI never offers
+// those controls to a barber, and RLS is the hard backstop.
+//
+// Linked email: v1 links accounts in the Supabase dashboard. We surface a barber's linked auth email
+// READ-ONLY by reading `profiles` (owner can select all) joined to the auth user. Since the client
+// cannot read `auth.users` directly, the owner-readable mapping we expose is
+// profiles.barber_id -> profiles.id; the email itself is shown only when the owner is that account.
+// For a faithful "linked email" display we read it from a dedicated owner RPC if present, else show
+// the linked state (linked / not linked). See `linkedBarberIds`.
+//
+// Boundary discipline: every row Zod-parsed; failure -> AdminError. Never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import {
+  adminDeleteBarberResponse,
+  barberRow,
+  barberRows,
+  parseWith,
+  profileRow,
+} from '../adminSchemas'
+import type {
+  AdminBarber,
+  AdminBarberId,
+  AdminError,
+  AdminResult,
+  BarberAccountState,
+  BarberEdit,
+  DeleteBarberOutcome,
+  NewBarber,
+} from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa barberare.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+
+/** Map a parsed raw barber row into the admin domain type. */
+function toBarber(r: {
+  id: string
+  name: string
+  ig: string
+  role_sv: string
+  role_en: string
+  bio_sv: string
+  bio_en: string
+  active: boolean
+  sort_order: number
+}): AdminBarber {
+  return {
+    id: r.id,
+    name: r.name,
+    ig: r.ig,
+    roleSv: r.role_sv,
+    roleEn: r.role_en,
+    bioSv: r.bio_sv,
+    bioEn: r.bio_en,
+    active: r.active,
+    sortOrder: r.sort_order,
+  }
+}
+
+/** List every barber the caller may see, ordered by sort_order then name (stable). */
+export async function listBarbers(): Promise<AdminResult<readonly AdminBarber[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barbers')
+      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(barberRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map(toBarber))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Create a barber row (owner-only; RLS denies a barber). */
+export async function createBarber(b: NewBarber): Promise<AdminResult<AdminBarber>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barbers')
+      .insert({
+        id: b.id,
+        name: b.name,
+        ig: b.ig,
+        role_sv: b.roleSv,
+        role_en: b.roleEn,
+        bio_sv: b.bioSv,
+        bio_en: b.bioEn,
+        sort_order: b.sortOrder,
+      })
+      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+
+    const parsed = parseWith(barberRow, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok(toBarber(parsed.value))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Update an existing barber by id (owner-only). */
+export async function updateBarber(
+  id: AdminBarberId,
+  edit: BarberEdit,
+): Promise<AdminResult<AdminBarber>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barbers')
+      .update({
+        name: edit.name,
+        ig: edit.ig,
+        role_sv: edit.roleSv,
+        role_en: edit.roleEn,
+        bio_sv: edit.bioSv,
+        bio_en: edit.bioEn,
+        active: edit.active,
+        sort_order: edit.sortOrder,
+      })
+      .eq('id', id)
+      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+
+    const parsed = parseWith(barberRow, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok(toBarber(parsed.value))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Toggle (set) a barber's active flag (owner-only). */
+export async function setBarberActive(
+  id: AdminBarberId,
+  active: boolean,
+): Promise<AdminResult<AdminBarber>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barbers')
+      .update({ active })
+      .eq('id', id)
+      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+
+    const parsed = parseWith(barberRow, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok(toBarber(parsed.value))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Build the `error` branch of a `DeleteBarberOutcome` from a typed kind + Swedish message. */
+function deleteBarberError(kind: AdminError['kind'], message: string): DeleteBarberOutcome {
+  return { kind: 'error', error: { kind, message } }
+}
+
+/**
+ * Delete a barber via the `admin_delete_barber` RPC (owner-only; RLS + the SECURITY DEFINER RPC are
+ * the whole boundary). With `purgeBookings=false` the RPC REFUSES while the barber still has bookings
+ * and returns the counts (total/past/upcoming) so the UI can confirm a purge. A purge may delete only
+ * historical/cancelled bookings; future confirmed bookings always return `has_upcoming` and must be
+ * cancelled or moved first. Returns a structured `DeleteBarberOutcome` (not an `AdminResult`) so the
+ * caller branches on confirmations without a stringly error; authorization, transport and parse
+ * failures collapse to the `error` variant.
+ */
+export async function deleteBarber(
+  id: AdminBarberId,
+  purgeBookings: boolean,
+): Promise<DeleteBarberOutcome> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('admin-manage-barber', {
+      body: {
+        action: 'delete',
+        barber_id: id,
+        purge_bookings: purgeBookings,
+      },
+    })
+    let payload: unknown = data
+    if (payload === null && error !== null) {
+      try {
+        const response = (error as unknown as { context?: Response }).context
+        if (response === undefined) return deleteBarberError('network', WRITE_ERROR)
+        payload = await response.json()
+      } catch {
+        return deleteBarberError('network', WRITE_ERROR)
+      }
+    }
+
+    const parsed = parseWith(adminDeleteBarberResponse, payload)
+    if (!parsed.ok) return deleteBarberError('malformed', WRITE_ERROR)
+
+    const r = parsed.value
+    if (r.ok) {
+      return {
+        kind: 'ok',
+        deletedBookings: r.deleted_bookings,
+        authCleanupPending: r.auth_cleanup_pending,
+      }
+    }
+    if (r.error === 'has_bookings') {
+      return { kind: 'has_bookings', count: r.count, past: r.past, upcoming: r.upcoming }
+    }
+    if (r.error === 'has_upcoming') {
+      return { kind: 'has_upcoming', count: r.count, past: r.past, upcoming: r.upcoming }
+    }
+    if (r.error === 'external_cleanup_pending') {
+      return { kind: 'external_cleanup_pending', calendarEvents: r.calendar_events }
+    }
+    if (r.error === 'delivery_pending') return { kind: 'delivery_pending' }
+    if (r.error === 'forbidden') {
+      return deleteBarberError('forbidden', 'Bara ägaren kan radera barberare.')
+    }
+    return deleteBarberError('not_found', 'Barberaren finns inte.')
+  } catch {
+    return deleteBarberError('network', WRITE_ERROR)
+  }
+}
+
+/**
+ * The set of barber ids that have a LINKED login account (owner-only read of `profiles`). The owner
+ * can `profiles_select_owner`, so this returns which barbers already have an account — surfaced
+ * read-only in the Barberare screen ("Inloggning kopplad"). Per v1 the email itself is managed in
+ * the dashboard; we show the linked STATE here.
+ */
+export async function barberAccountStates(): Promise<
+  AdminResult<ReadonlyMap<AdminBarberId, BarberAccountState>>
+> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('profiles')
+      .select('role, barber_id, must_change_password, account_enabled')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const accounts = new Map<AdminBarberId, BarberAccountState>()
+    for (const raw of data) {
+      const parsed = parseWith(profileRow, raw)
+      if (parsed.ok && parsed.value.barber_id !== null) {
+        accounts.set(parsed.value.barber_id, parsed.value.account_enabled ? 'enabled' : 'disabled')
+      }
+    }
+    return ok(accounts)
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Map a PostgREST write error to an AdminError, recognizing the unique-violation + RLS denial. */
+function mapWriteError(error: { code?: string; message?: string } | null): AdminResult<never> {
+  if (error !== null) {
+    // 23505 = unique_violation (duplicate id); 42501 = RLS/insufficient privilege.
+    if (error.code === '23505')
+      return err('validation', 'Det finns redan en barberare med det id:t.')
+    if (error.code === '42501') return err('forbidden', 'Du har inte behörighet för detta.')
+  }
+  return err('network', WRITE_ERROR)
+}
+
+
+===== src/admin/adapters/bookingsAdmin.ts =====
+// Bookings admin adapter. READS go through RLS (owner sees every booking via bookings_select_owner;
+// a barber sees ONLY their own via bookings_select_own) — so a barber CANNOT read another barber's
+// bookings even by asking. CANCEL goes through the `admin_cancel_booking` SECURITY DEFINER RPC (the
+// single audited write path; it re-derives authority from the caller's role).
+//
+// Filtering: `listBookings(barberId)` adds an explicit `.eq('barber_id', ...)` so the owner can scope
+// to one barber; with no id it lists everything the RLS policy allows (owner=all). The barber role's
+// RLS already restricts the result regardless of the filter.
+//
+// Boundary discipline: rows + RPC response Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import {
+  adminBookingRows,
+  adminCancelResponse,
+  adminCreateBookingResponse,
+  adminDeleteBookingsResponse,
+  adminPurgeHistoryResponse,
+  parseWith,
+} from '../adminSchemas'
+import type { AdminBarberId, AdminBooking, AdminResult } from '../types'
+import { err, ok } from '../types'
+import { localWallClockToStockholmIso } from '../../booking/stockholmTime'
+
+const READ_ERROR = 'Kunde inte läsa bokningar.'
+const CANCEL_ERROR = 'Kunde inte avboka. Försök igen.'
+const RESERVE_ERROR = 'Kunde inte reservera. Försök igen.'
+const DELETE_ERROR = 'Kunde inte radera bokningar. Försök igen.'
+const PURGE_ERROR = 'Kunde inte tömma historiken. Försök igen.'
+
+/** Fields for a manual "Reservera kund" booking (all but the time are optional at the UI). */
+export interface ManualBooking {
+  readonly startAt: Date
+  readonly durationMin: number
+  readonly serviceName: string
+  readonly price: number
+  readonly customerName: string
+  /** Normalized phone, or null for a contact-less walk-in. */
+  readonly phone: string | null
+}
+
+/**
+ * Reserve a customer via the `admin_create_booking` RPC (owner any barber; a barber only their own).
+ * Writes a real booking row honoring the no-double-book constraint; a phone makes it visible under
+ * "Mina bokningar". Maps the RPC's typed errors to admin errors the dialog can message precisely.
+ */
+export async function createManualBooking(
+  barberId: AdminBarberId,
+  b: ManualBooking,
+): Promise<AdminResult<true>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_create_booking', {
+      p_barber_id: barberId,
+      // `startAt` carries the salon-local WALL CLOCK the barber picked, in a browser-local Date.
+      // Re-anchor it to the Stockholm instant at the wire boundary — same as the public booking flow
+      // (supabaseBooking.ts) — so an admin on a non-Stockholm machine can't store the wrong time.
+      p_start_at: localWallClockToStockholmIso(b.startAt),
+      p_duration_min: b.durationMin,
+      p_service_name: b.serviceName,
+      p_price: b.price,
+      p_customer_name: b.customerName,
+      p_phone: b.phone,
+    })
+    if (error !== null) return err('network', RESERVE_ERROR)
+
+    const parsed = parseWith(adminCreateBookingResponse, data)
+    if (!parsed.ok) return err('malformed', RESERVE_ERROR)
+    if (!parsed.value.ok) {
+      if (parsed.value.error === 'forbidden') return err('forbidden', 'Du saknar behörighet.')
+      if (parsed.value.error === 'slot_taken') return err('validation', 'Tiden är redan bokad.')
+      if (parsed.value.error === 'outside_hours') {
+        return err('validation', 'Tiden ligger utanför arbetstid eller är blockerad.')
+      }
+      return err('validation', 'Kontrollera uppgifterna och försök igen.')
+    }
+    return ok(true)
+  } catch {
+    return err('network', RESERVE_ERROR)
+  }
+}
+
+/** Map a parsed raw booking row into the admin domain type (timestamps -> Date). */
+function toBooking(r: {
+  id: string
+  barber_id: string
+  service_name: string
+  price: number
+  duration_min: number
+  start_at: string
+  end_at: string
+  customer_name: string
+  method: 'phone' | 'email' | 'walkin'
+  phone: string | null
+  email: string | null
+  lang: 'sv' | 'en'
+  status: 'confirmed' | 'cancelled'
+}): AdminBooking {
+  return {
+    id: r.id,
+    barberId: r.barber_id,
+    serviceName: r.service_name,
+    price: r.price,
+    durationMin: r.duration_min,
+    startAt: new Date(r.start_at),
+    endAt: new Date(r.end_at),
+    customerName: r.customer_name,
+    method: r.method,
+    phone: r.phone,
+    email: r.email,
+    lang: r.lang,
+    status: r.status,
+  }
+}
+
+const COLUMNS =
+  'id,barber_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status'
+
+/**
+ * List bookings, newest start first. With `barberId` the owner scopes to one barber; without it the
+ * caller sees everything RLS allows (owner=all bookings, barber=own). A barber passing another id
+ * still gets only their own rows (RLS), so the filter cannot widen access. `fromIso` (an ISO
+ * instant) trims the result to bookings starting at/after it — the day grid passes local midnight
+ * so its payload stays bounded as history accumulates.
+ */
+export async function listBookings(
+  barberId?: AdminBarberId,
+  fromIso?: string,
+): Promise<AdminResult<readonly AdminBooking[]>> {
+  try {
+    const base = getAdminClient().from('bookings').select(COLUMNS)
+    const scoped = barberId === undefined ? base : base.eq('barber_id', barberId)
+    const query = fromIso === undefined ? scoped : scoped.gte('start_at', fromIso)
+    const { data, error } = await query.order('start_at', { ascending: false })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(adminBookingRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map(toBooking))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/**
+ * Cancel a CONFIRMED booking via the RPC. Returns the booking id on success. The RPC's own
+ * authorization maps to a typed error: 'forbidden' (not owner/owning-barber) or 'not_found' (missing
+ * or already cancelled) — surfaced so the UI can message precisely.
+ */
+export async function cancelBooking(bookingId: string): Promise<AdminResult<{ id: string }>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_cancel_booking', {
+      p_booking_id: bookingId,
+    })
+    if (error !== null) return err('network', CANCEL_ERROR)
+
+    const parsed = parseWith(adminCancelResponse, data)
+    if (!parsed.ok) return err('malformed', CANCEL_ERROR)
+    if (!parsed.value.ok) {
+      if (parsed.value.error === 'forbidden') {
+        return err('forbidden', 'Du kan bara avboka egna bokningar.')
+      }
+      return err('not_found', 'Bokningen finns inte eller är redan avbokad.')
+    }
+    return ok({ id: parsed.value.booking.id })
+  } catch {
+    return err('network', CANCEL_ERROR)
+  }
+}
+
+/**
+ * Permanently delete bookings by id via the `admin_delete_bookings` RPC (owner any barber; a barber
+ * only their own — the RPC re-derives authority). Intended for past/cancelled rows: the RPC REFUSES
+ * (`has_upcoming`) if any id is still a live upcoming appointment, and rejects an empty selection
+ * (`empty`). Returns the number of rows actually deleted.
+ */
+export async function deleteBookings(ids: readonly string[]): Promise<AdminResult<number>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_delete_bookings', {
+      p_ids: ids,
+    })
+    if (error !== null) return err('network', DELETE_ERROR)
+
+    const parsed = parseWith(adminDeleteBookingsResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    if (!parsed.value.ok) {
+      if (parsed.value.error === 'forbidden') {
+        return err('forbidden', 'Du kan bara radera egna bokningar.')
+      }
+      if (parsed.value.error === 'has_upcoming') {
+        return err('validation', 'Kommande bokningar kan inte raderas.')
+      }
+      if (parsed.value.error === 'delivery_pending') {
+        return err('validation', 'Bokningen har mejl som måste levereras eller hanteras först.')
+      }
+      return err('validation', 'Inga bokningar valda.')
+    }
+    return ok(parsed.value.count)
+  } catch {
+    return err('network', DELETE_ERROR)
+  }
+}
+
+/**
+ * Purge ALL past/cancelled booking history via the `admin_purge_history` RPC (owner-only; a barber is
+ * denied with `forbidden`). Returns the number of rows removed. Irreversible — the caller confirms first.
+ */
+export async function purgeHistory(): Promise<AdminResult<number>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_purge_history')
+    if (error !== null) return err('network', PURGE_ERROR)
+
+    const parsed = parseWith(adminPurgeHistoryResponse, data)
+    if (!parsed.ok) return err('malformed', PURGE_ERROR)
+    if (!parsed.value.ok) {
+      return parsed.value.error === 'delivery_pending'
+        ? err('validation', 'Historiken innehåller mejl som måste levereras eller hanteras först.')
+        : err('forbidden', 'Bara ägaren kan tömma all historik.')
+    }
+    return ok(parsed.value.count)
+  } catch {
+    return err('network', PURGE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/emailTemplatesAdmin.ts =====
+import type { Lang } from '../../i18n/index'
+import { getAdminClient } from '../adminClient'
+import {
+  emailTemplateRows,
+  failedBookingEmailDeliveryRows,
+  discardFailedBookingEmailDeliveryResponse,
+  parseWith,
+  retryFailedBookingEmailDeliveryResponse,
+} from '../adminSchemas'
+import type { AdminResult } from '../types'
+import { err, ok } from '../types'
+
+export type EmailTemplateName =
+  | 'customer_confirmation'
+  | 'barber_confirmation'
+  | 'customer_cancellation'
+  | 'barber_cancellation'
+  | 'customer_reminder'
+  | 'customer_booking_access'
+  | 'auth_recovery'
+  | 'auth_email_change'
+  | 'auth_invite'
+
+export interface EditableEmailTemplate {
+  readonly template: EmailTemplateName
+  readonly lang: Lang
+  readonly subject: string
+  readonly preheader: string
+  readonly title: string
+  readonly intro: string
+  readonly sectionTitle: string | null
+  readonly note: string
+  readonly ctaLabel: string
+  readonly contactLead: string | null
+}
+
+export interface FailedBookingEmailDelivery {
+  readonly id: string
+  readonly bookingId: string
+  readonly event: 'booking_confirmed' | 'booking_cancelled'
+  readonly attemptCount: number
+  readonly errorCode:
+    | 'not_configured'
+    | 'send_failed'
+    | 'send_failed_transient'
+    | 'send_failed_permanent'
+    | 'message_build_failed'
+    | null
+  readonly failedAt: string | null
+}
+
+const READ_ERROR = 'Kunde inte läsa mejlmallarna.'
+const WRITE_ERROR = 'Kunde inte spara mejlmallen. Försök igen.'
+
+export async function listEmailTemplates(): Promise<AdminResult<readonly EditableEmailTemplate[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('email_templates')
+      .select(
+        'template,lang,subject,preheader,title,intro,section_title,note,cta_label,contact_lead',
+      )
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(emailTemplateRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(
+      parsed.value.map((row) => ({
+        template: row.template,
+        lang: row.lang,
+        subject: row.subject,
+        preheader: row.preheader,
+        title: row.title,
+        intro: row.intro,
+        sectionTitle: row.section_title,
+        note: row.note,
+        ctaLabel: row.cta_label,
+        contactLead: row.contact_lead,
+      })),
+    )
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function saveEmailTemplate(
+  template: EditableEmailTemplate,
+): Promise<AdminResult<EditableEmailTemplate>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('email_templates')
+      .upsert(
+        {
+          template: template.template,
+          lang: template.lang,
+          subject: template.subject,
+          preheader: template.preheader,
+          title: template.title,
+          intro: template.intro,
+          section_title: template.sectionTitle,
+          note: template.note,
+          cta_label: template.ctaLabel,
+          contact_lead: template.contactLead,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'template,lang' },
+      )
+      .select(
+        'template,lang,subject,preheader,title,intro,section_title,note,cta_label,contact_lead',
+      )
+      .single()
+    if (error !== null || data === null) {
+      if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra mejlmallar.')
+      if (error?.code === '23514')
+        return err('validation', 'Kontrollera att alla texter har giltig längd.')
+      return err('network', WRITE_ERROR)
+    }
+    const parsed = parseWith(emailTemplateRows, [data])
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    const row = parsed.value[0]
+    if (row === undefined) return err('malformed', WRITE_ERROR)
+    return ok({
+      template: row.template,
+      lang: row.lang,
+      subject: row.subject,
+      preheader: row.preheader,
+      title: row.title,
+      intro: row.intro,
+      sectionTitle: row.section_title,
+      note: row.note,
+      ctaLabel: row.cta_label,
+      contactLead: row.contact_lead,
+    })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function listFailedBookingEmailDeliveries(): Promise<
+  AdminResult<readonly FailedBookingEmailDelivery[]>
+> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_list_failed_booking_email_deliveries')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(failedBookingEmailDeliveryRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(
+      parsed.value.map((row) => ({
+        id: row.id,
+        bookingId: row.booking_id,
+        event: row.event,
+        attemptCount: row.attempt_count,
+        errorCode: row.last_error_code,
+        failedAt: row.failed_at,
+      })),
+    )
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function retryFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  try {
+    const { data, error } = await getAdminClient().rpc(
+      'admin_retry_failed_booking_email_delivery',
+      {
+        p_id: id,
+      },
+    )
+    if (error !== null || data === null) return err('network', WRITE_ERROR)
+    const parsed = parseWith(retryFailedBookingEmailDeliveryResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return parsed.value.ok
+      ? ok(true)
+      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function discardFailedBookingEmailDelivery(id: string): Promise<AdminResult<boolean>> {
+  try {
+    const { data, error } = await getAdminClient().rpc(
+      'admin_discard_failed_booking_email_delivery',
+      { p_id: id },
+    )
+    if (error !== null || data === null) return err('network', WRITE_ERROR)
+    const parsed = parseWith(discardFailedBookingEmailDeliveryResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return parsed.value.ok
+      ? ok(true)
+      : err('not_found', 'Mejlet finns inte längre bland misslyckade leveranser.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/galleryAdmin.ts =====
+import { getAdminClient } from '../adminClient'
+import {
+  galleryRows,
+  imageDeleteResponse,
+  parseWith,
+  uploadGalleryImageResponse,
+} from '../adminSchemas'
+import type { AdminResult, GalleryImage, GalleryKind } from '../types'
+import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
+
+const BUCKET = 'gallery'
+const READ_ERROR = 'Kunde inte läsa galleriet.'
+const WRITE_ERROR = 'Kunde inte ladda upp bilden. Försök igen.'
+const DELETE_ERROR = 'Kunde inte ta bort bilden. Försök igen.'
+const VALIDATION_ERROR = 'Bilden uppfyller inte kraven.'
+const FORBIDDEN_ERROR = 'Endast ägaren kan ladda upp bilder.'
+
+function publicUrl(storagePath: string): string {
+  return getAdminClient().storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl
+}
+
+function toImage(
+  row: { id: string; kind: GalleryKind; storage_path: string; alt: string; sort_order: number },
+  url = publicUrl(row.storage_path),
+): GalleryImage {
+  return {
+    id: row.id,
+    kind: row.kind,
+    storagePath: row.storage_path,
+    alt: row.alt,
+    sortOrder: row.sort_order,
+    url,
+  }
+}
+
+export async function listGallery(
+  kind: GalleryKind,
+): Promise<AdminResult<readonly GalleryImage[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('gallery_images')
+      .select('id,kind,storage_path,alt,sort_order')
+      .eq('kind', kind)
+      .order('sort_order', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(galleryRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map((row) => toImage(row)))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function uploadImage(
+  kind: GalleryKind,
+  file: File,
+  alt: string,
+  sortOrder: number,
+): Promise<AdminResult<GalleryImage>> {
+  const form = new FormData()
+  form.set('kind', 'gallery')
+  form.set('file', file)
+  form.set('galleryKind', kind)
+  form.set('alt', alt)
+  form.set('sortOrder', String(sortOrder))
+
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: WRITE_ERROR,
+        forbidden: FORBIDDEN_ERROR,
+        validation: VALIDATION_ERROR,
+      })
+
+    const parsed = parseWith(uploadGalleryImageResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok(toImage(parsed.value.row, parsed.value.publicUrl))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function deleteImage(
+  image: GalleryImage,
+): Promise<AdminResult<{ readonly pending: boolean }>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', {
+      body: {
+        action: 'delete',
+        kind: 'gallery',
+        id: image.id,
+        storagePath: image.storagePath,
+      },
+    })
+    if (error !== null)
+      return mediaGatewayError(error, {
+        fallback: DELETE_ERROR,
+        forbidden: 'Endast ägaren kan ta bort bilder.',
+        validation: 'Bilden kunde inte tas bort. Ladda om sidan.',
+      })
+    const parsed = parseWith(imageDeleteResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    return ok({ pending: parsed.value.pending })
+  } catch {
+    return err('network', DELETE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/homepageLogoAdmin.ts =====
+// Homepage logo media adapter. Browser sends original bytes only to the authenticated Edge gateway;
+// server processing, storage write, optimistic replacement, and durable old-byte cleanup stay server-side.
+
+import { getAdminClient } from '../adminClient'
+import { imageDeleteResponse, parseWith, uploadHomepageLogoResponse } from '../adminSchemas'
+import type { AdminResult } from '../types'
+import { err, ok } from '../types'
+import { mediaGatewayError } from './mediaGateway'
+
+const WRITE_ERROR = 'Kunde inte spara logotypen. Försök igen.'
+const DELETE_ERROR = 'Kunde inte ta bort logotypen. Försök igen.'
+
+function mapGatewayError<T>(error: unknown, fallback: string): AdminResult<T> {
+  return mediaGatewayError(error, {
+    fallback,
+    forbidden: 'Endast ägaren kan ändra logotypen.',
+    validation: 'Logotypen måste vara en giltig bild inom storleksgränsen.',
+    conflict: 'Logotypen ändrades i en annan flik. Ladda om sidan.',
+  })
+}
+
+export interface UploadedHomepageLogo {
+  readonly path: string
+  readonly url: string
+  readonly cleanupPending: boolean
+}
+
+export function homepageLogoPublicUrl(path: string): string {
+  return getAdminClient().storage.from('gallery').getPublicUrl(path).data.publicUrl
+}
+
+export async function uploadHomepageLogo(
+  file: File,
+  expectedPath: string,
+): Promise<AdminResult<UploadedHomepageLogo>> {
+  const form = new FormData()
+  form.set('kind', 'site_logo')
+  form.set('file', file)
+  form.set('expectedPath', expectedPath)
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
+    if (error !== null) return mapGatewayError(error, WRITE_ERROR)
+    const parsed = parseWith(uploadHomepageLogoResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok({
+      path: parsed.value.path,
+      url: parsed.value.publicUrl,
+      cleanupPending: parsed.value.cleanupPending,
+    })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+export async function removeHomepageLogo(
+  path: string,
+): Promise<AdminResult<{ readonly pending: boolean }>> {
+  try {
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', {
+      body: { action: 'delete', kind: 'site_logo', storagePath: path },
+    })
+    if (error !== null) return mapGatewayError(error, DELETE_ERROR)
+    const parsed = parseWith(imageDeleteResponse, data)
+    if (!parsed.ok) return err('malformed', DELETE_ERROR)
+    return ok({ pending: parsed.value.pending })
+  } catch {
+    return err('network', DELETE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/mediaGateway.ts =====
+import { err, type AdminResult } from '../types'
+
+interface MediaGatewayMessages {
+  readonly fallback: string
+  readonly forbidden: string
+  readonly validation: string
+  readonly conflict?: string
+}
+
+/** Supabase FunctionsHttpError holds a Response in context; malformed errors remain transport errors. */
+export function mediaGatewayError<T>(
+  error: unknown,
+  messages: MediaGatewayMessages,
+): AdminResult<T> {
+  const context =
+    typeof error === 'object' && error !== null && 'context' in error ? error.context : null
+  const status =
+    typeof context === 'object' && context !== null && 'status' in context ? context.status : null
+  if (status === 401) return err('auth', 'Din session har gått ut. Logga in igen.')
+  if (status === 403) return err('forbidden', messages.forbidden)
+  if (status === 400 || status === 413 || status === 422)
+    return err('validation', messages.validation)
+  if (status === 409 && messages.conflict !== undefined) return err('validation', messages.conflict)
+  return err('network', messages.fallback)
+}
+
+
+===== src/admin/adapters/recurringBreaksAdmin.ts =====
+// Weekly break adapter. Direct writes are intentionally unavailable to browser clients; these RPCs
+// serialize with booking creation and surface customer conflicts before an operator overrides them.
+
+import { getAdminClient } from '../adminClient'
+import {
+  addRecurringBreakResponse,
+  deleteRecurringBreakResponse,
+  parseWith,
+  recurringBreakRows,
+} from '../adminSchemas'
+import type {
+  AdminBarberId,
+  AdminResult,
+  AvailabilityMutationOutcome,
+  RecurringBreak,
+  Weekday,
+} from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa återkommande pauser.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+const COLUMNS = 'id,barber_id,weekday,start_min,end_min'
+
+function toRecurringBreak(r: {
+  id: string
+  barber_id: string
+  weekday: Weekday
+  start_min: number
+  end_min: number
+}): RecurringBreak {
+  return {
+    id: r.id,
+    barberId: r.barber_id,
+    weekday: r.weekday,
+    startMin: r.start_min,
+    endMin: r.end_min,
+  }
+}
+
+export async function listRecurringBreaks(
+  barberId: AdminBarberId,
+): Promise<AdminResult<readonly RecurringBreak[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barber_recurring_breaks')
+      .select(COLUMNS)
+      .eq('barber_id', barberId)
+      .order('weekday', { ascending: true })
+      .order('start_min', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(recurringBreakRows, data)
+    return parsed.ok ? ok(parsed.value.map(toRecurringBreak)) : err('malformed', READ_ERROR)
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+export async function addRecurringBreak(
+  barberId: AdminBarberId,
+  weekday: Weekday,
+  startMin: number,
+  endMin: number,
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<RecurringBreak>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_add_recurring_break', {
+      p_barber_id: barberId,
+      p_weekday: weekday,
+      p_start_min: startMin,
+      p_end_min: endMin,
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+
+    const parsed = parseWith(addRecurringBreakResponse, data)
+    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (parsed.value.ok) return { kind: 'ok', value: toRecurringBreak(parsed.value.row) }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
+    }
+    if (parsed.value.error === 'forbidden') {
+      return { kind: 'error', error: { kind: 'forbidden', message: 'Du saknar behörighet.' } }
+    }
+    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+  } catch {
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+  }
+}
+
+export async function deleteRecurringBreak(id: string): Promise<AdminResult<{ id: string }>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_delete_recurring_break', { p_id: id })
+    if (error !== null) return err('network', WRITE_ERROR)
+
+    const parsed = parseWith(deleteRecurringBreakResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (parsed.value.ok) return ok({ id })
+    if (parsed.value.error === 'forbidden') return err('forbidden', 'Du saknar behörighet.')
+    return err('not_found', 'Pausen finns inte längre.')
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/schedulesAdmin.ts =====
+// Schedules admin adapter. Reads a barber's 7 weekday rows and writes the complete week through the
+// transactional `admin_save_barber_week` RPC. Direct authenticated writes to `barber_schedules` are
+// revoked by the transactional availability migration; the RPC authorizes owner/own-barber scope,
+// validates all seven rows, and detects conflicts before applying the whole replacement.
+//
+// availableSlotsFor exposes the same anon-callable `available_slots` RPC the public booking flow
+// uses ("what customers see"); the database definer RPC remains the live availability authority and
+// the integration tests assert schedule edits through it.
+//
+// Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import { availableSlotsResponse, parseWith, saveWeekResponse, scheduleRows } from '../adminSchemas'
+import { toWeekSchedule } from '../time'
+import type {
+  AdminBarberId,
+  AdminResult,
+  AvailabilityMutationOutcome,
+  WeekSchedule,
+} from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa schemat.'
+const WRITE_ERROR = 'Kunde inte spara schemat. Försök igen.'
+const SLOTS_ERROR = 'Kunde inte hämta lediga tider.'
+
+/** Read a barber's week, normalized to the fixed 7-entry `WeekSchedule` (missing days -> defaults). */
+export async function readWeek(barberId: AdminBarberId): Promise<AdminResult<WeekSchedule>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barber_schedules')
+      .select('barber_id,weekday,working,start_min,end_min')
+      .eq('barber_id', barberId)
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(scheduleRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+
+    const days = parsed.value.map((r) => ({
+      weekday: r.weekday,
+      working: r.working,
+      startMin: r.start_min,
+      endMin: r.end_min,
+    }))
+    return ok(toWeekSchedule(days))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/**
+ * Persist the whole week through the transactional RPC. All seven rows are supplied so stored state
+ * exactly matches the editor; the server authorizes and validates the replacement atomically.
+ */
+export async function saveWeek(
+  barberId: AdminBarberId,
+  week: WeekSchedule,
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<WeekSchedule>> {
+  const rows = week.map((d) => ({
+    barber_id: barberId,
+    weekday: d.weekday,
+    working: d.working,
+    start_min: d.startMin,
+    end_min: d.endMin,
+  }))
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_save_barber_week', {
+      p_barber_id: barberId,
+      p_week: rows.map((row) => ({
+        weekday: row.weekday,
+        working: row.working,
+        start_min: row.start_min,
+        end_min: row.end_min,
+      })),
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    const parsed = parseWith(saveWeekResponse, data)
+    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (parsed.value.ok) return { kind: 'ok', value: week }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
+    }
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara ändra ditt eget schema.' },
+      }
+    }
+    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+  } catch {
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+  }
+}
+
+/**
+ * Preview the bookable `HH:MM` slots for a barber on a date + duration (anon-callable RPC). Used by
+ * the editor's "förhandsgranska lediga tider" and asserted by the integration test that availability
+ * reflects a schedule/time-off edit.
+ */
+export async function availableSlotsFor(
+  barberId: AdminBarberId,
+  dateIso: string,
+  durationMin: number,
+): Promise<AdminResult<readonly string[]>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('available_slots', {
+      p_barber_id: barberId,
+      p_date: dateIso,
+      p_duration_min: durationMin,
+    })
+    if (error !== null) return err('network', SLOTS_ERROR)
+
+    const parsed = parseWith(availableSlotsResponse, data)
+    if (!parsed.ok) return err('malformed', SLOTS_ERROR)
+    return ok(parsed.value)
+  } catch {
+    return err('network', SLOTS_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/servicesAdmin.ts =====
+// Services admin adapter. Reads/writes the per-barber `services` menu through RLS: the owner manages
+// any barber's rows; a barber manages ONLY their own (RLS is the hard backstop — the UI only ever
+// passes the acting barber's id). Mirrors `barbersAdmin` exactly (getAdminClient + Zod-parse every
+// row/response; failure -> AdminError; never throws to the UI).
+
+import { getAdminClient } from '../adminClient'
+import {
+  createServiceResponse,
+  deleteServiceResponse,
+  parseWith,
+  reorderServiceResponse,
+  serviceRow,
+  serviceRows,
+} from '../adminSchemas'
+import type { AdminBarberId, AdminResult, AdminService, NewService, ServiceEdit } from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa tjänster.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+
+const COLUMNS = 'id,barber_id,name,price,duration_min,active,sort_order,available_weekdays'
+
+/** Map a parsed raw services row into the admin domain type. */
+function toService(r: {
+  id: string
+  barber_id: string
+  name: string
+  price: number
+  duration_min: number
+  active: boolean
+  sort_order: number
+  available_weekdays: AdminService['availableWeekdays']
+}): AdminService {
+  return {
+    id: r.id,
+    barberId: r.barber_id,
+    name: r.name,
+    price: r.price,
+    durationMin: r.duration_min,
+    active: r.active,
+    sortOrder: r.sort_order,
+    availableWeekdays: r.available_weekdays,
+  }
+}
+
+/** List a barber's services (all, incl. inactive), ordered by sort_order. */
+export async function listServices(
+  barberId: AdminBarberId,
+): Promise<AdminResult<readonly AdminService[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('services')
+      .select(COLUMNS)
+      .eq('barber_id', barberId)
+      .order('sort_order', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(serviceRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map(toService))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Create a service at the next per-barber position through the authorized ordering RPC. */
+export async function createService(
+  barberId: AdminBarberId,
+  s: NewService,
+): Promise<AdminResult<AdminService>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_create_service', {
+      p_barber_id: barberId,
+      p_name: s.name,
+      p_price: s.price,
+      p_duration_min: s.durationMin,
+      p_active: true,
+      p_available_weekdays: s.availableWeekdays,
+    })
+    if (error !== null) return mapWriteError(error)
+
+    const parsed = parseWith(createServiceResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
+    return ok(toService(parsed.value.row))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Update a service by id, leaving its server-owned sort_order untouched. */
+export async function updateService(
+  id: string,
+  edit: ServiceEdit,
+): Promise<AdminResult<AdminService>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('services')
+      .update({
+        name: edit.name,
+        price: edit.price,
+        duration_min: edit.durationMin,
+        active: edit.active,
+        available_weekdays: edit.availableWeekdays,
+      })
+      .eq('id', id)
+      .select(COLUMNS)
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+
+    const parsed = parseWith(serviceRow, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    return ok(toService(parsed.value))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Delete a service by id and compact its barber's order in the authorized RPC transaction. */
+export async function deleteService(id: string): Promise<AdminResult<{ id: string }>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_delete_service', { p_id: id })
+    if (error !== null) return mapWriteError(error)
+    const parsed = parseWith(deleteServiceResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
+    return ok({ id })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Move one service by one position through the atomic per-barber ordering RPC. */
+export async function reorderService(
+  barberId: AdminBarberId,
+  id: string,
+  direction: -1 | 1,
+): Promise<AdminResult<readonly AdminService[]>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_reorder_service', {
+      p_barber_id: barberId,
+      p_service_id: id,
+      p_direction: direction,
+    })
+    if (error !== null) return mapWriteError(error)
+    const parsed = parseWith(reorderServiceResponse, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    if (!parsed.value.ok) return mapMutationError(parsed.value.error)
+    return ok(parsed.value.services.map(toService))
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Map a PostgREST write error to an AdminError (RLS denial + check-constraint violation). */
+function mapWriteError(error: { code?: string; message?: string } | null): AdminResult<never> {
+  if (error !== null) {
+    if (error.code === '42501') return err('forbidden', 'Du har inte behörighet för detta.')
+    // 23514 = check_violation (name length / price / duration out of range).
+    if (error.code === '23514') return err('validation', 'Kontrollera namn, pris och längd.')
+  }
+  return err('network', WRITE_ERROR)
+}
+
+function mapMutationError(
+  error: 'forbidden' | 'not_found' | 'invalid' | 'duplicate',
+): AdminResult<never> {
+  if (error === 'forbidden') return err('forbidden', 'Du har inte behörighet för detta.')
+  if (error === 'not_found') return err('not_found', 'Tjänsten finns inte.')
+  if (error === 'duplicate') return err('validation', 'Tjänsteordningen kunde inte sparas.')
+  return err('validation', 'Kontrollera namn, pris och längd.')
+}
+
+
+===== src/admin/adapters/siteAdmin.ts =====
+// Site-chrome admin adapter (owner-only writes). Reads/upserts the editable homepage text
+// (`site_content`, PK key+lang) and public business/SEO/font-size settings (`site_settings`, PK
+// key). Mirrors aboutAdmin exactly. Anon can read; only the owner may write (site_*_owner RLS).
+//
+// Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import { parseWith, siteContentRows, siteSettingRows } from '../adminSchemas'
+import type { Lang } from '../../i18n/index'
+import type { AdminResult, AdminSiteContentCell, AdminSiteSetting } from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa startsidan.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+
+/** Read every editable homepage cell (both languages). */
+export async function listSiteContent(): Promise<AdminResult<readonly AdminSiteContentCell[]>> {
+  try {
+    const { data, error } = await getAdminClient().from('site_content').select('key,lang,value')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(siteContentRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map((r) => ({ key: r.key, lang: r.lang, value: r.value })))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Read every site setting as a `key -> value` map. */
+export async function listSiteSettings(): Promise<AdminResult<ReadonlyMap<string, string>>> {
+  try {
+    const { data, error } = await getAdminClient().from('site_settings').select('key,value')
+    if (error !== null || data === null) return err('network', READ_ERROR)
+    const parsed = parseWith(siteSettingRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    const settings: readonly AdminSiteSetting[] = parsed.value.map((r) => ({
+      key: r.key,
+      value: r.value,
+    }))
+    const map = new Map<string, string>()
+    for (const setting of settings) map.set(setting.key, setting.value)
+    return ok(map)
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Upsert one homepage text cell (owner-only). */
+export async function saveSiteContent(
+  key: string,
+  lang: Lang,
+  value: string,
+): Promise<AdminResult<AdminSiteContentCell>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('site_content')
+      .upsert({ key, lang, value }, { onConflict: 'key,lang' })
+      .select('key,lang,value')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+    return ok({ key, lang, value: typeof data.value === 'string' ? data.value : value })
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Upsert one site setting (owner-only). */
+export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<string>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('site_settings')
+      .upsert({ key, value }, { onConflict: 'key' })
+      .select('key,value')
+      .single()
+    if (error !== null || data === null) return mapWriteError(error)
+    return data.key === key && typeof data.value === 'string'
+      ? ok(data.value)
+      : err('malformed', WRITE_ERROR)
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+/** Atomically upsert a related set of settings (phone display + tel value, for example). */
+export async function saveSiteSettings(
+  values: readonly { readonly key: string; readonly value: string }[],
+): Promise<AdminResult<ReadonlyMap<string, string>>> {
+  if (values.length === 0) return ok(new Map())
+  try {
+    const { data, error } = await getAdminClient()
+      .from('site_settings')
+      .upsert(values, { onConflict: 'key' })
+      .select('key,value')
+    if (error !== null || data === null) return mapWriteError(error)
+    const parsed = parseWith(siteSettingRows, data)
+    if (!parsed.ok) return err('malformed', WRITE_ERROR)
+    const saved = new Map<string, string>()
+    for (const row of parsed.value) saved.set(row.key, row.value)
+    return ok(saved)
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+function mapWriteError(error: { code?: string } | null): AdminResult<never> {
+  if (error?.code === '42501') return err('forbidden', 'Endast ägaren kan ändra startsidan.')
+  if (error?.code === '23514' || error?.code === '22023') {
+    return err('validation', 'Kontrollera att inställningen har ett giltigt format.')
+  }
+  return err('network', WRITE_ERROR)
+}
+
+
+===== src/admin/adapters/slotBlocksAdmin.ts =====
+// Walk-in slot-block adapter. A block row says "unavailable on this date between start_min and
+// end_min" — the panel's day grid writes one row per 15-min quarter (tap = block, tap again = unblock).
+// RLS scopes a barber to their OWN rows; the owner may manage any barber's. Blocks are immutable
+// (toggle = insert/delete), so the surface is exactly list/add/delete.
+//
+// Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import { addSlotBlockResponse, parseWith, slotBlockRows } from '../adminSchemas'
+import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, SlotBlock } from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa blockerade tider.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+
+const COLUMNS = 'id,barber_id,block_date,start_min,end_min'
+
+/** Map a parsed raw block row to the domain type. */
+function toSlotBlock(r: {
+  id: string
+  barber_id: string
+  block_date: string
+  start_min: number
+  end_min: number
+}): SlotBlock {
+  return {
+    id: r.id,
+    barberId: r.barber_id,
+    date: r.block_date,
+    startMin: r.start_min,
+    endMin: r.end_min,
+  }
+}
+
+/** List a barber's blocks for ONE date (the day grid fetches per selected day), earliest first. */
+export async function listSlotBlocks(
+  barberId: AdminBarberId,
+  dateIso: string,
+): Promise<AdminResult<readonly SlotBlock[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barber_slot_blocks')
+      .select(COLUMNS)
+      .eq('barber_id', barberId)
+      .eq('block_date', dateIso)
+      .order('start_min', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(slotBlockRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map(toSlotBlock))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/**
+ * Block a window on a date (the day grid passes one 15-min quarter). A duplicate tap trips the
+ * exact-window unique constraint (23505) — surfaced as `validation` so the UI can just re-list.
+ */
+export async function addSlotBlock(
+  barberId: AdminBarberId,
+  dateIso: string,
+  startMin: number,
+  endMin: number,
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<SlotBlock>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_add_slot_block', {
+      p_barber_id: barberId,
+      p_block_date: dateIso,
+      p_start_min: startMin,
+      p_end_min: endMin,
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) {
+      return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    }
+    const parsed = parseWith(addSlotBlockResponse, data)
+    if (!parsed.ok) {
+      return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    }
+    if (parsed.value.ok) return { kind: 'ok', value: toSlotBlock(parsed.value.row) }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
+    }
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara blockera egna tider.' },
+      }
+    }
+    if (parsed.value.error === 'duplicate') {
+      return {
+        kind: 'error',
+        error: { kind: 'validation', message: 'Tiden är redan blockerad.' },
+      }
+    }
+    return { kind: 'error', error: { kind: 'validation', message: WRITE_ERROR } }
+  } catch {
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+  }
+}
+
+/** Unblock (delete by id). RLS scopes to allowed rows; deleting another's affects 0 rows. */
+export async function deleteSlotBlock(id: string): Promise<AdminResult<true>> {
+  try {
+    const { error } = await getAdminClient().from('barber_slot_blocks').delete().eq('id', id)
+    if (error !== null) {
+      if (error.code === '42501') return err('forbidden', 'Du har inte behörighet för detta.')
+      return err('network', WRITE_ERROR)
+    }
+    return ok(true)
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
+
+===== src/admin/adapters/timeOffAdmin.ts =====
+// Time-off admin adapter. Lists / adds / deletes a barber's time-off blocks. RLS scopes a barber to
+// their OWN rows (insert/delete with check barber_id = current_barber_id()); the owner may manage any
+// barber's. The list is filtered to a barber id and ordered by start date.
+//
+// Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
+
+import { getAdminClient } from '../adminClient'
+import { addTimeOffResponse, parseWith, timeOffRows } from '../adminSchemas'
+import type { AdminBarberId, AdminResult, AvailabilityMutationOutcome, TimeOff } from '../types'
+import { err, ok } from '../types'
+
+const READ_ERROR = 'Kunde inte läsa ledighet.'
+const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
+
+/** Map a parsed raw time-off row to the domain type. */
+function toTimeOff(r: {
+  id: string
+  barber_id: string
+  start_date: string
+  end_date: string
+  reason: string
+}): TimeOff {
+  return {
+    id: r.id,
+    barberId: r.barber_id,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    reason: r.reason,
+  }
+}
+
+/** List a barber's time-off, soonest first. */
+export async function listTimeOff(
+  barberId: AdminBarberId,
+): Promise<AdminResult<readonly TimeOff[]>> {
+  try {
+    const { data, error } = await getAdminClient()
+      .from('barber_time_off')
+      .select('id,barber_id,start_date,end_date,reason')
+      .eq('barber_id', barberId)
+      .order('start_date', { ascending: true })
+    if (error !== null || data === null) return err('network', READ_ERROR)
+
+    const parsed = parseWith(timeOffRows, data)
+    if (!parsed.ok) return err('malformed', READ_ERROR)
+    return ok(parsed.value.map(toTimeOff))
+  } catch {
+    return err('network', READ_ERROR)
+  }
+}
+
+/** Add a time-off block (single day -> startDate === endDate). RLS denies another barber's row. */
+export async function addTimeOff(
+  barberId: AdminBarberId,
+  startDate: string,
+  endDate: string,
+  reason: string,
+  allowExistingBookings = false,
+): Promise<AvailabilityMutationOutcome<TimeOff>> {
+  try {
+    const { data, error } = await getAdminClient().rpc('admin_add_time_off', {
+      p_barber_id: barberId,
+      p_start_date: startDate,
+      p_end_date: endDate,
+      p_reason: reason,
+      p_allow_existing_bookings: allowExistingBookings,
+    })
+    if (error !== null) return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+    const parsed = parseWith(addTimeOffResponse, data)
+    if (!parsed.ok) return { kind: 'error', error: { kind: 'malformed', message: WRITE_ERROR } }
+    if (parsed.value.ok) return { kind: 'ok', value: toTimeOff(parsed.value.row) }
+    if (parsed.value.error === 'booking_conflict') {
+      return { kind: 'booking_conflict', bookingIds: parsed.value.booking_ids }
+    }
+    if (parsed.value.error === 'forbidden') {
+      return {
+        kind: 'error',
+        error: { kind: 'forbidden', message: 'Du kan bara lägga till egen ledighet.' },
+      }
+    }
+    return {
+      kind: 'error',
+      error: { kind: 'validation', message: 'Slutdatum måste vara efter startdatum.' },
+    }
+  } catch {
+    return { kind: 'error', error: { kind: 'network', message: WRITE_ERROR } }
+  }
+}
+
+/** Delete a time-off block by id (RLS scopes to allowed rows; deleting another's affects 0 rows). */
+export async function deleteTimeOff(id: string): Promise<AdminResult<true>> {
+  try {
+    const { error } = await getAdminClient().from('barber_time_off').delete().eq('id', id)
+    if (error !== null) {
+      if (error.code === '42501') return err('forbidden', 'Du har inte behörighet för detta.')
+      return err('network', WRITE_ERROR)
+    }
+    return ok(true)
+  } catch {
+    return err('network', WRITE_ERROR)
+  }
+}
+
