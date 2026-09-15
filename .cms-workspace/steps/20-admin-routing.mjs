@@ -9,10 +9,10 @@ export function integrate(root) {
     if (!source.includes(before)) throw new Error(`Missing routing anchor: ${path}: ${before.slice(0, 80)}`)
     writeFileSync(file, source.replace(before, after))
   }
-  edit('src/admin/AdminApp.tsx', "const AdminShell = lazy", "const CmsStudio = lazy(() => import('./cms/Studio').then(module => ({ default: module.CmsStudio })))\nconst CmsPreview = lazy(() => import('./cms/Preview').then(module => ({ default: module.CmsPreview })))\n\nconst AdminShell = lazy")
+  edit('src/admin/AdminApp.tsx', "const AdminShell = lazy", "const CmsStudio = lazy(() => import('./cms/Studio'))\nconst CmsPreview = lazy(() => import('./cms/Preview').then(module => ({ default: module.CmsPreview })))\n\nconst AdminShell = lazy")
   edit('src/admin/AdminApp.tsx', 'const [, navigate] = useLocation()', 'const [pathname, navigate] = useLocation()')
   edit('src/admin/AdminApp.tsx', '\n  return (\n    <>', `
-  // Use the exact same session and forced-password gate as the operational panel.
+  // Use the same session and forced-password gate as the operational panel.
   if (pathname === '/admin/cms' || pathname.startsWith('/admin/cms/')) {
     return gate.profile.role === 'owner' ? (
       <LazySurface loadingLabel={t.lazyLoading} errorLabel={t.lazyError} retryLabel={t.lazyReload} minHeight="100vh">
@@ -51,17 +51,18 @@ export function integrate(root) {
   for (const [start, end, value] of changes.sort((a, b) => b[0] - a[0])) source = source.slice(0, start) + value + source.slice(end)
   source = "import { useLocation } from 'wouter-preact'\n" + source
   source = source.replace('  const { profile } = props', '  const [, navigate] = useLocation()\n  const { profile } = props')
+  source = source.replace('const { barbers, reload: reloadBarbers } = useBarbers()', 'const { barbers } = useBarbers()')
   const filter = 'TABS.filter((tab) => isOwner || !tab.ownerOnly)'
   if (!source.includes(filter)) throw new Error('Missing original role-specific tab filter')
   source = source.replace(filter, "TABS.filter((tab) => (isOwner || !tab.ownerOnly) && (!isOwner || tab.id !== 'profile'))")
-  const navigation = '{visibleTabs.map('
+  const navigation = '{visibleTabs.map(navButton)}'
   if (!source.includes(navigation)) throw new Error('Missing original navigation renderer')
-  source = source.replace(navigation, `{isOwner ? <button type="button" disabled={navigationLocked} style={s.navItemStyle(false)} onClick={() => {
+  source = source.replace(navigation, `{isOwner ? <button type="button" disabled={navigationLocked} style={{ textAlign: 'left', border: 'none', borderRadius: '9px', padding: '9px 12px', fontFamily: 'inherit', fontSize: '14px', fontWeight: 500, background: 'transparent', color: c.text, opacity: navigationLocked ? 0.4 : 0.78, cursor: navigationLocked ? 'not-allowed' : 'pointer' }} onClick={() => {
           if (navigationLocked) return
           persistScroll(tab)
           scrollCaptureGeneration.current += 1
           navigate('/admin/cms/')
-        }}>{props.lang === 'sv' ? 'Redigering' : 'Editing'}</button> : null}\n        {visibleTabs.map(`)
+        }}>{props.lang === 'sv' ? 'Redigering' : 'Editing'}</button> : null}\n        {visibleTabs.map(navButton)}`)
   writeFileSync(path, source)
   console.log('Owner editing route uses the existing session gate; schedule, bookings, services and settings implementations are unchanged.')
 }
