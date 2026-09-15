@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/tmp-cms-final-validation.yml
       - .cms-workspace/terminal-refinements.mjs
+      - .cms-workspace/steps/**
+      - .cms-workspace/payload/**
 permissions:
   contents: read
 concurrency:
