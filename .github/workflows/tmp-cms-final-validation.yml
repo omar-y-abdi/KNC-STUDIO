@@ -1,0 +1,135 @@
+name: Temporary CMS final validation
+on:
+  push:
+    branches: [tmp-knc-cms-terminal-20260915]
+    paths:
+      - .github/workflows/tmp-cms-final-validation.yml
+      - .cms-workspace/terminal-refinements.mjs
+permissions:
+  contents: read
+concurrency:
+  group: cms-final-terminal-validation
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.5
+      - name: Prepare and validate exact clean candidate
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/candidate"
+          EVIDENCE="$RUNNER_TEMP/source-evidence"
+          mkdir -p "$EVIDENCE"
+          echo "CANDIDATE=$ROOT" >> "$GITHUB_ENV"
+          git worktree add --detach "$ROOT" 9a17e4adce3ce3997032a5dc74fd08722fe991bd
+          node .cms-workspace/apply.mjs "$ROOT"
+          cp -a .cms-workspace/payload/. "$ROOT/"
+          cd "$ROOT"
+          npm ci
+          node "$GITHUB_WORKSPACE/.cms-workspace/run-integration.mjs" "$ROOT"
+          node "$GITHUB_WORKSPACE/.cms-workspace/terminal-refinements.mjs" "$ROOT"
+          {
+            node "$GITHUB_WORKSPACE/.cms-workspace/finalize-source.mjs" "$ROOT"
+            npm run format:check
+            npm run lint
+            npm run typecheck
+            npm test
+            npm run build
+            npm run deploy:dry-run
+          } 2>&1 | tee "$EVIDENCE/source.log"
+          node "$GITHUB_WORKSPACE/.cms-workspace/package.mjs" "$ROOT" "$EVIDENCE"
+          mkdir -p "$RUNNER_TEMP/prepared-source"
+          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=artifacts --exclude='.env*' --exclude='supabase/.temp' -czf "$RUNNER_TEMP/prepared-source/source.tar.gz" .
+          cd "$RUNNER_TEMP/prepared-source"
+          sha256sum source.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-final-source-evidence
+          path: ${{ runner.temp }}/source-evidence/*
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-prepared-source
+          path: ${{ runner.temp }}/prepared-source/*
+          retention-days: 3
+  browser:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-prepared-source
+          path: ${{ runner.temp }}/prepared-source
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Prepare isolated test services and browser
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/prepared-source"
+          sha256sum -c SHA256SUMS
+          mkdir -p "$GITHUB_WORKSPACE/candidate"
+          tar -xzf source.tar.gz -C "$GITHUB_WORKSPACE/candidate"
+          cd "$GITHUB_WORKSPACE/candidate"
+          npm ci
+          npx playwright install --with-deps ${{ matrix.engine }}
+          cat > supabase/functions/.env <<'EOF'
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          IP_SALT=ci-booking-ip-salt-not-for-production
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+          CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197,http://127.0.0.1:4188
+          CMS_ALLOWED_ORIGINS=http://127.0.0.1:4173,http://127.0.0.1:4188
+          PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+          EOF
+          npx supabase start
+          npx supabase status --output json > "$RUNNER_TEMP/stack.json"
+          export VITE_SUPABASE_URL=http://127.0.0.1:54321
+          export VITE_SUPABASE_ANON_KEY="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).ANON_KEY' "$RUNNER_TEMP/stack.json")"
+          npm run build
+      - name: Database and adapter regression gates
+        if: matrix.engine == 'chromium'
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cms-gates
+          npx supabase test db --local 2>&1 | tee artifacts/cms-gates/database.log
+          npm run test:integration 2>&1 | tee artifacts/cms-gates/integration.log
+      - name: Authenticated CMS against local Worker Auth Edge Database and Storage
+        working-directory: candidate
+        env:
+          CMS_BROWSER: ${{ matrix.engine }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cms-browser
+          node tools/e2e/cms-studio.mjs 2>&1 | tee artifacts/cms-browser/${{ matrix.engine }}.log
+      - name: Preserve browser and database evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-final-${{ matrix.engine }}-evidence
+          path: |
+            candidate/artifacts/cms-browser/**
+            candidate/artifacts/cms-gates/**
+          retention-days: 7
+      - name: Stop isolated stack
+        if: always()
+        working-directory: candidate
+        run: npx supabase stop --no-backup
