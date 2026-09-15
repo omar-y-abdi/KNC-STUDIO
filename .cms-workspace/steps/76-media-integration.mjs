@@ -5,7 +5,7 @@ export function integrate(root) {
   const edit = (path, before, after) => { const file=resolve(root,path),source=readFileSync(file,'utf8'); if (!source.includes(before)) throw new Error(`Missing media anchor ${path}: ${before}`); writeFileSync(file,source.replace(before,after)) }
   edit('supabase/functions/upload-image/index.ts', "import { createClient }", "import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'\nimport { createClient }")
   edit('supabase/functions/upload-image/index.ts', '  const upload = parseUpload(form)', `  if (form.get('kind') === 'cms_asset') {
-    return handleCmsUpload(form, user.id, service, async (input, profile) => {
+    return handleCmsUpload(form, callerData.user.id, service, async (input, profile) => {
       try { await ensureImageMagickReady() }
       catch { throw new CmsMediaUnavailable('Image decoder unavailable') }
       const bytes = processImage(input, profile ? 'barber_photo' : 'gallery')
