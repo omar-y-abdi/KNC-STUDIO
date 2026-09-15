@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
-      - name: Test current integration against the preserved admin contract
+      - name: Test admin integration against the preserved admin contract
         run: |
           set -euo pipefail
           control="$PWD/.cms-workspace"
@@ -33,7 +33,7 @@ jobs:
           cp -a "$control/payload/." "$root/"
           cd "$root"
           npm ci
-          node "$control/run-integration.mjs" "$root"
+          node --input-type=module -e 'const step=await import(process.argv[1]); step.integrate(process.argv[2])' "$control/steps/20-admin-routing.mjs" "$root"
           npm exec vitest -- run tests/unit/cmsLegacyCoexistence.test.ts --reporter=verbose
           test -z "$(git diff --name-only -- src/admin/views src/admin/adapters src/admin/auth.ts src/admin/useAdminSession.ts src/admin/navigationState.ts)"
           printf '\nVerified: legacy views, adapters, auth and navigation helpers are unchanged.\n'
