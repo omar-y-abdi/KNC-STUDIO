@@ -6,7 +6,9 @@ const path = resolve(root, 'package.json'), pkg = JSON.parse(readFileSync(path, 
 pkg.dependencies.grapesjs = '0.23.6'
 pkg.dependencies.parse5 = '8.0.1'
 pkg.dependencies['css-tree'] = '3.2.1'
+pkg.dependencies.fontkit = '2.0.4'
 pkg.devDependencies['@types/css-tree'] = '2.3.11'
+pkg.devDependencies['@types/fontkit'] = '2.0.9'
 writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n')
 execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts'], { cwd: root, stdio: 'inherit' })
 const assets = []
