@@ -10,6 +10,10 @@ if [[ "$PHASE" == red ]]; then
   npm exec vitest -- run tests/unit/cmsContract.test.ts
   exit
 fi
+if [[ "$PHASE" == routes-red ]]; then
+  npm exec vitest -- run tests/unit/cmsPublicationRoutes.test.ts
+  exit
+fi
 node "$CONTROL/run-integration.mjs" "$ROOT"
 if [[ "$PHASE" == inspect ]]; then
   set +e
