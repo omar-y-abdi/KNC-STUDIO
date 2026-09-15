@@ -49,6 +49,8 @@ if [[ "$PHASE" == database ]]; then
   npx supabase test db --local
   exit
 fi
+node "$CONTROL/finalize-source.mjs" "$ROOT"
+npm run format:check
 npm run lint
 npm run typecheck
 npm test
