@@ -90,13 +90,19 @@ export function AuthoredEditor(props: Props): JSX.Element {
       if (value && typeof value === 'object' && 'el' in value && 'model' in value && 'getChildrenContainer' in value) live.current = value as LiveView
     }
     const disable = (): void => { flush(); live.current = null }
-    gjs.on('rte:enable', enable); gjs.on('rte:disable', disable); gjs.on('update', schedule)
-    gjs.on('canvas:frame:load', () => {
+    const hardenFrame = (): void => {
+      const frame = gjs.Canvas.getFrameEl() ?? host.current?.querySelector<HTMLIFrameElement>('iframe.gjs-frame') ?? null
+      frame?.setAttribute('sandbox', 'allow-same-origin')
+    }
+    const frameLoaded = (): void => {
+      hardenFrame()
       inputDocument?.removeEventListener('input', schedule, true)
       inputDocument = gjs.Canvas.getDocument()
       inputDocument?.addEventListener('input', schedule, true)
-      gjs.Canvas.getFrameEl().setAttribute('sandbox', 'allow-same-origin')
-    })
+    }
+    gjs.on('rte:enable', enable); gjs.on('rte:disable', disable); gjs.on('update', schedule)
+    gjs.on('canvas:frame', hardenFrame); gjs.on('canvas:frame:load', frameLoaded)
+    hardenFrame()
     gjs.on('asset:open', () => { gjs.AssetManager.close(); current.current.pickImage() })
     props.onReady({ flush, selectImage(src, alt) {
       const selected = gjs.getSelected()
@@ -107,6 +113,7 @@ export function AuthoredEditor(props: Props): JSX.Element {
     return () => {
       if (scheduled !== null) cancelAnimationFrame(scheduled)
       flush(); props.onReady(null); inputDocument?.removeEventListener('input', schedule, true)
+      gjs.off('canvas:frame', hardenFrame); gjs.off('canvas:frame:load', frameLoaded)
       gjs.destroy(); editor.current = null; live.current = null
     }
   }, [])
