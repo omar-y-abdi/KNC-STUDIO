@@ -13,12 +13,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: cms-final-firefox-evidence
-          run-id: 34982036763
+          name: cms-final-chromium-evidence
+          run-id: 34984956055
           repository: omar-y-abdi/KNC-STUDIO
           github-token: ${{ github.token }}
           path: evidence
-      - name: Inspect captured authentication boundary
+      - name: Inspect native preview and authored frame boundaries
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -28,23 +28,28 @@ jobs:
           def clean(s):
             s=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted]',s)
             return re.sub(r'(Bearer\s+)[\w.-]+',r'\1[redacted]',s)
-          print('ARTIFACT PATHS', [str(p) for p in Path('evidence').rglob('*') if p.is_file()])
+          wanted=('owner-studio-native-preview','custom-page-create-type-locales-theme-publish')
           for p in sorted(Path('evidence').rglob('*.zip')):
-            if 'owner-studio' not in p.name:continue
-            print('TRACE',p)
+            if not any(key in p.name for key in wanted): continue
+            print('\nTRACE',p)
             with ZipFile(p) as z:
               for name in z.namelist():
-                if not name.endswith(('.network','.trace')):continue
-                for line in z.read(name).decode().splitlines():
+                if not name.endswith(('.network','.trace')): continue
+                for line in z.read(name).decode(errors='replace').splitlines():
                   try: row=json.loads(line)
-                  except ValueError:continue
+                  except ValueError: continue
                   if row.get('type')=='console':
-                    print('CONSOLE',clean(json.dumps(row))[:2200])
+                    print('CONSOLE',clean(json.dumps(row))[:3000])
                   item=row.get('snapshot',{})
-                  if 'request' in item:
-                    url=item['request'].get('url',''); parsed=urlsplit(url)
-                    if any(key in url for key in ['54321','/admin','/login']):
-                      result={'url':parsed.scheme+'://'+parsed.netloc+parsed.path,'method':item['request'].get('method'),'status':item.get('response',{}).get('status'),'failure':item.get('_failureText')}
-                      result['csp']=[h['value'] for h in item.get('response',{}).get('headers',[]) if h['name'].lower()=='content-security-policy']
-                      print('NETWORK',clean(json.dumps(result)))
+                  if 'request' not in item: continue
+                  req=item['request']; url=req.get('url',''); parsed=urlsplit(url)
+                  if '/admin/cms/preview' not in url and 'cdnjs.cloudflare.com' not in url: continue
+                  response=item.get('response',{})
+                  headers={h['name'].lower():h['value'] for h in response.get('headers',[])}
+                  result={'url':parsed.scheme+'://'+parsed.netloc+parsed.path,'method':req.get('method'),'status':response.get('status'),'failure':item.get('_failureText'),'location':headers.get('location'),'csp':headers.get('content-security-policy'),'xfo':headers.get('x-frame-options'),'contentType':headers.get('content-type')}
+                  print('NETWORK',clean(json.dumps(result)))
+          print('\nWORKER PREVIEW LINES')
+          for p in Path('evidence').rglob('worker.log'):
+            for line in p.read_text(errors='replace').splitlines():
+              if '/admin/cms/preview' in line or 'error' in line.lower(): print(clean(line))
           PY
