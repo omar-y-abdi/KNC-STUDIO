@@ -11,14 +11,13 @@ export function integrate(root) {
     if (!source.includes(before)) throw new Error(`Missing native integration anchor: ${path}: ${before.slice(0, 80)}`)
     write(path, source.replace(before, after))
   }
-  replace('src/admin/AdminApp.tsx', "import('./cms/Preview').then(module => ({ default: module.CmsPreview }))", "import('./cms/Preview')")
   replace('src/cms/context.tsx', 'export function useCmsPalette<T extends object>(base: T, mode: CmsMode): T {\n  const theme = useCms().presentation.themes[mode]', 'export function mergeCmsPalette<T extends object>(presentation: CmsPresentation, base: T, mode: CmsMode): T {\n  const theme = presentation.themes[mode]')
   write('src/cms/context.tsx', read('src/cms/context.tsx') + '\nexport function useCmsPalette<T extends object>(base: T, mode: CmsMode): T {\n  return mergeCmsPalette(useCms().presentation, base, mode)\n}\n')
   write('src/app/Root.tsx', "import { CmsPublicProvider } from '../cms/context'\n" + read('src/app/Root.tsx'))
   replace('src/app/Root.tsx', '<>\n      <Switch>', '<CmsPublicProvider>\n      <Switch>')
   replace('src/app/Root.tsx', '</Switch>\n    </>', '</Switch>\n    </CmsPublicProvider>')
   write('src/app/App.tsx', "import { CmsLocaleProvider, useCmsTheme } from '../cms/context'\n" + read('src/app/App.tsx'))
-  replace('src/app/App.tsx', "const dark = mode === 'dark'", "const dark = mode === 'dark'\n  useCmsTheme(mode)")
+  replace('src/app/App.tsx', "const dark = state.mode === 'dark'", "const dark = state.mode === 'dark'\n  useCmsTheme(state.mode)")
   {
     const path = 'src/app/App.tsx', source = read(path), tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX), changes = []
     const app = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'App')
@@ -137,7 +136,6 @@ export function integrate(root) {
     if (imports.has('cmsNodeId')) result = `import { cmsNodeId } from '${specifier('src/cms/nodeIdentity')}'\n` + result
     write(path,result)
   }
-  // The native About overlay is asynchronous; the draft remains the authoritative preview source.
   write('src/about/AboutSection.tsx', "import { useCmsStrings } from '../cms/context'\n" + read('src/about/AboutSection.tsx'))
   replace('src/about/AboutSection.tsx', 'const tx: AboutStrings = mergeAbout(base, overlay)', "const tx: AboutStrings = useCmsStrings('about', lang, mergeAbout(base, overlay))")
   console.log('Native text sources connected:', JSON.stringify(inventory))
