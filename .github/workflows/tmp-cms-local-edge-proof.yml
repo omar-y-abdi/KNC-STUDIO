@@ -1,0 +1,50 @@
+name: Temporary CMS local edge proof
+on:
+  push:
+    branches: [tmp-knc-cms-terminal-20260915]
+    paths:
+      - .github/workflows/tmp-cms-local-edge-proof.yml
+permissions:
+  contents: read
+jobs:
+  cms-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Build exact candidate and prove CMS integration
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/candidate"
+          git worktree add --detach "$ROOT" 9a17e4adce3ce3997032a5dc74fd08722fe991bd
+          node .cms-workspace/apply.mjs "$ROOT"
+          cp -a .cms-workspace/payload/. "$ROOT/"
+          cd "$ROOT"
+          npm ci
+          node "$GITHUB_WORKSPACE/.cms-workspace/run-integration.mjs" "$ROOT"
+          node "$GITHUB_WORKSPACE/.cms-workspace/terminal-refinements.mjs" "$ROOT"
+          grep -F 'policy = "oneshot"' supabase/config.toml
+          ! grep -F 'policy = "per_worker"' supabase/config.toml
+          cat > supabase/functions/.env <<'EOF'
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          IP_SALT=ci-booking-ip-salt-not-for-production
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+          CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+          CMS_ALLOWED_ORIGINS=http://127.0.0.1:4173
+          PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+          EOF
+          npx supabase start
+          npx supabase db reset --local
+          npx vitest run --config vitest.integration.config.ts tests/integration/cmsStudio.test.ts
+      - name: Stop local stack
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/candidate" 2>/dev/null || exit 0
+          npx supabase stop --no-backup || true
