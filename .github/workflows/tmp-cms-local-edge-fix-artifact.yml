@@ -1,0 +1,39 @@
+name: Temporary CMS local edge fix artifact
+on:
+  push:
+    branches: [tmp-knc-cms-terminal-20260915]
+    paths:
+      - .github/workflows/tmp-cms-local-edge-fix-artifact.yml
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build minimal local Edge Runtime fix
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/fix"
+          mkdir -p "$ROOT/supabase"
+          git show 9a17e4adce3ce3997032a5dc74fd08722fe991bd:supabase/config.toml > "$ROOT/supabase/config.toml"
+          python3 - "$ROOT/supabase/config.toml" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          source = path.read_text()
+          marker = 'policy = "per_worker"'
+          if source.count(marker) != 1:
+              raise SystemExit(f'expected one {marker!r}, found {source.count(marker)}')
+          path.write_text(source.replace(marker, 'policy = "oneshot"'))
+          PY
+          grep -F 'policy = "oneshot"' "$ROOT/supabase/config.toml"
+          ! grep -F 'policy = "per_worker"' "$ROOT/supabase/config.toml"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: KNC-CMS-local-edge-fix-20260916
+          path: ${{ runner.temp }}/fix
+          retention-days: 7
