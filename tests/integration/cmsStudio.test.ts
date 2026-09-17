@@ -141,7 +141,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
   })
   it('rejects incomplete publications before omission can delete authoritative content', async () => {
     const base = await state()
-    const attempts: Array<{ name: string; document: CmsState['document'] }> = []
+    const attempts: { name: string; document: CmsState['document'] }[] = []
 
     const missingSetting = structuredClone(base.document)
     delete missingSetting.settings['business_name']

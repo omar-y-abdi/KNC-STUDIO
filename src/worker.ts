@@ -284,7 +284,11 @@ export function renderLegalMetadata(
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
   rendered = rendered.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-name(?:="[^"]*")?)[^>]*>[^<]*<\/span\s*>/g,
+    /<span data-business-name=""\s*>[^<]*<\/span\s*>/g,
+    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  )
+  rendered = rendered.replaceAll(
+    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
     () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
   )
   rendered = rendered.replaceAll(
@@ -297,7 +301,11 @@ export function renderLegalMetadata(
       ? '<a href="/">Kontakt / Contact</a>'
       : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
   rendered = rendered.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-contact(?:="[^"]*")?)[^>]*>[\s\S]*?<\/span\s*>/g,
+    /<span data-business-contact=""\s*>[\s\S]*?<\/span\s*>/g,
+    () => `<span data-business-contact>${contact}</span>`,
+  )
+  rendered = rendered.replaceAll(
+    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
     () => `<span data-business-contact>${contact}</span>`,
   )
   for (const lang of ['sv', 'en'] as const) {

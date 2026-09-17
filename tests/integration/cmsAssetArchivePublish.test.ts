@@ -182,7 +182,7 @@ describe.sequential('CMS archived asset publication boundary', () => {
       const latest = await state()
       if (latest.document.presentation.images[nodeId]) {
         const cleanedDocument = structuredClone(latest.document)
-        delete cleanedDocument.presentation.images[nodeId]
+        Reflect.deleteProperty(cleanedDocument.presentation.images, nodeId)
         const cleanup = await call(publication(latest, cleanedDocument))
         expect(cleanup.status, await cleanup.clone().text()).toBe(200)
       }

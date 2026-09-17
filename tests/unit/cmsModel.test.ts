@@ -26,6 +26,11 @@ const state = (): CmsState => ({
   assets: [],
 })
 
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error('Missing test fixture value')
+  return value
+}
+
 describe('CMS shell theme palette', () => {
   it.each([
     ['light', false, '#123456', '#654321'],
@@ -317,8 +322,8 @@ describe('CMS draft durability', () => {
     ]
     const local = structuredClone(base),
       remote = structuredClone(base)
-    local.barbers[0]!.bio_sv = 'Local A'
-    remote.barbers[1]!.name = 'Remote B'
+    required(local.barbers[0]).bio_sv = 'Local A'
+    required(remote.barbers[1]).name = 'Remote B'
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.barbers.find((barber) => barber.id === 'a')?.bio_sv).toBe('Local A')
@@ -343,7 +348,7 @@ describe('CMS draft durability', () => {
       (item) => item.id !== '00000000-0000-4000-8000-000000000001',
     )
     local.gallery.push(image('00000000-0000-4000-8000-000000000003', 'Local add', 2))
-    remote.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002')!.alt =
+    required(\n      remote.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002'),\n    ).alt =
       'Remote edit'
     remote.gallery.push(image('00000000-0000-4000-8000-000000000004', 'Remote add', 3))
     const result = mergeDocuments(base, local, remote)
@@ -376,8 +381,8 @@ describe('CMS draft durability', () => {
     base.emails = [email('sv', 'SV'), email('en', 'EN')]
     const local = structuredClone(base),
       remote = structuredClone(base)
-    local.emails.find((item) => item.lang === 'sv')!.subject = 'Local SV'
-    remote.emails.find((item) => item.lang === 'en')!.subject = 'Remote EN'
+    required(local.emails.find((item) => item.lang === 'sv')).subject = 'Local SV'
+    required(remote.emails.find((item) => item.lang === 'en')).subject = 'Remote EN'
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.emails.find((item) => item.lang === 'sv')?.subject).toBe('Local SV')
@@ -406,16 +411,16 @@ describe('CMS draft durability', () => {
     const local = structuredClone(base),
       remote = structuredClone(base)
     local.presentation.pages = [
-      local.presentation.pages[1]!,
-      local.presentation.pages[0]!,
-      local.presentation.pages[2]!,
-      local.presentation.pages[3]!,
+      required(local.presentation.pages[1]),
+      required(local.presentation.pages[0]),
+      required(local.presentation.pages[2]),
+      required(local.presentation.pages[3]),
     ]
     remote.presentation.pages = [
-      remote.presentation.pages[0]!,
-      remote.presentation.pages[1]!,
-      remote.presentation.pages[3]!,
-      remote.presentation.pages[2]!,
+      required(remote.presentation.pages[0]),
+      required(remote.presentation.pages[1]),
+      required(remote.presentation.pages[3]),
+      required(remote.presentation.pages[2]),
     ]
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts).toHaveLength(0)
@@ -442,8 +447,8 @@ describe('CMS draft durability', () => {
     ]
     const local = structuredClone(base),
       remote = structuredClone(base)
-    local.barbers[0]!.bio_sv = 'Local'
-    remote.barbers[0]!.bio_sv = 'Remote'
+    required(local.barbers[0]).bio_sv = 'Local'
+    required(remote.barbers[0]).bio_sv = 'Remote'
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts.map((conflict) => conflict.path)).toEqual(['barbers.a.bio_sv'])
     expect(
