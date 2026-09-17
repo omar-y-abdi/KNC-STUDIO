@@ -49,41 +49,41 @@ const corsHeaders: Record<string, string> = {
 
 type UploadRequest =
   | {
-    readonly kind: 'gallery'
-    readonly file: File
-    readonly galleryKind: 'salon' | 'cuts'
-    readonly alt: string
-    readonly sortOrder: number
-  }
+      readonly kind: 'gallery'
+      readonly file: File
+      readonly galleryKind: 'salon' | 'cuts'
+      readonly alt: string
+      readonly sortOrder: number
+    }
   | {
-    readonly kind: 'barber_photo'
-    readonly file: File
-    readonly barberId: string
-  }
+      readonly kind: 'barber_photo'
+      readonly file: File
+      readonly barberId: string
+    }
   | {
-    readonly kind: 'site_logo'
-    readonly file: File
-    readonly expectedPath: string
-  }
+      readonly kind: 'site_logo'
+      readonly file: File
+      readonly expectedPath: string
+    }
 
 type DeleteRequest =
   | {
-    readonly action: 'delete'
-    readonly kind: 'gallery'
-    readonly id: string
-    readonly storagePath: string
-  }
+      readonly action: 'delete'
+      readonly kind: 'gallery'
+      readonly id: string
+      readonly storagePath: string
+    }
   | {
-    readonly action: 'delete'
-    readonly kind: 'barber_photo'
-    readonly barberId: string
-    readonly storagePath: string
-  }
+      readonly action: 'delete'
+      readonly kind: 'barber_photo'
+      readonly barberId: string
+      readonly storagePath: string
+    }
   | {
-    readonly action: 'delete'
-    readonly kind: 'site_logo'
-    readonly storagePath: string
-  }
+      readonly action: 'delete'
+      readonly kind: 'site_logo'
+      readonly storagePath: string
+    }
 
 const LOGO_PATH =
   /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
@@ -187,9 +187,7 @@ function parseDelete(value: unknown): DeleteRequest | null {
   if (
     body.kind === 'gallery' &&
     typeof body.id === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      body.id,
-    )
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)
   ) {
     return {
       action: body.action,
@@ -419,10 +417,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       })
 
       if (claimed.error !== null || claimed.data === null) {
-        console.error(
-          'upload-image: failed to claim external deletion action',
-          claimed.error?.code,
-        )
+        console.error('upload-image: failed to claim external deletion action', claimed.error?.code)
         return false
       }
 
@@ -574,17 +569,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const queued =
       deletion.kind === 'gallery'
         ? await service.rpc('internal_delete_gallery_image', {
-          p_id: deletion.id,
-          p_expected_path: deletion.storagePath,
-        })
+            p_id: deletion.id,
+            p_expected_path: deletion.storagePath,
+          })
         : deletion.kind === 'barber_photo'
           ? await service.rpc('internal_delete_barber_photo', {
-            p_barber_id: deletion.barberId,
-            p_expected_path: deletion.storagePath,
-          })
+              p_barber_id: deletion.barberId,
+              p_expected_path: deletion.storagePath,
+            })
           : await service.rpc('internal_remove_homepage_logo', {
-            p_expected_path: deletion.storagePath,
-          })
+              p_expected_path: deletion.storagePath,
+            })
 
     if (queued.error !== null) {
       console.error('upload-image: deletion transaction failed', queued.error.code)
@@ -672,10 +667,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    processed = processImage(
-      new Uint8Array(await upload.file.arrayBuffer()),
-      upload.kind,
-    ).bytes
+    processed = processImage(new Uint8Array(await upload.file.arrayBuffer()), upload.kind).bytes
   } catch (error) {
     if (error instanceof ImageValidationError) {
       return json({ ok: false, error: error.code }, 422)
@@ -707,10 +699,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       previous.error !== null ||
       (previous.data !== null && typeof previous.data.storage_path !== 'string')
     ) {
-      console.error(
-        'upload-image: could not read existing barber photo',
-        previous.error?.message,
-      )
+      console.error('upload-image: could not read existing barber photo', previous.error?.message)
 
       return json({ ok: false, error: 'database_failed' }, 500)
     }
@@ -737,10 +726,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
 
     if (inserted.error !== null || !isGalleryRow(inserted.data)) {
-      console.error(
-        'upload-image: gallery row insert failed',
-        inserted.error?.message,
-      )
+      console.error('upload-image: gallery row insert failed', inserted.error?.message)
 
       await removeObject(bucket, path)
 
@@ -770,17 +756,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
 
     if (replaced.error !== null || !isReplacement(replaced.data)) {
-      console.error(
-        'upload-image: homepage logo replace failed',
-        replaced.error?.code,
-      )
+      console.error('upload-image: homepage logo replace failed', replaced.error?.code)
 
       await removeObject(bucket, path)
 
       const response =
         typeof replaced.data === 'object' &&
-          replaced.data !== null &&
-          (replaced.data as Record<string, unknown>).error === 'conflict'
+        replaced.data !== null &&
+        (replaced.data as Record<string, unknown>).error === 'conflict'
           ? { status: 409, error: 'conflict' }
           : { status: 500, error: 'database_failed' }
 
@@ -796,13 +779,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let cleanupPending = false
 
     if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
-      cleanupPending = !(
-        await removeObject(
-          bucket,
-          replaced.data.previous_path,
-          replaced.data.deletion_id,
-        )
-      )
+      cleanupPending = !(await removeObject(
+        bucket,
+        replaced.data.previous_path,
+        replaced.data.deletion_id,
+      ))
     }
 
     const publicUrl = createClient(publicSupabaseUrl, anonKey)
@@ -828,17 +809,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
   })
 
   if (replaced.error !== null || !isReplacement(replaced.data)) {
-    console.error(
-      'upload-image: barber photo replace failed',
-      replaced.error?.code,
-    )
+    console.error('upload-image: barber photo replace failed', replaced.error?.code)
 
     await removeObject(bucket, path)
 
     const response =
       typeof replaced.data === 'object' &&
-        replaced.data !== null &&
-        (replaced.data as Record<string, unknown>).error === 'conflict'
+      replaced.data !== null &&
+      (replaced.data as Record<string, unknown>).error === 'conflict'
         ? { status: 409, error: 'conflict' }
         : { status: 500, error: 'database_failed' }
 
@@ -854,18 +832,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   let cleanupPending = false
 
   if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
-    cleanupPending = !(
-      await removeObject(
-        bucket,
-        replaced.data.previous_path,
-        replaced.data.deletion_id,
-      )
-    )
+    cleanupPending = !(await removeObject(
+      bucket,
+      replaced.data.previous_path,
+      replaced.data.deletion_id,
+    ))
   }
 
-  const publicUrl = createClient(publicSupabaseUrl, anonKey)
-    .storage.from(bucket)
-    .getPublicUrl(path).data.publicUrl
+  const publicUrl = createClient(publicSupabaseUrl, anonKey).storage.from(bucket).getPublicUrl(path)
+    .data.publicUrl
 
   return json(
     {

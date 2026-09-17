@@ -223,18 +223,13 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
      * hanging on macOS/Colima even though the database serialization contract
      * is the thing this assertion is intended to test.
      */
-    const attempts = await Promise.all([
-      publishDirect(first),
-      publishDirect(second),
-    ])
+    const attempts = await Promise.all([publishDirect(first), publishDirect(second)])
 
     const successfulIndexes = attempts
       .map((attempt, index) => (attempt.error === null ? index : -1))
       .filter((index) => index !== -1)
 
-    const conflicts = attempts.filter(
-      (attempt) => attempt.error?.code === '40001',
-    )
+    const conflicts = attempts.filter((attempt) => attempt.error?.code === '40001')
 
     expect(successfulIndexes).toHaveLength(1)
     expect(conflicts).toHaveLength(1)

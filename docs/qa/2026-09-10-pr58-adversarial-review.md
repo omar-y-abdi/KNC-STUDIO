@@ -13,14 +13,14 @@
 
 ## Independent work packages
 
-| Package | Input | Output | Independent check |
-| --- | --- | --- | --- |
-| Scope/history | PR description, comments, every commit, file manifest | Fixed review boundary and claimed outcomes | Compare live GitHub SHAs, manifest and local object inventory |
-| Customer security | Browser, Worker, Edge, migrations, tests | Authorization, rotation, cookie and rate-limit findings | Trace concrete requests and concurrent schedules from raw source |
-| Booking/public UI | App shells, wizard, gallery, translations, consent | Behavioral, accessibility and privacy findings | Trace event/state transitions and compare rendered controls to handlers |
-| Admin integrity | CMS, mail, services, bookings, profile, media | Lost-update and stale-response findings | Construct late-response / scope-switch schedules for each mutation |
-| Operations/verification | CI, runbooks, claimed tests, release config | Launch gates, test blind spots and deployment defects | Match each claim to checked-in tests/config and existing CI evidence |
-| Assembly | All findings and coverage ledger | Comprehensive GitHub comment, inline where possible | Attempt to disprove each candidate; repin head; read back posted review |
+| Package                 | Input                                                 | Output                                                  | Independent check                                                       |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Scope/history           | PR description, comments, every commit, file manifest | Fixed review boundary and claimed outcomes              | Compare live GitHub SHAs, manifest and local object inventory           |
+| Customer security       | Browser, Worker, Edge, migrations, tests              | Authorization, rotation, cookie and rate-limit findings | Trace concrete requests and concurrent schedules from raw source        |
+| Booking/public UI       | App shells, wizard, gallery, translations, consent    | Behavioral, accessibility and privacy findings          | Trace event/state transitions and compare rendered controls to handlers |
+| Admin integrity         | CMS, mail, services, bookings, profile, media         | Lost-update and stale-response findings                 | Construct late-response / scope-switch schedules for each mutation      |
+| Operations/verification | CI, runbooks, claimed tests, release config           | Launch gates, test blind spots and deployment defects   | Match each claim to checked-in tests/config and existing CI evidence    |
+| Assembly                | All findings and coverage ledger                      | Comprehensive GitHub comment, inline where possible     | Attempt to disprove each candidate; repin head; read back posted review |
 
 ## Progress
 
@@ -70,7 +70,6 @@ Review complete at pinned head. GitHub review submitted and read back; see compl
 - Token mint/rotation lock order appears correct statically: SHARE on token conflicts with rotation upsert, legacy challenge deletion precedes session deletion. Need preserve limits of static review; checked-in new pgTAP tests are sequential, not concurrency proofs.
 - Cancellation mail does not call token ensure/repair; only confirmation/reminder build permanent link. Last-booking cancellation therefore does not fail merely because ensure requires confirmed booking.
 - Cloudflare bot build message alone cannot prove production promotion. PM audit claims current production version remains prior release; verify via GET if accessible.
-
 
 ## Coverage checkpoint 2
 
@@ -154,7 +153,6 @@ All 59 files' complete PR diff now read. New audit records read fully; historica
 - Cold catalog differs from cold JS chunk. Barber step marker exists during rosterLoading; observer can settle/disconnect before listActive fulfills. Actual buttons are taller than loading placeholder and may wrap into multiple rows. Current smoke checks DOM visibility, not viewport bounds; recorded cold proof delayed chunk only. Report source-derived delayed-catalog scenario, not measured pixels.
 - Scope guards protect B UI against A replies but do not serialize A writes across A→B→A or reconcile A reads made before pending A writes commit.
 
-
 ## Disproof checkpoint 3
 
 - Owner target selector is locked only for Schedule (AdminShell:121); Services/Profile/Bookings have no pending-write navigation lock. F1 remains reachable.
@@ -166,7 +164,6 @@ All 59 files' complete PR diff now read. New audit records read fully; historica
 - Rechecked media CAS; no allegation of bypass. Slow first photo can still win if delayed before the Edge's post-decode current-path read. Exact same-observed-path races are correctly rejected by CAS.
 - No anonymous booking authorization bypass established. Existing numeric admin_create_booking revokes PUBLIC but not explicitly anon; internal owner/barber check fails closed. Treat as known ACL hardening, not exploit.
 - Remaining known audit items source-checked: CMS hardcoded fallback, admin gate only revalidates at mount, phone-change review restriction, Turnstile success-only/no deadline, ICS line folding omitted. Full dependency advisory count is historical audit evidence only; did not run npm audit.
-
 
 ## Completion record
 
@@ -189,15 +186,15 @@ Verdict: request corrections; not launch-ready. Six functional/integration findi
 
 I read the description, current discussion, all eight commits' messages and the complete 59-file diff, including deletions, migrations, tests, CI and audit documents. I traced the changed paths through their adapters and current DB definitions. No application code, tests, builds or live customer operations were executed. The only local write is the Markdown review ledger. Counterexamples below are static deductions, not newly executed reproductions.
 
-| Finding | Priority | Failure and consequence |
-| --- | --- | --- |
-| F1 | P1 | [Keep outstanding writes serialized when a barber is revisited](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/ServicesView.tsx#L103) |
-| F2 | P2 | [Distinguish typed fields from fields auto-filled for a previous customer](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/booking/BookingFlow.tsx#L99) |
-| F3 | P2 | [Do not settle the reveal before the barber catalog has arrived](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/app/DesktopSite.tsx#L110) |
-| F4 | P2 | [Serialize the About font-size autosave as well as explicit save buttons](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/SiteView.tsx#L256) |
-| F5 | P2 | [Fence initial reads against edits and uploads made while loading](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/AboutView.tsx#L280) |
-| F6 | P2 | [Provide the same-origin endpoint in the supported local dev/preview path](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/backend/publicBookingActions.ts#L36) |
-| F7 | P1 | [Make the launch-critical browser and concurrency regressions reproducible at this head](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/tests/integration/reviewAccessHelpers.ts#L29) |
+| Finding | Priority | Failure and consequence                                                                                                                                                                                                        |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F1      | P1       | [Keep outstanding writes serialized when a barber is revisited](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/ServicesView.tsx#L103)                                 |
+| F2      | P2       | [Distinguish typed fields from fields auto-filled for a previous customer](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/booking/BookingFlow.tsx#L99)                            |
+| F3      | P2       | [Do not settle the reveal before the barber catalog has arrived](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/app/DesktopSite.tsx#L110)                                         |
+| F4      | P2       | [Serialize the About font-size autosave as well as explicit save buttons](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/SiteView.tsx#L256)                           |
+| F5      | P2       | [Fence initial reads against edits and uploads made while loading](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/admin/views/AboutView.tsx#L280)                                 |
+| F6      | P2       | [Provide the same-origin endpoint in the supported local dev/preview path](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/src/backend/publicBookingActions.ts#L36)                    |
+| F7      | P1       | [Make the launch-critical browser and concurrency regressions reproducible at this head](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/tests/integration/reviewAccessHelpers.ts#L29) |
 
 **The central correctness problem is that protecting the current UI from an old reply does not protect persisted state from an old write.** For Services, the new target reset allows a second save after A → B → A while the first save still runs. If the second update commits first, the first update can overwrite it; the generation check then hides the evidence. Similar re-entry leaves Bookings stale and can reorder profile-image intent. The fix needs mutation ordering/versioning and reconciliation, not only response suppression.
 
@@ -207,13 +204,13 @@ The customer auto-fill fix has a related ownership gap: untouched auto-filled va
 
 **Production launch gates remain open. These are not evidence that the PR was secretly deployed.** Read-only platform checks during this review found:
 
-| Gate | Current evidence | Required outcome before launch |
-| --- | --- | --- |
-| Coordinated customer-access release | Supabase migration inventory ends at `20260905154608`; neither PR migration is applied. Edge inventory is `public-booking-actions` v8 and `send-confirmation` v47. Cloudflare still serves deployment `9ca2d3f8-9acd-40f6-a5bd-f2bda59d0568`, version `5f6f21bf-3393-474b-b74d-670cbf7559ae`, from September 8 at 100%. | Complete the reviewed migration → Edge → Worker/frontend release and record deployed versions plus live acceptance evidence. The bot's successful PR build is not a traffic promotion. |
-| Worker bindings | Current Worker settings list only `ASSETS` and `SUPABASE_URL`. `SUPABASE_ANON_KEY` and `CUSTOMER_GATEWAY_SECRET` are absent. | Install the matching project key and matching high-entropy Worker/Edge gateway secret, then verify the actual public route. Otherwise the new customer proxy fails closed and dynamic discovery still falls back. |
-| Recoverability | Latest backup [run 34449508611](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/34449508611), job `102781783693`, fails configuration validation with `Missing SUPABASE_DB_URL secret`; the preceding two runs also failed. | Obtain a successful encrypted DB+Storage backup and a verified restore under [the restore runbook](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/docs/operations/BACKUP_RESTORE.md#L1). The currently failing workflow provides no recovery artifact. |
-| Retired Calendar surface | `calendar-sync` remains ACTIVE v21 in the live function inventory. | Check last use/dependencies, retire it under the operational plan and verify the durable replacement; inventory alone does not prove an active caller or an authorization bypass. |
-| Provider acceptance | Resend `mail.bladeblendstudio.se` is verified with sending enabled and tracking disabled. This review did not send mail or exercise Auth/Calendar/media/restore workflows. | Supply the current release's controlled Auth invitation/recovery/email-change, customer booking/cancel/review/reminder, Calendar and image-lifecycle acceptance evidence called for by the runbooks. Domain verification or delivery acceptance alone is insufficient. |
+| Gate                                | Current evidence                                                                                                                                                                                                                                                                                                        | Required outcome before launch                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coordinated customer-access release | Supabase migration inventory ends at `20260905154608`; neither PR migration is applied. Edge inventory is `public-booking-actions` v8 and `send-confirmation` v47. Cloudflare still serves deployment `9ca2d3f8-9acd-40f6-a5bd-f2bda59d0568`, version `5f6f21bf-3393-474b-b74d-670cbf7559ae`, from September 8 at 100%. | Complete the reviewed migration → Edge → Worker/frontend release and record deployed versions plus live acceptance evidence. The bot's successful PR build is not a traffic promotion.                                                                                                          |
+| Worker bindings                     | Current Worker settings list only `ASSETS` and `SUPABASE_URL`. `SUPABASE_ANON_KEY` and `CUSTOMER_GATEWAY_SECRET` are absent.                                                                                                                                                                                            | Install the matching project key and matching high-entropy Worker/Edge gateway secret, then verify the actual public route. Otherwise the new customer proxy fails closed and dynamic discovery still falls back.                                                                               |
+| Recoverability                      | Latest backup [run 34449508611](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/34449508611), job `102781783693`, fails configuration validation with `Missing SUPABASE_DB_URL secret`; the preceding two runs also failed.                                                                                      | Obtain a successful encrypted DB+Storage backup and a verified restore under [the restore runbook](https://github.com/omar-y-abdi/KNC-STUDIO/blob/5b45a09c44ce32fd64be724e4855d96273583004/docs/operations/BACKUP_RESTORE.md#L1). The currently failing workflow provides no recovery artifact. |
+| Retired Calendar surface            | `calendar-sync` remains ACTIVE v21 in the live function inventory.                                                                                                                                                                                                                                                      | Check last use/dependencies, retire it under the operational plan and verify the durable replacement; inventory alone does not prove an active caller or an authorization bypass.                                                                                                               |
+| Provider acceptance                 | Resend `mail.bladeblendstudio.se` is verified with sending enabled and tracking disabled. This review did not send mail or exercise Auth/Calendar/media/restore workflows.                                                                                                                                              | Supply the current release's controlled Auth invitation/recovery/email-change, customer booking/cancel/review/reminder, Calendar and image-lifecycle acceptance evidence called for by the runbooks. Domain verification or delivery acceptance alone is insufficient.                          |
 
 **The PR also explicitly leaves product/security weaknesses unresolved.** They must not disappear behind the phrase “fully launch ready.” These are existing issues, distinct from the new regressions above:
 

@@ -1,11 +1,14 @@
 # AGENTS.md
+
 ## Project
+
 - Blade & Blend Studio website
 - Stack: Vite + Preact + TypeScript
 - Backend: Supabase + Cloudflare Workers/Static Assets
 - Default language: Swedish. English also exists
 
 ## Read First
+
 - [README.md](README.md)
 - [CODEBASE-MAP.md](CODEBASE-MAP.md) **THIS IS THE ARCHITECTURAL INDEX OF THE REPO READ IT BEFORE READING/GREP SEARCHING AND EDITING CODE: ALWAYS UPDATE WHEN CHANGING ARCHITECTURE**
 - [BACKEND.md](BACKEND.md)
@@ -14,6 +17,7 @@
 - [docs/operations/BACKUP_RESTORE.md](docs/operations/BACKUP_RESTORE.md)
 
 ## Quick Commands
+
 - `npm run build` - typecheck + production build
 - `npm run lint` - ESLint
 - `npm test` - unit tests
@@ -23,6 +27,7 @@
 - `npm run test:e2e` - browser smoke
 
 ## Repo Map
+
 - `src/app/` - root, router, desktop/mobile shell, app state
 - `src/booking/` - booking domain, slots, pricing, validation, ICS, adapters
 - `src/admin/` - staff panel, auth, settings, admin adapters
@@ -40,6 +45,7 @@
 - `tools/` - backup, smoke, seed, visual, e2e helpers
 
 ## Work Rules
+
 - Keep domain logic pure
 - Put effects at edges: adapters, Edge Functions, Worker, UI I/O
 - Booking truth lives server-side. Do not trust browser values for price, duration, or business rules
@@ -48,12 +54,14 @@
 - Touch only files needed for the task
 
 ## Supabase Rules
+
 - Use migrations, not manual schema drift
 - If changing schema, RLS, RPCs, triggers, or outbox behavior, check `supabase/tests/`
 - Public booking changes must follow [docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md](docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md)
 - Only `VITE_*` env values are public. Keep secrets server-side
 
 ## Launch Hotspots
+
 - Booking gateway: `supabase/functions/submit-booking/`, `public-booking-actions/`, related migrations/tests
 - Email and reminders: `send-confirmation`, reminder flow, mail templates
 - Storage/image upload: `upload-image/`, outbox cleanup, admin gallery paths
@@ -62,6 +70,7 @@
 - Backup/restore: `tools/backup/*`, [docs/operations/BACKUP_RESTORE.md](docs/operations/BACKUP_RESTORE.md)
 
 ## Session Flow
+
 1. Read the docs above
 2. Inspect nearest code and tests before editing
 3. Make smallest correct change
@@ -76,7 +85,7 @@ Operate with senior-level engineering judgment. Optimize for the correct, durabl
 
 - Inspect the relevant code, tests, docs, and existing seams before changing anything
 - Search before building; reuse established patterns where they fit
-- Surface material ambiguity, tradeoffs, and assumptions. *Ask when the answer would meaningfully change the implementation;* otherwise state the assumption and proceed with the best possible outcome, always striving for senior-level judgment and engineering density.
+- Surface material ambiguity, tradeoffs, and assumptions. _Ask when the answer would meaningfully change the implementation;_ otherwise state the assumption and proceed with the best possible outcome, always striving for senior-level judgment and engineering density.
 - Solve the actual user problem, including its difficult cases. Do not quietly narrow scope because a weaker version is easier to implement
 
 ### 2. Earn Complexity
