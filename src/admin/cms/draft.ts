@@ -256,7 +256,7 @@ export function mergeDocuments(
     const orders = [before, ours, theirs].map((items) =>
       items.map(identify).filter((identity) => included.has(identity)),
     )
-    const [baseOrder = [], localOrder = [], remoteOrder = []] = orders
+    const [, localOrder = [], remoteOrder = []] = orders
     const positions = orders.map(
       (order) => new Map(order.map((identity, index) => [identity, index])),
     )
