@@ -113,6 +113,33 @@ select lives_ok(
 select ok(not (select active from public.barbers where id='victor'),'Historical CMS publication preserves current barber bookability');
 select is((select value from public.site_settings where key='cancellation_policy_hours'),'48','Historical CMS publication preserves current cancellation enforcement');
 select ok(not exists(select 1 from jsonb_array_elements(public.public_business_discovery()->'barbers') as b(value) where b.value->>'id'='victor'),'Historical CMS publication cannot make an inactive barber bookable');
+
+insert into public.bookings
+ (id,barber_id,service_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status,created_at)
+values
+ ('99000000-0000-4000-8000-000000000030','victor','cms-operational-test','CMS Operational Test',300,30,
+  now()+interval '36 hours',now()+interval '36 hours 30 minutes','CMS Test','email','0709900030','cms-operational@example.invalid','sv','confirmed',now());
+
+set local role service_role;
+select ok(
+  (public.ensure_customer_booking_access_token(
+    'cms-operational@example.invalid','0709900030',repeat('a',64),'v1.' || repeat('A',80)
+  )->>'token_ciphertext') is not null,
+  'Cancellation enforcement fixture has valid customer access'
+);
+select is(
+  public.cancel_customer_booking_with_access(
+    '99000000-0000-4000-8000-000000000030',repeat('a',64)
+  )->>'error',
+  'not_found',
+  'Historical CMS publication cannot weaken the live 48-hour cancellation cutoff'
+);
+reset role;
+select is(
+  (select status from public.bookings where id='99000000-0000-4000-8000-000000000030'),
+  'confirmed',
+  'Booking inside the live cancellation cutoff remains confirmed after historical CMS publication'
+);
 rollback to savepoint cms_operational_boundary;
 
 insert into public.cms_assets(id,bucket,path,name,mime) values('99000000-0000-4000-8000-000000000020','cms-library','test/photo.webp','Photo','image/webp');
