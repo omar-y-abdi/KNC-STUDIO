@@ -238,8 +238,7 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
   visit(fragment)
 
   const missing: string[] = []
-  if (!ids.has(`legal-business-details-${lang}`))
-    missing.push(`#legal-business-details-${lang}`)
+  if (!ids.has(`legal-business-details-${lang}`)) missing.push(`#legal-business-details-${lang}`)
   if (path === '/terms' && !ids.has(`cancellation-policy-${lang}`))
     missing.push(`#cancellation-policy-${lang}`)
   if (path === '/privacy') {

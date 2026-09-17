@@ -342,9 +342,8 @@ describe('CMS draft durability', () => {
       (item) => item.id !== '00000000-0000-4000-8000-000000000001',
     )
     local.gallery.push(image('00000000-0000-4000-8000-000000000003', 'Local add', 2))
-    remote.gallery.find(
-      (item) => item.id === '00000000-0000-4000-8000-000000000002',
-    )!.alt = 'Remote edit'
+    remote.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002')!.alt =
+      'Remote edit'
     remote.gallery.push(image('00000000-0000-4000-8000-000000000004', 'Remote add', 3))
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts).toHaveLength(0)
@@ -354,9 +353,8 @@ describe('CMS draft durability', () => {
       '00000000-0000-4000-8000-000000000004',
     ])
     expect(
-      result.document.gallery.find(
-        (item) => item.id === '00000000-0000-4000-8000-000000000002',
-      )?.alt,
+      result.document.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002')
+        ?.alt,
     ).toBe('Remote edit')
   })
   it('merges email variants by template and language', () => {

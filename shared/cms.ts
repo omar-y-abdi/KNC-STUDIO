@@ -310,8 +310,7 @@ function validateSetting(key: string, value: unknown): void {
     case 'homepage_scale':
     case 'about_scale':
     case 'homepage_logo_scale':
-      if (!['sm', 'md', 'lg', 'xl'].includes(normalized))
-        fail(path, 'Expected sm, md, lg or xl')
+      if (!['sm', 'md', 'lg', 'xl'].includes(normalized)) fail(path, 'Expected sm, md, lg or xl')
       return
     case 'homepage_logo_style':
       if (!['classic', 'monochrome'].includes(normalized))
@@ -329,8 +328,7 @@ function validateSetting(key: string, value: unknown): void {
     case 'business_name':
     case 'business_street':
     case 'business_city':
-      if (normalized.length < 1 || normalized.length > 160)
-        fail(path, 'Expected 1–160 characters')
+      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Expected 1–160 characters')
       return
     case 'business_legal_name':
       if (normalized.length > 160 || /[\u0000-\u001f\u007f-\u009f]/.test(normalized))
@@ -363,13 +361,11 @@ function validateSetting(key: string, value: unknown): void {
       return
     case 'seo_title_sv':
     case 'seo_title_en':
-      if (normalized.length < 1 || normalized.length > 120)
-        fail(path, 'Expected 1–120 characters')
+      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Expected 1–120 characters')
       return
     case 'seo_description_sv':
     case 'seo_description_en':
-      if (normalized.length < 1 || normalized.length > 500)
-        fail(path, 'Expected 1–500 characters')
+      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Expected 1–500 characters')
       return
   }
 }
@@ -701,8 +697,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
   ] as const) {
     const cells = object(d[group], group)
     keys(cells, allowed, group)
-    for (const [key, raw] of Object.entries(cells))
-      localized(raw, `${group}.${key}`, max, true)
+    for (const [key, raw] of Object.entries(cells)) localized(raw, `${group}.${key}`, max, true)
   }
   const settings = object(d['settings'], 'settings')
   keys(settings, SETTING_KEYS, 'settings')
@@ -711,11 +706,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     barberIds: string[] = []
   for (const raw of barbers) {
     const b = object(raw, 'barber')
-    keys(
-      b,
-      ['id', 'name', 'ig', 'role_sv', 'role_en', 'bio_sv', 'bio_en', 'sort_order'],
-      'barber',
-    )
+    keys(b, ['id', 'name', 'ig', 'role_sv', 'role_en', 'bio_sv', 'bio_en', 'sort_order'], 'barber')
     const id = text(b['id'], 'barber.id', 32, 1)
     if (!/^[a-z0-9-]+$/.test(id)) fail('barber.id', 'Invalid identity')
     barberIds.push(id)
@@ -784,10 +775,8 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     text(email['preheader'], 'email.preheader', 180, 1)
     for (const key of ['intro', 'note']) text(email[key], `email.${key}`, 800, 1)
     text(email['cta_label'], 'email.cta_label', 80, 1)
-    if (email['section_title'] !== null)
-      text(email['section_title'], 'email.section_title', 120, 1)
-    if (email['contact_lead'] !== null)
-      text(email['contact_lead'], 'email.contact_lead', 240, 1)
+    if (email['section_title'] !== null) text(email['section_title'], 'email.section_title', 120, 1)
+    if (email['contact_lead'] !== null) text(email['contact_lead'], 'email.contact_lead', 240, 1)
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
   unique(emailIds, 'emails')
@@ -805,10 +794,7 @@ export function validateCompleteDocument(
       const translations = document[group][key]
       if (!translations) fail(`${group}.${key}`, 'Required content is missing')
       for (const lang of ['sv', 'en'] as const)
-        if (
-          Object.hasOwn(requiredTranslations, lang) &&
-          !Object.hasOwn(translations, lang)
-        )
+        if (Object.hasOwn(requiredTranslations, lang) && !Object.hasOwn(translations, lang))
           fail(`${group}.${key}.${lang}`, 'Required translation is missing')
     }
   }
@@ -854,8 +840,7 @@ export function validateDocumentMedia(document: CmsDocument, assets: readonly Cm
     const asset = inventory.get(mediaKey(ref))
     if (!asset) fail(path, 'Referenced media is not registered')
     if (prefix && !ref.path.startsWith(prefix)) fail(path, 'Media is outside the required scope')
-    if (kind === 'image' && !asset.mime.startsWith('image/'))
-      fail(path, 'Expected an image asset')
+    if (kind === 'image' && !asset.mime.startsWith('image/')) fail(path, 'Expected an image asset')
     if (kind === 'font' && asset.mime !== 'font/woff2') fail(path, 'Expected a WOFF2 font')
   }
 
@@ -874,12 +859,7 @@ export function validateDocumentMedia(document: CmsDocument, assets: readonly Cm
     )
   const logo = document.settings['homepage_logo_path']
   if (logo)
-    requireAsset(
-      { bucket: 'gallery', path: logo },
-      'settings.homepage_logo_path',
-      'image',
-      'logo/',
-    )
+    requireAsset({ bucket: 'gallery', path: logo }, 'settings.homepage_logo_path', 'image', 'logo/')
   for (const email of document.emails)
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')

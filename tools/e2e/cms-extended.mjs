@@ -173,7 +173,9 @@ export async function extendedCmsScenarios({
     assert.equal(policy.rowCount, 1, 'The cancellation policy fixture is missing')
     const originalPolicy = policy.rows[0].value
     const historicalPolicy = Number(originalPolicy)
-    assert.ok(Number.isInteger(historicalPolicy) && historicalPolicy >= 1 && historicalPolicy <= 168)
+    assert.ok(
+      Number.isInteger(historicalPolicy) && historicalPolicy >= 1 && historicalPolicy <= 168,
+    )
     const livePolicy = historicalPolicy <= 144 ? historicalPolicy + 24 : historicalPolicy - 24
     const bookingOffsetHours = Math.floor((historicalPolicy + livePolicy) / 2)
     const bookingId = randomUUID()
@@ -245,9 +247,8 @@ export async function extendedCmsScenarios({
         p_session_hash: accessHash,
       })
       assert.equal(cancellation.error, null)
-      const status = (
-        await db.query('select status from public.bookings where id=$1', [bookingId])
-      ).rows[0].status
+      const status = (await db.query('select status from public.bookings where id=$1', [bookingId]))
+        .rows[0].status
       if (bookingOffsetHours > livePolicy) {
         assert.equal(cancellation.data.ok, true)
         assert.equal(status, 'cancelled')

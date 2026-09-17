@@ -111,8 +111,9 @@ function NativeSite({
   useCmsTheme(mode)
   const [surface, setSurface] = useState(snapshot.surface)
   const [mobile, setMobile] = useState(() => matchMedia('(max-width:768px)').matches)
-  const [liveCancellationPolicyHours, setLiveCancellationPolicyHours] =
-    useState<number | null>(null)
+  const [liveCancellationPolicyHours, setLiveCancellationPolicyHours] = useState<number | null>(
+    null,
+  )
   const dark = mode === 'dark',
     c = useCmsPalette(shellPalette(dark), mode)
   useEffect(() => {
@@ -392,9 +393,7 @@ export default function CmsPreview(): JSX.Element {
       const nodes = [...document.querySelectorAll<HTMLElement>('[data-cms-node]')].filter(
         (node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0,
       )
-      const duplicates = duplicateCmsNodeIds(
-        nodes.map((node) => node.dataset['cmsNode'] ?? ''),
-      )
+      const duplicates = duplicateCmsNodeIds(nodes.map((node) => node.dataset['cmsNode'] ?? ''))
       if (duplicates.length > 0) {
         send(
           'error',

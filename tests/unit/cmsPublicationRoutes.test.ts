@@ -122,8 +122,7 @@ const currentBusinessDiscovery = {
 
 function rpcWithDiscovery(value: CmsPresentation = legalPresentation()) {
   const fetcher = vi.fn(async (input: Request | URL | string) => {
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (url.endsWith('/rest/v1/rpc/public_cms_presentation'))
       return Response.json({ revision: 3, presentation: value })
     if (url.endsWith('/rest/v1/rpc/public_business_discovery'))
@@ -250,7 +249,11 @@ describe('CMS publication through the actual Worker', () => {
     ['/privacy', 'CMS privacy override SV', 'Current KNC Studio AB'],
     ['/privacy?lang=en', 'CMS privacy override EN', 'Current KNC Studio AB'],
     ['/terms', 'CMS terms override SV', 'Avboka senast 36 timmar före den bokade tiden.'],
-    ['/terms?lang=en', 'CMS terms override EN', 'Cancel at least 36 hours before your appointment.'],
+    [
+      '/terms?lang=en',
+      'CMS terms override EN',
+      'Cancel at least 36 hours before your appointment.',
+    ],
   ])(
     'enriches CMS-authored legal route %s with current server-owned facts',
     async (path, override, expectedLegalText) => {

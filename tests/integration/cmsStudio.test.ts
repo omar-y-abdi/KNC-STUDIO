@@ -191,9 +191,10 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
 
     for (const attempt of attempts) {
       const validation = await call({ operation: 'validate', document: attempt.document })
-      expect(validation.status, `${attempt.name} validate: ${await validation.clone().text()}`).toBe(
-        422,
-      )
+      expect(
+        validation.status,
+        `${attempt.name} validate: ${await validation.clone().text()}`,
+      ).toBe(422)
       const publish = await call(publication(base, attempt.document))
       expect(publish.status, `${attempt.name} publish: ${await publish.clone().text()}`).toBe(422)
     }
