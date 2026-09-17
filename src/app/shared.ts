@@ -21,6 +21,7 @@ export interface ShellPalette {
   secondarySurface: string
   text: string
   muted: string
+  mobileMuted: string
   line: string
   navBg: string
   footer: string
@@ -34,7 +35,8 @@ const DARK: ShellPalette = {
   surface: '#242427',
   secondarySurface: 'rgba(255,255,255,.10)',
   text: '#f5f5f7',
-  muted: 'rgba(255,255,255,.55)',
+  muted: 'rgba(255,255,255,.7)',
+  mobileMuted: 'rgba(255,255,255,.55)',
   line: 'rgba(255,255,255,.1)',
   navBg: '#262629',
   footer: '#161618',
@@ -48,7 +50,8 @@ const LIGHT: ShellPalette = {
   surface: '#f4f3f0',
   secondarySurface: 'rgba(0,0,0,.06)',
   text: '#1c1c1e',
-  muted: 'rgba(0,0,0,.6)',
+  muted: 'rgba(0,0,0,.62)',
+  mobileMuted: 'rgba(0,0,0,.6)',
   line: 'rgba(0,0,0,.08)',
   navBg: '#f1f0ec',
   footer: '#faf9f6',

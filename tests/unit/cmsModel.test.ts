@@ -44,6 +44,7 @@ describe('CMS shell theme palette', () => {
       expect(palette.navBg).toBe(surface)
       expect(palette.footer).toBe(surface)
       expect(palette.muted).toBe(muted)
+      expect(palette.mobileMuted).toBe(muted)
     },
   )
 })
