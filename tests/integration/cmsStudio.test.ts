@@ -139,6 +139,44 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
       )
     }
   })
+  it('rejects incomplete publications before omission can delete authoritative content', async () => {
+    const base = await state()
+    const attempts: Array<{ name: string; document: CmsState['document'] }> = []
+
+    const missingSetting = structuredClone(base.document)
+    delete missingSetting.settings['cancellation_policy_hours']
+    attempts.push({ name: 'required setting', document: missingSetting })
+
+    const missingTemplate = structuredClone(base.document)
+    missingTemplate.emails = missingTemplate.emails.filter(
+      (email) => !(email.template === 'customer_confirmation' && email.lang === 'sv'),
+    )
+    attempts.push({ name: 'required email variant', document: missingTemplate })
+
+    const missingSiteTranslation = structuredClone(base.document)
+    const siteKicker = missingSiteTranslation.site['kicker']
+    if (!siteKicker) throw new Error('Missing seeded site fixture')
+    delete siteKicker.sv
+    attempts.push({ name: 'required site translation', document: missingSiteTranslation })
+
+    const missingAboutTranslation = structuredClone(base.document)
+    const aboutEyebrow = missingAboutTranslation.about['eyebrow']
+    if (!aboutEyebrow) throw new Error('Missing seeded about fixture')
+    delete aboutEyebrow.en
+    attempts.push({ name: 'required about translation', document: missingAboutTranslation })
+
+    for (const attempt of attempts) {
+      const validation = await call({ operation: 'validate', document: attempt.document })
+      const validationDetail = await validation.clone().text()
+      expect(validation.status, `${attempt.name} validate: ${validationDetail}`).toBe(422)
+
+      const publish = await call(publication(base, attempt.document))
+      const publishDetail = await publish.clone().text()
+      expect(publish.status, `${attempt.name} publish: ${publishDetail}`).toBe(422)
+    }
+
+    expect(await state()).toEqual(base)
+  })
   it('accepts exactly one competing publication and replays the committed identity', async () => {
     const base = await state()
 

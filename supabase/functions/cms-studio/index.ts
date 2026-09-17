@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   CmsValidationError,
-  validateDocument,
+  validateCompleteDocument,
   documentMedia,
   mediaKey,
   type CmsDocument,
@@ -173,7 +173,7 @@ Deno.serve(async (request) => {
       'document',
       ...(body.operation === 'publish' ? ['baseRevision', 'baseFingerprint', 'requestId'] : []),
     )
-    validateDocument(body.document)
+    validateCompleteDocument(body.document)
     const document: CmsDocument = structuredClone(body.document)
     const policy = {
       siteOrigin: origin ?? 'https://bladeblendstudio.se',
@@ -196,7 +196,7 @@ Deno.serve(async (request) => {
         'media',
         'En refererad fil saknas eller är inte registrerad. Välj filen på nytt i biblioteket.',
       )
-    validateDocument(document)
+    validateCompleteDocument(document)
     if (body.operation === 'validate') return json({ document })
     if (
       typeof body.baseFingerprint !== 'string' ||

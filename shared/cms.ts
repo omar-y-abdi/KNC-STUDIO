@@ -716,6 +716,35 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
   unique(emailIds, 'emails')
   validatePresentation(d['presentation'])
 }
+export function validateCompleteDocument(value: unknown): asserts value is CmsDocument {
+  validateDocument(value)
+  const document = value as CmsDocument
+
+  for (const [group, required] of [
+    ['site', SITE_KEYS],
+    ['about', ABOUT_KEYS],
+  ] as const) {
+    const cells = document[group]
+    for (const key of required) {
+      if (!Object.hasOwn(cells, key)) fail(`${group}.${key}`, 'Required content is missing')
+      const translations = cells[key]
+      if (!translations) fail(`${group}.${key}`, 'Required content is missing')
+      for (const lang of ['sv', 'en'] as const)
+        if (!Object.hasOwn(translations, lang))
+          fail(`${group}.${key}.${lang}`, 'Required translation is missing')
+    }
+  }
+
+  for (const key of SETTING_KEYS)
+    if (!Object.hasOwn(document.settings, key))
+      fail(`settings.${key}`, 'Required setting is missing')
+
+  const emailIds = new Set(document.emails.map((email) => `${email.template}:${email.lang}`))
+  for (const template of EMAIL_NAMES)
+    for (const lang of ['sv', 'en'] as const)
+      if (!emailIds.has(`${template}:${lang}`))
+        fail(`emails.${template}.${lang}`, 'Required email variant is missing')
+}
 export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
   const media = { bucket: ref.bucket, path: ref.path }
   if (!validMediaRef(media)) throw new CmsValidationError('media', 'Invalid reference')
