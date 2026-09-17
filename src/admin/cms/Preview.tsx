@@ -2,7 +2,7 @@ import type { JSX } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { DesktopSite } from '../../app/DesktopSite'
 import { MobileSite } from '../../app/MobileSite'
-import { chromeIcon, mobBtnBg, mobMuted, shellPalette, type View } from '../../app/shared'
+import { chromeIcon, shellPalette, type View } from '../../app/shared'
 import { appStrings } from '../../i18n'
 import { LangSwitch, ThemeSwitch } from '../chrome'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
@@ -275,8 +275,6 @@ function NativeSite({
       {mobile ? (
         <MobileSite
           {...common}
-          mobMutedColor={mobMuted(dark)}
-          mobBtnBgColor={mobBtnBg(dark)}
           openMobBooking={() => setSurface('booking')}
           scrollMobToHero={() => setSurface('home')}
         />
