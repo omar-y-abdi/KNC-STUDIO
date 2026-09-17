@@ -348,8 +348,9 @@ describe('CMS draft durability', () => {
       (item) => item.id !== '00000000-0000-4000-8000-000000000001',
     )
     local.gallery.push(image('00000000-0000-4000-8000-000000000003', 'Local add', 2))
-    required(\n      remote.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002'),\n    ).alt =
-      'Remote edit'
+    required(
+      remote.gallery.find((item) => item.id === '00000000-0000-4000-8000-000000000002'),
+    ).alt = 'Remote edit'
     remote.gallery.push(image('00000000-0000-4000-8000-000000000004', 'Remote add', 3))
     const result = mergeDocuments(base, local, remote)
     expect(result.conflicts).toHaveLength(0)
