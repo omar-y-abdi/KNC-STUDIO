@@ -390,13 +390,28 @@ describe('CMS draft durability', () => {
     base.presentation.pages = [a, b, c, d]
     const local = structuredClone(base),
       remote = structuredClone(base)
-    local.presentation.pages = [local.presentation.pages[1]!, local.presentation.pages[0]!, local.presentation.pages[2]!, local.presentation.pages[3]!]
-    remote.presentation.pages = [remote.presentation.pages[0]!, remote.presentation.pages[1]!, remote.presentation.pages[3]!, remote.presentation.pages[2]!]
+    local.presentation.pages = [
+      local.presentation.pages[1]!,
+      local.presentation.pages[0]!,
+      local.presentation.pages[2]!,
+      local.presentation.pages[3]!,
+    ]
+    remote.presentation.pages = [
+      remote.presentation.pages[0]!,
+      remote.presentation.pages[1]!,
+      remote.presentation.pages[3]!,
+      remote.presentation.pages[2]!,
+    ]
 
     const result = mergeDocuments(base, local, remote)
 
     expect(result.conflicts).toHaveLength(0)
-    expect(result.document.presentation.pages.map((item) => item.path)).toEqual(['/b', '/a', '/d', '/c'])
+    expect(result.document.presentation.pages.map((item) => item.path)).toEqual([
+      '/b',
+      '/a',
+      '/d',
+      '/c',
+    ])
   })
 
   it('conflicts only on the overlapping property of the same entity', () => {
