@@ -301,6 +301,88 @@ function text(value: unknown, path: string, max = 2000, min = 0): string {
     fail(path, `Expected ${min}–${max} characters`)
   return value
 }
+function sqlBtrim(value: string): string {
+  return value.replace(/^ +| +$/g, '')
+}
+function validateSetting(key: string, value: unknown): void {
+  const path = `settings.${key}`,
+    raw = text(value, path, 500),
+    normalized = sqlBtrim(raw)
+  switch (key) {
+    case 'homepage_scale':
+    case 'about_scale':
+    case 'homepage_logo_scale':
+      if (!['sm', 'md', 'lg', 'xl'].includes(normalized))
+        fail(path, 'Expected sm, md, lg or xl')
+      return
+    case 'homepage_logo_style':
+      if (!['classic', 'monochrome'].includes(normalized))
+        fail(path, 'Expected classic or monochrome')
+      return
+    case 'homepage_logo_path':
+      if (
+        normalized &&
+        !/^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/.test(
+          normalized,
+        )
+      )
+        fail(path, 'Invalid homepage logo path')
+      return
+    case 'business_name':
+    case 'business_street':
+    case 'business_city':
+      if (normalized.length < 1 || normalized.length > 160)
+        fail(path, 'Expected 1–160 characters')
+      return
+    case 'business_legal_name':
+      if (normalized.length > 160 || /[\u0000-\u001f\u007f-\u009f]/.test(normalized))
+        fail(path, 'Invalid legal business name')
+      return
+    case 'business_org_number':
+      if (normalized && !/^[0-9]{6}-?[0-9]{4}$/.test(normalized))
+        fail(path, 'Invalid business registration number')
+      return
+    case 'business_email':
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.toLowerCase()))
+        fail(path, 'Invalid business email')
+      return
+    case 'business_phone_display':
+      if (normalized.length > 80) fail(path, 'Expected at most 80 characters')
+      return
+    case 'business_phone_tel': {
+      const phone = normalized.replace(/[\s().-]/g, '')
+      if (phone && !/^\+?[0-9]{3,20}$/.test(phone)) fail(path, 'Invalid business phone')
+      return
+    }
+    case 'business_postal_code': {
+      const postalCode = normalized.replace(/\s/g, '')
+      if (!/^[0-9]{5}$/.test(postalCode)) fail(path, 'Invalid business postal code')
+      return
+    }
+    case 'business_maps_href':
+      if (normalized && !/^https:\/\/[^\s]+$/.test(normalized))
+        fail(path, 'Invalid business maps URL')
+      return
+    case 'cancellation_policy_hours':
+      if (
+        !/^[0-9]{1,3}$/.test(normalized) ||
+        Number(normalized) < 1 ||
+        Number(normalized) > 168
+      )
+        fail(path, 'Expected 1–168 hours')
+      return
+    case 'seo_title_sv':
+    case 'seo_title_en':
+      if (normalized.length < 1 || normalized.length > 120)
+        fail(path, 'Expected 1–120 characters')
+      return
+    case 'seo_description_sv':
+    case 'seo_description_en':
+      if (normalized.length < 1 || normalized.length > 500)
+        fail(path, 'Expected 1–500 characters')
+      return
+  }
+}
 function integer(value: unknown, path: string, min: number, max: number): void {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
     fail(path, `Expected an integer between ${min} and ${max}`)
@@ -623,17 +705,18 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     'document',
   )
   if (d['schema'] !== 1) fail('document.schema', 'Unsupported schema version')
-  for (const [group, allowed] of [
-    ['site', SITE_KEYS],
-    ['about', ABOUT_KEYS],
+  for (const [group, allowed, max] of [
+    ['site', SITE_KEYS, 400],
+    ['about', ABOUT_KEYS, 2000],
   ] as const) {
     const cells = object(d[group], group)
     keys(cells, allowed, group)
-    for (const [key, raw] of Object.entries(cells)) localized(raw, `${group}.${key}`, 2000, true)
+    for (const [key, raw] of Object.entries(cells))
+      localized(raw, `${group}.${key}`, max, true)
   }
   const settings = object(d['settings'], 'settings')
   keys(settings, SETTING_KEYS, 'settings')
-  for (const [key, raw] of Object.entries(settings)) text(raw, `settings.${key}`, 500)
+  for (const [key, raw] of Object.entries(settings)) validateSetting(key, raw)
   const barbers = list(d['barbers'], 'barbers', 100),
     barberIds: string[] = []
   for (const raw of barbers) {
@@ -646,10 +729,10 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     const id = text(b['id'], 'barber.id', 32, 1)
     if (!/^[a-z0-9-]+$/.test(id)) fail('barber.id', 'Invalid identity')
     barberIds.push(id)
-    text(b['name'], 'barber.name', 80, 1)
+    text(b['name'], 'barber.name', 60, 1)
     text(b['ig'], 'barber.ig', 60)
     for (const key of ['role_sv', 'role_en']) text(b[key], key, 80)
-    for (const key of ['bio_sv', 'bio_en']) text(b[key], key, 2000)
+    for (const key of ['bio_sv', 'bio_en']) text(b[key], key, 600)
     if (typeof b['active'] !== 'boolean') fail(id, 'Invalid active state')
     integer(b['sort_order'], id, -2147483648, 2147483647)
   }
@@ -670,9 +753,11 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     const id = text(image['id'], 'gallery.id', 36)
     if (!UUID.test(id)) fail('gallery.id', 'Invalid identity')
     galleryIds.push(id)
+    const storagePath = String(image['storage_path'])
     if (
       !['salon', 'cuts'].includes(String(image['kind'])) ||
-      !validMediaRef({ bucket: 'gallery', path: image['storage_path'] })
+      !validMediaRef({ bucket: 'gallery', path: storagePath }) ||
+      storagePath.length > 200
     )
       fail(id, 'Invalid gallery reference')
     text(image['alt'], `${id}.alt`, 2000)
@@ -706,11 +791,14 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     )
       fail('email', 'Unknown template or locale')
     emailIds.push(`${email['template']}:${email['lang']}`)
-    for (const key of ['subject', 'title', 'cta_label']) text(email[key], `email.${key}`, 120, 1)
+    for (const key of ['subject', 'title']) text(email[key], `email.${key}`, 120, 1)
     text(email['preheader'], 'email.preheader', 180, 1)
     for (const key of ['intro', 'note']) text(email[key], `email.${key}`, 800, 1)
-    for (const key of ['section_title', 'contact_lead'])
-      if (email[key] !== null) text(email[key], `email.${key}`, 800)
+    text(email['cta_label'], 'email.cta_label', 80, 1)
+    if (email['section_title'] !== null)
+      text(email['section_title'], 'email.section_title', 120, 1)
+    if (email['contact_lead'] !== null)
+      text(email['contact_lead'], 'email.contact_lead', 240, 1)
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
   unique(emailIds, 'emails')
@@ -765,6 +853,47 @@ export function documentMedia(document: CmsDocument): MediaRef[] {
   if (logo) refs.push({ bucket: 'gallery', path: logo })
   for (const email of document.emails) if (email.design?.logo) refs.push(email.design.logo)
   return [...new Map(refs.map((ref) => [mediaKey(ref), ref])).values()]
+}
+export function validateDocumentMedia(document: CmsDocument, assets: readonly CmsAsset[]): void {
+  const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
+  const requireAsset = (
+    ref: MediaRef,
+    path: string,
+    kind: 'image' | 'font',
+    prefix?: string,
+  ): void => {
+    const asset = inventory.get(mediaKey(ref))
+    if (!asset) fail(path, 'Referenced media is not registered')
+    if (prefix && !ref.path.startsWith(prefix)) fail(path, 'Media is outside the required scope')
+    if (kind === 'image' && !asset.mime.startsWith('image/'))
+      fail(path, 'Expected an image asset')
+    if (kind === 'font' && asset.mime !== 'font/woff2') fail(path, 'Expected a WOFF2 font')
+  }
+
+  for (const [id, image] of Object.entries(document.presentation.images))
+    requireAsset(image.ref, `presentation.images.${id}`, 'image')
+  for (const [id, font] of Object.entries(document.presentation.fonts ?? {}))
+    requireAsset(font.ref, `presentation.fonts.${id}`, 'font')
+  for (const [id, path] of Object.entries(document.photos))
+    requireAsset({ bucket: 'barber-photos', path }, `photos.${id}`, 'image', `${id}/`)
+  for (const image of document.gallery)
+    requireAsset(
+      { bucket: 'gallery', path: image.storage_path },
+      `gallery.${image.id}.storage_path`,
+      'image',
+      `${image.kind}/`,
+    )
+  const logo = document.settings['homepage_logo_path']
+  if (logo)
+    requireAsset(
+      { bucket: 'gallery', path: logo },
+      'settings.homepage_logo_path',
+      'image',
+      'logo/',
+    )
+  for (const email of document.emails)
+    if (email.design?.logo)
+      requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
 }
 export function cssProperty(name: string): string {
   return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)

@@ -177,6 +177,43 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
 
     expect(await state()).toEqual(base)
   })
+  it('uses the same database semantics for validation and publication', async () => {
+    const base = await state()
+    const attempts: Array<{ name: string; document: CmsState['document'] }> = []
+
+    const oversizedSiteCopy = structuredClone(base.document)
+    oversizedSiteCopy.site['kicker'] = { sv: 'x'.repeat(401), en: 'Valid' }
+    attempts.push({ name: 'site content length', document: oversizedSiteCopy })
+
+    const invalidEmail = structuredClone(base.document)
+    invalidEmail.settings['business_email'] = 'not-an-email'
+    attempts.push({ name: 'business email', document: invalidEmail })
+
+    const invalidCancellation = structuredClone(base.document)
+    invalidCancellation.settings['cancellation_policy_hours'] = '0'
+    attempts.push({ name: 'cancellation policy', document: invalidCancellation })
+
+    for (const attempt of attempts) {
+      const validation = await call({ operation: 'validate', document: attempt.document })
+      expect(validation.status, `${attempt.name} validate: ${await validation.clone().text()}`).toBe(
+        422,
+      )
+      const publish = await call(publication(base, attempt.document))
+      expect(publish.status, `${attempt.name} publish: ${await publish.clone().text()}`).toBe(422)
+    }
+
+    const accepted = structuredClone(base.document)
+    accepted.site['kicker'] = { sv: 'CMS semantic contract', en: 'CMS semantic contract' }
+    const validation = await call({ operation: 'validate', document: accepted })
+    expect(validation.status, await validation.clone().text()).toBe(200)
+    const validated = (await validation.json()) as { document: CmsState['document'] }
+    const published = await call(publication(base, validated.document))
+    expect(published.status, await published.clone().text()).toBe(200)
+
+    const latest = await state()
+    const restore = await call(publication(latest, base.document))
+    expect(restore.status, await restore.clone().text()).toBe(200)
+  })
   it('accepts exactly one competing publication and replays the committed identity', async () => {
     const base = await state()
 
@@ -429,6 +466,17 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
         (asset) => asset.bucket === 'gallery' && asset.path === newImage.storage_path,
       ),
     ).toBe(true)
+
+    const wrongPurpose = structuredClone(after.document)
+    const reassigned = wrongPurpose.gallery.find((image) => image.id === newImage.id)
+    if (!reassigned) throw new Error('Missing copied gallery assignment')
+    reassigned.kind = 'cuts'
+    const validation = await call({ operation: 'validate', document: wrongPurpose })
+    expect(validation.status, await validation.clone().text()).toBe(422)
+    const publish = await call(publication(after, wrongPurpose))
+    expect(publish.status, await publish.clone().text()).toBe(422)
+    expect((await state()).document).toEqual(after.document)
+
     const original = publication(after, before.document)
     expect((await call(original)).status).toBe(200)
   }, 30000)

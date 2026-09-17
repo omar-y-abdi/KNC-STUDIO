@@ -2,9 +2,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   CmsValidationError,
   validateCompleteDocument,
+  validateDocumentMedia,
   documentMedia,
   mediaKey,
   type CmsDocument,
+  type CmsState,
 } from '../../../shared/cms.ts'
 import { validateDocumentMarkup } from '../../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
@@ -173,11 +175,11 @@ Deno.serve(async (request) => {
       'document',
       ...(body.operation === 'publish' ? ['baseRevision', 'baseFingerprint', 'requestId'] : []),
     )
-    const authoritativeResult = await service.rpc('internal_cms_document')
-    if (authoritativeResult.error) throw authoritativeResult.error
-    const authoritative = authoritativeResult.data as CmsDocument
+    const validationState = (await invoke('internal_cms_state', {})) as CmsState
+    const authoritative = validationState.document
     validateCompleteDocument(body.document, authoritative)
     const document: CmsDocument = structuredClone(body.document)
+    validateDocumentMedia(document, validationState.assets)
     const policy = {
       siteOrigin: origin ?? 'https://bladeblendstudio.se',
       storageOrigin: new URL(publicStorage).origin,
