@@ -790,7 +790,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
 }
 export function validateCompleteDocument(
   value: unknown,
-  authoritative: Pick<CmsDocument, 'site' | 'about' | 'settings'>,
+  authoritative: Pick<CmsDocument, 'site' | 'about' | 'settings' | 'emails'>,
 ): asserts value is CmsDocument {
   validateDocument(value)
   const document = value as CmsDocument
@@ -810,10 +810,9 @@ export function validateCompleteDocument(
       fail(`settings.${key}`, 'Required setting is missing')
 
   const emailIds = new Set(document.emails.map((email) => `${email.template}:${email.lang}`))
-  for (const template of EMAIL_NAMES)
-    for (const lang of ['sv', 'en'] as const)
-      if (!emailIds.has(`${template}:${lang}`))
-        fail(`emails.${template}.${lang}`, 'Required email variant is missing')
+  for (const email of authoritative.emails)
+    if (!emailIds.has(`${email.template}:${email.lang}`))
+      fail(`emails.${email.template}.${email.lang}`, 'Required email variant is missing')
 }
 export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
   const media = { bucket: ref.bucket, path: ref.path }
@@ -873,9 +872,7 @@ export function validateDocumentMedia(
   for (const email of document.emails)
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
-  authoredImages.forEach((ref, index) =>
-    requireAsset(ref, `presentation.markup.${index}`, 'image'),
-  )
+  authoredImages.forEach((ref, index) => requireAsset(ref, `presentation.markup.${index}`, 'image'))
 }
 export function cssProperty(name: string): string {
   return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)

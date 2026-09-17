@@ -115,6 +115,20 @@ describe('CMS database semantic parity', () => {
     ).not.toThrow()
   })
 
+  it('requires email variants present in the authoritative base without inventing absent variants', () => {
+    const authoritative = emptyDocument()
+    authoritative.emails.push(email())
+
+    const missing = structuredClone(authoritative)
+    missing.emails = []
+    expect(() => validateCompleteDocument(missing, authoritative)).toThrow(
+      'emails.customer_confirmation.sv: Required email variant is missing',
+    )
+
+    const withoutOptionalEmail = emptyDocument()
+    expect(() => validateCompleteDocument(withoutOptionalEmail, withoutOptionalEmail)).not.toThrow()
+  })
+
   it('matches barber name and biography limits', () => {
     invalid((document) => {
       const item = barber()
@@ -194,9 +208,7 @@ describe('CMS media assignment parity', () => {
   it('requires authored markup resource references to be images', () => {
     const document = emptyDocument()
     const ref: MediaRef = { bucket: 'cms-library', path: 'fonts/test.woff2' }
-    expect(() =>
-      validateDocumentMedia(document, [asset(ref, 'font/woff2')], [ref]),
-    ).toThrow()
+    expect(() => validateDocumentMedia(document, [asset(ref, 'font/woff2')], [ref])).toThrow()
   })
 
   it('requires gallery images to stay inside their declared purpose', () => {
