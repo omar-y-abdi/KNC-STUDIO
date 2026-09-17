@@ -442,5 +442,4 @@ describe('CMS draft durability', () => {
         ?.bio_sv,
     ).toBe('Remote')
   })
-
 })
