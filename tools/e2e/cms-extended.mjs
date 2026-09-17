@@ -59,7 +59,7 @@ export async function extendedCmsScenarios({
         const duplicates = new Set()
         for (const node of nodes) {
           const rect = node.getBoundingClientRect()
-          const style = getComputedStyle(node)
+          const style = node.ownerDocument.defaultView?.getComputedStyle(node)
           if (
             rect.width <= 0 ||
             rect.height <= 0 ||
@@ -481,7 +481,7 @@ export async function extendedCmsScenarios({
     assert.notEqual(firstId, secondId)
     const first = canvas(page).locator(`[data-cms-node="${firstId}"]`)
     await expect(first).toHaveCount(1)
-    const originalFirstWidth = await first.evaluate((node) => getComputedStyle(node).width)
+    const originalFirstWidth = await first.evaluate(\n      (node) => node.ownerDocument.defaultView?.getComputedStyle(node).width ?? '',\n    )
 
     await second.click()
     await expect(page.getByRole('button', { name: 'Byt bild', exact: true })).toBeVisible()
