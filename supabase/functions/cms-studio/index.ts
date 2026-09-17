@@ -173,7 +173,10 @@ Deno.serve(async (request) => {
       'document',
       ...(body.operation === 'publish' ? ['baseRevision', 'baseFingerprint', 'requestId'] : []),
     )
-    validateCompleteDocument(body.document)
+    const authoritativeResult = await service.rpc('internal_cms_document')
+    if (authoritativeResult.error) throw authoritativeResult.error
+    const authoritative = authoritativeResult.data as CmsDocument
+    validateCompleteDocument(body.document, authoritative)
     const document: CmsDocument = structuredClone(body.document)
     const policy = {
       siteOrigin: origin ?? 'https://bladeblendstudio.se',
@@ -196,7 +199,7 @@ Deno.serve(async (request) => {
         'media',
         'En refererad fil saknas eller är inte registrerad. Välj filen på nytt i biblioteket.',
       )
-    validateCompleteDocument(document)
+    validateCompleteDocument(document, authoritative)
     if (body.operation === 'validate') return json({ document })
     if (
       typeof body.baseFingerprint !== 'string' ||

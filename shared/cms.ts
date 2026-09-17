@@ -716,21 +716,22 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
   unique(emailIds, 'emails')
   validatePresentation(d['presentation'])
 }
-export function validateCompleteDocument(value: unknown): asserts value is CmsDocument {
+export function validateCompleteDocument(
+  value: unknown,
+  authoritative: Pick<CmsDocument, 'site' | 'about'>,
+): asserts value is CmsDocument {
   validateDocument(value)
   const document = value as CmsDocument
 
-  for (const [group, required] of [
-    ['site', SITE_KEYS],
-    ['about', ABOUT_KEYS],
-  ] as const) {
-    const cells = document[group]
-    for (const key of required) {
-      if (!Object.hasOwn(cells, key)) fail(`${group}.${key}`, 'Required content is missing')
-      const translations = cells[key]
+  for (const group of ['site', 'about'] as const) {
+    for (const [key, requiredTranslations] of Object.entries(authoritative[group])) {
+      const translations = document[group][key]
       if (!translations) fail(`${group}.${key}`, 'Required content is missing')
       for (const lang of ['sv', 'en'] as const)
-        if (!Object.hasOwn(translations, lang))
+        if (
+          Object.hasOwn(requiredTranslations, lang) &&
+          !Object.hasOwn(translations, lang)
+        )
           fail(`${group}.${key}.${lang}`, 'Required translation is missing')
     }
   }
