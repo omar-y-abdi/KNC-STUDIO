@@ -179,13 +179,14 @@ Deno.serve(async (request) => {
     const authoritative = validationState.document
     validateCompleteDocument(body.document, authoritative)
     const document: CmsDocument = structuredClone(body.document)
-    validateDocumentMedia(document, validationState.assets)
     const policy = {
       siteOrigin: origin ?? 'https://bladeblendstudio.se',
       storageOrigin: new URL(publicStorage).origin,
       builtAssets: CMS_BUILT_ASSETS,
     }
-    const references = [...documentMedia(document), ...validateDocumentMarkup(document, policy)]
+    const authoredImages = validateDocumentMarkup(document, policy)
+    validateDocumentMedia(document, validationState.assets, authoredImages)
+    const references = [...documentMedia(document), ...authoredImages]
     const referenceKeys = [...new Set(references.map(mediaKey))]
     const inventory = await service.rpc('internal_cms_missing_media', {
       p_actor: actor,

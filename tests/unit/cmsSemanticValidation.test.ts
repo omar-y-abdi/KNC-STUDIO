@@ -182,6 +182,23 @@ describe('CMS media assignment parity', () => {
     expect(() => validateDocumentMedia(document, [asset(ref, 'image/webp')])).toThrow()
   })
 
+  it('requires uploaded fonts to come from the font upload purpose', () => {
+    const document = emptyDocument()
+    const ref: MediaRef = { bucket: 'cms-library', path: 'images/test.woff2' }
+    document.presentation.fonts = {
+      '00000000-0000-4000-8000-000000000001': { ref, name: 'Fixture' },
+    }
+    expect(() => validateDocumentMedia(document, [asset(ref, 'font/woff2')])).toThrow()
+  })
+
+  it('requires authored markup resource references to be images', () => {
+    const document = emptyDocument()
+    const ref: MediaRef = { bucket: 'cms-library', path: 'fonts/test.woff2' }
+    expect(() =>
+      validateDocumentMedia(document, [asset(ref, 'font/woff2')], [ref]),
+    ).toThrow()
+  })
+
   it('requires gallery images to stay inside their declared purpose', () => {
     const document = emptyDocument()
     const ref: MediaRef = { bucket: 'gallery', path: 'salon/test.webp' }

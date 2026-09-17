@@ -835,7 +835,11 @@ export function documentMedia(document: CmsDocument): MediaRef[] {
   for (const email of document.emails) if (email.design?.logo) refs.push(email.design.logo)
   return [...new Map(refs.map((ref) => [mediaKey(ref), ref])).values()]
 }
-export function validateDocumentMedia(document: CmsDocument, assets: readonly CmsAsset[]): void {
+export function validateDocumentMedia(
+  document: CmsDocument,
+  assets: readonly CmsAsset[],
+  authoredImages: readonly MediaRef[] = [],
+): void {
   const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
   const requireAsset = (
     ref: MediaRef,
@@ -853,7 +857,7 @@ export function validateDocumentMedia(document: CmsDocument, assets: readonly Cm
   for (const [id, image] of Object.entries(document.presentation.images))
     requireAsset(image.ref, `presentation.images.${id}`, 'image')
   for (const [id, font] of Object.entries(document.presentation.fonts ?? {}))
-    requireAsset(font.ref, `presentation.fonts.${id}`, 'font')
+    requireAsset(font.ref, `presentation.fonts.${id}`, 'font', 'fonts/')
   for (const [id, path] of Object.entries(document.photos))
     requireAsset({ bucket: 'barber-photos', path }, `photos.${id}`, 'image', `${id}/`)
   for (const image of document.gallery)
@@ -869,6 +873,9 @@ export function validateDocumentMedia(document: CmsDocument, assets: readonly Cm
   for (const email of document.emails)
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
+  authoredImages.forEach((ref, index) =>
+    requireAsset(ref, `presentation.markup.${index}`, 'image'),
+  )
 }
 export function cssProperty(name: string): string {
   return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)

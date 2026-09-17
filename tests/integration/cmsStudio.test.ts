@@ -454,6 +454,40 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     expect((await upload('cms_asset', barberToken)).status).toBe(403)
     expect((await state()).assets).toEqual(before.assets)
   })
+  it('rejects imported authored markup that assigns a font asset as an image', async () => {
+    const response = await upload('cms_asset')
+    expect(response.status, await response.clone().text()).toBe(200)
+    const value = (await response.json()) as {
+      asset: { id: string; bucket: 'cms-library'; path: string }
+    }
+    const changed = await service
+      .from('cms_assets')
+      .update({ mime: 'font/woff2' })
+      .eq('id', value.asset.id)
+    expect(changed.error).toBeNull()
+
+    try {
+      const base = await state()
+      const imported = structuredClone(base.document)
+      const src = `${env.url}/storage/v1/object/public/${value.asset.bucket}/${value.asset.path}`
+      imported.presentation.regions['home-before'] = {
+        sv: { html: `<img src="${src}" alt="Importtest">`, css: { light: '', dark: '' } },
+        en: { html: `<img src="${src}" alt="Import test">`, css: { light: '', dark: '' } },
+      }
+
+      const validation = await call({ operation: 'validate', document: imported })
+      expect(validation.status, await validation.clone().text()).toBe(422)
+      const publish = await call(publication(base, imported))
+      expect(publish.status, await publish.clone().text()).toBe(422)
+      expect((await state()).document).toEqual(base.document)
+    } finally {
+      const restored = await service
+        .from('cms_assets')
+        .update({ mime: 'image/webp' })
+        .eq('id', value.asset.id)
+      expect(restored.error).toBeNull()
+    }
+  }, 30000)
   it('makes newly uploaded legacy media available to the new editor without a second migration', async () => {
     const before = await state(),
       response = await upload('gallery')
