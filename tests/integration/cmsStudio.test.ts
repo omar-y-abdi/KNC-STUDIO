@@ -179,7 +179,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
   })
   it('uses the same database semantics for validation and publication', async () => {
     const base = await state()
-    const attempts: Array<{ name: string; document: CmsState['document'] }> = []
+    const attempts: { name: string; document: CmsState['document'] }[] = []
 
     const oversizedSiteCopy = structuredClone(base.document)
     oversizedSiteCopy.site['kicker'] = { sv: 'x'.repeat(401), en: 'Valid' }

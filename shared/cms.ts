@@ -331,7 +331,13 @@ function validateSetting(key: string, value: unknown): void {
       if (normalized.length < 1 || normalized.length > 160) fail(path, 'Expected 1–160 characters')
       return
     case 'business_legal_name':
-      if (normalized.length > 160 || /[\u0000-\u001f\u007f-\u009f]/.test(normalized))
+      if (
+        normalized.length > 160 ||
+        [...normalized].some((char) => {
+          const code = char.codePointAt(0) ?? 0
+          return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
+        })
+      )
         fail(path, 'Invalid legal business name')
       return
     case 'business_org_number':
