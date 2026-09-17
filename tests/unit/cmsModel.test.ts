@@ -318,14 +318,11 @@ describe('CMS draft durability', () => {
       remote = structuredClone(base)
     local.barbers[0]!.bio_sv = 'Local A'
     remote.barbers[1]!.name = 'Remote B'
-
     const result = mergeDocuments(base, local, remote)
-
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.barbers.find((barber) => barber.id === 'a')?.bio_sv).toBe('Local A')
     expect(result.document.barbers.find((barber) => barber.id === 'b')?.name).toBe('Remote B')
   })
-
   it('merges disjoint entity additions and deletions without losing either tab', () => {
     const image = (id: string, alt: string, sort_order: number) => ({
       id,
@@ -349,9 +346,7 @@ describe('CMS draft durability', () => {
       (item) => item.id === '00000000-0000-4000-8000-000000000002',
     )!.alt = 'Remote edit'
     remote.gallery.push(image('00000000-0000-4000-8000-000000000004', 'Remote add', 3))
-
     const result = mergeDocuments(base, local, remote)
-
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.gallery.map((item) => item.id)).toEqual([
       '00000000-0000-4000-8000-000000000002',
@@ -364,7 +359,6 @@ describe('CMS draft durability', () => {
       )?.alt,
     ).toBe('Remote edit')
   })
-
   it('merges email variants by template and language', () => {
     const email = (lang: 'sv' | 'en', subject: string) => ({
       template: 'customer_confirmation' as const,
@@ -385,14 +379,11 @@ describe('CMS draft durability', () => {
       remote = structuredClone(base)
     local.emails.find((item) => item.lang === 'sv')!.subject = 'Local SV'
     remote.emails.find((item) => item.lang === 'en')!.subject = 'Remote EN'
-
     const result = mergeDocuments(base, local, remote)
-
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.emails.find((item) => item.lang === 'sv')?.subject).toBe('Local SV')
     expect(result.document.emails.find((item) => item.lang === 'en')?.subject).toBe('Remote EN')
   })
-
   it('combines disjoint page reorders instead of conflicting on the whole collection', () => {
     const page = (id: string, path: string) => ({
       id,
@@ -427,9 +418,7 @@ describe('CMS draft durability', () => {
       remote.presentation.pages[3]!,
       remote.presentation.pages[2]!,
     ]
-
     const result = mergeDocuments(base, local, remote)
-
     expect(result.conflicts).toHaveLength(0)
     expect(result.document.presentation.pages.map((item) => item.path)).toEqual([
       '/b',
@@ -438,7 +427,6 @@ describe('CMS draft durability', () => {
       '/c',
     ])
   })
-
   it('conflicts only on the overlapping property of the same entity', () => {
     const base = emptyDocument()
     base.barbers = [
@@ -457,9 +445,7 @@ describe('CMS draft durability', () => {
       remote = structuredClone(base)
     local.barbers[0]!.bio_sv = 'Local'
     remote.barbers[0]!.bio_sv = 'Remote'
-
     const result = mergeDocuments(base, local, remote)
-
     expect(result.conflicts.map((conflict) => conflict.path)).toEqual(['barbers.a.bio_sv'])
     expect(
       mergeDocuments(base, local, remote, { 'barbers.a.bio_sv': 'remote' }).document.barbers[0]
