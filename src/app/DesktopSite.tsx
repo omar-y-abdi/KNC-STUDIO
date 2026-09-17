@@ -188,7 +188,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   }, [booking, rosterReady, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
-  const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
+  const heroLinkColor = c.muted
 
   const navStyle: JSX.CSSProperties = {
     position: props.scrollRootRef === undefined ? 'fixed' : 'sticky',

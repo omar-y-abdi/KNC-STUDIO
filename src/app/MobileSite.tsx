@@ -44,8 +44,6 @@ export interface MobileSiteProps {
   readonly dark: boolean
   readonly c: ShellPalette
   readonly view: View
-  readonly mobMutedColor: string
-  readonly mobBtnBgColor: string
   readonly business: BusinessSettings
   readonly chromeIconStyle: JSX.CSSProperties
   readonly themeToggle: JSX.Element
@@ -73,7 +71,7 @@ export interface MobileSiteProps {
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
-  const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
+  const { c, tx, dark, business } = props
   const reduceMotion = useReducedMotion()
   const view = props.view
   // Booking collapses immediately. On home the same panel collapses continuously as its scroll
@@ -119,7 +117,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
-  const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
+  const heroLinkColor = c.muted
   const heroOpacity = inSection
     ? 0
     : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))
@@ -129,7 +127,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    background: dark ? '#242427' : '#f4f3f0',
+    background: c.surface,
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
     height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
@@ -139,9 +137,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         ? 'height .66s ' + EASE + ', border-radius .3s ease'
         : 'border-radius .3s ease',
     '--mob-text': c.text,
-    '--mob-muted': mobMutedColor,
+    '--mob-muted': c.muted,
     '--mob-icon': c.iconF,
-    '--mob-btn-bg': mobBtnBgColor,
+    '--mob-btn-bg': c.secondarySurface,
     '--mob-border': c.line,
   }
   // Centered hero mark (home): the full B&B lockup. Fluid width so it never overflows small screens.
@@ -180,7 +178,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     borderRadius: '50%',
     border: 'none',
     cursor: 'pointer',
-    background: mobBtnBgColor,
+    background: c.secondarySurface,
   }
   const heroExtrasStyle: JSX.CSSProperties = {
     flex: 1,
@@ -220,7 +218,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     border: '.5px solid ' + c.line,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    background: mobBtnBgColor,
+    background: c.secondarySurface,
     color: c.text,
     fontWeight: 600,
     fontSize: '14px',

@@ -202,6 +202,8 @@ export function mergeCmsPalette<T extends object>(
   const result = { ...base } as Record<string, unknown>
   const slots: Record<string, string> = {
     bg: 'background',
+    surface: 'surface',
+    secondarySurface: 'surface',
     text: 'text',
     line: 'border',
     inputLine: 'border',

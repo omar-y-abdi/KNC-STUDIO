@@ -1,4 +1,5 @@
-import { MOBILE_MQ } from '../../src/app/shared'
+import { MOBILE_MQ, shellPalette } from '../../src/app/shared'
+import { mergeCmsPalette } from '../../src/cms/context'
 import { describe, expect, it } from 'vitest'
 import {
   emptyDocument,
@@ -23,6 +24,28 @@ const state = (): CmsState => ({
   fingerprint: 'a'.repeat(32),
   document: emptyDocument(),
   assets: [],
+})
+
+describe('CMS shell theme palette', () => {
+  it.each([
+    ['light', false, '#123456', '#654321'],
+    ['dark', true, '#234567', '#fedcba'],
+  ] as const)(
+    'applies site-wide surface and muted tokens to %s shell semantics',
+    (mode, dark, surface, muted) => {
+      const presentation = emptyDocument().presentation
+      presentation.themes[mode].surface = surface
+      presentation.themes[mode].muted = muted
+
+      const palette = mergeCmsPalette(presentation, shellPalette(dark), mode)
+
+      expect(palette.surface).toBe(surface)
+      expect(palette.secondarySurface).toBe(surface)
+      expect(palette.navBg).toBe(surface)
+      expect(palette.footer).toBe(surface)
+      expect(palette.muted).toBe(muted)
+    },
+  )
 })
 
 describe('CMS document boundary', () => {

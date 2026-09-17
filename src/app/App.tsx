@@ -32,7 +32,7 @@ import type { CustomerProfile } from '../mybookings/domain'
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
-import { MOBILE_MQ, chromeIcon, mobBtnBg, mobMuted, shellPalette } from './shared'
+import { MOBILE_MQ, chromeIcon, shellPalette } from './shared'
 
 function setMeta(selector: string, content: string): void {
   document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', content)
@@ -230,14 +230,12 @@ export function App(): JSX.Element {
   // Booking folds the public panel; the homepage itself remains a scrollable hero + About document.
   const inSection = view === 'booking'
   const c = mergeCmsPalette(_cmsPresentation, shellPalette(dark), dark ? 'dark' : 'light')
-  const mobMutedColor = mobMuted(dark)
-  const mobBtnBgColor = mobBtnBg(dark)
 
   // Two different surfaces meet the screen edges:
   //  - topBar (theme-color): the top header/notch area. CONSTANT per mode.
   //  - pageBg (html/body, behind the bottom URL bar): follows the content BELOW the header.
-  const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
-  const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
+  const topBar = isMobile ? c.surface : c.bg
+  const pageBg = isMobile ? (inSection ? c.bg : c.surface) : c.bg
   useEffect(() => {
     paintViewport(pageBg, topBar)
   }, [pageBg, topBar])
@@ -460,8 +458,6 @@ export function App(): JSX.Element {
           dark={dark}
           c={c}
           view={view}
-          mobMutedColor={mobMutedColor}
-          mobBtnBgColor={mobBtnBgColor}
           business={business}
           chromeIconStyle={chromeIconStyle}
           themeToggle={themeToggle}
