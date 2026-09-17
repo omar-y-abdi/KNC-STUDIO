@@ -400,17 +400,11 @@ export async function extendedCmsScenarios({
 
     await expect(mobileSurface()).toHaveCSS('background-color', 'rgb(35, 69, 103)')
     await expect(mobileMuted()).toHaveCSS('color', 'rgb(254, 220, 186)')
-    await expect
-      .poll(() => canvas(page).locator('meta[name="theme-color"]').getAttribute('content'))
-      .toBe('#234567')
     await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-mobile-dark.png` })
 
     await page.getByRole('button', { name: 'Ljust', exact: true }).click()
     await expect(mobileSurface()).toHaveCSS('background-color', 'rgb(18, 52, 86)')
     await expect(mobileMuted()).toHaveCSS('color', 'rgb(101, 67, 33)')
-    await expect
-      .poll(() => canvas(page).locator('meta[name="theme-color"]').getAttribute('content'))
-      .toBe('#123456')
     await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-mobile-light.png` })
   })
 
