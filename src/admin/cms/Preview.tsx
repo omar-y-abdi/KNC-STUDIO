@@ -6,6 +6,7 @@ import { chromeIcon, mobBtnBg, mobMuted, shellPalette, type View } from '../../a
 import { appStrings } from '../../i18n'
 import { LangSwitch, ThemeSwitch } from '../chrome'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+import { defaultSiteChromePort } from '../../site/adapters'
 import {
   formatBusinessAddress,
   parseScale,
@@ -110,9 +111,29 @@ function NativeSite({
   useCmsTheme(mode)
   const [surface, setSurface] = useState(snapshot.surface)
   const [mobile, setMobile] = useState(() => matchMedia('(max-width:768px)').matches)
+  const [liveCancellationPolicyHours, setLiveCancellationPolicyHours] =
+    useState<number | null>(null)
   const dark = mode === 'dark',
     c = useCmsPalette(shellPalette(dark), mode)
-  const business = resolveBusinessSettings(new Map(Object.entries(draft.settings)))
+  useEffect(() => {
+    let active = true
+    void defaultSiteChromePort
+      .load(lang)
+      .then((chrome) => {
+        if (active) setLiveCancellationPolicyHours(chrome?.business.cancellationPolicyHours ?? null)
+      })
+      .catch(() => {
+        if (active) setLiveCancellationPolicyHours(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [lang])
+  const draftBusiness = resolveBusinessSettings(new Map(Object.entries(draft.settings)))
+  const business =
+    liveCancellationPolicyHours === null
+      ? draftBusiness
+      : { ...draftBusiness, cancellationPolicyHours: liveCancellationPolicyHours }
   const text = Object.fromEntries(
     Object.entries(draft.site).map(([key, value]) => [key, value[lang] ?? '']),
   )
@@ -135,12 +156,15 @@ function NativeSite({
     return {
       ...read,
       barbers: {
-        listActive: () =>
-          Promise.resolve(
-            draft.barbers
-              .filter((barber) => barber.active)
-              .sort((a, b) => a.sort_order - b.sort_order)
-              .map((barber) => ({
+        listActive: async () => {
+          const live = await read.barbers.listActive()
+          const draftById = new Map(draft.barbers.map((barber) => [barber.id, barber]))
+          return live
+            .map((entry) => {
+              const barber = draftById.get(String(entry.barber.id))
+              if (!barber) return entry
+              return {
+                ...entry,
                 barber: { id: asBarberId(barber.id), name: barber.name, ig: barber.ig },
                 copy: {
                   roleSv: barber.role_sv,
@@ -155,8 +179,14 @@ function NativeSite({
                         SUPABASE_URL,
                       )
                     : null,
-              })),
-          ),
+              }
+            })
+            .sort(
+              (a, b) =>
+                (draftById.get(String(a.barber.id))?.sort_order ?? 0) -
+                (draftById.get(String(b.barber.id))?.sort_order ?? 0),
+            )
+        },
       },
       aboutContent: {
         overlay: (locale: CmsLang) =>

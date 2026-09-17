@@ -71,20 +71,6 @@ export function BarberInspector({
         onChange={(value) => update(lang === 'sv' ? 'bio_sv' : 'bio_en', value)}
         multiline
       />
-      <label class="cms-check">
-        <input
-          type="checkbox"
-          checked={barber.active}
-          onChange={(event) => {
-            const active = event.currentTarget.checked
-            edit((draft) => {
-              const item = draft.barbers.find((row) => row.id === id)
-              if (item) item.active = active
-            })
-          }}
-        />{' '}
-        Synlig och bokningsbar
-      </label>
       <Field
         label="Visningsordning"
         type="number"

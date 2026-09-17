@@ -162,26 +162,113 @@ export async function extendedCmsScenarios({
 
   await test('history-restores-as-draft-before-publishing', owner.session, async (page) => {
     const initial = await api({ operation: 'state' })
+    const activeBarber = await db.query(
+      'select id from public.barbers where active=true order by id limit 1',
+    )
+    assert.equal(activeBarber.rowCount, 1, 'The fixture needs one active barber')
+    const barberId = activeBarber.rows[0].id
+    const policy = await db.query(
+      "select value from public.site_settings where key='cancellation_policy_hours'",
+    )
+    assert.equal(policy.rowCount, 1, 'The cancellation policy fixture is missing')
+    const originalPolicy = policy.rows[0].value
+    const historicalPolicy = Number(originalPolicy)
+    assert.ok(Number.isInteger(historicalPolicy) && historicalPolicy >= 1 && historicalPolicy <= 168)
+    const livePolicy = historicalPolicy <= 144 ? historicalPolicy + 24 : historicalPolicy - 24
+    const bookingOffsetHours = Math.floor((historicalPolicy + livePolicy) / 2)
+    const bookingId = randomUUID()
+    const email = `cms-history-${randomUUID()}@example.test`
+    const phone = '0706196101'
+    const accessHash = 'f'.repeat(64)
+
     await studio(page)
     await text(page, `History ${engine}`)
     await publish(page)
     const published = await api({ operation: 'state' })
-    await page.getByRole('button', { name: 'Historik', exact: true }).click()
-    const row = page
-      .locator('.cms-history-entry')
-      .filter({ has: page.getByText(`Version ${initial.revision}`, { exact: true }) })
-    await row.getByRole('button', { name: 'Granska', exact: true }).click()
-    page.once('dialog', (dialog) => {
-      void dialog.accept().catch(() => undefined)
-    })
-    await page.getByRole('button', { name: 'Läs in som utkast', exact: true }).click()
-    await pending(page)
-    assert.equal((await api({ operation: 'state' })).revision, published.revision)
-    await publish(page)
-    assert.deepEqual(
-      (await api({ operation: 'state' })).document.site.kicker,
-      initial.document.site.kicker,
+
+    await db.query('update public.barbers set active=false where id=$1', [barberId])
+    await db.query(
+      "update public.site_settings set value=$1 where key='cancellation_policy_hours'",
+      [String(livePolicy)],
     )
+    try {
+      await page.reload()
+      await expect(page.locator('.cms-bottom')).toBeVisible({ timeout: 20000 })
+      await page.getByRole('button', { name: 'Historik', exact: true }).click()
+      const row = page
+        .locator('.cms-history-entry')
+        .filter({ has: page.getByText(`Version ${initial.revision}`, { exact: true }) })
+      await row.getByRole('button', { name: 'Granska', exact: true }).click()
+      page.once('dialog', (dialog) => {
+        void dialog.accept().catch(() => undefined)
+      })
+      await page.getByRole('button', { name: 'Läs in som utkast', exact: true }).click()
+      await pending(page)
+      assert.equal((await api({ operation: 'state' })).revision, published.revision)
+      await publish(page)
+
+      const restored = await api({ operation: 'state' })
+      assert.deepEqual(restored.document.site.kicker, initial.document.site.kicker)
+      assert.equal(restored.document.settings.cancellation_policy_hours, undefined)
+      assert.equal(
+        restored.document.barbers.some((barber) => Object.hasOwn(barber, 'active')),
+        false,
+      )
+      const operational = await db.query(
+        "select b.active,(select value from public.site_settings where key='cancellation_policy_hours') as policy from public.barbers b where b.id=$1",
+        [barberId],
+      )
+      assert.equal(operational.rows[0].active, false)
+      assert.equal(operational.rows[0].policy, String(livePolicy))
+      const discovery = await db.query('select public.public_business_discovery() as value')
+      assert.equal(
+        discovery.rows[0].value.barbers.some((barber) => barber.id === barberId),
+        false,
+        'Restoring CMS history must not make an inactive barber bookable',
+      )
+
+      await db.query(
+        `insert into public.bookings
+          (id,barber_id,service_id,service_name,price,duration_min,start_at,end_at,customer_name,method,phone,email,lang,status)
+         values($1,$2,'cms-ops','CMS Ops',300,30,now()+($5 * interval '1 hour'),now()+($5 * interval '1 hour')+interval '30 minutes','CMS Ops','email',$3,$4,'sv','confirmed')`,
+        [bookingId, barberId, phone, email, bookingOffsetHours],
+      )
+      const access = await service.rpc('ensure_customer_booking_access_token', {
+        p_email: email,
+        p_phone: phone,
+        p_token_hash: accessHash,
+        p_token_ciphertext: `v1.${'A'.repeat(80)}`,
+      })
+      assert.equal(access.error, null)
+      const cancellation = await service.rpc('cancel_customer_booking_with_access', {
+        p_booking_id: bookingId,
+        p_session_hash: accessHash,
+      })
+      assert.equal(cancellation.error, null)
+      const status = (
+        await db.query('select status from public.bookings where id=$1', [bookingId])
+      ).rows[0].status
+      if (bookingOffsetHours > livePolicy) {
+        assert.equal(cancellation.data.ok, true)
+        assert.equal(status, 'cancelled')
+      } else {
+        assert.equal(cancellation.data.error, 'not_found')
+        assert.equal(status, 'confirmed')
+      }
+    } finally {
+      await db.query('delete from public.bookings where id=$1', [bookingId]).catch(() => undefined)
+      await db
+        .query('delete from public.customer_booking_access_challenges where email=$1', [email])
+        .catch(() => undefined)
+      await db
+        .query('delete from public.customer_booking_access_tokens where email=$1', [email])
+        .catch(() => undefined)
+      await db.query('update public.barbers set active=true where id=$1', [barberId])
+      await db.query(
+        "update public.site_settings set value=$1 where key='cancellation_policy_hours'",
+        [originalPolicy],
+      )
+    }
   })
 
   await test('custom-page-create-type-locales-theme-publish', owner.session, async (page) => {

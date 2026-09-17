@@ -44,6 +44,8 @@ select is((select value->>'revision' from cms_test_state),'0','Initial state is 
 select is((select jsonb_typeof(value->'document'->'barbers') from cms_test_state),'array','Native roster is captured');
 select ok((select value->'document'->'site' ? 'kicker' from cms_test_state),'Existing bilingual site copy is captured');
 select is((select jsonb_typeof(value->'document'->'emails') from cms_test_state),'array','All stored email templates are captured');
+select ok(not ((select value->'document'->'settings' from cms_test_state) ? 'cancellation_policy_hours'),'Cancellation enforcement is not part of the reversible CMS document');
+select ok(not exists(select 1 from cms_test_state s cross join lateral jsonb_array_elements(s.value->'document'->'barbers') as b(value) where b.value ? 'active'),'Barber bookability is not part of the reversible CMS document');
 
 create temporary table cms_test_request as select jsonb_set(value->'document','{site,kicker}','{"sv":"Publicerat på svenska","en":"Published in English"}') as document from cms_test_state;
 create temporary table cms_test_result as select public.internal_cms_publish(
@@ -72,6 +74,46 @@ select is((select count(*)::int from public.cms_revisions),2,'Failed publication
 select is(public.internal_cms_revision('99000000-0000-4000-8000-000000000001',0)->'document'->'site',(select document->'site' from public.cms_revisions where revision=0),'History preserves the original bilingual copy');
 select is(jsonb_array_length(public.internal_cms_history('99000000-0000-4000-8000-000000000001')),2,'History exposes both committed versions');
 select is(jsonb_array_length(public.internal_cms_history('99000000-0000-4000-8000-000000000001',1)),1,'History cursor is exclusive');
+
+savepoint cms_operational_boundary;
+update public.barbers set active=false where id='victor';
+update public.site_settings set value='48' where key='cancellation_policy_hours';
+update cms_test_state set value=public.internal_cms_state('99000000-0000-4000-8000-000000000001');
+
+savepoint cms_policy_injection;
+select throws_ok(
+  $$select public.internal_cms_publish(
+    '99000000-0000-4000-8000-000000000001',
+    jsonb_set(s.value->'document','{settings,cancellation_policy_hours}','"1"',true),
+    (s.value->>'revision')::bigint,s.value->>'fingerprint','99000000-0000-4000-8000-000000000015'
+  ) from cms_test_state s$$,
+  '22023',null,'Direct CMS publication rejects cancellation enforcement fields'
+);
+rollback to savepoint cms_policy_injection;
+
+savepoint cms_bookability_injection;
+select throws_ok(
+  $$select public.internal_cms_publish(
+    '99000000-0000-4000-8000-000000000001',
+    jsonb_set(s.value->'document','{barbers,0,active}','true',true),
+    (s.value->>'revision')::bigint,s.value->>'fingerprint','99000000-0000-4000-8000-000000000016'
+  ) from cms_test_state s$$,
+  '22023',null,'Direct CMS publication rejects barber bookability fields'
+);
+rollback to savepoint cms_bookability_injection;
+
+select lives_ok(
+  $$select public.internal_cms_publish(
+    '99000000-0000-4000-8000-000000000001',
+    public.internal_cms_revision('99000000-0000-4000-8000-000000000001',0)->'document',
+    (s.value->>'revision')::bigint,s.value->>'fingerprint','99000000-0000-4000-8000-000000000017'
+  ) from cms_test_state s$$,
+  'Publishing historical presentation content does not require operational fields'
+);
+select ok(not (select active from public.barbers where id='victor'),'Historical CMS publication preserves current barber bookability');
+select is((select value from public.site_settings where key='cancellation_policy_hours'),'48','Historical CMS publication preserves current cancellation enforcement');
+select ok(not exists(select 1 from jsonb_array_elements(public.public_business_discovery()->'barbers') as b(value) where b.value->>'id'='victor'),'Historical CMS publication cannot make an inactive barber bookable');
+rollback to savepoint cms_operational_boundary;
 
 insert into public.cms_assets(id,bucket,path,name,mime) values('99000000-0000-4000-8000-000000000020','cms-library','test/photo.webp','Photo','image/webp');
 select is(public.internal_cms_asset_update('99000000-0000-4000-8000-000000000001','99000000-0000-4000-8000-000000000020',0,'New name','Useful alt',true)->>'version','1','Asset metadata uses a real version counter');

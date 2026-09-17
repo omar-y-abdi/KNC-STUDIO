@@ -84,8 +84,8 @@ select jsonb_build_object(
  'schema',1,
  'site',coalesce((select jsonb_object_agg(key,langs order by key) from (select key,jsonb_object_agg(lang,value order by lang) langs from public.site_content group by key) s),'{}'::jsonb),
  'about',coalesce((select jsonb_object_agg(key,langs order by key) from (select key,jsonb_object_agg(lang,value order by lang) langs from public.about_content group by key) s),'{}'::jsonb),
- 'settings',coalesce((select jsonb_object_agg(key,value order by key) from public.site_settings where key=any(array['homepage_scale','about_scale','homepage_logo_path','homepage_logo_scale','homepage_logo_style','business_name','business_legal_name','business_org_number','business_email','business_phone_display','business_phone_tel','business_street','business_postal_code','business_city','business_maps_href','cancellation_policy_hours','seo_title_sv','seo_description_sv','seo_title_en','seo_description_en'])),'{}'::jsonb),
- 'barbers',coalesce((select jsonb_agg(jsonb_build_object('id',id,'name',name,'ig',ig,'role_sv',role_sv,'role_en',role_en,'bio_sv',bio_sv,'bio_en',bio_en,'active',active,'sort_order',sort_order) order by id) from public.barbers),'[]'::jsonb),
+ 'settings',coalesce((select jsonb_object_agg(key,value order by key) from public.site_settings where key=any(array['homepage_scale','about_scale','homepage_logo_path','homepage_logo_scale','homepage_logo_style','business_name','business_legal_name','business_org_number','business_email','business_phone_display','business_phone_tel','business_street','business_postal_code','business_city','business_maps_href','seo_title_sv','seo_description_sv','seo_title_en','seo_description_en'])),'{}'::jsonb),
+ 'barbers',coalesce((select jsonb_agg(jsonb_build_object('id',id,'name',name,'ig',ig,'role_sv',role_sv,'role_en',role_en,'bio_sv',bio_sv,'bio_en',bio_en,'sort_order',sort_order) order by id) from public.barbers),'[]'::jsonb),
  'photos',coalesce((select jsonb_object_agg(barber_id,storage_path order by barber_id) from public.barber_photos),'{}'::jsonb),
  'gallery',coalesce((select jsonb_agg(jsonb_build_object('id',id,'kind',kind,'storage_path',storage_path,'alt',alt,'sort_order',sort_order) order by id) from public.gallery_images),'[]'::jsonb),
  'emails',coalesce((select jsonb_agg((to_jsonb(t)-'updated_at') || jsonb_build_object('design',d.design) order by t.template,t.lang) from public.email_templates t left join public.cms_email_designs d using(template,lang)),'[]'::jsonb),
@@ -131,8 +131,17 @@ begin
  perform public.internal_cms_assert_owner(p_actor);
  if p_request_id is null or p_base_revision is null or p_base_revision<0 or p_base_fingerprint is null or p_base_fingerprint !~ '^[0-9a-f]{32}$'
    or p_document is null or p_document->>'schema' is distinct from '1' or jsonb_typeof(p_document->'barbers') is distinct from 'array'
+   or jsonb_typeof(p_document->'settings') is distinct from 'object'
    or jsonb_typeof(p_document->'presentation') is distinct from 'object' or octet_length(p_document::text)>3145728 then
    raise exception 'Invalid CMS publication' using errcode='22023';
+ end if;
+ if (p_document->'settings') ? 'cancellation_policy_hours'
+   or exists(
+     select 1
+     from jsonb_array_elements(p_document->'barbers') as item(value)
+     where item.value ? 'active'
+   ) then
+   raise exception 'Operational booking rules are not CMS content' using errcode='22023';
  end if;
  -- One consistent snapshot, including edits made by existing non-CMS management tools.
  lock table public.barbers,public.site_content,public.about_content,public.site_settings,public.barber_photos,public.gallery_images,public.email_templates,public.cms_email_designs,public.cms_assets in share row exclusive mode;
@@ -189,7 +198,7 @@ begin
    insert into public.site_settings(key,value) values(pair.key,pair.value) on conflict(key) do update set value=excluded.value,updated_at=now();
  end loop;
  for row_data in select value from jsonb_array_elements(p_document->'barbers') loop
-   update public.barbers set name=row_data->>'name',ig=row_data->>'ig',role_sv=row_data->>'role_sv',role_en=row_data->>'role_en',bio_sv=row_data->>'bio_sv',bio_en=row_data->>'bio_en',active=(row_data->>'active')::boolean,sort_order=(row_data->>'sort_order')::integer where id=row_data->>'id';
+   update public.barbers set name=row_data->>'name',ig=row_data->>'ig',role_sv=row_data->>'role_sv',role_en=row_data->>'role_en',bio_sv=row_data->>'bio_sv',bio_en=row_data->>'bio_en',sort_order=(row_data->>'sort_order')::integer where id=row_data->>'id';
  end loop;
  delete from public.barber_photos where not p_document->'photos' ? barber_id;
  for pair in select * from jsonb_each_text(p_document->'photos') loop

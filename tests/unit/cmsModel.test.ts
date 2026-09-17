@@ -71,6 +71,33 @@ describe('CMS document boundary', () => {
       validateDocument({ ...emptyDocument(), extra: 'x'.repeat(3 * 1024 * 1024) }),
     ).toThrow()
   })
+  it('keeps operational booking rules outside reversible CMS documents', () => {
+    expect(() =>
+      validateDocument({
+        ...emptyDocument(),
+        settings: { cancellation_policy_hours: '1' },
+      }),
+    ).toThrow('Unsupported field')
+
+    expect(() =>
+      validateDocument({
+        ...emptyDocument(),
+        barbers: [
+          {
+            id: 'victor',
+            name: 'Victor',
+            ig: '',
+            role_sv: '',
+            role_en: '',
+            bio_sv: '',
+            bio_en: '',
+            active: false,
+            sort_order: 0,
+          },
+        ],
+      }),
+    ).toThrow('Unsupported field')
+  })
   it('cannot shadow admin, auth, customer capabilities or static assets with a page', () => {
     for (const path of [
       '/admin',
@@ -274,7 +301,6 @@ describe('CMS draft durability', () => {
         role_en: '',
         bio_sv: 'A',
         bio_en: '',
-        active: true,
         sort_order: 0,
       },
       {
@@ -285,7 +311,6 @@ describe('CMS draft durability', () => {
         role_en: '',
         bio_sv: 'B',
         bio_en: '',
-        active: true,
         sort_order: 1,
       },
     ]
@@ -425,7 +450,6 @@ describe('CMS draft durability', () => {
         role_en: '',
         bio_sv: 'Base',
         bio_en: '',
-        active: true,
         sort_order: 0,
       },
     ]

@@ -19,7 +19,6 @@ const barber = (): CmsBarber => ({
   role_en: '',
   bio_sv: '',
   bio_en: '',
-  active: true,
   sort_order: 0,
 })
 const email = (): CmsEmail => ({
@@ -77,8 +76,6 @@ describe('CMS database semantic parity', () => {
     ['business_phone_tel', '+12'],
     ['business_postal_code', '1234'],
     ['business_maps_href', 'http://example.com'],
-    ['cancellation_policy_hours', '0'],
-    ['cancellation_policy_hours', '169'],
     ['seo_title_sv', ''],
     ['seo_title_en', 'x'.repeat(121)],
     ['seo_description_sv', ''],
@@ -97,7 +94,6 @@ describe('CMS database semantic parity', () => {
       business_phone_tel: ' (031) 123-456 ',
       business_postal_code: ' 411 34 ',
       business_maps_href: ' https://maps.example.com/place ',
-      cancellation_policy_hours: ' 24 ',
     })
     expect(() => validateDocument(document)).not.toThrow()
   })

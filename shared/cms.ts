@@ -26,7 +26,6 @@ export interface CmsBarber {
   role_en: string
   bio_sv: string
   bio_en: string
-  active: boolean
   sort_order: number
 }
 export interface CmsGallery {
@@ -207,7 +206,6 @@ export const SETTING_KEYS = [
   'business_postal_code',
   'business_city',
   'business_maps_href',
-  'cancellation_policy_hours',
   'seo_title_sv',
   'seo_description_sv',
   'seo_title_en',
@@ -362,14 +360,6 @@ function validateSetting(key: string, value: unknown): void {
     case 'business_maps_href':
       if (normalized && !/^https:\/\/[^\s]+$/.test(normalized))
         fail(path, 'Invalid business maps URL')
-      return
-    case 'cancellation_policy_hours':
-      if (
-        !/^[0-9]{1,3}$/.test(normalized) ||
-        Number(normalized) < 1 ||
-        Number(normalized) > 168
-      )
-        fail(path, 'Expected 1–168 hours')
       return
     case 'seo_title_sv':
     case 'seo_title_en':
@@ -723,7 +713,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     const b = object(raw, 'barber')
     keys(
       b,
-      ['id', 'name', 'ig', 'role_sv', 'role_en', 'bio_sv', 'bio_en', 'active', 'sort_order'],
+      ['id', 'name', 'ig', 'role_sv', 'role_en', 'bio_sv', 'bio_en', 'sort_order'],
       'barber',
     )
     const id = text(b['id'], 'barber.id', 32, 1)
@@ -733,7 +723,6 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
     text(b['ig'], 'barber.ig', 60)
     for (const key of ['role_sv', 'role_en']) text(b[key], key, 80)
     for (const key of ['bio_sv', 'bio_en']) text(b[key], key, 600)
-    if (typeof b['active'] !== 'boolean') fail(id, 'Invalid active state')
     integer(b['sort_order'], id, -2147483648, 2147483647)
   }
   unique(barberIds, 'barbers')

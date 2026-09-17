@@ -51,7 +51,6 @@ export const SETTING_LABELS: Record<string, string> = {
   business_postal_code: 'Postnummer',
   business_city: 'Ort',
   business_maps_href: 'Kartlänk',
-  cancellation_policy_hours: 'Avbokningsgräns i timmar',
   seo_title_sv: 'SEO-titel · svenska',
   seo_title_en: 'SEO-titel · engelska',
   seo_description_sv: 'SEO-beskrivning · svenska',

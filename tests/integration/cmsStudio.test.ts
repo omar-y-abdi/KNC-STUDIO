@@ -144,7 +144,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     const attempts: Array<{ name: string; document: CmsState['document'] }> = []
 
     const missingSetting = structuredClone(base.document)
-    delete missingSetting.settings['cancellation_policy_hours']
+    delete missingSetting.settings['business_name']
     attempts.push({ name: 'required setting', document: missingSetting })
 
     const missingTemplate = structuredClone(base.document)
@@ -188,10 +188,6 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     const invalidEmail = structuredClone(base.document)
     invalidEmail.settings['business_email'] = 'not-an-email'
     attempts.push({ name: 'business email', document: invalidEmail })
-
-    const invalidCancellation = structuredClone(base.document)
-    invalidCancellation.settings['cancellation_policy_hours'] = '0'
-    attempts.push({ name: 'cancellation policy', document: invalidCancellation })
 
     for (const attempt of attempts) {
       const validation = await call({ operation: 'validate', document: attempt.document })
