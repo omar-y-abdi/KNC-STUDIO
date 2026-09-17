@@ -206,7 +206,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     }
 
     const accepted = structuredClone(base.document)
-    accepted.site['kicker'] = { sv: 'CMS semantic contract', en: 'CMS semantic contract' }
+    accepted.settings['business_email'] = 'cms-semantic@example.test'
     const validation = await call({ operation: 'validate', document: accepted })
     expect(validation.status, await validation.clone().text()).toBe(200)
     const validated = (await validation.json()) as { document: CmsState['document'] }
