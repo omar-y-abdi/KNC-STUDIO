@@ -6,7 +6,7 @@ const context = { exports: { PublicContent: { fetch: async () => new Response('u
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; font-src 'self'"
 const shell =
-  '<!doctype html><html><head><title id="business-title">Original</title><meta id="business-description" name="description" content="Old"><link rel="canonical" href="https://bladeblendstudio.se/"><meta property="og:url" content="https://bladeblendstudio.se/"><script type="module" src="/assets/site.js"></script></head><body><div id="root"></div></body></html>'
+  '<!doctype html><html><head><title id="business-title">Original</title><meta id="business-description" name="description" content="Old"><link rel="canonical" href="https://bladeblendstudio.se/"><meta property="og:url" content="https://bladeblendstudio.se/"><meta property="og:locale" content="sv_SE"><meta property="og:locale:alternate" content="en_US"><script type="module" src="/assets/site.js"></script></head><body><div id="root"></div></body></html>'
 function env() {
   return {
     SUPABASE_URL: 'https://example.supabase.co',
@@ -109,6 +109,8 @@ describe('CMS publication through the actual Worker', () => {
     expect(html).toContain('Studions guide')
     expect(html).toContain('Information om studion.')
     expect(html).toContain('https://bladeblendstudio.se/studio-guide')
+    expect(html).toContain('property="og:locale" content="sv_SE"')
+    expect(html).toContain('property="og:locale:alternate" content="en_US"')
     expect(html).not.toContain('<h1>Missing</h1>')
     expect(response.headers.get('cache-control')).toContain('no-store')
   })
@@ -120,6 +122,8 @@ describe('CMS publication through the actual Worker', () => {
     expect(html).toContain('Welcome here')
     expect(html).toContain('Studio guide')
     expect(html).toContain('#abcdef')
+    expect(html).toContain('property="og:locale" content="en_US"')
+    expect(html).toContain('property="og:locale:alternate" content="sv_SE"')
     expect(html).not.toContain('Välkommen hit')
   })
   it('canonicalizes trailing slashes without dropping the chosen language', async () => {
