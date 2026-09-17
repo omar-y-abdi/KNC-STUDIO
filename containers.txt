@@ -1,0 +1,10 @@
+supabase_studio_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/studio:2026.08.10-sha-5b68af1
+supabase_pg_meta_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/postgres-meta:v0.97.0
+supabase_edge_runtime_knc-studio | Up 7 minutes | public.ecr.aws/supabase/edge-runtime:v1.74.3
+supabase_storage_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/storage-api:v1.65.1
+supabase_rest_knc-studio | Up 7 minutes | public.ecr.aws/supabase/postgrest:v14.5
+supabase_realtime_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/realtime:v2.124.4
+supabase_inbucket_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/mailpit:v1.30.2
+supabase_auth_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/gotrue:v2.193.0
+supabase_kong_knc-studio | Up 7 minutes (healthy) | public.ecr.aws/supabase/kong:2.8.1
+supabase_db_knc-studio | Up 8 minutes (healthy) | public.ecr.aws/supabase/postgres:17.6.1.127

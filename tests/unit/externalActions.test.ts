@@ -110,6 +110,7 @@ describe('external action contract', () => {
   })
 
   it('removes a Storage object idempotently through service-role Storage', async () => {
+    rpc.mockResolvedValueOnce({ data: false, error: null })
     await executeExternalAction(
       {
         id: ACTION_ID,

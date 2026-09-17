@@ -1,3 +1,5 @@
+import { cmsNodeId } from '../cms/nodeIdentity'
+import { CmsImage } from '../cms/context'
 // GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
 //
 // Behaviour (per spec):
@@ -322,6 +324,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 
   return (
     <div
+      data-cms-node="gallerymarquee-div-1"
       ref={rowRef}
       style={rowStyle}
       data-testid="marquee-row"
@@ -333,6 +336,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       onBlur={onRowBlur}
     >
       <div
+        data-cms-node="gallerymarquee-div-2"
         ref={trackRef}
         style={trackStyle}
         data-testid="marquee-track"
@@ -365,6 +369,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           }
           return (
             <div
+              data-cms-node={cmsNodeId('gallerymarquee-div-3', String(j))}
               key={String(j)}
               data-tile-key={key}
               style={tileStyle}
@@ -375,8 +380,12 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
               aria-label={accessible ? alt : undefined}
               onKeyDown={accessible ? onTileKey(key) : undefined}
             >
-              <div style={photoWrapStyle(props.c)}>
-                <img
+              <div
+                data-cms-node={cmsNodeId('gallerymarquee-div-4', String(j))}
+                style={photoWrapStyle(props.c)}
+              >
+                <CmsImage
+                  data-cms-node={cmsNodeId('gallerymarquee-img-5', String(j))}
                   src={photo.url}
                   alt={alt}
                   draggable={false}
@@ -413,7 +422,10 @@ export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
   const photosB = [...photos].reverse()
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div
+      data-cms-node="gallerymarquee-div-6"
+      style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+    >
       <MarqueeRow
         photos={photos}
         initialDir={1}

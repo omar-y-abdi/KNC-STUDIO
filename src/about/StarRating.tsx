@@ -1,3 +1,4 @@
+import { cmsNodeId } from '../cms/nodeIdentity'
 // Star rating widgets — a read-only display (for published reviews) and a keyboard-operable
 // selector (for the review form). The selector is a WAI-ARIA radiogroup: arrow keys move the
 // selection, Home/End jump to 1/5, and each star is a focusable radio with an accessible name.
@@ -12,6 +13,7 @@ import { RATINGS } from './reviews/domain'
 function Star(props: { filled: boolean; size: number }): JSX.Element {
   return (
     <svg
+      data-cms-node="starrating-svg-1"
       viewBox="0 0 24 24"
       width={props.size}
       height={props.size}
@@ -38,6 +40,7 @@ export interface StarDisplayProps {
 export function StarDisplay(props: StarDisplayProps): JSX.Element {
   return (
     <span
+      data-cms-node="starrating-span-2"
       role="img"
       aria-label={props.label}
       style={{ display: 'inline-flex', gap: '2px', color: props.c.text }}
@@ -97,6 +100,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
 
   return (
     <div
+      data-cms-node="starrating-div-3"
       role="radiogroup"
       aria-label={props.groupLabel}
       onKeyDown={onKeyDown}
@@ -119,6 +123,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
         }
         return (
           <button
+            data-cms-node={cmsNodeId('starrating-button-4', n)}
             key={n}
             ref={(el) => {
               if (el) starRefs.current[n] = el

@@ -56,9 +56,18 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
     invalid: boolean,
     note: string,
   ): JSX.Element => (
-    <label style="display:flex;flex-direction:column;gap:5px;">
-      <span style="font-size:12px;font-weight:600;opacity:.55;">{label}</span>
+    <label
+      data-cms-node="detailsdialog-label-1"
+      style="display:flex;flex-direction:column;gap:5px;"
+    >
+      <span
+        data-cms-node="detailsdialog-span-2"
+        style="font-size:12px;font-weight:600;opacity:.55;"
+      >
+        {label}
+      </span>
       <input
+        data-cms-node="detailsdialog-input-3"
         value={value}
         onInput={onInput}
         placeholder={placeholder}
@@ -70,7 +79,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         class={FOCUS_CLS}
       />
       {invalid ? (
-        <span role="alert" style={s.fieldErrorNoteStyle}>
+        <span data-cms-node="detailsdialog-span-4" role="alert" style={s.fieldErrorNoteStyle}>
           {note}
         </span>
       ) : null}
@@ -87,50 +96,119 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
       cardClass="knc-sheet-card"
       cardStyle={s.overlayCardStyle}
     >
-      <div style={s.overlayHeaderStyle}>
+      <div data-cms-node="detailsdialog-div-5" style={s.overlayHeaderStyle}>
         <span
+          data-cms-node="detailsdialog-span-6"
+          data-cms-copy="site:yourDetails"
           id="knc-details-title"
           style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.yourDetails}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={props.closeLabel}>
+        <button
+          data-cms-node="detailsdialog-button-7"
+          onClick={props.onClose}
+          style={s.closeBtnStyle}
+          aria-label={props.closeLabel}
+        >
           ×
         </button>
       </div>
-      <div style="padding:16px 18px 18px;">
-        <div style={s.summaryBoxStyle}>
-          <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.55;">
+      <div data-cms-node="detailsdialog-div-8" style="padding:16px 18px 18px;">
+        <div data-cms-node="detailsdialog-div-9" style={s.summaryBoxStyle}>
+          <span
+            data-cms-node="detailsdialog-span-10"
+            data-cms-copy="site:summary"
+            style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.55;"
+          >
             {t.summary}
           </span>
-          <div style="display:flex;justify-content:space-between;font-size:14px;">
-            <span style="opacity:.55;">{t.fBarber}</span>
-            <span style="font-weight:600;">{props.sumBarber}</span>
+          <div
+            data-cms-node="detailsdialog-div-11"
+            style="display:flex;justify-content:space-between;font-size:14px;"
+          >
+            <span
+              data-cms-node="detailsdialog-span-12"
+              data-cms-copy="site:fBarber"
+              style="opacity:.55;"
+            >
+              {t.fBarber}
+            </span>
+            <span data-cms-node="detailsdialog-span-13" style="font-weight:600;">
+              {props.sumBarber}
+            </span>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:14px;">
-            <span style="opacity:.55;">{t.fWhen}</span>
-            <span style="font-weight:600;text-align:right;">{props.sumWhen}</span>
+          <div
+            data-cms-node="detailsdialog-div-14"
+            style="display:flex;justify-content:space-between;font-size:14px;"
+          >
+            <span
+              data-cms-node="detailsdialog-span-15"
+              data-cms-copy="site:fWhen"
+              style="opacity:.55;"
+            >
+              {t.fWhen}
+            </span>
+            <span data-cms-node="detailsdialog-span-16" style="font-weight:600;text-align:right;">
+              {props.sumWhen}
+            </span>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:14px;">
-            <span style="opacity:.55;">{t.fService}</span>
-            <span style="font-weight:600;text-align:right;">{props.sumService}</span>
+          <div
+            data-cms-node="detailsdialog-div-17"
+            style="display:flex;justify-content:space-between;font-size:14px;"
+          >
+            <span
+              data-cms-node="detailsdialog-span-18"
+              data-cms-copy="site:fService"
+              style="opacity:.55;"
+            >
+              {t.fService}
+            </span>
+            <span data-cms-node="detailsdialog-span-19" style="font-weight:600;text-align:right;">
+              {props.sumService}
+            </span>
           </div>
-          <div style={s.dividerStyle}></div>
-          <div style="display:flex;justify-content:space-between;font-size:15px;">
-            <span style="font-weight:600;">{t.fTotal}</span>
-            <span style="font-weight:700;">{props.sumPrice}</span>
+          <div data-cms-node="detailsdialog-div-20" style={s.dividerStyle}></div>
+          <div
+            data-cms-node="detailsdialog-div-21"
+            style="display:flex;justify-content:space-between;font-size:15px;"
+          >
+            <span
+              data-cms-node="detailsdialog-span-22"
+              data-cms-copy="site:fTotal"
+              style="font-weight:600;"
+            >
+              {t.fTotal}
+            </span>
+            <span data-cms-node="detailsdialog-span-23" style="font-weight:700;">
+              {props.sumPrice}
+            </span>
           </div>
         </div>
 
-        <div style="display:flex;flex-direction:column;gap:10px;">
+        <div
+          data-cms-node="detailsdialog-div-24"
+          style="display:flex;flex-direction:column;gap:10px;"
+        >
           {field(t.name, props.nameValue, props.onName, t.namePh, 'text', e.name, t.errName)}
           {field(t.phone, props.phoneValue, props.onPhone, t.phonePh, 'tel', e.phone, t.errPhone)}
           {field(t.email, props.emailValue, props.onEmail, t.emailPh, 'email', e.email, t.errEmail)}
         </div>
 
-        <p style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;">{t.policy}</p>
-        <p style="font-size:12px;line-height:1.5;margin:0 0 14px;">
+        <p
+          data-cms-node="detailsdialog-p-25"
+          data-cms-copy="site:policy"
+          style="font-size:11.5px;line-height:1.5;opacity:.5;margin:16px 0 14px;"
+        >
+          {t.policy}
+        </p>
+        <p
+          data-cms-node="detailsdialog-p-26"
+          style="font-size:12px;line-height:1.5;margin:0 0 14px;"
+        >
           <a
+            data-cms-node="detailsdialog-a-27"
+            data-cms-copy="copy:booking:termsLink"
             href="/terms"
             target="_blank"
             rel="noopener noreferrer"
@@ -143,16 +221,23 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         </p>
 
         {props.turnstile !== null ? (
-          <div style="display:flex;justify-content:center;margin:0 0 14px;">{props.turnstile}</div>
+          <div
+            data-cms-node="detailsdialog-div-28"
+            style="display:flex;justify-content:center;margin:0 0 14px;"
+          >
+            {props.turnstile}
+          </div>
         ) : null}
 
         {props.submitError !== null ? (
-          <p role="alert" style={s.submitErrorStyle}>
+          <p data-cms-node="detailsdialog-p-29" role="alert" style={s.submitErrorStyle}>
             {props.submitError}
           </p>
         ) : null}
 
         <button
+          data-cms-node="detailsdialog-button-30"
+          data-cms-copy="copy:booking:book"
           onClick={props.bookDisabled ? undefined : props.onBook}
           disabled={props.bookDisabled}
           style={s.bookBtnStyle}

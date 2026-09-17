@@ -1,3 +1,4 @@
+import { cmsPublicResponse, cmsResponsePolicy } from './cms/publicWorker'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
@@ -371,6 +372,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
 
+  const cms = await cmsPublicResponse(request, env, SITE_URL)
+  if (cms !== null) return cms
+
   if (pathname === '/404.html') {
     const missing = await serveAsset(request, env, '/404.html')
     return withNoIndex(
@@ -496,7 +500,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
 export class PublicContent extends WorkerEntrypoint<Env> {
   override async fetch(request: Request): Promise<Response> {
-    return fetchPublicContent(request, this.env)
+    return cmsResponsePolicy(
+      await fetchPublicContent(request, this.env),
+      new URL(request.url).pathname,
+      this.env.SUPABASE_URL,
+    )
   }
 }
 
@@ -520,6 +528,6 @@ export default {
       return context.exports.PublicContent.fetch(request)
     }
 
-    return fetchPublicContent(request, env)
+    return cmsResponsePolicy(await fetchPublicContent(request, env), url.pathname, env.SUPABASE_URL)
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

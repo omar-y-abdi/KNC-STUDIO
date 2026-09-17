@@ -1,3 +1,5 @@
+import { useCms, mergeCmsStrings, mergeCmsPalette, CmsImage } from '../cms/context'
+import { CmsLocaleProvider, useCmsTheme } from '../cms/context'
 // Root component.
 // Owns state {mode, lang, view, myBookingsOpen}, the isMobile matchMedia switch, and the
 // theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
@@ -89,6 +91,8 @@ function takeCustomerAccessLink(): BookingAccessLink {
 }
 
 export function App(): JSX.Element {
+  const _cmsPresentation = useCms().presentation
+
   const privacy = usePrivacyPreferences()
   useEffect(() => {
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
@@ -199,6 +203,7 @@ export function App(): JSX.Element {
   }, [])
 
   const dark = state.mode === 'dark'
+  useCmsTheme(state.mode)
   const lang = state.lang
   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
@@ -207,7 +212,7 @@ export function App(): JSX.Element {
     () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
   )
   const business = chrome.business
-  const txBase = appStrings(lang)
+  const txBase = mergeCmsStrings(_cmsPresentation, 'app', lang, appStrings(lang))
   const siteText = resolveSiteText(
     chrome.text,
     lang,
@@ -224,7 +229,7 @@ export function App(): JSX.Element {
   const view = state.view
   // Booking folds the public panel; the homepage itself remains a scrollable hero + About document.
   const inSection = view === 'booking'
-  const c = shellPalette(dark)
+  const c = mergeCmsPalette(_cmsPresentation, shellPalette(dark), dark ? 'dark' : 'light')
   const mobMutedColor = mobMuted(dark)
   const mobBtnBgColor = mobBtnBg(dark)
 
@@ -378,23 +383,45 @@ export function App(): JSX.Element {
 
   const themeToggle = (
     <button
+      data-cms-node="app-button-1"
+      data-cms-copy="copy:app:ariaTheme"
       onClick={toggleMode}
       style={themeTrackStyle}
       title={tx.ariaTheme}
       aria-label={tx.ariaTheme}
     >
-      <img src={themeTrackIconSrc} alt="" style={themeTrackIconStyle} />
-      <span style={themeKnobStyle}>
-        <img src={themeKnobIconSrc} alt="" style={themeKnobIconStyle} />
+      <CmsImage
+        data-cms-node="app-img-2"
+        src={themeTrackIconSrc}
+        alt=""
+        style={themeTrackIconStyle}
+      />
+      <span data-cms-node="app-span-3" style={themeKnobStyle}>
+        <CmsImage
+          data-cms-node="app-img-4"
+          src={themeKnobIconSrc}
+          alt=""
+          style={themeKnobIconStyle}
+        />
       </span>
     </button>
   )
   const langToggle = (
-    <div style={langWrapStyle}>
-      <button onClick={setSv} aria-pressed={lang === 'sv'} style={svMiniStyle}>
+    <div data-cms-node="app-div-5" style={langWrapStyle}>
+      <button
+        data-cms-node="app-button-6"
+        onClick={setSv}
+        aria-pressed={lang === 'sv'}
+        style={svMiniStyle}
+      >
         SV
       </button>
-      <button onClick={setEn} aria-pressed={lang === 'en'} style={enMiniStyle}>
+      <button
+        data-cms-node="app-button-7"
+        onClick={setEn}
+        aria-pressed={lang === 'en'}
+        style={enMiniStyle}
+      >
         EN
       </button>
     </div>
@@ -422,7 +449,7 @@ export function App(): JSX.Element {
 
   if (isMobile) {
     return (
-      <>
+      <CmsLocaleProvider lang={lang}>
         <MobileSite
           privacy={privacy}
           onManagePrivacy={openPrivacy}
@@ -451,12 +478,12 @@ export function App(): JSX.Element {
         />
         {myBookingsDialog}
         <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
-      </>
+      </CmsLocaleProvider>
     )
   }
 
   return (
-    <>
+    <CmsLocaleProvider lang={lang}>
       <DesktopSite
         privacy={privacy}
         onManagePrivacy={openPrivacy}
@@ -483,6 +510,6 @@ export function App(): JSX.Element {
       />
       {myBookingsDialog}
       <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
-    </>
+    </CmsLocaleProvider>
   )
 }

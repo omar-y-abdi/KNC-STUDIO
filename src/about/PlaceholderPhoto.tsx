@@ -29,8 +29,9 @@ export function PlaceholderPhoto(props: PlaceholderPhotoProps): JSX.Element {
     color: dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.18)',
   }
   return (
-    <div style={wrapStyle} aria-hidden="true">
+    <div data-cms-node="placeholderphoto-div-1" style={wrapStyle} aria-hidden="true">
       <svg
+        data-cms-node="placeholderphoto-svg-2"
         width="34"
         height="34"
         viewBox="0 0 24 24"

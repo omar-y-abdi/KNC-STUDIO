@@ -1,3 +1,4 @@
+import { emptyPresentation } from '../../shared/cms'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { GalleryMarquee, resolvePointerEnd } from '../../src/about/GalleryMarquee'
@@ -60,6 +61,7 @@ describe('gallery marquee interaction contract', () => {
 // Inspect rendered photo controls without running browser animation/effects; pointer, scroll,
 // focus and reduced-motion behavior remain covered by the browser harness.
 vi.mock('preact/hooks', () => ({
+  useContext: () => ({ presentation: emptyPresentation(), draft: null, revision: 0, lang: 'sv' }),
   useState: vi.fn((initial: unknown) => [
     typeof initial === 'function' ? initial() : initial,
     vi.fn(),
