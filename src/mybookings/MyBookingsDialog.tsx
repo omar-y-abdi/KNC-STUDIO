@@ -315,9 +315,9 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
   const emailNote = emailError ? t.errEmail : null
 
-  const chevron = (open: boolean): JSX.Element => (
+  const chevron = (open: boolean, instanceKey: string): JSX.Element => (
     <CmsImage
-      data-cms-node="mybookingsdialog-img-1"
+      data-cms-node={cmsNodeId('mybookingsdialog-img-1', instanceKey)}
       src="/icons/chevron.down.svg"
       alt=""
       style={{
@@ -332,15 +332,26 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     />
   )
 
-  const detailRow = (label: string, value: string): JSX.Element => (
+  const detailRow = (
+    bookingId: string,
+    fieldKey: 'barber' | 'service' | 'duration',
+    label: string,
+    value: string,
+  ): JSX.Element => (
     <div
-      data-cms-node="mybookingsdialog-div-2"
+      data-cms-node={cmsNodeId('mybookingsdialog-div-2', bookingId, fieldKey)}
       style="display:flex;justify-content:space-between;gap:12px;font-size:14px;"
     >
-      <span data-cms-node="mybookingsdialog-span-3" style="opacity:.55;flex:none;">
+      <span
+        data-cms-node={cmsNodeId('mybookingsdialog-span-3', bookingId, fieldKey)}
+        style="opacity:.55;flex:none;"
+      >
         {label}
       </span>
-      <span data-cms-node="mybookingsdialog-span-4" style="font-weight:600;text-align:right;">
+      <span
+        data-cms-node={cmsNodeId('mybookingsdialog-span-4', bookingId, fieldKey)}
+        style="font-weight:600;text-align:right;"
+      >
         {value}
       </span>
     </div>
@@ -387,7 +398,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
           >
             {b.whenLabel}
           </span>
-          {chevron(open)}
+          {chevron(open, `booking:${b.id}`)}
         </button>
         {open ? (
           <div
@@ -401,9 +412,9 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
               gap: '8px',
             }}
           >
-            {detailRow(t.fBarber, b.barber.name)}
-            {detailRow(t.fService, `${b.serviceName} · ${b.price} kr`)}
-            {detailRow(t.fDuration, `${b.durationMin} ${t.min}`)}
+            {detailRow(b.id, 'barber', t.fBarber, b.barber.name)}
+            {detailRow(b.id, 'service', t.fService, `${b.serviceName} · ${b.price} kr`)}
+            {detailRow(b.id, 'duration', t.fDuration, `${b.durationMin} ${t.min}`)}
             {upcoming ? (
               confirming ? (
                 <div
@@ -825,7 +836,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                   >
                     {t.pastTitle} ({bookings.past.length})
                   </span>
-                  {chevron(pastOpen)}
+                  {chevron(pastOpen, 'past')}
                 </button>
                 {pastOpen ? bookings.past.map((b) => bookingRow(b, false)) : null}
               </section>

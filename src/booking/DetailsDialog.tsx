@@ -3,6 +3,7 @@
 // localized red note under each invalid field) rendered ONLY after a failed submit, so the
 // default popup renders exactly as the mock did.
 
+import { cmsNodeId } from '../cms/nodeIdentity'
 import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'
 import { Dialog } from '../ui/Dialog'
@@ -48,6 +49,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   // note renders directly under it inside the same label column. When not flagged, the markup
   // matches the original mock.
   const field = (
+    fieldKey: 'name' | 'phone' | 'email',
     label: string,
     value: string,
     onInput: (ev: JSX.TargetedInputEvent<HTMLInputElement>) => void,
@@ -57,17 +59,17 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
     note: string,
   ): JSX.Element => (
     <label
-      data-cms-node="detailsdialog-label-1"
+      data-cms-node={cmsNodeId('detailsdialog-label-1', fieldKey)}
       style="display:flex;flex-direction:column;gap:5px;"
     >
       <span
-        data-cms-node="detailsdialog-span-2"
+        data-cms-node={cmsNodeId('detailsdialog-span-2', fieldKey)}
         style="font-size:12px;font-weight:600;opacity:.55;"
       >
         {label}
       </span>
       <input
-        data-cms-node="detailsdialog-input-3"
+        data-cms-node={cmsNodeId('detailsdialog-input-3', fieldKey)}
         value={value}
         onInput={onInput}
         placeholder={placeholder}
@@ -79,7 +81,11 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
         class={FOCUS_CLS}
       />
       {invalid ? (
-        <span data-cms-node="detailsdialog-span-4" role="alert" style={s.fieldErrorNoteStyle}>
+        <span
+          data-cms-node={cmsNodeId('detailsdialog-span-4', fieldKey)}
+          role="alert"
+          style={s.fieldErrorNoteStyle}
+        >
           {note}
         </span>
       ) : null}
@@ -190,9 +196,27 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
           data-cms-node="detailsdialog-div-24"
           style="display:flex;flex-direction:column;gap:10px;"
         >
-          {field(t.name, props.nameValue, props.onName, t.namePh, 'text', e.name, t.errName)}
-          {field(t.phone, props.phoneValue, props.onPhone, t.phonePh, 'tel', e.phone, t.errPhone)}
-          {field(t.email, props.emailValue, props.onEmail, t.emailPh, 'email', e.email, t.errEmail)}
+          {field('name', t.name, props.nameValue, props.onName, t.namePh, 'text', e.name, t.errName)}
+          {field(
+            'phone',
+            t.phone,
+            props.phoneValue,
+            props.onPhone,
+            t.phonePh,
+            'tel',
+            e.phone,
+            t.errPhone,
+          )}
+          {field(
+            'email',
+            t.email,
+            props.emailValue,
+            props.onEmail,
+            t.emailPh,
+            'email',
+            e.email,
+            t.errEmail,
+          )}
         </div>
 
         <p

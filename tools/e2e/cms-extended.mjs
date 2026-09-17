@@ -51,6 +51,49 @@ export async function extendedCmsScenarios({
   }
   const closeModal = async (page) =>
     page.getByRole('dialog').getByRole('button', { name: /Stäng/, exact: false }).first().click()
+  const duplicateVisibleCmsNodes = async (page) =>
+    canvas(page)
+      .locator('[data-cms-node]')
+      .evaluateAll((nodes) => {
+        const seen = new Set()
+        const duplicates = new Set()
+        for (const node of nodes) {
+          const rect = node.getBoundingClientRect()
+          const style = getComputedStyle(node)
+          if (
+            rect.width <= 0 ||
+            rect.height <= 0 ||
+            style.display === 'none' ||
+            style.visibility === 'hidden'
+          )
+            continue
+          const id = node.getAttribute('data-cms-node')
+          if (!id) continue
+          if (seen.has(id)) duplicates.add(id)
+          else seen.add(id)
+        }
+        return [...duplicates]
+      })
+  const expectUniqueCmsNodes = async (page) =>
+    expect.poll(async () => (await duplicateVisibleCmsNodes(page)).join('|')).toBe('')
+
+  await test('native-cms-node-identities-are-unique-per-rendered-surface', owner.session, async (page) => {
+    await studio(page)
+    await expect(canvas(page).locator('[data-cms-node]').first()).toBeVisible()
+    await expectUniqueCmsNodes(page)
+
+    await nav(page, 'Om oss').click()
+    await expect(canvas(page).locator('#om-oss')).toBeVisible()
+    await expectUniqueCmsNodes(page)
+
+    await nav(page, 'Bokning').click()
+    await expect(canvas(page).locator('[data-cms-node="bookingflow-div-1"]')).toBeVisible()
+    await expectUniqueCmsNodes(page)
+
+    await nav(page, 'Kundens bokningar').click()
+    await expect(canvas(page).getByRole('dialog')).toBeVisible()
+    await expectUniqueCmsNodes(page)
+  })
 
   await test('draft-reload-recovery-export-and-revert', owner.session, async (page) => {
     await studio(page)
@@ -273,6 +316,62 @@ export async function extendedCmsScenarios({
       (await api({ operation: 'state' })).assets.some((item) => item.name === 'invalid.png'),
       false,
     )
+  })
+
+  await test('second-repeated-marquee-image-edits-are-isolated', owner.session, async (page) => {
+    await studio(page)
+    await nav(page, 'Om oss').click()
+
+    const rows = canvas(page).locator(
+      '[data-cms-node="aboutsection-div-7"] [data-testid="marquee-row"]',
+    )
+    await expect(rows).toHaveCount(2)
+    const second = rows.nth(1).locator('img[data-cms-node]').first()
+    await expect(second).toBeVisible()
+    const secondId = await second.getAttribute('data-cms-node')
+    const originalSrc = await second.getAttribute('src')
+    assert.ok(secondId)
+    assert.ok(originalSrc)
+
+    const firstId = await rows
+      .nth(0)
+      .locator('img[data-cms-node]')
+      .evaluateAll(
+        (nodes, src) =>
+          nodes.find((node) => node.getAttribute('src') === src)?.getAttribute('data-cms-node') ??
+          null,
+        originalSrc,
+      )
+    assert.ok(firstId)
+    assert.notEqual(firstId, secondId)
+    const first = canvas(page).locator(`[data-cms-node="${firstId}"]`)
+    await expect(first).toHaveCount(1)
+    const originalFirstWidth = await first.evaluate((node) => getComputedStyle(node).width)
+
+    await second.click()
+    await expect(page.getByRole('button', { name: 'Byt bild', exact: true })).toBeVisible()
+    await field(page, 'Bredd').fill('123px')
+    await expect(second).toHaveCSS('width', '123px')
+    await expect(first).toHaveCSS('width', originalFirstWidth)
+
+    const replacementName = `cms-browser-${engine}.png`
+    const replacement = (await api({ operation: 'state' })).assets.find(
+      (item) => item.name === replacementName && !item.archived,
+    )
+    assert.ok(replacement)
+    await page.getByRole('button', { name: 'Byt bild', exact: true }).click()
+    const picker = page.getByRole('dialog').filter({ hasText: 'Välj fil' }).last()
+    await expect(picker).toBeVisible()
+    const asset = picker.locator('.cms-asset').filter({ hasText: replacementName }).first()
+    await expect(asset).toBeVisible()
+    await asset.click()
+    await picker.getByRole('button', { name: 'Använd filen', exact: true }).click()
+    await expect(picker).toHaveCount(0)
+
+    await expect.poll(() => second.getAttribute('src')).not.toBe(originalSrc)
+    await expect(first).toHaveAttribute('src', originalSrc)
+    await expect(second).toHaveCSS('width', '123px')
+    await expectUniqueCmsNodes(page)
   })
 
   await test(

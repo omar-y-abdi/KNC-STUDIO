@@ -9,3 +9,14 @@ export function cmsNodeId(template: string, ...keys: unknown[]): string {
   }
   return `${template}:${hash.toString(16)}`
 }
+
+
+export function duplicateCmsNodeIds(ids: Iterable<string>): string[] {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const id of ids) {
+    if (seen.has(id)) duplicates.add(id)
+    else seen.add(id)
+  }
+  return [...duplicates]
+}

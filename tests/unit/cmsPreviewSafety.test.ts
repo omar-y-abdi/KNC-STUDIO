@@ -1,9 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { duplicateCmsNodeIds } from '../../src/cms/nodeIdentity'
 
 describe('native CMS preview boundaries', () => {
   const mobile = readFileSync('src/app/MobileSite.tsx', 'utf8')
   const root = readFileSync('src/app/Root.tsx', 'utf8')
+  it('reports duplicate runtime node identities deterministically', () => {
+    expect(
+      duplicateCmsNodeIds(['native:a', 'native:b', 'native:a', 'native:b', 'native:a']),
+    ).toEqual(['native:a', 'native:b'])
+    expect(duplicateCmsNodeIds(['native:a', 'native:b'])).toEqual([])
+  })
+
   it('passes explicit read-only booking ports to the mobile booking surface', () => {
     expect(mobile).toContain('previewPorts?:')
     expect(mobile).toContain('props.previewPorts.booking')

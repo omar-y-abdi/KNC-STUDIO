@@ -18,6 +18,7 @@ import { asBarberId } from '../../booking/domain'
 import { MyBookingsDialog } from '../../mybookings/MyBookingsDialog'
 import { makeMockMyBookingsAdapter } from '../../mybookings/adapters/mockMyBookings'
 import { CmsDraftProvider, useCmsStrings, useCmsTheme, useCmsPalette } from '../../cms/context'
+import { duplicateCmsNodeIds } from '../../cms/nodeIdentity'
 import { SUPABASE_URL } from '../../backend/config'
 import {
   validateDocument,
@@ -361,6 +362,16 @@ export default function CmsPreview(): JSX.Element {
       const nodes = [...document.querySelectorAll<HTMLElement>('[data-cms-node]')].filter(
         (node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0,
       )
+      const duplicates = duplicateCmsNodeIds(
+        nodes.map((node) => node.dataset['cmsNode'] ?? ''),
+      )
+      if (duplicates.length > 0) {
+        send(
+          'error',
+          `Förhandsvisningen hittade dubbla CMS-nod-ID:n: ${duplicates.slice(0, 5).join(', ')}`,
+        )
+        return
+      }
       send('nodes', nodes.map(describe))
       document.querySelector('[data-cms-picked]')?.removeAttribute('data-cms-picked')
       const selected = nodes.find((node) => node.dataset['cmsNode'] === current.current?.selected)

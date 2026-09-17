@@ -396,7 +396,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </h3>
         {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
           <div data-cms-node="aboutsection-div-7" style={fullBleedStyle}>
-            <GalleryMarquee photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
+            <GalleryMarquee instanceKey="salon" photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
           </div>
         ) : (
           <p
@@ -446,7 +446,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                     }}
                   />
                 ) : (
-                  <PlaceholderPhoto c={c} dark={dark} />
+                  <PlaceholderPhoto instanceKey={b.id} c={c} dark={dark} />
                 )}
                 <div
                   data-cms-node={cmsNodeId('aboutsection-div-13', b.id)}
@@ -506,7 +506,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </h3>
         {cutPhotos.status === 'ready' && cutPhotos.photos.length > 0 ? (
           <div data-cms-node="aboutsection-div-19" style={fullBleedStyle}>
-            <GalleryMarquee photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
+            <GalleryMarquee instanceKey="cuts" photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
           </div>
         ) : (
           <p
@@ -583,6 +583,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       {r.name}
                     </span>
                     <StarDisplay
+                      instanceKey={r.id}
                       rating={r.rating}
                       c={c}
                       label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
@@ -658,6 +659,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               {tx.reviewRating}
             </span>
             <StarRating
+              instanceKey="review-form"
               value={draft.rating}
               onChange={setRating}
               c={c}
