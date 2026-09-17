@@ -381,52 +381,37 @@ export async function extendedCmsScenarios({
     await studio(page)
     await importDocument(page, document)
 
-    const desktopSurface = () =>
-      canvas(page).locator('[data-cms-node="desktopsite-div-2"]')
+    const desktopSurface = () => canvas(page).locator('[data-cms-node="desktopsite-div-2"]')
     const mutedLink = () =>
       canvas(page).locator('[data-cms-node="herolinks-button-2"]').first()
 
     await expect(desktopSurface()).toHaveCSS('background-color', 'rgb(18, 52, 86)')
     await expect(mutedLink()).toHaveCSS('color', 'rgb(101, 67, 33)')
-    await page.screenshot({
-      path: `artifacts/cms-browser/${engine}/theme-desktop-light.png`,
-    })
+    await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-desktop-light.png` })
 
     await page.getByRole('button', { name: 'Mörkt', exact: true }).click()
     await expect(desktopSurface()).toHaveCSS('background-color', 'rgb(35, 69, 103)')
     await expect(mutedLink()).toHaveCSS('color', 'rgb(254, 220, 186)')
-    await page.screenshot({
-      path: `artifacts/cms-browser/${engine}/theme-desktop-dark.png`,
-    })
+    await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-desktop-dark.png` })
 
     await page.getByRole('button', { name: 'Mobil', exact: true }).click()
-    const mobileSurface = () =>
-      canvas(page).locator('[data-cms-node="mobilesite-div-2"]')
-    const mobileMuted = () =>
-      canvas(page).locator('[data-cms-node="mobilesite-span-19"]')
+    const mobileSurface = () => canvas(page).locator('[data-cms-node="mobilesite-div-2"]')
+    const mobileMuted = () => canvas(page).locator('[data-cms-node="mobilesite-span-19"]')
 
     await expect(mobileSurface()).toHaveCSS('background-color', 'rgb(35, 69, 103)')
     await expect(mobileMuted()).toHaveCSS('color', 'rgb(254, 220, 186)')
     await expect
-      .poll(() =>
-        canvas(page).locator('meta[name="theme-color"]').getAttribute('content'),
-      )
+      .poll(() => canvas(page).locator('meta[name="theme-color"]').getAttribute('content'))
       .toBe('#234567')
-    await page.screenshot({
-      path: `artifacts/cms-browser/${engine}/theme-mobile-dark.png`,
-    })
+    await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-mobile-dark.png` })
 
     await page.getByRole('button', { name: 'Ljust', exact: true }).click()
     await expect(mobileSurface()).toHaveCSS('background-color', 'rgb(18, 52, 86)')
     await expect(mobileMuted()).toHaveCSS('color', 'rgb(101, 67, 33)')
     await expect
-      .poll(() =>
-        canvas(page).locator('meta[name="theme-color"]').getAttribute('content'),
-      )
+      .poll(() => canvas(page).locator('meta[name="theme-color"]').getAttribute('content'))
       .toBe('#123456')
-    await page.screenshot({
-      path: `artifacts/cms-browser/${engine}/theme-mobile-light.png`,
-    })
+    await page.screenshot({ path: `artifacts/cms-browser/${engine}/theme-mobile-light.png` })
   })
 
   await test('image-upload-metadata-archive-and-restore', owner.session, async (page) => {
