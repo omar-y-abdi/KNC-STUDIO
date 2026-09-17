@@ -382,8 +382,7 @@ export async function extendedCmsScenarios({
     await importDocument(page, document)
 
     const desktopSurface = () => canvas(page).locator('[data-cms-node="desktopsite-div-2"]')
-    const mutedLink = () =>
-      canvas(page).locator('[data-cms-node="herolinks-button-2"]').first()
+    const mutedLink = () => canvas(page).locator('[data-cms-node="herolinks-button-2"]').first()
 
     await expect(desktopSurface()).toHaveCSS('background-color', 'rgb(18, 52, 86)')
     await expect(mutedLink()).toHaveCSS('color', 'rgb(101, 67, 33)')
