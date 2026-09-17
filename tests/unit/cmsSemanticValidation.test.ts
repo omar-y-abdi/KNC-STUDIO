@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultEmailDesign,
   emptyDocument,
+  validateCompleteDocument,
   validateDocument,
   validateDocumentMedia,
   type CmsAsset,
@@ -96,6 +97,20 @@ describe('CMS database semantic parity', () => {
       business_maps_href: ' https://maps.example.com/place ',
     })
     expect(() => validateDocument(document)).not.toThrow()
+  })
+
+  it('requires settings present in the authoritative base without inventing absent settings', () => {
+    const authoritative = emptyDocument()
+    authoritative.settings['business_name'] = 'Studio'
+
+    const missing = structuredClone(authoritative)
+    delete missing.settings['business_name']
+    expect(() => validateCompleteDocument(missing, authoritative)).toThrow(
+      'settings.business_name: Required setting is missing',
+    )
+
+    const withoutOptionalSetting = emptyDocument()
+    expect(() => validateCompleteDocument(withoutOptionalSetting, withoutOptionalSetting)).not.toThrow()
   })
 
   it('matches barber name and biography limits', () => {

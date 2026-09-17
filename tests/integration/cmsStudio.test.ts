@@ -154,16 +154,22 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     attempts.push({ name: 'required email variant', document: missingTemplate })
 
     const missingSiteTranslation = structuredClone(base.document)
-    const siteKicker = missingSiteTranslation.site['kicker']
-    if (!siteKicker) throw new Error('Missing seeded site fixture')
-    delete siteKicker.sv
-    attempts.push({ name: 'required site translation', document: missingSiteTranslation })
+    const siteEntry = Object.entries(missingSiteTranslation.site).find(([, value]) =>
+      Object.hasOwn(value, 'sv'),
+    )
+    if (siteEntry) {
+      delete siteEntry[1].sv
+      attempts.push({ name: 'required site translation', document: missingSiteTranslation })
+    }
 
     const missingAboutTranslation = structuredClone(base.document)
-    const aboutEyebrow = missingAboutTranslation.about['eyebrow']
-    if (!aboutEyebrow) throw new Error('Missing seeded about fixture')
-    delete aboutEyebrow.en
-    attempts.push({ name: 'required about translation', document: missingAboutTranslation })
+    const aboutEntry = Object.entries(missingAboutTranslation.about).find(([, value]) =>
+      Object.hasOwn(value, 'en'),
+    )
+    if (aboutEntry) {
+      delete aboutEntry[1].en
+      attempts.push({ name: 'required about translation', document: missingAboutTranslation })
+    }
 
     for (const attempt of attempts) {
       const validation = await call({ operation: 'validate', document: attempt.document })

@@ -790,7 +790,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
 }
 export function validateCompleteDocument(
   value: unknown,
-  authoritative: Pick<CmsDocument, 'site' | 'about'>,
+  authoritative: Pick<CmsDocument, 'site' | 'about' | 'settings'>,
 ): asserts value is CmsDocument {
   validateDocument(value)
   const document = value as CmsDocument
@@ -805,7 +805,7 @@ export function validateCompleteDocument(
     }
   }
 
-  for (const key of SETTING_KEYS)
+  for (const key of Object.keys(authoritative.settings))
     if (!Object.hasOwn(document.settings, key))
       fail(`settings.${key}`, 'Required setting is missing')
 
