@@ -223,15 +223,8 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     const first = publication(base)
     const second = publication(base)
 
-    first.document.site['kicker'] = {
-      sv: 'CMS concurrent first',
-      en: 'First',
-    }
-
-    second.document.site['kicker'] = {
-      sv: 'CMS concurrent second',
-      en: 'Second',
-    }
+    first.document.settings['business_email'] = 'cms-concurrent-first@example.test'
+    second.document.settings['business_email'] = 'cms-concurrent-second@example.test'
 
     interface DirectPublishResult {
       data: unknown | null
@@ -330,7 +323,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     expect(await replay.json()).toEqual(committed)
 
     const sameIdDifferentContent = structuredClone(winner)
-    sameIdDifferentContent.document.site['kicker'] = { sv: 'Different' }
+    sameIdDifferentContent.document.settings['business_email'] = 'different@example.test'
 
     expect((await call(sameIdDifferentContent)).status).toBe(422)
 
@@ -345,16 +338,10 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
   it('detects writes made through the retained legacy editor even without a CMS revision change', async () => {
     const base = await state()
     const legacy = await owner
-      .from('site_content')
-      .upsert(
-        {
-          key: 'kicker',
-          lang: 'sv',
-          value: 'Changed through old editor',
-        },
-        { onConflict: 'key,lang' },
-      )
-      .select('key,lang,value')
+      .from('site_settings')
+      .update({ value: 'Changed through old editor' })
+      .eq('key', 'business_name')
+      .select('key,value')
       .single()
 
     expect(legacy.error).toBeNull()
@@ -363,7 +350,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
     expect(stale.status).toBe(409)
     const latest = await state()
     expect(latest.revision).toBe(base.revision)
-    expect(latest.document.site['kicker']?.sv).toBe('Changed through old editor')
+    expect(latest.document.settings['business_name']).toBe('Changed through old editor')
     expect((await call(publication(latest, base.document))).status).toBe(200)
   })
   it('rejects active markup without committing any content or history', async () => {
