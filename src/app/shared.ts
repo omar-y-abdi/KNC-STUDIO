@@ -61,7 +61,6 @@ export function shellPalette(dark: boolean): ShellPalette {
   return dark ? DARK : LIGHT
 }
 
-
 /** Keep shell animation preferences current when the operating-system setting changes. */
 export function useReducedMotion(): boolean {
   const query = '(prefers-reduced-motion: reduce)'
@@ -77,7 +76,6 @@ export function useReducedMotion(): boolean {
   }, [])
   return reduced
 }
-
 
 /** Shared easing token for the shell animations. */
 export const EASE = 'cubic-bezier(.32,.72,0,1)'
