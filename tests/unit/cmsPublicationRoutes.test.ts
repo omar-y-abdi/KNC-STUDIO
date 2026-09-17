@@ -80,7 +80,7 @@ function legalPresentation(): CmsPresentation {
     const defaults = LEGAL_DEFAULTS[item.key]
     value.pages.push({
       id: item.id,
-      kind: 'page',
+      kind: item.key,
       path: item.path,
       name: { sv: item.key, en: item.key },
       title: { sv: item.key, en: item.key },
