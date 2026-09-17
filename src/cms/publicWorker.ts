@@ -136,6 +136,8 @@ export function renderCmsPage(shell: string, page: CmsPage, url: URL, siteOrigin
     'og:title': title,
     'og:description': description,
     'og:url': canonical,
+    'og:locale': lang === 'en' ? 'en_US' : 'sv_SE',
+    'og:locale:alternate': lang === 'en' ? 'sv_SE' : 'en_US',
     'twitter:title': title,
     'twitter:description': description,
   }
