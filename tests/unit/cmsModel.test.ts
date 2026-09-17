@@ -240,4 +240,169 @@ describe('CMS draft durability', () => {
       mergeDocuments(base, local, remote, { 'site.kicker.sv': 'remote' }).document.site.kicker.sv,
     ).toBe('Other')
   })
+  it('merges disjoint barber edits by stable identity', () => {
+    const base = emptyDocument()
+    base.barbers = [
+      {
+        id: 'a',
+        name: 'Barber A',
+        ig: '',
+        role_sv: '',
+        role_en: '',
+        bio_sv: 'A',
+        bio_en: '',
+        active: true,
+        sort_order: 0,
+      },
+      {
+        id: 'b',
+        name: 'Barber B',
+        ig: '',
+        role_sv: '',
+        role_en: '',
+        bio_sv: 'B',
+        bio_en: '',
+        active: true,
+        sort_order: 1,
+      },
+    ]
+    const local = structuredClone(base),
+      remote = structuredClone(base)
+    local.barbers[0]!.bio_sv = 'Local A'
+    remote.barbers[1]!.name = 'Remote B'
+
+    const result = mergeDocuments(base, local, remote)
+
+    expect(result.conflicts).toHaveLength(0)
+    expect(result.document.barbers.find((barber) => barber.id === 'a')?.bio_sv).toBe('Local A')
+    expect(result.document.barbers.find((barber) => barber.id === 'b')?.name).toBe('Remote B')
+  })
+
+  it('merges disjoint entity additions and deletions without losing either tab', () => {
+    const image = (id: string, alt: string, sort_order: number) => ({
+      id,
+      kind: 'salon' as const,
+      storage_path: `salon/${id}.webp`,
+      alt,
+      sort_order,
+    })
+    const base = emptyDocument()
+    base.gallery = [
+      image('00000000-0000-4000-8000-000000000001', 'One', 0),
+      image('00000000-0000-4000-8000-000000000002', 'Two', 1),
+    ]
+    const local = structuredClone(base),
+      remote = structuredClone(base)
+    local.gallery = local.gallery.filter(
+      (item) => item.id !== '00000000-0000-4000-8000-000000000001',
+    )
+    local.gallery.push(image('00000000-0000-4000-8000-000000000003', 'Local add', 2))
+    remote.gallery.find(
+      (item) => item.id === '00000000-0000-4000-8000-000000000002',
+    )!.alt = 'Remote edit'
+    remote.gallery.push(image('00000000-0000-4000-8000-000000000004', 'Remote add', 3))
+
+    const result = mergeDocuments(base, local, remote)
+
+    expect(result.conflicts).toHaveLength(0)
+    expect(result.document.gallery.map((item) => item.id)).toEqual([
+      '00000000-0000-4000-8000-000000000002',
+      '00000000-0000-4000-8000-000000000003',
+      '00000000-0000-4000-8000-000000000004',
+    ])
+    expect(
+      result.document.gallery.find(
+        (item) => item.id === '00000000-0000-4000-8000-000000000002',
+      )?.alt,
+    ).toBe('Remote edit')
+  })
+
+  it('merges email variants by template and language', () => {
+    const email = (lang: 'sv' | 'en', subject: string) => ({
+      template: 'customer_confirmation' as const,
+      lang,
+      subject,
+      preheader: 'Preheader',
+      title: 'Title',
+      intro: 'Intro',
+      section_title: null,
+      note: 'Note',
+      cta_label: 'Open',
+      contact_lead: null,
+      design: null,
+    })
+    const base = emptyDocument()
+    base.emails = [email('sv', 'SV'), email('en', 'EN')]
+    const local = structuredClone(base),
+      remote = structuredClone(base)
+    local.emails.find((item) => item.lang === 'sv')!.subject = 'Local SV'
+    remote.emails.find((item) => item.lang === 'en')!.subject = 'Remote EN'
+
+    const result = mergeDocuments(base, local, remote)
+
+    expect(result.conflicts).toHaveLength(0)
+    expect(result.document.emails.find((item) => item.lang === 'sv')?.subject).toBe('Local SV')
+    expect(result.document.emails.find((item) => item.lang === 'en')?.subject).toBe('Remote EN')
+  })
+
+  it('combines disjoint page reorders instead of conflicting on the whole collection', () => {
+    const page = (id: string, path: string) => ({
+      id,
+      kind: 'page' as const,
+      path,
+      name: { sv: path, en: path },
+      title: { sv: path, en: path },
+      description: { sv: '', en: '' },
+      content: {
+        sv: { html: '<p>SV</p>', css: { light: '', dark: '' } },
+        en: { html: '<p>EN</p>', css: { light: '', dark: '' } },
+      },
+      inMenu: true,
+    })
+    const a = page('00000000-0000-4000-8000-000000000011', '/a'),
+      b = page('00000000-0000-4000-8000-000000000012', '/b'),
+      c = page('00000000-0000-4000-8000-000000000013', '/c'),
+      d = page('00000000-0000-4000-8000-000000000014', '/d')
+    const base = emptyDocument()
+    base.presentation.pages = [a, b, c, d]
+    const local = structuredClone(base),
+      remote = structuredClone(base)
+    local.presentation.pages = [local.presentation.pages[1]!, local.presentation.pages[0]!, local.presentation.pages[2]!, local.presentation.pages[3]!]
+    remote.presentation.pages = [remote.presentation.pages[0]!, remote.presentation.pages[1]!, remote.presentation.pages[3]!, remote.presentation.pages[2]!]
+
+    const result = mergeDocuments(base, local, remote)
+
+    expect(result.conflicts).toHaveLength(0)
+    expect(result.document.presentation.pages.map((item) => item.path)).toEqual(['/b', '/a', '/d', '/c'])
+  })
+
+  it('conflicts only on the overlapping property of the same entity', () => {
+    const base = emptyDocument()
+    base.barbers = [
+      {
+        id: 'a',
+        name: 'Barber A',
+        ig: '',
+        role_sv: '',
+        role_en: '',
+        bio_sv: 'Base',
+        bio_en: '',
+        active: true,
+        sort_order: 0,
+      },
+    ]
+    const local = structuredClone(base),
+      remote = structuredClone(base)
+    local.barbers[0]!.bio_sv = 'Local'
+    remote.barbers[0]!.bio_sv = 'Remote'
+
+    const result = mergeDocuments(base, local, remote)
+
+    expect(result.conflicts.map((conflict) => conflict.path)).toEqual(['barbers.a.bio_sv'])
+    expect(
+      mergeDocuments(base, local, remote, { 'barbers.a.bio_sv': 'remote' }).document.barbers[0]
+        ?.bio_sv,
+    ).toBe('Remote')
+  })
+
 })
