@@ -110,7 +110,9 @@ describe('CMS database semantic parity', () => {
     )
 
     const withoutOptionalSetting = emptyDocument()
-    expect(() => validateCompleteDocument(withoutOptionalSetting, withoutOptionalSetting)).not.toThrow()
+    expect(() =>
+      validateCompleteDocument(withoutOptionalSetting, withoutOptionalSetting),
+    ).not.toThrow()
   })
 
   it('matches barber name and biography limits', () => {
