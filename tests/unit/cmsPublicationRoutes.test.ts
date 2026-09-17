@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import worker from '../../src/worker'
 import { emptyPresentation, type CmsPresentation } from '../../shared/cms'
+import { LEGAL_DEFAULTS } from '../../shared/cms-legal-defaults'
 
 const context = { exports: { PublicContent: { fetch: async () => new Response('unused') } } }
 const csp =
@@ -57,6 +58,82 @@ function presentation(): CmsPresentation {
   })
   return value
 }
+function legalPresentation(): CmsPresentation {
+  const value = emptyPresentation()
+  const pages = [
+    {
+      id: '39c9de6b-fc88-42e0-970f-c544183752c1',
+      path: '/privacy' as const,
+      key: 'privacy' as const,
+      sv: 'CMS privacy override SV',
+      en: 'CMS privacy override EN',
+    },
+    {
+      id: 'dc5c405c-5219-4741-a8f9-491f3dc4dba0',
+      path: '/terms' as const,
+      key: 'terms' as const,
+      sv: 'CMS terms override SV',
+      en: 'CMS terms override EN',
+    },
+  ]
+  for (const item of pages) {
+    const defaults = LEGAL_DEFAULTS[item.key]
+    value.pages.push({
+      id: item.id,
+      kind: 'page',
+      path: item.path,
+      name: { sv: item.key, en: item.key },
+      title: { sv: item.key, en: item.key },
+      description: { sv: item.key, en: item.key },
+      inMenu: false,
+      content: {
+        sv: {
+          html: `${defaults.sv.html}<p>${item.sv}</p>`,
+          css: { ...defaults.sv.css },
+        },
+        en: {
+          html: `${defaults.en.html}<p>${item.en}</p>`,
+          css: { ...defaults.en.css },
+        },
+      },
+    })
+  }
+  return value
+}
+
+const currentBusinessDiscovery = {
+  settings: {
+    business_name: 'Current KNC Studio',
+    business_legal_name: 'Current KNC Studio AB',
+    business_org_number: '559999-1234',
+    business_email: 'legal@current.example',
+    business_phone_display: '031-123 45 67',
+    business_phone_tel: '0311234567',
+    business_street: 'Currentgatan 7',
+    business_postal_code: '411 11',
+    business_city: 'Göteborg',
+    business_maps_href: 'https://maps.example/current',
+    cancellation_policy_hours: '36',
+  },
+  barbers: [],
+  services: [],
+  schedules: [],
+}
+
+function rpcWithDiscovery(value: CmsPresentation = legalPresentation()) {
+  const fetcher = vi.fn(async (input: Request | URL | string) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (url.endsWith('/rest/v1/rpc/public_cms_presentation'))
+      return Response.json({ revision: 3, presentation: value })
+    if (url.endsWith('/rest/v1/rpc/public_business_discovery'))
+      return Response.json(currentBusinessDiscovery)
+    return new Response('unexpected RPC', { status: 500 })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  return fetcher
+}
+
 function rpc(value: unknown = { revision: 2, presentation: presentation() }) {
   const fetcher = vi.fn(async () => Response.json(value))
   vi.stubGlobal('fetch', fetcher)
@@ -169,6 +246,46 @@ describe('CMS publication through the actual Worker', () => {
     expect(response.status).toBe(503)
     expect(await response.text()).not.toContain('alert(1)')
   })
+  it.each([
+    ['/privacy', 'CMS privacy override SV', 'Current KNC Studio AB'],
+    ['/privacy?lang=en', 'CMS privacy override EN', 'Current KNC Studio AB'],
+    ['/terms', 'CMS terms override SV', 'Avboka senast 36 timmar före den bokade tiden.'],
+    ['/terms?lang=en', 'CMS terms override EN', 'Cancel at least 36 hours before your appointment.'],
+  ])(
+    'enriches CMS-authored legal route %s with current server-owned facts',
+    async (path, override, expectedLegalText) => {
+      rpcWithDiscovery()
+      const response = await worker.fetch(request(path), env(), context)
+      const html = await response.text()
+
+      expect(response.status).toBe(200)
+      expect(html).toContain(override)
+      expect(html).toContain('data-business-name>Current KNC Studio</span>')
+      expect(html).toContain('Current KNC Studio AB')
+      expect(html).toContain('559999-1234')
+      expect(html).toContain('Currentgatan 7, 411 11 Göteborg')
+      expect(html).toContain('legal@current.example')
+      expect(html).toContain(expectedLegalText)
+      expect(html).not.toContain('data-business-name="">salongen</span>')
+      expect(response.headers.get('cache-control')).toContain('no-store')
+    },
+  )
+
+  it('rejects a published CMS legal page that removes a required server-owned slot', async () => {
+    const value = legalPresentation()
+    const terms = value.pages.find((page) => page.path === '/terms')
+    if (!terms) throw new Error('Missing terms fixture')
+    terms.content.en.html = terms.content.en.html.replace(
+      'id="cancellation-policy-en"',
+      'id="removed-cancellation-policy-en"',
+    )
+    rpc({ revision: 3, presentation: value })
+
+    const response = await worker.fetch(request('/terms?lang=en'), env(), context)
+    expect(response.status).toBe(503)
+    expect(await response.text()).not.toContain('CMS terms override EN')
+  })
+
   it('retains original legal pages when no CMS override is published', async () => {
     rpc({ revision: 0, presentation: emptyPresentation() })
     const response = await worker.fetch(request('/terms'), env(), context)

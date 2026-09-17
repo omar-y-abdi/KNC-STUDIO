@@ -284,11 +284,11 @@ export function renderLegalMetadata(
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
   rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
+    /<span\b(?=[^>]*\bdata-business-name(?:="[^"]*")?)[^>]*>[^<]*<\/span\s*>/g,
     () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
   )
   rendered = rendered.replaceAll(
-    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
+    /<span\b(?=[^>]*\bdata-business-controller="(sv|en)")[^>]*>[^<]*<\/span\s*>/g,
     (_match, lang: string) =>
       `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
   )
@@ -297,7 +297,7 @@ export function renderLegalMetadata(
       ? '<a href="/">Kontakt / Contact</a>'
       : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
   rendered = rendered.replaceAll(
-    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
+    /<span\b(?=[^>]*\bdata-business-contact(?:="[^"]*")?)[^>]*>[\s\S]*?<\/span\s*>/g,
     () => `<span data-business-contact>${contact}</span>`,
   )
   for (const lang of ['sv', 'en'] as const) {
@@ -330,6 +330,40 @@ export function renderLegalMetadata(
     )
   }
   return rendered
+}
+
+async function enrichLegalResponse(
+  response: Response,
+  request: Request,
+  env: Env,
+  pathname: string,
+): Promise<Response> {
+  if (
+    (pathname !== '/terms' && pathname !== '/privacy') ||
+    !response.headers.get('content-type')?.includes('text/html') ||
+    response.status < 200 ||
+    response.status >= 300
+  )
+    return response
+
+  const headers = new Headers(response.headers)
+  for (const name of ['Content-Length', 'Content-Encoding', 'ETag', 'Last-Modified'])
+    headers.delete(name)
+  headers.set('Cache-Control', 'no-store')
+
+  if (request.method === 'HEAD')
+    return new Response(null, { status: response.status, statusText: response.statusText, headers })
+  if (request.method !== 'GET') return response
+
+  const discovery = await loadDiscovery(env)
+  return new Response(
+    renderLegalMetadata(await response.text(), pathname, discovery?.business ?? null),
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    },
+  )
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -373,7 +407,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const cleanPathname = withoutTrailingSlash(pathname)
 
   const cms = await cmsPublicResponse(request, env, SITE_URL)
-  if (cms !== null) return cms
+  if (cms !== null) return enrichLegalResponse(cms, request, env, cleanPathname)
 
   if (pathname === '/404.html') {
     const missing = await serveAsset(request, env, '/404.html')
@@ -430,20 +464,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     (request.method === 'GET' || request.method === 'HEAD')
   const asset = await serveAsset(request, env, assetPath, dynamicHomepage || dynamicLegal)
   if (asset.status !== 404) {
-    if (dynamicLegal) {
-      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
-      const headers = new Headers(asset.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set('Cache-Control', 'no-store')
-      return new Response(
-        request.method === 'HEAD'
-          ? null
-          : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
-        { status: asset.status, headers },
-      )
-    }
+    if (dynamicLegal) return enrichLegalResponse(asset, request, env, pathname)
     if (dynamicHomepage) {
       const loadedDiscovery = await loadDiscovery(env)
       const discovery = loadedDiscovery ?? {

@@ -214,6 +214,47 @@ export function validateMarkup(
   for (const anchor of anchors) if (!ids.has(anchor)) reject('href', `Missing anchor #${anchor}`)
   return { html: serialize(fragment), refs }
 }
+function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void {
+  if (path !== '/privacy' && path !== '/terms') return
+
+  const fragment = parseFragment(html)
+  const ids = new Set<string>()
+  let hasBusinessName = false
+  let hasBusinessContact = false
+  let hasBusinessController = false
+
+  const visit = (node: HtmlNode): void => {
+    if ('tagName' in node) {
+      for (const attr of node.attrs) {
+        if (attr.name === 'id') ids.add(attr.value)
+        if (attr.name === 'data-business-name') hasBusinessName = true
+        if (attr.name === 'data-business-contact') hasBusinessContact = true
+        if (attr.name === 'data-business-controller' && attr.value === lang)
+          hasBusinessController = true
+      }
+    }
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child)
+  }
+  visit(fragment)
+
+  const missing: string[] = []
+  if (!ids.has(`legal-business-details-${lang}`))
+    missing.push(`#legal-business-details-${lang}`)
+  if (path === '/terms' && !ids.has(`cancellation-policy-${lang}`))
+    missing.push(`#cancellation-policy-${lang}`)
+  if (path === '/privacy') {
+    if (!hasBusinessName) missing.push('[data-business-name]')
+    if (!hasBusinessController) missing.push(`[data-business-controller="${lang}"]`)
+    if (!hasBusinessContact) missing.push('[data-business-contact]')
+  }
+
+  if (missing.length > 0)
+    reject(
+      `presentation.${path}.${lang}`,
+      `Legal page is missing required server-owned slot(s): ${missing.join(', ')}`,
+    )
+}
+
 export function validateDocumentMarkup(document: CmsDocument, policy: MarkupPolicy): MediaRef[] {
   const refs: MediaRef[] = []
   const contents = [
@@ -228,6 +269,11 @@ export function validateDocumentMarkup(document: CmsDocument, policy: MarkupPoli
         content[lang].html = result.html
         refs.push(...result.refs)
       }
+    }
+  }
+  for (const page of document.presentation.pages) {
+    for (const lang of ['sv', 'en'] as const) {
+      validateLegalSlots(page.path, lang, page.content[lang].html)
     }
   }
   return refs
