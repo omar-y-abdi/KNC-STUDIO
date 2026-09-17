@@ -77,23 +77,27 @@ export async function extendedCmsScenarios({
   const expectUniqueCmsNodes = async (page) =>
     expect.poll(async () => (await duplicateVisibleCmsNodes(page)).join('|')).toBe('')
 
-  await test('native-cms-node-identities-are-unique-per-rendered-surface', owner.session, async (page) => {
-    await studio(page)
-    await expect(canvas(page).locator('[data-cms-node]').first()).toBeVisible()
-    await expectUniqueCmsNodes(page)
+  await test(
+    'native-cms-node-identities-are-unique-per-rendered-surface',
+    owner.session,
+    async (page) => {
+      await studio(page)
+      await expect(canvas(page).locator('[data-cms-node]').first()).toBeVisible()
+      await expectUniqueCmsNodes(page)
 
-    await nav(page, 'Om oss').click()
-    await expect(canvas(page).locator('#om-oss')).toBeVisible()
-    await expectUniqueCmsNodes(page)
+      await nav(page, 'Om oss').click()
+      await expect(canvas(page).locator('#om-oss')).toBeVisible()
+      await expectUniqueCmsNodes(page)
 
-    await nav(page, 'Bokning').click()
-    await expect(canvas(page).locator('[data-cms-node="bookingflow-div-1"]')).toBeVisible()
-    await expectUniqueCmsNodes(page)
+      await nav(page, 'Bokning').click()
+      await expect(canvas(page).locator('[data-cms-node="bookingflow-div-1"]')).toBeVisible()
+      await expectUniqueCmsNodes(page)
 
-    await nav(page, 'Kundens bokningar').click()
-    await expect(canvas(page).getByRole('dialog')).toBeVisible()
-    await expectUniqueCmsNodes(page)
-  })
+      await nav(page, 'Kundens bokningar').click()
+      await expect(canvas(page).getByRole('dialog')).toBeVisible()
+      await expectUniqueCmsNodes(page)
+    },
+  )
 
   await test('draft-reload-recovery-export-and-revert', owner.session, async (page) => {
     await studio(page)

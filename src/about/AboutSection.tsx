@@ -396,7 +396,12 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </h3>
         {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
           <div data-cms-node="aboutsection-div-7" style={fullBleedStyle}>
-            <GalleryMarquee instanceKey="salon" photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
+            <GalleryMarquee
+              instanceKey="salon"
+              photos={salonPhotos.photos}
+              alt={tx.galleryAlt}
+              c={c}
+            />
           </div>
         ) : (
           <p

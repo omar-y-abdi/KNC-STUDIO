@@ -196,7 +196,16 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
           data-cms-node="detailsdialog-div-24"
           style="display:flex;flex-direction:column;gap:10px;"
         >
-          {field('name', t.name, props.nameValue, props.onName, t.namePh, 'text', e.name, t.errName)}
+          {field(
+            'name',
+            t.name,
+            props.nameValue,
+            props.onName,
+            t.namePh,
+            'text',
+            e.name,
+            t.errName,
+          )}
           {field(
             'phone',
             t.phone,
