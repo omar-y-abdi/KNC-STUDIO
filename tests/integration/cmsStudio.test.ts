@@ -155,7 +155,7 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
       en: 'Second',
     }
 
-    type DirectPublishResult = {
+    interface DirectPublishResult {
       data: unknown | null
       error: {
         code?: string
