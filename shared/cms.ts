@@ -423,6 +423,7 @@ export function validMediaRef(value: unknown): value is MediaRef {
   )
 }
 export function isPagePath(path: string): boolean {
+  if (path === '/') return true
   return (
     path.length <= 100 &&
     path.startsWith('/') &&
