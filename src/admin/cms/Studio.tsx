@@ -60,6 +60,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [mode, setMode] = useState<CmsMode>('light')
   const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
   const [zoom, setZoom] = useState(80)
+  const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
   const [mobilePanel, setMobilePanel] = useState<Panel>(null)
@@ -389,6 +390,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button type="button" onClick={() => setZoom(device === 'Mobile' ? 90 : 70)}>
               Fit
             </button>
+            <button type="button" aria-pressed={compare} onClick={() => setCompare((value) => !value)}>
+              Jämför
+            </button>
             <button
               type="button"
               aria-pressed={locked}
@@ -404,6 +408,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               lang={lang}
               mode={mode}
               device={device}
+              compare={compare}
               zoom={zoom}
               locked={locked}
               assets={resources}
