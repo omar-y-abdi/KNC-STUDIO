@@ -540,7 +540,12 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         canonicalUrl,
         cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
       )
-      if (discovery) body = renderHomepageMetadata(body, discovery)
+      if (discovery) {
+        const structured = buildBusinessStructuredData(discovery.business, discovery.facts, SITE_URL)
+        body = replaceMetaContent(body, 'business-og-site-name', discovery.business.name)
+        body = replaceMetaContent(body, 'business-og-image-alt', discovery.business.name)
+        body = replaceJsonScript(body, 'business-json-ld', structured)
+      }
       if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
         body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
       return new Response(request.method === 'HEAD' ? null : body, {
