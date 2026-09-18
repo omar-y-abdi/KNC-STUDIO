@@ -83,3 +83,58 @@ export class CmsDraft {
     this.pending = null
   }
 }
+
+
+export interface CmsMergeConflict {
+  path: string
+}
+export interface CmsMergeResult {
+  document: CmsDocument
+  conflicts: CmsMergeConflict[]
+}
+
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+export function mergeCmsDocuments(
+  base: CmsDocument,
+  local: CmsDocument,
+  remote: CmsDocument,
+): CmsMergeResult {
+  const conflicts: CmsMergeConflict[] = []
+  const merge = (a: unknown, l: unknown, r: unknown, path: string): unknown => {
+    if (same(l, r)) return structuredClone(l)
+    if (same(l, a)) return structuredClone(r)
+    if (same(r, a)) return structuredClone(l)
+    if (
+      a &&
+      l &&
+      r &&
+      typeof a === 'object' &&
+      typeof l === 'object' &&
+      typeof r === 'object' &&
+      !Array.isArray(a) &&
+      !Array.isArray(l) &&
+      !Array.isArray(r)
+    ) {
+      const out: Record<string, unknown> = {}
+      const keys = new Set([
+        ...Object.keys(a as Record<string, unknown>),
+        ...Object.keys(l as Record<string, unknown>),
+        ...Object.keys(r as Record<string, unknown>),
+      ])
+      for (const key of keys)
+        out[key] = merge(
+          (a as Record<string, unknown>)[key],
+          (l as Record<string, unknown>)[key],
+          (r as Record<string, unknown>)[key],
+          path ? `${path}.${key}` : key,
+        )
+      return out
+    }
+    conflicts.push({ path })
+    return structuredClone(l)
+  }
+  return { document: merge(base, local, remote, '') as CmsDocument, conflicts }
+}
