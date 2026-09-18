@@ -52,6 +52,25 @@ export const EMAIL_NAMES = [
   'auth_invite',
 ] as const
 export type CmsEmailName = (typeof EMAIL_NAMES)[number]
+const EMAIL_VARIABLES: Record<CmsEmailName, ReadonlySet<string>> = {
+  customer_confirmation: new Set(['business_name', 'customer_name', 'barber_name', 'cancellation_hours']),
+  barber_confirmation: new Set(['business_name', 'customer_name', 'barber_name', 'booking_date', 'booking_time']),
+  customer_cancellation: new Set(['business_name', 'customer_name', 'barber_name']),
+  barber_cancellation: new Set(['business_name', 'customer_name', 'barber_name', 'booking_date', 'booking_time']),
+  customer_reminder: new Set(['business_name', 'customer_name', 'barber_name', 'cancellation_hours']),
+  customer_booking_access: new Set(['business_name']),
+  auth_recovery: new Set(['business_name']),
+  auth_email_change: new Set(['business_name', 'new_email']),
+  auth_invite: new Set(['business_name']),
+}
+const EMAIL_VARIABLE = /\{([a-z_]+)\}/g
+function emailVariables(value: string): Set<string> {
+  return new Set(
+    [...value.matchAll(EMAIL_VARIABLE)]
+      .map((match) => match[1])
+      .filter((variable): variable is string => variable !== undefined),
+  )
+}
 export const EMAIL_PARTS = ['title', 'intro', 'details', 'note', 'cta', 'contact'] as const
 export type EmailPart = (typeof EMAIL_PARTS)[number]
 export interface EmailPalette {
@@ -782,13 +801,30 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
       !['sv', 'en'].includes(String(email['lang']))
     )
       fail('email', 'Unknown template or locale')
-    emailIds.push(`${email['template']}:${email['lang']}`)
+    const template = email['template'] as CmsEmailName
+    emailIds.push(`${template}:${email['lang']}`)
     for (const key of ['subject', 'title']) text(email[key], `email.${key}`, 120, 1)
     text(email['preheader'], 'email.preheader', 180, 1)
     for (const key of ['intro', 'note']) text(email[key], `email.${key}`, 800, 1)
     text(email['cta_label'], 'email.cta_label', 80, 1)
     if (email['section_title'] !== null) text(email['section_title'], 'email.section_title', 120, 1)
     if (email['contact_lead'] !== null) text(email['contact_lead'], 'email.contact_lead', 240, 1)
+    for (const key of [
+      'subject',
+      'preheader',
+      'title',
+      'intro',
+      'section_title',
+      'note',
+      'cta_label',
+      'contact_lead',
+    ]) {
+      const value = email[key]
+      if (typeof value !== 'string') continue
+      for (const variable of emailVariables(value))
+        if (!EMAIL_VARIABLES[template].has(variable))
+          fail(`email.${template}.${key}`, `Unknown placeholder {${variable}}`)
+    }
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
   unique(emailIds, 'emails')
@@ -815,10 +851,36 @@ export function validateCompleteDocument(
     if (!Object.hasOwn(document.settings, key))
       fail(`settings.${key}`, 'Required setting is missing')
 
-  const emailIds = new Set(document.emails.map((email) => `${email.template}:${email.lang}`))
-  for (const email of authoritative.emails)
-    if (!emailIds.has(`${email.template}:${email.lang}`))
-      fail(`emails.${email.template}.${email.lang}`, 'Required email variant is missing')
+  const emailIds = new Map(
+    document.emails.map((email) => [`${email.template}:${email.lang}`, email]),
+  )
+  for (const email of authoritative.emails) {
+    const key = `${email.template}:${email.lang}`
+    const draft = emailIds.get(key)
+    if (!draft) {
+      fail(`emails.${key}`, 'Required email variant is missing')
+      continue
+    }
+    for (const field of [
+      'subject',
+      'preheader',
+      'title',
+      'intro',
+      'section_title',
+      'note',
+      'cta_label',
+      'contact_lead',
+    ] as const) {
+      const before = email[field]
+      const after = draft[field]
+      if (typeof before !== 'string') continue
+      const required = emailVariables(before)
+      const present = typeof after === 'string' ? emailVariables(after) : new Set<string>()
+      for (const variable of required)
+        if (!present.has(variable))
+          fail(`emails.${key}.${field}`, `Required placeholder {${variable}} is missing`)
+    }
+  }
 }
 export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
   const media = { bucket: ref.bucket, path: ref.path }
