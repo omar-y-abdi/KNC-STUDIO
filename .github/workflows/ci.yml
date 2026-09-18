@@ -116,8 +116,27 @@ jobs:
         run: npx supabase test db --local
       - name: Adapter integration tests
         run: npm run test:integration
-      - name: Install customer browser engines
+      - name: Build CMS browser assets
+        run: npm run build
+      - name: Install browser engines
         run: npx playwright install --with-deps chromium firefox webkit
+      - name: CMS studio shell in Chromium
+        run: >-
+          CMS_BROWSER=chromium
+          CMS_SCENARIOS=owner-studio-native-preview,mobile-studio-shell-drawers
+          node tools/e2e/cms-studio.mjs
+      - name: CMS mobile studio shell in WebKit
+        run: >-
+          CMS_BROWSER=webkit
+          CMS_SCENARIOS=mobile-studio-shell-drawers
+          node tools/e2e/cms-studio.mjs
+      - name: Preserve failed CMS shell evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cms-shell-failure-${{ github.run_attempt }}
+          path: artifacts/cms-browser
+          retention-days: 7
       - name: Customer browser through local Worker and Edge
         run: npm run test:e2e -- --customer
       - name: Preserve failed customer screenshots

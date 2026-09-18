@@ -12,6 +12,12 @@ import { chromium, firefox, webkit, expect } from 'playwright/test'
 
 const engine = process.env.CMS_BROWSER ?? 'chromium'
 if (!['chromium', 'firefox', 'webkit'].includes(engine)) throw new Error('Unsupported CMS_BROWSER')
+const selectedScenarios = new Set(
+  (process.env.CMS_SCENARIOS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+)
 const base = 'http://127.0.0.1:4188'
 const stack = JSON.parse(
   execFileSync('npx', ['supabase', 'status', '--output', 'json'], {
@@ -185,6 +191,7 @@ async function context(session, viewport = { width: 1600, height: 1000 }) {
   return value
 }
 async function test(name, session, action, viewport) {
+  if (selectedScenarios.size > 0 && !selectedScenarios.has(name)) return
   const current = await context(session, viewport),
     page = await current.newPage()
   const errors = [],
