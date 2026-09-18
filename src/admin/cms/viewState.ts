@@ -101,8 +101,7 @@ export function captureInspectorScroll(root?: ParentNode | null): CmsInspectorSc
   const state: CmsInspectorScrollState = {}
   for (const [key, css] of inspectorSelectors) {
     const element = scope.querySelector(css)
-    if (element && 'scrollTop' in element)
-      state[key] = finite((element as HTMLElement).scrollTop)
+    if (element && 'scrollTop' in element) state[key] = finite((element as HTMLElement).scrollTop)
   }
   return state
 }
@@ -170,8 +169,7 @@ export function restoreEditorView(
   else if (typeof editor.select === 'function') editor.select(null)
 
   if (snapshot.tab && options.setTab) options.setTab(snapshot.tab)
-  if (typeof snapshot.compare === 'boolean' && options.setCompare)
-    options.setCompare(snapshot.compare)
+  if (typeof snapshot.compare === 'boolean' && options.setCompare) options.setCompare(snapshot.compare)
   restoreInspectorScroll(snapshot.inspector, options.root)
 }
 
