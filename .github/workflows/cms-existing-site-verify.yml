@@ -1,0 +1,36 @@
+name: CMS existing-site verification
+
+on:
+  push:
+    branches: [fix/cms-existing-site]
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - name: Preserve isolated test workspace
+        run: |
+          git archive HEAD | tar -x -C "$RUNNER_TEMP"
+          rm -f "$RUNNER_TEMP/.env"
+          cp -a node_modules "$RUNNER_TEMP/node_modules"
+          cp -a "$HOME/.cache/ms-playwright" "$RUNNER_TEMP/ms-playwright"
+          tar -C "$RUNNER_TEMP" -czf /tmp/cms-verification-workspace.tar.gz src shared public supabase tests tools docs package.json package-lock.json tsconfig*.json vite.config.* vitest*.ts eslint.config.* index.html .prettierrc.json .prettierignore wrangler.* node_modules ms-playwright
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-verification-workspace
+          path: /tmp/cms-verification-workspace.tar.gz
+          retention-days: 1
+          compression-level: 0
