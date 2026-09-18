@@ -158,6 +158,27 @@ export function CmsEditor(props: Props): JSX.Element {
       if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
         component.set('editable', true)
     })
+    const keydown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+      const component = editor.getSelected()
+      if (!component || isProtected(component)) return
+      const delta =
+        event.key === 'ArrowLeft'
+          ? [-1, 0]
+          : event.key === 'ArrowRight'
+            ? [1, 0]
+            : event.key === 'ArrowUp'
+              ? [0, -1]
+              : [0, 1]
+      component.setStyle(
+        nudgeStyle(component.getStyle(), delta[0], delta[1], event.shiftKey ? 10 : 1),
+      )
+      event.preventDefault()
+    }
+    window.addEventListener('keydown', keydown)
     const remember = (): void => {
       const current = latest.current
       viewStates.current.set(
@@ -208,6 +229,7 @@ export function CmsEditor(props: Props): JSX.Element {
     return () => {
       if (timer.current !== null) window.clearTimeout(timer.current)
       props.onReady(null)
+      window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
     }
