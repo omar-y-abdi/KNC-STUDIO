@@ -16,6 +16,8 @@ import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
+import { uploadedFontCss } from './fonts'
+import { SUPABASE_URL } from '../../backend/config'
 import './studio.css'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
@@ -455,6 +457,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               zoom={zoom}
               locked={locked}
               assets={resources}
+              fontCss={uploadedFontCss(document.presentation, SUPABASE_URL ?? '')}
               tab={tab}
               onTab={setTab}
               onChange={replacePage}
