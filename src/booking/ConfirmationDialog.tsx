@@ -1,3 +1,4 @@
+import { CmsImage } from '../cms/context'
 // The booking "confirmation" modal — ported from the original mock, wrapped in the accessible
 // Dialog. Calendar/map links come from the BookingPort result; the local adapter reproduces the
 // mock's link strings, so output is identical.
@@ -46,94 +47,181 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
       cardClass="knc-sheet-card"
       cardStyle={s.overlayCardStyle}
     >
-      <button onClick={props.onReset} style={s.confirmCloseStyle} aria-label={props.closeLabel}>
+      <button
+        data-cms-node="confirmationdialog-button-1"
+        onClick={props.onReset}
+        style={s.confirmCloseStyle}
+        aria-label={props.closeLabel}
+      >
         ×
       </button>
-      <div style="padding:28px 22px 20px;text-align:center;">
-        <div style={s.successCircleStyle}>
-          <img src="/icons/checkmark.svg" alt="" style={s.successCheckStyle} />
+      <div
+        data-cms-node="confirmationdialog-div-2"
+        style="padding:28px 22px 20px;text-align:center;"
+      >
+        <div data-cms-node="confirmationdialog-div-3" style={s.successCircleStyle}>
+          <CmsImage
+            data-cms-node="confirmationdialog-img-4"
+            src="/icons/checkmark.svg"
+            alt=""
+            style={s.successCheckStyle}
+          />
         </div>
         <div
+          data-cms-node="confirmationdialog-div-5"
+          data-cms-copy="site:bookedTitle"
           id="knc-booked-title"
           style="font-family:'Inter Variable';font-weight:600;font-size:20px;margin-bottom:6px;"
         >
           {t.bookedTitle}
         </div>
-        <div style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto;">
+        <div
+          data-cms-node="confirmationdialog-div-6"
+          style="font-size:13.5px;opacity:.6;line-height:1.45;max-width:300px;margin:0 auto;"
+        >
           {props.confirmSentLine}
         </div>
         {props.customerAccessNote ? (
           <p
+            data-cms-node="confirmationdialog-p-7"
             style={{ fontSize: '13px', lineHeight: 1.45, margin: '12px auto 0', maxWidth: '300px' }}
           >
             {props.customerAccessNote}
           </p>
         ) : null}
       </div>
-      <div style={s.confirmSummaryStyle}>
-        <div style="display:flex;justify-content:space-between;font-size:14px;">
-          <span style="opacity:.55;">{t.fBarber}</span>
-          <span style="font-weight:600;">{props.sumBarber}</span>
+      <div data-cms-node="confirmationdialog-div-8" style={s.confirmSummaryStyle}>
+        <div
+          data-cms-node="confirmationdialog-div-9"
+          style="display:flex;justify-content:space-between;font-size:14px;"
+        >
+          <span
+            data-cms-node="confirmationdialog-span-10"
+            data-cms-copy="site:fBarber"
+            style="opacity:.55;"
+          >
+            {t.fBarber}
+          </span>
+          <span data-cms-node="confirmationdialog-span-11" style="font-weight:600;">
+            {props.sumBarber}
+          </span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:14px;">
-          <span style="opacity:.55;">{t.fWhen}</span>
-          <span style="font-weight:600;text-align:right;">{props.sumWhen}</span>
+        <div
+          data-cms-node="confirmationdialog-div-12"
+          style="display:flex;justify-content:space-between;font-size:14px;"
+        >
+          <span
+            data-cms-node="confirmationdialog-span-13"
+            data-cms-copy="site:fWhen"
+            style="opacity:.55;"
+          >
+            {t.fWhen}
+          </span>
+          <span
+            data-cms-node="confirmationdialog-span-14"
+            style="font-weight:600;text-align:right;"
+          >
+            {props.sumWhen}
+          </span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:14px;">
-          <span style="opacity:.55;">{t.fService}</span>
-          <span style="font-weight:600;text-align:right;">
+        <div
+          data-cms-node="confirmationdialog-div-15"
+          style="display:flex;justify-content:space-between;font-size:14px;"
+        >
+          <span
+            data-cms-node="confirmationdialog-span-16"
+            data-cms-copy="site:fService"
+            style="opacity:.55;"
+          >
+            {t.fService}
+          </span>
+          <span
+            data-cms-node="confirmationdialog-span-17"
+            style="font-weight:600;text-align:right;"
+          >
             {props.sumService} · {props.sumPrice}
           </span>
         </div>
       </div>
-      <div style="padding:16px 18px 8px;">
-        <div style="font-size:12px;font-weight:600;opacity:.55;margin-bottom:9px;">
+      <div data-cms-node="confirmationdialog-div-18" style="padding:16px 18px 8px;">
+        <div
+          data-cms-node="confirmationdialog-div-19"
+          data-cms-copy="site:addToCal"
+          style="font-size:12px;font-weight:600;opacity:.55;margin-bottom:9px;"
+        >
           {t.addToCal}
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px;">
+        <div
+          data-cms-node="confirmationdialog-div-20"
+          style="display:flex;flex-direction:column;gap:8px;"
+        >
           <a
+            data-cms-node="confirmationdialog-a-21"
             href={props.icsHref}
             download="blade-blend-studio.ics"
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >
-            <img src="/icons/calendar.badge.plus.svg" alt="" style={s.calIconStyle} />
+            <CmsImage
+              data-cms-node="confirmationdialog-img-22"
+              src="/icons/calendar.badge.plus.svg"
+              alt=""
+              style={s.calIconStyle}
+            />
             {t.calApple}
           </a>
           <a
+            data-cms-node="confirmationdialog-a-23"
             href={props.gcalHref}
             target="_blank"
             rel="noopener noreferrer"
             style={s.calRowStyle}
             class={pseudoClass('hover', props.calRowHover)}
           >
-            <img src="/icons/calendar.svg" alt="" style={s.calIconStyle} />
+            <CmsImage
+              data-cms-node="confirmationdialog-img-24"
+              src="/icons/calendar.svg"
+              alt=""
+              style={s.calIconStyle}
+            />
             {t.calGoogle}
           </a>
           {props.showDirections ? (
             <a
+              data-cms-node="confirmationdialog-a-25"
               href={props.mapsHref}
               target="_blank"
               rel="noopener noreferrer"
               style={s.calRowStyle}
               class={pseudoClass('hover', props.calRowHover)}
             >
-              <img src="/icons/mappin.circle.fill.svg" alt="" style={s.calIconStyle} />
+              <CmsImage
+                data-cms-node="confirmationdialog-img-26"
+                src="/icons/mappin.circle.fill.svg"
+                alt=""
+                style={s.calIconStyle}
+              />
               {t.directions}
             </a>
           ) : null}
         </div>
       </div>
-      <div style="padding:6px 18px 18px;">
+      <div data-cms-node="confirmationdialog-div-27" style="padding:6px 18px 18px;">
         {props.onMyBookings !== undefined && props.myBookingsLabel !== undefined ? (
           <button
+            data-cms-node="confirmationdialog-button-28"
             onClick={props.onMyBookings}
             style={{ ...s.secondaryBtnStyle, marginBottom: '10px' }}
           >
             {props.myBookingsLabel}
           </button>
         ) : null}
-        <button onClick={props.onReset} style={s.resetBtnStyle}>
+        <button
+          data-cms-node="confirmationdialog-button-29"
+          data-cms-copy="copy:booking:newBooking"
+          onClick={props.onReset}
+          style={s.resetBtnStyle}
+        >
           {t.newBooking}
         </button>
       </div>

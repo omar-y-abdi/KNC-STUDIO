@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "fontkit": "npm:fontkit@2.0.4"
+  }
+}

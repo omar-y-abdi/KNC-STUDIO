@@ -1,3 +1,5 @@
+import { cmsNodeId } from '../cms/nodeIdentity'
+import { useCms, mergeCmsStrings, mergeCmsPalette, CmsImage } from '../cms/context'
 // "Mina bokningar" / My-appointments popup — the customer self-service surface. Built on the SAME
 // accessible Dialog + booking-popup styling (knc-sheet-backdrop / knc-sheet-card) as the booking and
 // cancellation popups, so it matches the site everywhere it mounts.
@@ -71,10 +73,12 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 }
 
 function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
+  const _cmsPresentation = useCms().presentation
+
   const lang = props.lang
-  const t = myBookingsStrings(lang)
+  const t = mergeCmsStrings(_cmsPresentation, 'myBookings', lang, myBookingsStrings(lang))
   const dark = props.mode === 'dark'
-  const c = palette(dark)
+  const c = mergeCmsPalette(_cmsPresentation, palette(dark), dark ? 'dark' : 'light')
   const s = buildBookingStyles(c, dark, false)
   const red = systemRed(dark)
   const port: MyBookingsPort = props.port ?? defaultMyBookingsPort
@@ -311,8 +315,9 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
   const emailNote = emailError ? t.errEmail : null
 
-  const chevron = (open: boolean): JSX.Element => (
-    <img
+  const chevron = (open: boolean, instanceKey: string): JSX.Element => (
+    <CmsImage
+      data-cms-node={cmsNodeId('mybookingsdialog-img-1', instanceKey)}
       src="/icons/chevron.down.svg"
       alt=""
       style={{
@@ -327,10 +332,28 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     />
   )
 
-  const detailRow = (label: string, value: string): JSX.Element => (
-    <div style="display:flex;justify-content:space-between;gap:12px;font-size:14px;">
-      <span style="opacity:.55;flex:none;">{label}</span>
-      <span style="font-weight:600;text-align:right;">{value}</span>
+  const detailRow = (
+    bookingId: string,
+    fieldKey: 'barber' | 'service' | 'duration',
+    label: string,
+    value: string,
+  ): JSX.Element => (
+    <div
+      data-cms-node={cmsNodeId('mybookingsdialog-div-2', bookingId, fieldKey)}
+      style="display:flex;justify-content:space-between;gap:12px;font-size:14px;"
+    >
+      <span
+        data-cms-node={cmsNodeId('mybookingsdialog-span-3', bookingId, fieldKey)}
+        style="opacity:.55;flex:none;"
+      >
+        {label}
+      </span>
+      <span
+        data-cms-node={cmsNodeId('mybookingsdialog-span-4', bookingId, fieldKey)}
+        style="font-weight:600;text-align:right;"
+      >
+        {value}
+      </span>
     </div>
   )
 
@@ -339,6 +362,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     const confirming = cancelFor === b.id
     return (
       <div
+        data-cms-node={cmsNodeId('mybookingsdialog-div-5', b.id)}
         key={b.id}
         style={{
           border: '.5px solid ' + c.line,
@@ -348,6 +372,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
         }}
       >
         <button
+          data-cms-node={cmsNodeId('mybookingsdialog-button-6', b.id)}
           type="button"
           onClick={() => toggleRow(b.id)}
           aria-expanded={open}
@@ -367,11 +392,17 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
             textAlign: 'left',
           }}
         >
-          <span style="font-size:14.5px;font-weight:600;">{b.whenLabel}</span>
-          {chevron(open)}
+          <span
+            data-cms-node={cmsNodeId('mybookingsdialog-span-7', b.id)}
+            style="font-size:14.5px;font-weight:600;"
+          >
+            {b.whenLabel}
+          </span>
+          {chevron(open, `booking:${b.id}`)}
         </button>
         {open ? (
           <div
+            data-cms-node={cmsNodeId('mybookingsdialog-div-8', b.id)}
             style={{
               borderTop: '.5px solid ' + c.line,
               background: c.subtle,
@@ -381,20 +412,38 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
               gap: '8px',
             }}
           >
-            {detailRow(t.fBarber, b.barber.name)}
-            {detailRow(t.fService, `${b.serviceName} · ${b.price} kr`)}
-            {detailRow(t.fDuration, `${b.durationMin} ${t.min}`)}
+            {detailRow(b.id, 'barber', t.fBarber, b.barber.name)}
+            {detailRow(b.id, 'service', t.fService, `${b.serviceName} · ${b.price} kr`)}
+            {detailRow(b.id, 'duration', t.fDuration, `${b.durationMin} ${t.min}`)}
             {upcoming ? (
               confirming ? (
-                <div style={{ marginTop: '4px' }}>
-                  <p style="font-size:13px;line-height:1.45;margin:0 0 10px;">{t.cancelConfirmQ}</p>
+                <div
+                  data-cms-node={cmsNodeId('mybookingsdialog-div-9', b.id)}
+                  style={{ marginTop: '4px' }}
+                >
+                  <p
+                    data-cms-node={cmsNodeId('mybookingsdialog-p-10', b.id)}
+                    data-cms-copy="copy:myBookings:cancelConfirmQ"
+                    style="font-size:13px;line-height:1.45;margin:0 0 10px;"
+                  >
+                    {t.cancelConfirmQ}
+                  </p>
                   {cancelError !== null ? (
-                    <p role="alert" style={{ ...s.submitErrorStyle, margin: '0 0 10px' }}>
+                    <p
+                      data-cms-node={cmsNodeId('mybookingsdialog-p-11', b.id)}
+                      role="alert"
+                      style={{ ...s.submitErrorStyle, margin: '0 0 10px' }}
+                    >
                       {cancelError}
                     </p>
                   ) : null}
-                  <div style="display:flex;gap:10px;">
+                  <div
+                    data-cms-node={cmsNodeId('mybookingsdialog-div-12', b.id)}
+                    style="display:flex;gap:10px;"
+                  >
                     <button
+                      data-cms-node={cmsNodeId('mybookingsdialog-button-13', b.id)}
+                      data-cms-copy="copy:myBookings:cancelConfirmNo"
                       type="button"
                       onClick={() => {
                         setCancelFor(null)
@@ -418,6 +467,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                       {t.cancelConfirmNo}
                     </button>
                     <button
+                      data-cms-node={cmsNodeId('mybookingsdialog-button-14', b.id)}
                       type="button"
                       onClick={cancelBusy ? undefined : () => void onConfirmCancel(b)}
                       disabled={cancelBusy}
@@ -441,6 +491,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                 </div>
               ) : (
                 <button
+                  data-cms-node={cmsNodeId('mybookingsdialog-button-15', b.id)}
+                  data-cms-copy="copy:myBookings:cancelBtn"
                   type="button"
                   onClick={() => {
                     setCancelFor(b.id)
@@ -480,9 +532,18 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     inputRef: Ref<HTMLInputElement>,
     type: 'email' | 'tel',
   ): JSX.Element => (
-    <label style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
-      <span style="font-size:12px;font-weight:600;opacity:.55;">{label}</span>
+    <label
+      data-cms-node="mybookingsdialog-label-16"
+      style="display:flex;flex-direction:column;gap:5px;margin-top:12px;"
+    >
+      <span
+        data-cms-node="mybookingsdialog-span-17"
+        style="font-size:12px;font-weight:600;opacity:.55;"
+      >
+        {label}
+      </span>
       <input
+        data-cms-node="mybookingsdialog-input-18"
         ref={inputRef}
         value={value}
         onInput={onInput}
@@ -495,7 +556,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
         class={FOCUS_CLS}
       />
       {note !== null ? (
-        <span role="alert" style={s.fieldErrorNoteStyle}>
+        <span data-cms-node="mybookingsdialog-span-19" role="alert" style={s.fieldErrorNoteStyle}>
           {note}
         </span>
       ) : null}
@@ -504,6 +565,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
   const changeEmailLink = (
     <button
+      data-cms-node="mybookingsdialog-button-20"
+      data-cms-copy="copy:myBookings:changeEmail"
       type="button"
       onClick={onChangeDetails}
       style={{
@@ -534,19 +597,27 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       cardClass="knc-sheet-card"
       cardStyle={s.overlayCardStyle}
     >
-      <div style={s.overlayHeaderStyle}>
+      <div data-cms-node="mybookingsdialog-div-21" style={s.overlayHeaderStyle}>
         <span
+          data-cms-node="mybookingsdialog-span-22"
+          data-cms-copy="copy:myBookings:title"
           id="knc-mybookings-title"
           style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.title}
         </span>
-        <button onClick={props.onClose} style={s.closeBtnStyle} aria-label={t.ariaClose}>
+        <button
+          data-cms-node="mybookingsdialog-button-23"
+          data-cms-copy="copy:myBookings:ariaClose"
+          onClick={props.onClose}
+          style={s.closeBtnStyle}
+          aria-label={t.ariaClose}
+        >
           ×
         </button>
       </div>
 
-      <div style="padding:16px 18px 18px;">
+      <div data-cms-node="mybookingsdialog-div-24" style="padding:16px 18px 18px;">
         {props.emailLinkCode !== undefined && step !== 'loading' ? (
           <CustomerEmailLink
             lang={lang}
@@ -558,14 +629,32 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
           />
         ) : null}
         {step === 'list' && deviceOnly ? (
-          <p style={{ fontSize: '13px', lineHeight: 1.45, opacity: 0.7, margin: '0 0 14px' }}>
+          <p
+            data-cms-node="mybookingsdialog-p-25"
+            data-cms-copy="copy:myBookings:deviceBookingsNote"
+            style={{ fontSize: '13px', lineHeight: 1.45, opacity: 0.7, margin: '0 0 14px' }}
+          >
             {t.deviceBookingsNote}
           </p>
         ) : null}
-        {step === 'loading' ? <p role="status">{t.loadingBookings}</p> : null}
+        {step === 'loading' ? (
+          <p
+            data-cms-node="mybookingsdialog-p-26"
+            data-cms-copy="copy:myBookings:loadingBookings"
+            role="status"
+          >
+            {t.loadingBookings}
+          </p>
+        ) : null}
         {step === 'lookup' ? (
-          <div>
-            <p style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0;">{t.lookupLead}</p>
+          <div data-cms-node="mybookingsdialog-div-27">
+            <p
+              data-cms-node="mybookingsdialog-p-28"
+              data-cms-copy="copy:myBookings:lookupLead"
+              style="font-size:13.5px;opacity:.6;line-height:1.45;margin:0;"
+            >
+              {t.lookupLead}
+            </p>
             {contactField(
               t.email,
               email,
@@ -577,7 +666,11 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
               'email',
             )}
             {systemError !== null ? (
-              <p role="alert" style={{ ...s.submitErrorStyle, marginTop: '14px' }}>
+              <p
+                data-cms-node="mybookingsdialog-p-29"
+                role="alert"
+                style={{ ...s.submitErrorStyle, marginTop: '14px' }}
+              >
                 {systemError}
               </p>
             ) : null}
@@ -588,6 +681,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
               resetNonce={turnstileNonce}
             />
             <button
+              data-cms-node="mybookingsdialog-button-30"
               onClick={lookupDisabled ? undefined : onLookupClick}
               disabled={lookupDisabled}
               style={{
@@ -605,34 +699,62 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
         ) : null}
 
         {step === 'sent' ? (
-          <div style="display:flex;flex-direction:column;gap:16px;">
-            <p style="font-size:13.5px;line-height:1.5;margin:0;">{t.accessSent}</p>
-            <div style="display:flex;justify-content:center;padding-top:2px;">
+          <div
+            data-cms-node="mybookingsdialog-div-31"
+            style="display:flex;flex-direction:column;gap:16px;"
+          >
+            <p
+              data-cms-node="mybookingsdialog-p-32"
+              data-cms-copy="copy:myBookings:accessSent"
+              style="font-size:13.5px;line-height:1.5;margin:0;"
+            >
+              {t.accessSent}
+            </p>
+            <div
+              data-cms-node="mybookingsdialog-div-33"
+              style="display:flex;justify-content:center;padding-top:2px;"
+            >
               {changeEmailLink}
             </div>
           </div>
         ) : null}
 
         {step === 'list' && bookings !== null ? (
-          <div style="display:flex;flex-direction:column;gap:16px;">
+          <div
+            data-cms-node="mybookingsdialog-div-34"
+            style="display:flex;flex-direction:column;gap:16px;"
+          >
             {systemError !== null ? (
-              <div>
-                <p role="alert" style={{ ...s.submitErrorStyle, margin: '0 0 8px' }}>
+              <div data-cms-node="mybookingsdialog-div-35">
+                <p
+                  data-cms-node="mybookingsdialog-p-36"
+                  role="alert"
+                  style={{ ...s.submitErrorStyle, margin: '0 0 8px' }}
+                >
                   {systemError}
                 </p>
                 <button
+                  data-cms-node="mybookingsdialog-button-37"
                   type="button"
                   class={FOCUS_CLS}
                   style={s.bookBtnStyle}
                   disabled={busy}
                   onClick={() => void loadBookings('')}
                 >
-                  {customerEmailLinkStrings(lang).refresh}
+                  {
+                    mergeCmsStrings(
+                      _cmsPresentation,
+                      'customerEmailLink',
+                      lang,
+                      customerEmailLinkStrings(lang),
+                    ).refresh
+                  }
                 </button>
               </div>
             ) : null}
             {notice !== null ? (
               <div
+                data-cms-node="mybookingsdialog-div-38"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -646,7 +768,8 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                   padding: '10px 12px',
                 }}
               >
-                <img
+                <CmsImage
+                  data-cms-node="mybookingsdialog-img-39"
                   src="/icons/checkmark.svg"
                   alt=""
                   style={{ width: '14px', height: '14px', filter: c.iconF, opacity: 0.7 }}
@@ -656,12 +779,25 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
             ) : null}
 
             {/* Upcoming — always visible. */}
-            <section style="display:flex;flex-direction:column;gap:9px;">
-              <h3 style="margin:0;font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.55;">
+            <section
+              data-cms-node="mybookingsdialog-section-40"
+              style="display:flex;flex-direction:column;gap:9px;"
+            >
+              <h3
+                data-cms-node="mybookingsdialog-h3-41"
+                data-cms-copy="copy:myBookings:upcomingTitle"
+                style="margin:0;font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.55;"
+              >
                 {t.upcomingTitle}
               </h3>
               {bookings.upcoming.length === 0 ? (
-                <p style="font-size:13.5px;opacity:.55;margin:2px 0 0;">{t.upcomingEmpty}</p>
+                <p
+                  data-cms-node="mybookingsdialog-p-42"
+                  data-cms-copy="copy:myBookings:upcomingEmpty"
+                  style="font-size:13.5px;opacity:.55;margin:2px 0 0;"
+                >
+                  {t.upcomingEmpty}
+                </p>
               ) : (
                 bookings.upcoming.map((b) => bookingRow(b, true))
               )}
@@ -669,8 +805,13 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
             {/* Past — collapsible, starts collapsed. Only shown when there is history. */}
             {bookings.past.length > 0 ? (
-              <section style="display:flex;flex-direction:column;gap:9px;">
+              <section
+                data-cms-node="mybookingsdialog-section-43"
+                style="display:flex;flex-direction:column;gap:9px;"
+              >
                 <button
+                  data-cms-node="mybookingsdialog-button-44"
+                  data-cms-copy="copy:myBookings:ariaExpandPast"
                   type="button"
                   onClick={() => setPastOpen((v) => !v)}
                   aria-expanded={pastOpen}
@@ -689,10 +830,13 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                     cursor: 'pointer',
                   }}
                 >
-                  <span style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.55;">
+                  <span
+                    data-cms-node="mybookingsdialog-span-45"
+                    style="font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.55;"
+                  >
                     {t.pastTitle} ({bookings.past.length})
                   </span>
-                  {chevron(pastOpen)}
+                  {chevron(pastOpen, 'past')}
                 </button>
                 {pastOpen ? bookings.past.map((b) => bookingRow(b, false)) : null}
               </section>
@@ -708,7 +852,10 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
               />
             ) : null}
 
-            <div style="display:flex;justify-content:center;padding-top:2px;">
+            <div
+              data-cms-node="mybookingsdialog-div-46"
+              style="display:flex;justify-content:center;padding-top:2px;"
+            >
               {changeEmailLink}
             </div>
           </div>

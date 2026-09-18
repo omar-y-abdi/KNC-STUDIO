@@ -1,3 +1,5 @@
+import { CmsRegion, CmsPageMenu } from '../cms/Regions'
+import { CmsImage } from '../cms/context'
 // Desktop (WEBB · Editorial) layout — nav + hero with business info + collapsible booking fold.
 
 import type { JSX, RefObject } from 'preact'
@@ -186,7 +188,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
   }, [booking, rosterReady, props.scrollRootRef])
   const lineColor = c.line
   // Muted, theme-aware colour for the underlined hero links (matches the booking-form muted text).
-  const heroLinkColor = props.dark ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.62)'
+  const heroLinkColor = c.muted
 
   const navStyle: JSX.CSSProperties = {
     position: props.scrollRootRef === undefined ? 'fixed' : 'sticky',
@@ -295,6 +297,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
 
   return (
     <div
+      data-cms-node="desktopsite-div-1"
       style={{
         position: props.scrollRootRef === undefined ? undefined : 'relative',
         minHeight: '100vh',
@@ -307,28 +310,49 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         paddingBottom: 'var(--privacy-overlay-space, 0px)',
       }}
     >
-      <div style={navStyle} data-testid="desktop-top-panel" data-scroll-progress="1.000">
-        <h1 style={navLogoStyle}>
+      <div
+        data-cms-node="desktopsite-div-2"
+        style={navStyle}
+        data-testid="desktop-top-panel"
+        data-scroll-progress="1.000"
+      >
+        <h1 data-cms-node="desktopsite-h1-3" style={navLogoStyle}>
           <CornerMark height={30} />
         </h1>
-        <div style="display:flex;align-items:center;gap:14px;font-size:13px;">
+        <div
+          data-cms-node="desktopsite-div-4"
+          style="display:flex;align-items:center;gap:14px;font-size:13px;"
+        >
           {business.mapsHref === '' ? null : (
             <a
+              data-cms-node="desktopsite-a-5"
               href={business.mapsHref}
               target="_blank"
               rel="noopener noreferrer"
               style={props.findUsStyle}
             >
-              <img src="/icons/mappin.circle.fill.svg" alt="" style={props.chromeIconStyle} />
+              <CmsImage
+                data-cms-node="desktopsite-img-6"
+                src="/icons/mappin.circle.fill.svg"
+                alt=""
+                style={props.chromeIconStyle}
+              />
               {tx.findUs}
             </a>
           )}
           {business.phoneTel === '' || business.phoneDisplay === '' ? null : (
             <a
+              data-cms-node="desktopsite-a-7"
               href={`tel:${business.phoneTel}`}
               style="display:flex;align-items:center;gap:6px;opacity:.6;text-decoration:none;color:inherit;"
             >
-              <img src="/icons/phone.svg" alt={tx.ariaCall} style={props.chromeIconStyle} />
+              <CmsImage
+                data-cms-node="desktopsite-img-8"
+                data-cms-copy="copy:app:ariaCall"
+                src="/icons/phone.svg"
+                alt={tx.ariaCall}
+                style={props.chromeIconStyle}
+              />
               {business.phoneDisplay}
             </a>
           )}
@@ -337,8 +361,10 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
         </div>
       </div>
 
-      <main>
+      <main data-cms-node="desktopsite-main-9">
+        <CmsRegion name="home-before" lang={props.lang} mode={props.mode} />
         <div
+          data-cms-node="desktopsite-div-10"
           style={{
             position: 'relative',
             minHeight: booking ? 'auto' : '100dvh',
@@ -352,10 +378,12 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             color: 'inherit',
           }}
         >
-          <div style={heroMarkStyle} aria-hidden="true">
+          <div data-cms-node="desktopsite-div-11" style={heroMarkStyle} aria-hidden="true">
             <HomepageLogo logo={props.homepageLogo} layout="desktop" height={300} />
           </div>
           <div
+            data-cms-node="desktopsite-div-12"
+            data-cms-copy="site:kicker"
             style={{
               fontSize: scalePx(13, props.homepageScale) + 'px',
               fontWeight: 600,
@@ -367,8 +395,10 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           >
             {tx.kicker}
           </div>
-          <div style={heroActionsStyle}>
+          <div data-cms-node="desktopsite-div-13" style={heroActionsStyle}>
             <button
+              data-cms-node="desktopsite-button-14"
+              data-cms-copy="copy:app:book"
               onClick={props.toggleDeskBooking}
               onPointerDown={preloadBookingFlow}
               onFocus={preloadBookingFlow}
@@ -378,6 +408,8 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
               {tx.book}
             </button>
             <button
+              data-cms-node="desktopsite-button-15"
+              data-cms-copy="copy:app:myBookings"
               onClick={props.openMyBookings}
               onPointerDown={preloadMyBookingsDialog}
               onFocus={preloadMyBookingsDialog}
@@ -395,24 +427,31 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
             onOpenCancel={props.openCancel}
             marginTop="20px"
           />
+          <CmsPageMenu lang={props.lang} mode={props.mode} />
           {!booking && props.privacy !== undefined ? (
             <PrivacyManageButton lang={props.lang} dark={props.dark} controls={props.privacy} />
           ) : null}
-          <div style={heroInfoStyle}>
-            <span>{tx.hours}</span>
-            <span>{tx.addr}</span>
+          <div data-cms-node="desktopsite-div-16" style={heroInfoStyle}>
+            <span data-cms-node="desktopsite-span-17" data-cms-copy="site:hours">
+              {tx.hours}
+            </span>
+            <span data-cms-node="desktopsite-span-18" data-cms-copy="copy:app:addr">
+              {tx.addr}
+            </span>
           </div>
         </div>
         {/* Booking fold — unchanged render path. While open, About is absent rather than hidden. */}
         <div
+          data-cms-node="desktopsite-div-19"
           ref={bookingFoldRef}
           style={{ ...foldStyle(booking), scrollMarginTop: DESKTOP_PANEL_HEIGHT + 'px' }}
           data-testid="fold-booking"
           inert={!booking}
           aria-hidden={booking ? undefined : 'true'}
         >
-          <div style={deskFoldInnerStyle}>
+          <div data-cms-node="desktopsite-div-20" style={deskFoldInnerStyle}>
             <div
+              data-cms-node="desktopsite-div-21"
               style={
                 'border-top:.5px solid ' +
                 lineColor +
@@ -451,27 +490,32 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           </div>
         </div>
         {!booking ? (
-          <AboutSection
-            mode={props.mode}
-            lang={props.lang}
-            {...(props.initialContact === undefined
-              ? {}
-              : { customerPhone: props.initialContact.phone })}
-            fontScale={props.aboutScale}
-            scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
-            {...(props.onManagePrivacy === undefined
-              ? {}
-              : { onManagePrivacy: props.onManagePrivacy })}
-            {...(props.previewPorts === undefined
-              ? {}
-              : {
-                  port: props.previewPorts.reviews,
-                  barbersPort: props.previewPorts.barbers,
-                  aboutContentPort: props.previewPorts.aboutContent,
-                  galleryPort: props.previewPorts.gallery,
-                  challengeEnabled: false,
-                })}
-          />
+          <>
+            <CmsRegion name="home-after" lang={props.lang} mode={props.mode} />
+            <CmsRegion name="about-before" lang={props.lang} mode={props.mode} />
+            <AboutSection
+              mode={props.mode}
+              lang={props.lang}
+              {...(props.initialContact === undefined
+                ? {}
+                : { customerPhone: props.initialContact.phone })}
+              fontScale={props.aboutScale}
+              scrollMarginTop={DESKTOP_PANEL_HEIGHT + 'px'}
+              {...(props.onManagePrivacy === undefined
+                ? {}
+                : { onManagePrivacy: props.onManagePrivacy })}
+              {...(props.previewPorts === undefined
+                ? {}
+                : {
+                    port: props.previewPorts.reviews,
+                    barbersPort: props.previewPorts.barbers,
+                    aboutContentPort: props.previewPorts.aboutContent,
+                    galleryPort: props.previewPorts.gallery,
+                    challengeEnabled: false,
+                  })}
+            />
+            <CmsRegion name="about-after" lang={props.lang} mode={props.mode} />
+          </>
         ) : null}
       </main>
     </div>

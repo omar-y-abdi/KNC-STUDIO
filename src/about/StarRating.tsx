@@ -1,3 +1,4 @@
+import { cmsNodeId } from '../cms/nodeIdentity'
 // Star rating widgets — a read-only display (for published reviews) and a keyboard-operable
 // selector (for the review form). The selector is a WAI-ARIA radiogroup: arrow keys move the
 // selection, Home/End jump to 1/5, and each star is a focusable radio with an accessible name.
@@ -9,9 +10,10 @@ import type { Rating } from './reviews/domain'
 import { RATINGS } from './reviews/domain'
 
 /** A single star glyph (filled or outline), drawn with `currentColor`. */
-function Star(props: { filled: boolean; size: number }): JSX.Element {
+function Star(props: { filled: boolean; size: number; nodeId: string }): JSX.Element {
   return (
     <svg
+      data-cms-node={props.nodeId}
       viewBox="0 0 24 24"
       width={props.size}
       height={props.size}
@@ -28,6 +30,7 @@ function Star(props: { filled: boolean; size: number }): JSX.Element {
 }
 
 export interface StarDisplayProps {
+  readonly instanceKey: string
   readonly rating: Rating
   readonly c: Palette
   /** Pre-formatted accessible label, e.g. "Rating: 4 of 5". */
@@ -38,18 +41,25 @@ export interface StarDisplayProps {
 export function StarDisplay(props: StarDisplayProps): JSX.Element {
   return (
     <span
+      data-cms-node={cmsNodeId('starrating-span-2', props.instanceKey)}
       role="img"
       aria-label={props.label}
       style={{ display: 'inline-flex', gap: '2px', color: props.c.text }}
     >
       {RATINGS.map((n) => (
-        <Star key={n} filled={n <= props.rating} size={15} />
+        <Star
+          key={n}
+          nodeId={cmsNodeId('starrating-svg-1', 'display', props.instanceKey, n)}
+          filled={n <= props.rating}
+          size={15}
+        />
       ))}
     </span>
   )
 }
 
 export interface StarRatingProps {
+  readonly instanceKey: string
   readonly value: Rating | null
   readonly onChange: (r: Rating) => void
   readonly c: Palette
@@ -97,6 +107,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
 
   return (
     <div
+      data-cms-node={cmsNodeId('starrating-div-3', props.instanceKey)}
       role="radiogroup"
       aria-label={props.groupLabel}
       onKeyDown={onKeyDown}
@@ -119,6 +130,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
         }
         return (
           <button
+            data-cms-node={cmsNodeId('starrating-button-4', props.instanceKey, n)}
             key={n}
             ref={(el) => {
               if (el) starRefs.current[n] = el
@@ -131,7 +143,11 @@ export function StarRating(props: StarRatingProps): JSX.Element {
             onClick={() => move(n)}
             style={starStyle}
           >
-            <Star filled={selected} size={26} />
+            <Star
+              nodeId={cmsNodeId('starrating-svg-1', 'rating', props.instanceKey, n)}
+              filled={selected}
+              size={26}
+            />
           </button>
         )
       })}

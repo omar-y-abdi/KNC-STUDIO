@@ -1,3 +1,4 @@
+import { CmsImage } from '../cms/context'
 // Shared homepage logo renderer. Defaults preserve existing vector pixels; uploaded logo bytes are
 // server-processed WebP objects from the public gallery bucket and can only receive bounded styling.
 
@@ -25,7 +26,8 @@ export function HomepageLogo(props: HomepageLogoProps): JSX.Element {
   }
   if (props.logo.url !== null) {
     return (
-      <img
+      <CmsImage
+        data-cms-node="homepagelogo-img-1"
         src={props.logo.url}
         alt="Blade & Blend Studio"
         style={{

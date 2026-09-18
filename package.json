@@ -27,7 +27,11 @@
     "@supabase/supabase-js": "2.112.2",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "grapesjs": "0.23.6",
+    "parse5": "8.0.1",
+    "css-tree": "3.2.1",
+    "fontkit": "2.0.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260910.1",
@@ -50,6 +54,8 @@
     "typescript-eslint": "^8.61.1",
     "vite": "^8.0.12",
     "vitest": "^4.1.11",
-    "wrangler": "4.131.0"
+    "wrangler": "4.131.0",
+    "@types/css-tree": "2.3.11",
+    "@types/fontkit": "2.0.9"
   }
 }
