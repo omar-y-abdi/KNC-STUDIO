@@ -260,9 +260,11 @@ export function EmailPanel({
                 value={email.design.defaultMode}
                 onChange={(e) => {
                   const next = structuredClone(email)
-                  if (next.design) next.design.defaultMode = e.currentTarget.value as 'light' | 'dark'
+                  if (next.design)
+                    next.design.defaultMode = e.currentTarget.value as 'light' | 'dark'
                   onChange(replaceEmail(document, next))
-              }}>
+                }}
+              >
                 <option value="light">Ljus</option>
                 <option value="dark">Mörk</option>
               </select>
@@ -284,12 +286,13 @@ export function EmailPanel({
                     <input
                       type="color"
                       value={email.design?.palettes[paletteMode][key] ?? '#000000'}
-                onInput={(e) => {
-                      const next = structuredClone(email)
-                      if (next.design) next.design.palettes[paletteMode][key] = e.currentTarget.value
-                      onChange(replaceEmail(document, next))
-                }}
-              />
+                      onInput={(e) => {
+                        const next = structuredClone(email)
+                        if (next.design)
+                          next.design.palettes[paletteMode][key] = e.currentTarget.value
+                        onChange(replaceEmail(document, next))
+                      }}
+                    />
                   </label>
                 ))}
               </fieldset>
@@ -300,9 +303,11 @@ export function EmailPanel({
                 value={email.design.font}
                 onChange={(e) => {
                   const next = structuredClone(email)
-                  if (next.design) next.design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
+                  if (next.design)
+                    next.design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
                   onChange(replaceEmail(document, next))
-              }}>
+                }}
+              >
                 <option value="system">System</option>
                 <option value="sans">Sans</option>
                 <option value="serif">Serif</option>
