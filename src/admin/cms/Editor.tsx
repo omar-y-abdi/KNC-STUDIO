@@ -7,6 +7,7 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
+import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 
 export interface EditorHandle {
@@ -243,7 +244,7 @@ export function CmsEditor(props: Props): JSX.Element {
     mutateSelected((component) => {
       if (isProtected(component) || component.get('copyable') === false)
         return props.onError('Det valda funktionsblocket kan inte dupliceras.')
-      const copy = component.clone()
+      const copy = cloneComponent(component)
       component.parent()?.append(copy, { at: component.index() + 1 })
       instance.current?.select(copy)
     })
