@@ -181,7 +181,8 @@ export function validateMarkup(
   const functionalMode = options.functionalContracts !== undefined
   const contractList = options.functionalContracts ?? []
   const contracts = new Map(contractList.map((contract) => [contract.key, contract]))
-  if (contracts.size !== contractList.length) reject('html', 'Duplicate functional contract identity')
+  if (contracts.size !== contractList.length)
+    reject('html', 'Duplicate functional contract identity')
   const refs = checkCss(css, policy, false),
     ids = new Set<string>(),
     anchors: string[] = []

@@ -427,9 +427,12 @@ export function validateCanonicalProject(
 
     const trusted = seedById.get(id)
     const kind = page['kind']
-    if (!['page', 'privacy', 'terms'].includes(String(kind))) fail(`page.${id}.kind`, 'Invalid page kind')
-    if (trusted && kind !== trusted.kind) fail(`page.${id}.kind`, 'Protected page kind cannot change')
-    if (!trusted && kind !== 'page') fail(`page.${id}.kind`, 'Only ordinary custom pages may be created')
+    if (!['page', 'privacy', 'terms'].includes(String(kind)))
+      fail(`page.${id}.kind`, 'Invalid page kind')
+    if (trusted && kind !== trusted.kind)
+      fail(`page.${id}.kind`, 'Protected page kind cannot change')
+    if (!trusted && kind !== 'page')
+      fail(`page.${id}.kind`, 'Only ordinary custom pages may be created')
 
     const path = stringValue(page['path'], `page.${id}.path`, 100, 1)
     if (trusted?.pathLocked && path !== trusted.path)

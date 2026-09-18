@@ -208,10 +208,9 @@ describe('canonical CMS page project', () => {
     expect(() => validateCanonicalProject(valid, fixture.seed, policy)).not.toThrow()
 
     const broken = structuredClone(fixture.project)
-    broken.pages[0]!.content.sv.html = broken.pages[0]!.content.sv.html.replace(
-      ' data-business-name=""',
-      '',
-    ).replace(' data-business-name', '')
+    broken.pages[0]!.content.sv.html = broken.pages[0]!.content.sv.html
+      .replace(' data-business-name=""', '')
+      .replace(' data-business-name', '')
     expect(() => validateCanonicalProject(broken, fixture.seed, policy)).toThrow()
   })
 

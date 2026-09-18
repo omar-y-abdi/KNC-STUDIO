@@ -94,7 +94,9 @@ Browser
 | `src/booking/adapters/`                 | Booking availability plus shared DB-owned barber/photo/service catalog; live Supabase vs empty local/mock adapters.      |
 | `src/mybookings/`                       | Permanent customer-link request, appointment history/cancellation, server-backed session/autofill, formatting, adapters. |
 | `src/about/`                            | About CMS overlay, gallery, reviews/domain/gateway adapter.                                                              |
-| `src/site/`                             | Site chrome/facts, CMS, JSON-LD, Realtime, and browser-storage consent.                                                  |\n| `shared/cms-project.ts`                  | Canonical CMS page HTML/CSS project and trusted functional-island contracts; excludes operational booking/business state. |\n| `shared/cms-markup.ts`                   | Shared safe HTML/CSS/resource validation, including contract-gated runtime hooks for canonical pages.                    |
+| `src/site/`                             | Site chrome/facts, CMS, JSON-LD, Realtime, and browser-storage consent.                                                  |
+| `shared/cms-project.ts`                 | Canonical CMS page HTML/CSS + trusted functional contracts; excludes booking/business operational state.                 |
+| `shared/cms-markup.ts`                  | Safe HTML/CSS/resource validation plus contract-gated runtime hooks for canonical pages.                                 |
 | `src/admin/`                            | Authenticated admin client/auth lifecycle/shell/domain helpers.                                                          |
 | `src/admin/adapters/`                   | Admin booking/schedule/service/barber/CMS/media/email-template data access.                                              |
 | `src/admin/calendar/`                   | Calendar connection port/status/adapter/hook/UI.                                                                         |
