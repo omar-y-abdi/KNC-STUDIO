@@ -1,6 +1,12 @@
 import type { JSX } from 'preact'
-import { EMAIL_NAMES, defaultEmailDesign, type CmsDocument, type CmsEmail, type CmsLang } from '../../../shared/cms'
 import { useState } from 'preact/hooks'
+import {
+  EMAIL_NAMES,
+  defaultEmailDesign,
+  type CmsDocument,
+  type CmsEmail,
+  type CmsLang,
+} from '../../../shared/cms'
 
 const businessFields = [
   ['business_name', 'Visningsnamn'],
