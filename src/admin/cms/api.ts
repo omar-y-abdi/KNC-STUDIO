@@ -7,6 +7,17 @@ import type {
 } from '../../../shared/cms'
 import { getAdminClient } from '../adminClient'
 
+export interface AssetUsage {
+  currentReferences: number
+  historyReferences: number
+}
+export interface AssetLifecycleResult {
+  asset?: CmsAsset
+  usage?: AssetUsage
+  deleted?: boolean
+}
+export type CmsAssetPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
+
 interface HistoryResponse {
   items?: CmsRevision[]
   history?: CmsRevision[]
@@ -43,4 +54,26 @@ export const cmsApi = {
   asset: (
     asset: Pick<CmsAsset, 'id' | 'version' | 'name' | 'alt' | 'archived'>,
   ): Promise<CmsAsset> => invoke({ operation: 'asset', ...asset }),
+  assetUsage: (id: string): Promise<AssetUsage> => invoke({ operation: 'asset_usage', id }),
+  assetLifecycle: (
+    asset: Pick<CmsAsset, 'id' | 'version'>,
+    action: 'archive' | 'restore' | 'trash' | 'delete',
+  ): Promise<AssetLifecycleResult> =>
+    invoke({ operation: 'asset_lifecycle', id: asset.id, version: asset.version, action }),
+  uploadAsset: async (
+    file: File,
+    purpose: CmsAssetPurpose,
+    barberId?: string,
+  ): Promise<CmsAsset> => {
+    const form = new FormData()
+    form.set('kind', 'cms_asset')
+    form.set('file', file)
+    form.set('purpose', purpose)
+    if (barberId) form.set('barberId', barberId)
+    const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
+    if (error) throw new Error(message(error))
+    if (!data || typeof data !== 'object' || !('asset' in data))
+      throw new Error('Uppladdningen returnerade ingen registrerad resurs.')
+    return (data as { asset: CmsAsset }).asset
+  },
 }
