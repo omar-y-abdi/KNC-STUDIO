@@ -152,6 +152,15 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('component:create', configureComponent)
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
+    const remember = (): void => {
+      const current = latest.current
+      viewStates.current.set(
+        current.page.id,
+        captureViewState(editor, current.page.id, current.device, current.zoom),
+      )
+    }
+    editor.on('component:selected', remember)
+    editor.on('canvas:scroll', remember)
 
     const flush = (): void => {
       if (applying.current) return
@@ -201,12 +210,7 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
-    const previous = latest.current
-    if (previous.page.id !== props.page.id)
-      viewStates.current.set(
-        previous.page.id,
-        captureViewState(editor, previous.page.id, previous.device, previous.zoom),
-      )
+    const previousState = viewStates.current.get(props.page.id)
     applying.current = true
     editor.setStyle(`${props.fontCss}\n${props.page.content[props.lang].css[props.mode]}`)
     editor.setComponents(props.page.content[props.lang].html)
@@ -216,8 +220,7 @@ export function CmsEditor(props: Props): JSX.Element {
       .forEach((component: Component) => configureComponent(component))
     applying.current = false
     editor.clearDirtyCount()
-    const saved = viewStates.current.get(props.page.id)
-    if (saved) restoreViewState(editor, saved)
+    if (previousState) restoreViewState(editor, previousState)
   }, [props.page.id, props.lang, props.mode])
 
   useEffect(() => {
