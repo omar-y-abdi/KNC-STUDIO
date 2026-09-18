@@ -277,14 +277,20 @@ export function EmailPanel({
           </label>
         ))}
       </div>
-      <div class="cms-email-preview">
+      <div class="cms-email-preview" style={{
+        background: email.design?.palettes[email.design.defaultMode].background,
+      }}>
         <div class="cms-email-card" style={{
           maxWidth: `${email.design?.width ?? 600}px`,
           padding: `${email.design?.padding ?? 28}px`,
           borderRadius: `${email.design?.radius ?? 18}px`,
+          background: email.design?.palettes[email.design.defaultMode].surface,
+          color: email.design?.palettes[email.design.defaultMode].text,
+          fontSize: `${email.design?.textSize ?? 16}px`,
+          fontFamily: email.design?.font === 'serif' ? 'Georgia,serif' : email.design?.font === 'sans' ? 'Arial,sans-serif' : 'system-ui,sans-serif',
         }}>
           <small>{email.preheader}</small>
-          <h1>{email.title}</h1>
+          <h1 style={{ fontSize: `${email.design?.titleSize ?? 32}px` }}>{email.title}</h1>
           <p>{email.intro}</p>
           {email.section_title && <h2>{email.section_title}</h2>}
           {email.note && <p class="cms-email-note">{email.note}</p>}
