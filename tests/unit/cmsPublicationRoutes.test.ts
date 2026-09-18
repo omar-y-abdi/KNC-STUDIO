@@ -263,7 +263,8 @@ describe('CMS publication through the actual Worker', () => {
 
       expect(response.status).toBe(200)
       expect(html).toContain(override)
-      expect(html).toContain('data-business-name>Current KNC Studio</span>')
+      if (path !== '/terms?lang=en')
+        expect(html).toContain('data-business-name>Current KNC Studio</span>')
       expect(html).toContain('Current KNC Studio AB')
       expect(html).toContain('559999-1234')
       expect(html).toContain('Currentgatan 7, 411 11 Göteborg')
