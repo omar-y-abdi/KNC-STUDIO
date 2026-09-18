@@ -1,11 +1,6 @@
 -- Preserve placement identity when enforcing archived CMS asset lifecycle.
 begin;
 
-alter function public.internal_cms_publish(uuid,jsonb,bigint,text,uuid)
-rename to internal_cms_publish_unchecked;
-revoke all on function public.internal_cms_publish_unchecked(uuid,jsonb,bigint,text,uuid)
-from public,anon,authenticated,service_role;
-
 create function public.internal_cms_document_media_placements(p_document jsonb)
 returns table(placement text,bucket text,path text)
 language sql stable security definer set search_path = '' as $$
@@ -168,7 +163,7 @@ $$;
 revoke all on function public.internal_cms_document_media_placements(jsonb)
 from public,anon,authenticated,service_role;
 
-create function public.internal_cms_publish(
+create or replace function public.internal_cms_publish(
   p_actor uuid,
   p_document jsonb,
   p_base_revision bigint,

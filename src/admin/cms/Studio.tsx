@@ -65,7 +65,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       }
       setDraft(next)
       if (seeded) {
-        saveBackup(document)
+        saveBackup(document, loaded.revision, loaded.fingerprint)
         setError(
           'Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.',
         )
@@ -85,7 +85,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const commitDraft = (next: CmsDocument, group = ''): void => {
     if (!draft) return
     draft.change(next, group)
-    saveBackup(draft.document)
+    saveBackup(draft.document, draft.revision, draft.fingerprint)
     setVersion((value) => value + 1)
   }
   const replacePage = (page: CmsPage): void => {
