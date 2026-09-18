@@ -18,7 +18,6 @@ export interface AssetLifecycleResult {
 }
 export type CmsAssetPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
 
-
 function message(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) return String(error.message)
   return 'CMS-anropet misslyckades.'

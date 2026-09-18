@@ -391,4 +391,3 @@ export function validateDocumentMarkupPlacements(
 
   return placements
 }
-

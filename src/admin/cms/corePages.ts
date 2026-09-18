@@ -123,4 +123,3 @@ export function ensureCorePages(document: CmsDocument): CmsDocument {
   next.presentation.pages = [...protectedPages, ...custom]
   return next
 }
-

@@ -176,10 +176,7 @@ export function CmsEditor(props: Props): JSX.Element {
     window.addEventListener('keydown', keydown)
     const remember = (): void => {
       const current = latest.current
-      viewStates.current.set(
-        current.page.id,
-        captureViewState(editor),
-      )
+      viewStates.current.set(current.page.id, captureViewState(editor))
     }
     editor.on('component:selected', remember)
     editor.on('canvas:scroll', remember)

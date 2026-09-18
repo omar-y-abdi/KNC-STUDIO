@@ -143,7 +143,9 @@ export function EmailPanel({
     first
   const patch = (key: keyof CmsEmail, value: string): void =>
     onChange(replaceEmail(document, { ...email, [key]: value }))
-  const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
+  const updateDesign = (
+    mutate: (design: NonNullable<CmsEmail['design']>) => void,
+  ): void => {
     const next = structuredClone(email)
     if (!next.design) return
     mutate(next.design)
@@ -170,7 +172,9 @@ export function EmailPanel({
           <button
             type="button"
             onClick={() =>
-              onChange(replaceEmail(document, { ...email, design: defaultEmailDesign() }))
+              onChange(
+                replaceEmail(document, { ...email, design: defaultEmailDesign() }),
+              )
             }
           >
             Aktivera design
