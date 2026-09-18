@@ -279,6 +279,8 @@ export function renderCmsPage(
   rendered = replaceMetaContent(rendered, 'business-og-description', page.description[lang])
   rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
   rendered = replaceMetaContent(rendered, 'business-twitter-description', page.description[lang])
+  rendered = replaceMetaContent(rendered, 'business-og-locale', lang === 'en' ? 'en_US' : 'sv_SE')
+  rendered = replaceMetaContent(rendered, 'business-og-locale-alt', lang === 'en' ? 'sv_SE' : 'en_US')
   rendered = rendered.replace(
     /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
     `$1${escapeAttribute(canonicalUrl)}$2`,
