@@ -129,6 +129,8 @@ export function captureEditorView(
   const rawCoords = canvas?.getCoords?.() ?? { x: 0, y: 0 }
   const rawZoom =
     options.zoom ?? (typeof canvas?.getZoom === 'function' ? canvas.getZoom() : undefined) ?? 100
+  const device = options.device ?? editor.getDevice?.() ?? undefined
+  const tab = normalizeInspectorTab(options.tab)
   return {
     selected: stableComponentKey(editor.getSelected?.()),
     coords: { x: finite(rawCoords.x), y: finite(rawCoords.y) },
@@ -136,10 +138,10 @@ export function captureEditorView(
       x: finite(frameWindow?.scrollX),
       y: finite(frameWindow?.scrollY),
     },
-    device: options.device ?? editor.getDevice?.() ?? undefined,
+    ...(device !== undefined ? { device } : {}),
     zoom: normalizeViewZoom(rawZoom),
-    tab: normalizeInspectorTab(options.tab),
-    compare: options.compare,
+    ...(tab !== undefined ? { tab } : {}),
+    ...(typeof options.compare === 'boolean' ? { compare: options.compare } : {}),
     inspector: captureInspectorScroll(options.root),
   }
 }
@@ -164,7 +166,7 @@ export function restoreEditorView(
 
   const selected = findComponent(editor, snapshot.selected)
   if (selected) editor.select(selected)
-  else if (typeof editor.select === 'function') editor.select(null)
+  else if (typeof editor.select === 'function') editor.select()
 
   if (snapshot.tab && options.setTab) options.setTab(snapshot.tab)
   if (typeof snapshot.compare === 'boolean' && options.setCompare)
