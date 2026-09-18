@@ -265,6 +265,32 @@ describe('CMS media assignment parity', () => {
     expect(() => validateDocumentMedia(document, [asset(ref, 'font/woff2')])).toThrow()
   })
 
+  it('rejects an archived asset when the draft introduces a new reference', () => {
+    const ref: MediaRef = { bucket: 'cms-library', path: 'images/archived.webp' }
+    const document = emptyDocument()
+    document.presentation.images['home.archived'] = {
+      ref,
+      alt: { sv: 'Arkiverad', en: 'Archived' },
+    }
+    const archived = { ...asset(ref, 'image/webp'), archived: true }
+
+    expect(() => validateDocumentMedia(document, [archived])).toThrow(
+      'media: Archived media cannot be newly referenced',
+    )
+  })
+
+  it('allows an archived asset that is already referenced by the authoritative head', () => {
+    const ref: MediaRef = { bucket: 'cms-library', path: 'images/archived.webp' }
+    const document = emptyDocument()
+    document.presentation.images['home.archived'] = {
+      ref,
+      alt: { sv: 'Arkiverad', en: 'Archived' },
+    }
+    const archived = { ...asset(ref, 'image/webp'), archived: true }
+
+    expect(() => validateDocumentMedia(document, [archived], [], [ref])).not.toThrow()
+  })
+
   it('accepts assignments that match the upload and picker contract', () => {
     const ref: MediaRef = { bucket: 'gallery', path: 'salon/test.webp' }
     const document = emptyDocument()

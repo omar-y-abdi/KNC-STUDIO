@@ -184,8 +184,11 @@ Deno.serve(async (request) => {
       storageOrigin: new URL(publicStorage).origin,
       builtAssets: CMS_BUILT_ASSETS,
     }
+    const authoritativeDocument: CmsDocument = structuredClone(authoritative)
+    const authoritativeImages = validateDocumentMarkup(authoritativeDocument, policy)
+    const currentMedia = [...documentMedia(authoritativeDocument), ...authoritativeImages]
     const authoredImages = validateDocumentMarkup(document, policy)
-    validateDocumentMedia(document, validationState.assets, authoredImages)
+    validateDocumentMedia(document, validationState.assets, authoredImages, currentMedia)
     const references = [...documentMedia(document), ...authoredImages]
     const referenceKeys = [...new Set(references.map(mediaKey))]
     const inventory = await service.rpc('internal_cms_missing_media', {

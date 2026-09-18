@@ -838,6 +838,7 @@ export function validateDocumentMedia(
   document: CmsDocument,
   assets: readonly CmsAsset[],
   authoredImages: readonly MediaRef[] = [],
+  currentMedia: readonly MediaRef[] = [],
 ): void {
   const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
   const requireAsset = (
@@ -873,6 +874,13 @@ export function validateDocumentMedia(
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
   authoredImages.forEach((ref, index) => requireAsset(ref, `presentation.markup.${index}`, 'image'))
+
+  const currentKeys = new Set(currentMedia.map(mediaKey))
+  for (const ref of [...documentMedia(document), ...authoredImages]) {
+    const key = mediaKey(ref)
+    if (inventory.get(key)?.archived && !currentKeys.has(key))
+      fail('media', 'Archived media cannot be newly referenced')
+  }
 }
 export function cssProperty(name: string): string {
   return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
