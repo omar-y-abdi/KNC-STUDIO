@@ -7,7 +7,6 @@ import type {
   CmsMode,
   CmsPage,
   CmsRevision,
-  CmsState,
 } from '../../../shared/cms'
 import { ensureCorePages, CORE_PAGE_IDS } from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
@@ -56,7 +55,6 @@ function DownloadDraft({ document }: { document: CmsDocument }): JSX.Element {
 }
 
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
-  const [, setState] = useState<CmsState | null>(null)
   const [draft, setDraft] = useState<CmsDraft | null>(null)
   const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
@@ -96,7 +94,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,
         )
       }
-      setState({ ...loaded, document })
       setDraft(next)
       if (seeded) {
         saveBackup(document, loaded.revision, loaded.fingerprint)
@@ -147,16 +144,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       draft.acknowledge(result.document, result.revision, result.fingerprint)
       clearBackup()
       setDraft(draft)
-      setState((current) =>
-        current
-          ? {
-              ...current,
-              document: result.document,
-              revision: result.revision,
-              fingerprint: result.fingerprint,
-            }
-          : current,
-      )
       setVersion((value) => value + 1)
     } catch (reason) {
       const message =
