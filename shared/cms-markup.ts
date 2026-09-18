@@ -1,7 +1,13 @@
 import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 // @deno-types="npm:@types/css-tree@2.3.11"
 import { parse, walk, generate } from 'css-tree'
-import { CmsValidationError, validMediaRef, type MediaRef, type CmsDocument } from './cms.ts'
+import {
+  CmsValidationError,
+  validMediaRef,
+  type CmsDocument,
+  type MediaPlacement,
+  type MediaRef,
+} from './cms.ts'
 
 type HtmlNode = DefaultTreeAdapterMap['node']
 const TAGS = new Set(
@@ -254,26 +260,70 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
     )
 }
 
-export function validateDocumentMarkup(document: CmsDocument, policy: MarkupPolicy): MediaRef[] {
-  const refs: MediaRef[] = []
-  const contents = [
-    ...document.presentation.pages.map((page) => page.content),
-    ...Object.values(document.presentation.regions),
-  ]
-  for (const content of contents) {
-    if (!content) continue
+function appendPlacements(
+  placements: MediaPlacement[],
+  refs: readonly MediaRef[],
+  base: string,
+): void {
+  refs.forEach((ref, index) => placements.push({ placement: `${base}:${index}`, ref }))
+}
+
+export function validateDocumentMarkupPlacements(
+  document: CmsDocument,
+  policy: MarkupPolicy,
+): MediaPlacement[] {
+  const placements: MediaPlacement[] = []
+
+  for (const page of document.presentation.pages) {
     for (const lang of ['sv', 'en'] as const) {
+      const variant = page.content[lang]
+      const html = validateMarkup(variant.html, '', policy)
+      variant.html = html.html
+      appendPlacements(
+        placements,
+        html.refs,
+        `presentation.pages:${page.id}:${lang}:html`,
+      )
       for (const mode of ['light', 'dark'] as const) {
-        const result = validateMarkup(content[lang].html, content[lang].css[mode], policy)
-        content[lang].html = result.html
-        refs.push(...result.refs)
+        const css = validateMarkup('', variant.css[mode], policy)
+        appendPlacements(
+          placements,
+          css.refs,
+          `presentation.pages:${page.id}:${lang}:css:${mode}`,
+        )
       }
     }
   }
-  for (const page of document.presentation.pages) {
+
+  for (const [name, content] of Object.entries(document.presentation.regions)) {
+    if (!content) continue
     for (const lang of ['sv', 'en'] as const) {
-      validateLegalSlots(page.path, lang, page.content[lang].html)
+      const variant = content[lang]
+      const html = validateMarkup(variant.html, '', policy)
+      variant.html = html.html
+      appendPlacements(
+        placements,
+        html.refs,
+        `presentation.regions:${name}:${lang}:html`,
+      )
+      for (const mode of ['light', 'dark'] as const) {
+        const css = validateMarkup('', variant.css[mode], policy)
+        appendPlacements(
+          placements,
+          css.refs,
+          `presentation.regions:${name}:${lang}:css:${mode}`,
+        )
+      }
     }
   }
-  return refs
+
+  for (const page of document.presentation.pages)
+    for (const lang of ['sv', 'en'] as const)
+      validateLegalSlots(page.path, lang, page.content[lang].html)
+
+  return placements
+}
+
+export function validateDocumentMarkup(document: CmsDocument, policy: MarkupPolicy): MediaRef[] {
+  return validateDocumentMarkupPlacements(document, policy).map(({ ref }) => ref)
 }

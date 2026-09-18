@@ -4,11 +4,14 @@ import {
   validateCompleteDocument,
   validateDocumentMedia,
   documentMedia,
+  documentMediaPlacements,
   mediaKey,
   type CmsDocument,
   type CmsState,
 } from '../../../shared/cms.ts'
-import { validateDocumentMarkup } from '../../../shared/cms-markup.ts'
+import {
+  validateDocumentMarkupPlacements,
+} from '../../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
 
 const MAX_BODY = 2 * 1024 * 1024 + 4096
@@ -185,11 +188,14 @@ Deno.serve(async (request) => {
       builtAssets: CMS_BUILT_ASSETS,
     }
     const authoritativeDocument: CmsDocument = structuredClone(authoritative)
-    const authoritativeImages = validateDocumentMarkup(authoritativeDocument, policy)
-    const currentMedia = [...documentMedia(authoritativeDocument), ...authoritativeImages]
-    const authoredImages = validateDocumentMarkup(document, policy)
-    validateDocumentMedia(document, validationState.assets, authoredImages, currentMedia)
-    const references = [...documentMedia(document), ...authoredImages]
+    const authoritativeMarkup = validateDocumentMarkupPlacements(authoritativeDocument, policy)
+    const currentPlacements = [
+      ...documentMediaPlacements(authoritativeDocument),
+      ...authoritativeMarkup,
+    ]
+    const authoredMarkup = validateDocumentMarkupPlacements(document, policy)
+    validateDocumentMedia(document, validationState.assets, authoredMarkup, currentPlacements)
+    const references = [...documentMedia(document), ...authoredMarkup.map(({ ref }) => ref)]
     const referenceKeys = [...new Set(references.map(mediaKey))]
     const inventory = await service.rpc('internal_cms_missing_media', {
       p_actor: actor,

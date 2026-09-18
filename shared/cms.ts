@@ -7,6 +7,10 @@ export interface MediaRef {
   bucket: MediaBucket
   path: string
 }
+export interface MediaPlacement {
+  placement: string
+  ref: MediaRef
+}
 export interface CmsAsset extends MediaRef {
   id: string
   name: string
@@ -822,23 +826,52 @@ export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
 export function mediaKey(ref: MediaRef): string {
   return `${ref.bucket}/${ref.path}`
 }
-export function documentMedia(document: CmsDocument): MediaRef[] {
-  const refs: MediaRef[] = [
-    ...Object.values(document.presentation.images).map((image) => image.ref),
-    ...document.gallery.map((image) => ({ bucket: 'gallery' as const, path: image.storage_path })),
-    ...Object.values(document.photos).map((path) => ({ bucket: 'barber-photos' as const, path })),
-  ]
-  refs.push(...Object.values(document.presentation.fonts ?? {}).map((font) => font.ref))
+export function mediaPlacementKey(value: MediaPlacement): string {
+  return JSON.stringify([value.placement, value.ref.bucket, value.ref.path])
+}
+export function documentMediaPlacements(document: CmsDocument): MediaPlacement[] {
+  const placements: MediaPlacement[] = []
+
+  for (const [id, image] of Object.entries(document.presentation.images))
+    placements.push({ placement: `presentation.images:${id}`, ref: image.ref })
+  for (const [id, font] of Object.entries(document.presentation.fonts ?? {}))
+    placements.push({ placement: `presentation.fonts:${id}`, ref: font.ref })
+  for (const image of document.gallery)
+    placements.push({
+      placement: `gallery:${image.id}`,
+      ref: { bucket: 'gallery', path: image.storage_path },
+    })
+  for (const [id, path] of Object.entries(document.photos))
+    placements.push({
+      placement: `photos:${id}`,
+      ref: { bucket: 'barber-photos', path },
+    })
+
   const logo = document.settings['homepage_logo_path']
-  if (logo) refs.push({ bucket: 'gallery', path: logo })
-  for (const email of document.emails) if (email.design?.logo) refs.push(email.design.logo)
+  if (logo)
+    placements.push({
+      placement: 'settings:homepage_logo_path',
+      ref: { bucket: 'gallery', path: logo },
+    })
+
+  for (const email of document.emails)
+    if (email.design?.logo)
+      placements.push({
+        placement: `emails:${email.template}:${email.lang}:logo`,
+        ref: email.design.logo,
+      })
+
+  return placements
+}
+export function documentMedia(document: CmsDocument): MediaRef[] {
+  const refs = documentMediaPlacements(document).map(({ ref }) => ref)
   return [...new Map(refs.map((ref) => [mediaKey(ref), ref])).values()]
 }
 export function validateDocumentMedia(
   document: CmsDocument,
   assets: readonly CmsAsset[],
-  authoredImages: readonly MediaRef[] = [],
-  currentMedia: readonly MediaRef[] = [],
+  authoredPlacements: readonly MediaPlacement[] = [],
+  currentPlacements: readonly MediaPlacement[] = [],
 ): void {
   const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
   const requireAsset = (
@@ -873,13 +906,12 @@ export function validateDocumentMedia(
   for (const email of document.emails)
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
-  authoredImages.forEach((ref, index) => requireAsset(ref, `presentation.markup.${index}`, 'image'))
+  authoredPlacements.forEach(({ ref, placement }) => requireAsset(ref, placement, 'image'))
 
-  const currentKeys = new Set(currentMedia.map(mediaKey))
-  for (const ref of [...documentMedia(document), ...authoredImages]) {
-    const key = mediaKey(ref)
-    if (inventory.get(key)?.archived && !currentKeys.has(key))
-      fail('media', 'Archived media cannot be newly referenced')
+  const currentKeys = new Set(currentPlacements.map(mediaPlacementKey))
+  for (const media of [...documentMediaPlacements(document), ...authoredPlacements]) {
+    if (inventory.get(mediaKey(media.ref))?.archived && !currentKeys.has(mediaPlacementKey(media)))
+      fail('media', 'Archived media cannot be newly referenced in a new placement')
   }
 }
 export function cssProperty(name: string): string {

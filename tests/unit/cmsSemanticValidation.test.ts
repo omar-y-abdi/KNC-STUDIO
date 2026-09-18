@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   defaultEmailDesign,
+  documentMediaPlacements,
   emptyDocument,
   validateCompleteDocument,
   validateDocument,
@@ -208,7 +209,11 @@ describe('CMS media assignment parity', () => {
   it('requires authored markup resource references to be images', () => {
     const document = emptyDocument()
     const ref: MediaRef = { bucket: 'cms-library', path: 'fonts/test.woff2' }
-    expect(() => validateDocumentMedia(document, [asset(ref, 'font/woff2')], [ref])).toThrow()
+    expect(() =>
+      validateDocumentMedia(document, [asset(ref, 'font/woff2')], [
+        { placement: 'presentation.regions:test:sv:html:0', ref },
+      ]),
+    ).toThrow()
   })
 
   it('requires gallery images to stay inside their declared purpose', () => {
@@ -288,7 +293,28 @@ describe('CMS media assignment parity', () => {
     }
     const archived = { ...asset(ref, 'image/webp'), archived: true }
 
-    expect(() => validateDocumentMedia(document, [archived], [], [ref])).not.toThrow()
+    expect(() =>
+      validateDocumentMedia(document, [archived], [], documentMediaPlacements(document)),
+    ).not.toThrow()
+  })
+
+  it('rejects reusing an archived public asset in a second placement', () => {
+    const ref: MediaRef = { bucket: 'cms-library', path: 'images/archived.webp' }
+    const authoritative = emptyDocument()
+    authoritative.presentation.images.hero = {
+      ref,
+      alt: { sv: 'Hero', en: 'Hero' },
+    }
+    const draft = structuredClone(authoritative)
+    draft.presentation.images.footer = {
+      ref,
+      alt: { sv: 'Sidfot', en: 'Footer' },
+    }
+    const archived = { ...asset(ref, 'image/webp'), archived: true }
+
+    expect(() =>
+      validateDocumentMedia(draft, [archived], [], documentMediaPlacements(authoritative)),
+    ).toThrow('media: Archived media cannot be newly referenced in a new placement')
   })
 
   it('accepts assignments that match the upload and picker contract', () => {
