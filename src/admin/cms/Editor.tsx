@@ -198,9 +198,7 @@ export function CmsEditor(props: Props): JSX.Element {
         html: editor.getHtml({ cleanId: false }),
         css: {
           ...next.content[current.lang].css,
-          [current.mode]: authoredCss.startsWith(current.fontCss)
-            ? authoredCss.slice(current.fontCss.length).trimStart()
-            : authoredCss,
+          [current.mode]: authoredCss,
         },
       }
       current.onChange(next)
@@ -220,7 +218,7 @@ export function CmsEditor(props: Props): JSX.Element {
     })
 
     applying.current = true
-    editor.setStyle(`${props.fontCss}\n${props.page.content[props.lang].css[props.mode]}`)
+    editor.setStyle(props.page.content[props.lang].css[props.mode])
     editor.setComponents(props.page.content[props.lang].html)
     editor.getWrapper()?.components().forEach(configure)
     applying.current = false
@@ -240,7 +238,7 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!editor) return
     const previousState = viewStates.current.get(props.page.id)
     applying.current = true
-    editor.setStyle(`${props.fontCss}\n${props.page.content[props.lang].css[props.mode]}`)
+    editor.setStyle(props.page.content[props.lang].css[props.mode])
     editor.setComponents(props.page.content[props.lang].html)
     editor
       .getWrapper()
