@@ -526,6 +526,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
       const mode: CmsMode = url.searchParams.get('mode') === 'dark' ? 'dark' : 'light'
       const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
+      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
       const headers = new Headers(index.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')
@@ -539,10 +540,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         canonicalUrl,
         cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
       )
-      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms') {
-        const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      if (discovery) body = renderHomepageMetadata(body, discovery)
+      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
         body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
-      }
       return new Response(request.method === 'HEAD' ? null : body, {
         status: index.status,
         headers,
