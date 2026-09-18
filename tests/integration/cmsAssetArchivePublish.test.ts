@@ -139,6 +139,9 @@ describe.sequential('CMS archived asset publication boundary', () => {
       expect(afterArchive.fingerprint).toBe(base.fingerprint)
       expect(afterArchive.document).toEqual(base.document)
 
+      const validation = await call({ operation: 'validate', document: stale.document })
+      expect(validation.status, await validation.clone().text()).toBe(422)
+
       const rejected = await call(stale)
       expect(rejected.status, await rejected.clone().text()).toBe(422)
 
@@ -175,6 +178,12 @@ describe.sequential('CMS archived asset publication boundary', () => {
       const afterArchive = await state()
       expect(afterArchive.revision).toBe(referenced.revision)
       expect(afterArchive.fingerprint).toBe(referenced.fingerprint)
+
+      const validation = await call({
+        operation: 'validate',
+        document: structuredClone(afterArchive.document),
+      })
+      expect(validation.status, await validation.clone().text()).toBe(200)
 
       const keepExisting = await call(publication(afterArchive))
       expect(keepExisting.status, await keepExisting.clone().text()).toBe(200)
