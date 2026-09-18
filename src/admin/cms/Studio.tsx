@@ -56,7 +56,7 @@ function DownloadDraft({ document }: { document: CmsDocument }): JSX.Element {
 }
 
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
-  const [state, setState] = useState<CmsState | null>(null)
+  const [, setState] = useState<CmsState | null>(null)
   const [draft, setDraft] = useState<CmsDraft | null>(null)
   const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
@@ -71,7 +71,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
   const [editorRevision, setEditorRevision] = useState(0)
-  const [dialog, setDialog] = useState<'history' | 'resources' | 'business' | 'email' | 'delivery' | null>(null)
+  const [dialog, setDialog] = useState<
+    'history' | 'resources' | 'business' | 'email' | 'delivery' | null
+  >(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
   const [newName, setNewName] = useState('Ny sida')
@@ -90,13 +92,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       if (seeded) next.markDirtyFrom(loaded.document)
       if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
         next.change(ensureCorePages(backup.document))
-        setError(`Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`)
+        setError(
+          `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,
+        )
       }
       setState({ ...loaded, document })
       setDraft(next)
       if (seeded) {
         saveBackup(document, loaded.revision, loaded.fingerprint)
-        setError('Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.')
+        setError(
+          'Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.',
+        )
       }
       setResources(loaded.assets)
       setVersion((value) => value + 1)
