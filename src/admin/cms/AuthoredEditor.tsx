@@ -8,6 +8,7 @@ import { validateMarkup } from '../../../shared/cms-markup'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
+import { nudgeComponent, resetComponentPosition } from './position'
 
 interface LiveView {
   el: HTMLElement
@@ -17,6 +18,8 @@ interface LiveView {
 export interface AuthoredControls {
   flush: () => void
   selectImage: (src: string, alt: string) => void
+  nudge: (dx: number, dy: number, step?: number) => boolean
+  resetPosition: () => boolean
   remove: () => void
 }
 interface Props {
@@ -279,6 +282,19 @@ export function AuthoredEditor(props: Props): JSX.Element {
           })
         flush()
       },
+      nudge(dx, dy, step = 1) {
+        const selected = gjs.getSelected()
+        if (!selected || !nudgeComponent(selected, dx, dy, step)) return false
+        flush()
+        return true
+      },
+      resetPosition() {
+        const selected = gjs.getSelected()
+        if (!selected) return false
+        const reset = resetComponentPosition(selected)
+        if (reset) flush()
+        return reset
+      },
       remove() {
         const selected = gjs.getSelected()
         if (selected && selected !== gjs.getWrapper()) {
@@ -350,6 +366,24 @@ export function AuthoredEditor(props: Props): JSX.Element {
     if (props.locked) gjs.runCommand('preview')
     else gjs.stopCommand('preview')
   }, [props.locked])
+  const moveSelected = (dx: number, dy: number, step: number): void => {
+    const selected = editor.current?.getSelected()
+    if (!selected) {
+      props.onError('Välj ett element först.')
+      return
+    }
+    if (!nudgeComponent(selected, dx, dy, step))
+      props.onError('Det valda elementet kan inte flyttas säkert.')
+  }
+  const resetSelectedPosition = (): void => {
+    const selected = editor.current?.getSelected()
+    if (!selected) {
+      props.onError('Välj ett element först.')
+      return
+    }
+    if (!resetComponentPosition(selected))
+      props.onError('Det valda elementet har ingen flytt att återställa.')
+  }
   return (
     <div class="cms-authored-layout">
       <div class="cms-authored-canvas" ref={host} />
@@ -397,6 +431,51 @@ export function AuthoredEditor(props: Props): JSX.Element {
           <div id="cms-gjs-selectors" />
           <div id="cms-gjs-traits" />
           <div id="cms-gjs-styles" />
+          <div class="cms-segment" aria-label="Flytta valt element">
+            <button
+              type="button"
+              aria-label="Flytta vänster"
+              title="1 px · Shift + klick = 10 px"
+              disabled={props.locked}
+              onClick={(event) => moveSelected(-1, 0, event.shiftKey ? 10 : 1)}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              aria-label="Flytta uppåt"
+              title="1 px · Shift + klick = 10 px"
+              disabled={props.locked}
+              onClick={(event) => moveSelected(0, -1, event.shiftKey ? 10 : 1)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              aria-label="Flytta nedåt"
+              title="1 px · Shift + klick = 10 px"
+              disabled={props.locked}
+              onClick={(event) => moveSelected(0, 1, event.shiftKey ? 10 : 1)}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              aria-label="Flytta höger"
+              title="1 px · Shift + klick = 10 px"
+              disabled={props.locked}
+              onClick={(event) => moveSelected(1, 0, event.shiftKey ? 10 : 1)}
+            >
+              →
+            </button>
+            <button type="button" disabled={props.locked} onClick={resetSelectedPosition}>
+              Återställ flytt
+            </button>
+          </div>
+          <p class="cms-help">
+            Flytta 1 px per klick. Håll Shift för 10 px. Rotation, skala och andra transformeringar
+            bevaras.
+          </p>
         </div>
         <div id="cms-gjs-layers" hidden={tab !== 'layers'} />
         <div id="cms-gjs-blocks" hidden={tab !== 'blocks'} />
