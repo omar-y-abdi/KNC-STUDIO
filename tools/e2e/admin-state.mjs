@@ -26,6 +26,16 @@ async function mount(page, name, argument, path, shellMinHeight = '0px') {
 
 async function mountCmsStudio(page) {
   const origin = new URL(baseUrl).origin
+  const requests = []
+  const browserErrors = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('https://admin-harness.invalid/'))
+      requests.push(`${request.method()} ${request.url()}`)
+  })
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
   await page.route('https://admin-harness.invalid/**', async (route) => {
     const request = route.request()
     const headers = {
@@ -79,7 +89,15 @@ async function mountCmsStudio(page) {
     const harness = await import('/tools/e2e/admin-harness.tsx')
     harness.mountCmsStudioHarness()
   })
-  await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })
+  try {
+    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })
+  } catch (error) {
+    const notice = await page.locator('.cms-notice').allTextContents()
+    const body = await page.locator('body').innerText().catch(() => '')
+    throw new Error(
+      `CMS studio did not mount: ${error.message}; notice=${JSON.stringify(notice)}; requests=${JSON.stringify(requests)}; browserErrors=${JSON.stringify(browserErrors)}; body=${JSON.stringify(body.slice(0, 1200))}`,
+    )
+  }
 }
 
 async function verifyCmsStudioShell(page) {
