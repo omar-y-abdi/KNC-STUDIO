@@ -96,24 +96,24 @@ describe('CMS GrapesJS component positioning', () => {
     expect(component.style['transform']).toBe('skewX(8deg)')
   })
 
-  it('keeps nudge ownership across an editor reload and resets only the owned offset', () => {
+  it('keeps nudge ownership in canonical CSS across an editor reload', () => {
     const beforeReload = mockComponent({
       style: { translate: '3px 4px', transform: 'rotate(12deg)' },
     })
 
     expect(nudgeComponent(positionable(beforeReload), 1, 0)).toEqual([4, 4])
+    expect(beforeReload.attributes).toEqual({})
+    expect(beforeReload.style['--cms-nudge-x']).toBe('1px')
+    expect(beforeReload.style['--cms-nudge-y']).toBe('0px')
 
-    const afterReload = mockComponent({
-      style: { ...beforeReload.style },
-      attributes: { ...beforeReload.attributes },
-    })
+    const afterReload = mockComponent({ style: { ...beforeReload.style } })
     expect(nudgeComponent(positionable(afterReload), 0, 1, 10)).toEqual([4, 14])
     expect(resetComponentPosition(positionable(afterReload))).toBe(true)
 
     expect(afterReload.style['translate']).toBe('3px 4px')
     expect(afterReload.style['transform']).toBe('rotate(12deg)')
-    expect(afterReload.attributes['data-cms-nudge-offset']).toBeUndefined()
-    expect(afterReload.attributes['data-cms-nudge-base-translate']).toBeUndefined()
+    expect(afterReload.style['--cms-nudge-x']).toBeUndefined()
+    expect(afterReload.style['--cms-nudge-y']).toBeUndefined()
   })
 
   it('rejects functional runtime hooks without mutating their presentation', () => {
@@ -136,11 +136,13 @@ describe('CMS GrapesJS component positioning', () => {
 
     const afterReload = mockComponent({
       tag: 'g',
+      style: { ...beforeReload.style },
       attributes: { ...beforeReload.attributes },
     })
     expect(resetComponentPosition(positionable(afterReload))).toBe(true)
     expect(afterReload.attributes['transform']).toBe('rotate(15 5 5) scale(2)')
-    expect(afterReload.attributes['data-cms-nudge-offset']).toBeUndefined()
+    expect(afterReload.style['--cms-nudge-x']).toBeUndefined()
+    expect(afterReload.style['--cms-nudge-y']).toBeUndefined()
   })
 
   it('does not reset translation it did not create', () => {

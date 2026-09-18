@@ -45,8 +45,8 @@ const LOW_LEVEL_SVG = new Set([
   'stop',
   'clippath',
 ])
-const NUDGE_OFFSET_ATTRIBUTE = 'data-cms-nudge-offset'
-const NUDGE_BASE_TRANSLATE_ATTRIBUTE = 'data-cms-nudge-base-translate'
+const NUDGE_X_PROPERTY = '--cms-nudge-x'
+const NUDGE_Y_PROPERTY = '--cms-nudge-y'
 
 function tagOf(component: Component): string {
   return String(component.get('tagName') ?? 'div').toLowerCase()
@@ -86,11 +86,14 @@ export function parseTranslate(value: unknown): [number, number] | null {
   return x === null || y === null ? null : [x, y]
 }
 
-function parseOwnedOffset(value: unknown): [number, number] | null {
-  const match = String(value ?? '')
-    .trim()
-    .match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/)
-  return match ? [Number(match[1]), Number(match[2])] : null
+function ownedOffset(style: Record<string, unknown>): [number, number] | null | undefined {
+  const hasX = Object.prototype.hasOwnProperty.call(style, NUDGE_X_PROPERTY)
+  const hasY = Object.prototype.hasOwnProperty.call(style, NUDGE_Y_PROPERTY)
+  if (!hasX && !hasY) return undefined
+  if (!hasX || !hasY) return null
+  const x = parseLength(style[NUDGE_X_PROPERTY])
+  const y = parseLength(style[NUDGE_Y_PROPERTY])
+  return x === null || y === null ? null : [x, y]
 }
 
 function stripOwnedSvgTranslate(transform: string, offset: [number, number]): string | null {
@@ -115,73 +118,64 @@ export function nudgeComponent(
   )
     return null
 
-  const attributes = component.getAttributes()
-  const hasOwnedOffset = Object.prototype.hasOwnProperty.call(attributes, NUDGE_OFFSET_ATTRIBUTE)
-  const ownedOffset = hasOwnedOffset
-    ? parseOwnedOffset(attributes[NUDGE_OFFSET_ATTRIBUTE])
-    : ([0, 0] as [number, number])
-  if (!ownedOffset) return null
-
-  const nextOffset: [number, number] = [
-    ownedOffset[0] + dx * step,
-    ownedOffset[1] + dy * step,
-  ]
+  const style = component.getStyle() as Record<string, unknown>
+  const existingOffset = ownedOffset(style)
+  if (existingOffset === null) return null
+  const offset = existingOffset ?? [0, 0]
+  const nextOffset: [number, number] = [offset[0] + dx * step, offset[1] + dy * step]
 
   if (tagOf(component) === 'g') {
-    const transform = String(attributes['transform'] ?? '')
-    const baseTransform = hasOwnedOffset ? stripOwnedSvgTranslate(transform, ownedOffset) : transform
+    const transform = String(component.getAttributes()['transform'] ?? '')
+    const baseTransform = existingOffset ? stripOwnedSvgTranslate(transform, existingOffset) : transform
     if (baseTransform === null) return null
     component.addAttributes({
       transform: [baseTransform, `translate(${nextOffset[0]} ${nextOffset[1]})`]
         .filter(Boolean)
         .join(' '),
-      [NUDGE_OFFSET_ATTRIBUTE]: `${nextOffset[0]} ${nextOffset[1]}`,
+    })
+    component.addStyle({
+      [NUDGE_X_PROPERTY]: `${nextOffset[0]}px`,
+      [NUDGE_Y_PROPERTY]: `${nextOffset[1]}px`,
     })
     return nextOffset
   }
 
-  const hasBaseTranslate = Object.prototype.hasOwnProperty.call(
-    attributes,
-    NUDGE_BASE_TRANSLATE_ATTRIBUTE,
-  )
-  if (hasOwnedOffset && !hasBaseTranslate) return null
-  const raw = hasOwnedOffset
-    ? String(attributes[NUDGE_BASE_TRANSLATE_ATTRIBUTE] ?? '')
-    : component.getStyle()['translate']
-  const baseRaw = typeof raw === 'string' ? raw : ''
-  const base = parseTranslate(baseRaw)
-  if (!base) return null
-
+  const current = parseTranslate(style['translate'])
+  if (!current) return null
+  const base: [number, number] = [current[0] - offset[0], current[1] - offset[1]]
   const x = base[0] + nextOffset[0]
   const y = base[1] + nextOffset[1]
-  component.addStyle({ translate: `${x}px ${y}px` })
-  component.addAttributes({
-    [NUDGE_OFFSET_ATTRIBUTE]: `${nextOffset[0]} ${nextOffset[1]}`,
-    [NUDGE_BASE_TRANSLATE_ATTRIBUTE]: baseRaw,
+  component.addStyle({
+    translate: `${x}px ${y}px`,
+    [NUDGE_X_PROPERTY]: `${nextOffset[0]}px`,
+    [NUDGE_Y_PROPERTY]: `${nextOffset[1]}px`,
   })
   return [x, y]
 }
 
 export function resetComponentPosition(component: Component | null | undefined): boolean {
   if (!component) return false
-  const attributes = component.getAttributes()
-  if (!Object.prototype.hasOwnProperty.call(attributes, NUDGE_OFFSET_ATTRIBUTE)) return false
-  const ownedOffset = parseOwnedOffset(attributes[NUDGE_OFFSET_ATTRIBUTE])
-  if (!ownedOffset) return false
+  const style = component.getStyle() as Record<string, unknown>
+  const offset = ownedOffset(style)
+  if (!offset) return false
 
   if (tagOf(component) === 'g') {
-    const baseTransform = stripOwnedSvgTranslate(String(attributes['transform'] ?? ''), ownedOffset)
+    const baseTransform = stripOwnedSvgTranslate(
+      String(component.getAttributes()['transform'] ?? ''),
+      offset,
+    )
     if (baseTransform === null) return false
     if (baseTransform) component.addAttributes({ transform: baseTransform })
     else component.removeAttributes('transform')
-    component.removeAttributes(NUDGE_OFFSET_ATTRIBUTE)
-    return true
+  } else {
+    const current = parseTranslate(style['translate'])
+    if (!current) return false
+    const base: [number, number] = [current[0] - offset[0], current[1] - offset[1]]
+    if (base[0] === 0 && base[1] === 0) component.removeStyle('translate')
+    else component.addStyle({ translate: `${base[0]}px ${base[1]}px` })
   }
 
-  if (!Object.prototype.hasOwnProperty.call(attributes, NUDGE_BASE_TRANSLATE_ATTRIBUTE)) return false
-  const baseRaw = String(attributes[NUDGE_BASE_TRANSLATE_ATTRIBUTE] ?? '')
-  if (baseRaw) component.addStyle({ translate: baseRaw })
-  else component.removeStyle('translate')
-  component.removeAttributes([NUDGE_OFFSET_ATTRIBUTE, NUDGE_BASE_TRANSLATE_ATTRIBUTE])
+  component.removeStyle(NUDGE_X_PROPERTY)
+  component.removeStyle(NUDGE_Y_PROPERTY)
   return true
 }
