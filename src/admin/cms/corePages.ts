@@ -107,9 +107,11 @@ export function ensureCorePages(document: CmsDocument): CmsDocument {
   const next = structuredClone(document)
   const existing = new Map(next.presentation.pages.map((item) => [item.id, item]))
   const pathExisting = new Map(next.presentation.pages.map((item) => [item.path, item]))
-  const protectedPages = corePages.map(
-    (item) => existing.get(item.id) ?? pathExisting.get(item.path) ?? structuredClone(item),
-  )
+  const protectedPages = corePages.map((item) => {
+    const found = existing.get(item.id) ?? pathExisting.get(item.path)
+    if (!found) return structuredClone(item)
+    return { ...found, id: item.id, kind: item.kind, path: item.path }
+  })
   const coreIds = new Set(protectedPages.map((item) => item.id))
   const corePaths = new Set(protectedPages.map((item) => item.path))
   const custom = next.presentation.pages.filter(
