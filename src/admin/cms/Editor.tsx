@@ -8,6 +8,7 @@ import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
+import { uploadedFontCss } from './fonts'
 
 export interface EditorHandle {
   undo: () => void
@@ -24,6 +25,7 @@ interface Props {
   zoom: number
   locked: boolean
   assets: CmsAsset[]
+  fontCss: string
   tab: 'design' | 'layers' | 'blocks'
   onTab: (tab: 'design' | 'layers' | 'blocks') => void
   onChange: (page: CmsPage) => void
@@ -179,7 +181,7 @@ export function CmsEditor(props: Props): JSX.Element {
     })
 
     applying.current = true
-    editor.setStyle(props.page.content[props.lang].css[props.mode])
+    editor.setStyle(`${props.fontCss}\n${props.page.content[props.lang].css[props.mode]}`)
     editor.setComponents(props.page.content[props.lang].html)
     editor.getWrapper()?.components().forEach(configure)
     applying.current = false
@@ -203,7 +205,7 @@ export function CmsEditor(props: Props): JSX.Element {
         captureViewState(editor, previous.page.id, previous.device, previous.zoom),
       )
     applying.current = true
-    editor.setStyle(props.page.content[props.lang].css[props.mode])
+    editor.setStyle(`${props.fontCss}\n${props.page.content[props.lang].css[props.mode]}`)
     editor.setComponents(props.page.content[props.lang].html)
     editor
       .getWrapper()
