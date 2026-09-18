@@ -13,6 +13,7 @@ import { ensureCorePages, CORE_PAGE_IDS } from './corePages'
 import { CmsDraft } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
+import { CmsResources } from './Resources'
 import './studio.css'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
@@ -559,29 +560,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 </div>
               ))
             ) : (
-              <div class="cms-resource-grid">
-                {resources.map((asset) => (
-                  <button type="button" class="cms-resource-card">
-                    <>
-                      {asset.mime.startsWith('image/') ? (
-                        <img
-                          src={
-                            asset.bucket && asset.path
-                              ? `${(import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '')}/storage/v1/object/public/${asset.bucket}/${asset.path}`
-                              : ''
-                          }
-                          alt={asset.alt}
-                        />
-                      ) : (
-                        <div style="aspect-ratio:1;display:grid;place-items:center;font-size:28px">
-                          Aa
-                        </div>
-                      )}
-                      <span>{asset.name}</span>
-                    </>
-                  </button>
-                ))}
-              </div>
+              <CmsResources
+                assets={resources}
+                document={draft.document}
+                onAssets={setResources}
+                onDocument={(next) => commitDraft(next)}
+                onError={setError}
+              />
             )}
           </div>
         </dialog>
