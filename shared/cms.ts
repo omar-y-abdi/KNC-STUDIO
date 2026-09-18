@@ -20,6 +20,7 @@ export interface CmsAsset extends MediaRef {
   height: number | null
   bytes: number
   archived: boolean
+  trashed_at?: string | null
   version: number
 }
 export interface CmsBarber {
