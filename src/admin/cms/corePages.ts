@@ -46,7 +46,7 @@ function page(
     title: { sv: name[0], en: name[1] },
     description: { sv: description[0], en: description[1] },
     content: { sv: variant('sv', sv), en: variant('en', en) },
-    inMenu: !['privacy', 'terms'].includes(id),
+    inMenu: kind === 'page' && path !== '/my-bookings',
   }
 }
 
