@@ -19,7 +19,7 @@ export interface CmsEditorViewState {
   scroll?: { x: number; y: number }
   device?: string
   zoom?: number
-  tab?: CmsInspectorTab | string
+  tab?: CmsInspectorTab
   compare?: boolean
   inspector: CmsInspectorScrollState
 }
@@ -27,7 +27,7 @@ export interface CmsEditorViewState {
 interface CaptureOptions {
   device?: string
   zoom?: number
-  tab?: CmsInspectorTab
+  tab?: CmsInspectorTab | string
   compare?: boolean
   root?: ParentNode | null
 }
