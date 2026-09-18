@@ -53,7 +53,7 @@ function DownloadDraft({ document }: { document: CmsDocument }): JSX.Element {
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [state, setState] = useState<CmsState | null>(null)
   const [draft, setDraft] = useState<CmsDraft | null>(null)
-  const [selectedPage, setSelectedPage] = useState('home')
+  const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
   const [mode, setMode] = useState<CmsMode>('light')
   const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
@@ -324,7 +324,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                       (item) => item.id !== page.id,
                     )
                     commitDraft(next)
-                    setSelectedPage('home')
+                    setSelectedPage(CORE_PAGE_IDS[0])
                   }}
                 >
                   Ta bort
