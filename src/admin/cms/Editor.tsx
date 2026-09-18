@@ -97,9 +97,6 @@ export function CmsEditor(props: Props): JSX.Element {
       storageManager: false,
       panels: { defaults: [] },
       avoidInlineStyle: true,
-      parser: {
-        optionsHtml: { allowScripts: false, allowUnsafeAttr: false, allowUnsafeAttrValue: false },
-      },
       canvas: {
         scripts: [],
         styles: ['/fonts.css'],
