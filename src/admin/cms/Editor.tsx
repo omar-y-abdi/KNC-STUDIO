@@ -8,7 +8,6 @@ import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { uploadedFontCss } from './fonts'
 
 export interface EditorHandle {
   undo: () => void
