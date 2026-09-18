@@ -183,7 +183,9 @@ Deno.serve(async (request) => {
         !Number.isSafeInteger(row['version'])
       )
         throw new Error('Invalid asset deletion reservation')
-      const removed = await service.storage.from(row['bucket']).remove([row['path']])
+      const removed = await service.storage
+        .from(row['bucket'])
+        .remove([row['path']])
       if (removed.error) throw removed.error
       await invoke('internal_cms_asset_delete_finalize', {
         p_id: body.id,
@@ -285,7 +287,10 @@ Deno.serve(async (request) => {
     if (code === '42501') return json({ error: 'forbidden', requestId }, 403)
     if (code === 'P4090') {
       const message =
-        error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof error.message === 'string'
           ? error.message
           : 'Resursens livscykel ändrades. Läs in biblioteket igen.'
       return json({ error: 'asset_lifecycle_conflict', message, requestId }, 409)

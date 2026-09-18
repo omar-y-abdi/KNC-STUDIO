@@ -394,7 +394,12 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
     ) : target === 'business' ? (
       <BusinessInspector document={document} edit={studio.edit} />
     ) : target === 'theme' ? (
-      <ThemeInspector document={document} assets={studio.assets} mode={mode} edit={studio.edit} />
+      <ThemeInspector
+        document={document}
+        assets={studio.assets}
+        mode={mode}
+        edit={studio.edit}
+      />
     ) : target.startsWith('barber:') ? (
       <BarberInspector
         id={target.slice(7)}

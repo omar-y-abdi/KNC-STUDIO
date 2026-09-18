@@ -73,7 +73,11 @@ export function AssetLibrary({
       })
       .catch((reason: unknown) => {
         if (current && alive.current)
-          setError(reason instanceof Error ? reason.message : 'Resursens användning kunde inte läsas.')
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Resursens användning kunde inte läsas.',
+          )
       })
     return () => void (current = false)
   }, [api, asset?.id, asset?.version])
@@ -135,7 +139,9 @@ export function AssetLibrary({
       }
     } catch (reason) {
       if (alive.current)
-        setError(reason instanceof Error ? reason.message : 'Resursåtgärden kunde inte genomföras.')
+        setError(
+          reason instanceof Error ? reason.message : 'Resursåtgärden kunde inte genomföras.',
+        )
       try {
         const fresh = await api.state()
         if (alive.current) onAssets(fresh.assets)
@@ -175,7 +181,8 @@ export function AssetLibrary({
     }
   }
   const lifecycle = asset ? resourceState(asset) : null
-  const currentBlocked = usage === null || usage.currentReferences > 0 || uses.length > 0
+  const currentBlocked =
+    usage === null || usage.currentReferences > 0 || uses.length > 0
   const deleteBlocked = currentBlocked || (usage?.historyReferences ?? 1) > 0
   return (
     <div class="cms-asset-library" aria-busy={busy}>
@@ -299,7 +306,11 @@ export function AssetLibrary({
             )}
             {lifecycle === 'active' && (
               <>
-                <button type="button" disabled={busy} onClick={() => void transition('archive')}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void transition('archive')}
+                >
                   Arkivera filen
                 </button>
                 <button
@@ -313,7 +324,11 @@ export function AssetLibrary({
             )}
             {lifecycle === 'archived' && (
               <>
-                <button type="button" disabled={busy} onClick={() => void transition('restore')}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void transition('restore')}
+                >
                   Återställ till biblioteket
                 </button>
                 <button
@@ -344,7 +359,11 @@ export function AssetLibrary({
               </>
             )}
             {onFont && asset.mime === 'font/woff2' && (
-              <button type="button" disabled={busy || !resourceUsable(asset)} onClick={() => onFont(asset)}>
+              <button
+                type="button"
+                disabled={busy || !resourceUsable(asset)}
+                onClick={() => onFont(asset)}
+              >
                 Använd typsnittet på sidan
               </button>
             )}
