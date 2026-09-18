@@ -9,6 +9,7 @@ import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 import { nudgeComponent, resetComponentPosition } from './position'
+import { installCloneSafety } from './cloneSafety'
 
 interface LiveView {
   el: HTMLElement
@@ -174,6 +175,7 @@ export function AuthoredEditor(props: Props): JSX.Element {
       },
     })
     editor.current = gjs
+    installCloneSafety(gjs)
     for (const block of [
       { id: 'heading', label: 'Rubrik', content: '<h2>Ny rubrik</h2>' },
       { id: 'text', label: 'Text', content: '<p>Skriv texten här.</p>' },
