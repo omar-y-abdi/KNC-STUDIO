@@ -43,6 +43,7 @@ const FIXED_ATTRIBUTES = new Set([
   'for',
   'form',
   'role',
+  'method',
   'tabindex',
   'autocomplete',
   'checked',
@@ -351,7 +352,7 @@ function validCustomPath(path: string): boolean {
 
 function appendPlacements(
   placements: MediaPlacement[],
-  refs: readonly MediaPlacement[number]['ref'][],
+  refs: readonly MediaPlacement['ref'][],
   base: string,
 ): void {
   refs.forEach((ref, index) => placements.push({ placement: `${base}:${index}`, ref }))
