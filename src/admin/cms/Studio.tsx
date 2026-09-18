@@ -82,6 +82,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     try {
       const loaded = await cmsApi.state()
       const document = ensureCorePages(loaded.document)
+      const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
       if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
@@ -90,6 +91,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       }
       setState({ ...loaded, document })
       setDraft(next)
+      if (seeded) {
+        saveBackup(document, loaded.revision, loaded.fingerprint)
+        setError('Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.')
+      }
       setResources(loaded.assets)
       setVersion((value) => value + 1)
     } catch (reason) {
