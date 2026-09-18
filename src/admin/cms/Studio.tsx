@@ -71,7 +71,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
   const [editorRevision, setEditorRevision] = useState(0)
-  const [dialog, setDialog] = useState<'history' | 'resources' | 'business' | 'email' | null>(null)
+  const [dialog, setDialog] = useState<'history' | 'resources' | 'business' | 'email' | 'delivery' | null>(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
   const [newName, setNewName] = useState('Ny sida')
@@ -411,6 +411,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button type="button" onClick={() => { setDialog('email'); setMobilePanel(null) }}>
             Mejl
           </button>
+          <button type="button" onClick={() => { setDialog('delivery'); setMobilePanel(null) }}>
+            Leveransstatus ↗
+          </button>
         </aside>
         <main class="cms-canvas-shell">
           <div class="cms-canvas-toolbar">
@@ -570,13 +573,19 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       {dialog && (
         <dialog open class="cms-dialog">
           <header>
-            <strong>{dialog === 'history' ? 'Historik' : dialog === 'resources' ? 'Resurser' : dialog === 'business' ? 'Business / SEO' : 'Mejl'}</strong>
+            <strong>{dialog === 'history' ? 'Historik' : dialog === 'resources' ? 'Resurser' : dialog === 'business' ? 'Business / SEO' : dialog === 'delivery' ? 'Leveransstatus' : 'Mejl'}</strong>
             <button type="button" onClick={() => setDialog(null)}>
               ×
             </button>
           </header>
           <div class="cms-dialog-body">
-            {dialog === 'business' ? (
+            {dialog === 'delivery' ? (
+              <div class="cms-domain-panel">
+                <h2>Operativ e-postleverans</h2>
+                <p>Leveransstatus och återförsök är operativ data och ligger därför utanför reversibel CMS-historik.</p>
+                <a href="/admin?tab=operations" class="cms-external-link">Öppna leveranspanelen i Admin ↗</a>
+              </div>
+            ) : dialog === 'business' ? (
               <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
             ) : dialog === 'email' ? (
               <EmailPanel document={draft.document} lang={lang} onChange={(next) => commitDraft(next)} />
