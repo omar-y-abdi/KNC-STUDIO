@@ -30,9 +30,7 @@ jobs:
           mkdir -p /tmp/devkit
           cp -a node_modules /tmp/devkit/
           mkdir -p /tmp/devkit/ms-playwright
-          if [ -d "$HOME/.cache/ms-playwright" ]; then
-            cp -a "$HOME/.cache/ms-playwright/." /tmp/devkit/ms-playwright/
-          fi
+          cp -a "$HOME/.cache/ms-playwright/." /tmp/devkit/ms-playwright/
           {
             echo "repo_sha=$(git rev-parse HEAD)"
             echo "node=$(node --version)"
@@ -41,9 +39,17 @@ jobs:
             echo "supabase=$(npx supabase --version)"
           } > /tmp/devkit/MANIFEST.txt
           tar -C /tmp/devkit -czf /tmp/knc-cms-devkit.tgz .
+          split -b 400M /tmp/knc-cms-devkit.tgz /tmp/knc-cms-devkit.part-
+          ls -lh /tmp/knc-cms-devkit.part-*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: knc-cms-devkit
-          path: /tmp/knc-cms-devkit.tgz
+          name: knc-cms-devkit-aa
+          path: /tmp/knc-cms-devkit.part-aa
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: knc-cms-devkit-ab
+          path: /tmp/knc-cms-devkit.part-ab
           compression-level: 0
           retention-days: 1
