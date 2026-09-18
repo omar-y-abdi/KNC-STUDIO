@@ -11,8 +11,6 @@ import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 
 export interface EditorHandle {
-  undo: () => void
-  redo: () => void
   flush: () => void
 }
 
@@ -180,7 +178,7 @@ export function CmsEditor(props: Props): JSX.Element {
       const current = latest.current
       viewStates.current.set(
         current.page.id,
-        captureViewState(editor, current.page.id, current.device, current.zoom),
+        captureViewState(editor),
       )
     }
     editor.on('component:selected', remember)
@@ -208,11 +206,7 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     editor.on('update', schedule)
     editor.on('load', () => editor.clearDirtyCount())
-    props.onReady({
-      undo: () => editor.UndoManager.undo(),
-      redo: () => editor.UndoManager.redo(),
-      flush,
-    })
+    props.onReady({ flush })
 
     applying.current = true
     editor.setStyle(props.page.content[props.lang].css[props.mode])

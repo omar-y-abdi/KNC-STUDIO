@@ -392,6 +392,3 @@ export function validateDocumentMarkupPlacements(
   return placements
 }
 
-export function validateDocumentMarkup(document: CmsDocument, policy: MarkupPolicy): MediaRef[] {
-  return validateDocumentMarkupPlacements(document, policy).map(({ ref }) => ref)
-}

@@ -25,6 +25,22 @@ const businessFields = [
   ['seo_description_en', 'SEO description EN'],
 ] as const
 
+const barberFields = [
+  ['name', 'Namn', false],
+  ['role_sv', 'Roll SV', false],
+  ['role_en', 'Roll EN', false],
+  ['bio_sv', 'Bio SV', true],
+  ['bio_en', 'Bio EN', true],
+] as const
+
+const emailDesignNumberFields = [
+  ['width', 'Bredd', 320, 760],
+  ['radius', 'Hörnradie', 0, 48],
+  ['padding', 'Padding', 12, 64],
+  ['titleSize', 'Rubrikstorlek', 18, 56],
+  ['textSize', 'Textstorlek', 12, 24],
+] as const
+
 const emailLabel: Record<(typeof EMAIL_NAMES)[number], string> = {
   customer_confirmation: 'Kundbekräftelse',
   barber_confirmation: 'Barberarbekräftelse',
@@ -49,6 +65,17 @@ export function BusinessPanel({
     next.settings[key] = value
     onChange(next)
   }
+  const setBarber = (
+    index: number,
+    key: (typeof barberFields)[number][0],
+    value: string,
+  ): void => {
+    const next = structuredClone(document)
+    const barber = next.barbers[index]
+    if (!barber) return
+    barber[key] = value
+    onChange(next)
+  }
   return (
     <div class="cms-domain-panel">
       <h2>Business & SEO</h2>
@@ -68,71 +95,22 @@ export function BusinessPanel({
       {document.barbers.map((barber, index) => (
         <fieldset>
           <legend>{barber.name}</legend>
-          <label>
-            Namn
-            <input
-              value={barber.name}
-              onInput={(e) => {
-                const next = structuredClone(document)
-                const nextBarber = next.barbers[index]
-                if (!nextBarber) return
-                nextBarber.name = e.currentTarget.value
-                onChange(next)
-              }}
-            />
-          </label>
-          <label>
-            Roll SV
-            <input
-              value={barber.role_sv}
-              onInput={(e) => {
-                const next = structuredClone(document)
-                const nextBarber = next.barbers[index]
-                if (!nextBarber) return
-                nextBarber.role_sv = e.currentTarget.value
-                onChange(next)
-              }}
-            />
-          </label>
-          <label>
-            Roll EN
-            <input
-              value={barber.role_en}
-              onInput={(e) => {
-                const next = structuredClone(document)
-                const nextBarber = next.barbers[index]
-                if (!nextBarber) return
-                nextBarber.role_en = e.currentTarget.value
-                onChange(next)
-              }}
-            />
-          </label>
-          <label>
-            Bio SV
-            <textarea
-              value={barber.bio_sv}
-              onInput={(e) => {
-                const next = structuredClone(document)
-                const nextBarber = next.barbers[index]
-                if (!nextBarber) return
-                nextBarber.bio_sv = e.currentTarget.value
-                onChange(next)
-              }}
-            />
-          </label>
-          <label>
-            Bio EN
-            <textarea
-              value={barber.bio_en}
-              onInput={(e) => {
-                const next = structuredClone(document)
-                const nextBarber = next.barbers[index]
-                if (!nextBarber) return
-                nextBarber.bio_en = e.currentTarget.value
-                onChange(next)
-              }}
-            />
-          </label>
+          {barberFields.map(([key, label, multiline]) => (
+            <label>
+              {label}
+              {multiline ? (
+                <textarea
+                  value={barber[key]}
+                  onInput={(e) => setBarber(index, key, e.currentTarget.value)}
+                />
+              ) : (
+                <input
+                  value={barber[key]}
+                  onInput={(e) => setBarber(index, key, e.currentTarget.value)}
+                />
+              )}
+            </label>
+          ))}
         </fieldset>
       ))}
     </div>
@@ -165,6 +143,12 @@ export function EmailPanel({
     first
   const patch = (key: keyof CmsEmail, value: string): void =>
     onChange(replaceEmail(document, { ...email, [key]: value }))
+  const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
+    const next = structuredClone(email)
+    if (!next.design) return
+    mutate(next.design)
+    onChange(replaceEmail(document, next))
+  }
   return (
     <div class="cms-email-workspace">
       <aside>
@@ -185,11 +169,9 @@ export function EmailPanel({
         {!email.design && (
           <button
             type="button"
-            onClick={() => {
-              const next = structuredClone(email)
-              next.design = defaultEmailDesign()
-              onChange(replaceEmail(document, next))
-            }}
+            onClick={() =>
+              onChange(replaceEmail(document, { ...email, design: defaultEmailDesign() }))
+            }
           >
             Aktivera design
           </button>
@@ -197,86 +179,31 @@ export function EmailPanel({
         {email.design && (
           <fieldset>
             <legend>Design</legend>
-            <label>
-              Bredd
-              <input
-                type="number"
-                min="320"
-                max="760"
-                value={email.design.width}
-                onInput={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design) next.design.width = Number(e.currentTarget.value)
-                  onChange(replaceEmail(document, next))
-                }}
-              />
-            </label>
-            <label>
-              Hörnradie
-              <input
-                type="number"
-                min="0"
-                max="48"
-                value={email.design.radius}
-                onInput={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design) next.design.radius = Number(e.currentTarget.value)
-                  onChange(replaceEmail(document, next))
-                }}
-              />
-            </label>
-            <label>
-              Padding
-              <input
-                type="number"
-                min="12"
-                max="64"
-                value={email.design.padding}
-                onInput={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design) next.design.padding = Number(e.currentTarget.value)
-                  onChange(replaceEmail(document, next))
-                }}
-              />
-            </label>
-            <label>
-              Rubrikstorlek
-              <input
-                type="number"
-                min="18"
-                max="56"
-                value={email.design.titleSize}
-                onInput={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design) next.design.titleSize = Number(e.currentTarget.value)
-                  onChange(replaceEmail(document, next))
-                }}
-              />
-            </label>
-            <label>
-              Textstorlek
-              <input
-                type="number"
-                min="12"
-                max="24"
-                value={email.design.textSize}
-                onInput={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design) next.design.textSize = Number(e.currentTarget.value)
-                  onChange(replaceEmail(document, next))
-                }}
-              />
-            </label>
+            {emailDesignNumberFields.map(([key, label, min, max]) => (
+              <label>
+                {label}
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  value={email.design[key]}
+                  onInput={(e) =>
+                    updateDesign((design) => {
+                      design[key] = Number(e.currentTarget.value)
+                    })
+                  }
+                />
+              </label>
+            ))}
             <label>
               Standardtema
               <select
                 value={email.design.defaultMode}
-                onChange={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design)
-                    next.design.defaultMode = e.currentTarget.value as 'light' | 'dark'
-                  onChange(replaceEmail(document, next))
-                }}
+                onChange={(e) =>
+                  updateDesign((design) => {
+                    design.defaultMode = e.currentTarget.value as 'light' | 'dark'
+                  })
+                }
               >
                 <option value="light">Ljus</option>
                 <option value="dark">Mörk</option>
@@ -301,12 +228,11 @@ export function EmailPanel({
                     <input
                       type="color"
                       value={email.design?.palettes[paletteMode][key] ?? '#000000'}
-                      onInput={(e) => {
-                        const next = structuredClone(email)
-                        if (next.design)
-                          next.design.palettes[paletteMode][key] = e.currentTarget.value
-                        onChange(replaceEmail(document, next))
-                      }}
+                      onInput={(e) =>
+                        updateDesign((design) => {
+                          design.palettes[paletteMode][key] = e.currentTarget.value
+                        })
+                      }
                     />
                   </label>
                 ))}
@@ -316,12 +242,11 @@ export function EmailPanel({
               Typsnitt
               <select
                 value={email.design.font}
-                onChange={(e) => {
-                  const next = structuredClone(email)
-                  if (next.design)
-                    next.design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
-                  onChange(replaceEmail(document, next))
-                }}
+                onChange={(e) =>
+                  updateDesign((design) => {
+                    design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
+                  })
+                }
               >
                 <option value="system">System</option>
                 <option value="sans">Sans</option>

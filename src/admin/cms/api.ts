@@ -18,10 +18,6 @@ export interface AssetLifecycleResult {
 }
 export type CmsAssetPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
 
-interface HistoryResponse {
-  items?: CmsRevision[]
-  history?: CmsRevision[]
-}
 
 function message(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) return String(error.message)
@@ -45,11 +41,7 @@ export const cmsApi = {
     requestId: string,
   ): Promise<CmsPublication> =>
     invoke({ operation: 'publish', document, baseRevision, baseFingerprint, requestId }),
-  history: async (): Promise<CmsRevision[]> => {
-    const value = await invoke<HistoryResponse | CmsRevision[]>({ operation: 'history' })
-    if (Array.isArray(value)) return value
-    return value.items ?? value.history ?? []
-  },
+  history: (): Promise<CmsRevision[]> => invoke({ operation: 'history' }),
   revision: (revision: number): Promise<CmsState> => invoke({ operation: 'revision', revision }),
   asset: (
     asset: Pick<CmsAsset, 'id' | 'version' | 'name' | 'alt' | 'archived'>,

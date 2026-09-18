@@ -144,7 +144,6 @@ async function verifyCmsStudioShell(page) {
     'Save / Publicera',
     'Revert',
     'History',
-    'Restore',
     'Lås vy',
   ]) {
     const button = commandbar.getByRole('button', { name, exact: true })

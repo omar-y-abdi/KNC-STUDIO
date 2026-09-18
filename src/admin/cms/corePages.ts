@@ -1,4 +1,4 @@
-import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
+import type { CmsDocument, CmsPage } from '../../../shared/cms'
 
 export const CORE_PAGE_IDS = [
   '10000000-0000-4000-8000-000000000001',
@@ -124,6 +124,3 @@ export function ensureCorePages(document: CmsDocument): CmsDocument {
   return next
 }
 
-export function pageCss(page: CmsPage, lang: CmsLang, mode: CmsMode): string {
-  return page.content[lang].css[mode]
-}

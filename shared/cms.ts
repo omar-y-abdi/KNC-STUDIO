@@ -1001,38 +1001,3 @@ export function validateDocumentMedia(
       fail('media', 'Archived media cannot be newly referenced in a new placement')
   }
 }
-export function cssProperty(name: string): string {
-  return name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
-}
-export function presentationCss(presentation: CmsPresentation): string {
-  const rules: string[] = []
-  for (const mode of ['light', 'dark'] as const) {
-    const declarations = Object.entries(presentation.themes[mode])
-      .map(([key, value]) => `--knc-cms-${cssProperty(key)}:${value}`)
-      .join(';')
-    if (declarations) rules.push(`[data-cms-theme="${mode}"]{${declarations}}`)
-  }
-  for (const [id, variants] of Object.entries(presentation.styles)) {
-    if (!NODE_ID.test(id)) continue
-    for (const variant of ['base', 'light', 'dark', 'desktop', 'mobile'] as const) {
-      const declarations = Object.entries(variants[variant] ?? {})
-        .filter(
-          ([name, value]) =>
-            (STYLE_KEYS as readonly string[]).includes(name) && validCssValue(value),
-        )
-        .map(([name, value]) => `${cssProperty(name)}:${value}!important`)
-        .join(';')
-      if (!declarations) continue
-      const selector = `${variant === 'light' || variant === 'dark' ? `[data-cms-theme="${variant}"] ` : ''}[data-cms-node="${id}"]`
-      const rule = `${selector}{${declarations}}`
-      rules.push(
-        variant === 'mobile'
-          ? `@media(max-width:768px){${rule}}`
-          : variant === 'desktop'
-            ? `@media(min-width:769px){${rule}}`
-            : rule,
-      )
-    }
-  }
-  return rules.join('\n')
-}

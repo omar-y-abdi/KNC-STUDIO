@@ -15,7 +15,7 @@ import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
-import { uploadedFontCss } from './fonts'
+import { fontFaceCss } from '../../../shared/cms-fonts'
 import { SUPABASE_URL } from '../../backend/config'
 import './studio.css'
 
@@ -96,7 +96,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       }
       setDraft(next)
       if (seeded) {
-        saveBackup(document, loaded.revision, loaded.fingerprint)
+        saveBackup(document)
         setError(
           'Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.',
         )
@@ -116,8 +116,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const commitDraft = (next: CmsDocument, group = ''): void => {
     if (!draft) return
     draft.change(next, group)
-    saveBackup(draft.document, draft.revision, draft.fingerprint)
-    setDraft(draft)
+    saveBackup(draft.document)
     setVersion((value) => value + 1)
   }
   const replacePage = (page: CmsPage): void => {
@@ -143,7 +142,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       draft.acknowledge(result.document, result.revision, result.fingerprint)
       clearBackup()
-      setDraft(draft)
       setVersion((value) => value + 1)
     } catch (reason) {
       const message =
@@ -480,7 +478,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               zoom={zoom}
               locked={locked}
               assets={resources}
-              fontCss={uploadedFontCss(document.presentation, SUPABASE_URL ?? '')}
+              fontCss={fontFaceCss(document.presentation, SUPABASE_URL ?? '')}
               tab={tab}
               onTab={setTab}
               onChange={replacePage}
@@ -518,7 +516,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           onClick={() => {
             editor.current?.flush()
             if (draft.undo()) {
-              setDraft(draft)
               setVersion((v) => v + 1)
               setEditorRevision((v) => v + 1)
             }
@@ -530,7 +527,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           type="button"
           onClick={() => {
             if (draft.redo()) {
-              setDraft(draft)
               setVersion((v) => v + 1)
               setEditorRevision((v) => v + 1)
             }
@@ -555,7 +551,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           onClick={() => {
             editor.current?.flush()
             draft.revert()
-            setDraft(draft)
             setVersion((v) => v + 1)
             setEditorRevision((v) => v + 1)
           }}
@@ -564,9 +559,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </button>
         <button type="button" onClick={() => void openHistory()}>
           History
-        </button>
-        <button type="button" onClick={() => void openHistory()}>
-          Restore
         </button>
         <button type="button" aria-pressed={locked} onClick={() => setLocked((value) => !value)}>
           {locked ? 'Lås upp' : 'Lås vy'}
