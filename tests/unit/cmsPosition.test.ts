@@ -111,9 +111,7 @@ describe('CMS GrapesJS component positioning', () => {
 
     expect(nudgeComponent(positionable(component), 1, 0)).toEqual([1, 0])
     expect(nudgeComponent(positionable(component), 0, 1, 10)).toEqual([1, 10])
-    expect(component.attributes['transform']).toBe(
-      'rotate(15 5 5) scale(2) translate(1 10)',
-    )
+    expect(component.attributes['transform']).toBe('rotate(15 5 5) scale(2) translate(1 10)')
 
     expect(resetComponentPosition(positionable(component))).toBe(true)
     expect(component.attributes['transform']).toBe('rotate(15 5 5) scale(2)')
