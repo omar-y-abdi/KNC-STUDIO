@@ -11,11 +11,7 @@ const tabId = sessionStorage.getItem('knc-cms-tab') ?? crypto.randomUUID()
 sessionStorage.setItem('knc-cms-tab', tabId)
 const key = `knc-cms-draft:${tabId}`
 
-export function saveBackup(
-  document: CmsDocument,
-  revision: number,
-  fingerprint: string,
-): void {
+export function saveBackup(document: CmsDocument, revision: number, fingerprint: string): void {
   const value: Backup = {
     document,
     revision,

@@ -1,6 +1,12 @@
 import type { Component } from 'grapesjs'
 
-const referenceAttributes = ['href', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'for'] as const
+const referenceAttributes = [
+  'href',
+  'aria-labelledby',
+  'aria-describedby',
+  'aria-controls',
+  'for',
+] as const
 
 function walk(component: Component, visit: (component: Component) => void): void {
   visit(component)

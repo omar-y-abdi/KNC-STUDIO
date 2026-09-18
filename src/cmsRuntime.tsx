@@ -16,11 +16,7 @@ export function mountCmsRuntime(root: HTMLElement): void {
   const myBookings = root.querySelector<HTMLElement>('#knc-my-bookings-runtime')
   if (myBookings)
     render(
-      <MyBookingsDialog
-        mode={mode}
-        lang={lang}
-        onClose={() => window.location.assign('/')}
-      />,
+      <MyBookingsDialog mode={mode} lang={lang} onClose={() => window.location.assign('/')} />,
       myBookings,
     )
 }

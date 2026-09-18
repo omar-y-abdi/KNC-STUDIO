@@ -365,7 +365,8 @@ export async function loadEmailTemplate(
       validateEmailDesign(row.design)
       design = row.design
       if (design.logo)
-        designLogoUrl = client.storage.from(design.logo.bucket).getPublicUrl(design.logo.path).data.publicUrl
+        designLogoUrl = client.storage.from(design.logo.bucket).getPublicUrl(design.logo.path)
+          .data.publicUrl
     } catch {
       design = null
     }

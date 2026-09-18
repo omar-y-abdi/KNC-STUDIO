@@ -1,5 +1,11 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { validatePresentation, type CmsLang, type CmsMode, type CmsPage, type CmsPresentation } from '../shared/cms'
+import {
+  validatePresentation,
+  type CmsLang,
+  type CmsMode,
+  type CmsPage,
+  type CmsPresentation,
+} from '../shared/cms'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
 import { privatePageTitle } from './site/routeMetadata'
@@ -249,7 +255,6 @@ function replaceMetaContent(html: string, id: string, value: string): string {
   )
   return `${html.slice(0, bounds.start)}${updated}${html.slice(bounds.end + 1)}`
 }
-
 
 function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
   return Object.entries(presentation.fonts ?? {})
@@ -549,7 +554,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
       )
       if (discovery) {
-        const structured = buildBusinessStructuredData(discovery.business, discovery.facts, SITE_URL)
+        const structured = buildBusinessStructuredData(
+          discovery.business,
+          discovery.facts,
+          SITE_URL,
+        )
         body = replaceMetaContent(body, 'business-og-site-name', discovery.business.name)
         body = replaceMetaContent(body, 'business-og-image-alt', discovery.business.name)
         body = replaceJsonScript(body, 'business-json-ld', structured)

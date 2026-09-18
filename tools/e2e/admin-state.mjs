@@ -93,7 +93,10 @@ async function mountCmsStudio(page) {
     await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })
   } catch (error) {
     const notice = await page.locator('.cms-notice').allTextContents()
-    const body = await page.locator('body').innerText().catch(() => '')
+    const body = await page
+      .locator('body')
+      .innerText()
+      .catch(() => '')
     throw new Error(
       `CMS studio did not mount: ${error.message}; notice=${JSON.stringify(notice)}; requests=${JSON.stringify(requests)}; browserErrors=${JSON.stringify(browserErrors)}; body=${JSON.stringify(body.slice(0, 1200))}`,
     )
@@ -2609,38 +2612,38 @@ const chromiumScenarios =
   scenario === 'cms-shell'
     ? [verifyCmsStudioShell]
     : [
-    verifyNavigation,
-    verifyDelayedRestore,
-    verifyPresentationDraft,
-    verifyCmsStudioShell,
-    ...[
-      'focus',
-      'poll',
-      'auth-event',
-      'slow-signout',
-      'late-profile',
-      'late-password',
-      'password-completes',
-      'late-settings-password',
-      'queued-write',
-      'notification-gap',
-      'late-reset-logout',
-      'network',
-    ].map((scenario) => (page) => verifyAdminSession(page, scenario)),
-    ...['services', 'profile', 'bookings'].flatMap((kind) => [
-      (page) => verifyMutationReentry(page, kind),
-      (page) => verifyMutationReentry(page, kind, 'remount'),
-      (page) => verifyMutationReentry(page, kind, 'target', true),
-    ]),
-    ...['site', 'gallery'].flatMap((kind) => [
-      (page) => verifyInitialHydration(page, kind),
-      (page) => verifyInitialHydration(page, kind, true),
-    ]),
-    ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
-    ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
-    ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
-    verifyCalendarSync,
-    verifyCustomerEmail,
+        verifyNavigation,
+        verifyDelayedRestore,
+        verifyPresentationDraft,
+        verifyCmsStudioShell,
+        ...[
+          'focus',
+          'poll',
+          'auth-event',
+          'slow-signout',
+          'late-profile',
+          'late-password',
+          'password-completes',
+          'late-settings-password',
+          'queued-write',
+          'notification-gap',
+          'late-reset-logout',
+          'network',
+        ].map((scenario) => (page) => verifyAdminSession(page, scenario)),
+        ...['services', 'profile', 'bookings'].flatMap((kind) => [
+          (page) => verifyMutationReentry(page, kind),
+          (page) => verifyMutationReentry(page, kind, 'remount'),
+          (page) => verifyMutationReentry(page, kind, 'target', true),
+        ]),
+        ...['site', 'gallery'].flatMap((kind) => [
+          (page) => verifyInitialHydration(page, kind),
+          (page) => verifyInitialHydration(page, kind, true),
+        ]),
+        ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
+        ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
+        ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
+        verifyCalendarSync,
+        verifyCustomerEmail,
         ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
       ]
 let passed = 0

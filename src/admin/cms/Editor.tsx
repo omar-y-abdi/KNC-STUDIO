@@ -324,7 +324,9 @@ export function CmsEditor(props: Props): JSX.Element {
       <div class="cms-editor-canvas" ref={host} />
       {props.compare && (
         <div class="cms-compare-pane">
-          <div class="cms-compare-label">Jämför · {props.device === 'Desktop' ? '390' : '1440'}</div>
+          <div class="cms-compare-label">
+            Jämför · {props.device === 'Desktop' ? '390' : '1440'}
+          </div>
           <iframe
             title="Jämförelsevy"
             sandbox=""
@@ -395,10 +397,14 @@ export function CmsEditor(props: Props): JSX.Element {
                     Alternativtext
                     <input
                       value={String(attributes['alt'] ?? '')}
-                      onInput={(event) => selected.addAttributes({ alt: event.currentTarget.value })}
+                      onInput={(event) =>
+                        selected.addAttributes({ alt: event.currentTarget.value })
+                      }
                     />
                   </label>
-                  <button type="button" onClick={chooseImage}>Byt bild från biblioteket</button>
+                  <button type="button" onClick={chooseImage}>
+                    Byt bild från biblioteket
+                  </button>
                 </>
               )}
               <h3>Finjustera</h3>

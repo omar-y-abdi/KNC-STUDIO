@@ -290,7 +290,10 @@ function validateRuntimeSlot(path: string, lang: 'sv' | 'en', html: string): voi
   const fragment = parseFragment(html)
   let found = false
   const visit = (node: HtmlNode): void => {
-    if ('tagName' in node && node.attrs.some((attr) => attr.name === 'id' && attr.value === required))
+    if (
+      'tagName' in node &&
+      node.attrs.some((attr) => attr.name === 'id' && attr.value === required)
+    )
       found = true
     if ('childNodes' in node) for (const child of node.childNodes) visit(child)
   }

@@ -53,11 +53,33 @@ export const EMAIL_NAMES = [
 ] as const
 export type CmsEmailName = (typeof EMAIL_NAMES)[number]
 const EMAIL_VARIABLES: Record<CmsEmailName, ReadonlySet<string>> = {
-  customer_confirmation: new Set(['business_name', 'customer_name', 'barber_name', 'cancellation_hours']),
-  barber_confirmation: new Set(['business_name', 'customer_name', 'barber_name', 'booking_date', 'booking_time']),
+  customer_confirmation: new Set([
+    'business_name',
+    'customer_name',
+    'barber_name',
+    'cancellation_hours',
+  ]),
+  barber_confirmation: new Set([
+    'business_name',
+    'customer_name',
+    'barber_name',
+    'booking_date',
+    'booking_time',
+  ]),
   customer_cancellation: new Set(['business_name', 'customer_name', 'barber_name']),
-  barber_cancellation: new Set(['business_name', 'customer_name', 'barber_name', 'booking_date', 'booking_time']),
-  customer_reminder: new Set(['business_name', 'customer_name', 'barber_name', 'cancellation_hours']),
+  barber_cancellation: new Set([
+    'business_name',
+    'customer_name',
+    'barber_name',
+    'booking_date',
+    'booking_time',
+  ]),
+  customer_reminder: new Set([
+    'business_name',
+    'customer_name',
+    'barber_name',
+    'cancellation_hours',
+  ]),
   customer_booking_access: new Set(['business_name']),
   auth_recovery: new Set(['business_name']),
   auth_email_change: new Set(['business_name', 'new_email']),

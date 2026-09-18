@@ -73,55 +73,55 @@ export function BusinessPanel({
             <input
               value={barber.name}
               onInput={(e) => {
-                  const next = structuredClone(document)
+                const next = structuredClone(document)
                 next.barbers[index]!.name = e.currentTarget.value
                 onChange(next)
-                }}
-              />
+              }}
+            />
           </label>
           <label>
             Roll SV
             <input
               value={barber.role_sv}
               onInput={(e) => {
-                  const next = structuredClone(document)
+                const next = structuredClone(document)
                 next.barbers[index]!.role_sv = e.currentTarget.value
                 onChange(next)
-                }}
-              />
+              }}
+            />
           </label>
           <label>
             Roll EN
             <input
               value={barber.role_en}
               onInput={(e) => {
-                  const next = structuredClone(document)
+                const next = structuredClone(document)
                 next.barbers[index]!.role_en = e.currentTarget.value
                 onChange(next)
-                }}
-              />
+              }}
+            />
           </label>
           <label>
             Bio SV
             <textarea
               value={barber.bio_sv}
               onInput={(e) => {
-                  const next = structuredClone(document)
+                const next = structuredClone(document)
                 next.barbers[index]!.bio_sv = e.currentTarget.value
                 onChange(next)
-                }}
-              />
+              }}
+            />
           </label>
           <label>
             Bio EN
             <textarea
               value={barber.bio_en}
               onInput={(e) => {
-                  const next = structuredClone(document)
+                const next = structuredClone(document)
                 next.barbers[index]!.bio_en = e.currentTarget.value
                 onChange(next)
-                }}
-              />
+              }}
+            />
           </label>
         </fieldset>
       ))}
@@ -151,7 +151,8 @@ export function EmailPanel({
   if (!first) return <div class="cms-domain-panel">Inga e-postmallar är konfigurerade.</div>
   const [selectedTemplate, setSelectedTemplate] = useState(first.template)
   const email =
-    document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ?? first
+    document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ??
+    first
   const patch = (key: keyof CmsEmail, value: string): void =>
     onChange(replaceEmail(document, { ...email, [key]: value }))
   return (
@@ -168,7 +169,9 @@ export function EmailPanel({
         ))}
       </aside>
       <div class="cms-domain-panel">
-        <h2>{emailLabel[email.template]} · {lang.toUpperCase()}</h2>
+        <h2>
+          {emailLabel[email.template]} · {lang.toUpperCase()}
+        </h2>
         {!email.design && (
           <button
             type="button"
@@ -272,15 +275,17 @@ export function EmailPanel({
             {(['light', 'dark'] as const).map((paletteMode) => (
               <fieldset>
                 <legend>{paletteMode === 'light' ? 'Ljus palett' : 'Mörk palett'}</legend>
-                {([
-                  ['background', 'Bakgrund'],
-                  ['surface', 'Yta'],
-                  ['text', 'Text'],
-                  ['muted', 'Sekundär'],
-                  ['border', 'Kant'],
-                  ['button', 'Knapp'],
-                  ['buttonText', 'Knapptext'],
-                ] as const).map(([key, label]) => (
+                {(
+                  [
+                    ['background', 'Bakgrund'],
+                    ['surface', 'Yta'],
+                    ['text', 'Text'],
+                    ['muted', 'Sekundär'],
+                    ['border', 'Kant'],
+                    ['button', 'Knapp'],
+                    ['buttonText', 'Knapptext'],
+                  ] as const
+                ).map(([key, label]) => (
                   <label>
                     {label}
                     <input
@@ -315,14 +320,16 @@ export function EmailPanel({
             </label>
           </fieldset>
         )}
-        {([
-          ['subject', 'Ämne'],
-          ['preheader', 'Preheader'],
-          ['title', 'Rubrik'],
-          ['intro', 'Intro'],
-          ['note', 'Notis'],
-          ['cta_label', 'CTA'],
-        ] as const).map(([key, label]) => (
+        {(
+          [
+            ['subject', 'Ämne'],
+            ['preheader', 'Preheader'],
+            ['title', 'Rubrik'],
+            ['intro', 'Intro'],
+            ['note', 'Notis'],
+            ['cta_label', 'CTA'],
+          ] as const
+        ).map(([key, label]) => (
           <label>
             {label}
             {key === 'intro' || key === 'note' ? (

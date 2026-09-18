@@ -147,11 +147,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       setVersion((value) => value + 1)
     } catch (reason) {
       const message =
-        reason instanceof Error ? reason.message : 'Publiceringen misslyckades. Utkastet finns kvar.'
+        reason instanceof Error
+          ? reason.message
+          : 'Publiceringen misslyckades. Utkastet finns kvar.'
       if (/conflict|ändrats|409/i.test(message)) {
         try {
           const remote = await cmsApi.state()
-          const merged = mergeCmsDocuments(draft.base, draft.document, ensureCorePages(remote.document))
+          const merged = mergeCmsDocuments(
+            draft.base,
+            draft.document,
+            ensureCorePages(remote.document),
+          )
           const next = new CmsDraft(merged.document, remote.revision, remote.fingerprint)
           next.base = structuredClone(ensureCorePages(remote.document))
           setDraft(next)
@@ -210,7 +216,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
     if (
       !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
-      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(path) ||
+      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
+        path,
+      ) ||
       document.presentation.pages.some((item) => item.path === path)
     )
       return setError('Ange en unik, giltig adress som /hemsida.')
@@ -402,13 +410,31 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             Bilder & typsnitt · {resources.length}
           </button>
           <h2>KNC</h2>
-          <button type="button" onClick={() => { setDialog('business'); setMobilePanel(null) }}>
+          <button
+            type="button"
+            onClick={() => {
+              setDialog('business')
+              setMobilePanel(null)
+            }}
+          >
             Business / SEO
           </button>
-          <button type="button" onClick={() => { setDialog('email'); setMobilePanel(null) }}>
+          <button
+            type="button"
+            onClick={() => {
+              setDialog('email')
+              setMobilePanel(null)
+            }}
+          >
             Mejl
           </button>
-          <button type="button" onClick={() => { setDialog('delivery'); setMobilePanel(null) }}>
+          <button
+            type="button"
+            onClick={() => {
+              setDialog('delivery')
+              setMobilePanel(null)
+            }}
+          >
             Leveransstatus ↗
           </button>
         </aside>
@@ -435,7 +461,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button type="button" onClick={() => setZoom(device === 'Mobile' ? 90 : 70)}>
               Fit
             </button>
-            <button type="button" aria-pressed={compare} onClick={() => setCompare((value) => !value)}>
+            <button
+              type="button"
+              aria-pressed={compare}
+              onClick={() => setCompare((value) => !value)}
+            >
               Jämför
             </button>
           </div>
@@ -538,11 +568,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button type="button" onClick={() => void openHistory()}>
           Restore
         </button>
-        <button
-          type="button"
-          aria-pressed={locked}
-          onClick={() => setLocked((value) => !value)}
-        >
+        <button type="button" aria-pressed={locked} onClick={() => setLocked((value) => !value)}>
           {locked ? 'Lås upp' : 'Lås vy'}
         </button>
         <DownloadDraft document={document} />
@@ -570,7 +596,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       {dialog && (
         <dialog open class="cms-dialog">
           <header>
-            <strong>{dialog === 'history' ? 'Historik' : dialog === 'resources' ? 'Resurser' : dialog === 'business' ? 'Business / SEO' : dialog === 'delivery' ? 'Leveransstatus' : 'Mejl'}</strong>
+            <strong>
+              {dialog === 'history'
+                ? 'Historik'
+                : dialog === 'resources'
+                  ? 'Resurser'
+                  : dialog === 'business'
+                    ? 'Business / SEO'
+                    : dialog === 'delivery'
+                      ? 'Leveransstatus'
+                      : 'Mejl'}
+            </strong>
             <button type="button" onClick={() => setDialog(null)}>
               ×
             </button>
@@ -579,13 +615,22 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             {dialog === 'delivery' ? (
               <div class="cms-domain-panel">
                 <h2>Operativ e-postleverans</h2>
-                <p>Leveransstatus och återförsök är operativ data och ligger därför utanför reversibel CMS-historik.</p>
-                <a href="/admin?tab=operations" class="cms-external-link">Öppna leveranspanelen i Admin ↗</a>
+                <p>
+                  Leveransstatus och återförsök är operativ data och ligger därför utanför
+                  reversibel CMS-historik.
+                </p>
+                <a href="/admin?tab=operations" class="cms-external-link">
+                  Öppna leveranspanelen i Admin ↗
+                </a>
               </div>
             ) : dialog === 'business' ? (
               <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
             ) : dialog === 'email' ? (
-              <EmailPanel document={draft.document} lang={lang} onChange={(next) => commitDraft(next)} />
+              <EmailPanel
+                document={draft.document}
+                lang={lang}
+                onChange={(next) => commitDraft(next)}
+              />
             ) : dialog === 'history' ? (
               history.map((item) => (
                 <div class="cms-history-row">

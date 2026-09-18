@@ -88,7 +88,6 @@ export class CmsDraft {
   }
 }
 
-
 export interface CmsMergeConflict {
   path: string
 }
