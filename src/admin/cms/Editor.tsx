@@ -226,6 +226,16 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
+    editor.AssetManager.getAll().reset(
+      props.assets
+        .filter((asset) => asset.mime.startsWith('image/') && !asset.archived)
+        .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
+    )
+  }, [props.assets])
+
+  useEffect(() => {
+    const editor = instance.current
+    if (!editor) return
     editor.setDevice(props.device)
     editor.Canvas.setZoom(props.zoom)
   }, [props.device, props.zoom])
