@@ -19,7 +19,7 @@ export interface CmsEditorViewState {
   scroll?: { x: number; y: number }
   device?: string
   zoom?: number
-  tab?: CmsInspectorTab
+  tab?: CmsInspectorTab | string
   compare?: boolean
   inspector: CmsInspectorScrollState
 }
@@ -52,6 +52,10 @@ const inspectorSelectors: ReadonlyArray<
 function finite(value: unknown, fallback = 0): number {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
+}
+
+function normalizeInspectorTab(value: unknown): CmsInspectorTab | undefined {
+  return value === 'style' || value === 'layers' || value === 'blocks' ? value : undefined
 }
 
 function rootFor(root?: ParentNode | null): ParentNode | null {
@@ -131,7 +135,7 @@ export function captureEditorView(editor: Editor, options: CaptureOptions = {}):
     },
     device: options.device ?? editor.getDevice?.() ?? undefined,
     zoom: normalizeViewZoom(rawZoom),
-    tab: options.tab,
+    tab: normalizeInspectorTab(options.tab),
     compare: options.compare,
     inspector: captureInspectorScroll(options.root),
   }
