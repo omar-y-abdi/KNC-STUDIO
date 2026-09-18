@@ -1,9 +1,10 @@
 import type { Component, Editor } from 'grapesjs'
 
 export type CmsInspectorTab = 'style' | 'layers' | 'blocks'
-export type CmsComponentViewKey =
-  | { kind: 'cms'; value: string }
-  | { kind: 'id'; value: string }
+export interface CmsComponentViewKey {
+  kind: 'cms' | 'id'
+  value: string
+}
 
 export interface CmsInspectorScrollState {
   inspector?: number
@@ -38,8 +39,12 @@ interface RestoreOptions {
   root?: ParentNode | null
 }
 
+type InspectorSelector = readonly [keyof CmsInspectorScrollState, string]
+type MaybeComponent = Component | null | undefined
+type MaybeViewKey = CmsComponentViewKey | null | undefined
+
 const storedViews = new Map<string, string>()
-const inspectorSelectors: ReadonlyArray<readonly [keyof CmsInspectorScrollState, string]> = [
+const inspectorSelectors: readonly InspectorSelector[] = [
   ['inspector', '.cms-authored-inspector'],
   ['styles', '#cms-gjs-styles'],
   ['traits', '#cms-gjs-traits'],
@@ -66,7 +71,7 @@ function selector(value: string, name: string): string {
   return `[${name}="${escaped}"]`
 }
 
-function stableComponentKey(component: Component | null | undefined): CmsComponentViewKey | null {
+function stableComponentKey(component: MaybeComponent): CmsComponentViewKey | null {
   if (!component) return null
   const attributes = component.getAttributes?.() ?? {}
   const cms = attributes['data-cms-node']
@@ -76,10 +81,7 @@ function stableComponentKey(component: Component | null | undefined): CmsCompone
   return null
 }
 
-function findComponent(
-  editor: Editor,
-  key: CmsComponentViewKey | null | undefined,
-): Component | null {
+function findComponent(editor: Editor, key: MaybeViewKey): Component | null {
   if (!key) return null
   const wrapper = editor.getWrapper?.()
   if (!wrapper?.find) return null
