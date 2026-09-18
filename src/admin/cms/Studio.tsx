@@ -218,6 +218,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
     if (
       !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
+      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(path) ||
       document.presentation.pages.some((item) => item.path === path)
     )
       return setError('Ange en unik, giltig adress som /hemsida.')
