@@ -435,6 +435,111 @@ describe.sequential('real CMS Edge, Auth and database boundary', () => {
       ).status,
     ).toBe(200)
   }, 30000)
+  it('supports archive, restore, trash and permanent deletion for an unused resource', async () => {
+    const response = await upload('cms_asset')
+    expect(response.status, await response.clone().text()).toBe(200)
+    const uploaded = (await response.json()) as {
+      asset: { id: string; bucket: string; path: string; version: number }
+    }
+    const id = uploaded.asset.id
+
+    const usage = await call({ operation: 'asset_usage', id })
+    expect(usage.status, await usage.clone().text()).toBe(200)
+    expect(await usage.json()).toEqual({ currentReferences: 0, historyReferences: 0 })
+
+    const archive = await call({ operation: 'asset_lifecycle', id, version: 0, action: 'archive' })
+    expect(archive.status, await archive.clone().text()).toBe(200)
+    const archived = (await archive.json()) as {
+      asset: { version: number; archived: boolean; trashed: boolean }
+    }
+    expect(archived.asset).toMatchObject({ version: 1, archived: true, trashed: false })
+
+    const restore = await call({ operation: 'asset_lifecycle', id, version: 1, action: 'restore' })
+    expect(restore.status, await restore.clone().text()).toBe(200)
+    const restored = (await restore.json()) as {
+      asset: { version: number; archived: boolean; trashed: boolean }
+    }
+    expect(restored.asset).toMatchObject({ version: 2, archived: false, trashed: false })
+
+    const trash = await call({ operation: 'asset_lifecycle', id, version: 2, action: 'trash' })
+    expect(trash.status, await trash.clone().text()).toBe(200)
+    const trashed = (await trash.json()) as {
+      asset: { version: number; archived: boolean; trashed: boolean }
+    }
+    expect(trashed.asset).toMatchObject({ version: 3, archived: true, trashed: true })
+
+    const remove = await call({ operation: 'asset_lifecycle', id, version: 3, action: 'delete' })
+    expect(remove.status, await remove.clone().text()).toBe(200)
+    expect(await remove.json()).toMatchObject({ deleted: true, id })
+    expect((await state()).assets.some((asset) => asset.id === id)).toBe(false)
+    expect(
+      (
+        await fetch(
+          `${env.url}/storage/v1/object/public/${uploaded.asset.bucket}/${uploaded.asset.path}`,
+        )
+      ).status,
+    ).toBe(404)
+  }, 30000)
+  it('blocks trash for current references and permanent deletion for retained history', async () => {
+    const response = await upload('cms_asset')
+    expect(response.status, await response.clone().text()).toBe(200)
+    const uploaded = (await response.json()) as {
+      asset: { id: string; bucket: 'cms-library'; path: string }
+    }
+    const base = await state()
+    const placed = structuredClone(base.document)
+    const node = 'cms.lifecycle.proof'
+    placed.presentation.images[node] = {
+      ref: { bucket: uploaded.asset.bucket, path: uploaded.asset.path },
+      alt: { sv: 'Livscykeltest', en: 'Lifecycle test' },
+    }
+    const publishPlaced = await call(publication(base, placed))
+    expect(publishPlaced.status, await publishPlaced.clone().text()).toBe(200)
+
+    const withPlacement = await state()
+    const currentAsset = withPlacement.assets.find((asset) => asset.id === uploaded.asset.id)
+    if (!currentAsset) throw new Error('Lifecycle asset is missing after publication')
+    const currentTrash = await call({
+      operation: 'asset_lifecycle',
+      id: currentAsset.id,
+      version: currentAsset.version,
+      action: 'trash',
+    })
+    expect(currentTrash.status, await currentTrash.clone().text()).toBe(409)
+
+    const removed = structuredClone(withPlacement.document)
+    delete removed.presentation.images[node]
+    const publishRemoved = await call(publication(withPlacement, removed))
+    expect(publishRemoved.status, await publishRemoved.clone().text()).toBe(200)
+
+    const withoutPlacement = await state()
+    const removable = withoutPlacement.assets.find((asset) => asset.id === uploaded.asset.id)
+    if (!removable) throw new Error('Lifecycle asset disappeared unexpectedly')
+    const trash = await call({
+      operation: 'asset_lifecycle',
+      id: removable.id,
+      version: removable.version,
+      action: 'trash',
+    })
+    expect(trash.status, await trash.clone().text()).toBe(200)
+    const trashBody = (await trash.json()) as { asset: { version: number } }
+
+    const retainedDelete = await call({
+      operation: 'asset_lifecycle',
+      id: removable.id,
+      version: trashBody.asset.version,
+      action: 'delete',
+    })
+    expect(retainedDelete.status, await retainedDelete.clone().text()).toBe(409)
+
+    const restore = await call({
+      operation: 'asset_lifecycle',
+      id: removable.id,
+      version: trashBody.asset.version,
+      action: 'restore',
+    })
+    expect(restore.status, await restore.clone().text()).toBe(200)
+  }, 30000)
   it('rejects invalid image bytes and barber library writes before registering an asset', async () => {
     const before = await state()
     expect((await upload('cms_asset', ownerToken, new Uint8Array([1, 2, 3]))).status).toBe(422)

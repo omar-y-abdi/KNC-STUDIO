@@ -147,6 +147,50 @@ Deno.serve(async (request) => {
       const result = await invoke('internal_cms_revision', { p_revision: readInteger('revision') })
       return result ? json(result) : json({ error: 'not_found', requestId }, 404)
     }
+    if (body.operation === 'asset_usage') {
+      only('id')
+      if (typeof body.id !== 'string' || !UUID.test(body.id))
+        throw new CmsValidationError('asset', 'Invalid asset identity')
+      return json(await invoke('internal_cms_asset_usage', { p_id: body.id }))
+    }
+    if (body.operation === 'asset_lifecycle') {
+      only('id', 'version', 'action')
+      if (
+        typeof body.id !== 'string' ||
+        !UUID.test(body.id) ||
+        typeof body.action !== 'string' ||
+        !['archive', 'restore', 'trash', 'delete'].includes(body.action)
+      )
+        throw new CmsValidationError('asset', 'Invalid asset lifecycle action')
+      const result = await invoke('internal_cms_asset_transition', {
+        p_id: body.id,
+        p_version: readInteger('version'),
+        p_action: body.action,
+      })
+      if (body.action !== 'delete') return json(result)
+      if (!result || typeof result !== 'object' || Array.isArray(result))
+        throw new Error('Invalid asset lifecycle response')
+      const transition = result as Record<string, unknown>
+      const asset = transition['asset']
+      if (!asset || typeof asset !== 'object' || Array.isArray(asset))
+        throw new Error('Invalid asset deletion reservation')
+      const row = asset as Record<string, unknown>
+      if (
+        typeof row['bucket'] !== 'string' ||
+        !['gallery', 'barber-photos', 'cms-library'].includes(row['bucket']) ||
+        typeof row['path'] !== 'string' ||
+        typeof row['version'] !== 'number' ||
+        !Number.isSafeInteger(row['version'])
+      )
+        throw new Error('Invalid asset deletion reservation')
+      const removed = await service.storage.from(row['bucket']).remove([row['path']])
+      if (removed.error) throw removed.error
+      await invoke('internal_cms_asset_delete_finalize', {
+        p_id: body.id,
+        p_version: row['version'],
+      })
+      return json({ deleted: true, id: body.id, usage: transition['usage'] })
+    }
     if (body.operation === 'asset') {
       only('id', 'version', 'name', 'alt', 'archived')
       if (
@@ -239,6 +283,13 @@ Deno.serve(async (request) => {
         409,
       )
     if (code === '42501') return json({ error: 'forbidden', requestId }, 403)
+    if (code === 'P4090') {
+      const message =
+        error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : 'Resursens livscykel ändrades. Läs in biblioteket igen.'
+      return json({ error: 'asset_lifecycle_conflict', message, requestId }, 409)
+    }
     if (['22023', '23514', '23502', '23503', '23505'].includes(code))
       return json(
         {

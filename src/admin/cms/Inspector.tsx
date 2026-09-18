@@ -20,6 +20,7 @@ import {
 } from './catalog'
 import { Field, Select } from './controls'
 import type { CanvasNode } from './Preview'
+import { fontAssetForFamily, resourceFontOptions } from './resourceLifecycle'
 
 type Change = (operation: (draft: CmsDocument) => void, group?: string) => void
 export function NativeInspector({
@@ -326,10 +327,12 @@ export function BusinessInspector({
 }
 export function ThemeInspector({
   document,
+  assets,
   mode,
   edit,
 }: {
   document: CmsDocument
+  assets: CmsAsset[]
   mode: CmsMode
   edit: Change
 }): JSX.Element {
@@ -380,9 +383,17 @@ export function ThemeInspector({
       <Select
         label="Sidans typsnitt"
         value={theme['fontFamily'] ?? ''}
-        options={fontOptions(document.presentation)}
+        options={resourceFontOptions(document.presentation, assets)}
         onChange={(value) =>
           edit((draft) => {
+            const font = fontAssetForFamily(assets, value)
+            if (font) {
+              draft.presentation.fonts ??= {}
+              draft.presentation.fonts[font.id] = {
+                ref: { bucket: font.bucket, path: font.path },
+                name: font.name,
+              }
+            }
             if (value) draft.presentation.themes[mode]['fontFamily'] = value
             else delete draft.presentation.themes[mode]['fontFamily']
           })

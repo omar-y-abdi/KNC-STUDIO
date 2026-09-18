@@ -1,5 +1,5 @@
-import { fontFaceCss, fontOptions } from '../../../shared/cms-fonts'
-import type { CmsPresentation } from '../../../shared/cms'
+import { fontFaceCss } from '../../../shared/cms-fonts'
+import { mediaUrl, type CmsAsset, type CmsPresentation } from '../../../shared/cms'
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Editor, type Component } from 'grapesjs'
@@ -10,6 +10,12 @@ import { SUPABASE_URL } from '../../backend/config'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 import { nudgeComponent, resetComponentPosition } from './position'
 import { installCloneSafety } from './cloneSafety'
+import {
+  fontAssetForFamily,
+  grapesImageAssets,
+  resourceFontOptions,
+  resourceUsable,
+} from './resourceLifecycle'
 import {
   captureEditorView,
   loadEditorViewState,
@@ -32,6 +38,7 @@ export interface AuthoredControls {
 interface Props {
   identity: string
   presentation: CmsPresentation
+  assets: CmsAsset[]
   variant: PageVariant
   mode: CmsMode
   width: number
@@ -40,7 +47,8 @@ interface Props {
   onChange: (variant: PageVariant, group?: string) => void
   onReady: (controls: AuthoredControls | null) => void
   onError: (message: string) => void
-  pickImage: () => void
+  pickImage: (choose: (asset: CmsAsset) => void) => void
+  onFontUse: (asset: CmsAsset) => void
 }
 function cleanEditorHtml(html: string): string {
   const parsed = new DOMParser().parseFromString(html, 'text/html')
@@ -127,6 +135,14 @@ export function AuthoredEditor(props: Props): JSX.Element {
         frameContent: '<!doctype html><html><head></head><body></body></html>',
       },
       panels: { defaults: [] },
+      assetManager: {
+        assets: grapesImageAssets(
+          current.current.assets,
+          SUPABASE_URL ?? 'https://unconfigured.invalid',
+        ),
+        upload: false,
+        custom: true,
+      },
       selectorManager: { appendTo: '#cms-gjs-selectors', componentFirst: true },
       layerManager: { appendTo: '#cms-gjs-layers' },
       traitManager: { appendTo: '#cms-gjs-traits' },
@@ -276,9 +292,25 @@ export function AuthoredEditor(props: Props): JSX.Element {
     gjs.on('canvas:frame', hardenFrame)
     gjs.on('canvas:frame:load', frameLoaded)
     hardenFrame()
-    gjs.on('asset:open', () => {
-      gjs.AssetManager.close()
-      current.current.pickImage()
+    gjs.on('asset:custom', (event) => {
+      if (!event.open) return
+      current.current.pickImage((asset) => {
+        if (!resourceUsable(asset) || !asset.mime.startsWith('image/')) {
+          current.current.onError('Välj en aktiv bild från resursbiblioteket.')
+          return
+        }
+        const src = mediaUrl(asset, SUPABASE_URL ?? 'https://unconfigured.invalid')
+        const selected = gjs.getSelected()
+        if (selected?.is('image')) selected.addAttributes({ src, alt: asset.alt })
+        else
+          gjs.getWrapper()?.append({
+            tagName: 'img',
+            attributes: { src, alt: asset.alt },
+            style: { 'max-width': '100%', height: 'auto' },
+          })
+        gjs.AssetManager.close()
+        flush()
+      })
     })
     props.onReady({
       flush,
@@ -440,11 +472,13 @@ export function AuthoredEditor(props: Props): JSX.Element {
                 return
               }
               const value = event.currentTarget.value
+              const font = fontAssetForFamily(props.assets, value)
+              if (font) props.onFontUse(font)
               if (value) component.addStyle({ 'font-family': value })
               else component.removeStyle('font-family')
             }}
           >
-            {fontOptions(props.presentation).map(([value, label]) => (
+            {resourceFontOptions(props.presentation, props.assets).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>

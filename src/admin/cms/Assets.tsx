@@ -6,6 +6,15 @@ import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi, type CmsApi } from './api'
 import { Field, Notice, Select } from './controls'
+import {
+  filterResources,
+  resourceDeleting,
+  resourceState,
+  resourceUsable,
+  type AssetLifecycleAction,
+  type CmsAssetUsage,
+  type ResourceState,
+} from './resourceLifecycle'
 
 export type UploadPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
 export function AssetLibrary({
@@ -30,11 +39,12 @@ export function AssetLibrary({
   api?: CmsApi
 }): JSX.Element {
   const [query, setQuery] = useState(''),
-    [archived, setArchived] = useState(false),
-    [kind, setKind] = useState('all')
+    [state, setState] = useState<ResourceState>('active'),
+    [kind, setKind] = useState<'all' | 'images' | 'fonts'>('all')
   const [selected, setSelected] = useState<string | null>(null),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [busy, setBusy] = useState(false),
+    [usage, setUsage] = useState<CmsAssetUsage | null>(null)
   const [name, setName] = useState(''),
     [alt, setAlt] = useState('')
   const alive = useRef(true),
@@ -52,6 +62,21 @@ export function AssetLibrary({
     setName(asset?.name ?? '')
     setAlt(asset?.alt ?? '')
   }, [asset?.id, asset?.version])
+  useEffect(() => {
+    let current = true
+    setUsage(null)
+    if (!asset) return () => void (current = false)
+    void api
+      .assetUsage(asset.id)
+      .then((value) => {
+        if (current && alive.current) setUsage(value)
+      })
+      .catch((reason: unknown) => {
+        if (current && alive.current)
+          setError(reason instanceof Error ? reason.message : 'Resursens användning kunde inte läsas.')
+      })
+    return () => void (current = false)
+  }, [api, asset?.id, asset?.version])
   const setAsset = (value: CmsAsset): void =>
     onAssets([value, ...latest.current.filter((item) => item.id !== value.id)])
   const upload = async (file: File): Promise<void> => {
@@ -67,7 +92,7 @@ export function AssetLibrary({
       if (alive.current) {
         setAsset(result)
         setSelected(result.id)
-        setArchived(false)
+        setState('active')
       }
     } catch (reason) {
       if (alive.current)
@@ -79,19 +104,44 @@ export function AssetLibrary({
       }
     }
   }
-  const save = async (archive: boolean): Promise<void> => {
+  const save = async (): Promise<void> => {
+    if (!asset || busy || resourceDeleting(asset)) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await api.asset({ ...asset, name, alt })
+      if (alive.current) setAsset(result)
+    } catch (reason) {
+      if (alive.current)
+        setError(reason instanceof Error ? reason.message : 'Filuppgifterna kunde inte sparas.')
+    } finally {
+      if (alive.current) setBusy(false)
+    }
+  }
+  const transition = async (action: AssetLifecycleAction): Promise<void> => {
     if (!asset || busy) return
     setBusy(true)
     setError('')
     try {
-      const result = await api.asset({ ...asset, name, alt, archived: archive })
-      if (alive.current) {
-        setAsset(result)
-        setArchived(archive)
+      const result = await api.assetLifecycle(asset.id, asset.version, action)
+      if (!alive.current) return
+      setUsage(result.usage)
+      if ('deleted' in result) {
+        onAssets(latest.current.filter((item) => item.id !== asset.id))
+        setSelected(null)
+      } else {
+        setAsset(result.asset)
+        setState(resourceState(result.asset))
       }
     } catch (reason) {
       if (alive.current)
-        setError(reason instanceof Error ? reason.message : 'Filuppgifterna kunde inte sparas.')
+        setError(reason instanceof Error ? reason.message : 'Resursåtgärden kunde inte genomföras.')
+      try {
+        const fresh = await api.state()
+        if (alive.current) onAssets(fresh.assets)
+      } catch {
+        /* The original lifecycle failure remains the actionable error. */
+      }
     } finally {
       if (alive.current) setBusy(false)
     }
@@ -102,13 +152,12 @@ export function AssetLibrary({
       : purpose === 'profile'
         ? item.bucket === 'barber-photos' && item.path.startsWith(`${barberId ?? ''}/`)
         : item.bucket === 'gallery' && item.path.startsWith(`${purpose}/`)
-  const visible = assets.filter(
-    (item) =>
-      item.archived === archived &&
-      (kind === 'all' || item.mime.startsWith(kind === 'fonts' ? 'font/' : 'image/')) &&
-      `${item.name} ${item.alt}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()) &&
-      (!choose || eligible(item)),
-  )
+  const visible = filterResources(assets, {
+    state,
+    kind,
+    query,
+    ...(choose ? { eligible } : {}),
+  })
   let uses: string[] = []
   if (asset) {
     try {
@@ -125,6 +174,9 @@ export function AssetLibrary({
       uses = ['En ofärdig sida behöver valideras innan hela användningen kan räknas.']
     }
   }
+  const lifecycle = asset ? resourceState(asset) : null
+  const currentBlocked = usage === null || usage.currentReferences > 0 || uses.length > 0
+  const deleteBlocked = currentBlocked || (usage?.historyReferences ?? 1) > 0
   return (
     <div class="cms-asset-library" aria-busy={busy}>
       <div class="cms-panel-heading">
@@ -168,14 +220,27 @@ export function AssetLibrary({
           ]}
           onChange={setKind}
         />
-        <label>
-          <input
-            type="checkbox"
-            checked={archived}
-            onChange={(event) => setArchived(event.currentTarget.checked)}
-          />{' '}
-          Arkiverade
-        </label>
+        <div class="cms-segment" aria-label="Resursstatus">
+          {(
+            [
+              ['active', 'Aktiva'],
+              ['archived', 'Arkiverade'],
+              ['trash', 'Papperskorg'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              aria-pressed={state === value}
+              onClick={() => {
+                setState(value)
+                setSelected(null)
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <div class="cms-assets-body">
         <div class="cms-asset-grid">
@@ -208,8 +273,8 @@ export function AssetLibrary({
             <Field label="Beskrivning / alttext" value={alt} onChange={setAlt} multiline />
             <button
               type="button"
-              disabled={busy || !name.trim()}
-              onClick={() => void save(asset.archived)}
+              disabled={busy || resourceDeleting(asset) || !name.trim()}
+              onClick={() => void save()}
             >
               Spara filuppgifter
             </button>
@@ -217,7 +282,7 @@ export function AssetLibrary({
               <button
                 type="button"
                 class="cms-primary"
-                disabled={busy || asset.archived || !eligible(asset)}
+                disabled={busy || !resourceUsable(asset) || !eligible(asset)}
                 onClick={() => choose(asset)}
               >
                 Använd filen
@@ -226,20 +291,72 @@ export function AssetLibrary({
             {replace && (
               <button
                 type="button"
-                disabled={busy || asset.archived}
+                disabled={busy || lifecycle === 'trash' || resourceDeleting(asset)}
                 onClick={() => replace(asset)}
               >
                 Ersätt i hela utkastet
               </button>
             )}
-            <button type="button" disabled={busy} onClick={() => void save(!asset.archived)}>
-              {asset.archived ? 'Återställ till biblioteket' : 'Arkivera filen'}
-            </button>
+            {lifecycle === 'active' && (
+              <>
+                <button type="button" disabled={busy} onClick={() => void transition('archive')}>
+                  Arkivera filen
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || currentBlocked}
+                  onClick={() => void transition('trash')}
+                >
+                  Flytta till papperskorg
+                </button>
+              </>
+            )}
+            {lifecycle === 'archived' && (
+              <>
+                <button type="button" disabled={busy} onClick={() => void transition('restore')}>
+                  Återställ till biblioteket
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || currentBlocked}
+                  onClick={() => void transition('trash')}
+                >
+                  Flytta till papperskorg
+                </button>
+              </>
+            )}
+            {lifecycle === 'trash' && (
+              <>
+                <button
+                  type="button"
+                  disabled={busy || resourceDeleting(asset)}
+                  onClick={() => void transition('restore')}
+                >
+                  Återställ till biblioteket
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || deleteBlocked}
+                  onClick={() => void transition('delete')}
+                >
+                  {resourceDeleting(asset) ? 'Slutför permanent radering' : 'Radera permanent'}
+                </button>
+              </>
+            )}
             {onFont && asset.mime === 'font/woff2' && (
-              <button type="button" disabled={busy || asset.archived} onClick={() => onFont(asset)}>
+              <button type="button" disabled={busy || !resourceUsable(asset)} onClick={() => onFont(asset)}>
                 Använd typsnittet på sidan
               </button>
             )}
+            <h4>Publicerad användning och historik</h4>
+            <p>
+              {usage
+                ? usage.currentReferences +
+                  ' aktuella referenser · ' +
+                  usage.historyReferences +
+                  ' historiska referenser.'
+                : 'Kontrollerar serverns referenser…'}
+            </p>
             <h4>Användning i utkastet</h4>
             {uses.length ? (
               <ul>
@@ -251,9 +368,9 @@ export function AssetLibrary({
               <p>Inte placerad i det aktuella utkastet.</p>
             )}
             <small>
-              Arkivering döljer filen i biblioteket men raderar inte publicerade bilder eller
-              historiska versioner. Filer i befintliga publika buckets kan nås av den som känner
-              till adressen.
+              Arkivering bevarar filen och historiken. Papperskorgen kräver att ingen aktuell
+              publicerad eller lokal utkastplacering använder filen. Permanent radering kräver
+              dessutom att ingen sparad revision refererar den.
             </small>
           </aside>
         )}

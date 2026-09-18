@@ -12,7 +12,6 @@ import {
   EMAIL_NAMES,
   REGION_NAMES,
   isPagePath,
-  mediaUrl,
   type CmsDocument,
   type CmsLang,
   type CmsMode,
@@ -395,7 +394,7 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
     ) : target === 'business' ? (
       <BusinessInspector document={document} edit={studio.edit} />
     ) : target === 'theme' ? (
-      <ThemeInspector document={document} mode={mode} edit={studio.edit} />
+      <ThemeInspector document={document} assets={studio.assets} mode={mode} edit={studio.edit} />
     ) : target.startsWith('barber:') ? (
       <BarberInspector
         id={target.slice(7)}
@@ -741,6 +740,7 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
                 identity={`${target}:${lang}`}
                 variant={variant}
                 presentation={document.presentation}
+                assets={studio.assets}
                 mode={mode}
                 width={width}
                 zoom={zoom}
@@ -749,11 +749,18 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
                   authored.current = controls
                 }}
                 onError={studio.setError}
-                pickImage={() =>
-                  pick((asset) => {
-                    if (!asset.mime.startsWith('image/')) throw new Error('Välj en bild.')
-                    authored.current?.selectImage(mediaUrl(asset, SUPABASE_URL ?? ''), asset.alt)
-                  })
+                pickImage={(choose) => pick(choose)}
+                onFontUse={(asset) =>
+                  studio.edit(
+                    (value) => {
+                      value.presentation.fonts ??= {}
+                      value.presentation.fonts[asset.id] = {
+                        ref: { bucket: asset.bucket, path: asset.path },
+                        name: asset.name,
+                      }
+                    },
+                    `font:${asset.id}`,
+                  )
                 }
                 onChange={(next, group) =>
                   studio.edit((value) => {

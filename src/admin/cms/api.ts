@@ -9,6 +9,11 @@ import {
   type CmsPublication,
   type CmsDocument,
 } from '../../../shared/cms'
+import type {
+  AssetLifecycleAction,
+  CmsAssetLifecycleResult,
+  CmsAssetUsage,
+} from './resourceLifecycle'
 
 export class CmsApiError extends Error {
   readonly status: number
@@ -47,6 +52,8 @@ export function parseAsset(value: unknown): CmsAsset {
     typeof row['alt'] !== 'string' ||
     typeof row['mime'] !== 'string' ||
     typeof row['archived'] !== 'boolean' ||
+    (row['trashed'] !== undefined && typeof row['trashed'] !== 'boolean') ||
+    (row['deleting'] !== undefined && typeof row['deleting'] !== 'boolean') ||
     (row['width'] !== null && typeof row['width'] !== 'number') ||
     (row['height'] !== null && typeof row['height'] !== 'number')
   )
@@ -54,6 +61,13 @@ export function parseAsset(value: unknown): CmsAsset {
   number(row['bytes'])
   number(row['version'])
   return row as unknown as CmsAsset
+}
+function parseAssetUsage(value: unknown): CmsAssetUsage {
+  const row = record(value)
+  return {
+    currentReferences: number(row['currentReferences']),
+    historyReferences: number(row['historyReferences']),
+  }
 }
 async function call(operation: string, fields: Record<string, unknown> = {}): Promise<unknown> {
   const client = getAdminClient()
@@ -144,6 +158,23 @@ export const cmsApi = {
         archived: asset.archived,
       }),
     )
+  },
+  async assetUsage(id: string): Promise<CmsAssetUsage> {
+    return parseAssetUsage(await call('asset_usage', { id }))
+  },
+  async assetLifecycle(
+    id: string,
+    version: number,
+    action: AssetLifecycleAction,
+  ): Promise<CmsAssetLifecycleResult> {
+    const row = record(await call('asset_lifecycle', { id, version, action }))
+    const usage = parseAssetUsage(row['usage'])
+    if (row['deleted'] === true) {
+      if (row['id'] !== id)
+        throw new CmsApiError('Servern bekräftade fel resurs.', 502, 'invalid_response')
+      return { deleted: true, id, usage }
+    }
+    return { asset: parseAsset(row['asset']), usage }
   },
   async upload(
     file: File,
