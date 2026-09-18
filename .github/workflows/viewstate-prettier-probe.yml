@@ -1,4 +1,4 @@
-name: View-state Prettier probe
+name: View-state focused verification
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -19,5 +19,20 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Print canonical view-state formatting
-        run: npx prettier src/admin/cms/viewState.ts
+      - name: Focused formatting
+        run: npx prettier --check src/admin/cms/viewState.ts src/admin/cms/AuthoredEditor.tsx tests/unit/cmsViewState.test.ts
+      - name: Focused lint
+        run: npx eslint src/admin/cms/viewState.ts src/admin/cms/AuthoredEditor.tsx tests/unit/cmsViewState.test.ts
+      - name: Focused unit tests
+        run: npx vitest run tests/unit/cmsViewState.test.ts
+      - name: Check type errors in owned files
+        shell: bash
+        run: |
+          set +e
+          npx tsc -b --pretty false 2>&1 | tee /tmp/typecheck.log
+          set -e
+          if grep -E 'src/admin/cms/(viewState\.ts|AuthoredEditor\.tsx)|tests/unit/cmsViewState\.test\.ts' /tmp/typecheck.log; then
+            echo "Type errors found in view-state task files."
+            exit 1
+          fi
+          echo "No type errors reported in view-state task files."
