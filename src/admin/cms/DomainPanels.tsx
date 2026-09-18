@@ -196,6 +196,33 @@ export function EmailPanel({
               }} />
             </label>
             <label>
+              Rubrikstorlek
+              <input type="number" min="18" max="56" value={email.design.titleSize} onInput={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.titleSize = Number(e.currentTarget.value)
+                onChange(replaceEmail(document, next))
+              }} />
+            </label>
+            <label>
+              Textstorlek
+              <input type="number" min="12" max="24" value={email.design.textSize} onInput={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.textSize = Number(e.currentTarget.value)
+                onChange(replaceEmail(document, next))
+              }} />
+            </label>
+            <label>
+              Standardtema
+              <select value={email.design.defaultMode} onChange={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.defaultMode = e.currentTarget.value as 'light' | 'dark'
+                onChange(replaceEmail(document, next))
+              }}>
+                <option value="light">Ljus</option>
+                <option value="dark">Mörk</option>
+              </select>
+            </label>
+            <label>
               Typsnitt
               <select value={email.design.font} onChange={(e) => {
                 const next = structuredClone(email)
