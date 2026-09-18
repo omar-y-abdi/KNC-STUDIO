@@ -159,6 +159,47 @@ export function EmailPanel({
       </aside>
       <div class="cms-domain-panel">
         <h2>{emailLabel[email.template]} · {lang.toUpperCase()}</h2>
+        {email.design && (
+          <fieldset>
+            <legend>Design</legend>
+            <label>
+              Bredd
+              <input type="number" min="320" max="760" value={email.design.width} onInput={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.width = Number(e.currentTarget.value)
+                onChange(replaceEmail(document, next))
+              }} />
+            </label>
+            <label>
+              Hörnradie
+              <input type="number" min="0" max="48" value={email.design.radius} onInput={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.radius = Number(e.currentTarget.value)
+                onChange(replaceEmail(document, next))
+              }} />
+            </label>
+            <label>
+              Padding
+              <input type="number" min="12" max="64" value={email.design.padding} onInput={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.padding = Number(e.currentTarget.value)
+                onChange(replaceEmail(document, next))
+              }} />
+            </label>
+            <label>
+              Typsnitt
+              <select value={email.design.font} onChange={(e) => {
+                const next = structuredClone(email)
+                if (next.design) next.design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
+                onChange(replaceEmail(document, next))
+              }}>
+                <option value="system">System</option>
+                <option value="sans">Sans</option>
+                <option value="serif">Serif</option>
+              </select>
+            </label>
+          </fieldset>
+        )}
         {([
           ['subject', 'Ämne'],
           ['preheader', 'Preheader'],
