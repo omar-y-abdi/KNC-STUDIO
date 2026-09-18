@@ -434,6 +434,11 @@ export function validateCanonicalProject(
     const path = stringValue(page['path'], `page.${id}.path`, 100, 1)
     if (trusted?.pathLocked && path !== trusted.path)
       fail(`page.${id}.path`, 'Protected page path cannot change')
+    if (
+      (kind === 'privacy' && path !== '/privacy') ||
+      (kind === 'terms' && path !== '/terms')
+    )
+      fail(`page.${id}.path`, 'Legal page path is fixed')
     if ((!trusted || path !== trusted.path) && !validCustomPath(path))
       fail(`page.${id}.path`, 'Reserved or invalid custom page path')
     if (paths.has(path)) fail(`page.${id}.path`, 'Duplicate page path')

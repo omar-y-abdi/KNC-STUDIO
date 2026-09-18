@@ -13,13 +13,23 @@ const policy = {
 }
 
 const trustedHtml = `
-<main id="main">
+<main id="main" data-testid="legacy-preview-root" data-cms-node="legacy-main">
   <h1>Book</h1>
-  <form class="booking-form" data-booking-form="booking">
+  <form
+    class="booking-form"
+    data-cms-node="booking-form-root"
+    data-cms-copy="copy:booking:title"
+    data-booking-form="booking"
+  >
     <label for="customer-email">Email</label>
     <input id="customer-email" name="email" type="email" aria-describedby="email-help">
     <p id="email-help">We only use this for the booking.</p>
-    <button type="button" data-booking-next="details" aria-label="Continue">Continue</button>
+    <button
+      type="button"
+      data-cms-node="booking-next-button"
+      data-booking-next="details"
+      aria-label="Continue"
+    >Continue</button>
   </form>
 </main>`
 
@@ -49,6 +59,20 @@ function prepared(): ReturnType<typeof prepareCanonicalSource> {
 }
 
 describe('canonical CMS page project', () => {
+  it('bridges legacy KNC markup into stable contracts without retaining overlay metadata', () => {
+    const fixture = prepared()
+    const html = fixture.project.pages[0]!.content.sv.html
+    expect(html).not.toContain('data-cms-node')
+    expect(html).not.toContain('data-cms-copy')
+    expect(html).not.toContain('data-testid')
+    expect(fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'form')?.key).toBe(
+      'booking-form-root',
+    )
+    expect(fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'button')?.key).toBe(
+      'booking-next-button',
+    )
+  })
+
   it('keeps presentation editable while preserving trusted runtime contracts', () => {
     const fixture = prepared()
     const draft = structuredClone(fixture.project)
