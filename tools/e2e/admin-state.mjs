@@ -140,7 +140,6 @@ async function verifyCmsStudioShell(page) {
   for (const name of [
     'Ångra',
     'Gör om',
-    'Edit',
     'Save / Publicera',
     'Revert',
     'History',

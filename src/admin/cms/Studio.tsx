@@ -1,12 +1,13 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type {
-  CmsAsset,
-  CmsDocument,
-  CmsLang,
-  CmsMode,
-  CmsPage,
-  CmsRevision,
+import {
+  mediaUrl,
+  type CmsAsset,
+  type CmsDocument,
+  type CmsLang,
+  type CmsMode,
+  type CmsPage,
+  type CmsRevision,
 } from '../../../shared/cms'
 import { ensureCorePages, CORE_PAGE_IDS } from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
@@ -15,44 +16,12 @@ import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
-import { fontFaceCss } from '../../../shared/cms-fonts'
 import { SUPABASE_URL } from '../../backend/config'
 import './studio.css'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
 
 type Panel = 'library' | 'inspector' | null
-
-function pageLabel(page: CmsPage, lang: CmsLang): string {
-  return page.name[lang] || page.path
-}
-
-function currentPage(document: CmsDocument, id: string): CmsPage {
-  const found =
-    document.presentation.pages.find((page) => page.id === id) ?? document.presentation.pages[0]
-  if (!found) throw new Error('CMS project has no pages')
-  return found
-}
-
-function DownloadDraft({ document }: { document: CmsDocument }): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        const url = URL.createObjectURL(
-          new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }),
-        )
-        const link = window.document.createElement('a')
-        link.href = url
-        link.download = 'knc-cms-draft.json'
-        link.click()
-        window.setTimeout(() => URL.revokeObjectURL(url), 500)
-      }}
-    >
-      Export
-    </button>
-  )
-}
 
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [draft, setDraft] = useState<CmsDraft | null>(null)
@@ -87,7 +56,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
-      if (seeded) next.markDirtyFrom(loaded.document)
+      if (seeded) next.base = structuredClone(loaded.document)
       if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
         next.change(ensureCorePages(backup.document))
         setError(
@@ -194,7 +163,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       </div>
     )
   const document = draft.document
-  const page = currentPage(document, selectedPage)
+  const page =
+    document.presentation.pages.find((item) => item.id === selectedPage) ??
+    document.presentation.pages[0]
+  if (!page) throw new Error('CMS project has no pages')
+  const fontCss = Object.entries(document.presentation.fonts ?? {})
+    .map(
+      ([id, font]) =>
+        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
+    )
+    .join('\n')
 
   const importDraft = async (file: File): Promise<void> => {
     try {
@@ -307,7 +285,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setMobilePanel(null)
               }}
             >
-              {pageLabel(item, lang)}
+              {item.name[lang] || item.path}
             </button>
           ))}
           <div class="cms-page-meta">
@@ -478,7 +456,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               zoom={zoom}
               locked={locked}
               assets={resources}
-              fontCss={fontFaceCss(document.presentation, SUPABASE_URL ?? '')}
+              fontCss={fontCss}
               tab={tab}
               onTab={setTab}
               onChange={replacePage}
@@ -534,9 +512,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         >
           Gör om
         </button>
-        <button type="button" aria-pressed={!locked} onClick={() => setLocked(false)}>
-          Edit
-        </button>
         <button
           type="button"
           class="cms-publish"
@@ -563,7 +538,21 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button type="button" aria-pressed={locked} onClick={() => setLocked((value) => !value)}>
           {locked ? 'Lås upp' : 'Lås vy'}
         </button>
-        <DownloadDraft document={document} />
+        <button
+          type="button"
+          onClick={() => {
+            const url = URL.createObjectURL(
+              new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }),
+            )
+            const link = window.document.createElement('a')
+            link.href = url
+            link.download = 'knc-cms-draft.json'
+            link.click()
+            window.setTimeout(() => URL.revokeObjectURL(url), 500)
+          }}
+        >
+          Export
+        </button>
         <label class="cms-import-button">
           Import
           <input
