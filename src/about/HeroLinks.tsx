@@ -40,14 +40,28 @@ export function HeroLinks(props: HeroLinksProps): JSX.Element {
     marginTop: props.marginTop ?? '18px',
   }
   return (
-    <div style={wrapStyle}>
-      <button type="button" onClick={props.onOpenAbout} style={linkStyle}>
+    <div data-cms-node="herolinks-div-1" style={wrapStyle}>
+      <button
+        data-cms-node="herolinks-button-2"
+        type="button"
+        onClick={props.onOpenAbout}
+        style={linkStyle}
+      >
         {props.aboutLabel}
       </button>
-      <span aria-hidden="true" style={{ opacity: 0.3, color: props.color }}>
+      <span
+        data-cms-node="herolinks-span-3"
+        aria-hidden="true"
+        style={{ opacity: 0.3, color: props.color }}
+      >
         ·
       </span>
-      <button type="button" onClick={props.onOpenCancel} style={linkStyle}>
+      <button
+        data-cms-node="herolinks-button-4"
+        type="button"
+        onClick={props.onOpenCancel}
+        style={linkStyle}
+      >
         {props.cancelLabel}
       </button>
     </div>

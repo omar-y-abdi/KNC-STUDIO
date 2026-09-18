@@ -15,6 +15,7 @@
 // The top bar scrolls with the page instead of stacking under the sticky header. All controls are
 // buttons (keyboard-operable); the active tab is `aria-current`.
 
+import { useLocation } from 'wouter-preact'
 import type { JSX } from 'preact'
 import { lazy, Suspense } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -90,6 +91,7 @@ interface TabDef {
 }
 
 export function AdminShell(props: AdminShellProps): JSX.Element {
+  const [, navigate] = useLocation()
   const { profile } = props
   const isOwner = profile.role === 'owner'
   const c = palette(props.dark)
@@ -412,6 +414,34 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           style={s.navList}
           class={`knc-admin-navlist${mobileMenuOpen ? ' knc-admin-navlist-open' : ''}`}
         >
+          {isOwner ? (
+            <button
+              type="button"
+              disabled={navigationLocked}
+              style={{
+                textAlign: 'left',
+                border: 'none',
+                borderRadius: '9px',
+                padding: '9px 12px',
+                fontFamily: 'inherit',
+                fontSize: '14px',
+                fontWeight: 500,
+                background: 'transparent',
+                color: c.text,
+                opacity: navigationLocked ? 0.4 : 0.78,
+                cursor: navigationLocked ? 'not-allowed' : 'pointer',
+              }}
+              onClick={() => {
+                if (navigationLocked) return
+                persistScroll(tab)
+                scrollCaptureGeneration.current += 1
+                setMobileMenuOpen(false)
+                navigate('/admin/cms/')
+              }}
+            >
+              {props.lang === 'sv' ? 'Redigering' : 'Editing'}
+            </button>
+          ) : null}
           {visibleTabs.map(navButton)}
         </div>
         <button
