@@ -152,6 +152,12 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('component:create', configureComponent)
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
+    editor.on('component:dblclick', (component: Component) => {
+      const type = String(component.get('type') ?? '')
+      const tag = String(component.get('tagName') ?? '').toLowerCase()
+      if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
+        component.set('editable', true)
+    })
     const remember = (): void => {
       const current = latest.current
       viewStates.current.set(
