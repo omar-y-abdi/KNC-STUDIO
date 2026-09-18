@@ -14,6 +14,7 @@ import { CmsDraft } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
+import { BusinessPanel, EmailPanel } from './DomainPanels'
 import './studio.css'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
@@ -66,7 +67,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
   const [editorRevision, setEditorRevision] = useState(0)
-  const [dialog, setDialog] = useState<'history' | 'resources' | null>(null)
+  const [dialog, setDialog] = useState<'history' | 'resources' | 'business' | 'email' | null>(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
   const [newName, setNewName] = useState('Ny sida')
@@ -358,20 +359,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             Bilder & typsnitt · {resources.length}
           </button>
           <h2>KNC</h2>
-          <button
-            type="button"
-            onClick={() =>
-              setError(
-                'Business, SEO, barber, galleri och mejl kopplas in i nästa verifierade slice.',
-              )
-            }
-          >
+          <button type="button" onClick={() => { setDialog('business'); setMobilePanel(null) }}>
             Business / SEO
           </button>
-          <button
-            type="button"
-            onClick={() => setError('Mejl-editorn kopplas in i nästa verifierade slice.')}
-          >
+          <button type="button" onClick={() => { setDialog('email'); setMobilePanel(null) }}>
             Mejl
           </button>
         </aside>
@@ -515,13 +506,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       {dialog && (
         <dialog open class="cms-dialog">
           <header>
-            <strong>{dialog === 'history' ? 'Historik' : 'Resurser'}</strong>
+            <strong>{dialog === 'history' ? 'Historik' : dialog === 'resources' ? 'Resurser' : dialog === 'business' ? 'Business / SEO' : 'Mejl'}</strong>
             <button type="button" onClick={() => setDialog(null)}>
               ×
             </button>
           </header>
           <div class="cms-dialog-body">
-            {dialog === 'history' ? (
+            {dialog === 'business' ? (
+              <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
+            ) : dialog === 'email' ? (
+              <EmailPanel document={draft.document} lang={lang} onChange={(next) => commitDraft(next)} />
+            ) : dialog === 'history' ? (
               history.map((item) => (
                 <div class="cms-history-row">
                   <strong>v{item.revision}</strong>
