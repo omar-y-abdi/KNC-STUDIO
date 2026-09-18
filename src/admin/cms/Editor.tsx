@@ -226,7 +226,8 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
-    editor.AssetManager.getAll().reset(
+    editor.AssetManager.clear()
+    editor.AssetManager.add(
       props.assets
         .filter((asset) => asset.mime.startsWith('image/') && !asset.archived)
         .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
