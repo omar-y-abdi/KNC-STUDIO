@@ -184,7 +184,13 @@ Deno.serve(async (request) => {
       )
         throw new Error('Invalid asset deletion reservation')
       const removed = await service.storage.from(row['bucket']).remove([row['path']])
-      if (removed.error) throw removed.error
+      if (removed.error) {
+        await invoke('internal_cms_asset_delete_abort', {
+          p_id: body.id,
+          p_version: row['version'],
+        })
+        throw removed.error
+      }
       await invoke('internal_cms_asset_delete_finalize', {
         p_id: body.id,
         p_version: row['version'],
