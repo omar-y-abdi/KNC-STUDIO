@@ -21,8 +21,8 @@ export function captureViewState(
     device,
     zoom,
     selectedId: editor.getSelected()?.getId() ?? null,
-    scrollX: frame?.scrollX ?? 0,
-    scrollY: frame?.scrollY ?? 0,
+    scrollX: frame.scrollX,
+    scrollY: frame.scrollY,
   }
 }
 
@@ -33,6 +33,6 @@ export function restoreViewState(editor: Editor, state: CmsViewState): void {
       const component = editor.Components.getById(state.selectedId)
       if (component) editor.select(component)
     }
-    frame?.scrollTo(state.scrollX, state.scrollY)
+    frame.scrollTo(state.scrollX, state.scrollY)
   })
 }
