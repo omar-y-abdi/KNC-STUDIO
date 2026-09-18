@@ -128,9 +128,7 @@ export function captureEditorView(
   const frameWindow = canvas?.getWindow?.()
   const rawCoords = canvas?.getCoords?.() ?? { x: 0, y: 0 }
   const rawZoom =
-    options.zoom ??
-    (typeof canvas?.getZoom === 'function' ? canvas.getZoom() : undefined) ??
-    100
+    options.zoom ?? (typeof canvas?.getZoom === 'function' ? canvas.getZoom() : undefined) ?? 100
   return {
     selected: stableComponentKey(editor.getSelected?.()),
     coords: { x: finite(rawCoords.x), y: finite(rawCoords.y) },
@@ -169,7 +167,8 @@ export function restoreEditorView(
   else if (typeof editor.select === 'function') editor.select(null)
 
   if (snapshot.tab && options.setTab) options.setTab(snapshot.tab)
-  if (typeof snapshot.compare === 'boolean' && options.setCompare) options.setCompare(snapshot.compare)
+  if (typeof snapshot.compare === 'boolean' && options.setCompare)
+    options.setCompare(snapshot.compare)
   restoreInspectorScroll(snapshot.inspector, options.root)
 }
 
