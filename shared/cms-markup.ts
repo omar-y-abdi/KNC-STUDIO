@@ -278,6 +278,27 @@ export function validateMarkup(
   for (const anchor of anchors) if (!ids.has(anchor)) reject('href', `Missing anchor #${anchor}`)
   return { html: serialize(fragment), refs }
 }
+const RUNTIME_SLOTS: Readonly<Record<string, string>> = {
+  '/about': 'knc-about-runtime',
+  '/booking': 'knc-booking-runtime',
+  '/my-bookings': 'knc-my-bookings-runtime',
+}
+
+function validateRuntimeSlot(path: string, lang: 'sv' | 'en', html: string): void {
+  const required = RUNTIME_SLOTS[path]
+  if (!required) return
+  const fragment = parseFragment(html)
+  let found = false
+  const visit = (node: HtmlNode): void => {
+    if ('tagName' in node && node.attrs.some((attr) => attr.name === 'id' && attr.value === required))
+      found = true
+    if ('childNodes' in node) for (const child of node.childNodes) visit(child)
+  }
+  visit(fragment)
+  if (!found)
+    reject(`presentation.${path}.${lang}`, `Required runtime island #${required} is missing`)
+}
+
 function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void {
   if (path !== '/privacy' && path !== '/terms') return
 
@@ -360,8 +381,10 @@ export function validateDocumentMarkupPlacements(
   }
 
   for (const page of document.presentation.pages)
-    for (const lang of ['sv', 'en'] as const)
+    for (const lang of ['sv', 'en'] as const) {
+      validateRuntimeSlot(page.path, lang, page.content[lang].html)
       validateLegalSlots(page.path, lang, page.content[lang].html)
+    }
 
   return placements
 }
