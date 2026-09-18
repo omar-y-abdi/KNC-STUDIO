@@ -114,6 +114,7 @@ export function CmsEditor(props: Props): JSX.Element {
             ? sector
             : {
                 ...sector,
+                buildProps: sector.buildProps.filter((property) => property !== 'font-family'),
                 properties: [
                   {
                     property: 'font-family',
