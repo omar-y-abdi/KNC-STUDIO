@@ -40,12 +40,16 @@ function replaceElementText(html: string, id: string, value: string): string {
 
 export function enrichLegalMarkup(html: string, business: BusinessSettings): string {
   let rendered = html.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-name(?:=(?:"[^"]*"|'[^']*'))?)[^>]*>[^<]*<\/span\s*>/g,
+    /<span data-business-name=""\s*>[^<]*<\/span\s*>/g,
     () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
   )
   rendered = rendered.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-controller=(["'])(sv|en)\1)[^>]*>[^<]*<\/span\s*>/g,
-    (_match, _quote: string, lang: string) =>
+    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
+    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
+  )
+  rendered = rendered.replaceAll(
+    /<span\b(?=[^>]*\bdata-business-controller="(sv|en)")[^>]*>[^<]*<\/span\s*>/g,
+    (_match, lang: string) =>
       `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
   )
   const contact =
@@ -53,7 +57,11 @@ export function enrichLegalMarkup(html: string, business: BusinessSettings): str
       ? '<a href="/">Kontakt / Contact</a>'
       : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
   rendered = rendered.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-contact(?:=(?:"[^"]*"|'[^']*'))?)[^>]*>[\s\S]*?<\/span\s*>/g,
+    /<span data-business-contact=""\s*>[\s\S]*?<\/span\s*>/g,
+    () => `<span data-business-contact>${contact}</span>`,
+  )
+  rendered = rendered.replaceAll(
+    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
     () => `<span data-business-contact>${contact}</span>`,
   )
 
