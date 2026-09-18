@@ -328,10 +328,10 @@ try {
     owner.session,
     async (page) => {
       await studio(page)
-      assert.deepEqual(await page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight]), [
-        390,
-        844,
-      ])
+      assert.deepEqual(
+        await page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight]),
+        [390, 844],
+      )
       const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
       const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
       const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
