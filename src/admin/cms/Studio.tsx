@@ -67,7 +67,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [mobilePanel, setMobilePanel] = useState<Panel>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [version, setVersion] = useState(0)
+  const [, setVersion] = useState(0)
   const [editorRevision, setEditorRevision] = useState(0)
   const [dialog, setDialog] = useState<
     'history' | 'resources' | 'business' | 'email' | 'delivery' | null
@@ -191,7 +191,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     )
   const document = draft.document
   const page = currentPage(document, selectedPage)
-  void version
 
   const importDraft = async (file: File): Promise<void> => {
     try {
