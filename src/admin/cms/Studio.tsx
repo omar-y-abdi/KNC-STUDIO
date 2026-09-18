@@ -446,13 +446,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button type="button" aria-pressed={compare} onClick={() => setCompare((value) => !value)}>
               Jämför
             </button>
-            <button
-              type="button"
-              aria-pressed={locked}
-              onClick={() => setLocked((value) => !value)}
-            >
-              {locked ? 'Lås upp' : 'Lås vy'}
-            </button>
           </div>
           <div class="cms-editor-wrap">
             <CmsEditor
@@ -552,6 +545,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </button>
         <button type="button" onClick={() => void openHistory()}>
           Restore
+        </button>
+        <button
+          type="button"
+          aria-pressed={locked}
+          onClick={() => setLocked((value) => !value)}
+        >
+          {locked ? 'Lås upp' : 'Lås vy'}
         </button>
         <DownloadDraft document={document} />
         <label class="cms-import-button">
