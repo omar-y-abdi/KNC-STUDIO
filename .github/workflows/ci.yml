@@ -25,6 +25,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
+      - name: Diagnose Studio formatting
+        run: |
+          cp src/admin/cms/Studio.tsx /tmp/Studio.tsx.before
+          npx prettier --write src/admin/cms/Studio.tsx >/dev/null
+          git diff --no-index -- /tmp/Studio.tsx.before src/admin/cms/Studio.tsx || true
+          git checkout -- src/admin/cms/Studio.tsx
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
