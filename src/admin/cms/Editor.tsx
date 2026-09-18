@@ -250,7 +250,6 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor) return
     const frame = editor.Canvas.getDocument()
-    if (!frame) return
     let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
     if (!style) {
       style = frame.createElement('style')
