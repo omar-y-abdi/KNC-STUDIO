@@ -157,11 +157,14 @@ export function CmsEditor(props: Props): JSX.Element {
       if (applying.current) return
       const current = latest.current
       const next = structuredClone(current.page)
+      const authoredCss = editor.getCss({ keepUnusedStyles: true }) ?? ''
       next.content[current.lang] = {
         html: editor.getHtml({ cleanId: false }),
         css: {
           ...next.content[current.lang].css,
-          [current.mode]: editor.getCss({ keepUnusedStyles: true }) ?? '',
+          [current.mode]: authoredCss.startsWith(current.fontCss)
+            ? authoredCss.slice(current.fontCss.length).trimStart()
+            : authoredCss,
         },
       }
       current.onChange(next)
