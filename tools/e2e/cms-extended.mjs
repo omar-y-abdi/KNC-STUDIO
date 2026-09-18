@@ -317,6 +317,138 @@ export async function extendedCmsScenarios({
   })
 
   await test(
+    'published-legal-pages-keep-authoritative-data-after-client-mount',
+    owner.session,
+    async (page) => {
+      const settings = {
+          business_name: `Browser Legal ${engine}`,
+          business_legal_name: `Browser Legal ${engine} AB`,
+          business_org_number: '559999-1234',
+          business_email: `legal-${engine}@example.test`,
+          business_phone_display: '031-555 12 34',
+          business_phone_tel: '+46315551234',
+          business_street: 'DOM Testgatan 7',
+          business_postal_code: '411 11',
+          business_city: 'Göteborg',
+          cancellation_policy_hours: '37',
+        },
+        keys = Object.keys(settings),
+        before = await db.query(
+          'select key,value from public.site_settings where key = any($1::text[])',
+          [keys],
+        ),
+        originalSettings = new Map(before.rows.map((row) => [row.key, row.value]))
+
+      try {
+        for (const [key, value] of Object.entries(settings))
+          await db.query(
+            'insert into public.site_settings(key,value) values($1,$2) on conflict(key) do update set value=excluded.value',
+            [key, value],
+          )
+
+        await studio(page)
+        await pages(page)
+        const language = async (label) =>
+          page
+            .getByLabel('Redigeringsspråk')
+            .getByRole('button', { name: label, exact: true })
+            .click()
+        const editLegalHeading = async (label, sv, en) => {
+          await language('SV')
+          await nav(page, label).click()
+          const frame = page.frameLocator('.cms-authored-canvas iframe.gjs-frame')
+          const swedish = frame.locator('h1').first()
+          await expect(swedish).toBeVisible()
+          await swedish.dblclick()
+          await swedish.fill(sv)
+
+          await language('EN')
+          const english = frame.locator('h1').first()
+          await expect(english).toBeVisible()
+          await english.dblclick()
+          await english.fill(en)
+        }
+
+        await editLegalHeading(
+          'Integritetspolicy',
+          `CMS privacy SV ${engine}`,
+          `CMS privacy EN ${engine}`,
+        )
+        await editLegalHeading(
+          'Bokningsvillkor',
+          `CMS terms SV ${engine}`,
+          `CMS terms EN ${engine}`,
+        )
+        await publish(page)
+
+        const origin = new URL(page.url()).origin
+        const checkMounted = async ({ path, heading, lang, cancellation = false }) => {
+          await page.goto(`${origin}${path}`)
+          const mounted = page.locator('[data-cms-page]')
+          await expect(mounted).toBeVisible({ timeout: 20000 })
+          const authored = mounted.locator('[data-cms-authored]')
+          await expect(authored.locator('h1').first()).toHaveText(heading)
+          await expect(authored.locator(`#legal-business-details-${lang}`)).toContainText(
+            settings.business_legal_name,
+          )
+          await expect(authored.locator(`#legal-business-details-${lang}`)).toContainText(
+            'DOM Testgatan 7',
+          )
+          if (path.startsWith('/privacy')) {
+            await expect(authored.locator('[data-business-name]').first()).toHaveText(
+              settings.business_name,
+            )
+            await expect(
+              authored.locator(`[data-business-controller="${lang}"]`).first(),
+            ).toHaveText(settings.business_legal_name)
+            await expect(authored.locator('[data-business-contact]').first()).toContainText(
+              settings.business_email,
+            )
+          }
+          if (cancellation)
+            await expect(authored.locator(`#cancellation-policy-${lang}`)).toHaveText(
+              lang === 'sv'
+                ? 'Avboka senast 37 timmar före den bokade tiden.'
+                : 'Cancel at least 37 hours before your appointment.',
+            )
+        }
+
+        await checkMounted({
+          path: '/privacy',
+          heading: `CMS privacy SV ${engine}`,
+          lang: 'sv',
+        })
+        await checkMounted({
+          path: '/privacy?lang=en',
+          heading: `CMS privacy EN ${engine}`,
+          lang: 'en',
+        })
+        await checkMounted({
+          path: '/terms',
+          heading: `CMS terms SV ${engine}`,
+          lang: 'sv',
+          cancellation: true,
+        })
+        await checkMounted({
+          path: '/terms?lang=en',
+          heading: `CMS terms EN ${engine}`,
+          lang: 'en',
+          cancellation: true,
+        })
+      } finally {
+        for (const key of keys) {
+          if (originalSettings.has(key))
+            await db.query(
+              'insert into public.site_settings(key,value) values($1,$2) on conflict(key) do update set value=excluded.value',
+              [key, originalSettings.get(key)],
+            )
+          else await db.query('delete from public.site_settings where key=$1', [key])
+        }
+      }
+    },
+  )
+
+  await test(
     'authored-css-color-modes-do-not-overwrite-one-another',
     owner.session,
     async (page) => {

@@ -5,7 +5,10 @@ import { useEffect, useState } from 'preact/hooks'
 import { useLocation } from 'wouter-preact'
 import { isPagePath, type CmsLang, type CmsMode } from '../../shared/cms'
 import { NotFound } from '../app/NotFound'
+import { supabaseSiteChromeAdapter } from '../site/adapters/supabaseSiteChrome'
+import type { BusinessSettings } from '../site/business'
 import { CmsMarkup } from './Markup'
+import { enrichLegalMarkup } from './legal'
 import { readPublishedCms, type PublishedCms } from './context'
 
 function metadata(title: string, description: string, canonical: string, lang: CmsLang): void {
@@ -58,7 +61,13 @@ export default function CmsPublicPage(): JSX.Element {
           : 'light',
   )
   const [attempt, setAttempt] = useState(0)
-  const eligible = isPagePath(path) || path === '/privacy' || path === '/terms'
+  const legal = path === '/privacy' || path === '/terms'
+  const [businessState, setBusinessState] = useState<{
+    path: string
+    value: BusinessSettings | null
+    error: string
+  }>({ path: '', value: null, error: '' })
+  const eligible = isPagePath(path) || legal
   useEffect(() => {
     if (!eligible) return
     let active = true
@@ -75,8 +84,45 @@ export default function CmsPublicPage(): JSX.Element {
       active = false
     }
   }, [path, attempt, eligible])
+  useEffect(() => {
+    if (!legal) return
+    let active = true
+    setBusinessState({ path, value: null, error: '' })
+    void supabaseSiteChromeAdapter
+      .load('sv')
+      .then((chrome) => {
+        if (!active) return
+        if (chrome === null) {
+          setBusinessState({
+            path,
+            value: null,
+            error: 'Sidans aktuella företagsuppgifter kunde inte hämtas. Försök igen.',
+          })
+          return
+        }
+        setBusinessState({ path, value: chrome.business, error: '' })
+      })
+      .catch(() => {
+        if (active)
+          setBusinessState({
+            path,
+            value: null,
+            error: 'Sidans aktuella företagsuppgifter kunde inte hämtas. Försök igen.',
+          })
+      })
+    return () => {
+      active = false
+    }
+  }, [path, attempt, legal])
   const value = state.path === path ? state.value : null
   const page = value?.presentation.pages.find((item) => item.path === path)
+  const business = businessState.path === path ? businessState.value : null
+  const pageError =
+    state.path === path && state.error
+      ? state.error
+      : legal && page && businessState.path === path
+        ? businessState.error
+        : ''
   useEffect(() => {
     if (value && !page && (path === '/privacy' || path === '/terms'))
       window.location.replace(`${path}.html`)
@@ -96,11 +142,11 @@ export default function CmsPublicPage(): JSX.Element {
     window.history.replaceState(window.history.state, '', url)
   }, [page, lang, mode])
   if (!eligible) return <NotFound />
-  if (state.path === path && state.error)
+  if (pageError)
     return (
       <main role="alert" style={{ padding: '48px 24px', fontFamily: 'system-ui,sans-serif' }}>
         <h1>Innehållet är tillfälligt otillgängligt</h1>
-        <p>{state.error}</p>
+        <p>{pageError}</p>
         <button type="button" onClick={() => setAttempt((number) => number + 1)}>
           Försök igen
         </button>
@@ -109,7 +155,7 @@ export default function CmsPublicPage(): JSX.Element {
         </p>
       </main>
     )
-  if (!value)
+  if (!value || (legal && page && business === null))
     return (
       <p role="status" style={{ padding: '32px', fontFamily: 'system-ui,sans-serif' }}>
         Läser sidan…
@@ -122,6 +168,7 @@ export default function CmsPublicPage(): JSX.Element {
       <NotFound />
     )
   const content = page.content[lang]
+  const authoredHtml = legal && business ? enrichLegalMarkup(content.html, business) : content.html
   return (
     <div
       data-cms-page={page.id}
@@ -162,7 +209,7 @@ export default function CmsPublicPage(): JSX.Element {
       <style>
         {fontFaceCss(value.presentation, SUPABASE_URL ?? 'https://unconfigured.invalid')}
       </style>
-      <CmsMarkup html={content.html} css={content.css[mode]} label={page.name[lang]} />
+      <CmsMarkup html={authoredHtml} css={content.css[mode]} label={page.name[lang]} />
     </div>
   )
 }

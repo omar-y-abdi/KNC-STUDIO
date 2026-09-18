@@ -1,4 +1,5 @@
 import { cmsPublicResponse, cmsResponsePolicy } from './cms/publicWorker'
+import { enrichLegalMarkup } from './cms/legal'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
@@ -283,61 +284,7 @@ export function renderLegalMetadata(
       ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
-  rendered = rendered.replaceAll(
-    /<span data-business-name=""\s*>[^<]*<\/span\s*>/g,
-    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
-  )
-  rendered = rendered.replaceAll(
-    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
-    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
-  )
-  rendered = rendered.replaceAll(
-    /<span\b(?=[^>]*\bdata-business-controller="(sv|en)")[^>]*>[^<]*<\/span\s*>/g,
-    (_match, lang: string) =>
-      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
-  )
-  const contact =
-    business.email === ''
-      ? '<a href="/">Kontakt / Contact</a>'
-      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
-  rendered = rendered.replaceAll(
-    /<span data-business-contact=""\s*>[\s\S]*?<\/span\s*>/g,
-    () => `<span data-business-contact>${contact}</span>`,
-  )
-  rendered = rendered.replaceAll(
-    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
-    () => `<span data-business-contact>${contact}</span>`,
-  )
-  for (const lang of ['sv', 'en'] as const) {
-    const rows: readonly (readonly [string, string])[] = [
-      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
-      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
-      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
-      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
-      [lang === 'sv' ? 'E-post' : 'Email', business.email],
-      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
-    ]
-    const details = rows
-      .filter(([, value]) => value !== '')
-      .map(
-        ([label, value]) =>
-          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
-      )
-      .join('')
-    rendered = replaceElementContent(
-      rendered,
-      `legal-business-details-${lang}`,
-      `<dl>${details}</dl>`,
-    )
-    rendered = replaceElementText(
-      rendered,
-      `cancellation-policy-${lang}`,
-      lang === 'sv'
-        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
-        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
-    )
-  }
-  return rendered
+  return enrichLegalMarkup(rendered, business)
 }
 
 async function enrichLegalResponse(
