@@ -1,6 +1,5 @@
 import type { JSX } from 'preact'
 import type { CmsDocument, CmsEmail, CmsLang } from '../../../shared/cms'import { EMAIL_NAMES } from '../../../shared/cms'
-import { EmailTemplatePreview } from '../EmailTemplatePreview'
 
 const businessFields = [
   ['business_name', 'Visningsnamn'],
@@ -138,15 +137,11 @@ export function EmailPanel({
   lang: CmsLang
   onChange: (document: CmsDocument) => void
 }): JSX.Element {
-  const first =
-    document.emails.find((email) => email.lang === lang) ??
-    document.emails[0]
+  const first = document.emails.find((email) => email.lang === lang) ?? document.emails[0]
   if (!first) return <div class="cms-domain-panel">Inga e-postmallar är konfigurerade.</div>
   const [selectedTemplate, setSelectedTemplate] = useState(first.template)
   const email =
-    document.emails.find(
-      (item) => item.template === selectedTemplate && item.lang === lang,
-    ) ?? first
+    document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ?? first
   const patch = (key: keyof CmsEmail, value: string): void =>
     onChange(replaceEmail(document, { ...email, [key]: value }))
   return (
@@ -183,21 +178,20 @@ export function EmailPanel({
         ))}
       </div>
       <div class="cms-email-preview">
-        <EmailTemplatePreview
-          template={email.template}
-          lang={email.lang}
-          subject={email.subject}
-          preheader={email.preheader}
-          title={email.title}
-          intro={email.intro}
-          sectionTitle={email.section_title}
-          note={email.note}
-          ctaLabel={email.cta_label}
-          contactLead={email.contact_lead}
-        />
+        <div class="cms-email-card" style={{
+          maxWidth: `${email.design?.width ?? 600}px`,
+          padding: `${email.design?.padding ?? 28}px`,
+          borderRadius: `${email.design?.radius ?? 18}px`,
+        }}>
+          <small>{email.preheader}</small>
+          <h1>{email.title}</h1>
+          <p>{email.intro}</p>
+          {email.section_title && <h2>{email.section_title}</h2>}
+          {email.note && <p class="cms-email-note">{email.note}</p>}
+          {email.cta_label && <button type="button">{email.cta_label}</button>}
+          {email.contact_lead && <p>{email.contact_lead}</p>}
+        </div>
       </div>
     </div>
   )
 }
-
-import { useState } from 'preact/hooks'
