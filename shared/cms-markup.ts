@@ -11,7 +11,7 @@ import {
 
 type HtmlNode = DefaultTreeAdapterMap['node']
 const TAGS = new Set(
-  'a abbr address article aside b bdi bdo blockquote br caption cite code col colgroup dd del details dfn div dl dt em figcaption figure footer h1 h2 h3 h4 h5 h6 header hr i img ins kbd li main mark nav ol p pre q rp rt ruby s samp section small span strong sub summary sup table tbody td tfoot th thead time tr u ul var wbr svg g path circle ellipse rect line polyline polygon defs linearGradient radialGradient stop clipPath mask title desc use'
+  'a abbr address article aside b bdi bdo blockquote br button caption cite code col colgroup dd del details dfn div dl dt em fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hr i img input ins kbd label legend li main mark nav ol option p pre q rp rt ruby s samp section select small span strong sub summary sup table tbody td textarea tfoot th thead time tr u ul var wbr svg g path circle ellipse rect line polyline polygon defs linearGradient radialGradient stop clipPath mask title desc use'
     .toLowerCase()
     .split(' '),
 )
@@ -28,7 +28,7 @@ const BAD_ATTRIBUTES = new Set([
   'xmlns:xlink',
 ])
 const ATTRIBUTES = new Set(
-  'id class style title role dir lang tabindex href target rel download src alt width height loading decoding datetime colspan rowspan scope open viewbox preserveaspectratio d x y x1 x2 y1 y2 cx cy r rx ry points fill stroke stroke-width stroke-linecap stroke-linejoin opacity fill-opacity stroke-opacity transform offset stop-color stop-opacity gradientunits gradienttransform spreadmethod clip-path clip-rule fill-rule mask'.split(
+  'id class style title role dir lang tabindex href target rel download src alt width height loading decoding datetime colspan rowspan scope open name type value for form method autocomplete checked disabled required readonly selected multiple min max step minlength maxlength pattern inputmode accept placeholder rows cols viewbox preserveaspectratio d x y x1 x2 y1 y2 cx cy r rx ry points fill stroke stroke-width stroke-linecap stroke-linejoin opacity fill-opacity stroke-opacity transform offset stop-color stop-opacity gradientunits gradienttransform spreadmethod clip-path clip-rule fill-rule mask'.split(
     ' ',
   ),
 )
@@ -49,6 +49,35 @@ export interface MarkupPolicy {
   storageOrigin: string
   builtAssets?: readonly string[]
 }
+export interface MarkupFunctionalContract {
+  key: string
+  tag: string
+  attrs: Readonly<Record<string, string>>
+}
+export interface MarkupValidationOptions {
+  functionalContracts?: readonly MarkupFunctionalContract[]
+}
+const LEGACY_UNSUPPORTED_FUNCTIONAL_TAGS = new Set([
+  'form',
+  'input',
+  'select',
+  'textarea',
+  'button',
+  'label',
+  'fieldset',
+  'legend',
+  'option',
+])
+const CONTRACT_REQUIRED_TAGS = new Set([
+  'form',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  'fieldset',
+  'legend',
+  'option',
+])
 export function resourceReference(raw: string, policy: MarkupPolicy): MediaRef | null {
   const value = raw.trim()
   if (hasControlOrSpace(value) || value.startsWith('//')) reject('resource', 'Invalid resource URL')
@@ -146,8 +175,13 @@ export function validateMarkup(
   html: string,
   css: string,
   policy: MarkupPolicy,
+  options: MarkupValidationOptions = {},
 ): { html: string; refs: MediaRef[] } {
   if (html.length > 100000 || css.length > 100000) reject('page', 'Page exceeds its size limit')
+  const functionalMode = options.functionalContracts !== undefined
+  const contractList = options.functionalContracts ?? []
+  const contracts = new Map(contractList.map((contract) => [contract.key, contract]))
+  if (contracts.size !== contractList.length) reject('html', 'Duplicate functional contract identity')
   const refs = checkCss(css, policy, false),
     ids = new Set<string>(),
     anchors: string[] = []
@@ -163,6 +197,20 @@ export function validateMarkup(
     if ('tagName' in node) {
       const tag = node.tagName.toLowerCase()
       if (!TAGS.has(tag)) reject('html', `Unsupported element <${tag}>`)
+      const contractKey = node.attrs.find(
+        (item) => item.name.toLowerCase() === 'data-cms-contract',
+      )?.value
+      const contract = contractKey === undefined ? undefined : contracts.get(contractKey)
+      if (contractKey !== undefined && (!functionalMode || !contract || contract.tag !== tag))
+        reject('html', 'Unknown or mismatched functional contract identity')
+      if (!functionalMode && LEGACY_UNSUPPORTED_FUNCTIONAL_TAGS.has(tag))
+        reject('html', `Unsupported element <${tag}>`)
+      if (functionalMode && CONTRACT_REQUIRED_TAGS.has(tag) && !contract)
+        reject('html', `Functional element <${tag}> requires a trusted contract`)
+      if (functionalMode && tag === 'button' && !contract) {
+        const type = node.attrs.find((item) => item.name.toLowerCase() === 'type')?.value
+        if (type !== 'button') reject('html', 'Unbound buttons must use type="button"')
+      }
       for (const attr of node.attrs) {
         const name = attr.name.toLowerCase(),
           value = attr.value
@@ -170,15 +218,25 @@ export function validateMarkup(
           name.startsWith('on') ||
           BAD_ATTRIBUTES.has(name) ||
           name.startsWith('data-gjs-') ||
-          name.startsWith('data-cms-')
+          (name.startsWith('data-cms-') && name !== 'data-cms-contract')
         )
           reject('html', `Unsupported attribute ${name}`)
         if (attr.namespace && !(tag === 'use' && name === 'href'))
           reject('html', 'Unsupported namespaced attribute')
+        if (name === 'data-cms-contract') {
+          if (!functionalMode || !contract || value !== contract.key)
+            reject('html', 'Unknown functional contract identity')
+          continue
+        }
+        const runtimeData = name.startsWith('data-') && !name.startsWith('data-cms-')
+        const trustedRuntimeData =
+          functionalMode && runtimeData && contract?.attrs[name] === value
+        if (functionalMode && runtimeData && !trustedRuntimeData)
+          reject('html', 'Functional data hook does not match its trusted contract')
         if (
           !ATTRIBUTES.has(name) &&
           !/^aria-[a-z-]+$/.test(name) &&
-          !/^data-business-[a-z-]+$/.test(name)
+          !(functionalMode ? trustedRuntimeData : /^data-business-[a-z-]+$/.test(name))
         )
           reject('html', `Unsupported attribute ${name}`)
         if (value.length > 10000 || value.includes('\0')) reject('html', 'Invalid attribute value')
