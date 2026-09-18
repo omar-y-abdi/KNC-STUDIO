@@ -209,11 +209,8 @@ describe('CMS media assignment parity', () => {
   it('requires authored markup resource references to be images', () => {
     const document = emptyDocument()
     const ref: MediaRef = { bucket: 'cms-library', path: 'fonts/test.woff2' }
-    expect(() =>
-      validateDocumentMedia(document, [asset(ref, 'font/woff2')], [
-        { placement: 'presentation.regions:test:sv:html:0', ref },
-      ]),
-    ).toThrow()
+    const placements = [{ placement: 'presentation.regions:test:sv:html:0', ref }]
+    expect(() => validateDocumentMedia(document, [asset(ref, 'font/woff2')], placements)).toThrow()
   })
 
   it('requires gallery images to stay inside their declared purpose', () => {
@@ -293,9 +290,8 @@ describe('CMS media assignment parity', () => {
     }
     const archived = { ...asset(ref, 'image/webp'), archived: true }
 
-    expect(() =>
-      validateDocumentMedia(document, [archived], [], documentMediaPlacements(document)),
-    ).not.toThrow()
+    const current = documentMediaPlacements(document)
+    expect(() => validateDocumentMedia(document, [archived], [], current)).not.toThrow()
   })
 
   it('rejects reusing an archived public asset in a second placement', () => {
@@ -312,9 +308,10 @@ describe('CMS media assignment parity', () => {
     }
     const archived = { ...asset(ref, 'image/webp'), archived: true }
 
-    expect(() =>
-      validateDocumentMedia(draft, [archived], [], documentMediaPlacements(authoritative)),
-    ).toThrow('media: Archived media cannot be newly referenced in a new placement')
+    const current = documentMediaPlacements(authoritative)
+    expect(() => validateDocumentMedia(draft, [archived], [], current)).toThrow(
+      'media: Archived media cannot be newly referenced in a new placement',
+    )
   })
 
   it('accepts assignments that match the upload and picker contract', () => {

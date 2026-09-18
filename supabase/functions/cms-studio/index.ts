@@ -9,9 +9,7 @@ import {
   type CmsDocument,
   type CmsState,
 } from '../../../shared/cms.ts'
-import {
-  validateDocumentMarkupPlacements,
-} from '../../../shared/cms-markup.ts'
+import { validateDocumentMarkupPlacements } from '../../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
 
 const MAX_BODY = 2 * 1024 * 1024 + 4096

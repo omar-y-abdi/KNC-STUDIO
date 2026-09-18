@@ -279,18 +279,10 @@ export function validateDocumentMarkupPlacements(
       const variant = page.content[lang]
       const html = validateMarkup(variant.html, '', policy)
       variant.html = html.html
-      appendPlacements(
-        placements,
-        html.refs,
-        `presentation.pages:${page.id}:${lang}:html`,
-      )
+      appendPlacements(placements, html.refs, `presentation.pages:${page.id}:${lang}:html`)
       for (const mode of ['light', 'dark'] as const) {
         const css = validateMarkup('', variant.css[mode], policy)
-        appendPlacements(
-          placements,
-          css.refs,
-          `presentation.pages:${page.id}:${lang}:css:${mode}`,
-        )
+        appendPlacements(placements, css.refs, `presentation.pages:${page.id}:${lang}:css:${mode}`)
       }
     }
   }
@@ -301,18 +293,10 @@ export function validateDocumentMarkupPlacements(
       const variant = content[lang]
       const html = validateMarkup(variant.html, '', policy)
       variant.html = html.html
-      appendPlacements(
-        placements,
-        html.refs,
-        `presentation.regions:${name}:${lang}:html`,
-      )
+      appendPlacements(placements, html.refs, `presentation.regions:${name}:${lang}:html`)
       for (const mode of ['light', 'dark'] as const) {
         const css = validateMarkup('', variant.css[mode], policy)
-        appendPlacements(
-          placements,
-          css.refs,
-          `presentation.regions:${name}:${lang}:css:${mode}`,
-        )
+        appendPlacements(placements, css.refs, `presentation.regions:${name}:${lang}:css:${mode}`)
       }
     }
   }
