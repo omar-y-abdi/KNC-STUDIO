@@ -1,4 +1,3 @@
-import { useCms, mergeCmsStrings } from '../cms/context'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
@@ -17,9 +16,7 @@ export interface PrivacyBannerProps {
  * Necessary HttpOnly session cookies after email-token authentication remain required by that flow.
  */
 export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX.Element | null {
-  const _cmsPresentation = useCms().presentation
-
-  const tx = mergeCmsStrings(_cmsPresentation, 'privacy', lang, privacyStrings(lang))
+  const tx = privacyStrings(lang)
   const {
     preferences: saved,
     expanded: showPreferences,
@@ -75,8 +72,6 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
 
   return (
     <div
-      data-cms-node="privacybanner-div-1"
-      data-cms-copy="copy:privacy:title"
       ref={panel}
       id="privacy-preferences"
       role="region"
@@ -101,71 +96,36 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
         fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
       }}
     >
-      <h2
-        data-cms-node="privacybanner-h2-2"
-        data-cms-copy="copy:privacy:title"
-        ref={heading}
-        tabIndex={-1}
-        style={{ fontSize: '15px', margin: '0 0 7px' }}
-      >
+      <h2 ref={heading} tabIndex={-1} style={{ fontSize: '15px', margin: '0 0 7px' }}>
         {tx.title}
       </h2>
-      <p
-        data-cms-node="privacybanner-p-3"
-        style={{ color: muted, fontSize: '13px', lineHeight: 1.5, margin: '0 0 12px' }}
-      >
+      <p style={{ color: muted, fontSize: '13px', lineHeight: 1.5, margin: '0 0 12px' }}>
         {tx.lead}{' '}
-        <a
-          data-cms-node="privacybanner-a-4"
-          data-cms-copy="copy:privacy:privacyLink"
-          href="/privacy"
-          style={{ color: text, textUnderlineOffset: '3px' }}
-        >
+        <a href="/privacy" style={{ color: text, textUnderlineOffset: '3px' }}>
           {tx.privacyLink}
         </a>
       </p>
 
       {showPreferences ? (
-        <div
-          data-cms-node="privacybanner-div-5"
-          style={{ borderTop: '.5px solid ' + line, marginTop: '12px', paddingTop: '12px' }}
-        >
+        <div style={{ borderTop: '.5px solid ' + line, marginTop: '12px', paddingTop: '12px' }}>
           <div
-            data-cms-node="privacybanner-div-6"
             style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}
           >
             <input
-              data-cms-node="privacybanner-input-7"
               id="functional-storage"
               type="checkbox"
               checked={functional}
               onInput={(event) => setFunctional(event.currentTarget.checked)}
             />
-            <label
-              data-cms-node="privacybanner-label-8"
-              htmlFor="functional-storage"
-              style={{ fontSize: '13px', lineHeight: 1.45 }}
-            >
+            <label htmlFor="functional-storage" style={{ fontSize: '13px', lineHeight: 1.45 }}>
               <strong style={{ display: 'block' }}>{tx.functionalTitle}</strong>
-              <span
-                data-cms-node="privacybanner-span-9"
-                data-cms-copy="copy:privacy:functionalLead"
-                style={{ color: muted }}
-              >
-                {tx.functionalLead}
-              </span>
+              <span style={{ color: muted }}>{tx.functionalLead}</span>
             </label>
           </div>
-          <p
-            data-cms-node="privacybanner-p-10"
-            data-cms-copy="copy:privacy:necessary"
-            style={{ color: muted, fontSize: '12px', lineHeight: 1.45, margin: '0 0 12px' }}
-          >
+          <p style={{ color: muted, fontSize: '12px', lineHeight: 1.45, margin: '0 0 12px' }}>
             {tx.necessary}
           </p>
           <button
-            data-cms-node="privacybanner-button-11"
-            data-cms-copy="copy:privacy:save"
             type="button"
             onClick={() => save({ functional })}
             style={{ ...buttonStyle, background: text, color: surface }}
@@ -174,13 +134,8 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
           </button>
         </div>
       ) : (
-        <div
-          data-cms-node="privacybanner-div-12"
-          style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <button
-            data-cms-node="privacybanner-button-13"
-            data-cms-copy="copy:privacy:accept"
             type="button"
             onClick={() => save({ functional: true })}
             style={{ ...buttonStyle, background: text, color: surface }}
@@ -188,8 +143,6 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
             {tx.accept}
           </button>
           <button
-            data-cms-node="privacybanner-button-14"
-            data-cms-copy="copy:privacy:reject"
             type="button"
             onClick={() => save({ functional: false })}
             style={{
@@ -202,8 +155,6 @@ export function PrivacyBanner({ lang, dark, controls }: PrivacyBannerProps): JSX
             {tx.reject}
           </button>
           <button
-            data-cms-node="privacybanner-button-15"
-            data-cms-copy="copy:privacy:preferences"
             type="button"
             onClick={openPreferences}
             style={{ ...buttonStyle, background: 'transparent', color: text, paddingInline: '4px' }}
@@ -222,14 +173,10 @@ export function PrivacyManageButton({
   dark,
   controls,
 }: PrivacyBannerProps): JSX.Element | null {
-  const _cmsPresentation = useCms().presentation
-
   if (controls.preferences === null) return null
-  const tx = mergeCmsStrings(_cmsPresentation, 'privacy', lang, privacyStrings(lang))
+  const tx = privacyStrings(lang)
   return (
     <button
-      data-cms-node="privacybanner-button-16"
-      data-cms-copy="copy:privacy:manage"
       type="button"
       aria-label={tx.manageLabel}
       disabled={controls.expanded}

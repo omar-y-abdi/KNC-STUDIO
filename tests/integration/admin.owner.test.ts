@@ -164,37 +164,16 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     if (!listed.ok) return
     expect(listed.value.some((i) => i.id === uploaded.value.id)).toBe(true)
 
-    // Delete removes the gallery placement; CMS retains its recoverable media object.
+    // Delete removes the row AND the object.
     const removed = await deleteImage(uploaded.value)
     expect(removed.ok).toBe(true)
     const after = await listGallery('salon')
     expect(after.ok).toBe(true)
     if (!after.ok) return
     expect(after.value.some((i) => i.id === uploaded.value.id)).toBe(false)
-    // The placement is gone, but the additive CMS registry retains immutable bytes for
-    // drafts and historical publications. Physical deletion of unretained objects has a
-    // separate regression test; these are intentionally different lifecycle contracts.
-    const retained = await fetch(uploaded.value.url, { method: 'GET' })
-    expect(retained.ok).toBe(true)
-    const env = readAdminStackEnv()
-    if (env === null) throw new Error('Missing local integration database')
-    const db = new Client({ connectionString: env.dbUrl })
-    await db.connect()
-    try {
-      const path = new URL(uploaded.value.url).pathname.split('/gallery/')[1]
-      const rows = await db.query(
-        'select path from public.cms_assets where bucket=$1 and path=$2',
-        ['gallery', path],
-      )
-      expect(rows.rowCount).toBe(1)
-      const placements = await db.query(
-        'select id from public.gallery_images where storage_path=$1',
-        [path],
-      )
-      expect(placements.rowCount).toBe(0)
-    } finally {
-      await db.end()
-    }
+    // The object 404s after delete.
+    const gone = await fetch(uploaded.value.url, { method: 'GET' })
+    expect(gone.ok).toBe(false)
   })
 
   it('uploads a barber profile as a valid public WebP and removes it', async () => {

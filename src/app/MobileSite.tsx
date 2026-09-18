@@ -1,5 +1,3 @@
-import { CmsRegion, CmsPageMenu } from '../cms/Regions'
-import { CmsImage } from '../cms/context'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -9,7 +7,6 @@ import { CmsImage } from '../cms/context'
 //    (absolute top-left, fades in when a section opens) — two elements, not one sliding element.
 //  - faded hero (heroExtras) has pointer-events:none while booking so it never steals taps.
 
-import type { DesktopSitePreviewPorts } from './DesktopSite'
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { AboutSection } from '../about/AboutSection'
@@ -37,13 +34,14 @@ import type { CustomerProfile } from '../mybookings/domain'
 type StyleWithVars = JSX.CSSProperties & Record<`--${string}`, string | number>
 
 export interface MobileSiteProps {
-  readonly previewPorts?: DesktopSitePreviewPorts
   readonly mode: Mode
   readonly lang: Lang
   readonly tx: AppStrings
   readonly dark: boolean
   readonly c: ShellPalette
   readonly view: View
+  readonly mobMutedColor: string
+  readonly mobBtnBgColor: string
   readonly business: BusinessSettings
   readonly chromeIconStyle: JSX.CSSProperties
   readonly themeToggle: JSX.Element
@@ -71,7 +69,7 @@ export interface MobileSiteProps {
 }
 
 export function MobileSite(props: MobileSiteProps): JSX.Element {
-  const { c, tx, dark, business } = props
+  const { c, tx, dark, mobMutedColor, mobBtnBgColor, business } = props
   const reduceMotion = useReducedMotion()
   const view = props.view
   // Booking collapses immediately. On home the same panel collapses continuously as its scroll
@@ -117,7 +115,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
-  const heroLinkColor = c.mobileHeroMuted
+  const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
   const heroOpacity = inSection
     ? 0
     : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))
@@ -127,7 +125,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    background: c.surface,
+    background: dark ? '#242427' : '#f4f3f0',
     color: c.text,
     borderRadius: compactPanel ? '0 0 28px 28px' : '0',
     height: inSection ? PANEL_COMPACT : `calc(${PANEL_FULL} - ${collapse}px)`,
@@ -137,9 +135,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         ? 'height .66s ' + EASE + ', border-radius .3s ease'
         : 'border-radius .3s ease',
     '--mob-text': c.text,
-    '--mob-muted': c.mobileMuted,
+    '--mob-muted': mobMutedColor,
     '--mob-icon': c.iconF,
-    '--mob-btn-bg': c.secondarySurface,
+    '--mob-btn-bg': mobBtnBgColor,
     '--mob-border': c.line,
   }
   // Centered hero mark (home): the full B&B lockup. Fluid width so it never overflows small screens.
@@ -178,7 +176,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     borderRadius: '50%',
     border: 'none',
     cursor: 'pointer',
-    background: c.secondarySurface,
+    background: mobBtnBgColor,
   }
   const heroExtrasStyle: JSX.CSSProperties = {
     flex: 1,
@@ -218,7 +216,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     border: '.5px solid ' + c.line,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    background: c.secondarySurface,
+    background: mobBtnBgColor,
     color: c.text,
     fontWeight: 600,
     fontSize: '14px',
@@ -243,7 +241,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
   return (
     <div
-      data-cms-node="mobilesite-div-1"
       style={{
         position: 'relative',
         // Fixed viewport scroll container. Home keeps the full hero in normal flow while its sticky
@@ -261,7 +258,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       data-testid="mobile-site-scroll"
     >
       <div
-        data-cms-node="mobilesite-div-2"
         style={{
           ...foldingPanelStyle,
           position: privacyOpen && !compactPanel ? 'relative' : 'sticky',
@@ -269,13 +265,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           zIndex: 10,
         }}
       >
-        <div data-cms-node="mobilesite-div-3" style={panelTopStyle}>
+        <div style={panelTopStyle}>
+          <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}></div>
           <div
-            data-cms-node="mobilesite-div-4"
-            style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}
-          ></div>
-          <div
-            data-cms-node="mobilesite-div-5"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -286,10 +278,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             }}
           >
             {business.phoneTel === '' || business.phoneDisplay === '' ? (
-              <span data-cms-node="mobilesite-span-6" />
+              <span />
             ) : (
               <a
-                data-cms-node="mobilesite-a-7"
                 href={`tel:${business.phoneTel}`}
                 style={{
                   display: 'flex',
@@ -300,9 +291,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   fontSize: '12px',
                 }}
               >
-                <CmsImage
-                  data-cms-node="mobilesite-img-8"
-                  data-cms-copy="copy:app:ariaCall"
+                <img
                   src="/icons/phone.svg"
                   alt={tx.ariaCall}
                   style={{
@@ -318,21 +307,15 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 {business.phoneDisplay}
               </a>
             )}
-            <div
-              data-cms-node="mobilesite-div-9"
-              style="display:flex;align-items:center;gap:6px;flex:none;"
-            >
+            <div style="display:flex;align-items:center;gap:6px;flex:none;">
               {props.langToggle}
               {props.themeToggle}
               <button
-                data-cms-node="mobilesite-button-10"
                 onClick={props.scrollMobToHero}
                 style={expandChevStyle}
                 title={tx.ariaBackHome}
               >
-                <CmsImage
-                  data-cms-node="mobilesite-img-11"
-                  data-cms-copy="copy:app:ariaBackHome"
+                <img
                   src="/icons/chevron.down.svg"
                   alt={tx.ariaBackHome}
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)' }}
@@ -342,16 +325,12 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           </div>
         </div>
 
-        <div data-cms-node="mobilesite-div-12" style={headerMarkStyle} aria-hidden="true">
+        <div style={headerMarkStyle} aria-hidden="true">
           <CornerMark height={26} />
         </div>
 
-        <div data-cms-node="mobilesite-div-13" style={heroExtrasStyle} inert={heroOpacity === 0}>
-          <CmsRegion name="home-before" lang={props.lang} mode={props.mode} />
-          <h1
-            data-cms-node="mobilesite-h1-14"
-            style={{ margin: 0, display: 'flex', justifyContent: 'center' }}
-          >
+        <div style={heroExtrasStyle} inert={heroOpacity === 0}>
+          <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
             <HomepageLogo
               logo={props.homepageLogo}
               layout="mobile"
@@ -360,8 +339,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             />
           </h1>
           <button
-            data-cms-node="mobilesite-button-15"
-            data-cms-copy="copy:app:book"
             onClick={props.openMobBooking}
             onPointerDown={preloadBookingFlow}
             onFocus={preloadBookingFlow}
@@ -370,8 +347,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             {tx.book}
           </button>
           <button
-            data-cms-node="mobilesite-button-16"
-            data-cms-copy="copy:app:myBookings"
             onClick={props.openMyBookings}
             onPointerDown={preloadMyBookingsDialog}
             onFocus={preloadMyBookingsDialog}
@@ -387,17 +362,14 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             onOpenCancel={props.openCancel}
             marginTop="16px"
           />
-          <CmsPageMenu lang={props.lang} mode={props.mode} />
           {!inSection && props.privacy !== undefined ? (
             <PrivacyManageButton lang={props.lang} dark={dark} controls={props.privacy} />
           ) : null}
-          <div data-cms-node="mobilesite-div-17" style={infoBlockStyle}>
+          <div style={infoBlockStyle}>
             <div
-              data-cms-node="mobilesite-div-18"
               style={{ display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left' }}
             >
               <span
-                data-cms-node="mobilesite-span-19"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -406,8 +378,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   color: 'var(--mob-muted)',
                 }}
               >
-                <CmsImage
-                  data-cms-node="mobilesite-img-20"
+                <img
                   src="/icons/clock.svg"
                   alt=""
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.5 }}
@@ -415,7 +386,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 {tx.hours}
               </span>
               <span
-                data-cms-node="mobilesite-span-21"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -424,8 +394,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                   color: 'var(--mob-muted)',
                 }}
               >
-                <CmsImage
-                  data-cms-node="mobilesite-img-22"
+                <img
                   src="/icons/mappin.circle.fill.svg"
                   alt=""
                   style={{ width: '13px', height: '13px', filter: 'var(--mob-icon)', opacity: 0.6 }}
@@ -435,7 +404,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             </div>
             {business.mapsHref === '' ? null : (
               <a
-                data-cms-node="mobilesite-a-23"
                 href={business.mapsHref}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -456,12 +424,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
                 }}
               >
                 {tx.findUs}
-                <CmsImage
-                  data-cms-node="mobilesite-img-24"
-                  src="/icons/mappin.circle.fill.svg"
-                  alt=""
-                  style={chromeIcon}
-                />
+                <img src="/icons/mappin.circle.fill.svg" alt="" style={chromeIcon} />
               </a>
             )}
           </div>
@@ -470,14 +433,8 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
       {/* Keep panel + spacer at one viewport tall. At max collapse About begins exactly below the
           compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
-      {!inSection ? (
-        <div
-          data-cms-node="mobilesite-div-25"
-          aria-hidden="true"
-          style={{ height: collapse + 'px' }}
-        />
-      ) : null}
-      <div data-cms-node="mobilesite-div-26" style={m3BodyStyle}>
+      {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
+      <div style={m3BodyStyle}>
         {inSection ? (
           <LazySurface
             loadingLabel={tx.lazyBookingLoading}
@@ -486,13 +443,6 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             minHeight="280px"
           >
             <LazyBookingFlow
-              {...(props.previewPorts === undefined
-                ? {}
-                : {
-                    port: props.previewPorts.booking,
-                    barbersPort: props.previewPorts.barbers,
-                    servicesPort: props.previewPorts.services,
-                  })}
               mode={props.mode}
               defaultLang={props.lang}
               onMyBookings={props.openMyBookings}
@@ -505,31 +455,17 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
             />
           </LazySurface>
         ) : (
-          <>
-            <CmsRegion name="home-after" lang={props.lang} mode={props.mode} />
-            <CmsRegion name="about-before" lang={props.lang} mode={props.mode} />
-            <AboutSection
-              {...(props.previewPorts === undefined
-                ? {}
-                : {
-                    port: props.previewPorts.reviews,
-                    barbersPort: props.previewPorts.barbers,
-                    aboutContentPort: props.previewPorts.aboutContent,
-                    galleryPort: props.previewPorts.gallery,
-                    challengeEnabled: false,
-                  })}
-              mode={props.mode}
-              lang={props.lang}
-              fontScale={props.aboutScale}
-              {...(props.onManagePrivacy === undefined
-                ? {}
-                : { onManagePrivacy: props.onManagePrivacy })}
-              {...(props.initialContact === undefined
-                ? {}
-                : { customerPhone: props.initialContact.phone })}
-            />
-            <CmsRegion name="about-after" lang={props.lang} mode={props.mode} />
-          </>
+          <AboutSection
+            mode={props.mode}
+            lang={props.lang}
+            fontScale={props.aboutScale}
+            {...(props.onManagePrivacy === undefined
+              ? {}
+              : { onManagePrivacy: props.onManagePrivacy })}
+            {...(props.initialContact === undefined
+              ? {}
+              : { customerPhone: props.initialContact.phone })}
+          />
         )}
       </div>
     </div>

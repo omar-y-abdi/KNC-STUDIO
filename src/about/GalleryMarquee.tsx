@@ -1,5 +1,3 @@
-import { cmsNodeId } from '../cms/nodeIdentity'
-import { CmsImage } from '../cms/context'
 // GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
 //
 // Behaviour (per spec):
@@ -53,9 +51,6 @@ function photoWrapStyle(c: Palette): JSX.CSSProperties {
 }
 
 interface MarqueeRowProps {
-  /** Stable semantic identity for this gallery and row. */
-  readonly instanceKey: string
-  readonly row: 0 | 1
   /** Real Storage-backed photos for this row. */
   readonly photos: readonly GalleryPhoto[]
   readonly initialDir: 1 | -1
@@ -327,7 +322,6 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 
   return (
     <div
-      data-cms-node={cmsNodeId('gallerymarquee-div-1', props.instanceKey, props.row)}
       ref={rowRef}
       style={rowStyle}
       data-testid="marquee-row"
@@ -339,7 +333,6 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       onBlur={onRowBlur}
     >
       <div
-        data-cms-node={cmsNodeId('gallerymarquee-div-2', props.instanceKey, props.row)}
         ref={trackRef}
         style={trackStyle}
         data-testid="marquee-track"
@@ -350,12 +343,11 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           const photo = props.photos[logicalIndex]
           if (photo === undefined) return null
           const logicalKey = photo.id
-          const cloneIndex = itemCount > 0 ? Math.floor(j / itemCount) : 0
           const alt = photo.alt.trim() || props.alt
-          // The same logical photo appears in loop clones. Keep its CMS identity stable across
-          // reordering by combining gallery, row, entity id and the physical clone index.
-          const key = `${logicalKey}:${cloneIndex}`
-          const accessible = cloneIndex === 0
+          // The same logical photo appears in loop clones. Selection belongs to the physical tile
+          // instance under the pointer, not every clone with the same photo id.
+          const key = `${logicalKey}:${j}`
+          const accessible = j < itemCount
           const selected = props.selectedKey === key
           const tileStyle: JSX.CSSProperties = {
             flex: 'none',
@@ -373,14 +365,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           }
           return (
             <div
-              data-cms-node={cmsNodeId(
-                'gallerymarquee-div-3',
-                props.instanceKey,
-                props.row,
-                logicalKey,
-                cloneIndex,
-              )}
-              key={key}
+              key={String(j)}
               data-tile-key={key}
               style={tileStyle}
               role={accessible ? 'button' : undefined}
@@ -390,24 +375,8 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
               aria-label={accessible ? alt : undefined}
               onKeyDown={accessible ? onTileKey(key) : undefined}
             >
-              <div
-                data-cms-node={cmsNodeId(
-                  'gallerymarquee-div-4',
-                  props.instanceKey,
-                  props.row,
-                  logicalKey,
-                  cloneIndex,
-                )}
-                style={photoWrapStyle(props.c)}
-              >
-                <CmsImage
-                  data-cms-node={cmsNodeId(
-                    'gallerymarquee-img-5',
-                    props.instanceKey,
-                    props.row,
-                    logicalKey,
-                    cloneIndex,
-                  )}
+              <div style={photoWrapStyle(props.c)}>
+                <img
                   src={photo.url}
                   alt={alt}
                   draggable={false}
@@ -425,8 +394,6 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
 }
 
 export interface GalleryMarqueeProps {
-  /** Stable semantic identity for this gallery placement (for example salon or cuts). */
-  readonly instanceKey: string
   /** Real Storage-backed photos; an empty list renders no interactive rows. */
   readonly photos: readonly GalleryPhoto[]
   readonly alt: string
@@ -446,13 +413,8 @@ export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
   const photosB = [...photos].reverse()
 
   return (
-    <div
-      data-cms-node={cmsNodeId('gallerymarquee-div-6', props.instanceKey)}
-      style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
-    >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <MarqueeRow
-        instanceKey={props.instanceKey}
-        row={0}
         photos={photos}
         initialDir={1}
         c={props.c}
@@ -462,8 +424,6 @@ export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
         onSelect={select(0)}
       />
       <MarqueeRow
-        instanceKey={props.instanceKey}
-        row={1}
         photos={photosB}
         initialDir={-1}
         c={props.c}

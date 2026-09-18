@@ -1,5 +1,3 @@
-import { cmsNodeId } from '../cms/nodeIdentity'
-import { useCms, mergeCmsStrings, mergeCmsPalette } from '../cms/context'
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { buildBookingStyles, palette } from '../booking/bookingStyles'
@@ -33,15 +31,8 @@ export interface CustomerEmailLinkProps {
 }
 
 export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | null {
-  const _cmsPresentation = useCms().presentation
-
-  const t = mergeCmsStrings(
-    _cmsPresentation,
-    'customerEmailLink',
-    props.lang,
-    customerEmailLinkStrings(props.lang),
-  )
-  const c = mergeCmsPalette(_cmsPresentation, palette(props.dark), props.dark ? 'dark' : 'light')
+  const t = customerEmailLinkStrings(props.lang)
+  const c = palette(props.dark)
   const s = buildBookingStyles(c, props.dark, false)
   const email = props.profile?.email ?? ''
   const verified = parseEmail(email).ok
@@ -163,16 +154,12 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
   const result = (
     <>
       {state.status !== null ? (
-        <p data-cms-node="customeremaillink-p-1" role="status" style={noteStyle}>
+        <p role="status" style={noteStyle}>
           {messages[state.status]}
         </p>
       ) : null}
       {state.error !== null ? (
-        <p
-          data-cms-node="customeremaillink-p-2"
-          role="alert"
-          style={{ ...s.submitErrorStyle, margin: 0 }}
-        >
+        <p role="alert" style={{ ...s.submitErrorStyle, margin: 0 }}>
           {errors[state.error]}
         </p>
       ) : null}
@@ -182,46 +169,22 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
   if (props.code !== undefined) {
     return (
       <section
-        data-cms-node="customeremaillink-section-3"
-        data-cms-copy="copy:myBookings:confirmTitle"
         aria-label={t.confirmTitle}
         style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;"
       >
-        <h3
-          data-cms-node="customeremaillink-h3-4"
-          data-cms-copy="copy:myBookings:confirmTitle"
-          style="margin:0;font-size:15px;"
-        >
-          {t.confirmTitle}
-        </h3>
+        <h3 style="margin:0;font-size:15px;">{t.confirmTitle}</h3>
         {props.code === null ? (
-          <p
-            data-cms-node="customeremaillink-p-5"
-            data-cms-copy="copy:myBookings:invalid"
-            role="alert"
-            style={noteStyle}
-          >
+          <p role="alert" style={noteStyle}>
             {t.invalid}
           </p>
         ) : !verified ? (
-          <p
-            data-cms-node="customeremaillink-p-6"
-            data-cms-copy="copy:myBookings:accessDenied"
-            role="status"
-            style={noteStyle}
-          >
+          <p role="status" style={noteStyle}>
             {t.accessDenied}
           </p>
         ) : (
           <>
-            <p
-              data-cms-node="customeremaillink-p-7"
-              data-cms-copy="copy:myBookings:explanation"
-              style={noteStyle}
-            >
-              {t.explanation}
-            </p>
-            <p data-cms-node="customeremaillink-p-8" style={noteStyle}>
+            <p style={noteStyle}>{t.explanation}</p>
+            <p style={noteStyle}>
               {t.session} <strong>{email}</strong>
             </p>
             {state.status === null &&
@@ -229,7 +192,6 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
             state.error !== 'invalid' &&
             state.error !== 'stale' ? (
               <button
-                data-cms-node="customeremaillink-button-9"
                 type="button"
                 class={FOCUS_CLS}
                 style={actionStyle}
@@ -250,13 +212,8 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
     ...new Set([email, ...(props.profile?.emails ?? [])].filter((value) => value.trim() !== '')),
   ]
   return (
-    <section
-      data-cms-node="customeremaillink-section-10"
-      style={{ borderTop: '.5px solid ' + c.line, paddingTop: '12px' }}
-    >
+    <section style={{ borderTop: '.5px solid ' + c.line, paddingTop: '12px' }}>
       <button
-        data-cms-node="customeremaillink-button-11"
-        data-cms-copy="copy:myBookings:manage"
         type="button"
         class={FOCUS_CLS}
         aria-expanded={state.expanded}
@@ -281,37 +238,16 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
           noValidate
           style="display:flex;flex-direction:column;gap:12px;margin-top:10px;"
         >
-          <p
-            data-cms-node="customeremaillink-p-12"
-            data-cms-copy="copy:myBookings:addresses"
-            style={noteStyle}
-          >
-            {t.addresses}
-          </p>
-          <ul
-            data-cms-node="customeremaillink-ul-13"
-            style="margin:0;padding-left:18px;font-size:13px;overflow-wrap:anywhere;"
-          >
+          <p style={noteStyle}>{t.addresses}</p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;overflow-wrap:anywhere;">
             {aliases.map((address) => (
-              <li data-cms-node={cmsNodeId('customeremaillink-li-14', address)} key={address}>
-                {address}
-              </li>
+              <li key={address}>{address}</li>
             ))}
           </ul>
-          <p
-            data-cms-node="customeremaillink-p-15"
-            data-cms-copy="copy:myBookings:explanation"
-            style={noteStyle}
-          >
-            {t.explanation}
-          </p>
-          <label
-            data-cms-node="customeremaillink-label-16"
-            style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;"
-          >
+          <p style={noteStyle}>{t.explanation}</p>
+          <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;">
             {t.email}
             <input
-              data-cms-node="customeremaillink-input-17"
               type="email"
               inputMode="email"
               autoComplete="email"
@@ -328,7 +264,6 @@ export function CustomerEmailLink(props: CustomerEmailLinkProps): JSX.Element | 
           </label>
           {state.status === null ? (
             <button
-              data-cms-node="customeremaillink-button-18"
               type="submit"
               class={FOCUS_CLS}
               style={actionStyle}

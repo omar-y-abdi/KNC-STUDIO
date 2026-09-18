@@ -1,5 +1,3 @@
-import { cmsNodeId } from '../cms/nodeIdentity'
-import { useCms, mergeCmsStrings, mergeCmsPalette, CmsImage } from '../cms/context'
 // The 4-step booking flow (barber → date → service → time), ported from the original mock; the
 // details + confirmation modals live in their own components. Inline styles/literals match the
 // mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
@@ -72,8 +70,6 @@ export interface BookingFlowProps {
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
-  const _cmsPresentation = useCms().presentation
-
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
   // Port result, per-FIELD validation errors, and the generic SYSTEM/submit error all live
@@ -141,7 +137,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
 
   const lang: Lang = state.lang ?? props.defaultLang ?? 'sv'
   const business = props.business ?? DEFAULT_BUSINESS
-  const defaultText = mergeCmsStrings(_cmsPresentation, 'booking', lang, bookingStrings(lang))
+  const defaultText = bookingStrings(lang)
   const t: BookingStrings = {
     ...defaultText,
     policy: defaultText.policy
@@ -208,7 +204,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     }
   }, [port, S.barberId, S.dateIso, serviceDur, serviceId])
 
-  const c = mergeCmsPalette(_cmsPresentation, palette(dark), dark ? 'dark' : 'light')
+  const c = palette(dark)
   const navBtn = makeNavBtn(c)
 
   const barbers = roster.map((entry) => {
@@ -549,94 +545,45 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const notTimesReady = !S.service
 
   return (
-    <div data-cms-node="bookingflow-div-1" style={s.rootStyle}>
-      <div data-cms-node="bookingflow-div-2" style="padding: 18px 22px 26px 22px">
-        <div
-          data-cms-node="bookingflow-div-3"
-          data-testid="booking-step-barber"
-          data-booking-step="barber"
-        >
-          <div
-            data-cms-node="bookingflow-div-4"
-            style="display:flex;align-items:center;gap:9px;margin-bottom:13px;"
-          >
-            <span data-cms-node="bookingflow-span-5" style={s.badgeStyle}>
-              1
-            </span>
-            <span
-              data-cms-node="bookingflow-span-6"
-              data-cms-copy="copy:booking:chooseBarber"
-              style="font-family:'Inter Variable';font-weight:600;font-size:18px;"
-            >
+    <div style={s.rootStyle}>
+      <div style="padding: 18px 22px 26px 22px">
+        <div data-testid="booking-step-barber" data-booking-step="barber">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+            <span style={s.badgeStyle}>1</span>
+            <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
               {t.chooseBarber}
             </span>
           </div>
           <div
-            data-cms-node="bookingflow-div-7"
             data-testid="booking-barber-list"
             style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;"
           >
-            {rosterLoading ? (
-              <div
-                data-cms-node="bookingflow-div-8"
-                data-cms-copy="copy:booking:loadingBarbers"
-                style={s.timePlaceholderStyle}
-              >
-                {t.loadingBarbers}
-              </div>
-            ) : null}
+            {rosterLoading ? <div style={s.timePlaceholderStyle}>{t.loadingBarbers}</div> : null}
             {!rosterLoading && barbers.length === 0 ? (
-              <div
-                data-cms-node="bookingflow-div-9"
-                data-cms-copy="copy:booking:noBarbers"
-                data-testid="booking-barber-empty"
-                style={s.timePlaceholderStyle}
-              >
+              <div data-testid="booking-barber-empty" style={s.timePlaceholderStyle}>
                 {t.noBarbers}
               </div>
             ) : null}
             {!rosterLoading
               ? barbers.map((b) => (
                   <button
-                    data-cms-node={cmsNodeId('bookingflow-button-10', b.id)}
                     key={b.id}
                     data-testid="booking-barber-option"
                     aria-pressed={b.selected}
                     onClick={b.onSelect}
                     style={b.cardStyle}
                   >
-                    <span
-                      data-cms-node={cmsNodeId('bookingflow-span-11', b.id)}
-                      style={b.avatarStyle}
-                    >
-                      {b.initial}
-                    </span>
-                    <span
-                      data-cms-node={cmsNodeId('bookingflow-span-12', b.id)}
-                      style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;"
-                    >
-                      <span
-                        data-cms-node={cmsNodeId('bookingflow-span-13', b.id)}
-                        data-cms-copy={`barber:${b.id}:name`}
-                        style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-                      >
+                    <span style={b.avatarStyle}>{b.initial}</span>
+                    <span style="display:flex;flex-direction:column;gap:1px;text-align:left;min-width:0;flex:1;">
+                      <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                         {b.name}
                       </span>
-                      <span
-                        data-cms-node={cmsNodeId('bookingflow-span-14', b.id)}
-                        data-cms-copy={`barber:${b.id}:ig`}
-                        style="font-size:11.5px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-                      >
+                      <span style="font-size:11.5px;opacity:.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                         @{b.ig}
                       </span>
                     </span>
                     {b.selected ? (
-                      <CmsImage
-                        data-cms-node={cmsNodeId('bookingflow-img-15', b.id)}
-                        src="/icons/checkmark.circle.fill.svg"
-                        alt=""
-                        style={s.checkIconStyle}
-                      />
+                      <img src="/icons/checkmark.circle.fill.svg" alt="" style={s.checkIconStyle} />
                     ) : null}
                   </button>
                 ))
@@ -645,37 +592,17 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         </div>
 
         {showCalendar ? (
-          <div
-            data-cms-node="bookingflow-div-16"
-            style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:26px;animation:kncFade .32s cubic-bezier(.32,.72,0,1) both;"
-          >
-            <div
-              data-cms-node="bookingflow-div-17"
-              style="flex:1 1 300px;max-width:344px;min-width:0;"
-            >
-              <div
-                data-cms-node="bookingflow-div-18"
-                style="display:flex;align-items:center;gap:9px;margin-bottom:13px;"
-              >
-                <span data-cms-node="bookingflow-span-19" style={s.badgeStyle}>
-                  2
-                </span>
-                <span
-                  data-cms-node="bookingflow-span-20"
-                  data-cms-copy="copy:booking:chooseDate"
-                  style="font-family:'Inter Variable';font-weight:600;font-size:18px;"
-                >
+          <div style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:26px;animation:kncFade .32s cubic-bezier(.32,.72,0,1) both;">
+            <div style="flex:1 1 300px;max-width:344px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                <span style={s.badgeStyle}>2</span>
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseDate}
                 </span>
               </div>
-              <div data-cms-node="bookingflow-div-21" style={s.panelStyle}>
-                <div
-                  data-cms-node="bookingflow-div-22"
-                  style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;"
-                >
+              <div style={s.panelStyle}>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                   <button
-                    data-cms-node="bookingflow-button-23"
-                    data-cms-copy="copy:booking:previousMonth"
                     type="button"
                     onClick={
                       canPrev
@@ -686,22 +613,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     aria-label={t.previousMonth}
                     style={navBtn(canPrev)}
                   >
-                    <CmsImage
-                      data-cms-node="bookingflow-img-24"
-                      src="/icons/chevron.left.svg"
-                      alt=""
-                      style={s.navIconStyle}
-                    />
+                    <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
                   </button>
-                  <span
-                    data-cms-node="bookingflow-span-25"
-                    style="font-family:'Inter Variable';font-weight:600;font-size:15px;"
-                  >
+                  <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
                     {monthLabelText}
                   </span>
                   <button
-                    data-cms-node="bookingflow-button-26"
-                    data-cms-copy="copy:booking:nextMonth"
                     type="button"
                     onClick={
                       canNext
@@ -712,21 +629,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     aria-label={t.nextMonth}
                     style={navBtn(canNext)}
                   >
-                    <CmsImage
-                      data-cms-node="bookingflow-img-27"
-                      src="/icons/chevron.right.svg"
-                      alt=""
-                      style={s.navIconStyle}
-                    />
+                    <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
                   </button>
                 </div>
-                <div
-                  data-cms-node="bookingflow-div-28"
-                  style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;"
-                >
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
                   {headerLabels(lang).map((hh, i) => (
                     <span
-                      data-cms-node={cmsNodeId('bookingflow-span-29', i)}
                       key={i}
                       style="text-align:center;font-size:10.5px;font-weight:600;opacity:.45;letter-spacing:.2px;"
                     >
@@ -735,22 +643,12 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                   ))}
                 </div>
                 {calendarWeeks.map((week, wi) => (
-                  <div
-                    data-cms-node={cmsNodeId('bookingflow-div-30', wi)}
-                    key={wi}
-                    style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;"
-                  >
+                  <div key={wi} style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
                     {week.map((cell, ci) =>
                       cell.day === '' ? (
-                        <span
-                          data-cms-node={cmsNodeId('bookingflow-span-31', wi, ci)}
-                          key={ci}
-                          aria-hidden="true"
-                          style={cell.cellStyle}
-                        ></span>
+                        <span key={ci} aria-hidden="true" style={cell.cellStyle}></span>
                       ) : (
                         <button
-                          data-cms-node={cmsNodeId('bookingflow-button-32', wi, ci)}
                           key={ci}
                           type="button"
                           onClick={cell.onClick}
@@ -765,125 +663,62 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                     )}
                   </div>
                 ))}
-                <div
-                  data-cms-node="bookingflow-div-33"
-                  style="display:flex;gap:14px;margin-top:11px;font-size:11px;opacity:.5;"
-                >
-                  <span
-                    data-cms-node="bookingflow-span-34"
-                    style="display:flex;align-items:center;gap:5px;"
-                  >
-                    <span data-cms-node="bookingflow-span-35" style={s.legendChosenDot}></span>
+                <div style="display:flex;gap:14px;margin-top:11px;font-size:11px;opacity:.5;">
+                  <span style="display:flex;align-items:center;gap:5px;">
+                    <span style={s.legendChosenDot}></span>
                     {t.legendChosen}
                   </span>
-                  <span
-                    data-cms-node="bookingflow-span-36"
-                    style="display:flex;align-items:center;gap:5px;"
-                  >
-                    <span data-cms-node="bookingflow-span-37" style={s.legendClosedDot}></span>
+                  <span style="display:flex;align-items:center;gap:5px;">
+                    <span style={s.legendClosedDot}></span>
                     {t.legendClosed}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div data-cms-node="bookingflow-div-38" style="flex:1 1 250px;min-width:0;">
-              <div
-                data-cms-node="bookingflow-div-39"
-                style="display:flex;align-items:center;gap:9px;margin-bottom:13px;"
-              >
-                <span data-cms-node="bookingflow-span-40" style={s.badgeStyle}>
-                  3
-                </span>
-                <span
-                  data-cms-node="bookingflow-span-41"
-                  data-cms-copy="copy:booking:chooseService"
-                  style="font-family:'Inter Variable';font-weight:600;font-size:18px;"
-                >
+            <div style="flex:1 1 250px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                <span style={s.badgeStyle}>3</span>
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseService}
                 </span>
               </div>
               {servicesReady ? (
-                <div
-                  data-cms-node="bookingflow-div-42"
-                  style="display:flex;flex-direction:column;gap:16px;"
-                >
+                <div style="display:flex;flex-direction:column;gap:16px;">
                   {serviceGroups.map((g, gi) => (
-                    <div data-cms-node={cmsNodeId('bookingflow-div-43', gi)} key={gi}>
+                    <div key={gi}>
                       {g.title !== '' ? (
-                        <div
-                          data-cms-node={cmsNodeId('bookingflow-div-44', gi)}
-                          style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;"
-                        >
-                          <span
-                            data-cms-node={cmsNodeId('bookingflow-span-45', gi)}
-                            style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;"
-                          >
+                        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;">
+                          <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;">
                             {g.title}
                           </span>
-                          <span
-                            data-cms-node={cmsNodeId('bookingflow-span-46', gi)}
-                            style="font-size:11px;opacity:.4;"
-                          >
-                            {g.note}
-                          </span>
+                          <span style="font-size:11px;opacity:.4;">{g.note}</span>
                         </div>
                       ) : null}
-                      <div
-                        data-cms-node={cmsNodeId('bookingflow-div-47', gi)}
-                        style={s.panelStyleFlush}
-                      >
+                      <div style={s.panelStyleFlush}>
                         {g.items.map((it, ii) => (
                           <button
-                            data-cms-node={cmsNodeId('bookingflow-button-48', gi, ii)}
                             key={ii}
                             data-testid="booking-service-option"
                             onClick={it.onClick}
                             style={it.rowStyle}
                             class={pseudoClass('hover', it.rowHover)}
                           >
-                            <span
-                              data-cms-node={cmsNodeId('bookingflow-span-49', gi, ii)}
-                              style="display:flex;flex-direction:column;gap:2px;text-align:left;"
-                            >
-                              <span
-                                data-cms-node={cmsNodeId('bookingflow-span-50', gi, ii)}
-                                style="font-weight:500;font-size:15px;"
-                              >
-                                {it.name}
-                              </span>
-                              <span
-                                data-cms-node={cmsNodeId('bookingflow-span-51', gi, ii)}
-                                style="font-size:12px;opacity:.5;"
-                              >
-                                {it.dur}
-                              </span>
+                            <span style="display:flex;flex-direction:column;gap:2px;text-align:left;">
+                              <span style="font-weight:500;font-size:15px;">{it.name}</span>
+                              <span style="font-size:12px;opacity:.5;">{it.dur}</span>
                             </span>
-                            <span
-                              data-cms-node={cmsNodeId('bookingflow-span-52', gi, ii)}
-                              style="display:flex;align-items:center;gap:9px;"
-                            >
-                              <span
-                                data-cms-node={cmsNodeId('bookingflow-span-53', gi, ii)}
-                                style="font-weight:600;font-size:15px;"
-                              >
-                                {it.priceLabel}
-                              </span>
+                            <span style="display:flex;align-items:center;gap:9px;">
+                              <span style="font-weight:600;font-size:15px;">{it.priceLabel}</span>
                               {it.selected ? (
-                                <CmsImage
-                                  data-cms-node={cmsNodeId('bookingflow-img-54', gi, ii)}
+                                <img
                                   src="/icons/checkmark.circle.fill.svg"
                                   alt=""
                                   style={s.checkIconStyle}
                                 />
                               ) : null}
                               {it.notSelected ? (
-                                <CmsImage
-                                  data-cms-node={cmsNodeId('bookingflow-img-55', gi, ii)}
-                                  src="/icons/chevron.right.svg"
-                                  alt=""
-                                  style={s.chevronStyle}
-                                />
+                                <img src="/icons/chevron.right.svg" alt="" style={s.chevronStyle} />
                               ) : null}
                             </span>
                           </button>
@@ -894,78 +729,32 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                 </div>
               ) : null}
               {servicesReady && servicesLoading ? (
-                <div
-                  data-cms-node="bookingflow-div-56"
-                  data-cms-copy="copy:booking:loadingServices"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.loadingServices}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.loadingServices}</div>
               ) : null}
               {servicesReady && !servicesLoading && barberServices.length === 0 ? (
-                <div
-                  data-cms-node="bookingflow-div-57"
-                  data-cms-copy="copy:booking:noServices"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.noServices}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.noServices}</div>
               ) : null}
               {notServicesReady ? (
-                <div
-                  data-cms-node="bookingflow-div-58"
-                  data-cms-copy="copy:booking:pickDayForService"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.pickDayForService}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div>
               ) : null}
             </div>
 
-            <div data-cms-node="bookingflow-div-59" style="flex:1 1 220px;min-width:0;">
-              <div
-                data-cms-node="bookingflow-div-60"
-                style="display:flex;align-items:center;gap:9px;margin-bottom:13px;"
-              >
-                <span data-cms-node="bookingflow-span-61" style={s.badgeStyle}>
-                  4
-                </span>
-                <span
-                  data-cms-node="bookingflow-span-62"
-                  data-cms-copy="copy:booking:chooseTime"
-                  style="font-family:'Inter Variable';font-weight:600;font-size:18px;"
-                >
+            <div style="flex:1 1 220px;min-width:0;">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                <span style={s.badgeStyle}>4</span>
+                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
                   {t.chooseTime}
                 </span>
               </div>
               {timesReady && slotsLoading ? (
-                <div
-                  data-cms-node="bookingflow-div-63"
-                  data-cms-copy="copy:booking:loadingTimes"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.loadingTimes}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
               ) : null}
               {timesReady && !slotsLoading && availableTimes.length > 0 ? (
-                <div data-cms-node="bookingflow-div-64">
-                  <div
-                    data-cms-node="bookingflow-div-65"
-                    style="font-size:13px;opacity:.5;margin:0 0 13px 0;"
-                  >
-                    {timeSubLabel}
-                  </div>
-                  <div
-                    data-cms-node="bookingflow-div-66"
-                    style="display:flex;flex-wrap:wrap;gap:8px;"
-                  >
+                <div>
+                  <div style="font-size:13px;opacity:.5;margin:0 0 13px 0;">{timeSubLabel}</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;">
                     {timeSlots.map((slot, si) => (
-                      <button
-                        data-cms-node={cmsNodeId('bookingflow-button-67', si)}
-                        key={si}
-                        onClick={slot.onClick}
-                        style={slot.chipStyle}
-                      >
+                      <button key={si} onClick={slot.onClick} style={slot.chipStyle}>
                         {slot.label}
                       </button>
                     ))}
@@ -973,22 +762,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                 </div>
               ) : null}
               {timesReady && !slotsLoading && availableTimes.length === 0 ? (
-                <div
-                  data-cms-node="bookingflow-div-68"
-                  data-cms-copy="copy:booking:noSlots"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.noSlots}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.noSlots}</div>
               ) : null}
               {notTimesReady ? (
-                <div
-                  data-cms-node="bookingflow-div-69"
-                  data-cms-copy="copy:booking:pickServiceForTime"
-                  style={s.timePlaceholderStyle}
-                >
-                  {t.pickServiceForTime}
-                </div>
+                <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div>
               ) : null}
             </div>
           </div>
@@ -999,9 +776,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <DetailsDialog
           t={t}
           s={s}
-          closeLabel={
-            mergeCmsStrings(_cmsPresentation, 'myBookings', lang, myBookingsStrings(lang)).ariaClose
-          }
+          closeLabel={myBookingsStrings(lang).ariaClose}
           sumBarber={sumBarber}
           sumWhen={sumWhen}
           sumService={sumService}
@@ -1035,18 +810,14 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         <ConfirmationDialog
           t={t}
           s={s}
-          closeLabel={
-            mergeCmsStrings(_cmsPresentation, 'myBookings', lang, myBookingsStrings(lang)).ariaClose
-          }
+          closeLabel={myBookingsStrings(lang).ariaClose}
           confirmSentLine={confirmSentLine}
           {...(result?.ok && result.customerAccess
             ? {
                 customerAccessNote:
                   result.customerAccess === 'ready'
-                    ? mergeCmsStrings(_cmsPresentation, 'myBookings', lang, myBookingsStrings(lang))
-                        .deviceReady
-                    : mergeCmsStrings(_cmsPresentation, 'myBookings', lang, myBookingsStrings(lang))
-                        .deviceUnavailable,
+                    ? myBookingsStrings(lang).deviceReady
+                    : myBookingsStrings(lang).deviceUnavailable,
               }
             : {})}
           sumBarber={sumBarber}
@@ -1067,9 +838,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
                 }
               : undefined
           }
-          myBookingsLabel={
-            mergeCmsStrings(_cmsPresentation, 'app', lang, appStrings(lang)).myBookings
-          }
+          myBookingsLabel={appStrings(lang).myBookings}
           onBackdropClick={onConfirmBackdrop}
         />
       ) : null}

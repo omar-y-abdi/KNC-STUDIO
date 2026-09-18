@@ -1573,7 +1573,7 @@ async function verifyCustomerBrowser() {
           }
       } finally {
         try {
-          await bounded(browser.close(), `customer ${engine.name()} browser.close`, 30_000)
+          await bounded(browser.close(), `customer ${engine.name()} browser.close`)
         } catch (error) {
           retainFailure(error)
         }
