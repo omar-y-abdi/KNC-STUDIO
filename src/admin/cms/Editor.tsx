@@ -248,6 +248,18 @@ export function CmsEditor(props: Props): JSX.Element {
     else editor.stopCommand('preview')
   }, [props.locked])
 
+  const chooseImage = (): void => {
+    const editor = instance.current
+    const component = editor?.getSelected()
+    if (!editor || !component || String(component.get('tagName') ?? '').toLowerCase() !== 'img')
+      return props.onError('Välj en bild först.')
+    editor.AssetManager.open({
+      select(asset) {
+        component.addAttributes({ src: asset.getSrc() })
+        editor.AssetManager.close()
+      },
+    })
+  }
   const mutateSelected = (fn: (component: Component) => void): void => {
     const component = instance.current?.getSelected()
     if (!component) return props.onError('Välj ett element först.')
@@ -341,13 +353,16 @@ export function CmsEditor(props: Props): JSX.Element {
                 </label>
               )}
               {tag === 'img' && (
-                <label>
-                  Alternativtext
-                  <input
-                    value={String(attributes['alt'] ?? '')}
-                    onInput={(event) => selected.addAttributes({ alt: event.currentTarget.value })}
-                  />
-                </label>
+                <>
+                  <label>
+                    Alternativtext
+                    <input
+                      value={String(attributes['alt'] ?? '')}
+                      onInput={(event) => selected.addAttributes({ alt: event.currentTarget.value })}
+                    />
+                  </label>
+                  <button type="button" onClick={chooseImage}>Byt bild från biblioteket</button>
+                </>
               )}
               <h3>Finjustera</h3>
               <div class="cms-nudge-grid">
