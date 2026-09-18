@@ -85,6 +85,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
+      if (seeded) next.change(document)
       if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
         next.change(ensureCorePages(backup.document))
         setError(`Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`)
