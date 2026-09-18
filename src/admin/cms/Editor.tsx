@@ -20,6 +20,7 @@ interface Props {
   lang: CmsLang
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
+  compare: boolean
   zoom: number
   locked: boolean
   assets: CmsAsset[]
@@ -226,6 +227,16 @@ export function CmsEditor(props: Props): JSX.Element {
   return (
     <>
       <div class="cms-editor-canvas" ref={host} />
+      {props.compare && (
+        <div class="cms-compare-pane">
+          <div class="cms-compare-label">Jämför · {props.device === 'Desktop' ? '390' : '1440'}</div>
+          <iframe
+            title="Jämförelsevy"
+            sandbox=""
+            srcDoc={`<!doctype html><html><head><style>html,body{margin:0}${props.page.content[props.lang].css[props.mode]}</style></head><body>${props.page.content[props.lang].html}</body></html>`}
+          />
+        </div>
+      )}
       <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper">
         <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
