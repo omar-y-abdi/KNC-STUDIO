@@ -251,12 +251,25 @@ function replaceMetaContent(html: string, id: string, value: string): string {
 }
 
 
+function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
+  return Object.entries(presentation.fonts ?? {})
+    .map(([id, font]) => {
+      const url = `${storageOrigin.replace(/\/$/, '')}/storage/v1/object/public/${font.ref.bucket}/${font.ref.path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`
+      return `@font-face{font-family:"CMSFont-${id}";src:url("${url}") format("woff2");font-display:swap}`
+    })
+    .join('\n')
+}
+
 export function renderCmsPage(
   html: string,
   page: CmsPage,
   lang: CmsLang,
   mode: CmsMode,
   canonicalUrl: string,
+  fontCss = '',
 ): string {
   const variant = page.content[lang]
   let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
@@ -272,7 +285,8 @@ export function renderCmsPage(
   )
   rendered = rendered.replace(
     '</head>',
-    `<style id="cms-page-light" media="(prefers-color-scheme: light)">${variant.css.light}</style>` +
+    `<style id="cms-fonts">${fontCss}</style>` +
+      `<style id="cms-page-light" media="(prefers-color-scheme: light)">${variant.css.light}</style>` +
       `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${variant.css.dark}</style></head>`,
   )
   rendered = replaceElementContent(rendered, 'root', variant.html)
@@ -517,7 +531,14 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       headers.delete('ETag')
       headers.delete('Last-Modified')
       headers.set('Cache-Control', 'no-store')
-      let body = renderCmsPage(await index.text(), cmsPage, lang, mode, canonicalUrl)
+      let body = renderCmsPage(
+        await index.text(),
+        cmsPage,
+        lang,
+        mode,
+        canonicalUrl,
+        cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
+      )
       if (cmsPage.path === '/privacy' || cmsPage.path === '/terms') {
         const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
         body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
