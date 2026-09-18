@@ -4,7 +4,7 @@ import { inspectWoff2 } from '../_shared/cmsFont.ts'
 export class CmsMediaUnavailable extends Error {}
 type DecodedImage = { bytes: Uint8Array; width: number; height: number }
 type Decode = (input: Uint8Array, profile: boolean) => Promise<DecodedImage>
-const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,version'
+const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,trashed_at,version'
 
 export async function handleCmsUpload(
   form: FormData,
