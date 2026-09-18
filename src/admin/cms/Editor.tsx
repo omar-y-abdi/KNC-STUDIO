@@ -31,6 +31,16 @@ interface Props {
   onError: (message: string) => void
 }
 
+function fontFamilyOptions(assets: CmsAsset[]): Array<{ id: string; label: string }> {
+  return [
+    { id: "'Inter Variable',Inter,system-ui,sans-serif", label: 'Inter' },
+    { id: "'Playfair Display',Georgia,serif", label: 'Playfair Display' },
+    ...assets
+      .filter((asset) => asset.mime === 'font/woff2' && !asset.archived)
+      .map((asset) => ({ id: `CMSFont-${asset.id}`, label: asset.name })),
+  ]
+}
+
 const blocks = [
   [
     'section',
@@ -97,7 +107,23 @@ export function CmsEditor(props: Props): JSX.Element {
       selectorManager: { componentFirst: true },
       layerManager: { appendTo: '#cms-layers' },
       traitManager: { appendTo: '#cms-traits' },
-      styleManager: { appendTo: '#cms-styles', sectors: styleSectors },
+      styleManager: {
+        appendTo: '#cms-styles',
+        sectors: styleSectors.map((sector) =>
+          sector.id !== 'typography'
+            ? sector
+            : {
+                ...sector,
+                properties: [
+                  {
+                    property: 'font-family',
+                    type: 'select',
+                    options: fontFamilyOptions(latest.current.assets),
+                  },
+                ],
+              },
+        ),
+      },
       blockManager: { appendTo: '#cms-blocks', appendOnClick: true },
       deviceManager: {
         devices: [
