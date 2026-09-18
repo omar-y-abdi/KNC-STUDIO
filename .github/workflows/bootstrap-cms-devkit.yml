@@ -1,0 +1,49 @@
+name: Bootstrap CMS devkit
+
+on:
+  push:
+    branches: [bootstrap-cms-devkit]
+
+permissions:
+  contents: read
+
+jobs:
+  devkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium firefox webkit
+      - name: Verify toolchain
+        run: |
+          node --version
+          npm --version
+          npx playwright --version
+          npx supabase --version
+      - name: Package portable devkit
+        run: |
+          mkdir -p /tmp/devkit
+          cp -a node_modules /tmp/devkit/
+          mkdir -p /tmp/devkit/ms-playwright
+          if [ -d "$HOME/.cache/ms-playwright" ]; then
+            cp -a "$HOME/.cache/ms-playwright/." /tmp/devkit/ms-playwright/
+          fi
+          {
+            echo "repo_sha=$(git rev-parse HEAD)"
+            echo "node=$(node --version)"
+            echo "npm=$(npm --version)"
+            echo "playwright=$(npx playwright --version)"
+            echo "supabase=$(npx supabase --version)"
+          } > /tmp/devkit/MANIFEST.txt
+          tar -C /tmp/devkit -czf /tmp/knc-cms-devkit.tgz .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: knc-cms-devkit
+          path: /tmp/knc-cms-devkit.tgz
+          compression-level: 0
+          retention-days: 1
