@@ -222,6 +222,29 @@ export function EmailPanel({
                 <option value="dark">Mörk</option>
               </select>
             </label>
+            {(['light', 'dark'] as const).map((paletteMode) => (
+              <fieldset>
+                <legend>{paletteMode === 'light' ? 'Ljus palett' : 'Mörk palett'}</legend>
+                {([
+                  ['background', 'Bakgrund'],
+                  ['surface', 'Yta'],
+                  ['text', 'Text'],
+                  ['muted', 'Sekundär'],
+                  ['border', 'Kant'],
+                  ['button', 'Knapp'],
+                  ['buttonText', 'Knapptext'],
+                ] as const).map(([key, label]) => (
+                  <label>
+                    {label}
+                    <input type="color" value={email.design?.palettes[paletteMode][key] ?? '#000000'} onInput={(e) => {
+                      const next = structuredClone(email)
+                      if (next.design) next.design.palettes[paletteMode][key] = e.currentTarget.value
+                      onChange(replaceEmail(document, next))
+                    }} />
+                  </label>
+                ))}
+              </fieldset>
+            ))}
             <label>
               Typsnitt
               <select value={email.design.font} onChange={(e) => {
