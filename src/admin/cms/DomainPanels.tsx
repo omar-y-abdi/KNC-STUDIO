@@ -182,7 +182,7 @@ export function EmailPanel({
                   type="number"
                   min={min}
                   max={max}
-                  value={email.design[key]}
+                  value={email.design?.[key]}
                   onInput={(e) =>
                     updateDesign((design) => {
                       design[key] = Number(e.currentTarget.value)
