@@ -66,7 +66,10 @@ export function CmsResources(props: Props): JSX.Element {
   )
 
   useEffect(() => {
-    if (!asset) return setUsage(null)
+    if (!asset) {
+      setUsage(null)
+      return
+    }
     let active = true
     void cmsApi
       .assetUsage(asset.id)
