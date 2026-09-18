@@ -126,7 +126,9 @@ export function nudgeComponent(
 
   if (tagOf(component) === 'g') {
     const transform = String(component.getAttributes()['transform'] ?? '')
-    const baseTransform = existingOffset ? stripOwnedSvgTranslate(transform, existingOffset) : transform
+    const baseTransform = existingOffset
+      ? stripOwnedSvgTranslate(transform, existingOffset)
+      : transform
     if (baseTransform === null) return null
     component.addAttributes({
       transform: [baseTransform, `translate(${nextOffset[0]} ${nextOffset[1]})`]
