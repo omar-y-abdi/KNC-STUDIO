@@ -22,8 +22,8 @@ export class CmsDraft {
     return JSON.stringify(this.document) !== JSON.stringify(this.base)
   }
 
-  markDirty(): void {
-    if (!this.dirty) this.base = { ...structuredClone(this.document), schema: 0 as never }
+  markDirtyFrom(base: CmsDocument): void {
+    this.base = structuredClone(base)
   }
 
   change(next: CmsDocument, group = ''): void {
