@@ -17,7 +17,7 @@ const common = String.raw`
 const dark = `${common}.knc-cms-page{background:#171719;color:#f3f0e8}.knc-nav,.knc-footer{border-color:#f3f0e828}.knc-card,.knc-runtime-island{background:#242427;border-color:#f3f0e824}.knc-button.primary{background:#f3f0e8;color:#171719;border-color:#f3f0e8}`
 const light = common
 
-function chrome(lang: CmsLang, body: string): string {
+function chrome(lang: 'sv' | 'en', body: string): string {
   const labels =
     lang === 'sv'
       ? { home: 'Hem', about: 'Om oss', book: 'Boka', mine: 'Mina bokningar' }
@@ -25,7 +25,7 @@ function chrome(lang: CmsLang, body: string): string {
   return `<div class="knc-cms-page"><div class="knc-shell"><nav class="knc-nav"><a class="knc-brand" href="/"><img src="/icons/knc-logo-pole.svg" alt=""><span>Blade & Blend Studio</span></a><div class="knc-links"><a href="/">${labels.home}</a><a href="/about">${labels.about}</a><a href="/booking">${labels.book}</a><a href="/my-bookings">${labels.mine}</a></div></nav>${body}<footer class="knc-footer"><span>Blade & Blend Studio</span><span><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></span></footer></div></div>`
 }
 
-function variant(lang: CmsLang, body: string): CmsPage['content'][CmsLang] {
+function variant(lang: 'sv' | 'en', body: string): CmsPage['content']['sv'] {
   return { html: chrome(lang, body), css: { light, dark } }
 }
 
