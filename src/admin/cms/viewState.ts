@@ -39,9 +39,7 @@ interface RestoreOptions {
 }
 
 const storedViews = new Map<string, string>()
-const inspectorSelectors: ReadonlyArray<
-  readonly [keyof CmsInspectorScrollState, string]
-> = [
+const inspectorSelectors: ReadonlyArray<readonly [keyof CmsInspectorScrollState, string]> = [
   ['inspector', '.cms-authored-inspector'],
   ['styles', '#cms-gjs-styles'],
   ['traits', '#cms-gjs-traits'],
@@ -78,7 +76,10 @@ function stableComponentKey(component: Component | null | undefined): CmsCompone
   return null
 }
 
-function findComponent(editor: Editor, key: CmsComponentViewKey | null | undefined): Component | null {
+function findComponent(
+  editor: Editor,
+  key: CmsComponentViewKey | null | undefined,
+): Component | null {
   if (!key) return null
   const wrapper = editor.getWrapper?.()
   if (!wrapper?.find) return null
@@ -118,7 +119,10 @@ export function restoreInspectorScroll(
   }
 }
 
-export function captureEditorView(editor: Editor, options: CaptureOptions = {}): CmsEditorViewState {
+export function captureEditorView(
+  editor: Editor,
+  options: CaptureOptions = {},
+): CmsEditorViewState {
   const canvas = editor.Canvas
   const frameWindow = canvas?.getWindow?.()
   const rawCoords = canvas?.getCoords?.() ?? { x: 0, y: 0 }
