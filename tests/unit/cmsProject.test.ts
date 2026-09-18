@@ -135,9 +135,7 @@ describe('canonical CMS page project', () => {
       marker,
       'data-cms-contract="forged-contract"',
     )
-    expect(() => validateCanonicalProject(draft, fixture.seed, policy)).toThrow(
-      /contract/i,
-    )
+    expect(() => validateCanonicalProject(draft, fixture.seed, policy)).toThrow(/contract/i)
 
     const duplicated = structuredClone(fixture.project)
     const button = duplicated.pages[0]!.content.sv.html.match(
@@ -224,9 +222,7 @@ describe('canonical CMS page project', () => {
 
   it('requires protected seed pages and paths', () => {
     const fixture = prepared()
-    expect(() =>
-      validateCanonicalProject({ schema: 1, pages: [] }, fixture.seed, policy),
-    ).toThrow()
+    expect(() => validateCanonicalProject({ schema: 1, pages: [] }, fixture.seed, policy)).toThrow()
 
     const moved = structuredClone(fixture.project)
     moved.pages[0]!.path = '/moved/'

@@ -176,9 +176,7 @@ function elements(root: HtmlNode): HtmlElement[] {
 }
 
 function isRuntimeData(name: string): boolean {
-  return (
-    name.startsWith('data-') && !name.startsWith('data-cms-') && !SOURCE_ONLY_DATA.has(name)
-  )
+  return name.startsWith('data-') && !name.startsWith('data-cms-') && !SOURCE_ONLY_DATA.has(name)
 }
 
 function fixedAttribute(name: string, value: string): boolean {
@@ -193,10 +191,7 @@ function fixedAttribute(name: string, value: string): boolean {
 function referenceTargets(name: string, value: string): string[] {
   if (name === 'href' && value.startsWith('#') && value.length > 1) return [value.slice(1)]
   if (!REFERENCE_ATTRIBUTES.has(name)) return []
-  return value
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
+  return value.trim().split(/\s+/).filter(Boolean)
 }
 
 function candidateKey(node: HtmlElement, legacy: string | undefined, index: number): string {
@@ -435,10 +430,7 @@ export function validateCanonicalProject(
     const path = stringValue(page['path'], `page.${id}.path`, 100, 1)
     if (trusted?.pathLocked && path !== trusted.path)
       fail(`page.${id}.path`, 'Protected page path cannot change')
-    if (
-      (kind === 'privacy' && path !== '/privacy') ||
-      (kind === 'terms' && path !== '/terms')
-    )
+    if ((kind === 'privacy' && path !== '/privacy') || (kind === 'terms' && path !== '/terms'))
       fail(`page.${id}.path`, 'Legal page path is fixed')
     if ((!trusted || path !== trusted.path) && !validCustomPath(path))
       fail(`page.${id}.path`, 'Reserved or invalid custom page path')
