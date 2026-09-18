@@ -22,6 +22,10 @@ export class CmsDraft {
     return JSON.stringify(this.document) !== JSON.stringify(this.base)
   }
 
+  markDirty(): void {
+    if (!this.dirty) this.base = { ...structuredClone(this.document), schema: 0 as never }
+  }
+
   change(next: CmsDocument, group = ''): void {
     if (JSON.stringify(next) === JSON.stringify(this.document)) return
     const now = Date.now()
