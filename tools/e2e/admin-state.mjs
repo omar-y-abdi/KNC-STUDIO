@@ -32,8 +32,7 @@ async function mountCmsStudio(page) {
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
       'Content-Type': 'application/json',
     }
-    if (request.method() === 'OPTIONS')
-      return route.fulfill({ status: 204, headers })
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const url = new URL(request.url())
     if (url.pathname === '/functions/v1/cms-studio') {
       const body = request.postDataJSON()
