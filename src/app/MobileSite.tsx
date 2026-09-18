@@ -117,7 +117,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const chromeIcon = props.chromeIconStyle
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
-  const heroLinkColor = c.mobileMuted
+  const heroLinkColor = c.mobileHeroMuted
   const heroOpacity = inSection
     ? 0
     : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))

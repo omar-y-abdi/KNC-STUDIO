@@ -217,6 +217,7 @@ export function mergeCmsPalette<T extends object>(
     accentText: 'accentText',
     muted: 'muted',
     mobileMuted: 'muted',
+    mobileHeroMuted: 'muted',
   }
   for (const [key, slot] of Object.entries(slots)) {
     if (typeof result[key] === 'string' && theme[slot]) result[key] = theme[slot]

@@ -22,6 +22,7 @@ export interface ShellPalette {
   text: string
   muted: string
   mobileMuted: string
+  mobileHeroMuted: string
   line: string
   navBg: string
   footer: string
@@ -37,6 +38,7 @@ const DARK: ShellPalette = {
   text: '#f5f5f7',
   muted: 'rgba(255,255,255,.7)',
   mobileMuted: 'rgba(255,255,255,.55)',
+  mobileHeroMuted: 'rgba(255,255,255,.72)',
   line: 'rgba(255,255,255,.1)',
   navBg: '#262629',
   footer: '#161618',
@@ -52,6 +54,7 @@ const LIGHT: ShellPalette = {
   text: '#1c1c1e',
   muted: 'rgba(0,0,0,.62)',
   mobileMuted: 'rgba(0,0,0,.6)',
+  mobileHeroMuted: 'rgba(0,0,0,.6)',
   line: 'rgba(0,0,0,.08)',
   navBg: '#f1f0ec',
   footer: '#faf9f6',
