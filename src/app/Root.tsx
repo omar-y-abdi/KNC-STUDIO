@@ -1,4 +1,3 @@
-import { CmsPublicProvider } from '../cms/context'
 // The application router — the single entry rendered by `main.tsx`. It keeps the marketing site
 // EXACTLY as before at `/` (the `App` component is statically imported and rendered with NO wrapper
 // DOM, so the public markup is byte-identical) and LAZY-loads the entire admin surface for `/login`
@@ -24,11 +23,10 @@ import { Route, Switch, useLocation } from 'wouter-preact'
 import { useEffect } from 'preact/hooks'
 import { privatePageTitle } from '../site/routeMetadata'
 import { App } from './App'
-const CmsPublicPage = lazy(() => import('../cms/PublicPage'))
+import { NotFound } from './NotFound'
 
 // One dynamic import for the whole admin surface (login + panel share this chunk).
 const AdminEntry = lazy(() => import('../admin/index'))
-const CmsPreviewEntry = lazy(() => import('../admin/cms/Preview'))
 
 /** Lightweight fallback while the admin chunk loads (no admin code; plain neutral text). */
 function AdminFallback(): JSX.Element {
@@ -59,7 +57,7 @@ export function Root(): JSX.Element {
     }
   }, [pathname])
   return (
-    <CmsPublicProvider>
+    <>
       <Switch>
         {/* Public marketing site — unchanged, rendered with no wrapper so DOM stays byte-identical. */}
         <Route path="/" component={App} />
@@ -91,11 +89,6 @@ export function Root(): JSX.Element {
         {/* Match BOTH the bare `/admin` and any subpath. wouter's `:rest*` matches `/admin/...` and
             `/admin/` but NOT bare `/admin`, so the explicit `/admin` route is required (otherwise a
             post-login navigate('/admin') falls through to the catch-all and redirects home). */}
-        <Route path="/admin/cms/preview">
-          <Suspense fallback={<AdminFallback />}>
-            <CmsPreviewEntry />
-          </Suspense>
-        </Route>
         <Route path="/admin">
           <Suspense fallback={<AdminFallback />}>
             <AdminEntry />
@@ -111,23 +104,15 @@ export function Root(): JSX.Element {
             them into a fragment before assets load; this route preserves direct Vite/dev visits. */}
         <Route path="/:customerAccessToken">
           {(params) =>
-            /^[0-9a-f]{64}$/i.test(params.customerAccessToken) ? (
-              <App />
-            ) : (
-              <Suspense fallback={<AdminFallback />}>
-                <CmsPublicPage />
-              </Suspense>
-            )
+            /^[0-9a-f]{64}$/i.test(params.customerAccessToken) ? <App /> : <NotFound />
           }
         </Route>
 
         {/* Unknown -> not found; the Worker supplies HTTP 404 on direct requests. */}
         <Route>
-          <Suspense fallback={<AdminFallback />}>
-            <CmsPublicPage />
-          </Suspense>
+          <NotFound />
         </Route>
       </Switch>
-    </CmsPublicProvider>
+    </>
   )
 }

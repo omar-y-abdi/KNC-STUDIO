@@ -17,12 +17,7 @@ export type View = 'home' | 'booking'
 /** Site-shell palette for a given mode. */
 export interface ShellPalette {
   bg: string
-  surface: string
-  secondarySurface: string
   text: string
-  muted: string
-  mobileMuted: string
-  mobileHeroMuted: string
   line: string
   navBg: string
   footer: string
@@ -33,12 +28,7 @@ export interface ShellPalette {
 
 const DARK: ShellPalette = {
   bg: '#1c1c1e',
-  surface: '#242427',
-  secondarySurface: 'rgba(255,255,255,.10)',
   text: '#f5f5f7',
-  muted: 'rgba(255,255,255,.7)',
-  mobileMuted: 'rgba(255,255,255,.55)',
-  mobileHeroMuted: 'rgba(255,255,255,.72)',
   line: 'rgba(255,255,255,.1)',
   navBg: '#262629',
   footer: '#161618',
@@ -49,12 +39,7 @@ const DARK: ShellPalette = {
 
 const LIGHT: ShellPalette = {
   bg: '#ffffff',
-  surface: '#f4f3f0',
-  secondarySurface: 'rgba(0,0,0,.06)',
   text: '#1c1c1e',
-  muted: 'rgba(0,0,0,.62)',
-  mobileMuted: 'rgba(0,0,0,.6)',
-  mobileHeroMuted: 'rgba(0,0,0,.6)',
   line: 'rgba(0,0,0,.08)',
   navBg: '#f1f0ec',
   footer: '#faf9f6',
@@ -65,6 +50,10 @@ const LIGHT: ShellPalette = {
 
 export function shellPalette(dark: boolean): ShellPalette {
   return dark ? DARK : LIGHT
+}
+
+export function mobMuted(dark: boolean): string {
+  return dark ? 'rgba(255,255,255,.55)' : 'rgba(0,0,0,.6)'
 }
 
 /** Keep shell animation preferences current when the operating-system setting changes. */
@@ -81,6 +70,10 @@ export function useReducedMotion(): boolean {
     return () => media.removeEventListener('change', sync)
   }, [])
   return reduced
+}
+
+export function mobBtnBg(dark: boolean): string {
+  return dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.06)'
 }
 
 /** Shared easing token for the shell animations. */

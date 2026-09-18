@@ -1,10 +1,8 @@
 // Decorative neutral avatar when a barber has no published portrait; the adjacent name labels them.
-import { cmsNodeId } from '../cms/nodeIdentity'
 import type { JSX } from 'preact'
 import type { Palette } from '../booking/bookingStyles'
 
 interface PlaceholderPhotoProps {
-  readonly instanceKey: string
   readonly c: Palette
   readonly dark: boolean
 }
@@ -31,13 +29,8 @@ export function PlaceholderPhoto(props: PlaceholderPhotoProps): JSX.Element {
     color: dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.18)',
   }
   return (
-    <div
-      data-cms-node={cmsNodeId('placeholderphoto-div-1', props.instanceKey)}
-      style={wrapStyle}
-      aria-hidden="true"
-    >
+    <div style={wrapStyle} aria-hidden="true">
       <svg
-        data-cms-node={cmsNodeId('placeholderphoto-svg-2', props.instanceKey)}
         width="34"
         height="34"
         viewBox="0 0 24 24"

@@ -1,5 +1,3 @@
-import { cmsPublicResponse, cmsResponsePolicy } from './cms/publicWorker'
-import { enrichLegalMarkup } from './cms/legal'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
@@ -284,41 +282,53 @@ export function renderLegalMetadata(
       ? `Bokning, priser, avbokning och kontakt hos ${business.name}.`
       : `Så hanterar ${business.name} bokningsuppgifter, cookies, e-post och kalenderkoppling.`,
   )
-  return enrichLegalMarkup(rendered, business)
-}
-
-async function enrichLegalResponse(
-  response: Response,
-  request: Request,
-  env: Env,
-  pathname: string,
-): Promise<Response> {
-  if (
-    (pathname !== '/terms' && pathname !== '/privacy') ||
-    !response.headers.get('content-type')?.includes('text/html') ||
-    response.status < 200 ||
-    response.status >= 300
+  rendered = rendered.replaceAll(
+    /<span data-business-name\s*>[^<]*<\/span\s*>/g,
+    () => `<span data-business-name>${escapeElementText(business.name)}</span>`,
   )
-    return response
-
-  const headers = new Headers(response.headers)
-  for (const name of ['Content-Length', 'Content-Encoding', 'ETag', 'Last-Modified'])
-    headers.delete(name)
-  headers.set('Cache-Control', 'no-store')
-
-  if (request.method === 'HEAD')
-    return new Response(null, { status: response.status, statusText: response.statusText, headers })
-  if (request.method !== 'GET') return response
-
-  const discovery = await loadDiscovery(env)
-  return new Response(
-    renderLegalMetadata(await response.text(), pathname, discovery?.business ?? null),
-    {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    },
+  rendered = rendered.replaceAll(
+    /<span data-business-controller="(sv|en)"\s*>[^<]*<\/span\s*>/g,
+    (_match, lang: string) =>
+      `<span data-business-controller="${lang}">${escapeElementText(business.legalName || business.name)}</span>`,
   )
+  const contact =
+    business.email === ''
+      ? '<a href="/">Kontakt / Contact</a>'
+      : `<a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a>`
+  rendered = rendered.replaceAll(
+    /<span data-business-contact\s*>[\s\S]*?<\/span\s*>/g,
+    () => `<span data-business-contact>${contact}</span>`,
+  )
+  for (const lang of ['sv', 'en'] as const) {
+    const rows: readonly (readonly [string, string])[] = [
+      [lang === 'sv' ? 'Salong' : 'Salon', business.name],
+      [lang === 'sv' ? 'Juridiskt företagsnamn' : 'Legal business name', business.legalName],
+      [lang === 'sv' ? 'Organisationsnummer' : 'Registration number', business.organizationNumber],
+      [lang === 'sv' ? 'Adress' : 'Address', formatBusinessAddress(business)],
+      [lang === 'sv' ? 'E-post' : 'Email', business.email],
+      [lang === 'sv' ? 'Telefon' : 'Phone', business.phoneDisplay],
+    ]
+    const details = rows
+      .filter(([, value]) => value !== '')
+      .map(
+        ([label, value]) =>
+          `<dt>${escapeElementText(label)}</dt><dd>${escapeElementText(value)}</dd>`,
+      )
+      .join('')
+    rendered = replaceElementContent(
+      rendered,
+      `legal-business-details-${lang}`,
+      `<dl>${details}</dl>`,
+    )
+    rendered = replaceElementText(
+      rendered,
+      `cancellation-policy-${lang}`,
+      lang === 'sv'
+        ? `Avboka senast ${business.cancellationPolicyHours} timmar före den bokade tiden.`
+        : `Cancel at least ${business.cancellationPolicyHours} hours before your appointment.`,
+    )
+  }
+  return rendered
 }
 
 function priceRange(facts: BusinessDiscoveryFacts): string | null {
@@ -360,9 +370,6 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
-
-  const cms = await cmsPublicResponse(request, env, SITE_URL)
-  if (cms !== null) return enrichLegalResponse(cms, request, env, cleanPathname)
 
   if (pathname === '/404.html') {
     const missing = await serveAsset(request, env, '/404.html')
@@ -419,7 +426,20 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     (request.method === 'GET' || request.method === 'HEAD')
   const asset = await serveAsset(request, env, assetPath, dynamicHomepage || dynamicLegal)
   if (asset.status !== 404) {
-    if (dynamicLegal) return enrichLegalResponse(asset, request, env, pathname)
+    if (dynamicLegal) {
+      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const headers = new Headers(asset.headers)
+      headers.delete('Content-Length')
+      headers.delete('ETag')
+      headers.delete('Last-Modified')
+      headers.set('Cache-Control', 'no-store')
+      return new Response(
+        request.method === 'HEAD'
+          ? null
+          : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
+        { status: asset.status, headers },
+      )
+    }
     if (dynamicHomepage) {
       const loadedDiscovery = await loadDiscovery(env)
       const discovery = loadedDiscovery ?? {
@@ -476,11 +496,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
 export class PublicContent extends WorkerEntrypoint<Env> {
   override async fetch(request: Request): Promise<Response> {
-    return cmsResponsePolicy(
-      await fetchPublicContent(request, this.env),
-      new URL(request.url).pathname,
-      this.env.SUPABASE_URL,
-    )
+    return fetchPublicContent(request, this.env)
   }
 }
 
@@ -504,6 +520,6 @@ export default {
       return context.exports.PublicContent.fetch(request)
     }
 
-    return cmsResponsePolicy(await fetchPublicContent(request, env), url.pathname, env.SUPABASE_URL)
+    return fetchPublicContent(request, env)
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

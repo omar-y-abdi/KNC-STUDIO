@@ -1,4 +1,3 @@
-import { emptyPresentation } from '../../shared/cms'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { GalleryMarquee, resolvePointerEnd } from '../../src/about/GalleryMarquee'
@@ -13,7 +12,7 @@ describe('gallery marquee interaction contract', () => {
   const source = readFileSync('src/about/GalleryMarquee.tsx', 'utf8')
 
   it('exposes one keyboard-selectable logical copy and hides loop clones', () => {
-    expect(source).toContain('const accessible = cloneIndex === 0')
+    expect(source).toContain('const accessible = j < itemCount')
     expect(source).toContain("aria-hidden={accessible ? undefined : 'true'}")
     expect(source).toContain("role={accessible ? 'button' : undefined}")
     expect(source).toContain('tabIndex={accessible ? 0 : undefined}')
@@ -21,7 +20,7 @@ describe('gallery marquee interaction contract', () => {
 
   it('keys selection by physical tile instance so loop clones cannot all highlight', () => {
     expect(source).toContain('const logicalKey =')
-    expect(source).toContain('const key = `${logicalKey}:${cloneIndex}`')
+    expect(source).toContain('const key = `${logicalKey}:${j}`')
     expect(source).toContain('const selected = props.selectedKey === key')
   })
 
@@ -61,7 +60,6 @@ describe('gallery marquee interaction contract', () => {
 // Inspect rendered photo controls without running browser animation/effects; pointer, scroll,
 // focus and reduced-motion behavior remain covered by the browser harness.
 vi.mock('preact/hooks', () => ({
-  useContext: () => ({ presentation: emptyPresentation(), draft: null, revision: 0, lang: 'sv' }),
   useState: vi.fn((initial: unknown) => [
     typeof initial === 'function' ? initial() : initial,
     vi.fn(),
@@ -86,25 +84,7 @@ function elements(node: unknown): readonly RenderedNode[] {
 
 describe('published gallery photos', () => {
   it('renders no controls, tiles or images for an empty gallery', () => {
-    expect(
-      GalleryMarquee({ instanceKey: 'empty', photos: [], alt: 'Gallery photo', c: palette(false) }),
-    ).toBeNull()
-  })
-
-  it('keeps CMS node identities unique across rows, loop clones, and gallery placements', () => {
-    const photos = [
-      { id: 'one', url: '/one.webp', alt: 'One' },
-      { id: 'two', url: '/two.webp', alt: 'Two' },
-    ]
-    const nodes = elements([
-      GalleryMarquee({ instanceKey: 'salon', photos, alt: 'Salon', c: palette(false) }),
-      GalleryMarquee({ instanceKey: 'cuts', photos, alt: 'Cuts', c: palette(false) }),
-    ])
-    const ids = nodes
-      .map((node) => node.props?.['data-cms-node'])
-      .filter((id): id is string => typeof id === 'string')
-    expect(ids.length).toBeGreaterThan(0)
-    expect(new Set(ids).size).toBe(ids.length)
+    expect(GalleryMarquee({ photos: [], alt: 'Gallery photo', c: palette(false) })).toBeNull()
   })
 
   it.each(['sv', 'en'] as const)(
@@ -113,7 +93,6 @@ describe('published gallery photos', () => {
       const t = aboutStrings(lang)
       const nodes = elements(
         GalleryMarquee({
-          instanceKey: `gallery-${lang}`,
           photos: [
             { id: 'empty', url: '/salon-one.webp', alt: '  ' },
             { id: 'described', url: '/salon-two.webp', alt: '  Saved description  ' },
@@ -141,7 +120,7 @@ describe('published gallery photos', () => {
   )
 
   it('makes a missing portrait decorative instead of announcing a prototype image', () => {
-    const portrait = PlaceholderPhoto({ instanceKey: 'barber-1', c: palette(false), dark: false })
+    const portrait = PlaceholderPhoto({ c: palette(false), dark: false })
     expect(portrait.props['aria-hidden']).toBe('true')
     expect(portrait.props.role).toBeUndefined()
     expect(portrait.props['aria-label']).toBeUndefined()

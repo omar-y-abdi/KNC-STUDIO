@@ -1,6 +1,3 @@
-import { useCmsStrings } from '../cms/context'
-import { cmsNodeId } from '../cms/nodeIdentity'
-import { useCms, mergeCmsStrings, mergeCmsPalette, CmsImage } from '../cms/context'
 // "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
 // the desktop and mobile layouts. Minimal/editorial on desktop, M3 cards on mobile (it simply uses
 // the booking palette + 14px radii, so it reads native in both shells). Photos and reviews come
@@ -63,12 +60,10 @@ export interface AboutSectionProps {
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
-  const _cmsPresentation = useCms().presentation
-
   const lang = props.lang
-  const base: AboutStrings = mergeCmsStrings(_cmsPresentation, 'about', lang, aboutStrings(lang))
+  const base: AboutStrings = aboutStrings(lang)
   const dark = props.mode === 'dark'
-  const c = mergeCmsPalette(_cmsPresentation, palette(dark), dark ? 'dark' : 'light')
+  const c = palette(dark)
   const s = buildBookingStyles(c, dark, false)
   const red = systemRed(dark)
   const port: ReviewsPort = props.port ?? defaultReviewsPort
@@ -123,7 +118,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
       live = false
     }
   }, [contentPort, dataActive, lang])
-  const tx: AboutStrings = useCmsStrings('about', lang, mergeAbout(base, overlay))
+  const tx: AboutStrings = mergeAbout(base, overlay)
 
   // The stylist cards' roster (constant under the mock, immediate; DB rows under a backend). The
   // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
@@ -363,49 +358,27 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
   return (
     <section
-      data-cms-node="aboutsection-section-1"
       ref={sectionRef}
       id={ABOUT_SECTION_ID}
       style={sectionStyle}
       aria-labelledby="om-oss-heading"
     >
-      <div data-cms-node="aboutsection-div-2" style={innerStyle}>
-        <div data-cms-node="aboutsection-div-3" data-cms-copy="about:eyebrow" style={eyebrowStyle}>
-          {tx.eyebrow}
-        </div>
-        <h2
-          data-cms-node="aboutsection-h2-4"
-          data-cms-copy="about:heading"
-          id="om-oss-heading"
-          style={headingStyle}
-        >
+      <div style={innerStyle}>
+        <div style={eyebrowStyle}>{tx.eyebrow}</div>
+        <h2 id="om-oss-heading" style={headingStyle}>
           {tx.heading}
         </h2>
-        <p data-cms-node="aboutsection-p-5" data-cms-copy="about:intro" style={introStyle}>
-          {tx.intro}
-        </p>
+        <p style={introStyle}>{tx.intro}</p>
 
         {/* Salon gallery — two counter-scrolling, draggable marquee rows (tap a tile to focus it).
             Full-bleed so the tiles enter/exit at the screen edge, not the content column. */}
-        <h3
-          data-cms-node="aboutsection-h3-6"
-          data-cms-copy="about:galleryTitle"
-          style={blockTitleStyle}
-        >
-          {tx.galleryTitle}
-        </h3>
+        <h3 style={blockTitleStyle}>{tx.galleryTitle}</h3>
         {salonPhotos.status === 'ready' && salonPhotos.photos.length > 0 ? (
-          <div data-cms-node="aboutsection-div-7" style={fullBleedStyle}>
-            <GalleryMarquee
-              instanceKey="salon"
-              photos={salonPhotos.photos}
-              alt={tx.galleryAlt}
-              c={c}
-            />
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={salonPhotos.photos} alt={tx.galleryAlt} c={c} />
           </div>
         ) : (
           <p
-            data-cms-node="aboutsection-p-8"
             role="status"
             style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
           >
@@ -418,26 +391,15 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         )}
 
         {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
-        <h3
-          data-cms-node="aboutsection-h3-9"
-          data-cms-copy="about:stylistsTitle"
-          style={blockTitleStyle}
-        >
-          {tx.stylistsTitle}
-        </h3>
-        <div data-cms-node="aboutsection-div-10" style={stylistGridStyle}>
+        <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
+        <div style={stylistGridStyle}>
           {roster.map((entry) => {
             const b = entry.barber
             const copy = stylistCopyFor(entry, lang)
             return (
-              <div
-                data-cms-node={cmsNodeId('aboutsection-div-11', b.id)}
-                key={b.id}
-                style={stylistCardStyle}
-              >
+              <div key={b.id} style={stylistCardStyle}>
                 {entry.photoUrl !== null ? (
-                  <CmsImage
-                    data-cms-node={cmsNodeId('aboutsection-img-12', b.id)}
+                  <img
                     src={entry.photoUrl}
                     alt={b.name}
                     loading="lazy"
@@ -451,30 +413,13 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                     }}
                   />
                 ) : (
-                  <PlaceholderPhoto instanceKey={b.id} c={c} dark={dark} />
+                  <PlaceholderPhoto c={c} dark={dark} />
                 )}
-                <div
-                  data-cms-node={cmsNodeId('aboutsection-div-13', b.id)}
-                  style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}
-                >
-                  <span
-                    data-cms-node={cmsNodeId('aboutsection-span-14', b.id)}
-                    data-cms-copy={`barber:${b.id}:name`}
-                    style={{ fontWeight: 600, fontSize: '16px' }}
-                  >
-                    {b.name}
-                  </span>
-                  <span
-                    data-cms-node={cmsNodeId('aboutsection-span-15', b.id)}
-                    data-cms-copy={`barber:${b.id}:ig`}
-                    style={{ fontSize: '12.5px', opacity: 0.5 }}
-                  >
-                    @{b.ig}
-                  </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
+                  <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
                   {copy ? (
                     <span
-                      data-cms-node={cmsNodeId('aboutsection-span-16', b.id)}
-                      data-cms-copy={`barber:${b.id}:role_${lang}`}
                       style={{
                         fontSize: '11px',
                         fontWeight: 600,
@@ -488,11 +433,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                   ) : null}
                 </div>
                 {copy ? (
-                  <p
-                    data-cms-node={cmsNodeId('aboutsection-p-17', b.id)}
-                    data-cms-copy={`barber:${b.id}:bio_${lang}`}
-                    style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-                  >
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
                     {copy.bio}
                   </p>
                 ) : null}
@@ -502,20 +443,13 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </div>
 
         {/* Customer-cuts gallery — the same interactive photo marquee. Full-bleed too. */}
-        <h3
-          data-cms-node="aboutsection-h3-18"
-          data-cms-copy="about:cutsTitle"
-          style={blockTitleStyle}
-        >
-          {tx.cutsTitle}
-        </h3>
+        <h3 style={blockTitleStyle}>{tx.cutsTitle}</h3>
         {cutPhotos.status === 'ready' && cutPhotos.photos.length > 0 ? (
-          <div data-cms-node="aboutsection-div-19" style={fullBleedStyle}>
-            <GalleryMarquee instanceKey="cuts" photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
+          <div style={fullBleedStyle}>
+            <GalleryMarquee photos={cutPhotos.photos} alt={tx.cutsAlt} c={c} />
           </div>
         ) : (
           <p
-            data-cms-node="aboutsection-p-20"
             role="status"
             style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
           >
@@ -528,18 +462,10 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         )}
 
         {/* Reviews */}
-        <h3
-          data-cms-node="aboutsection-h3-21"
-          data-cms-copy="about:reviewsTitle"
-          style={blockTitleStyle}
-        >
-          {tx.reviewsTitle}
-        </h3>
-        <div data-cms-node="aboutsection-div-22" style={reviewsWrapStyle}>
+        <h3 style={blockTitleStyle}>{tx.reviewsTitle}</h3>
+        <div style={reviewsWrapStyle}>
           {reviewsState === 'loading' ? (
             <p
-              data-cms-node="aboutsection-p-23"
-              data-cms-copy="copy:about:reviewsLoading"
               aria-live="polite"
               style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
             >
@@ -548,8 +474,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           ) : null}
           {reviewsState === 'error' ? (
             <p
-              data-cms-node="aboutsection-p-24"
-              data-cms-copy="copy:about:reviewsUnavailable"
               role="status"
               style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
             >
@@ -557,23 +481,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             </p>
           ) : null}
           {reviewsState === 'ready' && reviews.length === 0 ? (
-            <p
-              data-cms-node="aboutsection-p-25"
-              data-cms-copy="copy:about:reviewsEmpty"
-              style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}
-            >
+            <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
               {tx.reviewsEmpty}
             </p>
           ) : null}
           {reviewsState === 'ready'
             ? reviews.map((r) => (
-                <div
-                  data-cms-node={cmsNodeId('aboutsection-div-26', r.id)}
-                  key={r.id}
-                  style={reviewCardStyle}
-                >
+                <div key={r.id} style={reviewCardStyle}>
                   <div
-                    data-cms-node={cmsNodeId('aboutsection-div-27', r.id)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -581,23 +496,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                       gap: '10px',
                     }}
                   >
-                    <span
-                      data-cms-node={cmsNodeId('aboutsection-span-28', r.id)}
-                      style={{ fontWeight: 600, fontSize: '14px' }}
-                    >
-                      {r.name}
-                    </span>
+                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{r.name}</span>
                     <StarDisplay
-                      instanceKey={r.id}
                       rating={r.rating}
                       c={c}
                       label={tx.ratingValueLabel.replace('{n}', String(r.rating))}
                     />
                   </div>
-                  <p
-                    data-cms-node={cmsNodeId('aboutsection-p-29', r.id)}
-                    style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}
-                  >
+                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.7, margin: 0 }}>
                     {r.text}
                   </p>
                 </div>
@@ -606,26 +512,14 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </div>
 
         {/* Leave a review */}
-        <div data-cms-node="aboutsection-div-30" style={formCardStyle}>
-          <span
-            data-cms-node="aboutsection-span-31"
-            data-cms-copy="copy:about:reviewSubmit"
-            style={{ fontFamily: "'Inter Variable'", fontWeight: 600, fontSize: '16px' }}
-          >
+        <div style={formCardStyle}>
+          <span style={{ fontFamily: "'Inter Variable'", fontWeight: 600, fontSize: '16px' }}>
             {tx.reviewSubmit}
           </span>
 
-          <label data-cms-node="aboutsection-label-32" style={fieldColStyle}>
-            <span
-              data-cms-node="aboutsection-span-33"
-              data-cms-copy="copy:about:reviewPhone"
-              style={labelStyle}
-            >
-              {tx.reviewPhone}
-            </span>
+          <label style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewPhone}</span>
             <input
-              data-cms-node="aboutsection-input-34"
-              data-cms-copy="copy:about:reviewPhonePh"
               value={draft.phone}
               onInput={setPhone}
               placeholder={tx.reviewPhonePh}
@@ -636,35 +530,17 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               style={errors.phone ? s.inputErrorStyle : s.inputStyle}
               class={FOCUS_CLS}
             />
-            <span
-              data-cms-node="aboutsection-span-35"
-              data-cms-copy="copy:about:reviewPhoneHint"
-              style={hintStyle}
-            >
-              {tx.reviewPhoneHint}
-            </span>
+            <span style={hintStyle}>{tx.reviewPhoneHint}</span>
             {errors.phone ? (
-              <span
-                data-cms-node="aboutsection-span-36"
-                data-cms-copy="copy:about:reviewErrPhone"
-                role="alert"
-                style={s.fieldErrorNoteStyle}
-              >
+              <span role="alert" style={s.fieldErrorNoteStyle}>
                 {tx.reviewErrPhone}
               </span>
             ) : null}
           </label>
 
-          <div data-cms-node="aboutsection-div-37" style={fieldColStyle}>
-            <span
-              data-cms-node="aboutsection-span-38"
-              data-cms-copy="copy:about:reviewRating"
-              style={labelStyle}
-            >
-              {tx.reviewRating}
-            </span>
+          <div style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewRating}</span>
             <StarRating
-              instanceKey="review-form"
               value={draft.rating}
               onChange={setRating}
               c={c}
@@ -674,28 +550,15 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               errorColor={red}
             />
             {errors.rating ? (
-              <span
-                data-cms-node="aboutsection-span-39"
-                data-cms-copy="copy:about:reviewErrRating"
-                role="alert"
-                style={s.fieldErrorNoteStyle}
-              >
+              <span role="alert" style={s.fieldErrorNoteStyle}>
                 {tx.reviewErrRating}
               </span>
             ) : null}
           </div>
 
-          <label data-cms-node="aboutsection-label-40" style={fieldColStyle}>
-            <span
-              data-cms-node="aboutsection-span-41"
-              data-cms-copy="copy:about:reviewText"
-              style={labelStyle}
-            >
-              {tx.reviewText}
-            </span>
+          <label style={fieldColStyle}>
+            <span style={labelStyle}>{tx.reviewText}</span>
             <textarea
-              data-cms-node="aboutsection-textarea-42"
-              data-cms-copy="copy:about:reviewTextPh"
               value={draft.text}
               onInput={setText}
               placeholder={tx.reviewTextPh}
@@ -704,27 +567,20 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
               class={FOCUS_CLS}
             />
             {errors.text ? (
-              <span
-                data-cms-node="aboutsection-span-43"
-                data-cms-copy="copy:about:reviewErrText"
-                role="alert"
-                style={s.fieldErrorNoteStyle}
-              >
+              <span role="alert" style={s.fieldErrorNoteStyle}>
                 {tx.reviewErrText}
               </span>
             ) : null}
           </label>
 
           {submitError !== null ? (
-            <p data-cms-node="aboutsection-p-44" role="alert" style={s.submitErrorStyle}>
+            <p role="alert" style={s.submitErrorStyle}>
               {submitErrorText(submitError)}
             </p>
           ) : null}
 
           {thanks ? (
             <p
-              data-cms-node="aboutsection-p-45"
-              data-cms-copy="copy:about:reviewThanks"
               role="status"
               style={{ fontSize: '13px', fontWeight: 600, color: c.text, opacity: 0.8, margin: 0 }}
             >
@@ -742,8 +598,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           )}
 
           <button
-            data-cms-node="aboutsection-button-46"
-            data-cms-copy="copy:about:reviewSubmit"
             type="button"
             onClick={
               submitting || (challengeRequired && turnstileToken === '') ? undefined : onSubmitClick
@@ -761,7 +615,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </div>
       </div>
       <footer
-        data-cms-node="aboutsection-footer-47"
         style={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -772,8 +625,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         }}
       >
         <a
-          data-cms-node="aboutsection-a-48"
-          data-cms-copy="copy:about:termsLink"
           href="/terms"
           class={FOCUS_CLS}
           style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
@@ -781,8 +632,6 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           {tx.termsLink}
         </a>
         <a
-          data-cms-node="aboutsection-a-49"
-          data-cms-copy="copy:about:privacyLink"
           href="/privacy"
           class={FOCUS_CLS}
           style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
@@ -791,23 +640,16 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
         </a>
         {props.onManagePrivacy ? (
           <a
-            data-cms-node="aboutsection-a-50"
             href="#privacy-preferences"
             class={FOCUS_CLS}
-            aria-label={
-              mergeCmsStrings(_cmsPresentation, 'privacy', props.lang, privacyStrings(props.lang))
-                .manageLabel
-            }
+            aria-label={privacyStrings(props.lang).manageLabel}
             onClick={(event) => {
               event.preventDefault()
               props.onManagePrivacy?.()
             }}
             style={{ color: c.text, opacity: 0.65, fontSize: '12px', textUnderlineOffset: '3px' }}
           >
-            {
-              mergeCmsStrings(_cmsPresentation, 'privacy', props.lang, privacyStrings(props.lang))
-                .manage
-            }
+            {privacyStrings(props.lang).manage}
           </a>
         ) : null}
       </footer>

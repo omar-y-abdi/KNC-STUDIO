@@ -16,9 +16,6 @@ import { useTheme } from './useTheme'
 import { useAdminSession } from './useAdminSession'
 import { LazySurface } from '../ui/LazySurface'
 
-const CmsStudio = lazy(() => import('./cms/Studio'))
-const CmsPreview = lazy(() => import('./cms/Preview'))
-
 const AdminShell = lazy(() =>
   import('./AdminShell').then((module) => ({ default: module.AdminShell })),
 )
@@ -28,7 +25,7 @@ const ForcedPasswordChange = lazy(() =>
 
 export function AdminApp(): JSX.Element {
   const theme = useTheme()
-  const [pathname, navigate] = useLocation()
+  const [, navigate] = useLocation()
   const { gate, error, revalidate, onSignOut } = useAdminSession(navigate)
 
   const c = palette(theme.dark)
@@ -80,42 +77,6 @@ export function AdminApp(): JSX.Element {
           t.lazyLoading
         )}
       </div>
-    )
-  }
-
-  // The additive studio uses the existing session and forced-password gate.
-  if (pathname === '/admin/cms' || pathname.startsWith('/admin/cms/')) {
-    return gate.profile.role === 'owner' ? (
-      <LazySurface
-        loadingLabel={t.lazyLoading}
-        errorLabel={t.lazyError}
-        retryLabel={t.lazyReload}
-        minHeight="100vh"
-      >
-        {pathname.replace(/\/+$/, '') === '/admin/cms/preview' ? (
-          <CmsPreview />
-        ) : (
-          <CmsStudio
-            profile={gate.profile}
-            initialLang={theme.lang}
-            initialMode={theme.dark ? 'dark' : 'light'}
-          />
-        )}
-      </LazySurface>
-    ) : (
-      <main
-        role="alert"
-        style={{ minHeight: '100vh', background: c.bg, color: c.text, padding: '32px' }}
-      >
-        <h1>
-          {theme.lang === 'sv'
-            ? 'Endast ägaren kan redigera webbplatsen.'
-            : 'Only the owner can edit the website.'}
-        </h1>
-        <button type="button" onClick={() => navigate('/admin')}>
-          {theme.lang === 'sv' ? 'Till admin' : 'Back to admin'}
-        </button>
-      </main>
     )
   }
 

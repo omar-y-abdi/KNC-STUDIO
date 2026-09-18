@@ -1,14 +1,41 @@
-import {
-  defaultEmailTemplate,
-  type EmailLanguage,
-  type EmailTemplateName,
-  type EmailTemplateCopy,
-  type EmailMessage,
-  type EmailBusiness,
-} from '../../../shared/email.ts'
-export * from '../../../shared/email.ts'
-import { validateEmailDesign, mediaUrl } from '../../../shared/cms.ts'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+
+export type EmailLanguage = 'sv' | 'en'
+export type EmailTemplateName =
+  | 'customer_confirmation'
+  | 'barber_confirmation'
+  | 'customer_cancellation'
+  | 'barber_cancellation'
+  | 'customer_reminder'
+  | 'customer_booking_access'
+  | 'auth_recovery'
+  | 'auth_email_change'
+  | 'auth_invite'
+
+export interface EmailTemplateCopy {
+  readonly subject: string
+  readonly preheader: string
+  readonly title: string
+  readonly intro: string
+  readonly sectionTitle: string | null
+  readonly note: string
+  readonly ctaLabel: string
+  readonly contactLead: string | null
+}
+
+export interface EmailDetailRow {
+  readonly label: string
+  readonly value: string
+}
+
+export interface EmailMessage {
+  readonly to: string
+  readonly from: string
+  readonly replyTo: string
+  readonly subject: string
+  readonly text: string
+  readonly html: string
+}
 
 export type ResendFailureKind = 'transient' | 'permanent'
 
@@ -22,6 +49,232 @@ export class ResendDeliveryError extends Error {
     this.kind = kind
     this.status = status
   }
+}
+
+interface EmailBuildInput {
+  readonly to: string
+  readonly lang: EmailLanguage
+  readonly copy: EmailTemplateCopy
+  readonly variables?: Readonly<Record<string, string>>
+  readonly rows?: readonly EmailDetailRow[]
+  readonly ctaHref: string
+  readonly business: EmailBusiness
+}
+
+const SITE_URL = 'https://bladeblendstudio.se'
+const SENDING_MAILBOX = 'booking@mail.bladeblendstudio.se'
+
+export interface EmailBusiness {
+  readonly name: string
+  readonly email: string
+  /** Both are null when the owner intentionally removes phone contact from email CMS. */
+  readonly phoneDisplay: string | null
+  readonly phoneHref: string | null
+  readonly address: string
+  /** Null when map contact is intentionally removed or the value is unsafe. */
+  readonly mapsHref: string | null
+  readonly cancellationPolicyHours: number
+}
+
+const DEFAULTS: Record<EmailTemplateName, Record<EmailLanguage, EmailTemplateCopy>> = {
+  customer_confirmation: {
+    sv: {
+      subject: 'Bokningsbekräftelse',
+      preheader: 'Din tid hos {barber_name} är bokad.',
+      title: 'Din tid är bokad',
+      intro: 'Hej {customer_name},\nTack för din bokning, du är varmt välkommen till oss!',
+      sectionTitle: 'Din bokade tid',
+      note: 'Din tid kan följas under "Mina bokningar", avbokningsvillkor {cancellation_hours}h.',
+      ctaLabel: 'Mina bokningar',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Booking confirmation',
+      preheader: 'Your appointment with {barber_name} is confirmed.',
+      title: 'Your appointment is confirmed',
+      intro: 'Hi {customer_name},\nThank you for your booking. You are warmly welcome to visit us!',
+      sectionTitle: 'Your appointment',
+      note: 'Follow your appointment under "My appointments". Cancellation policy: {cancellation_hours} hours.',
+      ctaLabel: 'My appointments',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  barber_confirmation: {
+    sv: {
+      subject: 'Ny bokning',
+      preheader: 'Ny bokning {booking_date} {booking_time}.',
+      title: 'En ny tid är bokad',
+      intro: '{customer_name} har bokat en tid hos {barber_name}.',
+      sectionTitle: 'Bokningsuppgifter',
+      note: 'Bokningen finns i adminpanelen tillsammans med kundens kontaktuppgifter.',
+      ctaLabel: 'Öppna adminpanelen',
+      contactLead: 'Vid frågor, kontakta studion på',
+    },
+    en: {
+      subject: 'New booking',
+      preheader: 'New booking.',
+      title: 'A new appointment is booked',
+      intro: '{customer_name} booked an appointment.',
+      sectionTitle: 'Booking details',
+      note: 'The booking is available in the admin panel.',
+      ctaLabel: 'Open admin panel',
+      contactLead: 'Questions? Call the studio on',
+    },
+  },
+  customer_cancellation: {
+    sv: {
+      subject: 'Avbokningsbekräftelse',
+      preheader: 'Din tid hos {barber_name} är avbokad.',
+      title: 'Din tid är avbokad',
+      intro: 'Hej {customer_name},\nDin avbokning är bekräftad.',
+      sectionTitle: 'Din avbokade tid',
+      note: 'Tiden är inte längre aktiv under "Mina bokningar".',
+      ctaLabel: 'Boka en ny tid',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Cancellation confirmation',
+      preheader: 'Your appointment with {barber_name} is cancelled.',
+      title: 'Your appointment is cancelled',
+      intro: 'Hi {customer_name},\nYour cancellation is confirmed.',
+      sectionTitle: 'Your cancelled appointment',
+      note: 'The appointment is no longer active under "My appointments".',
+      ctaLabel: 'Book a new appointment',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  barber_cancellation: {
+    sv: {
+      subject: 'Avbokad tid',
+      preheader: 'Avbokad tid {booking_date} {booking_time}.',
+      title: 'En tid har avbokats',
+      intro: '{customer_name}s tid hos {barber_name} har avbokats.',
+      sectionTitle: 'Avbokningsuppgifter',
+      note: 'Tiden har tagits bort från kommande bokningar.',
+      ctaLabel: 'Öppna adminpanelen',
+      contactLead: 'Vid frågor, kontakta studion på',
+    },
+    en: {
+      subject: 'Cancelled appointment',
+      preheader: 'An appointment was cancelled.',
+      title: 'An appointment was cancelled',
+      intro: '{customer_name} cancelled an appointment.',
+      sectionTitle: 'Cancellation details',
+      note: 'The appointment was removed from upcoming bookings.',
+      ctaLabel: 'Open admin panel',
+      contactLead: 'Questions? Call the studio on',
+    },
+  },
+  customer_reminder: {
+    sv: {
+      subject: 'Påminnelse inför din bokning',
+      preheader: 'Din tid hos {barber_name} är i morgon.',
+      title: 'Vi ses i morgon',
+      intro: 'Hej {customer_name},\nDetta är en påminnelse om din bokade tid i morgon.',
+      sectionTitle: 'Din bokade tid',
+      note: 'Behöver du avboka? Öppna "Mina bokningar". Avbokningsvillkor {cancellation_hours}h.',
+      ctaLabel: 'Mina bokningar',
+      contactLead: 'Om du har frågor, kontakta oss på',
+    },
+    en: {
+      subject: 'Appointment reminder',
+      preheader: 'Your appointment with {barber_name} is tomorrow.',
+      title: 'See you tomorrow',
+      intro: 'Hi {customer_name},\nThis is a reminder about your appointment tomorrow.',
+      sectionTitle: 'Your appointment',
+      note: 'Need to cancel? Open "My appointments". Cancellation policy: {cancellation_hours} hours.',
+      ctaLabel: 'My appointments',
+      contactLead: 'Questions? Call us on',
+    },
+  },
+  customer_booking_access: {
+    sv: {
+      subject: 'Öppna Mina bokningar',
+      preheader: 'Öppna din säkra länk till Mina bokningar.',
+      title: 'Öppna Mina bokningar',
+      intro: 'Använd länken för att se och hantera dina bokade tider.',
+      sectionTitle: null,
+      note: 'Länken gäller tills du begär en ny. Då slutar den tidigare länken att fungera.',
+      ctaLabel: 'Öppna Mina bokningar',
+      contactLead: 'Om du inte begärde länken kan du ignorera detta mejl.',
+    },
+    en: {
+      subject: 'Open My appointments',
+      preheader: 'Open your secure My appointments link.',
+      title: 'Open My appointments',
+      intro: 'Use the link to view and manage your booked appointments.',
+      sectionTitle: null,
+      note: 'This link remains valid until you request a new one. The previous link then stops working.',
+      ctaLabel: 'Open My appointments',
+      contactLead: 'Ignore this email if you did not request the link.',
+    },
+  },
+  auth_recovery: {
+    sv: {
+      subject: 'Återställ lösenord',
+      preheader: 'Välj ett nytt lösenord till ditt konto.',
+      title: 'Återställ ditt lösenord',
+      intro: 'Vi har fått en begäran om att återställa lösenordet för ditt konto.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter. Om du inte begärde återställningen kan du ignorera mejlet.',
+      ctaLabel: 'Välj nytt lösenord',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Reset password',
+      preheader: 'Choose a new password for your account.',
+      title: 'Reset your password',
+      intro: 'We received a request to reset the password for your account.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes. Ignore this email if you did not request the reset.',
+      ctaLabel: 'Choose new password',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+  auth_email_change: {
+    sv: {
+      subject: 'Bekräfta ny e-postadress',
+      preheader: 'Bekräfta din nya e-postadress.',
+      title: 'Bekräfta din nya e-postadress',
+      intro: 'Bekräfta {new_email} som ny e-postadress för ditt konto.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter och kan bara användas en gång. Ignorera mejlet om du inte begärde ändringen.',
+      ctaLabel: 'Bekräfta e-postadress',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Confirm new email address',
+      preheader: 'Confirm your new email address.',
+      title: 'Confirm your new email address',
+      intro: 'Confirm {new_email} as the new email address for your account.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes and can only be used once. Ignore this email if you did not request the change.',
+      ctaLabel: 'Confirm email address',
+      contactLead: 'Need help? Call us on',
+    },
+  },
+  auth_invite: {
+    sv: {
+      subject: 'Din inbjudan till {business_name}',
+      preheader: 'Skapa ditt personliga lösenord och aktivera kontot.',
+      title: 'Välkommen till teamet',
+      intro: 'Du har blivit inbjuden till barberarpanelen hos {business_name}.',
+      sectionTitle: null,
+      note: 'Länken gäller i 60 minuter och kan bara användas en gång.',
+      ctaLabel: 'Skapa mitt lösenord',
+      contactLead: 'Behöver du hjälp? Kontakta oss på',
+    },
+    en: {
+      subject: 'Your invitation to {business_name}',
+      preheader: 'Create your personal password and activate the account.',
+      title: 'Welcome to the team',
+      intro: 'You have been invited to the barber panel at {business_name}.',
+      sectionTitle: null,
+      note: 'The link is valid for 60 minutes and can only be used once.',
+      ctaLabel: 'Create my password',
+      contactLead: 'Need help? Call us on',
+    },
+  },
 }
 
 function nonEmpty(value: unknown): value is string {
@@ -85,7 +338,7 @@ export async function loadEmailTemplate(
   template: EmailTemplateName,
   lang: EmailLanguage,
 ): Promise<EmailTemplateCopy> {
-  const fallback = defaultEmailTemplate(template, lang)
+  const fallback = DEFAULTS[template][lang]
   const { data, error } = await client.rpc('email_template_for_delivery', {
     p_template: template,
     p_lang: lang,
@@ -110,7 +363,99 @@ export async function loadEmailTemplate(
     note: row.note,
     ctaLabel: row.cta_label,
     contactLead: nonEmpty(row.contact_lead) ? row.contact_lead : null,
-    ...deliveryDesign(row.design, client),
+  }
+}
+
+export function defaultEmailTemplate(
+  template: EmailTemplateName,
+  lang: EmailLanguage,
+): EmailTemplateCopy {
+  return DEFAULTS[template][lang]
+}
+
+function interpolate(value: string, variables: Readonly<Record<string, string>>): string {
+  return value.replace(/\{([a-z_]+)\}/g, (match, key: string) => variables[key] ?? match)
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function htmlText(value: string): string {
+  return escapeHtml(value).replaceAll('\n', '<br>')
+}
+
+function rowsHtml(rows: readonly EmailDetailRow[]): string {
+  return rows
+    .map(
+      (row, index) =>
+        `<tr><td style="padding:${index === 0 ? '0 0 14px' : '14px 0'};color:#98989d;font-size:14px;line-height:1.45;vertical-align:top;border-bottom:${index === rows.length - 1 ? '0' : '1px solid #424245'}">${escapeHtml(row.label)}</td><td align="right" style="padding:${index === 0 ? '0 0 14px' : '14px 0'};color:#f5f5f7;font-size:15px;font-weight:650;line-height:1.45;vertical-align:top;border-bottom:${index === rows.length - 1 ? '0' : '1px solid #424245'}">${escapeHtml(row.value)}</td></tr>`,
+    )
+    .join('')
+}
+
+export function buildEmailMessage(input: EmailBuildInput): EmailMessage {
+  const variables = { business_name: input.business.name, ...input.variables }
+  const subject = interpolate(input.copy.subject, variables)
+  const preheader = interpolate(input.copy.preheader, variables)
+  const title = interpolate(input.copy.title, variables)
+  const intro = interpolate(input.copy.intro, variables)
+  const sectionTitle =
+    input.copy.sectionTitle === null ? null : interpolate(input.copy.sectionTitle, variables)
+  const note = interpolate(input.copy.note, variables)
+  const ctaLabel = interpolate(input.copy.ctaLabel, variables)
+  const contactLead =
+    input.copy.contactLead === null ? null : interpolate(input.copy.contactLead, variables)
+  const rows = input.rows ?? []
+  const business = input.business
+  const phoneLink =
+    business.phoneHref !== null && business.phoneDisplay !== null
+      ? `<a href="${escapeHtml(business.phoneHref)}" style="color:#f5f5f7;text-decoration:underline;text-decoration-color:#68686d;text-underline-offset:3px;white-space:nowrap">${escapeHtml(business.phoneDisplay)}</a>`
+      : ''
+  const detailBlock =
+    rows.length === 0
+      ? ''
+      : `<p style="margin:0 0 12px;color:#b5b5ba;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">${escapeHtml(sectionTitle ?? '')}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#303033" style="width:100%;background:#303033;border:1px solid #48484b;border-radius:18px;border-collapse:separate;padding:20px 22px">${rowsHtml(rows)}</table>`
+  const contactBlock =
+    contactLead === null || phoneLink === ''
+      ? ''
+      : `<p style="margin:28px 0 0;color:#a9a9ae;font-size:13px;line-height:1.6">${htmlText(contactLead)} ${phoneLink}</p>`
+  const addressLink =
+    business.mapsHref === null
+      ? escapeHtml(business.address)
+      : `<a href="${escapeHtml(business.mapsHref)}" style="color:#98989d;text-decoration:none">${escapeHtml(business.address)}</a>`
+  const footerPhone =
+    business.phoneHref === null || business.phoneDisplay === null
+      ? ''
+      : `<br><a href="${escapeHtml(business.phoneHref)}" style="color:#98989d;text-decoration:none">${escapeHtml(business.phoneDisplay)}</a>`
+  const html = `<!doctype html><html lang="${input.lang}" style="color-scheme:dark;supported-color-schemes:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>${escapeHtml(subject)}</title></head><body bgcolor="#151517" style="margin:0;padding:0;background:#151517;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#151517" style="width:100%;background:#151517"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#1f1f21" style="width:100%;max-width:600px;background:#1f1f21;border:1px solid #39393c;border-radius:28px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px 34px 0"><a href="${SITE_URL}" style="display:inline-block;color:#f5f5f7;text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">BLADE &amp; BLEND</a></td></tr><tr><td style="padding:40px 34px 34px"><h1 style="margin:0;color:#f5f5f7;font-size:32px;font-weight:750;letter-spacing:-.04em;line-height:1.12">${htmlText(title)}</h1><p style="margin:20px 0 32px;color:#d1d1d6;font-size:16px;line-height:1.65">${htmlText(intro)}</p>${detailBlock}<p style="margin:28px 0 22px;color:#b5b5ba;font-size:14px;line-height:1.65">${htmlText(note)}</p><table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#f5f5f7" style="background:#f5f5f7;border-radius:12px"><a href="${escapeHtml(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:#171719;text-decoration:none;font-size:15px;font-weight:750">${escapeHtml(ctaLabel)}</a></td></tr></table>${contactBlock}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid #39393c"><tr><td style="padding-top:22px;color:#737378;font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table></td></tr></table></td></tr></table></body></html>`
+  const text = [
+    title,
+    intro,
+    sectionTitle,
+    ...rows.map((row) => `${row.label}: ${row.value}`),
+    note,
+    `${ctaLabel}: ${input.ctaHref}`,
+    contactLead === null || business.phoneDisplay === null
+      ? null
+      : `${contactLead} ${business.phoneDisplay}`,
+    business.address,
+    business.phoneDisplay,
+  ]
+    .filter((value): value is string => value !== null && value.length > 0)
+    .join('\n\n')
+  return {
+    to: input.to,
+    from: `${business.name} <${SENDING_MAILBOX}>`,
+    replyTo: business.email,
+    subject,
+    text,
+    html,
   }
 }
 
@@ -227,23 +572,4 @@ export async function deliverEmailBatch<Entry extends { readonly kind: string }>
   }
 
   return { sent, failureCode }
-}
-
-function deliveryDesign(raw: unknown, client: SupabaseClient): Partial<EmailTemplateCopy> {
-  if (raw === null || raw === undefined) return {}
-  try {
-    validateEmailDesign(raw)
-    if (!raw.logo) return { design: raw }
-    const origin =
-      typeof Deno !== 'undefined'
-        ? Deno.env.get('PUBLIC_SUPABASE_URL') || Deno.env.get('SUPABASE_URL')
-        : undefined
-    const url = origin
-      ? mediaUrl(raw.logo, origin)
-      : client.storage.from(raw.logo.bucket).getPublicUrl(raw.logo.path).data.publicUrl
-    return { design: raw, designLogoUrl: url }
-  } catch {
-    // A corrupt legacy design never creates executable mail or drops a transactional message.
-    return {}
-  }
 }
