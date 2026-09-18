@@ -45,7 +45,10 @@ class FakeComponent {
     this.style = { ...style }
   }
 
-  components(): { forEach: (fn: (child: FakeComponent, index: number) => void) => void; at: (index: number) => FakeComponent | undefined } {
+  components(): {
+    forEach: (fn: (child: FakeComponent, index: number) => void) => void
+    at: (index: number) => FakeComponent | undefined
+  } {
     return {
       forEach: (fn) => this.children.forEach(fn),
       at: (index) => this.children[index],
@@ -123,20 +126,10 @@ describe('CMS GrapesJS clone safety', () => {
     const ids = new Map([['target', 'target-copy']])
 
     expect(
-      remapCloneAttributes(
-        { href: '/about#target' },
-        ids,
-        '/about',
-        'https://example.test',
-      ).href,
+      remapCloneAttributes({ href: '/about#target' }, ids, '/about', 'https://example.test').href,
     ).toBe('/about#target-copy')
     expect(
-      remapCloneAttributes(
-        { href: '/booking#target' },
-        ids,
-        '/about',
-        'https://example.test',
-      ).href,
+      remapCloneAttributes({ href: '/booking#target' }, ids, '/about', 'https://example.test').href,
     ).toBe('/booking#target')
   })
 
@@ -210,12 +203,9 @@ describe('CMS GrapesJS clone safety', () => {
       },
     }
 
-    remapClone(
-      original as never,
-      clone as never,
-      editor as never,
-      { origin: 'https://example.test' },
-    )
+    remapClone(original as never, clone as never, editor as never, {
+      origin: 'https://example.test',
+    })
 
     expect(cloneLink.attributes.href).toBe('#target-copy')
     expect(cloneLabel.attributes['aria-labelledby']).toBe('target-copy')
