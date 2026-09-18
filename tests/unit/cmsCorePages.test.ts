@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
+import { emptyDocument, validateDocument } from '../../shared/cms'
 import { ensureCorePages, CORE_PAGE_IDS } from '../../src/admin/cms/corePages'
 
 describe('CMS core pages', () => {
@@ -17,6 +17,7 @@ describe('CMS core pages', () => {
       '/terms',
     ])
     expect(ensureCorePages(seeded).presentation.pages).toHaveLength(CORE_PAGE_IDS.length)
+    expect(() => validateDocument(seeded)).not.toThrow()
   })
 
   it('preserves custom pages while repairing only missing protected pages', () => {
