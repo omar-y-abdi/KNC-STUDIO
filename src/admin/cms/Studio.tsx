@@ -192,6 +192,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const page = currentPage(document, selectedPage)
   void version
 
+  const importDraft = async (file: File): Promise<void> => {
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown
+      const checked = await cmsApi.validate(parsed as CmsDocument)
+      const next = ensureCorePages(checked.document)
+      commitDraft(next)
+      setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
+      setEditorRevision((value) => value + 1)
+      setError('JSON-utkastet importerades och är ännu inte publicerat.')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'JSON-utkastet kunde inte importeras.')
+    }
+  }
+
   const createPage = (): void => {
     const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
     if (
@@ -523,6 +537,19 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           Restore
         </button>
         <DownloadDraft document={document} />
+        <label class="cms-import-button">
+          Import
+          <input
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              if (file) void importDraft(file)
+              event.currentTarget.value = ''
+            }}
+          />
+        </label>
         <span class="cms-status">
           {busy
             ? 'Arbetar…'
