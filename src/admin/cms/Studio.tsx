@@ -820,7 +820,9 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
                   role="tab"
                   key={key}
                   aria-selected={inspectorTab === key}
-                  onClick={() => setInspectorTab(key as 'design' | 'layers' | 'blocks')}
+                  onClick={() =>
+                    setInspectorTab(key as 'design' | 'layers' | 'blocks')
+                  }
                 >
                   {label}
                 </button>
@@ -877,7 +879,9 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
           class="cms-panel-toggle"
           aria-controls="cms-library"
           aria-expanded={mobilePanel === 'library'}
-          onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
+          onClick={() =>
+            setMobilePanel((value) => (value === 'library' ? null : 'library'))
+          }
         >
           Sidor
         </button>
@@ -886,7 +890,9 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
           class="cms-panel-toggle"
           aria-controls="cms-inspector"
           aria-expanded={mobilePanel === 'inspector'}
-          onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
+          onClick={() =>
+            setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))
+          }
         >
           Egenskaper
         </button>
