@@ -267,6 +267,27 @@ try {
   await test('owner-studio-native-preview', owner.session, async (page) => {
     await studio(page)
     await expect(canvas(page).locator('[data-cms-node]').first()).toBeVisible()
+    const desktopShell = await page.locator('.cms-workspace').evaluate((workspace) => {
+      const library = workspace.querySelector('#cms-library')?.getBoundingClientRect()
+      const canvasArea = workspace.querySelector('.cms-canvas-area')?.getBoundingClientRect()
+      const inspector = workspace.querySelector('#cms-inspector')?.getBoundingClientRect()
+      if (!library || !canvasArea || !inspector) return null
+      return {
+        libraryRight: library.right,
+        canvasLeft: canvasArea.left,
+        canvasRight: canvasArea.right,
+        inspectorLeft: inspector.left,
+      }
+    })
+    assert(
+      desktopShell !== null &&
+        desktopShell.libraryRight <= desktopShell.canvasLeft &&
+        desktopShell.canvasRight <= desktopShell.inspectorLeft,
+      `Desktop studio is not a left/canvas/right layout: ${JSON.stringify(desktopShell)}`,
+    )
+    await expect(page.getByRole('tablist', { name: 'Egenskapspanel' })).toBeVisible()
+    await expect(page.getByRole('toolbar', { name: 'Redigeringskommandon' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Mobilverktyg' })).toBeHidden()
     await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeDisabled()
     await page.getByRole('button', { name: 'Resurser', exact: true }).click()
     for (const name of [
