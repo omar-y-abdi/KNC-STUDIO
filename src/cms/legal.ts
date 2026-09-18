@@ -1,7 +1,4 @@
-import {
-  formatBusinessAddress,
-  type BusinessSettings,
-} from '../site/business'
+import { formatBusinessAddress, type BusinessSettings } from '../site/business'
 
 function escapeAttribute(value: string): string {
   return value

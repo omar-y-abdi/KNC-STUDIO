@@ -32,9 +32,7 @@ describe('CMS legal authoritative markup', () => {
     const result = enrichLegalMarkup(html, BUSINESS)
 
     expect(result).toContain('<span data-business-name>Current Studio</span>')
-    expect(result).toContain(
-      '<span data-business-controller="sv">Current Studio AB</span>',
-    )
+    expect(result).toContain('<span data-business-controller="sv">Current Studio AB</span>')
     expect(result).toContain('mailto:legal@example.test')
     expect(result).toContain('559999-1234')
     expect(result).toContain('Currentgatan 7, 411 11 Göteborg')
