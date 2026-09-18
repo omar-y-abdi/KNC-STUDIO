@@ -10,6 +10,12 @@ import { SUPABASE_URL } from '../../backend/config'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 import { nudgeComponent, resetComponentPosition } from './position'
 import { installCloneSafety } from './cloneSafety'
+import {
+  captureEditorView,
+  loadEditorViewState,
+  restoreEditorView,
+  saveEditorViewState,
+} from './viewState'
 
 interface LiveView {
   el: HTMLElement
@@ -76,7 +82,10 @@ export function AuthoredEditor(props: Props): JSX.Element {
   const applying = useRef(false),
     emitted = useRef(''),
     appliedSource = useRef(''),
+    pendingViewRestore = useRef<number | null>(null),
     [tab, setTab] = useState('style')
+  const tabRef = useRef(tab)
+  tabRef.current = tab
   const fontCss = fontFaceCss(props.presentation, SUPABASE_URL ?? 'https://unconfigured.invalid')
   const applyFonts = (): void => {
     const document = editor.current?.Canvas.getDocument()
@@ -307,6 +316,14 @@ export function AuthoredEditor(props: Props): JSX.Element {
     })
     return () => {
       if (scheduled !== null) cancelAnimationFrame(scheduled)
+      if (pendingViewRestore.current !== null) cancelAnimationFrame(pendingViewRestore.current)
+      saveEditorViewState(
+        current.current.identity,
+        captureEditorView(gjs, {
+          zoom: current.current.zoom,
+          tab: tabRef.current,
+        }),
+      )
       flush()
       props.onReady(null)
       inputDocument?.removeEventListener('input', schedule, true)
@@ -328,6 +345,10 @@ export function AuthoredEditor(props: Props): JSX.Element {
       appliedSource.current = targetKey
       return
     }
+    const viewSnapshot = appliedSource.current
+      ? captureEditorView(gjs, { zoom: props.zoom, tab: tabRef.current })
+      : loadEditorViewState(props.identity)
+    if (viewSnapshot) saveEditorViewState(props.identity, viewSnapshot)
     try {
       const policy = {
         siteOrigin: location.origin,
@@ -348,6 +369,23 @@ export function AuthoredEditor(props: Props): JSX.Element {
         css: { ...props.variant.css, [props.mode]: css },
       })
       appliedSource.current = targetKey
+      if (viewSnapshot) {
+        if (pendingViewRestore.current !== null) cancelAnimationFrame(pendingViewRestore.current)
+        const snapshot = {
+          ...viewSnapshot,
+          device: props.width <= 768 ? 'Mobile' : 'Desktop',
+          zoom: props.zoom,
+        }
+        pendingViewRestore.current = requestAnimationFrame(() => {
+          pendingViewRestore.current = null
+          restoreEditorView(gjs, snapshot, {
+            setTab(value) {
+              tabRef.current = value
+              setTab(value)
+            },
+          })
+        })
+      }
     } catch (error) {
       props.onError(error instanceof Error ? error.message : 'Sidan kunde inte läsas.')
     } finally {
