@@ -1,6 +1,5 @@
 import type { JSX } from 'preact'
-import type { CmsDocument, CmsEmail, CmsLang } from '../../../shared/cms'
-import { EMAIL_NAMES } from '../../../shared/cms'
+import type { CmsDocument, CmsEmail, CmsLang } from '../../../shared/cms'import { EMAIL_NAMES } from '../../../shared/cms'
 import { EmailTemplatePreview } from '../EmailTemplatePreview'
 
 const businessFields = [
