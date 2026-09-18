@@ -72,8 +72,7 @@ export function BusinessPanel({
             Namn
             <input
               value={barber.name}
-             
-                onInput={(e) => {
+              onInput={(e) => {
                 const next = structuredClone(document)
                 next.barbers[index].name = e.currentTarget.value
                 onChange(next)
@@ -84,8 +83,7 @@ export function BusinessPanel({
             Roll SV
             <input
               value={barber.role_sv}
-             
-                onInput={(e) => {
+              onInput={(e) => {
                 const next = structuredClone(document)
                 next.barbers[index].role_sv = e.currentTarget.value
                 onChange(next)
@@ -96,8 +94,7 @@ export function BusinessPanel({
             Roll EN
             <input
               value={barber.role_en}
-             
-                onInput={(e) => {
+              onInput={(e) => {
                 const next = structuredClone(document)
                 next.barbers[index].role_en = e.currentTarget.value
                 onChange(next)
@@ -108,8 +105,7 @@ export function BusinessPanel({
             Bio SV
             <textarea
               value={barber.bio_sv}
-             
-                onInput={(e) => {
+              onInput={(e) => {
                 const next = structuredClone(document)
                 next.barbers[index].bio_sv = e.currentTarget.value
                 onChange(next)
@@ -120,8 +116,7 @@ export function BusinessPanel({
             Bio EN
             <textarea
               value={barber.bio_en}
-             
-                onInput={(e) => {
+              onInput={(e) => {
                 const next = structuredClone(document)
                 next.barbers[index].bio_en = e.currentTarget.value
                 onChange(next)
@@ -191,63 +186,73 @@ export function EmailPanel({
             <legend>Design</legend>
             <label>
               Bredd
-              <input type="number" min="320" max="760"
+              <input
+                type="number"
+                min="320"
+                max="760"
                 value={email.design.width}
                 onInput={(e) => {
                 const next = structuredClone(email)
                 if (next.design) next.design.width = Number(e.currentTarget.value)
                 onChange(replaceEmail(document, next))
-             
-                }}
-              />
+              }}
+            />
             </label>
             <label>
               Hörnradie
-              <input type="number" min="0" max="48"
+              <input
+                type="number"
+                min="0"
+                max="48"
                 value={email.design.radius}
                 onInput={(e) => {
                 const next = structuredClone(email)
                 if (next.design) next.design.radius = Number(e.currentTarget.value)
                 onChange(replaceEmail(document, next))
-             
-                }}
-              />
+              }}
+            />
             </label>
             <label>
               Padding
-              <input type="number" min="12" max="64"
+              <input
+                type="number"
+                min="12"
+                max="64"
                 value={email.design.padding}
                 onInput={(e) => {
                 const next = structuredClone(email)
                 if (next.design) next.design.padding = Number(e.currentTarget.value)
                 onChange(replaceEmail(document, next))
-             
-                }}
-              />
+              }}
+            />
             </label>
             <label>
               Rubrikstorlek
-              <input type="number" min="18" max="56"
+              <input
+                type="number"
+                min="18"
+                max="56"
                 value={email.design.titleSize}
                 onInput={(e) => {
                 const next = structuredClone(email)
                 if (next.design) next.design.titleSize = Number(e.currentTarget.value)
                 onChange(replaceEmail(document, next))
-             
-                }}
-              />
+              }}
+            />
             </label>
             <label>
               Textstorlek
-              <input type="number" min="12" max="24"
+              <input
+                type="number"
+                min="12"
+                max="24"
                 value={email.design.textSize}
                 onInput={(e) => {
                 const next = structuredClone(email)
                 if (next.design) next.design.textSize = Number(e.currentTarget.value)
                 onChange(replaceEmail(document, next))
-             
-                }}
-              />
+              }}
+            />
             </label>
             <label>
               Standardtema
@@ -276,14 +281,15 @@ export function EmailPanel({
                 ] as const).map(([key, label]) => (
                   <label>
                     {label}
-                    <input type="color" value={email.design?.palettes[paletteMode][key] ?? '#000000'}
+                    <input
+                      type="color"
+                      value={email.design?.palettes[paletteMode][key] ?? '#000000'}
                 onInput={(e) => {
                       const next = structuredClone(email)
                       if (next.design) next.design.palettes[paletteMode][key] = e.currentTarget.value
                       onChange(replaceEmail(document, next))
-                   
-                }}
-              />
+              }}
+            />
                   </label>
                 ))}
               </fieldset>
