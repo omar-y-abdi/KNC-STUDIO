@@ -177,9 +177,7 @@ function elements(root: HtmlNode): HtmlElement[] {
 
 function isRuntimeData(name: string): boolean {
   return (
-    name.startsWith('data-') &&
-    !name.startsWith('data-cms-') &&
-    !SOURCE_ONLY_DATA.has(name)
+    name.startsWith('data-') && !name.startsWith('data-cms-') && !SOURCE_ONLY_DATA.has(name)
   )
 }
 

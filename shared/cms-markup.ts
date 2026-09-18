@@ -230,8 +230,7 @@ export function validateMarkup(
           continue
         }
         const runtimeData = name.startsWith('data-') && !name.startsWith('data-cms-')
-        const trustedRuntimeData =
-          functionalMode && runtimeData && contract?.attrs[name] === value
+        const trustedRuntimeData = functionalMode && runtimeData && contract?.attrs[name] === value
         if (functionalMode && runtimeData && !trustedRuntimeData)
           reject('html', 'Functional data hook does not match its trusted contract')
         if (

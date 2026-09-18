@@ -65,12 +65,12 @@ describe('canonical CMS page project', () => {
     expect(html).not.toContain('data-cms-node')
     expect(html).not.toContain('data-cms-copy')
     expect(html).not.toContain('data-testid')
-    expect(fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'form')?.key).toBe(
-      'booking-form-root',
-    )
-    expect(fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'button')?.key).toBe(
-      'booking-next-button',
-    )
+    expect(
+      fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'form')?.key,
+    ).toBe('booking-form-root')
+    expect(
+      fixture.seed.pages[0]!.contracts.sv.find((item) => item.tag === 'button')?.key,
+    ).toBe('booking-next-button')
   })
 
   it('keeps presentation editable while preserving trusted runtime contracts', () => {
