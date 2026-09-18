@@ -1,5 +1,30 @@
-import { validateEmailDesign, type CmsMode, type EmailDesign } from './cms.ts'
-import type { EmailBuildInput } from './email.ts'
+import { validateEmailDesign, type CmsLang, type CmsMode, type EmailDesign } from './cms.ts'
+
+export interface DesignedEmailCopy {
+  subject: string
+  preheader: string
+  title: string
+  intro: string
+  sectionTitle: string | null
+  note: string
+  ctaLabel: string
+  contactLead: string | null
+  designLogoUrl?: string
+}
+export interface DesignedEmailInput {
+  lang: CmsLang
+  copy: DesignedEmailCopy
+  variables?: Readonly<Record<string, string>>
+  rows?: readonly { label: string; value: string }[]
+  ctaHref: string
+  business: {
+    name: string
+    phoneDisplay: string | null
+    phoneHref: string | null
+    address: string
+    mapsHref: string | null
+  }
+}
 
 const escape = (value: string): string =>
   value
@@ -14,13 +39,13 @@ const copy = (value: string, variables: Readonly<Record<string, string>>): strin
   escape(expand(value, variables)).replaceAll('\n', '<br>')
 
 export function renderDesignedEmail(
-  input: EmailBuildInput,
+  input: DesignedEmailInput,
   design: EmailDesign,
   previewMode?: CmsMode,
 ): string {
   validateEmailDesign(design)
-  const mode = previewMode ?? design.defaultMode,
-    colors = design.palettes[mode]
+  const mode = previewMode ?? design.defaultMode
+  const colors = design.palettes[mode]
   const variables = { business_name: input.business.name, ...input.variables }
   const font =
     design.font === 'serif'
@@ -39,7 +64,7 @@ export function renderDesignedEmail(
       details.length === 0
         ? ''
         : `<section data-email-part="details"><p style="font-weight:700;font-size:12px;color:${colors.muted}">${text(input.copy.sectionTitle ?? '')}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="12" style="border:1px solid ${colors.border};margin-bottom:24px">${details.map((row) => `<tr><td style="font-size:${design.textSize}px;color:${colors.muted}">${escape(row.label)}</td><td align="right" style="font-size:${design.textSize}px;color:${colors.text}">${escape(row.value)}</td></tr>`).join('')}</table></section>`,
-    note: `<p data-email-part="note" style="font-size:${design.textSize - 2}px;color:${colors.muted};line-height:1.65;margin:0 0 24px">${text(input.copy.note)}</p>`,
+    note: `<p data-email-part="note" style="font-size:${Math.max(10, design.textSize - 2)}px;color:${colors.muted};line-height:1.65;margin:0 0 24px">${text(input.copy.note)}</p>`,
     cta: `<table data-email-part="cta" role="presentation" cellspacing="0" cellpadding="0" style="margin-bottom:24px"><tr><td bgcolor="${colors.button}" style="background:${colors.button};border-radius:${Math.min(12, design.radius)}px"><a href="${escape(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:${colors.buttonText};font-size:${design.textSize}px;font-weight:700;text-decoration:none">${text(input.copy.ctaLabel)}</a></td></tr></table>`,
     contact: `<div data-email-part="contact" style="font-size:12px;line-height:1.65;color:${colors.muted}">${input.copy.contactLead && input.business.phoneHref && input.business.phoneDisplay ? `<p>${text(input.copy.contactLead)} ${link(input.business.phoneHref, input.business.phoneDisplay)}</p>` : ''}<p>${input.business.mapsHref ? link(input.business.mapsHref, input.business.address) : escape(input.business.address)}</p></div>`,
   }
