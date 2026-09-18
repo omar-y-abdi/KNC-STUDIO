@@ -10,7 +10,7 @@ import type {
   CmsState,
 } from '../../../shared/cms'
 import { ensureCorePages, CORE_PAGE_IDS } from './corePages'
-import { CmsDraft } from './draft'
+import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
@@ -137,11 +137,26 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       setVersion((value) => value + 1)
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : 'Publiceringen misslyckades. Utkastet finns kvar.',
-      )
+      const message =
+        reason instanceof Error ? reason.message : 'Publiceringen misslyckades. Utkastet finns kvar.'
+      if (/conflict|ändrats|409/i.test(message)) {
+        try {
+          const remote = await cmsApi.state()
+          const merged = mergeCmsDocuments(draft.base, draft.document, ensureCorePages(remote.document))
+          const next = new CmsDraft(merged.document, remote.revision, remote.fingerprint)
+          next.base = structuredClone(ensureCorePages(remote.document))
+          setDraft(next)
+          setVersion((value) => value + 1)
+          setEditorRevision((value) => value + 1)
+          setError(
+            merged.conflicts.length
+              ? `Konflikt. Oberoende ändringar slogs ihop; ${merged.conflicts.length} område(n) kräver kontroll före ny publicering.`
+              : 'Servern hade nya ändringar. De slogs ihop med ditt utkast; granska och publicera igen.',
+          )
+        } catch {
+          setError(message)
+        }
+      } else setError(message)
     } finally {
       setBusy(false)
     }
