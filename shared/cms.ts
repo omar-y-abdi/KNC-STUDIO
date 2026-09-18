@@ -878,9 +878,10 @@ export function validateCompleteDocument(
   )
   for (const email of authoritative.emails) {
     const key = `${email.template}:${email.lang}`
+    const path = `emails.${email.template}.${email.lang}`
     const draft = emailIds.get(key)
     if (!draft) {
-      fail(`emails.${key}`, 'Required email variant is missing')
+      fail(path, 'Required email variant is missing')
       continue
     }
     for (const field of [
@@ -900,7 +901,7 @@ export function validateCompleteDocument(
       const present = typeof after === 'string' ? emailVariables(after) : new Set<string>()
       for (const variable of required)
         if (!present.has(variable))
-          fail(`emails.${key}.${field}`, `Required placeholder {${variable}} is missing`)
+          fail(`${path}.${field}`, `Required placeholder {${variable}} is missing`)
     }
   }
 }
