@@ -133,6 +133,42 @@ describe('CMS GrapesJS clone safety', () => {
     ).toBe('/booking#target')
   })
 
+  it('regenerates copied DOM IDs before remapping references', () => {
+    const originalTarget = new FakeComponent('target-model', { id: 'target' })
+    const originalLink = new FakeComponent('link-model', { href: '#target' })
+    const original = new FakeComponent('section-model', { id: 'section' }, {}, [
+      originalTarget,
+      originalLink,
+    ])
+
+    const cloneTarget = new FakeComponent('target-clone-model', { id: 'target' })
+    const cloneLink = new FakeComponent('link-clone-model', { href: '#target' })
+    const clone = new FakeComponent('section-clone-model', { id: 'section' }, {}, [
+      cloneTarget,
+      cloneLink,
+    ])
+    const editor = {
+      getWrapper: () => ({
+        getAttributes: () => ({ 'data-page': '/about' }),
+      }),
+      Css: {
+        getAll: () => ({ models: [] }),
+        setRule: () => undefined,
+      },
+    }
+
+    remapClone(original as never, clone as never, editor as never, {
+      origin: 'https://example.test',
+    })
+
+    expect(clone.attributes.id).not.toBe('section')
+    expect(cloneTarget.attributes.id).not.toBe('target')
+    expect(cloneLink.attributes.href).toBe(`#${cloneTarget.attributes.id}`)
+    expect(original.attributes.id).toBe('section')
+    expect(originalTarget.attributes.id).toBe('target')
+    expect(originalLink.attributes.href).toBe('#target')
+  })
+
   it('remaps ID selectors and url references in component CSS values', () => {
     const ids = new Map([
       ['target', 'target-copy'],
