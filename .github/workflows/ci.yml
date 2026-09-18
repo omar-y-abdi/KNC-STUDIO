@@ -117,7 +117,11 @@ jobs:
       - name: Adapter integration tests
         run: npm run test:integration
       - name: Build CMS browser assets
-        run: npm run build
+        run: |
+          stack="$(npx supabase status --output json)"
+          export VITE_SUPABASE_URL="$(node -e 'const value=JSON.parse(process.argv[1]);process.stdout.write(value.API_URL)' "$stack")"
+          export VITE_SUPABASE_ANON_KEY="$(node -e 'const value=JSON.parse(process.argv[1]);process.stdout.write(value.ANON_KEY)' "$stack")"
+          npm run build
       - name: Install browser engines
         run: npx playwright install --with-deps chromium firefox webkit
       - name: CMS studio shell in Chromium
