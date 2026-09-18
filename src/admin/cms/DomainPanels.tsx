@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import type { CmsDocument, CmsEmail, CmsLang } from '../../../shared/cms'import { EMAIL_NAMES } from '../../../shared/cms'
+import type { CmsDocument, CmsEmail, CmsLang } from '../../../shared/cms'import { EMAIL_NAMES, defaultEmailDesign } from '../../../shared/cms'
 
 const businessFields = [
   ['business_name', 'Visningsnamn'],
@@ -159,6 +159,15 @@ export function EmailPanel({
       </aside>
       <div class="cms-domain-panel">
         <h2>{emailLabel[email.template]} · {lang.toUpperCase()}</h2>
+        {!email.design && (
+          <button type="button" onClick={() => {
+            const next = structuredClone(email)
+            next.design = defaultEmailDesign()
+            onChange(replaceEmail(document, next))
+          }}>
+            Aktivera design
+          </button>
+        )}
         {email.design && (
           <fieldset>
             <legend>Design</legend>
