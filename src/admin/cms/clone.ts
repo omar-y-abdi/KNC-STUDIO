@@ -4,7 +4,7 @@ const referenceAttributes = ['href', 'aria-labelledby', 'aria-describedby', 'ari
 
 function walk(component: Component, visit: (component: Component) => void): void {
   visit(component)
-  component.components().forEach((child) => walk(child, visit))
+  component.components().forEach((child: Component) => walk(child, visit))
 }
 
 export function cloneComponent(component: Component): Component {

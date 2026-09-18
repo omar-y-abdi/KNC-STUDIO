@@ -183,7 +183,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }
 
-  if (!draft || !state)
+  if (!draft)
     return (
       <div class="knc-cms-studio">
         <div class="cms-notice">{error ?? 'Laddar Studio…'}</div>

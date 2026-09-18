@@ -13,18 +13,18 @@ function translate(value: unknown): [number, number] {
   return [px(parts[0]), px(parts[1] ?? '0px')]
 }
 
-export function nudgeStyle(
-  style: ComponentStyle,
+export function nudgeStyle<T extends ComponentStyle>(
+  style: T,
   dx: number,
   dy: number,
   step = 1,
-): ComponentStyle {
+): T {
   const [x, y] = translate(style['translate'])
-  return { ...style, translate: `${x + dx * step}px ${y + dy * step}px` }
+  return { ...style, translate: `${x + dx * step}px ${y + dy * step}px` } as T
 }
 
-export function resetNudgeStyle(style: ComponentStyle): ComponentStyle {
-  const next = { ...style }
+export function resetNudgeStyle<T extends ComponentStyle>(style: T): T {
+  const next = { ...style } as T
   delete next['translate']
   return next
 }

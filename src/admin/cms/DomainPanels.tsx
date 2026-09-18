@@ -74,7 +74,7 @@ export function BusinessPanel({
               value={barber.name}
               onInput={(e) => {
                   const next = structuredClone(document)
-                next.barbers[index].name = e.currentTarget.value
+                next.barbers[index]!.name = e.currentTarget.value
                 onChange(next)
                 }}
               />
@@ -85,7 +85,7 @@ export function BusinessPanel({
               value={barber.role_sv}
               onInput={(e) => {
                   const next = structuredClone(document)
-                next.barbers[index].role_sv = e.currentTarget.value
+                next.barbers[index]!.role_sv = e.currentTarget.value
                 onChange(next)
                 }}
               />
@@ -96,7 +96,7 @@ export function BusinessPanel({
               value={barber.role_en}
               onInput={(e) => {
                   const next = structuredClone(document)
-                next.barbers[index].role_en = e.currentTarget.value
+                next.barbers[index]!.role_en = e.currentTarget.value
                 onChange(next)
                 }}
               />
@@ -107,7 +107,7 @@ export function BusinessPanel({
               value={barber.bio_sv}
               onInput={(e) => {
                   const next = structuredClone(document)
-                next.barbers[index].bio_sv = e.currentTarget.value
+                next.barbers[index]!.bio_sv = e.currentTarget.value
                 onChange(next)
                 }}
               />
@@ -118,7 +118,7 @@ export function BusinessPanel({
               value={barber.bio_en}
               onInput={(e) => {
                   const next = structuredClone(document)
-                next.barbers[index].bio_en = e.currentTarget.value
+                next.barbers[index]!.bio_en = e.currentTarget.value
                 onChange(next)
                 }}
               />
