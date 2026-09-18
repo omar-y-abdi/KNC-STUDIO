@@ -201,4 +201,54 @@ describe.sequential('CMS archived asset publication boundary', () => {
       if (current?.archived) await setArchived(current, false)
     }
   }, 30000)
+  it('rejects reusing an archived public asset in a new placement', async () => {
+    const uploaded = await uploadAsset()
+    const base = await state()
+    const first = publication(base)
+    const secondNodeId = `${nodeId}.second`
+    first.document.presentation.images[nodeId] = {
+      ref: { bucket: uploaded.bucket, path: uploaded.path },
+      alt: { sv: 'Befintlig referens', en: 'Existing reference' },
+    }
+
+    const published = await call(first)
+    expect(published.status, await published.clone().text()).toBe(200)
+
+    try {
+      const referenced = await state()
+      const asset = referenced.assets.find((candidate) => candidate.id === uploaded.id)
+      expect(asset).toBeDefined()
+      if (!asset) throw new Error('Published asset is missing from CMS state')
+
+      await setArchived(asset, true)
+
+      const afterArchive = await state()
+      const reused = structuredClone(afterArchive.document)
+      reused.presentation.images[secondNodeId] = {
+        ref: { bucket: uploaded.bucket, path: uploaded.path },
+        alt: { sv: 'Ny placering', en: 'New placement' },
+      }
+
+      const validation = await call({ operation: 'validate', document: reused })
+      expect(validation.status, await validation.clone().text()).toBe(422)
+
+      const publish = await call(publication(afterArchive, reused))
+      expect(publish.status, await publish.clone().text()).toBe(422)
+
+      const latest = await state()
+      expect(latest.document.presentation.images[nodeId]).toBeDefined()
+      expect(latest.document.presentation.images[secondNodeId]).toBeUndefined()
+    } finally {
+      const latest = await state()
+      const cleanedDocument = structuredClone(latest.document)
+      Reflect.deleteProperty(cleanedDocument.presentation.images, nodeId)
+      const cleanup = await call(publication(latest, cleanedDocument))
+      expect(cleanup.status, await cleanup.clone().text()).toBe(200)
+
+      const cleaned = await state()
+      const current = cleaned.assets.find((candidate) => candidate.id === uploaded.id)
+      if (current?.archived) await setArchived(current, false)
+    }
+  }, 30000)
+
 })
