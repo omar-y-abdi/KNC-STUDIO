@@ -254,6 +254,20 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
+    const frame = editor.Canvas.getDocument()
+    if (!frame) return
+    let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
+    if (!style) {
+      style = frame.createElement('style')
+      style.id = 'cms-uploaded-fonts'
+      frame.head.append(style)
+    }
+    style.textContent = props.fontCss
+  }, [props.fontCss])
+
+  useEffect(() => {
+    const editor = instance.current
+    if (!editor) return
     editor.AssetManager.clear()
     editor.AssetManager.add(
       props.assets
