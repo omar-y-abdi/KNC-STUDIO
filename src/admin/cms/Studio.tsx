@@ -214,6 +214,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }
 
+  const editPath = (value: string): void => {
+    if (protectedIds.has(page.id)) return
+    const path = value.trim().replace(/\/+$/, '') || '/'
+    const next = structuredClone(page)
+    next.path = path
+    replacePage(next)
+  }
+
   const createPage = (): void => {
     const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
     if (
@@ -318,6 +326,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <input
                 value={page.name[lang]}
                 onInput={(e) => editMeta('name', e.currentTarget.value)}
+              />
+            </label>
+            <label>
+              Adress
+              <input
+                value={page.path}
+                disabled={protectedIds.has(page.id)}
+                onInput={(e) => editPath(e.currentTarget.value)}
               />
             </label>
             <label>
