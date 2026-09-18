@@ -110,9 +110,7 @@ export function ensureCorePages(document: CmsDocument): CmsDocument {
   const protectedPages = corePages.map((item) => {
     const found = existing.get(item.id) ?? pathExisting.get(item.path)
     if (!found) return structuredClone(item)
-    const usable = ['sv', 'en'].every(
-      (lang) => found.content[lang as CmsLang]?.html?.trim(),
-    )
+    const usable = (['sv', 'en'] as const).every((lang) => found.content[lang]?.html.trim())
     return usable
       ? { ...found, id: item.id, kind: item.kind, path: item.path }
       : structuredClone(item)
