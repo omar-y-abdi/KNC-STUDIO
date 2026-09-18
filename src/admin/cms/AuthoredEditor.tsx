@@ -389,7 +389,7 @@ export function AuthoredEditor(props: Props): JSX.Element {
   return (
     <div class="cms-authored-layout">
       <div class="cms-authored-canvas" ref={host} />
-      <aside class="cms-authored-inspector">
+      <aside id="cms-inspector" class="cms-authored-inspector" aria-label="Egenskaper">
         <label>
           Tilldela typsnitt{' '}
           <select
@@ -413,11 +413,11 @@ export function AuthoredEditor(props: Props): JSX.Element {
             ))}
           </select>
         </label>
-        <div class="cms-segment">
+        <div class="cms-segment" aria-label="Egenskapspanel">
           {[
-            ['style', 'Egenskaper'],
+            ['style', 'Design'],
             ['layers', 'Lager'],
-            ['blocks', 'Block'],
+            ['blocks', 'Lägg till'],
           ].map(([key, label]) => (
             <button
               type="button"

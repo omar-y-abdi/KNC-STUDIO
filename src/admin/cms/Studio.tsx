@@ -91,6 +91,8 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
   const [target, setTarget] = useState<Target>(initialTarget),
     [library, setLibrary] = useState('pages'),
     [search, setSearch] = useState('')
+  const [inspectorTab, setInspectorTab] = useState<'design' | 'layers' | 'blocks'>('design'),
+    [mobilePanel, setMobilePanel] = useState<'library' | 'inspector' | null>(null)
   const [width, setWidth] = useState(1440),
     [zoom, setZoom] = useState(60),
     [locked, setLocked] = useState(false),
@@ -121,6 +123,8 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
     setTarget(value)
     setSelected(null)
     setLocked(false)
+    setInspectorTab('design')
+    setMobilePanel(null)
     setHistoryPreview(null)
     setHistoryVersion(null)
   }
@@ -160,6 +164,10 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
   actions.current = { shortcut }
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setMobilePanel(null)
+        return
+      }
       if (!(event.ctrlKey || event.metaKey)) return
       const textInput =
         event.target instanceof HTMLInputElement ||
@@ -299,6 +307,16 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
     flush()
     downloadJson(`knc-cms-reservkopia-v${draft.revision}.json`, draft.backup(profile.userId))
   }
+  const openHistory = (): void => {
+    flush()
+    void studio.readHistory()
+    setDialog('history')
+  }
+  const openNewPageDialog = (): void => {
+    flush()
+    setPageError('')
+    setDialog('newPage')
+  }
   const importFile = async (file: File): Promise<void> => {
     if (file.size > 8 * 1024 * 1024) {
       studio.setError('Importfilen är för stor.')
@@ -421,7 +439,12 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
       />
     )
   return (
-    <div class="knc-cms" data-studio-mode={mode}>
+    <div
+      class="knc-cms"
+      data-studio-mode={mode}
+      data-library-open={mobilePanel === 'library' ? 'true' : 'false'}
+      data-inspector-open={mobilePanel === 'inspector' ? 'true' : 'false'}
+    >
       <header class="cms-topbar">
         <div class="cms-return">
           <button type="button" onClick={() => leave('/admin')}>
@@ -499,12 +522,19 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
         </div>
       )}
       <div class={`cms-workspace${variant ? ' cms-workspace--authored' : ''}`}>
-        <aside class="cms-library" aria-label="Sid- och resursbibliotek">
+        {mobilePanel && (
+          <button
+            type="button"
+            class="cms-drawer-backdrop"
+            aria-label="Stäng sidopanel"
+            onClick={() => setMobilePanel(null)}
+          />
+        )}
+        <aside id="cms-library" class="cms-library" aria-label="Sid- och resursbibliotek">
           <div class="cms-segment">
             {[
               ['pages', 'Sidor'],
               ['resources', 'Resurser'],
-              ['layers', 'Lager'],
             ].map(([key, label]) => (
               <button
                 type="button"
@@ -540,11 +570,7 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
               <button
                 type="button"
                 class="cms-add"
-                onClick={() => {
-                  flush()
-                  setPageError('')
-                  setDialog('newPage')
-                }}
+                onClick={openNewPageDialog}
               >
                 + Ny sida
               </button>
@@ -597,42 +623,9 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
               {nav('deliveries', 'Misslyckade mejlleveranser')}
             </>
           )}
-          {library === 'layers' && (
-            <>
-              <h2>Synliga lager</h2>
-              {variant ? (
-                <p class="cms-help">Sidans dragbara lager finns i panelen till höger.</p>
-              ) : (
-                nodes
-                  .filter(
-                    (node) =>
-                      !search ||
-                      `${node.label} ${node.tag}`.toLowerCase().includes(search.toLowerCase()),
-                  )
-                  .map((node) => (
-                    <button
-                      type="button"
-                      class={`cms-layer${selected?.id === node.id ? ' is-selected' : ''}`}
-                      key={node.id}
-                      onClick={() => requestSelection(node.id)}
-                    >
-                      <small>{node.tag}</small>
-                      <span>{node.label || node.id}</span>
-                    </button>
-                  ))
-              )}
-            </>
-          )}
           <div class="cms-library-bottom">
             <span>Version {draft.revision}</span>
-            <button
-              type="button"
-              onClick={() => {
-                flush()
-                void studio.readHistory()
-                setDialog('history')
-              }}
-            >
+            <button type="button" onClick={openHistory}>
               Historik
             </button>
           </div>
@@ -669,16 +662,6 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              aria-pressed={locked}
-              onClick={() => {
-                flush()
-                setLocked((value) => !value)
-              }}
-            >
-              {locked ? 'Återgå till redigering' : 'Förhandsvisa'}
-            </button>
             {page && (
               <button
                 type="button"
@@ -817,41 +800,151 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
           )}
         </main>
         {!variant && (
-          <aside class="cms-inspector" aria-label="Egenskaper">
-            {target === 'media' || target === 'deliveries' ? (
-              <>
-                <h2>Resurshantering</h2>
-                <p>
-                  Välj en sida, profil eller mejlmall i biblioteket för att återgå till visuell
-                  redigering.
-                </p>
-              </>
-            ) : (
-              inspected
-            )}
+          <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper">
+            <div class="cms-inspector-tabs" role="tablist" aria-label="Egenskapspanel">
+              {[
+                ['design', 'Design'],
+                ['layers', 'Lager'],
+                ['blocks', 'Lägg till'],
+              ].map(([key, label]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  key={key}
+                  aria-selected={inspectorTab === key}
+                  onClick={() => setInspectorTab(key as 'design' | 'layers' | 'blocks')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div class="cms-inspector-body">
+              {inspectorTab === 'layers' ? (
+                <>
+                  <h2>Lager</h2>
+                  {nodes.length > 0 ? (
+                    nodes.map((node) => (
+                      <button
+                        type="button"
+                        class={`cms-layer${selected?.id === node.id ? ' is-selected' : ''}`}
+                        key={node.id}
+                        onClick={() => requestSelection(node.id)}
+                      >
+                        <small>{node.tag}</small>
+                        <span>{node.label || node.id}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <p class="cms-help">Välj en sida för att läsa dess lager.</p>
+                  )}
+                </>
+              ) : inspectorTab === 'blocks' ? (
+                <>
+                  <h2>Lägg till</h2>
+                  <p class="cms-help">
+                    Skapa en visuell sida här. På GrapesJS-sidor visas sidblock i samma flik.
+                  </p>
+                  <button type="button" class="cms-add" onClick={openNewPageDialog}>
+                    + Ny sida
+                  </button>
+                </>
+              ) : target === 'media' || target === 'deliveries' ? (
+                <>
+                  <h2>Resurshantering</h2>
+                  <p>
+                    Välj en sida, profil eller mejlmall i biblioteket för att återgå till visuell
+                    redigering.
+                  </p>
+                </>
+              ) : (
+                inspected
+              )}
+            </div>
           </aside>
         )}
       </div>
+      <nav class="cms-mobile-tools" aria-label="Mobilverktyg">
+        <button
+          type="button"
+          class="cms-panel-toggle"
+          aria-controls="cms-library"
+          aria-expanded={mobilePanel === 'library'}
+          onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
+        >
+          Sidor
+        </button>
+        <button
+          type="button"
+          class="cms-panel-toggle"
+          aria-controls="cms-inspector"
+          aria-expanded={mobilePanel === 'inspector'}
+          onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
+        >
+          Egenskaper
+        </button>
+      </nav>
       <footer class="cms-bottom">
-        <div class="cms-history-tools">
+        <div
+          class="cms-history-tools cms-commandbar"
+          role="toolbar"
+          aria-label="Redigeringskommandon"
+        >
           <button type="button" disabled={!draft.canUndo} onClick={undo}>
             Ångra
           </button>
           <button type="button" disabled={!draft.canRedo} onClick={redo}>
             Gör om
           </button>
+          <span class="cms-command-divider" aria-hidden="true" />
+          <button
+            type="button"
+            aria-pressed={!locked}
+            onClick={() => {
+              flush()
+              setLocked(false)
+            }}
+          >
+            Redigera
+          </button>
+          <button
+            type="button"
+            class="cms-primary"
+            disabled={studio.busy || (!draft.dirty && !draft.pending)}
+            onClick={publish}
+          >
+            {draft.pending ? 'Bekräfta sparförsöket' : 'Publicera'}
+          </button>
           <button
             type="button"
             disabled={!draft.dirty || !!draft.pending || studio.busy}
             onClick={() => {
+              flush()
               if (window.confirm('Återställ utkastet till den senast inlästa publiceringen?')) {
                 draft.revert()
                 studio.changed()
               }
             }}
           >
-            Återställ utkast
+            Återställ
           </button>
+          <span class="cms-command-divider" aria-hidden="true" />
+          <button type="button" onClick={openHistory}>
+            Historik
+          </button>
+          <button type="button" onClick={openHistory}>
+            Återställ version
+          </button>
+          <button
+            type="button"
+            aria-pressed={locked}
+            onClick={() => {
+              flush()
+              setLocked((value) => !value)
+            }}
+          >
+            Lås vy
+          </button>
+          <span class="cms-command-divider" aria-hidden="true" />
           <button
             type="button"
             aria-pressed={compare}
@@ -898,14 +991,6 @@ export default function Studio({ profile, initialLang, initialMode }: Props): JS
                 ? 'Opublicerade ändringar'
                 : 'Alla ändringar publicerade'}
         </span>
-        <button
-          type="button"
-          class="cms-primary"
-          disabled={studio.busy || (!draft.dirty && !draft.pending)}
-          onClick={publish}
-        >
-          {draft.pending ? 'Bekräfta sparförsöket' : 'Publicera'}
-        </button>
       </footer>
       {dialog === 'newPage' && (
         <Modal title="Skapa ny sida" onClose={() => setDialog(null)}>

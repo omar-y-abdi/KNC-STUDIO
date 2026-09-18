@@ -152,9 +152,9 @@ async function api(body) {
   assert.equal(response.status, 200, `CMS ${body.operation}: ${JSON.stringify(value)}`)
   return value
 }
-async function context(session) {
+async function context(session, viewport = { width: 1600, height: 1000 }) {
   const value = await browser.newContext({
-    viewport: { width: 1600, height: 1000 },
+    viewport,
     reducedMotion: 'reduce',
     storageState: session
       ? {
@@ -184,8 +184,8 @@ async function context(session) {
     )
   return value
 }
-async function test(name, session, action) {
-  const current = await context(session),
+async function test(name, session, action, viewport) {
+  const current = await context(session, viewport),
     page = await current.newPage()
   const errors = [],
     network = [],
@@ -323,6 +323,71 @@ try {
     await expect.poll(() => canvas(page).locator('html').getAttribute('lang')).toBe('sv')
     await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeDisabled()
   })
+  await test(
+    'mobile-studio-shell-drawers',
+    owner.session,
+    async (page) => {
+      await studio(page)
+      assert.deepEqual(await page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight]), [
+        390,
+        844,
+      ])
+      const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
+      const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
+      const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
+      await expect(tools).toBeVisible()
+      await expect(page.locator('#cms-library')).toBeHidden()
+      await expect(page.locator('#cms-inspector')).toBeHidden()
+
+      await pages.click()
+      await expect(page.locator('#cms-library')).toBeVisible()
+      await expect(pages).toHaveAttribute('aria-expanded', 'true')
+      await expect(properties).toHaveAttribute('aria-expanded', 'false')
+
+      await properties.click()
+      await expect(page.locator('#cms-library')).toBeHidden()
+      await expect(page.locator('#cms-inspector')).toBeVisible()
+      await expect(pages).toHaveAttribute('aria-expanded', 'false')
+      await expect(properties).toHaveAttribute('aria-expanded', 'true')
+
+      const inspectorTabs = page.getByRole('tablist', { name: 'Egenskapspanel' })
+      for (const name of ['Design', 'Lager', 'Lägg till']) {
+        const tab = inspectorTabs.getByRole('tab', { name, exact: true })
+        await tab.click()
+        await expect(tab).toHaveAttribute('aria-selected', 'true')
+      }
+
+      const commands = page.getByRole('toolbar', { name: 'Redigeringskommandon' })
+      await expect(commands).toBeVisible()
+      for (const name of [
+        'Ångra',
+        'Gör om',
+        'Redigera',
+        'Publicera',
+        'Återställ',
+        'Historik',
+        'Återställ version',
+        'Lås vy',
+      ]) {
+        const button = commands.getByRole('button', { name, exact: true })
+        await button.scrollIntoViewIfNeeded()
+        await expect(button).toBeInViewport()
+      }
+      const commandGeometry = await commands.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return { top: box.top, bottom: box.bottom, viewport: globalThis.innerHeight }
+      })
+      assert(
+        commandGeometry.top >= 0 && commandGeometry.bottom <= commandGeometry.viewport,
+        `Mobile command bar escaped the viewport: ${JSON.stringify(commandGeometry)}`,
+      )
+
+      await page.keyboard.press('Escape')
+      await expect(page.locator('#cms-inspector')).toBeHidden()
+      await expect(properties).toHaveAttribute('aria-expanded', 'false')
+    },
+    { width: 390, height: 844 },
+  )
   await test('inline-text-undo-save-reload-public', owner.session, async (page) => {
     await studio(page)
     const heading = canvas(page).locator('[data-cms-copy="site:kicker"]').first()
