@@ -1,12 +1,12 @@
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 
 export const CORE_PAGE_IDS = [
-  'home',
-  'about',
-  'booking',
-  'my-bookings',
-  'privacy',
-  'terms',
+  '10000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000002',
+  '10000000-0000-4000-8000-000000000003',
+  '10000000-0000-4000-8000-000000000004',
+  '10000000-0000-4000-8000-000000000005',
+  '10000000-0000-4000-8000-000000000006',
 ] as const
 
 const common = String.raw`
@@ -52,7 +52,7 @@ function page(
 
 const corePages: readonly CmsPage[] = [
   page(
-    'home',
+    CORE_PAGE_IDS[0],
     '/',
     ['Startsida', 'Home'],
     ['Blade & Blend Studio i Göteborg.', 'Blade & Blend Studio in Gothenburg.'],
@@ -60,7 +60,7 @@ const corePages: readonly CmsPage[] = [
     '<main class="knc-hero"><div><p class="knc-kicker">Blade & Blend Studio</p><h1 class="knc-display">Cut.<br>Beard.<br>Detail.</h1><p class="knc-lead">A modern barbershop focused on craft, calm and booking that takes less time than the decision itself.</p><div class="knc-actions"><a class="knc-button primary" href="/booking">Book appointment</a><a class="knc-button" href="/my-bookings">My bookings</a><a class="knc-button" href="/about">About us</a></div></div><aside class="knc-card"><h2>Gothenburg.</h2><p>Choose barber, service and time. We keep the rest simple.</p></aside></main>',
   ),
   page(
-    'about',
+    CORE_PAGE_IDS[1],
     '/about',
     ['Om oss', 'About us'],
     ['Salongen, barberarna och arbetet.', 'The salon, barbers and craft.'],
@@ -68,7 +68,7 @@ const corePages: readonly CmsPage[] = [
     '<main class="knc-section"><p class="knc-kicker">About the studio</p><h1>Craft without theatre.</h1><div class="knc-grid"><div class="knc-copy"><p>Blade & Blend is built around good cuts, clear appointments and a relaxed experience.</p></div><div id="knc-about-runtime" class="knc-runtime-island"></div></div></main>',
   ),
   page(
-    'booking',
+    CORE_PAGE_IDS[2],
     '/booking',
     ['Bokning', 'Booking'],
     ['Boka barberare och behandling.', 'Book a barber and service.'],
@@ -76,7 +76,7 @@ const corePages: readonly CmsPage[] = [
     '<main class="knc-section"><p class="knc-kicker">Booking</p><h1>Your time. Your chair.</h1><div id="knc-booking-runtime" class="knc-runtime-island"></div></main>',
   ),
   page(
-    'my-bookings',
+    CORE_PAGE_IDS[3],
     '/my-bookings',
     ['Kundens bokningar', 'My bookings'],
     ['Hantera dina bokningar.', 'Manage your bookings.'],
@@ -84,7 +84,7 @@ const corePages: readonly CmsPage[] = [
     '<main class="knc-section"><p class="knc-kicker">My bookings</p><h1>Everything in one place.</h1><div id="knc-my-bookings-runtime" class="knc-runtime-island"></div></main>',
   ),
   page(
-    'privacy',
+    CORE_PAGE_IDS[4],
     '/privacy',
     ['Integritetspolicy', 'Privacy policy'],
     ['Hur personuppgifter hanteras.', 'How personal data is handled.'],
@@ -93,7 +93,7 @@ const corePages: readonly CmsPage[] = [
     'privacy',
   ),
   page(
-    'terms',
+    CORE_PAGE_IDS[5],
     '/terms',
     ['Bokningsvillkor', 'Booking terms'],
     ['Villkor för bokning och avbokning.', 'Booking and cancellation terms.'],
