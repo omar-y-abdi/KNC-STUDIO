@@ -15,6 +15,7 @@ import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
+import { clearBackup, loadBackup, saveBackup } from './backup'
 import './studio.css'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
@@ -81,7 +82,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     try {
       const loaded = await cmsApi.state()
       const document = ensureCorePages(loaded.document)
+      const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
+      if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
+        next.change(ensureCorePages(backup.document))
+        setError(`Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`)
+      }
       setState({ ...loaded, document })
       setDraft(next)
       setResources(loaded.assets)
@@ -99,6 +105,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const commitDraft = (next: CmsDocument, group = ''): void => {
     if (!draft) return
     draft.change(next, group)
+    saveBackup(draft.document, draft.revision, draft.fingerprint)
     setDraft(draft)
     setVersion((value) => value + 1)
   }
@@ -124,6 +131,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         request.requestId,
       )
       draft.acknowledge(result.document, result.revision, result.fingerprint)
+      clearBackup()
       setDraft(draft)
       setState((current) =>
         current
