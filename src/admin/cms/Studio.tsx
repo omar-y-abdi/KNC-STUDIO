@@ -217,6 +217,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const editPath = (value: string): void => {
     if (protectedIds.has(page.id)) return
     const path = value.trim().replace(/\/+$/, '') || '/'
+    if (
+      !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
+      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(path) ||
+      document.presentation.pages.some((item) => item.id !== page.id && item.path === path)
+    ) {
+      setError('Adressen är ogiltig, reserverad eller används redan.')
+      return
+    }
     const next = structuredClone(page)
     next.path = path
     replacePage(next)
