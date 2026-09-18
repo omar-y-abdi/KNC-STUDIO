@@ -45,26 +45,8 @@ const LOW_LEVEL_SVG = new Set([
   'stop',
   'clippath',
 ])
-
-interface CssNudgeState {
-  kind: 'css'
-  baseRaw: string
-  baseX: number
-  baseY: number
-  x: number
-  y: number
-}
-
-interface SvgNudgeState {
-  kind: 'svg'
-  baseTransform: string
-  x: number
-  y: number
-}
-
-type NudgeState = CssNudgeState | SvgNudgeState
-
-const nudgeState = new WeakMap<Component, NudgeState>()
+const NUDGE_OFFSET_ATTRIBUTE = 'data-cms-nudge-offset'
+const NUDGE_BASE_TRANSLATE_ATTRIBUTE = 'data-cms-nudge-base-translate'
 
 function tagOf(component: Component): string {
   return String(component.get('tagName') ?? 'div').toLowerCase()
@@ -104,6 +86,21 @@ export function parseTranslate(value: unknown): [number, number] | null {
   return x === null || y === null ? null : [x, y]
 }
 
+function parseOwnedOffset(value: unknown): [number, number] | null {
+  const match = String(value ?? '')
+    .trim()
+    .match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)$/)
+  return match ? [Number(match[1]), Number(match[2])] : null
+}
+
+function stripOwnedSvgTranslate(transform: string, offset: [number, number]): string | null {
+  const current = transform.trim()
+  const suffix = `translate(${offset[0]} ${offset[1]})`
+  if (current === suffix) return ''
+  if (current.endsWith(` ${suffix}`)) return current.slice(0, -suffix.length).trim()
+  return null
+}
+
 export function nudgeComponent(
   component: Component | null | undefined,
   dx: number,
@@ -118,68 +115,73 @@ export function nudgeComponent(
   )
     return null
 
-  const existing = nudgeState.get(component)
+  const attributes = component.getAttributes()
+  const hasOwnedOffset = Object.prototype.hasOwnProperty.call(attributes, NUDGE_OFFSET_ATTRIBUTE)
+  const ownedOffset = hasOwnedOffset
+    ? parseOwnedOffset(attributes[NUDGE_OFFSET_ATTRIBUTE])
+    : ([0, 0] as [number, number])
+  if (!ownedOffset) return null
+
+  const nextOffset: [number, number] = [
+    ownedOffset[0] + dx * step,
+    ownedOffset[1] + dy * step,
+  ]
+
   if (tagOf(component) === 'g') {
-    const current: SvgNudgeState =
-      existing?.kind === 'svg'
-        ? existing
-        : {
-            kind: 'svg',
-            baseTransform: String(component.getAttributes()['transform'] ?? ''),
-            x: 0,
-            y: 0,
-          }
-    const next: SvgNudgeState = {
-      ...current,
-      x: current.x + dx * step,
-      y: current.y + dy * step,
-    }
-    const translate = next.x || next.y ? `translate(${next.x} ${next.y})` : ''
-    const transform = [next.baseTransform, translate].filter(Boolean).join(' ')
-    if (transform) component.addAttributes({ transform })
-    else component.removeAttributes('transform')
-    nudgeState.set(component, next)
-    return [next.x, next.y]
+    const transform = String(attributes['transform'] ?? '')
+    const baseTransform = hasOwnedOffset ? stripOwnedSvgTranslate(transform, ownedOffset) : transform
+    if (baseTransform === null) return null
+    component.addAttributes({
+      transform: [baseTransform, `translate(${nextOffset[0]} ${nextOffset[1]})`]
+        .filter(Boolean)
+        .join(' '),
+      [NUDGE_OFFSET_ATTRIBUTE]: `${nextOffset[0]} ${nextOffset[1]}`,
+    })
+    return nextOffset
   }
 
-  let current: CssNudgeState | null = existing?.kind === 'css' ? existing : null
-  if (!current) {
-    const raw = component.getStyle()['translate']
-    const baseRaw = typeof raw === 'string' ? raw : ''
-    const base = parseTranslate(baseRaw)
-    if (!base) return null
-    current = {
-      kind: 'css',
-      baseRaw,
-      baseX: base[0],
-      baseY: base[1],
-      x: 0,
-      y: 0,
-    }
-  }
-  const next: CssNudgeState = {
-    ...current,
-    x: current.x + dx * step,
-    y: current.y + dy * step,
-  }
-  const x = next.baseX + next.x
-  const y = next.baseY + next.y
+  const hasBaseTranslate = Object.prototype.hasOwnProperty.call(
+    attributes,
+    NUDGE_BASE_TRANSLATE_ATTRIBUTE,
+  )
+  if (hasOwnedOffset && !hasBaseTranslate) return null
+  const raw = hasOwnedOffset
+    ? String(attributes[NUDGE_BASE_TRANSLATE_ATTRIBUTE] ?? '')
+    : component.getStyle()['translate']
+  const baseRaw = typeof raw === 'string' ? raw : ''
+  const base = parseTranslate(baseRaw)
+  if (!base) return null
+
+  const x = base[0] + nextOffset[0]
+  const y = base[1] + nextOffset[1]
   component.addStyle({ translate: `${x}px ${y}px` })
-  nudgeState.set(component, next)
+  component.addAttributes({
+    [NUDGE_OFFSET_ATTRIBUTE]: `${nextOffset[0]} ${nextOffset[1]}`,
+    [NUDGE_BASE_TRANSLATE_ATTRIBUTE]: baseRaw,
+  })
   return [x, y]
 }
 
 export function resetComponentPosition(component: Component | null | undefined): boolean {
   if (!component) return false
-  const current = nudgeState.get(component)
-  if (!current) return false
+  const attributes = component.getAttributes()
+  if (!Object.prototype.hasOwnProperty.call(attributes, NUDGE_OFFSET_ATTRIBUTE)) return false
+  const ownedOffset = parseOwnedOffset(attributes[NUDGE_OFFSET_ATTRIBUTE])
+  if (!ownedOffset) return false
 
-  if (current.kind === 'svg') {
-    if (current.baseTransform) component.addAttributes({ transform: current.baseTransform })
+  if (tagOf(component) === 'g') {
+    const baseTransform = stripOwnedSvgTranslate(String(attributes['transform'] ?? ''), ownedOffset)
+    if (baseTransform === null) return false
+    if (baseTransform) component.addAttributes({ transform: baseTransform })
     else component.removeAttributes('transform')
-  } else if (current.baseRaw) component.addStyle({ translate: current.baseRaw })
-  else component.removeStyle('translate')
+    component.removeAttributes(NUDGE_OFFSET_ATTRIBUTE)
+    return true
+  }
 
-  nudgeState.delete(component)
+  if (!Object.prototype.hasOwnProperty.call(attributes, NUDGE_BASE_TRANSLATE_ATTRIBUTE)) return false
+  const baseRaw = String(attributes[NUDGE_BASE_TRANSLATE_ATTRIBUTE] ?? '')
+  if (baseRaw) component.addStyle({ translate: baseRaw })
+  else component.removeStyle('translate')
+  component.removeAttributes([NUDGE_OFFSET_ATTRIBUTE, NUDGE_BASE_TRANSLATE_ATTRIBUTE])
   return true
 }

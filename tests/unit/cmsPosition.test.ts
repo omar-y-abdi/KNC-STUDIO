@@ -19,7 +19,7 @@ interface MockComponent {
   removeStyle: (property: string) => void
   getAttributes: () => Record<string, string>
   addAttributes: (attributes: Record<string, string>) => void
-  removeAttributes: (attribute: string) => void
+  removeAttributes: (attribute: string | string[]) => void
 }
 
 function mockComponent({
@@ -55,7 +55,8 @@ function mockComponent({
       Object.assign(component.attributes, next)
     },
     removeAttributes(attribute) {
-      delete component.attributes[attribute]
+      for (const name of Array.isArray(attribute) ? attribute : [attribute])
+        delete component.attributes[name]
     },
   }
   return component
@@ -95,6 +96,26 @@ describe('CMS GrapesJS component positioning', () => {
     expect(component.style['transform']).toBe('skewX(8deg)')
   })
 
+  it('keeps nudge ownership across an editor reload and resets only the owned offset', () => {
+    const beforeReload = mockComponent({
+      style: { translate: '3px 4px', transform: 'rotate(12deg)' },
+    })
+
+    expect(nudgeComponent(positionable(beforeReload), 1, 0)).toEqual([4, 4])
+
+    const afterReload = mockComponent({
+      style: { ...beforeReload.style },
+      attributes: { ...beforeReload.attributes },
+    })
+    expect(nudgeComponent(positionable(afterReload), 0, 1, 10)).toEqual([4, 14])
+    expect(resetComponentPosition(positionable(afterReload))).toBe(true)
+
+    expect(afterReload.style['translate']).toBe('3px 4px')
+    expect(afterReload.style['transform']).toBe('rotate(12deg)')
+    expect(afterReload.attributes['data-cms-nudge-offset']).toBeUndefined()
+    expect(afterReload.attributes['data-cms-nudge-base-translate']).toBeUndefined()
+  })
+
   it('rejects functional runtime hooks without mutating their presentation', () => {
     const component = mockComponent({ attributes: { 'data-booking-action': 'submit' } })
 
@@ -103,21 +124,26 @@ describe('CMS GrapesJS component positioning', () => {
     expect(component.style).toEqual({})
   })
 
-  it('preserves an SVG group transform exactly when nudge is reset', () => {
-    const component = mockComponent({
+  it('preserves an SVG group transform exactly when nudge is reset after reload', () => {
+    const beforeReload = mockComponent({
       tag: 'g',
       attributes: { transform: 'rotate(15 5 5) scale(2)' },
     })
 
-    expect(nudgeComponent(positionable(component), 1, 0)).toEqual([1, 0])
-    expect(nudgeComponent(positionable(component), 0, 1, 10)).toEqual([1, 10])
-    expect(component.attributes['transform']).toBe('rotate(15 5 5) scale(2) translate(1 10)')
+    expect(nudgeComponent(positionable(beforeReload), 1, 0)).toEqual([1, 0])
+    expect(nudgeComponent(positionable(beforeReload), 0, 1, 10)).toEqual([1, 10])
+    expect(beforeReload.attributes['transform']).toBe('rotate(15 5 5) scale(2) translate(1 10)')
 
-    expect(resetComponentPosition(positionable(component))).toBe(true)
-    expect(component.attributes['transform']).toBe('rotate(15 5 5) scale(2)')
+    const afterReload = mockComponent({
+      tag: 'g',
+      attributes: { ...beforeReload.attributes },
+    })
+    expect(resetComponentPosition(positionable(afterReload))).toBe(true)
+    expect(afterReload.attributes['transform']).toBe('rotate(15 5 5) scale(2)')
+    expect(afterReload.attributes['data-cms-nudge-offset']).toBeUndefined()
   })
 
-  it('does not reset translation it did not create in the current editor session', () => {
+  it('does not reset translation it did not create', () => {
     const component = mockComponent({ style: { translate: '8px 9px' } })
 
     expect(resetComponentPosition(positionable(component))).toBe(false)
