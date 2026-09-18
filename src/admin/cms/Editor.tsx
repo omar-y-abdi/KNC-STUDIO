@@ -1,6 +1,6 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import grapesjs, { type Component, type Editor, type StyleProps } from 'grapesjs'
+import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
 import type { CmsAsset, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
@@ -238,7 +238,7 @@ export function CmsEditor(props: Props): JSX.Element {
   }
   const nudge = (dx: number, dy: number, step: number): void =>
     mutateSelected((component) =>
-      component.setStyle(nudgeStyle(component.getStyle(), dx, dy, step) as StyleProps),
+      component.setStyle(nudgeStyle(component.getStyle(), dx, dy, step)),
     )
   const duplicate = (): void =>
     mutateSelected((component) => {
@@ -350,7 +350,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   type="button"
                   onClick={() =>
                     mutateSelected((component) =>
-                      component.setStyle(resetNudgeStyle(component.getStyle()) as StyleProps),
+                      component.setStyle(resetNudgeStyle(component.getStyle())),
                     )
                   }
                 >
