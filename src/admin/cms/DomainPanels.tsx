@@ -65,11 +65,7 @@ export function BusinessPanel({
     next.settings[key] = value
     onChange(next)
   }
-  const setBarber = (
-    index: number,
-    key: (typeof barberFields)[number][0],
-    value: string,
-  ): void => {
+  const setBarber = (index: number, key: (typeof barberFields)[number][0], value: string): void => {
     const next = structuredClone(document)
     const barber = next.barbers[index]
     if (!barber) return
@@ -143,9 +139,7 @@ export function EmailPanel({
     first
   const patch = (key: keyof CmsEmail, value: string): void =>
     onChange(replaceEmail(document, { ...email, [key]: value }))
-  const updateDesign = (
-    mutate: (design: NonNullable<CmsEmail['design']>) => void,
-  ): void => {
+  const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
     const next = structuredClone(email)
     if (!next.design) return
     mutate(next.design)
@@ -172,9 +166,7 @@ export function EmailPanel({
           <button
             type="button"
             onClick={() =>
-              onChange(
-                replaceEmail(document, { ...email, design: defaultEmailDesign() }),
-              )
+              onChange(replaceEmail(document, { ...email, design: defaultEmailDesign() }))
             }
           >
             Aktivera design
