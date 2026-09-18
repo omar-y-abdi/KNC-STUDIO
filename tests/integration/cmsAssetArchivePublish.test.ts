@@ -250,5 +250,4 @@ describe.sequential('CMS archived asset publication boundary', () => {
       if (current?.archived) await setArchived(current, false)
     }
   }, 30000)
-
 })
