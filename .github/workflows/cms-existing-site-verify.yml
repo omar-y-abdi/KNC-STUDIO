@@ -27,7 +27,7 @@ jobs:
           rm -f "$RUNNER_TEMP/.env"
           cp -a node_modules "$RUNNER_TEMP/node_modules"
           cp -a "$HOME/.cache/ms-playwright" "$RUNNER_TEMP/ms-playwright"
-          tar -C "$RUNNER_TEMP" -czf /tmp/cms-verification-workspace.tar.gz src shared public supabase tests tools docs package.json package-lock.json tsconfig*.json vite.config.* vitest*.ts eslint.config.* index.html .prettierrc.json .prettierignore wrangler.* node_modules ms-playwright
+          tar -C "$RUNNER_TEMP" --exclude='ms-playwright/chromium_headless_shell-*' -czf /tmp/cms-verification-workspace.tar.gz src shared public supabase tests tools docs package.json package-lock.json tsconfig*.json vite.config.* vitest*.ts eslint.config.* index.html .prettierrc.json .prettierignore wrangler.* node_modules ms-playwright
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: cms-verification-workspace
