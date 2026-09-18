@@ -30,15 +30,7 @@ const LAYOUT_TAGS = new Set([
   'svg',
   'g',
 ])
-const CONTROL_TAGS = new Set([
-  'input',
-  'select',
-  'textarea',
-  'option',
-  'form',
-  'label',
-  'fieldset',
-])
+const CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
 const LOW_LEVEL_SVG = new Set([
   'path',
   'circle',
@@ -91,8 +83,7 @@ export function isPositionableComponent(
   if (!component) return false
   const tag = tagOf(component)
   const type = component.get('type')
-  if (CONTROL_TAGS.has(tag) || LOW_LEVEL_SVG.has(tag) || hasFunctionalHook(component))
-    return false
+  if (CONTROL_TAGS.has(tag) || LOW_LEVEL_SVG.has(tag) || hasFunctionalHook(component)) return false
   return type === 'image' || type === 'text' || type === 'link' || LAYOUT_TAGS.has(tag)
 }
 
