@@ -1,6 +1,8 @@
 import { chromium, firefox, webkit } from 'playwright'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4188').replace(/\/$/, '')
+const scenario = process.env.ADMIN_E2E_SCENARIO ?? 'all'
+if (!['all', 'cms-shell'].includes(scenario)) throw new Error('Unsupported admin E2E scenario')
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -2585,9 +2587,10 @@ const privacyCases = [
 ]
 
 const browser = await chromium.launch()
-let passed = 0
-try {
-  for (const verify of [
+const chromiumScenarios =
+  scenario === 'cms-shell'
+    ? [verifyCmsStudioShell]
+    : [
     verifyNavigation,
     verifyDelayedRestore,
     verifyPresentationDraft,
@@ -2620,8 +2623,11 @@ try {
     ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
     verifyCalendarSync,
     verifyCustomerEmail,
-    ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
-  ]) {
+        ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
+      ]
+let passed = 0
+try {
+  for (const verify of chromiumScenarios) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
     const page = await context.newPage()
     page.setDefaultTimeout(10_000)
@@ -2639,18 +2645,20 @@ try {
   await browser.close()
 }
 
-for (const engine of [firefox, webkit]) {
+const secondaryEngines = scenario === 'cms-shell' ? [webkit] : [firefox, webkit]
+for (const engine of secondaryEngines) {
   const browser = await engine.launch()
   try {
-    for (const options of privacyCases) {
-      const page = await browser.newPage()
-      page.setDefaultTimeout(10_000)
-      try {
-        await verifyPrivacy(page, options)
-      } finally {
-        await page.close()
+    if (scenario !== 'cms-shell')
+      for (const options of privacyCases) {
+        const page = await browser.newPage()
+        page.setDefaultTimeout(10_000)
+        try {
+          await verifyPrivacy(page, options)
+        } finally {
+          await page.close()
+        }
       }
-    }
     const cmsPage = await browser.newPage()
     cmsPage.setDefaultTimeout(10_000)
     try {
@@ -2659,7 +2667,9 @@ for (const engine of [firefox, webkit]) {
       await cmsPage.close()
     }
     console.log(
-      `Responsive privacy passed (${privacyCases.length} scenarios) plus CMS mobile shell: ${engine.name()}.`,
+      scenario === 'cms-shell'
+        ? `CMS mobile shell passed: ${engine.name()}.`
+        : `Responsive privacy passed (${privacyCases.length} scenarios) plus CMS mobile shell: ${engine.name()}.`,
     )
   } finally {
     await browser.close()
