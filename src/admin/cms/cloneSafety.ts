@@ -15,13 +15,7 @@ const ID_REFERENCE_ATTRIBUTES = new Set([
   'form',
 ])
 
-const CSS_REFERENCE_ATTRIBUTES = new Set([
-  'fill',
-  'stroke',
-  'clip-path',
-  'mask',
-  'filter',
-])
+const CSS_REFERENCE_ATTRIBUTES = new Set(['fill', 'stroke', 'clip-path', 'mask', 'filter'])
 
 let fallbackIdentity = 0
 
@@ -106,10 +100,7 @@ function samePageHref(
   }
 }
 
-export function remapSelectorIds(
-  selector: string,
-  ids: ReadonlyMap<string, string>,
-): string {
+export function remapSelectorIds(selector: string, ids: ReadonlyMap<string, string>): string {
   return mapCss(selector, 'selectorList', ids)
 }
 
@@ -175,11 +166,7 @@ function ensureDistinctExplicitIds(pairs: Array<[Component, Component]>): void {
   for (const [source, copy] of pairs) {
     const sourceId = source.getAttributes()['id']
     const copyAttributes = copy.getAttributes()
-    if (
-      typeof sourceId === 'string' &&
-      sourceId &&
-      copyAttributes['id'] === sourceId
-    ) {
+    if (typeof sourceId === 'string' && sourceId && copyAttributes['id'] === sourceId) {
       copy.setAttributes({ ...copyAttributes, id: freshDomId(sourceId) })
     }
   }
@@ -196,10 +183,7 @@ function sameStyle(
 ): boolean {
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => left[key] === right[key])
-  )
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key])
 }
 
 export function remapClone(
