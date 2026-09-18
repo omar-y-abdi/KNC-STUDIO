@@ -7,6 +7,7 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
+import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 
 export interface EditorHandle {
   undo: () => void
@@ -69,6 +70,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const [selected, setSelected] = useState<Component | null>(null)
   const [advancedProperty, setAdvancedProperty] = useState('')
   const [advancedValue, setAdvancedValue] = useState('')
+  const viewStates = useRef(new Map<string, CmsViewState>())
 
   useEffect(() => {
     if (!host.current) return
@@ -166,6 +168,12 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
+    const previous = latest.current
+    if (previous.page.id !== props.page.id)
+      viewStates.current.set(
+        previous.page.id,
+        captureViewState(editor, previous.page.id, previous.device, previous.zoom),
+      )
     applying.current = true
     editor.setStyle(props.page.content[props.lang].css[props.mode])
     editor.setComponents(props.page.content[props.lang].html)
@@ -175,6 +183,8 @@ export function CmsEditor(props: Props): JSX.Element {
       .forEach((component: Component) => configureComponent(component))
     applying.current = false
     editor.clearDirtyCount()
+    const saved = viewStates.current.get(props.page.id)
+    if (saved) restoreViewState(editor, saved)
   }, [props.page.id, props.lang, props.mode])
 
   useEffect(() => {
