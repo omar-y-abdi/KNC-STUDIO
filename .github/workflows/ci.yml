@@ -25,11 +25,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
-      - name: Format changed files
-        run: |
-          files=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.json' '*.md' '*.css' '*.yml' '*.yaml')
-          if [ -n "$files" ]; then npx prettier --write $files; fi
-          git diff --exit-code
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
