@@ -33,7 +33,7 @@ interface Props {
   onError: (message: string) => void
 }
 
-function fontFamilyOptions(assets: CmsAsset[]): Array<{ id: string; label: string }> {
+function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
   return [
     { id: "'Inter Variable',Inter,system-ui,sans-serif", label: 'Inter' },
     { id: "'Playfair Display',Georgia,serif", label: 'Playfair Display' },

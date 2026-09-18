@@ -74,7 +74,9 @@ export function BusinessPanel({
               value={barber.name}
               onInput={(e) => {
                 const next = structuredClone(document)
-                next.barbers[index]!.name = e.currentTarget.value
+                const nextBarber = next.barbers[index]
+                if (!nextBarber) return
+                nextBarber.name = e.currentTarget.value
                 onChange(next)
               }}
             />
@@ -85,7 +87,9 @@ export function BusinessPanel({
               value={barber.role_sv}
               onInput={(e) => {
                 const next = structuredClone(document)
-                next.barbers[index]!.role_sv = e.currentTarget.value
+                const nextBarber = next.barbers[index]
+                if (!nextBarber) return
+                nextBarber.role_sv = e.currentTarget.value
                 onChange(next)
               }}
             />
@@ -96,7 +100,9 @@ export function BusinessPanel({
               value={barber.role_en}
               onInput={(e) => {
                 const next = structuredClone(document)
-                next.barbers[index]!.role_en = e.currentTarget.value
+                const nextBarber = next.barbers[index]
+                if (!nextBarber) return
+                nextBarber.role_en = e.currentTarget.value
                 onChange(next)
               }}
             />
@@ -107,7 +113,9 @@ export function BusinessPanel({
               value={barber.bio_sv}
               onInput={(e) => {
                 const next = structuredClone(document)
-                next.barbers[index]!.bio_sv = e.currentTarget.value
+                const nextBarber = next.barbers[index]
+                if (!nextBarber) return
+                nextBarber.bio_sv = e.currentTarget.value
                 onChange(next)
               }}
             />
@@ -118,7 +126,9 @@ export function BusinessPanel({
               value={barber.bio_en}
               onInput={(e) => {
                 const next = structuredClone(document)
-                next.barbers[index]!.bio_en = e.currentTarget.value
+                const nextBarber = next.barbers[index]
+                if (!nextBarber) return
+                nextBarber.bio_en = e.currentTarget.value
                 onChange(next)
               }}
             />
