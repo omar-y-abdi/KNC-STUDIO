@@ -22,7 +22,7 @@ const page: CmsPage = {
   },
 }
 
-const shell = `<!doctype html><html lang="sv"><head><title id="business-title">Old</title><meta id="business-description" name="description" content="old"><meta id="business-og-title" property="og:title" content="old"><meta id="business-og-description" property="og:description" content="old"><meta id="business-twitter-title" name="twitter:title" content="old"><meta id="business-twitter-description" name="twitter:description" content="old"><link rel="canonical" href="https://bladeblendstudio.se/"></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
+const shell = `<!doctype html><html lang="sv"><head><title id="business-title">Old</title><meta id="business-description" name="description" content="old"><meta id="business-og-title" property="og:title" content="old"><meta id="business-og-description" property="og:description" content="old"><meta id="business-twitter-title" name="twitter:title" content="old"><meta id="business-twitter-description" name="twitter:description" content="old"><meta property="og:locale" content="sv_SE"><meta property="og:locale:alternate" content="en_US"><link rel="canonical" href="https://bladeblendstudio.se/"></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
 
 describe('canonical CMS public page rendering', () => {
   it('renders authored HTML/CSS as the public root without a second presentation tree', () => {
@@ -40,5 +40,7 @@ describe('canonical CMS public page rendering', () => {
     expect(html).toContain('English title')
     expect(html).toContain('English description')
     expect(html).toContain('href="https://bladeblendstudio.se/"')
+    expect(html).toContain('property="og:locale" content="en_US"')
+    expect(html).toContain('property="og:locale:alternate" content="sv_SE"')
   })
 })
