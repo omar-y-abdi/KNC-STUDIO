@@ -25,6 +25,7 @@ import type { AdminBooking, AdminResult, AdminService } from '../../src/admin/ty
 import { GalleryManager, type GalleryManagerPort } from '../../src/admin/views/AboutView'
 import { AdminShell } from '../../src/admin/AdminShell'
 import { AdminApp } from '../../src/admin/AdminApp'
+import { CmsStudio } from '../../src/admin/cms/Studio'
 import { App } from '../../src/app/App'
 import { buildAdminStyles } from '../../src/admin/adminStyles'
 import { palette } from '../../src/booking/bookingStyles'
@@ -52,6 +53,12 @@ export function mountAdminAppHarness(tab: string): void {
   const target = root()
   history.replaceState({}, '', `/admin?tab=${tab}`)
   render(h(AdminApp, {}), target)
+}
+
+export function mountCmsStudioHarness(): void {
+  const target = root()
+  history.replaceState({}, '', '/admin/cms/')
+  render(h(CmsStudio, { onExit: () => undefined }), target)
 }
 
 /** Actual root, responsive shells and shared consent state; HTTP and sockets stay inert in runner. */
