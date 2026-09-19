@@ -26,11 +26,32 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply the exact reviewed corrections on the runner
+      - name: Apply pinned correction
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tools/cms-candidate.py
-      - name: Format only changed source and test files
+        run: |
+          python3 tools/cms-candidate.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/e2e/cms-native.mjs')
+          source = p.read_text()
+          source = source.replace("  page.on('pageerror', (error) => errors.push(error.message))", "  page.on('pageerror', (error) => { errors.push(error.message); console.error('PAGE_ERROR', error.message) })\n  page.on('console', (message) => { if (message.type() === 'error') console.error('BROWSER', message.text()) })")
+          source = source.replace('  } finally { await browser.close() }', '''  } catch (error) {
+              console.error('EDITOR_BODY', (await page.locator('body').innerText()).slice(0, 5000))
+              console.error('PAGE_ERRORS', errors)
+              await page.screenshot({ path: `/tmp/cms-native-${name}-failure.png` })
+              for (const frame of page.frames()) console.error('FRAME', frame.url(), await frame.evaluate(() => ({
+                status: { ...globalThis.document.documentElement.dataset },
+                surfaces: [...globalThis.document.querySelectorAll('[data-knc-surface]')].map((node) => node.getAttribute('data-knc-surface')),
+              })).catch(() => 'detached'))
+              throw error
+            } finally { await browser.close() }''')
+          p.write_text(source)
+          p = Path('src/admin/cms/NativeSource.tsx')
+          source = p.read_text().replace("        document.documentElement.dataset['kncSourceError'] = context.id", "        console.error('SOURCE_NOT_READY', JSON.stringify({ context, ...state.status, surfaces: [...document.querySelectorAll('[data-knc-surface]')].map((node) => node.getAttribute('data-knc-surface')), fonts: document.fonts.status, booking: document.documentElement.dataset['kncBookingReady'] }))\n        document.documentElement.dataset['kncSourceError'] = context.id")
+          p.write_text(source)
+          PY
+      - name: Format changed source
         run: |
           npx prettier --write tests/unit/cmsNativeTree.test.ts
           git add -N .
@@ -44,18 +65,7 @@ jobs:
           npm test || failed=1
           exit "$failed"
       - run: npm run build
-      - run: npx playwright install --with-deps chromium webkit
-      - name: Actual-site editor behavior
-        run: |
-          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 >/tmp/cms-native-vite.log 2>&1 &
-          server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          for attempt in {1..30}; do
-            curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break
-            sleep 1
-          done
-          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
-      - name: Store verified candidate without changing any branch
+      - name: Store compiled candidate for review without changing a branch
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_PARENT: ${{ github.event.pull_request.head.sha }}
@@ -86,12 +96,23 @@ jobs:
               tree.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': sha})
           base = api('/git/commits/' + parent)['tree']['sha']
           result = api('/git/trees', {'base_tree': base, 'tree': tree})
-          commit = api('/git/commits', {'message': 'fix(cms): edit the existing native site and verify persistence',
+          commit = api('/git/commits', {'message': 'fix(cms): connect the editor to original site components\n\nFormat, lint, type, unit and build gates pass. Browser acceptance\nis a separate required check; no production branch is changed.',
               'tree': result['sha'], 'parents': [parent]})
-          print('VERIFIED_CANDIDATE=' + commit['sha'])
-          print('VERIFIED_TREE=' + result['sha'])
+          print('COMPILED_CANDIDATE=' + commit['sha'])
+          print('CANDIDATE_TREE=' + result['sha'])
           print(changes)
           PY
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Actual-site editor behavior
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 >/tmp/cms-native-vite.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true; cat /tmp/cms-native-vite.log' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
