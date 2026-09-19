@@ -4,7 +4,7 @@
 // bodies live in their own modules; the shared chrome (toggles, palette) is built here and
 // passed down so both layouts render identical controls.
 
-import type { JSX } from 'preact'
+import type { JSX, ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
@@ -27,6 +27,11 @@ import { readStoragePreferences, subscribeStoragePreferences } from '../site/sto
 import { invokePublicBookingAction } from '../backend/publicBookingActions'
 import { withCustomerDeviceLock } from '../mybookings/customerDeviceLock'
 import type { CustomerProfile } from '../mybookings/domain'
+import { previewCustomerPort } from '../cms/PreviewPorts'
+import { defaultSiteChromePort } from '../site/adapters'
+import type { SiteChromePort } from '../site/port'
+
+const sourceChromePort: SiteChromePort = { load: (lang) => defaultSiteChromePort.load(lang) }
 import { DesktopSite } from './DesktopSite'
 import { MobileSite } from './MobileSite'
 import type { Mode, View } from './shared'
@@ -80,6 +85,23 @@ interface AppState {
   readonly myBookingsOpen: boolean
 }
 
+export interface SitePreviewSnapshot {
+  readonly mode: Mode
+  readonly lang: Lang
+  readonly view: View
+  readonly myBookings: boolean
+  readonly mobile: boolean
+  readonly chrome: SiteChrome
+}
+
+export interface SitePreview {
+  readonly mode: Mode
+  readonly lang: Lang
+  readonly view: View
+  readonly myBookings: boolean
+  readonly onReady: (snapshot: SitePreviewSnapshot) => void
+}
+
 function takeCustomerAccessLink(): BookingAccessLink {
   const link = consumeBookingAccessLink(window.location.href)
   if (link.code !== null || link.emailLinkCode !== undefined) {
@@ -88,32 +110,54 @@ function takeCustomerAccessLink(): BookingAccessLink {
   return link
 }
 
-export function App(): JSX.Element {
+export function App({
+  preview,
+}: { preview?: SitePreview; children?: ComponentChildren } = {}): JSX.Element {
   const privacy = usePrivacyPreferences()
   useEffect(() => {
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
   }, [privacy.openPreferences])
   // Default to the device's light/dark preference (manual toggle still overrides afterwards).
   const [state, setRaw] = useState<AppState>(() => ({
-    mode: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
-    lang: 'sv',
-    view: 'home',
-    myBookingsOpen: false,
+    mode:
+      preview?.mode ??
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+    lang: preview?.lang ?? 'sv',
+    view: preview?.view ?? (window.location.pathname === '/booking' ? 'booking' : 'home'),
+    myBookingsOpen: preview?.myBookings ?? window.location.pathname === '/my-bookings',
   }))
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
+  useEffect(() => {
+    if (!preview) return
+    setRaw((current) =>
+      current.mode === preview.mode &&
+      current.lang === preview.lang &&
+      current.view === preview.view &&
+      current.myBookingsOpen === preview.myBookings
+        ? current
+        : {
+            mode: preview.mode,
+            lang: preview.lang,
+            view: preview.view,
+            myBookingsOpen: preview.myBookings,
+          },
+    )
+  }, [preview?.mode, preview?.lang, preview?.view, preview?.myBookings])
   const [isMobile, setIsMobile] = useState<boolean>(() => window.matchMedia(MOBILE_MQ).matches)
   const [bookingAccess, setBookingAccess] = useState<{
     readonly token?: string
     readonly error?: 'invalid' | 'cookies_disabled' | 'system'
   }>({})
-  // Consume credentials before the dialog mounts. Mailbox-link proofs stay in memory and can never
-  // enter the existing automatic booking-token exchange path.
-  const [initialAccess] = useState(takeCustomerAccessLink)
+  // Source inspection must not consume credentials or mutate the owner's customer session.
+  const [initialAccess] = useState(() =>
+    preview ? consumeBookingAccessLink(`${window.location.origin}/`) : takeCustomerAccessLink(),
+  )
   const [emailLinkCode, setEmailLinkCode] = useState<string | null | undefined>(undefined)
   const accessSequence = useRef(0)
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | undefined>(undefined)
   useEffect(() => {
+    if (preview) return
     const clearOptionalAccess = (): void => {
       if (readStoragePreferences()?.functional === false) {
         // Queue behind any in-flight booking, so its late receipt cannot undo a withdrawn choice.
@@ -143,6 +187,7 @@ export function App(): JSX.Element {
   )
 
   useEffect(() => {
+    if (preview) return
     let active = true
     const acceptLink = (link: BookingAccessLink, restoreProfile = false): void => {
       const sequence = ++accessSequence.current
@@ -202,7 +247,18 @@ export function App(): JSX.Element {
   const lang = state.lang
   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
-  const { chrome, metadataReady } = useSiteChrome(lang)
+  const { chrome, metadataReady } = useSiteChrome(lang, preview ? sourceChromePort : undefined)
+  useEffect(() => {
+    if (metadataReady)
+      preview?.onReady({
+        mode: state.mode,
+        lang,
+        view: state.view,
+        myBookings: state.myBookingsOpen,
+        mobile: isMobile,
+        chrome,
+      })
+  }, [metadataReady, chrome, state, isMobile, preview?.onReady])
   const [initialStructuredData] = useState<string | null>(
     () => document.querySelector<HTMLScriptElement>('#business-json-ld')?.textContent ?? null,
   )
@@ -251,7 +307,7 @@ export function App(): JSX.Element {
   })
 
   useEffect(() => {
-    if (canReplaceDocumentMetadata(metadataReady, initialStructuredData)) {
+    if (!preview && canReplaceDocumentMetadata(metadataReady, initialStructuredData)) {
       updateDocumentMetadata(chrome, lang)
     }
   }, [chrome, initialStructuredData, lang, metadataReady])
@@ -409,6 +465,7 @@ export function App(): JSX.Element {
     >
       <LazyMyBookingsDialog
         key={accessSequence.current}
+        {...(preview ? { port: previewCustomerPort } : {})}
         mode={state.mode}
         lang={lang}
         onClose={closeMyBookings}
@@ -450,7 +507,7 @@ export function App(): JSX.Element {
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
-        <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+        {!preview && <PrivacyBanner lang={lang} dark={dark} controls={privacy} />}
       </>
     )
   }
@@ -482,7 +539,7 @@ export function App(): JSX.Element {
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
-      <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+      {!preview && <PrivacyBanner lang={lang} dark={dark} controls={privacy} />}
     </>
   )
 }

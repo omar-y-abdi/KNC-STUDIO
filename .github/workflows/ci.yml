@@ -87,6 +87,7 @@ jobs:
             sleep 1
           done
           BASE_URL=http://127.0.0.1:4188 ADMIN_E2E_SCENARIO=cms-shell npm run test:e2e:admin
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
 
   edge-functions:
     name: Edge Functions

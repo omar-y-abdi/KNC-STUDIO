@@ -9,6 +9,7 @@ import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
+import { nativeCanvas, exportNativeCanvas } from './nativeCanvas'
 
 export interface EditorHandle {
   flush: () => void
@@ -97,7 +98,7 @@ export function CmsEditor(props: Props): JSX.Element {
       avoidInlineStyle: true,
       canvas: {
         scripts: [],
-        styles: ['/fonts.css'],
+        styles: [],
         frameContent: '<!doctype html><html lang="sv"><head></head><body></body></html>',
       },
       canvasCss: 'html{scroll-behavior:auto!important}body{margin:0!important}',
@@ -148,6 +149,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
     editor.on('component:dblclick', (component: Component) => {
+      if (isProtected(component)) return
       const type = String(component.get('type') ?? '')
       const tag = String(component.get('tagName') ?? '').toLowerCase()
       if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
@@ -185,9 +187,14 @@ export function CmsEditor(props: Props): JSX.Element {
       if (applying.current) return
       const current = latest.current
       const next = structuredClone(current.page)
-      const authoredCss = editor.getCss({ keepUnusedStyles: true }) ?? ''
+      const exported = exportNativeCanvas(
+        editor.getHtml({ cleanId: false }),
+        editor.getCss({ keepUnusedStyles: true }) ?? '',
+        current.mode,
+      )
+      const authoredCss = exported.css
       next.content[current.lang] = {
-        html: editor.getHtml({ cleanId: false }),
+        html: exported.html,
         css: {
           ...next.content[current.lang].css,
           [current.mode]: authoredCss,
@@ -206,8 +213,9 @@ export function CmsEditor(props: Props): JSX.Element {
     props.onReady({ flush })
 
     applying.current = true
-    editor.setStyle(props.page.content[props.lang].css[props.mode])
-    editor.setComponents(props.page.content[props.lang].html)
+    const content = nativeCanvas(props.page.content[props.lang], props.mode)
+    editor.setStyle(content.css)
+    editor.setComponents(content.html)
     editor.getWrapper()?.components().forEach(configure)
     applying.current = false
     editor.clearDirtyCount()
@@ -226,8 +234,9 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!editor) return
     const previousState = viewStates.current.get(props.page.id)
     applying.current = true
-    editor.setStyle(props.page.content[props.lang].css[props.mode])
-    editor.setComponents(props.page.content[props.lang].html)
+    const content = nativeCanvas(props.page.content[props.lang], props.mode)
+    editor.setStyle(content.css)
+    editor.setComponents(content.html)
     editor
       .getWrapper()
       ?.components()

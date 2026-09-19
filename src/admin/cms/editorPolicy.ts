@@ -96,15 +96,24 @@ export const styleSectors = [
 
 export function isProtected(component: Component): boolean {
   const id = String(component.getAttributes()['id'] ?? '')
-  return protectedIds.has(id)
+  if (protectedIds.has(id)) return true
+  let current: Component | undefined = component
+  while (current) {
+    const attrs = current.getAttributes()
+    if (attrs['data-knc-slot'] || (current === component && attrs['data-knc-required'] === 'true'))
+      return true
+    current = current.parent()
+  }
+  return false
 }
 
 export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const protectedComponent = isProtected(component)
+  const retainedChildren = component.find('[data-knc-slot],[data-knc-required="true"]').length > 0
   component.set({
-    removable: !protectedComponent,
-    copyable: !protectedComponent,
+    removable: !protectedComponent && !retainedChildren,
+    copyable: !protectedComponent && !retainedChildren,
     draggable: !protectedComponent,
     droppable: !protectedComponent,
     resizable: !protectedComponent && !controls.has(tag) && !svgLeaf.has(tag),

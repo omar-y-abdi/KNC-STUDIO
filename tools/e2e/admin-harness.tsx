@@ -856,3 +856,5 @@ export function mountDelayedCatalogHarness(embedded: boolean): void {
   }
   render(h(Harness, {}), root())
 }
+
+export { default as cmsGrapes } from 'grapesjs'

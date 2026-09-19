@@ -473,10 +473,46 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
   return lines.join('\n')
 }
 
+export function cmsFrameResponse(response: Response, source: boolean): Response {
+  const headers = new Headers(response.headers)
+  const current =
+    headers.get('Content-Security-Policy') ??
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+  const parts = current
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter(
+      (part) => !part.startsWith('frame-src ') && !(source && part.startsWith('frame-ancestors ')),
+    )
+  parts.push("frame-src 'self' https://challenges.cloudflare.com")
+  if (source) parts.push("frame-ancestors 'self'")
+  headers.set('Content-Security-Policy', parts.join('; '))
+  headers.set('X-Frame-Options', source ? 'SAMEORIGIN' : 'DENY')
+  headers.set('Cache-Control', 'no-store')
+  headers.set('X-Robots-Tag', 'noindex, nofollow')
+  return new Response(response.body, { status: response.status, headers })
+}
+
 async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
+
+  if (pathname === '/api/cms/presentation') {
+    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
+    const cms = await loadPublicCms(env)
+    return new Response(
+      request.method === 'HEAD' ? null : JSON.stringify(cms ?? { error: 'unavailable' }),
+      {
+        status: cms ? 200 : 503,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      },
+    )
+  }
+  if (pathname === '/cms-public/source' && ['GET', 'HEAD'].includes(request.method)) {
+    return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
+  }
 
   if (pathname === '/404.html') {
     const missing = await serveAsset(request, env, '/404.html')
@@ -562,6 +598,13 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         body = replaceMetaContent(body, 'business-og-site-name', discovery.business.name)
         body = replaceMetaContent(body, 'business-og-image-alt', discovery.business.name)
         body = replaceJsonScript(body, 'business-json-ld', structured)
+      }
+      if (cms && cmsPage.content[lang].html.includes('data-knc-native="1"')) {
+        const state = JSON.stringify(cms.presentation).replaceAll('<', '\\u003c')
+        body = body.replace(
+          '</head>',
+          `<script type="application/json" id="cms-native-state">${state}</script></head>`,
+        )
       }
       if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
         body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
@@ -673,6 +716,7 @@ export default {
       return context.exports.PublicContent.fetch(request)
     }
 
-    return fetchPublicContent(request, env)
+    const response = await fetchPublicContent(request, env)
+    return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

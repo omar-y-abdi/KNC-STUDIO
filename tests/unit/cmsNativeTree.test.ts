@@ -15,7 +15,14 @@ it('keeps original action handlers and refs instead of reconstructing booking be
 
 it('keeps keyed native identities attached to the same entity across insertion and reorder', () => {
   const render = (ids: string[]) =>
-    nativeTree(h('div', null, ids.map((id) => h('p', { key: id }, id))), 'about')
+    nativeTree(
+      h(
+        'div',
+        null,
+        ids.map((id) => h('p', { key: id }, id)),
+      ),
+      'about',
+    )
   const before = render(['a', 'b'])
   const after = render(['c', 'b', 'a'])
   for (const [id, node] of before.nodes) {

@@ -25,6 +25,8 @@ async function mount(page, name, argument, path, shellMinHeight = '0px') {
 }
 
 async function mountCmsStudio(page) {
+  const { nativeBackend } = await import('./cms-native.mjs')
+  await nativeBackend(page.context())
   const origin = new URL(baseUrl).origin
   const requests = []
   const browserErrors = []
@@ -80,7 +82,7 @@ async function mountCmsStudio(page) {
         return route.fulfill({ status: 200, headers, body: JSON.stringify({ items: [] }) })
       throw new Error(`Unexpected CMS shell operation: ${JSON.stringify(body)}`)
     }
-    return route.fulfill({ status: 401, headers, body: '{}' })
+    return route.fallback()
   })
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html?view=cms-studio`, {
     waitUntil: 'domcontentloaded',

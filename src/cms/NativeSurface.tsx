@@ -22,9 +22,21 @@ export function NativeSiteProvider({
   presentation?: CmsPresentation | null
   source?: boolean
 }): JSX.Element {
-  const [published, setPublished] = useState<CmsPresentation | null>(null)
+  const [published, setPublished] = useState<CmsPresentation | null>(() => {
+    if (typeof document === 'undefined' || source || presentation !== undefined) return null
+    try {
+      const value: unknown = JSON.parse(
+        document.getElementById('cms-native-state')?.textContent ?? 'null',
+      )
+      if (value === null) return null
+      validatePresentation(value)
+      return value
+    } catch {
+      return null
+    }
+  })
   useEffect(() => {
-    if (source || presentation !== undefined) return
+    if (source || presentation !== undefined || published !== null) return
     const controller = new AbortController()
     void fetch('/api/cms/presentation', { signal: controller.signal })
       .then(async (response) => {
@@ -93,7 +105,7 @@ export function nativeTree(
         ),
       )
     if (typeof value.type !== 'string') {
-      const slot = h(
+      const slot = h<Record<string, unknown>>(
         'div',
         {
           id: identity,
@@ -102,12 +114,12 @@ export function nativeTree(
           style: 'display:contents',
         },
         value,
-      ) as NativeNode
+      )
       slots.set(identity, slot)
       return slot
     }
     const required = Boolean(value.ref) || Object.keys(props).some((key) => /^on[A-Z]/.test(key))
-    const node = h(
+    const node = h<Record<string, unknown>>(
       value.type,
       {
         ...props,
@@ -121,7 +133,7 @@ export function nativeTree(
       childrenOf(props['children'] as ComponentChildren).map((child, index) =>
         visit(child, `${path}-${childKey(child, index)}`),
       ),
-    ) as NativeNode
+    )
     nodes.set(identity, node)
     return node
   }
@@ -179,7 +191,7 @@ export function projectNativeTree(
     for (const name of editableAttributes) {
       const value = element.getAttribute(name)
       if (!original || value !== (before[name] ?? null)) {
-        if (value === null) delete props[name]
+        if (value === null) Reflect.deleteProperty(props, name)
         else if (safeAttribute(name, value)) props[name] = value
       }
     }
@@ -216,7 +228,14 @@ export function useNativeSurface(
   mode: CmsMode,
 ): JSX.Element {
   const context = useContext(NativeContext)
-  const path = surface.endsWith('-booking') ? '/booking' : surface === 'about' ? '/about' : '/'
+  const path =
+    surface === 'my-bookings'
+      ? '/my-bookings'
+      : surface.endsWith('-booking')
+        ? '/booking'
+        : surface === 'about'
+          ? '/about'
+          : '/'
   const page = context?.presentation?.pages.find((candidate) => candidate.path === path)
   const html = context?.source ? '' : (page?.content[lang].html ?? '')
   const template = useMemo(() => {

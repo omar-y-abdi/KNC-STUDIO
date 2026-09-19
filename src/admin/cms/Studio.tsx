@@ -9,7 +9,7 @@ import {
   type CmsPage,
   type CmsRevision,
 } from '../../../shared/cms'
-import { ensureCorePages, CORE_PAGE_IDS } from './corePages'
+import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS } from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
@@ -52,12 +52,21 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setError(null)
     try {
       const loaded = await cmsApi.state()
+      await prepareCorePageSource()
       const document = ensureCorePages(loaded.document)
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
       if (seeded) next.base = structuredClone(loaded.document)
-      if (backup && JSON.stringify(backup.document) !== JSON.stringify(document)) {
+      if (backup && isInventedSite(backup.document)) {
+        localStorage.setItem('knc-cms-retained-template-draft', JSON.stringify(backup))
+        setError('Det äldre mallutkastet har bevarats lokalt men används inte som din webbplats.')
+      }
+      if (
+        backup &&
+        !isInventedSite(backup.document) &&
+        JSON.stringify(backup.document) !== JSON.stringify(document)
+      ) {
         next.change(ensureCorePages(backup.document))
         setError(
           `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,

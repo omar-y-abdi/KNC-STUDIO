@@ -55,6 +55,7 @@ export interface MarkupFunctionalContract {
   attrs: Readonly<Record<string, string>>
 }
 export interface MarkupValidationOptions {
+  native?: boolean
   functionalContracts?: readonly MarkupFunctionalContract[]
 }
 const LEGACY_UNSUPPORTED_FUNCTIONAL_TAGS = new Set([
@@ -178,6 +179,7 @@ export function validateMarkup(
   options: MarkupValidationOptions = {},
 ): { html: string; refs: MediaRef[] } {
   if (html.length > 100000 || css.length > 100000) reject('page', 'Page exceeds its size limit')
+  const nativeMode = options.native === true
   const functionalMode = options.functionalContracts !== undefined
   const contractList = options.functionalContracts ?? []
   const contracts = new Map(contractList.map((contract) => [contract.key, contract]))
@@ -204,7 +206,7 @@ export function validateMarkup(
       const contract = contractKey === undefined ? undefined : contracts.get(contractKey)
       if (contractKey !== undefined && (!functionalMode || !contract || contract.tag !== tag))
         reject('html', 'Unknown or mismatched functional contract identity')
-      if (!functionalMode && LEGACY_UNSUPPORTED_FUNCTIONAL_TAGS.has(tag))
+      if (!functionalMode && !nativeMode && LEGACY_UNSUPPORTED_FUNCTIONAL_TAGS.has(tag))
         reject('html', `Unsupported element <${tag}>`)
       if (functionalMode && CONTRACT_REQUIRED_TAGS.has(tag) && !contract)
         reject('html', `Functional element <${tag}> requires a trusted contract`)
@@ -234,12 +236,66 @@ export function validateMarkup(
         if (functionalMode && runtimeData && !trustedRuntimeData)
           reject('html', 'Functional data hook does not match its trusted contract')
         if (
+          !(nativeMode && (name.startsWith('data-knc-') || name === 'inert')) &&
           !ATTRIBUTES.has(name) &&
           !/^aria-[a-z-]+$/.test(name) &&
           !(functionalMode ? trustedRuntimeData : /^data-business-[a-z-]+$/.test(name))
         )
           reject('html', `Unsupported attribute ${name}`)
         if (value.length > 10000 || value.includes('\0')) reject('html', 'Invalid attribute value')
+        if (name.startsWith('data-knc-')) {
+          if (
+            !nativeMode ||
+            ![
+              'data-knc-native',
+              'data-knc-source',
+              'data-knc-slot',
+              'data-knc-required',
+              'data-knc-surface',
+              'data-knc-light',
+              'data-knc-dark',
+              'data-knc-baseline',
+              'data-knc-dark-attrs',
+            ].includes(name)
+          )
+            reject('html', 'Unknown native presentation metadata')
+          if (name === 'data-knc-light' || name === 'data-knc-dark')
+            refs.push(...checkCss(value, policy, true))
+          else if (name === 'data-knc-baseline' || name === 'data-knc-dark-attrs') {
+            let metadata: unknown
+            try {
+              metadata = JSON.parse(value)
+            } catch {
+              reject('html', 'Invalid native metadata')
+            }
+            if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+              reject('html', 'Invalid native metadata')
+            for (const [key, item] of Object.entries(metadata as Record<string, unknown>)) {
+              if (
+                ![
+                  'class',
+                  'title',
+                  'href',
+                  'target',
+                  'rel',
+                  'src',
+                  'alt',
+                  'aria-label',
+                  'text',
+                ].includes(key) ||
+                typeof item !== 'string'
+              )
+                reject('html', 'Invalid native metadata field')
+              if (key === 'href' && !safeLink(item as string, policy.siteOrigin))
+                reject('html', 'Unsafe native link')
+              if (key === 'src') {
+                const ref = resourceReference(item as string, policy)
+                if (ref) refs.push(ref)
+              }
+            }
+          } else if (!/^[a-zA-Z0-9_-]{1,240}$/.test(value))
+            reject('html', 'Invalid native identity')
+        }
         if (name === 'id') {
           if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,127}$/.test(value) || ids.has(value))
             reject('html', 'Invalid or duplicate element ID')
@@ -359,7 +415,10 @@ export function validateDocumentMarkupPlacements(
   for (const page of document.presentation.pages) {
     for (const lang of ['sv', 'en'] as const) {
       const variant = page.content[lang]
-      const html = validateMarkup(variant.html, '', policy)
+      const native = variant.html.includes('data-knc-native="1"')
+      if (native && !['/', '/about', '/booking', '/my-bookings'].includes(page.path))
+        reject('page', 'Native presentation is restricted to the existing site')
+      const html = validateMarkup(variant.html, '', policy, { native })
       variant.html = html.html
       appendPlacements(placements, html.refs, `presentation.pages:${page.id}:${lang}:html`)
       for (const mode of ['light', 'dark'] as const) {
@@ -385,7 +444,8 @@ export function validateDocumentMarkupPlacements(
 
   for (const page of document.presentation.pages)
     for (const lang of ['sv', 'en'] as const) {
-      validateRuntimeSlot(page.path, lang, page.content[lang].html)
+      if (!page.content[lang].html.includes('data-knc-native="1"'))
+        validateRuntimeSlot(page.path, lang, page.content[lang].html)
       validateLegalSlots(page.path, lang, page.content[lang].html)
     }
 
