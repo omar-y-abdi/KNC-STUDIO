@@ -32,12 +32,17 @@ jobs:
         run: python3 tools/cms-candidate.py
       - name: Format only changed source and test files
         run: |
+          npx prettier --write tests/unit/cmsNativeTree.test.ts
           git add -N .
           git diff --name-only --diff-filter=ACMR -z | xargs -0 --no-run-if-empty npx prettier --write --ignore-unknown
       - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
+      - name: Independent lint, type and unit checks
+        run: |
+          failed=0
+          npm run lint || failed=1
+          npm run typecheck || failed=1
+          npm test || failed=1
+          exit "$failed"
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
       - name: Actual-site editor behavior
