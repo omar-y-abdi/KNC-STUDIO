@@ -1,4 +1,11 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
+import {
+  validatePresentation,
+  type CmsLang,
+  type CmsMode,
+  type CmsPage,
+  type CmsPresentation,
+} from '../shared/cms'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
 import { privatePageTitle } from './site/routeMetadata'
@@ -110,6 +117,47 @@ export interface BusinessDiscovery {
   readonly facts: BusinessDiscoveryFacts
 }
 
+interface PublicCmsPresentation {
+  readonly revision: number
+  readonly presentation: CmsPresentation
+}
+
+function publicCmsFromWire(value: unknown): PublicCmsPresentation | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const wire = value as Record<string, unknown>
+  if (typeof wire['revision'] !== 'number' || !Number.isSafeInteger(wire['revision'])) return null
+  const presentation = structuredClone(wire['presentation'])
+  try {
+    validatePresentation(presentation)
+  } catch {
+    return null
+  }
+  return { revision: wire['revision'], presentation }
+}
+
+async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  try {
+    const response = await fetch(
+      `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/public_cms_presentation`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: env.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(1800),
+      },
+    )
+    if (!response.ok) return null
+    return publicCmsFromWire(await response.json())
+  } catch {
+    return null
+  }
+}
+
 function discoveryFromWire(value: unknown): BusinessDiscovery | null {
   const parsed = publicBusinessDiscoveryResponse.safeParse(value)
   if (!parsed.success) return null
@@ -206,6 +254,65 @@ function replaceMetaContent(html: string, id: string, value: string): string {
     () => `content="${escapeAttribute(value)}"`,
   )
   return `${html.slice(0, bounds.start)}${updated}${html.slice(bounds.end + 1)}`
+}
+
+function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
+  return Object.entries(presentation.fonts ?? {})
+    .map(([id, font]) => {
+      const url = `${storageOrigin.replace(/\/$/, '')}/storage/v1/object/public/${font.ref.bucket}/${font.ref.path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`
+      return `@font-face{font-family:"CMSFont-${id}";src:url("${url}") format("woff2");font-display:swap}`
+    })
+    .join('\n')
+}
+
+export function renderCmsPage(
+  html: string,
+  page: CmsPage,
+  lang: CmsLang,
+  mode: CmsMode,
+  canonicalUrl: string,
+  fontCss = '',
+): string {
+  const variant = page.content[lang]
+  let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
+  rendered = replaceElementText(rendered, 'business-title', page.title[lang])
+  rendered = replaceMetaContent(rendered, 'business-description', page.description[lang])
+  rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
+  rendered = replaceMetaContent(rendered, 'business-og-description', page.description[lang])
+  rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
+  rendered = replaceMetaContent(rendered, 'business-twitter-description', page.description[lang])
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
+    `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
+  )
+  rendered = rendered.replace(
+    /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
+    `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
+  )
+  rendered = rendered.replace(
+    /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
+    `$1${escapeAttribute(canonicalUrl)}$2`,
+  )
+  rendered = rendered.replace(
+    '</head>',
+    `<style id="cms-fonts">${fontCss}</style>` +
+      `<style id="cms-page-light" media="(prefers-color-scheme: light)">${variant.css.light}</style>` +
+      `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${variant.css.dark}</style></head>`,
+  )
+  rendered = replaceElementContent(rendered, 'root', variant.html)
+  const bounds = tagBounds(rendered, 'root')
+  if (bounds !== null) {
+    const opening = rendered.slice(bounds.start, bounds.end + 1)
+    const marked = opening.replace(
+      /\s*>$/,
+      ` data-cms-public="1" data-cms-mode="${mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+    )
+    rendered = `${rendered.slice(0, bounds.start)}${marked}${rendered.slice(bounds.end + 1)}`
+  }
+  return rendered
 }
 
 export function renderHomepageMetadata(html: string, discovery: BusinessDiscovery): string {
@@ -366,10 +473,46 @@ export function renderLlmsText(discovery: BusinessDiscovery): string {
   return lines.join('\n')
 }
 
+export function cmsFrameResponse(response: Response, source: boolean): Response {
+  const headers = new Headers(response.headers)
+  const current =
+    headers.get('Content-Security-Policy') ??
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+  const parts = current
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter(
+      (part) => !part.startsWith('frame-src ') && !(source && part.startsWith('frame-ancestors ')),
+    )
+  parts.push("frame-src 'self' https://challenges.cloudflare.com")
+  if (source) parts.push("frame-ancestors 'self'")
+  headers.set('Content-Security-Policy', parts.join('; '))
+  headers.set('X-Frame-Options', source ? 'SAMEORIGIN' : 'DENY')
+  headers.set('Cache-Control', 'no-store')
+  headers.set('X-Robots-Tag', 'noindex, nofollow')
+  return new Response(response.body, { status: response.status, headers })
+}
+
 async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname
   const cleanPathname = withoutTrailingSlash(pathname)
+
+  if (pathname === '/api/cms/presentation') {
+    if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
+    const cms = await loadPublicCms(env)
+    return new Response(
+      request.method === 'HEAD' ? null : JSON.stringify(cms ?? { error: 'unavailable' }),
+      {
+        status: cms ? 200 : 503,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      },
+    )
+  }
+  if (pathname === '/cms-public/source' && ['GET', 'HEAD'].includes(request.method)) {
+    return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
+  }
 
   if (pathname === '/404.html') {
     const missing = await serveAsset(request, env, '/404.html')
@@ -419,6 +562,59 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === '/index.html') return redirectTo(url, '/')
+
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    !isPrivatePath(pathname) &&
+    pathname !== '/google-calendar'
+  ) {
+    const cms = await loadPublicCms(env)
+    const cmsPage = cms?.presentation.pages.find((page) => page.path === cleanPathname)
+    if (cmsPage) {
+      const index = await serveAsset(request, env, '/index.html', true)
+      const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
+      const mode: CmsMode = url.searchParams.get('mode') === 'dark' ? 'dark' : 'light'
+      const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
+      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const headers = new Headers(index.headers)
+      headers.delete('Content-Length')
+      headers.delete('ETag')
+      headers.delete('Last-Modified')
+      headers.set('Cache-Control', 'no-store')
+      let body = renderCmsPage(
+        await index.text(),
+        cmsPage,
+        lang,
+        mode,
+        canonicalUrl,
+        cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
+      )
+      if (discovery) {
+        const structured = buildBusinessStructuredData(
+          discovery.business,
+          discovery.facts,
+          SITE_URL,
+        )
+        body = replaceMetaContent(body, 'business-og-site-name', discovery.business.name)
+        body = replaceMetaContent(body, 'business-og-image-alt', discovery.business.name)
+        body = replaceJsonScript(body, 'business-json-ld', structured)
+      }
+      if (cms && cmsPage.content[lang].html.includes('data-knc-native="1"')) {
+        const state = JSON.stringify(cms.presentation).replaceAll('<', '\\u003c')
+        body = body.replace(
+          '</head>',
+          `<script type="application/json" id="cms-native-state">${state}</script></head>`,
+        )
+      }
+      if (cmsPage.path === '/privacy' || cmsPage.path === '/terms')
+        body = renderLegalMetadata(body, cmsPage.path, discovery?.business ?? null)
+      return new Response(request.method === 'HEAD' ? null : body, {
+        status: index.status,
+        headers,
+      })
+    }
+  }
+
   const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
   const dynamicHomepage = pathname === '/' && request.method === 'GET'
   const dynamicLegal =
@@ -520,6 +716,7 @@ export default {
       return context.exports.PublicContent.fetch(request)
     }
 
-    return fetchPublicContent(request, env)
+    const response = await fetchPublicContent(request, env)
+    return /^\/admin\/cms(?:\/|$)/.test(url.pathname) ? cmsFrameResponse(response, false) : response
   },
 } satisfies { fetch(request: Request, env: Env, context: WorkerContext): Promise<Response> }

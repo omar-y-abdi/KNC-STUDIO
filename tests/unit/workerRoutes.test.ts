@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
+import { emptyPresentation } from '../../shared/cms'
 import worker, {
   PublicContent,
   customerAccessTokenFromPath,
@@ -281,12 +282,16 @@ describe('Worker route policy', () => {
   })
 
   it('share-caches homepage metadata only after successful discovery', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ settings: {}, barbers: [], services: [], schedules: [] }), {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      const body = url.includes('public_cms_presentation')
+        ? { revision: 2, presentation: emptyPresentation() }
+        : { settings: {}, barbers: [], services: [], schedules: [] }
+      return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+      })
+    })
     const env = {
       ...createEnv(),
       SUPABASE_URL: 'https://example.supabase.co',
@@ -300,7 +305,7 @@ describe('Worker route policy', () => {
         createWorkerContext(env),
       )
       expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
-      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(fetchMock).toHaveBeenCalledTimes(2)
     } finally {
       fetchMock.mockRestore()
     }

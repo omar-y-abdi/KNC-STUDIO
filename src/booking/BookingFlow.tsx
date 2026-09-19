@@ -4,7 +4,8 @@
 // Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useRef, useState } from 'preact/hooks'
+import { PreviewPorts } from '../cms/PreviewPorts'
 import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
@@ -70,6 +71,7 @@ export interface BookingFlowProps {
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
+  const previewPorts = useContext(PreviewPorts)
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
   // Port result, per-FIELD validation errors, and the generic SYSTEM/submit error all live
@@ -150,17 +152,20 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const dark = (props.mode ?? 'light') === 'dark'
   const showDirections = props.showDirections !== false
   const clock: Clock = props.clock ?? defaultClock
-  const port: BookingPort = props.port ?? defaultBookingPort
-  const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
+  const port: BookingPort = previewPorts?.booking ?? props.port ?? defaultBookingPort
+  const { roster, loading: rosterLoading } = useRoster(previewPorts?.barbers ?? props.barbersPort)
   useEffect(() => {
-    if (!rosterLoading) props.onRosterReady?.()
-  }, [rosterLoading, props.onRosterReady])
+    if (!rosterLoading) {
+      props.onRosterReady?.()
+      if (previewPorts) document.documentElement.dataset['kncBookingReady'] = '1'
+    }
+  }, [rosterLoading, props.onRosterReady, props.mode, props.defaultLang, previewPorts])
   const today = stockholmWallClockDate(clock())
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
     S.barberId,
     S.dateIso,
-    props.servicesPort,
+    previewPorts?.services ?? props.servicesPort,
   )
 
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
@@ -435,7 +440,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const f = S.form
   const bookDisabled =
     !(f.name.trim() && f.phone.trim() && f.email.trim()) ||
-    (turnstileConfigured && turnstileToken === '')
+    (turnstileConfigured && previewPorts === undefined && turnstileToken === '')
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
@@ -794,7 +799,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           onClose={closePopup}
           onBackdropClick={onPopupBackdrop}
           turnstile={
-            turnstileConfigured ? (
+            turnstileConfigured && previewPorts === undefined ? (
               <Turnstile
                 action="booking"
                 lang={lang}

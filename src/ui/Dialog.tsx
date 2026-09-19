@@ -11,6 +11,8 @@
 
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useRef } from 'preact/hooks'
+import { useNativeSurface } from '../cms/NativeSurface'
+import type { CmsLang, CmsMode } from '../../shared/cms'
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])'
@@ -24,6 +26,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export interface DialogProps {
+  readonly cms?: { surface: string; lang: CmsLang; mode: CmsMode }
   /** Stable id used for `aria-labelledby` and applied to the title element by the caller. */
   readonly titleId: string
   /** Close handler — wired to Escape and (by the caller) to backdrop click. */
@@ -95,7 +98,7 @@ export function Dialog(props: DialogProps): JSX.Element {
     ? { ...props.cardStyle, animation: 'none' }
     : props.cardStyle
 
-  return (
+  const source = (
     <div
       onClick={props.onBackdropClick}
       onKeyDown={onKeyDown}
@@ -114,5 +117,11 @@ export function Dialog(props: DialogProps): JSX.Element {
         {props.children}
       </div>
     </div>
+  )
+  return useNativeSurface(
+    source,
+    props.cms?.surface ?? `dialog-${props.titleId}`,
+    props.cms?.lang ?? 'sv',
+    props.cms?.mode ?? 'light',
   )
 }

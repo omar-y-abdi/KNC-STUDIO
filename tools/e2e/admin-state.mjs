@@ -1,6 +1,8 @@
 import { chromium, firefox, webkit } from 'playwright'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4188').replace(/\/$/, '')
+const scenario = process.env.ADMIN_E2E_SCENARIO ?? 'all'
+if (!['all', 'cms-shell'].includes(scenario)) throw new Error('Unsupported admin E2E scenario')
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -20,6 +22,157 @@ async function mount(page, name, argument, path, shellMinHeight = '0px') {
     const shell = globalThis.document.querySelector('.knc-admin-shell')
     if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = minHeight
   }, shellMinHeight)
+}
+
+async function mountCmsStudio(page) {
+  const { nativeBackend } = await import('./cms-native.mjs')
+  await nativeBackend(page.context())
+  const origin = new URL(baseUrl).origin
+  const requests = []
+  const browserErrors = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('https://admin-harness.invalid/'))
+      requests.push(`${request.method()} ${request.url()}`)
+  })
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
+  await page.route('https://admin-harness.invalid/**', async (route) => {
+    const request = route.request()
+    const headers = {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Headers': 'authorization,apikey,content-type,x-client-info',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Content-Type': 'application/json',
+    }
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
+    const url = new URL(request.url())
+    if (url.pathname === '/functions/v1/cms-studio') {
+      const body = request.postDataJSON()
+      if (body?.operation === 'state')
+        return route.fulfill({
+          status: 200,
+          headers,
+          body: JSON.stringify({
+            revision: 1,
+            fingerprint: 'cms-shell-e2e',
+            assets: [],
+            document: {
+              schema: 1,
+              site: {},
+              about: {},
+              settings: {},
+              barbers: [],
+              photos: {},
+              gallery: [],
+              emails: [],
+              presentation: {
+                copy: {},
+                styles: {},
+                images: {},
+                themes: { light: {}, dark: {} },
+                pages: [],
+                regions: {},
+              },
+            },
+          }),
+        })
+      if (body?.operation === 'history')
+        return route.fulfill({ status: 200, headers, body: JSON.stringify({ items: [] }) })
+      throw new Error(`Unexpected CMS shell operation: ${JSON.stringify(body)}`)
+    }
+    return route.fallback()
+  })
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html?view=cms-studio`, {
+    waitUntil: 'domcontentloaded',
+  })
+  await page.evaluate(async () => {
+    const harness = await import('/tools/e2e/admin-harness.tsx')
+    harness.mountCmsStudioHarness()
+  })
+  try {
+    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })
+  } catch (error) {
+    const notice = await page.locator('.cms-notice').allTextContents()
+    const body = await page
+      .locator('body')
+      .innerText()
+      .catch(() => '')
+    throw new Error(
+      `CMS studio did not mount: ${error.message}; notice=${JSON.stringify(notice)}; requests=${JSON.stringify(requests)}; browserErrors=${JSON.stringify(browserErrors)}; body=${JSON.stringify(body.slice(0, 1200))}`,
+    )
+  }
+}
+
+async function verifyCmsStudioShell(page) {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mountCmsStudio(page)
+  assert(
+    JSON.stringify(await page.evaluate(() => [globalThis.innerWidth, globalThis.innerHeight])) ===
+      JSON.stringify([390, 844]),
+    'CMS studio did not run at the real phone-sized viewport',
+  )
+
+  const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
+  const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
+  const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
+  const library = page.locator('#cms-library')
+  const inspector = page.locator('#cms-inspector')
+  await tools.waitFor({ state: 'visible' })
+  assert(!(await library.isVisible()), 'Mobile CMS library starts open')
+  assert(!(await inspector.isVisible()), 'Mobile CMS inspector starts open')
+
+  await pages.click()
+  assert(await library.isVisible(), 'Sidor did not open the mobile library drawer')
+  assert(!(await inspector.isVisible()), 'Opening Sidor also opened Egenskaper')
+  await properties.click()
+  assert(!(await library.isVisible()), 'Opening Egenskaper left Sidor open')
+  assert(await inspector.isVisible(), 'Egenskaper did not open the mobile inspector drawer')
+
+  const tabs = page.getByRole('tablist', { name: 'Egenskapspanel' })
+  for (const name of ['Design', 'Lager', 'Lägg till']) {
+    const tab = tabs.getByRole('tab', { name, exact: true })
+    await tab.click()
+    assert((await tab.getAttribute('aria-selected')) === 'true', `${name} is not touch-usable`)
+  }
+
+  const commandbar = page.locator('.cms-bottom')
+  await commandbar.waitFor({ state: 'visible' })
+  for (const name of ['Ångra', 'Gör om', 'Save / Publicera', 'Revert', 'History', 'Lås vy']) {
+    const button = commandbar.getByRole('button', { name, exact: true })
+    assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
+    await button.scrollIntoViewIfNeeded()
+    assert(await button.isVisible(), `Bottom command ${name} is not reachable on mobile`)
+  }
+  const box = await commandbar.boundingBox()
+  assert(
+    box !== null && box.y >= 0 && box.y + box.height <= 844,
+    `Mobile command bar escaped the viewport: ${JSON.stringify(box)}`,
+  )
+
+  await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  assert(!(await inspector.isVisible()), 'Backdrop did not close the mobile inspector')
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const geometry = await page.evaluate(() => {
+    const library = globalThis.document.querySelector('#cms-library')?.getBoundingClientRect()
+    const canvas = globalThis.document.querySelector('.cms-editor-canvas')?.getBoundingClientRect()
+    const inspector = globalThis.document.querySelector('#cms-inspector')?.getBoundingClientRect()
+    if (!library || !canvas || !inspector) return null
+    return {
+      libraryRight: library.right,
+      canvasLeft: canvas.left,
+      canvasRight: canvas.right,
+      inspectorLeft: inspector.left,
+    }
+  })
+  assert(
+    geometry !== null &&
+      geometry.libraryRight <= geometry.canvasLeft &&
+      geometry.canvasRight <= geometry.inspectorLeft,
+    `Desktop CMS is not left-library / canvas / right-inspector: ${JSON.stringify(geometry)}`,
+  )
 }
 
 async function waitForScroll(page, expected, label) {
@@ -2448,42 +2601,47 @@ const privacyCases = [
 ]
 
 const browser = await chromium.launch()
+const chromiumScenarios =
+  scenario === 'cms-shell'
+    ? [verifyCmsStudioShell]
+    : [
+        verifyNavigation,
+        verifyDelayedRestore,
+        verifyPresentationDraft,
+        verifyCmsStudioShell,
+        ...[
+          'focus',
+          'poll',
+          'auth-event',
+          'slow-signout',
+          'late-profile',
+          'late-password',
+          'password-completes',
+          'late-settings-password',
+          'queued-write',
+          'notification-gap',
+          'late-reset-logout',
+          'network',
+        ].map((scenario) => (page) => verifyAdminSession(page, scenario)),
+        ...['services', 'profile', 'bookings'].flatMap((kind) => [
+          (page) => verifyMutationReentry(page, kind),
+          (page) => verifyMutationReentry(page, kind, 'remount'),
+          (page) => verifyMutationReentry(page, kind, 'target', true),
+        ]),
+        ...['site', 'gallery'].flatMap((kind) => [
+          (page) => verifyInitialHydration(page, kind),
+          (page) => verifyInitialHydration(page, kind, true),
+        ]),
+        ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
+        ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
+        ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
+        verifyCalendarSync,
+        verifyCustomerEmail,
+        ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
+      ]
 let passed = 0
 try {
-  for (const verify of [
-    verifyNavigation,
-    verifyDelayedRestore,
-    verifyPresentationDraft,
-    ...[
-      'focus',
-      'poll',
-      'auth-event',
-      'slow-signout',
-      'late-profile',
-      'late-password',
-      'password-completes',
-      'late-settings-password',
-      'queued-write',
-      'notification-gap',
-      'late-reset-logout',
-      'network',
-    ].map((scenario) => (page) => verifyAdminSession(page, scenario)),
-    ...['services', 'profile', 'bookings'].flatMap((kind) => [
-      (page) => verifyMutationReentry(page, kind),
-      (page) => verifyMutationReentry(page, kind, 'remount'),
-      (page) => verifyMutationReentry(page, kind, 'target', true),
-    ]),
-    ...['site', 'gallery'].flatMap((kind) => [
-      (page) => verifyInitialHydration(page, kind),
-      (page) => verifyInitialHydration(page, kind, true),
-    ]),
-    ...['booking', 'review'].map((kind) => (page) => verifyContactOwnership(page, kind)),
-    ...[false, true].map((embedded) => (page) => verifyDelayedCatalog(page, embedded)),
-    ...['sv', 'en'].map((lang) => (page) => verifyBookingTerms(page, lang)),
-    verifyCalendarSync,
-    verifyCustomerEmail,
-    ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
-  ]) {
+  for (const verify of chromiumScenarios) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
     const page = await context.newPage()
     page.setDefaultTimeout(10_000)
@@ -2501,19 +2659,32 @@ try {
   await browser.close()
 }
 
-for (const engine of [firefox, webkit]) {
+const secondaryEngines = scenario === 'cms-shell' ? [webkit] : [firefox, webkit]
+for (const engine of secondaryEngines) {
   const browser = await engine.launch()
   try {
-    for (const options of privacyCases) {
-      const page = await browser.newPage()
-      page.setDefaultTimeout(10_000)
-      try {
-        await verifyPrivacy(page, options)
-      } finally {
-        await page.close()
+    if (scenario !== 'cms-shell')
+      for (const options of privacyCases) {
+        const page = await browser.newPage()
+        page.setDefaultTimeout(10_000)
+        try {
+          await verifyPrivacy(page, options)
+        } finally {
+          await page.close()
+        }
       }
+    const cmsPage = await browser.newPage()
+    cmsPage.setDefaultTimeout(10_000)
+    try {
+      await verifyCmsStudioShell(cmsPage)
+    } finally {
+      await cmsPage.close()
     }
-    console.log(`Responsive privacy passed (${privacyCases.length} scenarios): ${engine.name()}.`)
+    console.log(
+      scenario === 'cms-shell'
+        ? `CMS mobile shell passed: ${engine.name()}.`
+        : `Responsive privacy passed (${privacyCases.length} scenarios) plus CMS mobile shell: ${engine.name()}.`,
+    )
   } finally {
     await browser.close()
   }

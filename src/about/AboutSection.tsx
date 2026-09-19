@@ -1,3 +1,6 @@
+import { useNativeSurface } from '../cms/NativeSurface'
+import { useContext } from 'preact/hooks'
+import { PreviewPorts } from '../cms/PreviewPorts'
 // "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
 // the desktop and mobile layouts. Minimal/editorial on desktop, M3 cards on mobile (it simply uses
 // the booking palette + 14px radii, so it reads native in both shells). Photos and reviews come
@@ -60,6 +63,17 @@ export interface AboutSectionProps {
 }
 
 export function AboutSection(props: AboutSectionProps): JSX.Element {
+  const previewPorts = useContext(PreviewPorts)
+  if (previewPorts)
+    props = {
+      ...props,
+      port: previewPorts.reviews,
+      barbersPort: previewPorts.barbers,
+      aboutContentPort: previewPorts.aboutContent,
+      galleryPort: previewPorts.gallery,
+      challengeEnabled: false,
+    }
+
   const lang = props.lang
   const base: AboutStrings = aboutStrings(lang)
   const dark = props.mode === 'dark'
@@ -356,7 +370,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     boxShadow: '0 0 0 3px ' + (dark ? 'rgba(255,69,58,.28)' : 'rgba(255,59,48,.28)'),
   }
 
-  return (
+  return useNativeSurface(
     <section
       ref={sectionRef}
       id={ABOUT_SECTION_ID}
@@ -653,6 +667,9 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
           </a>
         ) : null}
       </footer>
-    </section>
+    </section>,
+    'about',
+    props.lang,
+    props.mode,
   )
 }

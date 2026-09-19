@@ -14,7 +14,8 @@
 // the current high-entropy email-scoped token; requesting another link replaces the previous token.
 
 import type { JSX, Ref } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useRef, useState } from 'preact/hooks'
+import { PreviewPorts } from '../cms/PreviewPorts'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
@@ -71,6 +72,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 }
 
 function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
+  const previewPorts = useContext(PreviewPorts)
   const lang = props.lang
   const t = myBookingsStrings(lang)
   const dark = props.mode === 'dark'
@@ -114,7 +116,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState('')
   const [turnstileNonce, setTurnstileNonce] = useState(0)
-  const challengeRequired = turnstileConfigured
+  const challengeRequired = turnstileConfigured && previewPorts === undefined
   const actionError = (
     error: 'failed_challenge' | 'rate_limited' | 'system',
     fallback: string,
@@ -527,6 +529,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
   return (
     <Dialog
       titleId="knc-mybookings-title"
+      cms={{ surface: 'my-bookings', lang, mode: props.mode }}
       onClose={props.onClose}
       onBackdropClick={onBackdrop}
       backdropClass="knc-sheet-backdrop"

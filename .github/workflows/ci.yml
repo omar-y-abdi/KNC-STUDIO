@@ -65,6 +65,30 @@ jobs:
             /tmp/visual-diff/*.png
           retention-days: 7
 
+  cms-shell:
+    name: CMS shell browsers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Real desktop and mobile CMS shell
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/blade-cms-shell.log 2>&1 &
+          dev_pid=$!
+          trap 'kill "$dev_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4188 ADMIN_E2E_SCENARIO=cms-shell npm run test:e2e:admin
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
+
   edge-functions:
     name: Edge Functions
     runs-on: ubuntu-latest
