@@ -211,7 +211,18 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     const response = await fetch(`/${kind}.html`, { cache: 'no-store' })
     if (!response.ok) throw new Error('Den befintliga juridiska sidan kunde inte läsas.')
     const doc = new DOMParser().parseFromString(await response.text(), 'text/html')
-    const css = [...doc.querySelectorAll('style')].map((style) => style.textContent).join('\n')
+    const styles: string[] = []
+    for (const style of doc.querySelectorAll('style,link[rel="stylesheet"]')) {
+      if (style.tagName === 'STYLE') styles.push(style.textContent ?? '')
+      else {
+        const url = new URL(style.getAttribute('href') ?? '', location.origin)
+        if (url.origin !== location.origin) throw new Error('Extern källstil stöds inte.')
+        const stylesheet = await fetch(url, { cache: 'no-store' })
+        if (!stylesheet.ok) throw new Error('Den befintliga sidans stil kunde inte läsas.')
+        styles.push(await stylesheet.text())
+      }
+    }
+    const css = styles.join('\n')
     for (const script of doc.querySelectorAll('script')) script.remove()
     const name = names[index + 4]
     const id = CORE_PAGE_IDS[index + 4]

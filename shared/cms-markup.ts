@@ -127,6 +127,7 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
   try {
     tree = parse(css, {
       context: inline ? 'declarationList' : 'stylesheet',
+      parseCustomProperty: true,
       onParseError: () => reject('css', 'Malformed CSS'),
     })
   } catch (error) {
