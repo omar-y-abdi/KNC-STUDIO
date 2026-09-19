@@ -48,7 +48,10 @@ jobs:
             } finally { await browser.close() }''')
           p.write_text(source)
           p = Path('src/admin/cms/NativeSource.tsx')
-          source = p.read_text().replace("        document.documentElement.dataset['kncSourceError'] = context.id", "        console.error('SOURCE_NOT_READY', JSON.stringify({ context, ...state.status, surfaces: [...document.querySelectorAll('[data-knc-surface]')].map((node) => node.getAttribute('data-knc-surface')), fonts: document.fonts.status, booking: document.documentElement.dataset['kncBookingReady'] }))\n        document.documentElement.dataset['kncSourceError'] = context.id")
+          source = p.read_text().replace("        document.documentElement.dataset['kncSourceError'] = context.id", "        document.documentElement.dataset['kncSourceFailure'] = JSON.stringify({ context, ...state.status, surfaces: [...document.querySelectorAll('[data-knc-surface]')].map((node) => node.getAttribute('data-knc-surface')), fonts: document.fonts.status, booking: document.documentElement.dataset['kncBookingReady'] })\n        document.documentElement.dataset['kncSourceError'] = context.id")
+          p.write_text(source)
+          p = Path('src/admin/cms/nativePages.ts')
+          source = p.read_text().replace("throw new Error('Webbplatsens källdata kunde inte läsas. Utkastet har inte ändrats.')", "throw new Error('Källan kunde inte läsas: ' + document.documentElement.dataset['kncSourceFailure'])")
           p.write_text(source)
           PY
       - name: Format changed source
