@@ -146,7 +146,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     expect(cell?.value).toBe(marker)
   })
 
-  it('uploads and removes a gallery placement while retaining CMS media bytes', async () => {
+  it('uploads and deletes a gallery image (Storage write + row lifecycle)', async () => {
     const alt = `IT salon ${Date.now()}`
     const uploaded = await uploadImage('salon', pngFile('it.png'), alt, 0)
     expect(uploaded.ok).toBe(true)
@@ -164,15 +164,16 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     if (!listed.ok) return
     expect(listed.value.some((i) => i.id === uploaded.value.id)).toBe(true)
 
-    // Delete removes the gallery placement; CMS media bytes stay in the immutable asset registry.
+    // Delete removes the row AND the object.
     const removed = await deleteImage(uploaded.value)
     expect(removed.ok).toBe(true)
     const after = await listGallery('salon')
     expect(after.ok).toBe(true)
     if (!after.ok) return
     expect(after.value.some((i) => i.id === uploaded.value.id)).toBe(false)
-    const retained = await fetch(uploaded.value.url, { method: 'GET' })
-    expect(retained.ok).toBe(true)
+    // The object 404s after delete.
+    const gone = await fetch(uploaded.value.url, { method: 'GET' })
+    expect(gone.ok).toBe(false)
   })
 
   it('uploads a barber profile as a valid public WebP and removes it', async () => {

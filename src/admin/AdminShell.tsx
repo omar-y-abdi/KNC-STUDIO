@@ -413,23 +413,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
           class={`knc-admin-navlist${mobileMenuOpen ? ' knc-admin-navlist-open' : ''}`}
         >
           {visibleTabs.map(navButton)}
-          {isOwner && (
-            <a
-              href="/admin/cms/"
-              style={{
-                textAlign: 'left',
-                borderRadius: '9px',
-                padding: '9px 12px',
-                fontSize: '14px',
-                fontWeight: 700,
-                textDecoration: 'none',
-                color: c.text,
-                background: c.subtle,
-              }}
-            >
-              {props.lang === 'sv' ? 'Redigering' : 'Editing'}
-            </a>
-          )}
         </div>
         <button
           type="button"
