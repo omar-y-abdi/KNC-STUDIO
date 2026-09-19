@@ -139,10 +139,15 @@ async function run(engine, name) {
     await page.goto(base)
     const sourceCopy = page.getByText('KNC source sv', { exact: true }).first()
     await sourceCopy.waitFor()
+    assert.equal(
+      await page.locator('[data-knc-source],[data-knc-slot]').count(),
+      0,
+      'An unpublished CMS must leave the original component tree untouched',
+    )
     const desktopAppearance = await appearance(sourceCopy)
     await page.screenshot({ path: `/tmp/cms-native-${name}-original-desktop.png` })
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.locator('[data-knc-surface="mobile-home"]').waitFor()
+    await page.getByTestId('mobile-site-scroll').waitFor()
     const mobileAppearance = await appearance(
       page.getByRole('button', { name: 'Boka tid', exact: true }),
     )

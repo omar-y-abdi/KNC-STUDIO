@@ -244,7 +244,7 @@ export function useNativeSurface(
       .parseFromString(html, 'text/html')
       .querySelector(`[data-knc-surface="${surface}"]`)
   }, [html, surface])
-  if (!context) return h(Fragment, null, source)
+  if (!context || (!context.source && !template)) return h(Fragment, null, source)
   const native = nativeTree(source, surface)
   return (
     <>
