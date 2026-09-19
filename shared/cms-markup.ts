@@ -15,6 +15,14 @@ const TAGS = new Set(
     .toLowerCase()
     .split(' '),
 )
+const SVG_TEXT_ATTRIBUTES = new Set([
+  'text-anchor',
+  'font-family',
+  'font-weight',
+  'font-size',
+  'font-style',
+  'letter-spacing',
+])
 const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href'])
 const BAD_ATTRIBUTES = new Set([
   'srcdoc',
@@ -200,7 +208,8 @@ export function validateMarkup(
     if (++count > 5000 || depth > 40) reject('html', 'Page is too complex')
     if ('tagName' in node) {
       const tag = node.tagName.toLowerCase()
-      if (!TAGS.has(tag)) reject('html', `Unsupported element <${tag}>`)
+      const svgText = tag === 'text' && node.namespaceURI === 'http://www.w3.org/2000/svg'
+      if (!TAGS.has(tag) && !svgText) reject('html', `Unsupported element <${tag}>`)
       const contractKey = node.attrs.find(
         (item) => item.name.toLowerCase() === 'data-cms-contract',
       )?.value
@@ -239,6 +248,7 @@ export function validateMarkup(
         if (
           !(nativeMode && (name.startsWith('data-knc-') || name === 'inert')) &&
           !ATTRIBUTES.has(name) &&
+          !(svgText && SVG_TEXT_ATTRIBUTES.has(name)) &&
           !/^aria-[a-z-]+$/.test(name) &&
           !(functionalMode ? trustedRuntimeData : /^data-business-[a-z-]+$/.test(name))
         )

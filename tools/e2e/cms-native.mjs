@@ -89,6 +89,7 @@ async function run(engine, name) {
     colorScheme: 'light',
     reducedMotion: 'reduce',
   })
+  context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context)
   const page = await context.newPage()
   const errors = []
@@ -99,18 +100,84 @@ async function run(engine, name) {
   page.on('console', (message) => {
     if (message.type() === 'error') console.error('BROWSER', message.text())
   })
+  const appearance = (locator) =>
+    locator.evaluate((node) => {
+      const style = globalThis.getComputedStyle(node)
+      return Object.fromEntries(
+        [
+          'color',
+          'font-family',
+          'font-size',
+          'font-weight',
+          'letter-spacing',
+          'text-transform',
+        ].map((key) => [key, style.getPropertyValue(key)]),
+      )
+    })
   try {
+    await page.goto(base)
+    const sourceCopy = page.getByText('KNC source sv', { exact: true }).first()
+    await sourceCopy.waitFor()
+    const desktopAppearance = await appearance(sourceCopy)
+    await page.screenshot({ path: `/tmp/cms-native-${name}-original-desktop.png` })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('[data-knc-surface="mobile-home"]').waitFor()
+    const mobileAppearance = await appearance(
+      page.getByRole('button', { name: 'Boka tid', exact: true }),
+    )
+    await page.screenshot({ path: `/tmp/cms-native-${name}-original-mobile.png` })
+    await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
     await page.evaluate(async () => {
       const harness = await import('/tools/e2e/admin-harness.tsx')
       harness.mountCmsStudioHarness()
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    const sourceContract = await page.evaluate(async () => {
+      const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
+      const fixture = new globalThis.DOMParser().parseFromString(
+        '<section><a href="#privacy-preferences">Privacy</a><div data-knc-slot="outer"><div id="nested" data-knc-slot="nested"><span id="caption">Name</span><input aria-labelledby="caption"></div></div></section>',
+        'text/html',
+      ).body.firstElementChild
+      const desktop = snapshotNative(fixture, 'desktop-test')
+      const mobile = snapshotNative(fixture, 'mobile-test')
+      const doc = new globalThis.DOMParser().parseFromString(desktop + mobile, 'text/html')
+      return {
+        html: desktop + mobile,
+        nestedSlots: doc.querySelectorAll('[data-knc-slot="nested"]').length,
+        privacy: doc.querySelector('a').getAttribute('href'),
+        labels: [...doc.querySelectorAll('input')].map(
+          (input) => doc.getElementById(input.getAttribute('aria-labelledby'))?.textContent,
+        ),
+      }
+    })
+    assert.equal(sourceContract.nestedSlots, 0, 'Nested runtime identities leaked into snapshots')
+    assert.equal(sourceContract.privacy, '/#privacy-preferences')
+    assert.deepEqual(sourceContract.labels, ['Name', 'Name'])
+    const { validateMarkup } = await import('../../shared/cms-markup.ts')
+    validateMarkup(
+      sourceContract.html,
+      '',
+      { siteOrigin: new URL(base).origin, storageOrigin: 'https://admin-harness.invalid' },
+      { native: true },
+    )
     const frame = page.frameLocator('.gjs-frame').first()
     await frame.getByText('KNC source sv', { exact: true }).first().waitFor({ timeout: 10000 })
+    assert.deepEqual(
+      await appearance(frame.getByText('KNC source sv', { exact: true }).first()),
+      desktopAppearance,
+      'The desktop canvas must retain the actual site typography and color',
+    )
     assert.equal(await frame.getByText('Klipp.').count(), 0)
     assert.equal(await frame.locator('[data-knc-surface="desktop-home"]').count(), 1)
     assert.equal((await frame.locator('svg').count()) > 0, true, 'The actual vector logo is absent')
+    assert.equal(
+      await frame
+        .locator('[data-knc-surface="desktop-home"]')
+        .evaluate((node) => globalThis.getComputedStyle(node).display),
+      'flex',
+      'The actual site layout styles were lost while loading GrapesJS',
+    )
     assert.deepEqual(backend.writes, [], 'Opening the editor issued a public write')
     await page.screenshot({ path: `/tmp/cms-native-${name}-desktop.png` })
 
@@ -127,7 +194,31 @@ async function run(engine, name) {
       if (!component) throw new Error('Actual source component missing')
       component.components('Owner edited the actual KNC site')
       component.addStyle({ color: '#123456' })
+      globalThis.document.querySelector('[aria-label="Språk"] button:last-child').click()
       return { id: element.id }
+    })
+    await frame.getByText('KNC source en', { exact: true }).first().waitFor()
+    await page.getByRole('button', { name: 'SV', exact: true }).click()
+    await frame.getByText('Owner edited the actual KNC site', { exact: true }).waitFor()
+    await page.evaluate(async (id) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      editor
+        .getWrapper()
+        .find(`#${globalThis.CSS.escape(id)}`)[0]
+        .addStyle({
+          'letter-spacing': '3px',
+        })
+      globalThis.document.querySelector('[aria-label="Tema"] button:last-child').click()
+    }, edit.id)
+    await page.waitForFunction(
+      () =>
+        globalThis.document.querySelector('.knc-cms-studio')?.getAttribute('data-mode') === 'dark',
+    )
+    await page.getByRole('button', { name: 'Ljus', exact: true }).click()
+    await frame.locator(`#${edit.id}`).evaluate((node) => {
+      if (globalThis.getComputedStyle(node).letterSpacing !== '3px')
+        throw new Error('An immediate theme switch lost the pending style edit')
     })
     await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
     await page.waitForFunction(() =>
@@ -158,9 +249,19 @@ async function run(engine, name) {
       null,
     )
 
+    await page.bringToFront()
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: '390', exact: true }).click()
     await frame.locator('[data-knc-surface="mobile-home"]').waitFor({ state: 'visible' })
+    assert.deepEqual(
+      await appearance(
+        frame
+          .locator('[data-knc-surface="mobile-home"]')
+          .getByRole('button', { name: 'Boka tid', exact: true }),
+      ),
+      mobileAppearance,
+      'The mobile canvas must retain the actual site typography and color',
+    )
     await page.screenshot({ path: `/tmp/cms-native-${name}-mobile.png` })
     await page.reload()
     await page.evaluate(async () => {

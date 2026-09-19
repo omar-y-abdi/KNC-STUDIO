@@ -71,13 +71,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Capture source for offline regression reproduction
-        run: git archive --format=tar.gz --output=/tmp/cms-source.tar.gz HEAD src shared tests tools supabase docs .github package.json package-lock.json index.html '*config*' '.prettier*' public/privacy.html public/terms.html public/info.css
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: cms-source-${{ github.run_attempt }}
-          path: /tmp/cms-source.tar.gz
-          retention-days: 1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22

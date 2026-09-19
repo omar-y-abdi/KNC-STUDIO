@@ -19,8 +19,8 @@ export function snapshotNative(root: Element, prefix: string): string {
   const nodes = [copy, ...copy.querySelectorAll('*')]
   const ids = new Map<string, string>()
   for (const [index, node] of nodes.entries()) {
-    const opaque = node.closest('[data-knc-slot]')
-    if (opaque && opaque !== node) {
+    const opaque = node.parentElement?.closest('[data-knc-slot]')
+    if (opaque) {
       for (const attr of [...node.attributes])
         if (attr.name.startsWith('data-knc-')) node.removeAttribute(attr.name)
       const id = `preview-${prefix}-${index}`
@@ -38,11 +38,19 @@ export function snapshotNative(root: Element, prefix: string): string {
         node.removeAttribute(attr.name)
     }
   }
+  const localIds = new Set(nodes.map((node) => node.id))
   for (const node of nodes) {
     for (const attr of [...node.attributes]) {
       if (['href', 'xlink:href'].includes(attr.name) && attr.value.startsWith('#')) {
         const target = ids.get(attr.value.slice(1))
         if (target) node.setAttribute(attr.name, `#${target}`)
+        else if (
+          attr.name === 'href' &&
+          node.localName === 'a' &&
+          attr.value.length > 1 &&
+          !localIds.has(attr.value.slice(1))
+        )
+          node.setAttribute('href', `/${attr.value}`)
       } else if (
         ['for', 'aria-labelledby', 'aria-describedby', 'aria-controls'].includes(attr.name)
       ) {

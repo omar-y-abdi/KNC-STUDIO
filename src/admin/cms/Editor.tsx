@@ -184,6 +184,8 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('canvas:scroll', remember)
 
     const flush = (): void => {
+      if (timer.current !== null) window.clearTimeout(timer.current)
+      timer.current = null
       if (applying.current) return
       const current = latest.current
       const next = structuredClone(current.page)
@@ -214,8 +216,8 @@ export function CmsEditor(props: Props): JSX.Element {
 
     applying.current = true
     const content = nativeCanvas(props.page.content[props.lang], props.mode)
-    editor.setStyle(content.css)
     editor.setComponents(content.html)
+    editor.setStyle(content.css)
     editor.getWrapper()?.components().forEach(configure)
     applying.current = false
     editor.clearDirtyCount()
@@ -235,8 +237,8 @@ export function CmsEditor(props: Props): JSX.Element {
     const previousState = viewStates.current.get(props.page.id)
     applying.current = true
     const content = nativeCanvas(props.page.content[props.lang], props.mode)
-    editor.setStyle(content.css)
     editor.setComponents(content.html)
+    editor.setStyle(content.css)
     editor
       .getWrapper()
       ?.components()

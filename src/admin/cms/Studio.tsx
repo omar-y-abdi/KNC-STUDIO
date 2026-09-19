@@ -257,14 +257,28 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <div class="cms-topbar-spacer" />
         <div class="cms-segment" aria-label="Språk">
           {(['sv', 'en'] as const).map((value) => (
-            <button type="button" aria-pressed={lang === value} onClick={() => setLang(value)}>
+            <button
+              type="button"
+              aria-pressed={lang === value}
+              onClick={() => {
+                editor.current?.flush()
+                setLang(value)
+              }}
+            >
               {value.toUpperCase()}
             </button>
           ))}
         </div>
         <div class="cms-segment" aria-label="Tema">
           {(['light', 'dark'] as const).map((value) => (
-            <button type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>
+            <button
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => {
+                editor.current?.flush()
+                setMode(value)
+              }}
+            >
               {value === 'light' ? 'Ljus' : 'Mörk'}
             </button>
           ))}
