@@ -8,6 +8,13 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 
 export async function nativeBackend(context) {
+  // The CMS fixture uses local APIs, not a real third-party challenge on HTTP localhost.
+  await context.route('https://challenges.cloudflare.com/**', (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: 'window.turnstile={render:()=>"test",remove:()=>{},reset:()=>{}}',
+    }),
+  )
   let document = emptyDocument()
   let revision = 1
   const writes = []
@@ -114,6 +121,20 @@ async function run(engine, name) {
         ].map((key) => [key, style.getPropertyValue(key)]),
       )
     })
+  const fitCanvas = async () => {
+    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.waitForFunction(
+      () => {
+        const host = globalThis.document
+          .querySelector('.cms-editor-canvas')
+          ?.getBoundingClientRect()
+        const frame = globalThis.document.querySelector('.gjs-frame')?.getBoundingClientRect()
+        return host && frame && frame.left >= host.left - 1 && frame.right <= host.right + 1
+      },
+      null,
+      { timeout: 3000 },
+    )
+  }
   try {
     await page.goto(base)
     const sourceCopy = page.getByText('KNC source sv', { exact: true }).first()
@@ -179,6 +200,7 @@ async function run(engine, name) {
       'The actual site layout styles were lost while loading GrapesJS',
     )
     assert.deepEqual(backend.writes, [], 'Opening the editor issued a public write')
+    await fitCanvas()
     await page.screenshot({ path: `/tmp/cms-native-${name}-desktop.png` })
 
     const edit = await page.evaluate(async () => {
@@ -262,6 +284,7 @@ async function run(engine, name) {
       mobileAppearance,
       'The mobile canvas must retain the actual site typography and color',
     )
+    await fitCanvas()
     await page.screenshot({ path: `/tmp/cms-native-${name}-mobile.png` })
     await page.reload()
     await page.evaluate(async () => {

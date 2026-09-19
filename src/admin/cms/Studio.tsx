@@ -457,7 +457,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button type="button" onClick={() => setZoom(Math.min(120, zoom + 10))}>
               +
             </button>
-            <button type="button" onClick={() => setZoom(device === 'Mobile' ? 90 : 70)}>
+            <button
+              type="button"
+              onClick={() => {
+                const nextZoom = editor.current?.fit()
+                if (nextZoom !== undefined) setZoom(nextZoom)
+              }}
+            >
               Fit
             </button>
             <button

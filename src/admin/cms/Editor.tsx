@@ -13,6 +13,7 @@ import { nativeCanvas, exportNativeCanvas } from './nativeCanvas'
 
 export interface EditorHandle {
   flush: () => void
+  fit: () => number
 }
 
 interface Props {
@@ -212,7 +213,17 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     editor.on('update', schedule)
     editor.on('load', () => editor.clearDirtyCount())
-    props.onReady({ flush })
+    props.onReady({
+      flush,
+      fit: () => {
+        editor.Canvas.fitViewport({
+          gap: 16,
+          ignoreHeight: true,
+          zoom: (value) => Math.min(100, Math.floor(value)),
+        })
+        return editor.Canvas.getZoom()
+      },
+    })
 
     applying.current = true
     const content = nativeCanvas(props.page.content[props.lang], props.mode)
