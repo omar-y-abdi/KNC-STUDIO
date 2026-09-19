@@ -25,7 +25,6 @@ const EmailChangeConfirmRoute = lazy(() =>
   })),
 )
 const AdminApp = lazy(() => import('./AdminApp').then((module) => ({ default: module.AdminApp })))
-const CmsRoute = lazy(() => import('./CmsRoute').then((module) => ({ default: module.CmsRoute })))
 
 /** Default export so `Root` can `lazy(() => import('./admin'))` and get this component. */
 export default function AdminEntry(): JSX.Element {
@@ -42,8 +41,6 @@ export default function AdminEntry(): JSX.Element {
         <Route path="/reset" component={ResetPasswordRoute} />
         <Route path="/invite" component={InvitePasswordRoute} />
         <Route path="/auth/confirm" component={EmailChangeConfirmRoute} />
-        <Route path="/admin/cms/" component={CmsRoute} />
-        <Route path="/admin/cms" component={CmsRoute} />
         <Route path="/admin/:rest*" component={AdminApp} />
         <Route path="/admin" component={AdminApp} />
       </Switch>

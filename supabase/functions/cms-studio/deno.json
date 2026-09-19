@@ -1,7 +1,0 @@
-{
-  "imports": {
-    "parse5": "npm:parse5@8.0.1",
-    "css-tree": "npm:css-tree@3.2.1"
-  },
-  "compilerOptions": { "strict": true }
-}
