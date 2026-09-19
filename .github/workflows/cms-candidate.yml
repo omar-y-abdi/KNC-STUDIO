@@ -1,0 +1,97 @@
+name: CMS correction candidate
+
+on:
+  pull_request:
+    paths:
+      - tools/cms-candidate.py
+      - .github/workflows/cms-candidate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.event.pull_request.number == 67 && github.event.pull_request.head.ref == 'CMS-improve' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply the exact reviewed corrections on the runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/cms-candidate.py
+      - name: Format only changed source and test files
+        run: |
+          git add -N .
+          git diff --name-only --diff-filter=ACMR -z | xargs -0 --no-run-if-empty npx prettier --write --ignore-unknown
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Actual-site editor behavior
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 >/tmp/cms-native-vite.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
+      - name: Store verified candidate without changing any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PARENT: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, subprocess, urllib.request
+          from pathlib import Path
+          repo = os.environ['GITHUB_REPOSITORY']
+          parent = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert parent == os.environ['EXPECTED_PARENT']
+          assert repo == 'omar-y-abdi/KNC-STUDIO'
+          def api(path, body=None):
+              request = urllib.request.Request('https://api.github.com/repos/' + repo + path,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                      'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
+                  method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(request) as response:
+                  return json.load(response)
+          subprocess.run(['git', 'add', '-A'], check=True)
+          tree = []
+          changes = subprocess.check_output(['git', 'diff', '--cached', '--name-status', '--no-renames'], text=True)
+          for entry in changes.splitlines():
+              status, path = entry.split('\t')
+              assert path.startswith(('src/', 'shared/', 'tests/', 'tools/', '.github/'))
+              sha = None if status == 'D' else api('/git/blobs', {
+                  'content': base64.b64encode(Path(path).read_bytes()).decode(), 'encoding': 'base64'})['sha']
+              tree.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': sha})
+          base = api('/git/commits/' + parent)['tree']['sha']
+          result = api('/git/trees', {'base_tree': base, 'tree': tree})
+          commit = api('/git/commits', {'message': 'fix(cms): edit the existing native site and verify persistence',
+              'tree': result['sha'], 'parents': [parent]})
+          print('VERIFIED_CANDIDATE=' + commit['sha'])
+          print('VERIFIED_TREE=' + result['sha'])
+          print(changes)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-native-verification
+          path: |
+            /tmp/cms-native-*.png
+            /tmp/cms-native-vite.log
+          retention-days: 3
