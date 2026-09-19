@@ -5,7 +5,9 @@ const attributes = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'ar
 
 function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   const value: unknown = JSON.parse(
-    element.getAttribute(mode === 'dark' ? 'data-knc-dark-attrs' : 'data-knc-baseline') ?? '{}',
+    (mode === 'dark' ? element.getAttribute('data-knc-dark-attrs') : null) ??
+      element.getAttribute('data-knc-baseline') ??
+      '{}',
   )
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('Ogiltig källmetadata. Läs in den befintliga sidan igen.')
@@ -25,7 +27,8 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
       if (current[name] === undefined) element.removeAttribute(name)
       else element.setAttribute(name, current[name])
     }
-    const style = element.getAttribute(`data-knc-${mode}`) ?? ''
+    const style =
+      element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
     if (style && element.id) rules.push(`#${CSS.escape(element.id)}{${style}}`)
     element.removeAttribute('style')
   }
@@ -43,7 +46,8 @@ export function exportNativeCanvas(
   const originalStyles = new Map<string, CSSStyleDeclaration>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const style = document.createElement('span').style
-    style.cssText = element.getAttribute(`data-knc-${mode}`) ?? ''
+    style.cssText =
+      element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
     if (element.id) originalStyles.set(element.id, style)
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light

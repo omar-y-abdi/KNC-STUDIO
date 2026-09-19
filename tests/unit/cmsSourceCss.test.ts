@@ -7,11 +7,10 @@ const policy = {
   storageOrigin: 'https://fixture.supabase.co',
 }
 
-it.each(['privacy', 'terms'])('accepts the original %s stylesheet without removing it', (page) => {
+it.each(['privacy', 'terms'])('accepts the original %s CSS', (page) => {
   const html = readFileSync(new URL(`../../public/${page}.html`, import.meta.url), 'utf8')
-  const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)]
-    .map((match) => match[1])
-    .join('\n')
+  const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+  const css = styles.map((match) => match[1]).join('\n')
   expect(css.length).toBeGreaterThan(0)
   expect(() => validateMarkup('', css, policy)).not.toThrow()
 })

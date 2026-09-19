@@ -74,18 +74,18 @@ export function snapshotNative(root: Element, prefix: string): string {
   return copy.outerHTML
 }
 
-function mergeModes(light: string, dark: string): string {
+export function mergeModes(light: string, dark: string): string {
   const doc = new DOMParser().parseFromString(light, 'text/html')
   const other = new DOMParser().parseFromString(dark, 'text/html')
   const byId = new Map([...other.querySelectorAll('[id]')].map((node) => [node.id, node]))
   for (const node of doc.querySelectorAll('[data-knc-baseline]')) {
     const variant = byId.get(node.id)
-    node.setAttribute(
-      'data-knc-dark',
-      variant?.getAttribute('style') ?? node.getAttribute('style') ?? '',
-    )
-    if (variant)
-      node.setAttribute('data-knc-dark-attrs', variant.getAttribute('data-knc-baseline') ?? '{}')
+    const style = (variant ?? node).getAttribute('style') ?? ''
+    if (style !== (node.getAttribute('data-knc-light') ?? ''))
+      node.setAttribute('data-knc-dark', style)
+    const baseline = variant?.getAttribute('data-knc-baseline')
+    if (typeof baseline === 'string' && baseline !== node.getAttribute('data-knc-baseline'))
+      node.setAttribute('data-knc-dark-attrs', baseline)
   }
   return `<div data-knc-native="1" style="display:contents">${doc.body.innerHTML}</div>`
 }
