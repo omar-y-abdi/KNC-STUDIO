@@ -19,7 +19,8 @@ it('keeps keyed native identities attached to the same entity across insertion a
   const before = render(['a', 'b'])
   const after = render(['c', 'b', 'a'])
   for (const [id, node] of before.nodes) {
-    if (node.type === 'p') expect(after.nodes.get(id)?.props['children']).toEqual(node.props['children'])
+    if (node.type === 'p')
+      expect(after.nodes.get(id)?.props['children']).toEqual(node.props['children'])
   }
 })
 
