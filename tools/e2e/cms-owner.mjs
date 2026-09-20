@@ -69,7 +69,7 @@ for (const [engine, name] of [
           await live.getByText('Owner duplicated the real site', { exact: true }).waitFor()
         } else if (scenario === 'add-block') {
           await inspector.getByRole('tab', { name: 'Lägg till', exact: true }).click()
-          await page.locator('#cms-blocks').getByText('Rubrik', { exact: true }).click()
+          await page.locator('#cms-blocks').getByTitle('Rubrik', { exact: true }).click()
           await frame.getByRole('heading', { name: 'Ny rubrik', exact: true }).waitFor()
           await publish()
           const live = await context.newPage()

@@ -75,7 +75,7 @@ export class CmsDraft {
   }
 
   acknowledge(document: CmsDocument, revision: number, fingerprint: string): void {
-    const currentEqualsSaved = JSON.stringify(this.document) === JSON.stringify(document)
+    const currentEqualsSaved = same(this.document, this.pending?.document ?? document)
     this.base = structuredClone(document)
     if (currentEqualsSaved) this.document = structuredClone(document)
     this.revision = revision

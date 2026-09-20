@@ -263,6 +263,8 @@ export function CmsEditor(props: Props): JSX.Element {
     }
   }, [])
 
+  // Flush + undo can restore identical props in one render while the canvas has changed.
+  // Compare against the last rendered document on every render, not only changed dependencies.
   useLayoutEffect(() => {
     const editor = instance.current
     if (!editor) return
@@ -302,7 +304,7 @@ export function CmsEditor(props: Props): JSX.Element {
     applying.current = false
     editor.clearDirtyCount()
     if (previousState) restoreViewState(editor, previousState)
-  }, [contextKey, variant.html, variant.css[props.mode]])
+  })
 
   useLayoutEffect(() => {
     const host = compareHost.current
