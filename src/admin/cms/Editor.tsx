@@ -154,7 +154,9 @@ export function CmsEditor(props: Props): JSX.Element {
           target ??= surfaces.find((surface) => surface.getEl()?.getClientRects().length) ?? wrapper
           if (!target || target.get('droppable') === false)
             return latest.current.onError('Välj en redigerbar behållare i sidan först.')
-          const added = target.append(block.getContent())
+          const content = block.getContent()
+          if (content === undefined) return
+          const added = target.append(typeof content === 'function' ? content() : content)
           editor.select(added[0])
         },
       },
