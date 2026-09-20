@@ -7,7 +7,7 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 
-export async function nativeBackend(context) {
+export async function nativeBackend(context, initialDocument = emptyDocument()) {
   // The CMS fixture uses local APIs, not a real third-party challenge on HTTP localhost.
   await context.route('https://challenges.cloudflare.com/**', (route) =>
     route.fulfill({
@@ -15,7 +15,7 @@ export async function nativeBackend(context) {
       body: 'window.turnstile={render:()=>"test",remove:()=>{},reset:()=>{}}',
     }),
   )
-  let document = emptyDocument()
+  let document = structuredClone(initialDocument)
   let revision = 1
   const writes = []
   const fingerprint = () => createHash('md5').update(JSON.stringify(document)).digest('hex')
@@ -217,27 +217,8 @@ async function run(engine, name) {
 
     const edit = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { CmsDraft } = await import('/src/admin/cms/draft.ts')
       const editor = cmsGrapes.editors.at(-1)
       if (!editor) throw new Error('Actual GrapesJS instance missing')
-      const marker = 'Owner edited the actual KNC site'
-      const summarize = (html) => ({
-        edited: String(html).includes(marker),
-        sv: String(html).includes('KNC source sv'),
-        en: String(html).includes('KNC source en'),
-      })
-      const change = CmsDraft.prototype.change
-      CmsDraft.prototype.change = function (next, group) {
-        const home = next.presentation.pages.find((item) => item.path === '/')
-        const trace = { group, sv: summarize(home.content.sv.html) }
-        console.error('CMS_DRAFT_TRACE', JSON.stringify(trace))
-        return change.call(this, next, group)
-      }
-      const setComponents = editor.setComponents
-      editor.setComponents = function (html, ...options) {
-        console.error('CMS_CANVAS_TRACE', JSON.stringify(summarize(html)))
-        return setComponents.call(this, html, ...options)
-      }
       const elements = [...editor.Canvas.getDocument().querySelectorAll('[data-knc-source]')]
       const element = elements.find(
         (node) => node.children.length === 0 && node.textContent === 'KNC source sv',
@@ -245,10 +226,8 @@ async function run(engine, name) {
       if (!element) throw new Error('Actual source copy not found')
       const component = editor.getWrapper().find(`#${globalThis.CSS.escape(element.id)}`)[0]
       if (!component) throw new Error('Actual source component missing')
-      component.components(marker)
+      component.components('Owner edited the actual KNC site')
       component.addStyle({ color: '#123456' })
-      const trace = { dirty: editor.getDirtyCount(), ...summarize(editor.getHtml()) }
-      console.error('CMS_BEFORE_SWITCH', JSON.stringify(trace))
       globalThis.document.querySelector('[aria-label="Språk"] button:last-child').click()
       return { id: element.id }
     })
