@@ -12,6 +12,7 @@ const scenarios = [
   'compare',
   'literal-text',
   'undo-redo',
+  'edit-during-save',
 ]
 
 for (const [engine, name] of [
@@ -27,7 +28,7 @@ for (const [engine, name] of [
         reducedMotion: 'reduce',
       })
       context.setDefaultTimeout(10000)
-      await nativeBackend(context)
+      const backend = await nativeBackend(context)
       const page = await context.newPage()
       const frame = page.frameLocator('.gjs-frame').first()
       const inspector = page.locator('#cms-inspector')
@@ -132,6 +133,49 @@ for (const [engine, name] of [
           const live = await context.newPage()
           await live.goto(base)
           await live.getByText('Recover the owner edit', { exact: true }).waitFor()
+        } else if (scenario === 'edit-during-save') {
+          await publish()
+          await selectCopy()
+          await inspector.getByLabel('Text', { exact: true }).fill('Submitted owner edit')
+          let release
+          const gate = new Promise((resolve) => (release = resolve))
+          const isPublish = (request) =>
+            request.method() === 'POST' && request.postDataJSON().operation === 'publish'
+          const holdPublish = async (route) => {
+            if (!isPublish(route.request())) return route.fallback()
+            const body = route.request().postDataJSON()
+            const home = body.document.presentation.pages.find((item) => item.path === '/')
+            // Simulate serialization normalization; the real shared validators still run.
+            home.content.sv.html += '\n'
+            await gate
+            await route.fallback({ postData: JSON.stringify(body) })
+          }
+          await context.route('**/functions/v1/cms-studio', holdPublish)
+          try {
+            const started = page.waitForRequest(
+              (request) => request.url().endsWith('/cms-studio') && isPublish(request),
+            )
+            await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+            await started
+            await inspector.getByLabel('Text', { exact: true }).fill('Newer unsaved owner edit')
+          } finally {
+            release()
+          }
+          await page.waitForFunction(() =>
+            globalThis.document.querySelector('.cms-status')?.textContent?.includes('Opublicerade'),
+          )
+          await frame.getByText('Newer unsaved owner edit', { exact: true }).waitFor()
+          const saved = backend.document.presentation.pages.find((item) => item.path === '/')
+          assert.ok(saved.content.sv.html.includes('Submitted owner edit'))
+          assert.ok(!saved.content.sv.html.includes('Newer unsaved owner edit'))
+          await context.unroute('**/functions/v1/cms-studio', holdPublish)
+          await mount('Newer unsaved owner edit')
+          await publish()
+          const live = await context.newPage()
+          await live.goto(base)
+          await live.getByText('Newer unsaved owner edit', { exact: true }).waitFor()
+          await live.reload()
+          await live.getByText('Newer unsaved owner edit', { exact: true }).waitFor()
         } else {
           await selectCopy()
           const text = 'KNC <strong>literal</strong> & text'
