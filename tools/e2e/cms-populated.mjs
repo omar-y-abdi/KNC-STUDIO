@@ -143,6 +143,28 @@ for (const [engine, name] of [
     await live.getByAltText('Owner logo description', { exact: true }).waitFor()
     await page.screenshot({ path: `/tmp/cms-native-${name}-populated-image.png` })
     console.log(`PASS populated ${name}: original image edit survives publication and reload`)
+
+    await live.goto(`${base}/?lang=en&mode=dark`)
+    await live.getByText('KNC source en', { exact: true }).waitFor()
+    assert.equal(await live.locator('html').getAttribute('lang'), 'en')
+    assert.equal(
+      await live
+        .getByRole('button', { name: 'Toggle light/dark' })
+        .locator('span img')
+        .getAttribute('src'),
+      '/icons/moon.svg',
+    )
+    await live.reload()
+    await live.getByText('KNC source en', { exact: true }).waitFor()
+    assert.equal(
+      await live
+        .getByRole('button', { name: 'Toggle light/dark' })
+        .locator('span img')
+        .getAttribute('src'),
+      '/icons/moon.svg',
+    )
+    await live.screenshot({ path: `/tmp/cms-native-${name}-english-dark-reload.png` })
+    console.log(`PASS populated ${name}: direct English/dark URL survives fresh public reload`)
   } catch (error) {
     failures.push(`${name}: ${error.message}`)
     console.error('POPULATED_OWNER_ERROR', error)

@@ -7,6 +7,18 @@ const policy = {
   storageOrigin: 'https://fixture.supabase.co',
 }
 
+it('retains native gallery drag suppression and rejects malformed drag metadata', () => {
+  expect(
+    validateMarkup('<div draggable="false"></div>', '', policy, { native: true }).html,
+  ).toContain('draggable="false"')
+  expect(() =>
+    validateMarkup('<div draggable="script"></div>', '', policy, { native: true }),
+  ).toThrow('Invalid native drag behavior')
+  expect(() => validateMarkup('<div draggable="false"></div>', '', policy)).toThrow(
+    'Unsupported attribute draggable',
+  )
+})
+
 it('native metadata cannot introduce executable code, arbitrary hooks or unsafe URLs', () => {
   for (const html of [
     '<div data-knc-secret="x"></div>',

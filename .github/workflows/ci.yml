@@ -96,6 +96,7 @@ jobs:
           BASE_URL=http://127.0.0.1:4188 ADMIN_E2E_SCENARIO=cms-shell npm run test:e2e:admin
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
           status=0
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-projection.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-populated.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-conflict.mjs || status=1

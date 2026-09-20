@@ -1,3 +1,4 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // Star rating widgets — a read-only display (for published reviews) and a keyboard-operable
 // selector (for the review form). The selector is a WAI-ARIA radiogroup: arrow keys move the
 // selection, Home/End jump to 1/5, and each star is a focusable radio with an accessible name.
@@ -10,7 +11,8 @@ import { RATINGS } from './reviews/domain'
 
 /** A single star glyph (filled or outline), drawn with `currentColor`. */
 function Star(props: { filled: boolean; size: number }): JSX.Element {
-  return (
+  const present = useNativeChild()
+  return present(
     <svg
       viewBox="0 0 24 24"
       width={props.size}
@@ -23,7 +25,7 @@ function Star(props: { filled: boolean; size: number }): JSX.Element {
       style={{ display: 'block' }}
     >
       <path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.6 1.1 6.45L12 17.9l-5.8 3.05 1.1-6.45-4.7-4.6 6.5-.95z" />
-    </svg>
+    </svg>,
   )
 }
 
@@ -36,7 +38,8 @@ export interface StarDisplayProps {
 
 /** Read-only star row for a published review. */
 export function StarDisplay(props: StarDisplayProps): JSX.Element {
-  return (
+  const present = useNativeChild()
+  return present(
     <span
       role="img"
       aria-label={props.label}
@@ -45,7 +48,7 @@ export function StarDisplay(props: StarDisplayProps): JSX.Element {
       {RATINGS.map((n) => (
         <Star key={n} filled={n <= props.rating} size={15} />
       ))}
-    </span>
+    </span>,
   )
 }
 
@@ -67,6 +70,7 @@ export interface StarRatingProps {
  * none is selected) is in the tab order; arrows/Home/End move and select.
  */
 export function StarRating(props: StarRatingProps): JSX.Element {
+  const present = useNativeChild()
   const current = props.value
   // Star button refs (keyed by Rating) so arrow-key changes can move focus to the new radio — the
   // WAI-ARIA radiogroup pattern: focus tracks the checked option, not the originally-focused star.
@@ -95,7 +99,7 @@ export function StarRating(props: StarRatingProps): JSX.Element {
 
   const baseColor = props.invalid && current === null ? props.errorColor : props.c.text
 
-  return (
+  return present(
     <div
       role="radiogroup"
       aria-label={props.groupLabel}
@@ -135,6 +139,6 @@ export function StarRating(props: StarRatingProps): JSX.Element {
           </button>
         )
       })}
-    </div>
+    </div>,
   )
 }

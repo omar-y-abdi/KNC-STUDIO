@@ -118,14 +118,22 @@ export function App({
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
   }, [privacy.openPreferences])
   // Default to the device's light/dark preference (manual toggle still overrides afterwards).
-  const [state, setRaw] = useState<AppState>(() => ({
-    mode:
-      preview?.mode ??
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
-    lang: preview?.lang ?? 'sv',
-    view: preview?.view ?? (window.location.pathname === '/booking' ? 'booking' : 'home'),
-    myBookingsOpen: preview?.myBookings ?? window.location.pathname === '/my-bookings',
-  }))
+  const [state, setRaw] = useState<AppState>(() => {
+    const query = new URLSearchParams(window.location.search)
+    const requestedMode = query.get('mode')
+    return {
+      mode:
+        preview?.mode ??
+        (requestedMode === 'light' || requestedMode === 'dark'
+          ? requestedMode
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'),
+      lang: preview?.lang ?? (query.get('lang') === 'en' ? 'en' : 'sv'),
+      view: preview?.view ?? (window.location.pathname === '/booking' ? 'booking' : 'home'),
+      myBookingsOpen: preview?.myBookings ?? window.location.pathname === '/my-bookings',
+    }
+  })
   const setState = (u: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void =>
     setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
   useEffect(() => {

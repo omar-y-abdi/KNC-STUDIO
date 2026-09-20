@@ -1,3 +1,4 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // The 4-step booking flow (barber → date → service → time), ported from the original mock; the
 // details + confirmation modals live in their own components. Inline styles/literals match the
 // mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
@@ -71,6 +72,7 @@ export interface BookingFlowProps {
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
+  const present = useNativeChild()
   const previewPorts = useContext(PreviewPorts)
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
@@ -549,7 +551,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const timesReady = Boolean(S.barberId && S.dateIso && S.service)
   const notTimesReady = !S.service
 
-  return (
+  return present(
     <div style={s.rootStyle}>
       <div style="padding: 18px 22px 26px 22px">
         <div data-testid="booking-step-barber" data-booking-step="barber">
@@ -847,6 +849,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           onBackdropClick={onConfirmBackdrop}
         />
       ) : null}
-    </div>
+    </div>,
   )
 }

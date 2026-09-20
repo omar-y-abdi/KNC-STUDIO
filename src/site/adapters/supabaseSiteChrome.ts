@@ -50,17 +50,21 @@ async function publicJson(url: URL, init?: RequestInit): Promise<unknown | null>
 
 function publicObjectUrl(bucket: string, path: string): string | null {
   if (SUPABASE_URL === undefined) return null
-  return new URL(`/storage/v1/object/public/${bucket}/${path}`, SUPABASE_URL).toString()
+  return new URL(
+    `storage/v1/object/public/${bucket}/${path}`,
+    `${SUPABASE_URL.replace(/\/$/, '')}/`,
+  ).toString()
 }
 
 async function loadSiteChrome(lang: Lang): Promise<SiteChrome | null> {
   if (SUPABASE_URL === undefined || SUPABASE_ANON_KEY === undefined) return null
 
   try {
-    const contentUrl = new URL('/rest/v1/site_content', SUPABASE_URL)
+    const base = `${SUPABASE_URL.replace(/\/$/, '')}/`
+    const contentUrl = new URL('rest/v1/site_content', base)
     contentUrl.searchParams.set('select', 'key,lang,value')
     contentUrl.searchParams.set('lang', `eq.${lang}`)
-    const discoveryUrl = new URL('/rest/v1/rpc/public_business_discovery', SUPABASE_URL)
+    const discoveryUrl = new URL('rest/v1/rpc/public_business_discovery', base)
 
     const [contentData, discoveryData] = await Promise.all([
       publicJson(contentUrl),

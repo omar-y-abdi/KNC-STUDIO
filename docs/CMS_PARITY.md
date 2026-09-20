@@ -1,6 +1,16 @@
 # o-y-a → KNC CMS parity
 
-Status is accepted only after browser verification. This inventory prevents silent feature cuts.
+PORTED and EXTENDED describe implementation coverage. They do not certify browser verification of every control in this inventory. Merge evidence must refer to a CI run on the current PR commit.
+
+The executable acceptance checks are:
+
+- `tools/e2e/cms-native.mjs`: original desktop/mobile appearance, editor source capture, publication and fresh public reload in Chromium and WebKit.
+- `tools/e2e/cms-owner.mjs` and `cms-populated.mjs`: owner edits and populated content through the editor and shared publication validators in both engines. These use a fixture backend.
+- `tools/e2e/cms-projection.mjs`: actual nested components retain published text/image/style edits, callbacks, state, and newly loaded live entries in both engines.
+- `tools/e2e/cms-conflict.mjs`: explicit local/server conflict choices, stale backup recovery, and unresolved-conflict reload in both engines.
+- `tools/e2e/smoke.mjs` with the local Supabase stack: a real owner publishes existing desktop/mobile copy through Edge and the database before customer booking/access/cancellation scenarios run in Chromium, Firefox, and WebKit. The frontend is Vite preview with the real Worker APIs; this is not an end-to-end Worker HTML-rendering test.
+
+Worker HTML rendering has unit coverage. Physical iPhone Safari, live production publication, every editor/resource/history control, and visual equality between email preview and delivered email are not established by these browser checks.
 
 | Capability                                | KNC status | Notes                                                                                          |
 | ----------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------- |

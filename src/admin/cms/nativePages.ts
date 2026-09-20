@@ -18,9 +18,17 @@ export function snapshotNative(root: Element, prefix: string): string {
     node.remove()
   const nodes = [copy, ...copy.querySelectorAll('*')]
   const ids = new Map<string, string>()
+  const opaqueNodes = new Set<Element>()
+  const separateAbout = new Set(
+    prefix === 'about' ? [] : nodes.filter((node) => node.closest('[data-knc-surface="about"]')),
+  )
   for (const [index, node] of nodes.entries()) {
     const opaque = node.parentElement?.closest('[data-knc-slot]')
-    if (opaque) {
+    const adapted =
+      node.hasAttribute('data-knc-source') ||
+      (node.hasAttribute('data-knc-slot') && node.parentElement?.closest('[data-knc-source]'))
+    if (opaque && (separateAbout.has(node) || !adapted)) {
+      opaqueNodes.add(node)
       for (const attr of [...node.attributes])
         if (attr.name.startsWith('data-knc-')) node.removeAttribute(attr.name)
       const id = `preview-${prefix}-${index}`
@@ -70,14 +78,23 @@ export function snapshotNative(root: Element, prefix: string): string {
         )
       }
     }
+    if (opaqueNodes.has(node)) continue
     const baseline: Record<string, string> = Object.fromEntries(
       attrs.flatMap((name) =>
         node.hasAttribute(name) ? [[name, node.getAttribute(name) ?? '']] : [],
       ),
     )
+    baseline['children'] = JSON.stringify(
+      [...node.children].flatMap((child) => {
+        const identity =
+          child.getAttribute('data-knc-source') ?? child.getAttribute('data-knc-slot')
+        return identity ? [identity] : []
+      }),
+    )
     if (node.children.length === 0) baseline['text'] = node.textContent ?? ''
     node.setAttribute('data-knc-baseline', JSON.stringify(baseline))
     node.setAttribute('data-knc-light', node.getAttribute('style') ?? '')
+    node.removeAttribute('style')
   }
   return copy.outerHTML
 }
@@ -88,7 +105,7 @@ export function mergeModes(light: string, dark: string): string {
   const byId = new Map([...other.querySelectorAll('[id]')].map((node) => [node.id, node]))
   for (const node of doc.querySelectorAll('[data-knc-baseline]')) {
     const variant = byId.get(node.id)
-    const style = (variant ?? node).getAttribute('style') ?? ''
+    const style = (variant ?? node).getAttribute('data-knc-light') ?? ''
     if (style !== (node.getAttribute('data-knc-light') ?? ''))
       node.setAttribute('data-knc-dark', style)
     const baseline = variant?.getAttribute('data-knc-baseline')

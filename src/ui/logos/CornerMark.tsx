@@ -1,3 +1,4 @@
+import { useNativeChild } from '../../cms/NativeSurface'
 import type { JSX } from 'preact'
 
 export interface CornerMarkProps {
@@ -12,7 +13,8 @@ export interface CornerMarkProps {
 //
 // SVG presentation attributes are kebab-case (Preact does not translate camelCase → SVG attributes).
 export function CornerMark({ height, style }: CornerMarkProps): JSX.Element {
-  return (
+  const present = useNativeChild()
+  return present(
     <svg
       viewBox="0 0 322 48"
       height={height}
@@ -46,6 +48,6 @@ export function CornerMark({ height, style }: CornerMarkProps): JSX.Element {
       >
         BLADE &amp; BLEND
       </text>
-    </svg>
+    </svg>,
   )
 }

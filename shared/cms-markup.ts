@@ -3,6 +3,8 @@ import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import { parse, walk, generate } from 'css-tree'
 import {
   CmsValidationError,
+  CMS_HTML_LIMIT,
+  CMS_NATIVE_HTML_LIMIT,
   validMediaRef,
   type CmsDocument,
   type MediaPlacement,
@@ -187,8 +189,9 @@ export function validateMarkup(
   policy: MarkupPolicy,
   options: MarkupValidationOptions = {},
 ): { html: string; refs: MediaRef[] } {
-  if (html.length > 100000 || css.length > 100000) reject('page', 'Page exceeds its size limit')
   const nativeMode = options.native === true
+  if (html.length > (nativeMode ? CMS_NATIVE_HTML_LIMIT : CMS_HTML_LIMIT) || css.length > 100000)
+    reject('page', 'Page exceeds its size limit')
   const functionalMode = options.functionalContracts !== undefined
   const contractList = options.functionalContracts ?? []
   const contracts = new Map(contractList.map((contract) => [contract.key, contract]))
@@ -246,7 +249,10 @@ export function validateMarkup(
         if (functionalMode && runtimeData && !trustedRuntimeData)
           reject('html', 'Functional data hook does not match its trusted contract')
         if (
-          !(nativeMode && (name.startsWith('data-knc-') || name === 'inert')) &&
+          !(
+            nativeMode &&
+            (name.startsWith('data-knc-') || name === 'inert' || name === 'draggable')
+          ) &&
           !ATTRIBUTES.has(name) &&
           !(svgText && SVG_TEXT_ATTRIBUTES.has(name)) &&
           !/^aria-[a-z-]+$/.test(name) &&
@@ -254,6 +260,8 @@ export function validateMarkup(
         )
           reject('html', `Unsupported attribute ${name}`)
         if (value.length > 10000 || value.includes('\0')) reject('html', 'Invalid attribute value')
+        if (name === 'draggable' && !['true', 'false'].includes(value))
+          reject('html', 'Invalid native drag behavior')
         if (name.startsWith('data-knc-')) {
           if (
             !nativeMode ||
@@ -293,6 +301,7 @@ export function validateMarkup(
                   'alt',
                   'aria-label',
                   'text',
+                  'children',
                 ].includes(key) ||
                 typeof item !== 'string'
               )

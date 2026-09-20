@@ -1,3 +1,4 @@
+import { useNativeChild } from '../../cms/NativeSurface'
 import type { JSX } from 'preact'
 
 export interface DeskLockupProps {
@@ -11,7 +12,8 @@ export interface DeskLockupProps {
 //
 // SVG presentation attributes are kebab-case (Preact does not translate camelCase → SVG attributes).
 export function DeskLockup({ height, style }: DeskLockupProps): JSX.Element {
-  return (
+  const present = useNativeChild()
+  return present(
     <svg
       viewBox="0 0 460 258"
       height={height}
@@ -76,6 +78,6 @@ export function DeskLockup({ height, style }: DeskLockupProps): JSX.Element {
       >
         SHARPEN YOUR LOOK · ELEVATE YOUR STANDARDS
       </text>
-    </svg>
+    </svg>,
   )
 }

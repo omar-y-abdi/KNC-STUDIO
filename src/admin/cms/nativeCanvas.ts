@@ -57,7 +57,7 @@ export function exportNativeCanvas(
       if (light[name] === undefined) element.removeAttribute(name)
       else element.setAttribute(name, light[name])
     }
-    element.setAttribute('style', element.getAttribute('data-knc-light') ?? '')
+    element.removeAttribute('style')
   }
   const stylesheet = parse(css)
   walk(stylesheet, {

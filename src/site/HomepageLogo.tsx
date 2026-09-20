@@ -1,3 +1,4 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // Shared homepage logo renderer. Defaults preserve existing vector pixels; uploaded logo bytes are
 // server-processed WebP objects from the public gallery bucket and can only receive bounded styling.
 
@@ -18,13 +19,14 @@ export function homepageLogoFilter(style: HomepageLogo['style']): string | undef
 }
 
 export function HomepageLogo(props: HomepageLogoProps): JSX.Element {
+  const present = useNativeChild()
   const height = scalePx(props.height, props.logo.scale)
   const presentationStyle: JSX.CSSProperties = {
     ...props.style,
     filter: homepageLogoFilter(props.logo.style) ?? props.style?.filter,
   }
   if (props.logo.url !== null) {
-    return (
+    return present(
       <img
         src={props.logo.url}
         alt="Blade & Blend Studio"
@@ -35,12 +37,14 @@ export function HomepageLogo(props: HomepageLogoProps): JSX.Element {
           maxWidth: 'min(460px, 80vw)',
           objectFit: 'contain',
         }}
-      />
+      />,
     )
   }
-  return props.layout === 'desktop' ? (
-    <DeskLockup height={height} style={presentationStyle} />
-  ) : (
-    <HeroLockup height={height} style={presentationStyle} />
+  return present(
+    props.layout === 'desktop' ? (
+      <DeskLockup height={height} style={presentationStyle} />
+    ) : (
+      <HeroLockup height={height} style={presentationStyle} />
+    ),
   )
 }

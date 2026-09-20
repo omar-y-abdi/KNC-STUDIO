@@ -5,7 +5,7 @@ import 'grapesjs/dist/css/grapes.min.css'
 import type { CmsAsset, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
-import { configureComponent, isProtected, styleSectors } from './editorPolicy'
+import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
@@ -370,6 +370,8 @@ export function CmsEditor(props: Props): JSX.Element {
   const mutateSelected = (fn: (component: Component) => void): void => {
     const component = instance.current?.getSelected()
     if (!component) return props.onError('Välj ett element först.')
+    if (isReadOnlyPreview(component))
+      return props.onError('Den här runtime-förhandsvisningen är skrivskyddad.')
     fn(component)
   }
   const nudge = (dx: number, dy: number, step: number): void =>
@@ -388,6 +390,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const attributes = selected?.getAttributes() ?? {}
   const tag = String(selected?.get('tagName') ?? '').toLowerCase()
   const textLike = selected && ['text', 'textnode', 'link'].includes(String(selected.get('type')))
+  const readOnly = selected ? isReadOnlyPreview(selected) : false
 
   return (
     <>
@@ -429,7 +432,12 @@ export function CmsEditor(props: Props): JSX.Element {
           <div class="cms-selection-head">
             <strong>{label(selected)}</strong>
           </div>
-          {selected ? (
+          {selected && readOnly ? (
+            <p class="cms-lock-note">
+              Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen sida
+              i sidlistan.
+            </p>
+          ) : selected ? (
             <section class="cms-inspector-section">
               <div class="cms-actions-row">
                 <button
@@ -533,7 +541,7 @@ export function CmsEditor(props: Props): JSX.Element {
           )}
           <div id="cms-traits" />
           <div id="cms-styles" />
-          {selected && (
+          {selected && !readOnly && (
             <details class="cms-advanced">
               <summary>Avancerad CSS</summary>
               <label>

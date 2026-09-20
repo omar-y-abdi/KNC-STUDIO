@@ -1,4 +1,4 @@
-import { h, createRef } from 'preact'
+import { h, createRef, type VNode } from 'preact'
 import { expect, it, vi } from 'vitest'
 import { nativeTree } from '../../src/cms/NativeSurface'
 
@@ -36,7 +36,8 @@ it('retains a code-owned runtime component as a live slot, not serialized replac
   const runtime = h(Runtime, {})
   const result = nativeTree(h('main', null, runtime), 'desktop-booking')
   expect(result.slots.size).toBe(1)
-  expect([...result.slots.values()][0]?.props['children']).toBe(runtime)
+  const provider = [...result.slots.values()][0]?.props['children'] as VNode
+  expect(provider.props.children).toBe(runtime)
 })
 
 it('changes CMS scene identities without remounting the live root or runtime component', () => {

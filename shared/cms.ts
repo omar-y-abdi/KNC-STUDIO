@@ -1,6 +1,10 @@
 // Shared wire contract: no browser globals, credentials, HTML execution or persistence.
 export type CmsLang = 'sv' | 'en'
 export type CmsMode = 'light' | 'dark'
+export const CMS_HTML_LIMIT = 100_000
+// Native captures include bounded identities and light/dark source styles.
+// The complete document remains limited to 2 MiB.
+export const CMS_NATIVE_HTML_LIMIT = 500_000
 export type Localized = Record<CmsLang, string>
 export type MediaBucket = 'gallery' | 'barber-photos' | 'cms-library'
 export interface MediaRef {
@@ -685,7 +689,8 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
   const variant = (raw: unknown, path: string): void => {
     const v = object(raw, path)
     keys(v, ['html', 'css'], path)
-    text(v['html'], `${path}.html`, 100000)
+    const native = typeof v['html'] === 'string' && v['html'].includes('data-knc-native="1"')
+    text(v['html'], `${path}.html`, native ? CMS_NATIVE_HTML_LIMIT : CMS_HTML_LIMIT)
     localizedStyles(v['css'], `${path}.css`)
   }
   for (const raw of pages) {

@@ -119,6 +119,18 @@ export function isProtected(component: Component): boolean {
   return false
 }
 
+/** A rendered preview without a native identity cannot be projected back into runtime. */
+export function isReadOnlyPreview(component: Component): boolean {
+  const attrs = component.getAttributes()
+  if (attrs['data-knc-source'] || attrs['data-knc-slot']) return false
+  let parent = component.parent()
+  while (parent) {
+    if (parent.getAttributes()['data-knc-slot']) return true
+    parent = parent.parent()
+  }
+  return false
+}
+
 export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
@@ -133,6 +145,7 @@ export function configureComponent(component: Component): void {
     )
   })
   component.set({
+    ...(isReadOnlyPreview(component) ? { editable: false, stylable: false } : {}),
     removable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
     copyable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
     draggable: !protectedComponent && !attrs['data-knc-native'],
@@ -141,4 +154,5 @@ export function configureComponent(component: Component): void {
       (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag))),
     resizable: !protectedComponent && !controls.has(tag) && !svgLeaf.has(tag),
   })
+  if (isReadOnlyPreview(component)) component.setTraits([])
 }

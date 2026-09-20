@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
+import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
   validatePresentation,
   type CmsLang,
@@ -302,7 +303,58 @@ export function renderCmsPage(
       `<style id="cms-page-light" media="(prefers-color-scheme: light)">${variant.css.light}</style>` +
       `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${variant.css.dark}</style></head>`,
   )
-  rendered = replaceElementContent(rendered, 'root', variant.html)
+  let markup = variant.html
+  if (markup.includes('data-knc-native="1"')) {
+    // Source styles are stored once in the document; restore them for the first HTML response.
+    const fragment = parseFragment(markup)
+    const restoreSource = (node: DefaultTreeAdapterMap['node']): void => {
+      if ('attrs' in node && node.attrs.some((attr) => attr.name === 'data-knc-baseline')) {
+        const style =
+          node.attrs.find((attr) => attr.name === `data-knc-${mode}`) ??
+          node.attrs.find((attr) => attr.name === 'data-knc-light')
+        if (style) {
+          node.attrs = node.attrs.filter((attr) => attr.name !== 'style')
+          node.attrs.push({ name: 'style', value: style.value })
+        }
+        if (mode === 'dark') {
+          const read = (name: string): Record<string, string> => {
+            try {
+              const value: unknown = JSON.parse(
+                node.attrs.find((attr) => attr.name === name)?.value ?? '{}',
+              )
+              return value && typeof value === 'object' && !Array.isArray(value)
+                ? (value as Record<string, string>)
+                : {}
+            } catch {
+              return {}
+            }
+          }
+          const light = read('data-knc-baseline')
+          const dark = node.attrs.some((attr) => attr.name === 'data-knc-dark-attrs')
+            ? read('data-knc-dark-attrs')
+            : light
+          for (const name of [
+            'class',
+            'title',
+            'href',
+            'target',
+            'rel',
+            'src',
+            'alt',
+            'aria-label',
+          ]) {
+            if (node.attrs.find((attr) => attr.name === name)?.value !== light[name]) continue
+            node.attrs = node.attrs.filter((attr) => attr.name !== name)
+            if (typeof dark[name] === 'string') node.attrs.push({ name, value: dark[name] })
+          }
+        }
+      }
+      if ('childNodes' in node) node.childNodes.forEach(restoreSource)
+    }
+    restoreSource(fragment)
+    markup = serialize(fragment)
+  }
+  rendered = replaceElementContent(rendered, 'root', markup)
   const bounds = tagBounds(rendered, 'root')
   if (bounds !== null) {
     const opening = rendered.slice(bounds.start, bounds.end + 1)

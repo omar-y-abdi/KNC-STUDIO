@@ -13,6 +13,47 @@ const NativeContext = createContext<{
   source: boolean
 } | null>(null)
 
+interface NativeRenderContext {
+  template: Element | null
+  mode: CmsMode
+}
+const RenderContext = createContext<NativeRenderContext | null>(null)
+const SlotContext = createContext<(NativeRenderContext & { identity: string }) | null>(null)
+
+function NativeSlot({
+  identity,
+  children,
+}: {
+  identity: string
+  children?: ComponentChildren
+}): JSX.Element {
+  const parent = useContext(RenderContext)
+  const template = parent?.template?.querySelector(`[data-knc-surface="${identity}"]`) ?? null
+  return (
+    <SlotContext.Provider value={parent ? { ...parent, identity, template } : null}>
+      {children}
+    </SlotContext.Provider>
+  )
+}
+
+/** Opt a code-owned component into presentation editing without replacing its hooks or handlers. */
+export function useNativeChild(): (source: JSX.Element) => JSX.Element {
+  const context = useContext(SlotContext)
+  return (source) => {
+    if (!context) return source
+    const root =
+      isValidElement(source) && typeof source.type === 'string'
+        ? source
+        : h('div', { style: 'display:contents' }, source)
+    const native = nativeTree(root, context.identity)
+    return (
+      <RenderContext.Provider value={context}>
+        {context.template ? projectNativeTree(native, context.template, context.mode) : native.tree}
+      </RenderContext.Provider>
+    )
+  }
+}
+
 export function NativeSiteProvider({
   children,
   presentation,
@@ -81,6 +122,16 @@ function childKey(value: ComponentChild, index: number): string {
     .join('x')}`
 }
 
+function nodeIdentity(surface: string, path: string): string {
+  const identity = `knc-${surface}-${path}`
+  if (identity.length <= 120) return identity
+  // Nested component paths and entity UUIDs still need to fit the public element-ID contract.
+  let hash = 14695981039346656037n
+  for (const char of identity)
+    hash = BigInt.asUintN(64, (hash ^ BigInt(char.charCodeAt(0))) * 1099511628211n)
+  return `knc-node-${hash.toString(16)}`
+}
+
 /** Keep actual handlers, refs and component instances; HTML supplies presentation only. */
 export function nativeTree(
   source: ComponentChild,
@@ -89,21 +140,24 @@ export function nativeTree(
   tree: ComponentChild
   nodes: Map<string, NativeNode>
   slots: Map<string, NativeNode>
+  parents: Map<string, string>
 } {
   const nodes = new Map<string, NativeNode>()
   const slots = new Map<string, NativeNode>()
-  const visit = (value: ComponentChild, path: string): ComponentChild => {
+  const parents = new Map<string, string>()
+  const visit = (value: ComponentChild, path: string, parent?: string): ComponentChild => {
     if (!isValidElement(value)) return value
     const props = value.props as Record<string, unknown>
-    const identity = `knc-${surface}-${path}`
+    const identity = nodeIdentity(surface, path)
     if (value.type === Fragment)
       return h(
         Fragment,
         null,
         childrenOf(props['children'] as ComponentChildren).map((child, index) =>
-          visit(child, `${path}-${childKey(child, index)}`),
+          visit(child, `${path}-${childKey(child, index)}`, parent),
         ),
       )
+    if (parent) parents.set(identity, parent)
     if (typeof value.type !== 'string') {
       const slot = h<Record<string, unknown>>(
         'div',
@@ -113,7 +167,7 @@ export function nativeTree(
           'data-knc-slot': identity,
           style: 'display:contents',
         },
-        value,
+        h(NativeSlot, { identity }, value),
       )
       slots.set(identity, slot)
       return slot
@@ -131,13 +185,13 @@ export function nativeTree(
         ...(path === '0' ? { 'data-knc-surface': surface } : {}),
       },
       childrenOf(props['children'] as ComponentChildren).map((child, index) =>
-        visit(child, `${path}-${childKey(child, index)}`),
+        visit(child, `${path}-${childKey(child, index)}`, identity),
       ),
     )
     nodes.set(identity, node)
     return node
   }
-  return { tree: visit(source, '0'), nodes, slots }
+  return { tree: visit(source, '0'), nodes, slots, parents }
 }
 
 function baseline(element: Element): Record<string, unknown> {
@@ -148,6 +202,18 @@ function baseline(element: Element): Record<string, unknown> {
       : {}
   } catch {
     return {}
+  }
+}
+
+function baselineChildren(element: Element): string[] | null {
+  const before = baseline(element)
+  try {
+    const value: unknown = JSON.parse(
+      typeof before['children'] === 'string' ? before['children'] : 'null',
+    )
+    return Array.isArray(value) && value.every((id) => typeof id === 'string') ? value : null
+  } catch {
+    return null
   }
 }
 
@@ -165,6 +231,8 @@ export function projectNativeTree(
   mode: CmsMode = 'light',
 ): ComponentChild {
   const identities = new Set<string>()
+  const captured = new Set<string>()
+  let capturedChildren = false
   for (const element of [
     template,
     ...template.querySelectorAll('[data-knc-source],[data-knc-slot]'),
@@ -173,9 +241,23 @@ export function projectNativeTree(
     if (!id) continue
     if (identities.has(id)) return source.tree
     identities.add(id)
+    const children = baselineChildren(element)
+    if (children) {
+      capturedChildren = true
+      for (const child of children) captured.add(child)
+    }
   }
-  for (const [id, node] of source.nodes)
-    if (node.props['data-knc-required'] && !identities.has(id)) return source.tree
+  for (const [id, node] of source.nodes) {
+    if (!node.props['data-knc-required'] || identities.has(id)) continue
+    if (!capturedChildren) return source.tree
+    // A previously captured action (or its container) may not be removed. A new live action may appear.
+    for (
+      let current: string | undefined = id;
+      current && !identities.has(current);
+      current = source.parents.get(current)
+    )
+      if (captured.has(current)) return source.tree
+  }
 
   const visit = (node: Node): ComponentChild => {
     if (node.nodeType === 3) return node.textContent
@@ -213,12 +295,20 @@ export function projectNativeTree(
     const children = unchangedText
       ? childrenOf(original.props['children'] as ComponentChildren)
       : [...element.childNodes].map(visit)
-    // Preserve live lazy children that did not exist when the source was inspected.
+    // Newly loaded entities and conditional runtime UI must not be frozen by an old snapshot.
+    // The original child list distinguishes them from presentation children the owner removed.
+    const previousChildren = baselineChildren(element)
     if (original)
       for (const child of childrenOf(original.props['children'] as ComponentChildren)) {
         if (!isValidElement(child)) continue
-        const id = (child.props as Record<string, unknown>)['data-knc-slot']
-        if (typeof id === 'string' && !identities.has(id)) children.push(child)
+        const props = child.props as Record<string, unknown>
+        const id = props['data-knc-slot'] ?? props['data-knc-source']
+        if (
+          typeof id === 'string' &&
+          !identities.has(id) &&
+          (previousChildren ? !previousChildren.includes(id) : Boolean(props['data-knc-slot']))
+        )
+          children.push(child)
       }
     return h(original ? String(original.type) : element.tagName.toLowerCase(), props, children)
   }
@@ -253,7 +343,9 @@ export function useNativeSurface(
   return (
     <>
       {template && <style>{page?.content[lang].css[mode] ?? ''}</style>}
-      {template ? projectNativeTree(native, template, mode) : native.tree}
+      <RenderContext.Provider value={{ template, mode }}>
+        {template ? projectNativeTree(native, template, mode) : native.tree}
+      </RenderContext.Provider>
     </>
   )
 }
