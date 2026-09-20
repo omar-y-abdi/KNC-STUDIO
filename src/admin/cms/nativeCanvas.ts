@@ -1,4 +1,5 @@
 import { generate, parse, walk } from 'css-tree'
+import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 
 const attributes = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label']
@@ -79,4 +80,49 @@ export function exportNativeCanvas(
     },
   })
   return { html: doc.body.innerHTML, css: generate(stylesheet) }
+}
+
+/** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands). */
+export function parseCanvasCss(
+  css: string,
+  editor: Editor,
+): ReturnType<Editor['Parser']['parseCss']> {
+  const declarations = new Map<string, { property: string; value: string }>()
+  const tree = parse(css, { parseCustomProperty: true })
+  walk(tree, {
+    visit: 'Block',
+    enter(block) {
+      if (!this.rule) return
+      block.children.forEach((declaration) => {
+        if (declaration.type !== 'Declaration') return
+        const key = `--cms-internal-parse-${declarations.size}`
+        declarations.set(key, {
+          property: declaration.property,
+          value: generate(declaration.value) + (declaration.important ? ' !important' : ''),
+        })
+        declaration.property = key
+      })
+    },
+  })
+  const restore = (style: Record<string, unknown>): Record<string, unknown> => {
+    const restored: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(style)) {
+      const original = declarations.get(key)
+      if (original) {
+        const previous = restored[original.property]
+        restored[original.property] =
+          previous === undefined ? original.value : [previous, original.value].flat()
+      } else {
+        restored[key] =
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? restore(value as Record<string, unknown>)
+            : value
+      }
+    }
+    return restored
+  }
+  return editor.Parser.parseCss(generate(tree)).map((rule) => ({
+    ...rule,
+    style: restore(rule.style ?? {}),
+  }))
 }

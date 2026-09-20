@@ -9,7 +9,7 @@ import { configureComponent, isProtected, styleSectors } from './editorPolicy'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { nativeCanvas, exportNativeCanvas } from './nativeCanvas'
+import { nativeCanvas, exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 
 export interface EditorHandle {
   flush: () => void
@@ -228,7 +228,7 @@ export function CmsEditor(props: Props): JSX.Element {
     applying.current = true
     const content = nativeCanvas(props.page.content[props.lang], props.mode)
     editor.setComponents(content.html)
-    editor.setStyle(content.css)
+    editor.setStyle(parseCanvasCss(content.css, editor))
     editor.getWrapper()?.components().forEach(configure)
     applying.current = false
     editor.clearDirtyCount()
@@ -249,7 +249,7 @@ export function CmsEditor(props: Props): JSX.Element {
     applying.current = true
     const content = nativeCanvas(props.page.content[props.lang], props.mode)
     editor.setComponents(content.html)
-    editor.setStyle(content.css)
+    editor.setStyle(parseCanvasCss(content.css, editor))
     editor
       .getWrapper()
       ?.components()
