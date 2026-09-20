@@ -1,3 +1,4 @@
+import { useNativeSurface } from '../cms/NativeSurface'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -239,7 +240,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     minHeight: 'calc(100dvh - ' + PANEL_COMPACT + ')',
   }
 
-  return (
+  return useNativeSurface(
     <div
       style={{
         position: 'relative',
@@ -468,6 +469,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           />
         )}
       </div>
-    </div>
+    </div>,
+    `mobile-${props.view}`,
+    props.lang,
+    props.mode,
   )
 }

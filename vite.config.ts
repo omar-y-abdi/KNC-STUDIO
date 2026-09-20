@@ -57,8 +57,12 @@ export default defineConfig(({ command, mode }) => {
   const proxy: Record<string, ProxyOptions> = {
     '^/api/customer-bookings(?:\\?.*)?$': customerGateway,
     '^/api/bookings(?:\\?.*)?$': customerGateway,
+    '^/api/cms/presentation(?:\\?.*)?$': customerGateway,
     '^/[0-9a-f]{64}(?:\\?.*)?$': customerGateway,
   }
+  // Browser acceptance gate: serve public HTML from the actual local Worker at the same origin.
+  if (env['LOCAL_WORKER_DOCUMENTS'] === '1')
+    proxy['^/(?:about|booking|my-bookings|cms-public/source)?(?:\\?.*)?$'] = customerGateway
   // Optional local-only TLS bridge for browsers that reject HTTPS -> HTTP loopback fetches.
   // Supabase bearer auth still uses Authorization; site cookies belong only to our customer gateway.
   if (env['LOCAL_SUPABASE_URL']) {

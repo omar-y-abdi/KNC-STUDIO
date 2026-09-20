@@ -1,3 +1,4 @@
+import { useNativeChild } from '../../cms/NativeSurface'
 import type { JSX } from 'preact'
 
 export interface HeroLockupProps {
@@ -14,7 +15,8 @@ export interface HeroLockupProps {
 // does not translate camelCase prop names to these SVG attribute names, so camelCase would be dropped
 // and the glyphs would fall back to a default font / lose alignment.
 export function HeroLockup({ height, style }: HeroLockupProps): JSX.Element {
-  return (
+  const present = useNativeChild()
+  return present(
     <svg
       viewBox="0 0 460 330"
       height={height}
@@ -90,6 +92,6 @@ export function HeroLockup({ height, style }: HeroLockupProps): JSX.Element {
       >
         SHARPEN YOUR LOOK · ELEVATE YOUR STANDARDS
       </text>
-    </svg>
+    </svg>,
   )
 }

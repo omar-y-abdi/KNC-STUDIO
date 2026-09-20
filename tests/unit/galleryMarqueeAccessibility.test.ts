@@ -60,6 +60,7 @@ describe('gallery marquee interaction contract', () => {
 // Inspect rendered photo controls without running browser animation/effects; pointer, scroll,
 // focus and reduced-motion behavior remain covered by the browser harness.
 vi.mock('preact/hooks', () => ({
+  useContext: () => null,
   useState: vi.fn((initial: unknown) => [
     typeof initial === 'function' ? initial() : initial,
     vi.fn(),

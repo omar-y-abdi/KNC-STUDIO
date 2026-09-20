@@ -1,3 +1,6 @@
+import { useNativeSurface } from '../cms/NativeSurface'
+import { useContext } from 'preact/hooks'
+import { PreviewPorts } from '../cms/PreviewPorts'
 // Desktop (WEBB · Editorial) layout — nav + hero with business info + collapsible booking fold.
 
 import type { JSX, RefObject } from 'preact'
@@ -67,6 +70,9 @@ export interface DesktopSiteProps extends ShellProps {
 }
 
 export function DesktopSite(props: DesktopSiteProps): JSX.Element {
+  const previewPorts = useContext(PreviewPorts)
+  if (previewPorts) props = { ...props, previewPorts }
+
   const { c, tx, business, view } = props
   const reduceMotion = useReducedMotion()
   // Booking is the only fold. The homepage remains a normal scroll document with About below hero.
@@ -293,7 +299,7 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
     gap: '8px',
   }
 
-  return (
+  return useNativeSurface(
     <div
       style={{
         position: props.scrollRootRef === undefined ? undefined : 'relative',
@@ -474,6 +480,9 @@ export function DesktopSite(props: DesktopSiteProps): JSX.Element {
           />
         ) : null}
       </main>
-    </div>
+    </div>,
+    `desktop-${props.view}`,
+    props.lang,
+    props.mode,
   )
 }

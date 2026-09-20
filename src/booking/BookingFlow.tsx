@@ -1,10 +1,12 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // The 4-step booking flow (barber → date → service → time), ported from the original mock; the
 // details + confirmation modals live in their own components. Inline styles/literals match the
 // mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
 // Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { PreviewPorts } from '../cms/PreviewPorts'
 import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
 import type { BookingStrings, Lang } from '../i18n/index'
@@ -70,6 +72,8 @@ export interface BookingFlowProps {
 export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey>>
 
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
+  const present = useNativeChild()
+  const previewPorts = useContext(PreviewPorts)
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
   // Port result, per-FIELD validation errors, and the generic SYSTEM/submit error all live
@@ -91,10 +95,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const setState = (
     u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
-  useEffect(() => {
+  useLayoutEffect(() => {
     const contact = props.initialContact
-    // Nonempty auto-fill still belongs to its verified profile. Only actual edits survive a
-    // profile switch/clear, including an intentionally emptied field.
+    // Synchronize before paint: deferred effects can expose the previous customer's auto-fill.
+    // Only actual edits survive a profile switch/clear, including an intentionally emptied field.
     setState((current) => ({
       form: {
         name: typedContact.current.name ? current.form.name : (contact?.name ?? ''),
@@ -150,17 +154,20 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const dark = (props.mode ?? 'light') === 'dark'
   const showDirections = props.showDirections !== false
   const clock: Clock = props.clock ?? defaultClock
-  const port: BookingPort = props.port ?? defaultBookingPort
-  const { roster, loading: rosterLoading } = useRoster(props.barbersPort)
+  const port: BookingPort = previewPorts?.booking ?? props.port ?? defaultBookingPort
+  const { roster, loading: rosterLoading } = useRoster(previewPorts?.barbers ?? props.barbersPort)
   useEffect(() => {
-    if (!rosterLoading) props.onRosterReady?.()
-  }, [rosterLoading, props.onRosterReady])
+    if (!rosterLoading) {
+      props.onRosterReady?.()
+      if (previewPorts) document.documentElement.dataset['kncBookingReady'] = '1'
+    }
+  }, [rosterLoading, props.onRosterReady, props.mode, props.defaultLang, previewPorts])
   const today = stockholmWallClockDate(clock())
   const S = state
   const { services: barberServices, loading: servicesLoading } = useServices(
     S.barberId,
     S.dateIso,
-    props.servicesPort,
+    previewPorts?.services ?? props.servicesPort,
   )
 
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
@@ -435,7 +442,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const f = S.form
   const bookDisabled =
     !(f.name.trim() && f.phone.trim() && f.email.trim()) ||
-    (turnstileConfigured && turnstileToken === '')
+    (turnstileConfigured && previewPorts === undefined && turnstileToken === '')
 
   // Confirmation links come from the stored BookingPort result; fall back to '#' before submit
   // (and defensively if result is momentarily null) so the confirmation modal never crashes.
@@ -544,7 +551,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const timesReady = Boolean(S.barberId && S.dateIso && S.service)
   const notTimesReady = !S.service
 
-  return (
+  return present(
     <div style={s.rootStyle}>
       <div style="padding: 18px 22px 26px 22px">
         <div data-testid="booking-step-barber" data-booking-step="barber">
@@ -794,7 +801,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           onClose={closePopup}
           onBackdropClick={onPopupBackdrop}
           turnstile={
-            turnstileConfigured ? (
+            turnstileConfigured && previewPorts === undefined ? (
               <Turnstile
                 action="booking"
                 lang={lang}
@@ -842,6 +849,6 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
           onBackdropClick={onConfirmBackdrop}
         />
       ) : null}
-    </div>
+    </div>,
   )
 }

@@ -36,6 +36,7 @@ PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
 CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
 IP_SALT=ci-booking-ip-salt-not-for-production
 PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+CMS_ALLOWED_ORIGINS=https://127.0.0.1:4197
 PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EOF
 npx supabase start
@@ -47,8 +48,13 @@ these settings; restart/serve Functions after changing them. The gate requires c
 and installed Playwright Chromium, Firefox and WebKit (`npx playwright install --with-deps`). It
 builds the app in a temporary directory, starts an HTTPS Worker and Vite preview, creates isolated
 customer fixtures, tests actual cookies/profile switching/rotation, and removes its fixtures and
-servers. It sends no provider email and rejects non-loopback database/API addresses. Logs and failed
-screenshots remain in the printed temporary directory.
+servers. It also signs in as a temporary owner, edits existing desktop/mobile copy through the CMS,
+publishes through the real Edge Function, and runs customer scenarios with that published presentation.
+The gate checks authored copy after navigation and reload, restores its CMS changes, and deletes its
+temporary owner. It sends no provider email and rejects non-loopback database/API addresses. Logs and
+screenshots remain in the printed temporary directory. Vite preview provides the local TLS bridge;
+public page HTML, CMS presentation and customer APIs run through the actual Worker. The gate asserts
+both desktop/mobile edits in the initial Worker HTML before checking browser navigation and reload.
 
 For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`

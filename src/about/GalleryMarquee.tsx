@@ -1,3 +1,4 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // GalleryMarquee — two counter-scrolling, draggable photo rows for an About gallery section.
 //
 // Behaviour (per spec):
@@ -78,6 +79,7 @@ export function resolvePointerEnd(
 }
 
 function MarqueeRow(props: MarqueeRowProps): JSX.Element {
+  const present = useNativeChild()
   const rowRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
   const offset = useRef(0)
@@ -320,7 +322,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
     willChange: 'transform',
   }
 
-  return (
+  return present(
     <div
       ref={rowRef}
       style={rowStyle}
@@ -365,7 +367,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           }
           return (
             <div
-              key={String(j)}
+              key={`${logicalKey}:${Math.floor(j / itemCount)}`}
               data-tile-key={key}
               style={tileStyle}
               role={accessible ? 'button' : undefined}
@@ -389,7 +391,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
           )
         })}
       </div>
-    </div>
+    </div>,
   )
 }
 
@@ -402,6 +404,7 @@ export interface GalleryMarqueeProps {
 
 /** Two counter-scrolling rows of the same photos (row 2 reversed so they don't move in lock-step). */
 export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
+  const present = useNativeChild()
   const [selected, setSelected] = useState<{ row: 0 | 1; key: string } | null>(null)
   const select =
     (row: 0 | 1) =>
@@ -412,7 +415,7 @@ export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
   if (photos.length === 0) return null
   const photosB = [...photos].reverse()
 
-  return (
+  return present(
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <MarqueeRow
         photos={photos}
@@ -432,6 +435,6 @@ export function GalleryMarquee(props: GalleryMarqueeProps): JSX.Element | null {
         selectedKey={selected && selected.row === 1 ? selected.key : null}
         onSelect={select(1)}
       />
-    </div>
+    </div>,
   )
 }

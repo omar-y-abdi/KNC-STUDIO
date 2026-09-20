@@ -202,6 +202,7 @@ describe('local first-party transport boundaries', () => {
     vi.stubEnv('LOCAL_SUPABASE_URL', '')
     vi.stubEnv('LOCAL_HTTPS_KEY', '')
     vi.stubEnv('LOCAL_HTTPS_CERT', '')
+    vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '')
   })
   afterEach(() => vi.unstubAllEnvs())
 
@@ -214,6 +215,7 @@ describe('local first-party transport boundaries', () => {
       expect(Object.keys(config.server?.proxy ?? {})).toEqual([
         '^/api/customer-bookings(?:\\?.*)?$',
         '^/api/bookings(?:\\?.*)?$',
+        '^/api/cms/presentation(?:\\?.*)?$',
         '^/[0-9a-f]{64}(?:\\?.*)?$',
       ])
       for (const route of Object.values(config.server?.proxy ?? {})) {
@@ -241,7 +243,7 @@ describe('local first-party transport boundaries', () => {
     )
   })
 
-  it('real proxy isolates Supabase cookies and forwards only the exact customer routes', async () => {
+  it('real proxy isolates Supabase cookies and forwards only the exact public gateway routes', async () => {
     const cacheDir = mkdtempSync(join(tmpdir(), 'knc-proxy-test-'))
     const upstream = createHttpServer((request, response) => {
       response.setHeader('Content-Type', 'application/json')
@@ -264,6 +266,7 @@ describe('local first-party transport boundaries', () => {
       if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
       vi.stubEnv('LOCAL_SUPABASE_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('CUSTOMER_GATEWAY_PROXY_URL', `http://127.0.0.1:${address.port}`)
+      vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '1')
       const config = await localTransportConfig()
       vite = await createViteServer({
         configFile: false,
@@ -290,6 +293,14 @@ describe('local first-party transport boundaries', () => {
       for (const path of [
         '/api/customer-bookings',
         '/api/customer-bookings?x=1',
+        '/api/cms/presentation',
+        '/api/cms/presentation?x=1',
+        '/',
+        '/?lang=en&mode=dark',
+        '/about',
+        '/booking',
+        '/my-bookings?lang=en',
+        '/cms-public/source',
         `/${'a'.repeat(64)}`,
       ]) {
         const result = await fetch(`http://127.0.0.1:${server.port}${path}`, {
@@ -301,6 +312,12 @@ describe('local first-party transport boundaries', () => {
       for (const path of [
         '/api/customer-bookings-extra',
         '/api/customer-bookings/nested',
+        '/api/cms/presentation-extra',
+        '/api/cms/presentation/nested',
+        '/about-extra',
+        '/booking/private',
+        '/cms-public/source-extra',
+        '/admin/cms',
         '/rest/v1/private',
         '/other',
       ]) {

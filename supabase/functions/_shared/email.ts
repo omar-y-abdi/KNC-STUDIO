@@ -1,4 +1,6 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { renderDesignedEmail } from '../../../shared/cms-email.ts'
+import { validateEmailDesign, type EmailDesign } from '../../../shared/cms.ts'
 
 export type EmailLanguage = 'sv' | 'en'
 export type EmailTemplateName =
@@ -21,6 +23,8 @@ export interface EmailTemplateCopy {
   readonly note: string
   readonly ctaLabel: string
   readonly contactLead: string | null
+  readonly design?: EmailDesign | null
+  readonly designLogoUrl?: string
 }
 
 export interface EmailDetailRow {
@@ -354,6 +358,19 @@ export async function loadEmailTemplate(
     !nonEmpty(row.cta_label)
   )
     return fallback
+  let design: EmailDesign | null = null
+  let designLogoUrl: string | undefined
+  if (row.design !== undefined && row.design !== null) {
+    try {
+      validateEmailDesign(row.design)
+      design = row.design
+      if (design.logo)
+        designLogoUrl = client.storage.from(design.logo.bucket).getPublicUrl(design.logo.path)
+          .data.publicUrl
+    } catch {
+      design = null
+    }
+  }
   return {
     subject: row.subject,
     preheader: row.preheader,
@@ -363,6 +380,8 @@ export async function loadEmailTemplate(
     note: row.note,
     ctaLabel: row.cta_label,
     contactLead: nonEmpty(row.contact_lead) ? row.contact_lead : null,
+    design,
+    ...(designLogoUrl ? { designLogoUrl } : {}),
   }
 }
 
@@ -433,7 +452,30 @@ export function buildEmailMessage(input: EmailBuildInput): EmailMessage {
     business.phoneHref === null || business.phoneDisplay === null
       ? ''
       : `<br><a href="${escapeHtml(business.phoneHref)}" style="color:#98989d;text-decoration:none">${escapeHtml(business.phoneDisplay)}</a>`
-  const html = `<!doctype html><html lang="${input.lang}" style="color-scheme:dark;supported-color-schemes:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>${escapeHtml(subject)}</title></head><body bgcolor="#151517" style="margin:0;padding:0;background:#151517;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#151517" style="width:100%;background:#151517"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#1f1f21" style="width:100%;max-width:600px;background:#1f1f21;border:1px solid #39393c;border-radius:28px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px 34px 0"><a href="${SITE_URL}" style="display:inline-block;color:#f5f5f7;text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">BLADE &amp; BLEND</a></td></tr><tr><td style="padding:40px 34px 34px"><h1 style="margin:0;color:#f5f5f7;font-size:32px;font-weight:750;letter-spacing:-.04em;line-height:1.12">${htmlText(title)}</h1><p style="margin:20px 0 32px;color:#d1d1d6;font-size:16px;line-height:1.65">${htmlText(intro)}</p>${detailBlock}<p style="margin:28px 0 22px;color:#b5b5ba;font-size:14px;line-height:1.65">${htmlText(note)}</p><table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#f5f5f7" style="background:#f5f5f7;border-radius:12px"><a href="${escapeHtml(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:#171719;text-decoration:none;font-size:15px;font-weight:750">${escapeHtml(ctaLabel)}</a></td></tr></table>${contactBlock}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid #39393c"><tr><td style="padding-top:22px;color:#737378;font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table></td></tr></table></td></tr></table></body></html>`
+  const legacyHtml = `<!doctype html><html lang="${input.lang}" style="color-scheme:dark;supported-color-schemes:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>${escapeHtml(subject)}</title></head><body bgcolor="#151517" style="margin:0;padding:0;background:#151517;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#151517" style="width:100%;background:#151517"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#1f1f21" style="width:100%;max-width:600px;background:#1f1f21;border:1px solid #39393c;border-radius:28px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px 34px 0"><a href="${SITE_URL}" style="display:inline-block;color:#f5f5f7;text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">BLADE &amp; BLEND</a></td></tr><tr><td style="padding:40px 34px 34px"><h1 style="margin:0;color:#f5f5f7;font-size:32px;font-weight:750;letter-spacing:-.04em;line-height:1.12">${htmlText(title)}</h1><p style="margin:20px 0 32px;color:#d1d1d6;font-size:16px;line-height:1.65">${htmlText(intro)}</p>${detailBlock}<p style="margin:28px 0 22px;color:#b5b5ba;font-size:14px;line-height:1.65">${htmlText(note)}</p><table role="presentation" cellspacing="0" cellpadding="0"><tr><td bgcolor="#f5f5f7" style="background:#f5f5f7;border-radius:12px"><a href="${escapeHtml(input.ctaHref)}" style="display:inline-block;padding:15px 22px;color:#171719;text-decoration:none;font-size:15px;font-weight:750">${escapeHtml(ctaLabel)}</a></td></tr></table>${contactBlock}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:38px;border-top:1px solid #39393c"><tr><td style="padding-top:22px;color:#737378;font-size:12px;line-height:1.65">${addressLink}${footerPhone}</td></tr></table></td></tr></table></td></tr></table></body></html>`
+  const html = input.copy.design
+    ? renderDesignedEmail(
+        {
+          lang: input.lang,
+          copy: {
+            subject: input.copy.subject,
+            preheader: input.copy.preheader,
+            title: input.copy.title,
+            intro: input.copy.intro,
+            sectionTitle: input.copy.sectionTitle,
+            note: input.copy.note,
+            ctaLabel: input.copy.ctaLabel,
+            contactLead: input.copy.contactLead,
+            ...(input.copy.designLogoUrl ? { designLogoUrl: input.copy.designLogoUrl } : {}),
+          },
+          variables: input.variables,
+          rows: input.rows,
+          ctaHref: input.ctaHref,
+          business: input.business,
+        },
+        input.copy.design,
+      )
+    : legacyHtml
   const text = [
     title,
     intro,

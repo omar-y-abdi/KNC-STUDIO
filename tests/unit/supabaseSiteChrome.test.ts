@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
+  supabaseUrl: 'https://example.supabase.co',
   contentData: null as readonly unknown[] | null,
   discoveryData: null as unknown,
   contentOk: false,
@@ -13,7 +14,9 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('../../src/backend/config', () => ({
-  SUPABASE_URL: 'https://example.supabase.co',
+  get SUPABASE_URL() {
+    return state.supabaseUrl
+  },
   SUPABASE_ANON_KEY: 'eyJ.test.signature',
   isBackendConfigured: () => true,
 }))
@@ -47,6 +50,7 @@ import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteC
 
 describe('Supabase site chrome resolution', () => {
   beforeEach(() => {
+    state.supabaseUrl = 'https://example.supabase.co'
     state.contentData = null
     state.discoveryData = null
     state.contentOk = false
@@ -61,13 +65,14 @@ describe('Supabase site chrome resolution', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = new URL(typeof input === 'string' ? input : input.toString())
-        if (url.pathname === '/rest/v1/site_content') {
+        const prefix = new URL(state.supabaseUrl).pathname.replace(/\/$/, '')
+        if (url.pathname === `${prefix}/rest/v1/site_content`) {
           return new Response(JSON.stringify(state.contentData), {
             status: state.contentOk ? 200 : 503,
             headers: { 'Content-Type': 'application/json' },
           })
         }
-        if (url.pathname === '/rest/v1/rpc/public_business_discovery') {
+        if (url.pathname === `${prefix}/rest/v1/rpc/public_business_discovery`) {
           return new Response(JSON.stringify(state.discoveryData), {
             status: state.discoveryOk ? 200 : 503,
             headers: { 'Content-Type': 'application/json' },
@@ -106,6 +111,32 @@ describe('Supabase site chrome resolution', () => {
       expect(headers.get('Authorization')).toBe('Bearer eyJ.test.signature')
     }
   })
+
+  it.each(['https://127.0.0.1:4197/__supabase', 'https://127.0.0.1:4197/__supabase/'])(
+    'preserves the TLS bridge prefix for metadata and logo reads (%s)',
+    async (url) => {
+      state.supabaseUrl = url
+      state.contentData = [{ key: 'kicker', lang: 'sv', value: 'Existing source copy' }]
+      state.contentOk = true
+      const path = 'logo/123e4567-e89b-42d3-a456-426614174000.webp'
+      state.discoveryData = {
+        settings: { homepage_logo_path: path },
+        barbers: [],
+        services: [],
+        schedules: [],
+      }
+
+      await expect(supabaseSiteChromeAdapter.load('sv')).resolves.toMatchObject({
+        text: { kicker: 'Existing source copy' },
+        homepageLogo: {
+          url: `https://127.0.0.1:4197/__supabase/storage/v1/object/public/gallery/${path}`,
+        },
+      })
+      expect(vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual(
+        ['/__supabase/rest/v1/site_content', '/__supabase/rest/v1/rpc/public_business_discovery'],
+      )
+    },
+  )
 
   it('waits for Postgres Changes readiness before the authoritative realtime re-read', async () => {
     state.contentData = []

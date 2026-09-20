@@ -1,3 +1,4 @@
+import { retainCmsObject } from './cmsRetention.ts'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   buildEvent,
@@ -584,6 +585,7 @@ export async function executeExternalAction(
     case 'superseded':
       return
     case 'storage_object_delete': {
+      if (await retainCmsObject(service, action.bucket, action.path)) return
       const removed = await service.storage.from(action.bucket).remove([action.path])
       if (removed.error !== null) {
         throw new ExternalActionError('storage_failed', removed.error.message)

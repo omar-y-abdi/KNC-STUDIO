@@ -8,9 +8,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from 'pg'
+import { customerCmsFixture } from './cms-customer.mjs'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
+// Playwright allows 30 seconds for graceful process shutdown before forcing cleanup.
+// The outer bound must let that cleanup finish; action/page/context waits remain unchanged.
+const BROWSER_CLOSE_TIMEOUT = 45_000
 const WATCHDOG_TIMEOUT = 180_000
 let currentPhase = 'startup'
 
@@ -37,6 +41,16 @@ async function bounded(promise, label, timeout = WAIT_TIMEOUT) {
   } finally {
     globalThis.clearTimeout(timer)
   }
+}
+
+async function closeBrowser(browser, label) {
+  phase(label)
+  const started = globalThis.performance.now()
+  await bounded(browser.close(), label, BROWSER_CLOSE_TIMEOUT)
+  assert(!browser.isConnected(), `${label} left the browser connected`)
+  console.log(
+    `${label} completed in ${Math.round(globalThis.performance.now() - started)}ms; disconnected`,
+  )
 }
 
 async function runCdpTouchSequence(client, label, startPoint, movePoints) {
@@ -769,6 +783,7 @@ async function verifyCustomerBrowser() {
     VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
     CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
+    LOCAL_WORKER_DOCUMENTS: '1',
     LOCAL_HTTPS_KEY: key,
     LOCAL_HTTPS_CERT: cert,
   }
@@ -795,6 +810,7 @@ async function verifyCustomerBrowser() {
   const db = new Client({ connectionString: stack.DB_URL, connectionTimeoutMillis: 5000 })
   let connected = false,
     fixture
+  let cms
   // Hosted Supabase adds its own bot cookie. Preserve separate upstream headers so this gate
   // reproduces production: a Worker using Headers.get would merge Domain=supabase.co into our
   // __Host cookie and every real browser would reject the customer session.
@@ -1027,6 +1043,7 @@ async function verifyCustomerBrowser() {
       ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
       ready(origin, preview, 'preview'),
     ])
+    cms = await customerCmsFixture({ db, stack, origin, work })
 
     for (const engine of [chromium, firefox, webkit]) {
       phase(`customer ${engine.name()}: seed isolated fixtures`)
@@ -1103,6 +1120,10 @@ async function verifyCustomerBrowser() {
         )
       }
       try {
+        if (engine === chromium) {
+          phase('customer: publish actual desktop/mobile CMS through the owner UI')
+          await cms.publish(browser)
+        }
         for (const width of [1280, 390]) {
           phase(`customer ${engine.name()} ${width}: permanent link and browser cookie`)
           const context = await browser.newContext({
@@ -1113,6 +1134,7 @@ async function verifyCustomerBrowser() {
           const page = await context.newPage()
           page.setDefaultTimeout(WAIT_TIMEOUT)
           await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+          await cms.verify(page, width)
           await showHistory(page, a)
           assert(
             new URL(page.url()).pathname === '/' && !page.url().includes(a.token),
@@ -1142,6 +1164,10 @@ async function verifyCustomerBrowser() {
           await showHistory(page, a)
           await page.getByRole('button', { name: 'Stäng', exact: true }).click()
           await page.reload({ waitUntil: 'domcontentloaded' })
+          await cms.verify(page, width)
+          await page.screenshot({
+            path: join(work, `cms-published-${engine.name()}-${width}.png`),
+          })
           const dismissAgain = page.getByRole('button', {
             name: 'Avvisa valfri lagring',
             exact: true,
@@ -1252,6 +1278,7 @@ async function verifyCustomerBrowser() {
         const prepareBooking = async (page, person, time, consent) => {
           page.setDefaultTimeout(WAIT_TIMEOUT)
           await page.goto(origin, { waitUntil: 'domcontentloaded' })
+          await cms.verify(page, page.viewportSize().width)
           const choose = page.getByRole('button', {
             name: consent ? 'Godkänn valfri lagring' : 'Avvisa valfri lagring',
             exact: true,
@@ -1573,7 +1600,7 @@ async function verifyCustomerBrowser() {
           }
       } finally {
         try {
-          await bounded(browser.close(), `customer ${engine.name()} browser.close`)
+          await closeBrowser(browser, `customer ${engine.name()} browser.close`)
         } catch (error) {
           retainFailure(error)
         }
@@ -1587,6 +1614,11 @@ async function verifyCustomerBrowser() {
     upstream.closeAllConnections()
     await new Promise((resolveClose) => upstream.close(resolveClose))
     if (connected) {
+      try {
+        await cms?.cleanup()
+      } catch (error) {
+        retainFailure(error)
+      }
       try {
         await cleanupFixture()
       } catch (error) {
@@ -1658,7 +1690,7 @@ try {
   if (browser !== undefined) {
     try {
       phase('browser cleanup')
-      await bounded(browser.close(), 'browser.close')
+      await closeBrowser(browser, 'browser.close')
     } catch (error) {
       writeSync(
         2,

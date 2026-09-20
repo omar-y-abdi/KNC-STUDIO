@@ -1,3 +1,4 @@
+import { useNativeChild } from '../cms/NativeSurface'
 // The two small underlined hero links rendered under the "Boka tid" button on BOTH layouts:
 //   LEFT  = "Om oss"     → animates to the About state  (onOpenAbout, an action — like Boka tid)
 //   RIGHT = "Avbokning"  → opens the cancellation popup (onOpenCancel, an action)
@@ -18,6 +19,7 @@ export interface HeroLinksProps {
 }
 
 export function HeroLinks(props: HeroLinksProps): JSX.Element {
+  const present = useNativeChild()
   const linkStyle: JSX.CSSProperties = {
     color: props.color,
     fontFamily: 'inherit',
@@ -39,7 +41,7 @@ export function HeroLinks(props: HeroLinksProps): JSX.Element {
     gap: '18px',
     marginTop: props.marginTop ?? '18px',
   }
-  return (
+  return present(
     <div style={wrapStyle}>
       <button type="button" onClick={props.onOpenAbout} style={linkStyle}>
         {props.aboutLabel}
@@ -50,6 +52,6 @@ export function HeroLinks(props: HeroLinksProps): JSX.Element {
       <button type="button" onClick={props.onOpenCancel} style={linkStyle}>
         {props.cancelLabel}
       </button>
-    </div>
+    </div>,
   )
 }

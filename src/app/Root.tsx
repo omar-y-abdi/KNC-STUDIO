@@ -60,7 +60,18 @@ export function Root(): JSX.Element {
     <>
       <Switch>
         {/* Public marketing site — unchanged, rendered with no wrapper so DOM stays byte-identical. */}
-        <Route path="/" component={App} />
+        <Route path="/">
+          <App />
+        </Route>
+        <Route path="/about">
+          <App />
+        </Route>
+        <Route path="/booking">
+          <App />
+        </Route>
+        <Route path="/my-bookings">
+          <App />
+        </Route>
 
         {/* Admin surface — lazy-loaded. /login, /reset and /admin/* all resolve inside the admin entry. */}
         <Route path="/login">
