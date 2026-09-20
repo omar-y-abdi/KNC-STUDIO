@@ -8,7 +8,7 @@ const id = (number) => `11111111-1111-4111-8111-${String(number).padStart(12, '0
 const seed = emptyDocument()
 seed.settings.homepage_logo_path = `logo/${id(30)}.webp`
 seed.barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) => ({
-  id: id(index + 1),
+  id: `fixture-barber-${index + 1}`,
   name,
   ig: '',
   role_sv: 'Frisör',

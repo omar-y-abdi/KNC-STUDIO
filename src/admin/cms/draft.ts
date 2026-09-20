@@ -105,6 +105,7 @@ export function mergeCmsDocuments(
   base: CmsDocument,
   local: CmsDocument,
   remote: CmsDocument,
+  resolution: 'local' | 'remote' = 'local',
 ): CmsMergeResult {
   const conflicts: CmsMergeConflict[] = []
   const merge = (a: unknown, l: unknown, r: unknown, path: string): unknown => {
@@ -138,7 +139,7 @@ export function mergeCmsDocuments(
       return out
     }
     conflicts.push({ path })
-    return structuredClone(l)
+    return structuredClone(resolution === 'remote' ? r : l)
   }
   return { document: merge(base, local, remote, '') as CmsDocument, conflicts }
 }

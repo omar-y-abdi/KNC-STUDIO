@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from 'pg'
+import { customerCmsFixture } from './cms-customer.mjs'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
@@ -795,6 +796,7 @@ async function verifyCustomerBrowser() {
   const db = new Client({ connectionString: stack.DB_URL, connectionTimeoutMillis: 5000 })
   let connected = false,
     fixture
+  let cms
   // Hosted Supabase adds its own bot cookie. Preserve separate upstream headers so this gate
   // reproduces production: a Worker using Headers.get would merge Domain=supabase.co into our
   // __Host cookie and every real browser would reject the customer session.
@@ -1027,6 +1029,7 @@ async function verifyCustomerBrowser() {
       ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
       ready(origin, preview, 'preview'),
     ])
+    cms = await customerCmsFixture({ db, stack, origin, work })
 
     for (const engine of [chromium, firefox, webkit]) {
       phase(`customer ${engine.name()}: seed isolated fixtures`)
@@ -1103,6 +1106,10 @@ async function verifyCustomerBrowser() {
         )
       }
       try {
+        if (engine === chromium) {
+          phase('customer: publish actual desktop/mobile CMS through the owner UI')
+          await cms.publish(browser)
+        }
         for (const width of [1280, 390]) {
           phase(`customer ${engine.name()} ${width}: permanent link and browser cookie`)
           const context = await browser.newContext({
@@ -1113,6 +1120,7 @@ async function verifyCustomerBrowser() {
           const page = await context.newPage()
           page.setDefaultTimeout(WAIT_TIMEOUT)
           await page.goto(`${origin}/${a.token}`, { waitUntil: 'domcontentloaded' })
+          await cms.verify(page, width)
           await showHistory(page, a)
           assert(
             new URL(page.url()).pathname === '/' && !page.url().includes(a.token),
@@ -1142,6 +1150,10 @@ async function verifyCustomerBrowser() {
           await showHistory(page, a)
           await page.getByRole('button', { name: 'Stäng', exact: true }).click()
           await page.reload({ waitUntil: 'domcontentloaded' })
+          await cms.verify(page, width)
+          await page.screenshot({
+            path: join(work, `cms-published-${engine.name()}-${width}.png`),
+          })
           const dismissAgain = page.getByRole('button', {
             name: 'Avvisa valfri lagring',
             exact: true,
@@ -1252,6 +1264,7 @@ async function verifyCustomerBrowser() {
         const prepareBooking = async (page, person, time, consent) => {
           page.setDefaultTimeout(WAIT_TIMEOUT)
           await page.goto(origin, { waitUntil: 'domcontentloaded' })
+          await cms.verify(page, page.viewportSize().width)
           const choose = page.getByRole('button', {
             name: consent ? 'Godkänn valfri lagring' : 'Avvisa valfri lagring',
             exact: true,
@@ -1587,6 +1600,11 @@ async function verifyCustomerBrowser() {
     upstream.closeAllConnections()
     await new Promise((resolveClose) => upstream.close(resolveClose))
     if (connected) {
+      try {
+        await cms?.cleanup()
+      } catch (error) {
+        retainFailure(error)
+      }
       try {
         await cleanupFixture()
       } catch (error) {

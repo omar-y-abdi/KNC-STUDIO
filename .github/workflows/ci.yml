@@ -149,6 +149,7 @@ jobs:
           PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
           CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
           PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+          CMS_ALLOWED_ORIGINS=https://127.0.0.1:4197
           PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
           EOF
       - name: Start local Supabase
@@ -165,12 +166,12 @@ jobs:
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Customer browser through local Worker and Edge
         run: npm run test:e2e -- --customer
-      - name: Preserve failed customer screenshots
-        if: failure()
+      - name: Preserve customer and published CMS screenshots
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: customer-failure-${{ github.run_attempt }}
-          path: /tmp/knc-customer-e2e-*/*-failure.png
+          name: customer-browser-${{ github.run_attempt }}
+          path: /tmp/knc-customer-e2e-*/*.png
           retention-days: 7
       - name: Stop local Supabase
         if: always()

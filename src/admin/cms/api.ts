@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import type {
   CmsAsset,
   CmsDocument,
@@ -18,14 +19,22 @@ export interface AssetLifecycleResult {
 }
 export type CmsAssetPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
 
-function message(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) return String(error.message)
-  return 'CMS-anropet misslyckades.'
+async function apiError(error: unknown): Promise<unknown> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const body: unknown = await error.context.clone().json()
+      if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string')
+        error.message = body.message
+    } catch {
+      // Preserve the original HTTP status even when the gateway did not return JSON.
+    }
+  }
+  return error
 }
 
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await getAdminClient().functions.invoke('cms-studio', { body })
-  if (error) throw new Error(message(error))
+  if (error) throw await apiError(error)
   return data as T
 }
 
@@ -62,7 +71,7 @@ export const cmsApi = {
     form.set('purpose', purpose)
     if (barberId) form.set('barberId', barberId)
     const { data, error } = await getAdminClient().functions.invoke('upload-image', { body: form })
-    if (error) throw new Error(message(error))
+    if (error) throw await apiError(error)
     if (!data || typeof data !== 'object' || !('asset' in data))
       throw new Error('Uppladdningen returnerade ingen registrerad resurs.')
     return (data as { asset: CmsAsset }).asset

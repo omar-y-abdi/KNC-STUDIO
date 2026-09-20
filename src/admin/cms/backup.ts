@@ -6,14 +6,26 @@ interface Backup {
   // Keep backups written by the metadata-free version recoverable.
   revision?: number
   fingerprint?: string
+  base?: CmsDocument
 }
 
 const tabId = sessionStorage.getItem('knc-cms-tab') ?? crypto.randomUUID()
 sessionStorage.setItem('knc-cms-tab', tabId)
 const key = `knc-cms-draft:${tabId}`
 
-export function saveBackup(document: CmsDocument, revision: number, fingerprint: string): void {
-  const value: Backup = { document, revision, fingerprint, savedAt: new Date().toISOString() }
+export function saveBackup(
+  document: CmsDocument,
+  revision: number,
+  fingerprint: string,
+  base?: CmsDocument,
+): void {
+  const value: Backup = {
+    document,
+    revision,
+    fingerprint,
+    ...(base ? { base } : {}),
+    savedAt: new Date().toISOString(),
+  }
   localStorage.setItem(key, JSON.stringify(value))
 }
 

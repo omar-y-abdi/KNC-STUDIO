@@ -214,6 +214,7 @@ describe('local first-party transport boundaries', () => {
       expect(Object.keys(config.server?.proxy ?? {})).toEqual([
         '^/api/customer-bookings(?:\\?.*)?$',
         '^/api/bookings(?:\\?.*)?$',
+        '^/api/cms/presentation(?:\\?.*)?$',
         '^/[0-9a-f]{64}(?:\\?.*)?$',
       ])
       for (const route of Object.values(config.server?.proxy ?? {})) {
@@ -241,7 +242,7 @@ describe('local first-party transport boundaries', () => {
     )
   })
 
-  it('real proxy isolates Supabase cookies and forwards only the exact customer routes', async () => {
+  it('real proxy isolates Supabase cookies and forwards only the exact public gateway routes', async () => {
     const cacheDir = mkdtempSync(join(tmpdir(), 'knc-proxy-test-'))
     const upstream = createHttpServer((request, response) => {
       response.setHeader('Content-Type', 'application/json')
@@ -290,6 +291,8 @@ describe('local first-party transport boundaries', () => {
       for (const path of [
         '/api/customer-bookings',
         '/api/customer-bookings?x=1',
+        '/api/cms/presentation',
+        '/api/cms/presentation?x=1',
         `/${'a'.repeat(64)}`,
       ]) {
         const result = await fetch(`http://127.0.0.1:${server.port}${path}`, {
@@ -301,6 +304,8 @@ describe('local first-party transport boundaries', () => {
       for (const path of [
         '/api/customer-bookings-extra',
         '/api/customer-bookings/nested',
+        '/api/cms/presentation-extra',
+        '/api/cms/presentation/nested',
         '/rest/v1/private',
         '/other',
       ]) {

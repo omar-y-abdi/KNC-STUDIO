@@ -14,8 +14,10 @@ it('retains backup metadata and recovers metadata-free drafts', async () => {
     const document = emptyDocument()
     const fingerprint = '0123456789abcdef0123456789abcdef'
     const key = 'knc-cms-draft:regression'
-    saveBackup(document, 7, fingerprint)
-    expect(loadBackup()).toMatchObject({ document, revision: 7, fingerprint })
+    const base = structuredClone(document)
+    document.settings.business_name = 'Unpublished local name'
+    saveBackup(document, 7, fingerprint, base)
+    expect(loadBackup()).toMatchObject({ document, revision: 7, fingerprint, base })
 
     const legacy = { document, savedAt: '2026-09-18T00:00:00Z' }
     storage.set(key, JSON.stringify(legacy))

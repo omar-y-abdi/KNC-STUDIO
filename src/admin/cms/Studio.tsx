@@ -1,4 +1,5 @@
 import type { JSX } from 'preact'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
@@ -8,6 +9,7 @@ import {
   type CmsMode,
   type CmsPage,
   type CmsRevision,
+  type CmsState,
 } from '../../../shared/cms'
 import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS } from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
@@ -36,6 +38,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [mobilePanel, setMobilePanel] = useState<Panel>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
+    null,
+  )
   const [, setVersion] = useState(0)
   const [dialog, setDialog] = useState<
     'history' | 'resources' | 'business' | 'email' | 'delivery' | null
@@ -56,6 +61,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
+      setConflict(null)
       if (seeded) next.base = structuredClone(loaded.document)
       if (backup && isInventedSite(backup.document)) {
         localStorage.setItem('knc-cms-retained-template-draft', JSON.stringify(backup))
@@ -66,10 +72,27 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        next.change(ensureCorePages(backup.document))
-        setError(
-          `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,
-        )
+        const local = ensureCorePages(backup.document)
+        const sameHead =
+          backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
+        const merged =
+          !sameHead && backup.base
+            ? mergeCmsDocuments(backup.base, local, document)
+            : { document: local, conflicts: sameHead ? [] : [{ path: '' }] }
+        next.change(merged.document)
+        if (merged.conflicts.length) {
+          next.base = structuredClone(backup.base ?? loaded.document)
+          next.revision = backup.revision ?? -1
+          next.fingerprint = backup.fingerprint ?? ''
+          setConflict({ remote: loaded, base: backup.base ?? null })
+          setError(
+            'Det lokala utkastet och servern har olika ändringar. Välj hur konflikten ska lösas före publicering.',
+          )
+        } else {
+          setError(
+            `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,
+          )
+        }
       }
       setDraft(next)
       if (seeded && !backup)
@@ -91,14 +114,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   useLayoutEffect(() => {
     if (!draft) return
     try {
-      if (draft.dirty) saveBackup(draft.document, draft.revision, draft.fingerprint)
+      if (draft.dirty || conflict)
+        saveBackup(
+          draft.document,
+          draft.revision,
+          draft.fingerprint,
+          conflict ? (conflict.base ?? undefined) : draft.base,
+        )
       else clearBackup()
     } catch {
       setError(
         'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.',
       )
     }
-  }, [draft?.document, draft?.revision, draft?.fingerprint])
+  }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
 
   const commitDraft = (next: CmsDocument, group = ''): void => {
     if (!draft) return
@@ -113,7 +142,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     commitDraft(next, `page:${page.id}:${lang}:${mode}`)
   }
   const publish = async (): Promise<void> => {
-    if (!draft) return
+    if (!draft || conflict || busy) return
     editor.current?.flush()
     setBusy(true)
     setError(null)
@@ -134,16 +163,23 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         reason instanceof Error
           ? reason.message
           : 'Publiceringen misslyckades. Utkastet finns kvar.'
-      if (/conflict|ändrats|409/i.test(message)) {
+      if (reason instanceof FunctionsHttpError && reason.context.status === 409) {
         try {
           const remote = await cmsApi.state()
+          editor.current?.flush()
           const merged = mergeCmsDocuments(
             draft.base,
             draft.document,
             ensureCorePages(remote.document),
           )
           const next = new CmsDraft(merged.document, remote.revision, remote.fingerprint)
-          next.base = structuredClone(ensureCorePages(remote.document))
+          next.base = structuredClone(remote.document)
+          if (merged.conflicts.length) {
+            next.base = structuredClone(draft.base)
+            next.revision = draft.revision
+            next.fingerprint = draft.fingerprint
+            setConflict({ remote, base: draft.base })
+          }
           setDraft(next)
           setVersion((value) => value + 1)
           setError(
@@ -158,6 +194,26 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     } finally {
       setBusy(false)
     }
+  }
+  const resolveConflict = (resolution: 'local' | 'remote'): void => {
+    if (!draft || !conflict) return
+    editor.current?.flush()
+    const remote = ensureCorePages(conflict.remote.document)
+    const resolved = conflict.base
+      ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
+      : resolution === 'local'
+        ? draft.document
+        : remote
+    const next = new CmsDraft(
+      conflict.remote.document,
+      conflict.remote.revision,
+      conflict.remote.fingerprint,
+    )
+    next.change(resolved)
+    setDraft(next)
+    setConflict(null)
+    setError('Konflikten är löst i utkastet. Granska före publicering.')
+    setVersion((value) => value + 1)
   }
   const openHistory = async (): Promise<void> => {
     editor.current?.flush()
@@ -313,6 +369,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           {error}{' '}
           <button type="button" onClick={() => setError(null)}>
             Stäng
+          </button>
+        </div>
+      )}
+      {conflict && (
+        <div class="cms-notice" role="alert">
+          Publicering är blockerad tills konflikten är löst.
+          <button type="button" onClick={() => resolveConflict('local')}>
+            Behåll mina konfliktändringar
+          </button>
+          <button type="button" onClick={() => resolveConflict('remote')}>
+            Använd serverns konfliktändringar
           </button>
         </div>
       )}
@@ -576,7 +643,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           class="cms-publish"
-          disabled={busy || !draft.dirty}
+          disabled={busy || Boolean(conflict) || !draft.dirty}
           onClick={() => void publish()}
         >
           Save / Publicera
@@ -586,7 +653,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           disabled={!draft.dirty}
           onClick={() => {
             editor.current?.flush()
-            draft.revert()
+            if (conflict) {
+              const next = new CmsDraft(
+                conflict.remote.document,
+                conflict.remote.revision,
+                conflict.remote.fingerprint,
+              )
+              setDraft(next)
+              setConflict(null)
+            } else draft.revert()
             setVersion((v) => v + 1)
           }}
         >

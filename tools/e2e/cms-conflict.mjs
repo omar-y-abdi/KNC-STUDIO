@@ -12,7 +12,7 @@ for (const [engine, name] of [
 ]) {
   const browser = await engine.launch()
   try {
-    for (const scenario of ['keep-local', 'keep-server', 'stale-backup']) {
+    for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-reload']) {
       const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         reducedMotion: 'reduce',
@@ -76,6 +76,12 @@ for (const [engine, name] of [
         if (scenario === 'stale-backup') await mount(second, 'Local owner change')
         else await second.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
 
+        if (scenario === 'conflict-reload') {
+          await second
+            .getByRole('button', { name: 'Behåll mina konfliktändringar', exact: true })
+            .waitFor()
+          await mount(second, 'Local owner change')
+        }
         const keepLocal = second.getByRole('button', {
           name: 'Behåll mina konfliktändringar',
           exact: true,
