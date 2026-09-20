@@ -125,6 +125,8 @@ async function run(engine, name) {
         parentPadding: globalThis.getComputedStyle(node.parentElement).padding,
       }
     })
+  const scrollbarWidth = (locator) =>
+    locator.evaluate((node) => globalThis.getComputedStyle(node, '::-webkit-scrollbar').width)
   const fitCanvas = async () => {
     await page.getByRole('button', { name: 'Fit', exact: true }).click()
     await page.waitForFunction(
@@ -152,6 +154,7 @@ async function run(engine, name) {
     await page.screenshot({ path: `/tmp/cms-native-${name}-original-desktop.png` })
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByTestId('mobile-site-scroll').waitFor()
+    const mobileScrollbarWidth = await scrollbarWidth(page.getByTestId('mobile-site-scroll'))
     const mobileAppearance = await appearance(
       page.getByRole('button', { name: 'Boka tid', exact: true }),
     )
@@ -289,6 +292,11 @@ async function run(engine, name) {
       return canvas && globalThis.getComputedStyle(canvas).width === '390px'
     })
     await frame.locator('[data-knc-surface="mobile-home"]').waitFor({ state: 'visible' })
+    assert.equal(
+      await scrollbarWidth(frame.locator('[data-knc-surface="mobile-home"]')),
+      mobileScrollbarWidth,
+      'The canvas must retain the original mobile scrolling style',
+    )
     assert.deepEqual(
       await appearance(
         frame

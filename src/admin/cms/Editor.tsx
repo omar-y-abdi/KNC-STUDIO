@@ -101,6 +101,8 @@ export function CmsEditor(props: Props): JSX.Element {
         scripts: [],
         styles: [],
         frameContent: '<!doctype html><html lang="sv"><head></head><body></body></html>',
+        // Default WebKit scrollbar styling reserves 10px that the actual mobile site does not.
+        frameStyle: 'body{background-color:#fff}',
       },
       canvasCss: 'html{scroll-behavior:auto!important}body{margin:0!important}',
       selectorManager: { componentFirst: true },
