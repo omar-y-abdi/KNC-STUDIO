@@ -114,7 +114,9 @@ for (const [engine, name] of [
       } catch (error) {
         failures.push(`${name}/${scenario}: ${error.message}`)
         console.error(`FAIL revision ${name}: ${scenario}`, error)
-        await second.screenshot({ path: `/tmp/cms-native-${name}-revision-${scenario}-failure.png` })
+        await second.screenshot({
+          path: `/tmp/cms-native-${name}-revision-${scenario}-failure.png`,
+        })
       } finally {
         await context.close()
       }
