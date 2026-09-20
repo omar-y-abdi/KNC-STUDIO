@@ -88,6 +88,7 @@ jobs:
           done
           BASE_URL=http://127.0.0.1:4188 ADMIN_E2E_SCENARIO=cms-shell npm run test:e2e:admin
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs
       - name: Preserve CMS browser evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
