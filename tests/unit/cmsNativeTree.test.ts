@@ -38,3 +38,14 @@ it('retains a code-owned runtime component as a live slot, not serialized replac
   expect(result.slots.size).toBe(1)
   expect([...result.slots.values()][0]?.props['children']).toBe(runtime)
 })
+
+it('changes CMS scene identities without remounting the live root or runtime component', () => {
+  const Runtime = () => h('input', { value: 'Customer draft' })
+  const source = h('main', null, h(Runtime, {}))
+  const home = nativeTree(source, 'desktop-home')
+  const booking = nativeTree(source, 'desktop-booking')
+  expect(home.nodes.get('knc-desktop-home-0')?.key).toBe(
+    booking.nodes.get('knc-desktop-booking-0')?.key,
+  )
+  expect([...home.slots.values()][0]?.key).toBe([...booking.slots.values()][0]?.key)
+})
