@@ -1,7 +1,16 @@
 import type { Component } from 'grapesjs'
 
 const controls = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
-const containers = new Set(['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav'])
+const containers = new Set([
+  'div',
+  'main',
+  'section',
+  'article',
+  'aside',
+  'header',
+  'footer',
+  'nav',
+])
 const svgLeaf = new Set([
   'path',
   'circle',
@@ -114,9 +123,15 @@ export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
   const protectedComponent = isProtected(component)
-  const retainedChildren =
-    component.find('[data-knc-slot],[data-knc-required="true"]').length > 0 ||
-    [...protectedIds].some((id) => component.find(`#${id}`).length > 0)
+  // The model search also works for text nodes and components not yet mounted in the canvas.
+  const retainedChildren = component.findFirstType((child) => {
+    const attributes = child.getAttributes()
+    return Boolean(
+      attributes['data-knc-slot'] ||
+      attributes['data-knc-required'] === 'true' ||
+      protectedIds.has(String(attributes['id'] ?? '')),
+    )
+  })
   component.set({
     removable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
     copyable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
