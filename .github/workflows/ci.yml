@@ -79,7 +79,6 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - name: Real desktop and mobile CMS shell
         run: |
-          git archive --output=/tmp/cms-source.tar HEAD
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/blade-cms-shell.log 2>&1 &
           dev_pid=$!
           trap 'kill "$dev_pid" 2>/dev/null || true' EXIT
@@ -97,7 +96,6 @@ jobs:
           path: |
             /tmp/cms-native-*.png
             /tmp/blade-cms-shell.log
-            /tmp/cms-source.tar
           retention-days: 7
 
   edge-functions:

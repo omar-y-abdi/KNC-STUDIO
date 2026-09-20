@@ -283,6 +283,11 @@ async function run(engine, name) {
     await page.bringToFront()
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: '390', exact: true }).click()
+    // The mobile surface appears before GrapesJS finishes animating the device width.
+    await page.waitForFunction(() => {
+      const canvas = globalThis.document.querySelector('.gjs-frame')
+      return canvas && globalThis.getComputedStyle(canvas).width === '390px'
+    })
     await frame.locator('[data-knc-surface="mobile-home"]').waitFor({ state: 'visible' })
     assert.deepEqual(
       await appearance(
