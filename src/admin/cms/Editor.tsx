@@ -85,6 +85,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const [advancedValue, setAdvancedValue] = useState('')
   const viewStates = useRef(new Map<string, CmsViewState>())
   const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
+  const checkpoint = useRef<{ html: string; css: string } | null>(null)
   const contextKey = `${props.page.id}:${props.lang}:${props.mode}`
   const variant = props.page.content[props.lang]
   const compareHost = useRef<HTMLDivElement>(null)
@@ -153,7 +154,7 @@ export function CmsEditor(props: Props): JSX.Element {
           target ??= surfaces.find((surface) => surface.getEl()?.getClientRects().length) ?? wrapper
           if (!target || target.get('droppable') === false)
             return latest.current.onError('Välj en redigerbar behållare i sidan först.')
-          const added = target.append(block.get('content'))
+          const added = target.append(block.getContent())
           editor.select(added[0])
         },
       },
@@ -210,14 +211,14 @@ export function CmsEditor(props: Props): JSX.Element {
     const flush = (): void => {
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = null
-      if (applying.current || !editor.getDirtyCount()) return
+      if (applying.current || !checkpoint.current) return
+      // GrapesJS updates its dirty counter asynchronously; a context switch cannot wait for it.
+      const html = editor.getHtml({ cleanId: false })
+      const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
+      if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
       const next = structuredClone(current.page)
-      const exported = exportNativeCanvas(
-        editor.getHtml({ cleanId: false }),
-        editor.getCss({ keepUnusedStyles: true }) ?? '',
-        current.mode,
-      )
+      const exported = exportNativeCanvas(html, css, current.mode)
       next.content[current.lang] = {
         html: exported.html,
         css: { ...next.content[current.lang].css, [current.mode]: exported.css },
@@ -228,6 +229,7 @@ export function CmsEditor(props: Props): JSX.Element {
         ...exported,
       }
       current.onChange(next)
+      checkpoint.current = { html, css }
       editor.clearDirtyCount()
     }
     const schedule = (): void => {
@@ -290,6 +292,10 @@ export function CmsEditor(props: Props): JSX.Element {
       key: contextKey,
       html: variant.html,
       css: variant.css[props.mode],
+    }
+    checkpoint.current = {
+      html: editor.getHtml({ cleanId: false }),
+      css: editor.getCss({ keepUnusedStyles: true }) ?? '',
     }
     applying.current = false
     editor.clearDirtyCount()
