@@ -15,7 +15,7 @@ export async function nativeBackend(context, initialDocument = emptyDocument()) 
       body: 'window.turnstile={render:()=>"test",remove:()=>{},reset:()=>{}}',
     }),
   )
-  let document = structuredClone(initialDocument)
+  let document = globalThis.structuredClone(initialDocument)
   let revision = 1
   const writes = []
   const fingerprint = () => createHash('md5').update(JSON.stringify(document)).digest('hex')

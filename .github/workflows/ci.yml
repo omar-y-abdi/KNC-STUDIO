@@ -98,6 +98,7 @@ jobs:
           status=0
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-populated.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-conflict.mjs || status=1
           exit "$status"
       - name: Preserve CMS browser evidence
         if: always()
