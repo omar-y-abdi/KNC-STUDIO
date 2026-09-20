@@ -33,7 +33,7 @@ export async function nativeBackend(context) {
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     }
     const reply = (value, status = 200) => route.fulfill({ status, headers, json: value })
-    if (request.method === 'OPTIONS') return route.fulfill({ status: 204, headers })
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     if (path === '/functions/v1/cms-studio') {
       const body = request.postDataJSON()
       if (body.operation === 'state')
