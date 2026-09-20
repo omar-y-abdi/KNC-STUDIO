@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
 import type { CmsAsset, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
@@ -38,7 +38,7 @@ function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] 
     { id: "'Inter Variable',Inter,system-ui,sans-serif", label: 'Inter' },
     { id: "'Playfair Display',Georgia,serif", label: 'Playfair Display' },
     ...assets
-      .filter((asset) => asset.mime === 'font/woff2' && !asset.archived)
+      .filter((asset) => asset.mime === 'font/woff2' && !asset.archived && !asset.trashed_at)
       .map((asset) => ({ id: `CMSFont-${asset.id}`, label: asset.name })),
   ]
 }
@@ -84,8 +84,18 @@ export function CmsEditor(props: Props): JSX.Element {
   const [advancedProperty, setAdvancedProperty] = useState('')
   const [advancedValue, setAdvancedValue] = useState('')
   const viewStates = useRef(new Map<string, CmsViewState>())
+  const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
+  const contextKey = `${props.page.id}:${props.lang}:${props.mode}`
+  const variant = props.page.content[props.lang]
+  const compareHost = useRef<HTMLDivElement>(null)
+  const [compareScale, setCompareScale] = useState(1)
+  const compareWidth = props.device === 'Desktop' ? 390 : 1440
+  const comparison = useMemo(
+    () => (props.compare ? nativeCanvas(variant, props.mode) : null),
+    [props.compare, variant.html, variant.css[props.mode], props.mode],
+  )
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!host.current) return
     const editor = grapesjs.init({
       container: host.current,
@@ -126,28 +136,39 @@ export function CmsEditor(props: Props): JSX.Element {
               },
         ),
       },
-      blockManager: { appendTo: '#cms-blocks', appendOnClick: true },
+      blockManager: {
+        appendTo: '#cms-blocks',
+        appendOnClick: (block, editor) => {
+          const wrapper = editor.getWrapper()
+          const surfaces = wrapper?.find('[data-knc-surface]') ?? []
+          let target = editor.getSelected()
+          while (
+            target &&
+            (target.get('droppable') === false ||
+              !['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav'].includes(
+                String(target.get('tagName')).toLowerCase(),
+              ))
+          )
+            target = target.parent()
+          target ??= surfaces.find((surface) => surface.getEl()?.getClientRects().length) ?? wrapper
+          if (!target || target.get('droppable') === false)
+            return latest.current.onError('Välj en redigerbar behållare i sidan först.')
+          const added = target.append(block.get('content'))
+          editor.select(added[0])
+        },
+      },
       deviceManager: {
         devices: [
           { id: 'Desktop', name: 'Desktop', width: '1440px' },
           { id: 'Mobile', name: 'Mobile', width: '390px', widthMedia: '768px' },
         ],
       },
-      assetManager: {
-        assets: latest.current.assets
-          .filter((asset) => asset.mime.startsWith('image/') && !asset.archived)
-          .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
-        upload: false,
-      },
+      assetManager: { assets: [], upload: false },
     })
     instance.current = editor
     for (const [id, blockLabel, content] of blocks)
       editor.BlockManager.add(id, { label: blockLabel, content })
 
-    const configure = (component: Component): void => {
-      configureComponent(component)
-      component.components().forEach(configure)
-    }
     editor.on('component:create', configureComponent)
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
@@ -180,8 +201,8 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     window.addEventListener('keydown', keydown)
     const remember = (): void => {
-      const current = latest.current
-      viewStates.current.set(current.page.id, captureViewState(editor))
+      if (!applying.current && rendered.current)
+        viewStates.current.set(rendered.current.pageId, captureViewState(editor))
     }
     editor.on('component:selected', remember)
     editor.on('canvas:scroll', remember)
@@ -189,7 +210,7 @@ export function CmsEditor(props: Props): JSX.Element {
     const flush = (): void => {
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = null
-      if (applying.current) return
+      if (applying.current || !editor.getDirtyCount()) return
       const current = latest.current
       const next = structuredClone(current.page)
       const exported = exportNativeCanvas(
@@ -197,13 +218,14 @@ export function CmsEditor(props: Props): JSX.Element {
         editor.getCss({ keepUnusedStyles: true }) ?? '',
         current.mode,
       )
-      const authoredCss = exported.css
       next.content[current.lang] = {
         html: exported.html,
-        css: {
-          ...next.content[current.lang].css,
-          [current.mode]: authoredCss,
-        },
+        css: { ...next.content[current.lang].css, [current.mode]: exported.css },
+      }
+      rendered.current = {
+        pageId: current.page.id,
+        key: `${current.page.id}:${current.lang}:${current.mode}`,
+        ...exported,
       }
       current.onChange(next)
       editor.clearDirtyCount()
@@ -214,6 +236,7 @@ export function CmsEditor(props: Props): JSX.Element {
       timer.current = window.setTimeout(flush, 180)
     }
     editor.on('update', schedule)
+    editor.Commands.add('tlb-clone', { run: () => duplicate() })
     editor.on('load', () => editor.clearDirtyCount())
     props.onReady({
       flush,
@@ -227,14 +250,6 @@ export function CmsEditor(props: Props): JSX.Element {
       },
     })
 
-    applying.current = true
-    const content = nativeCanvas(props.page.content[props.lang], props.mode)
-    editor.setComponents(content.html)
-    editor.setStyle(parseCanvasCss(content.css, editor))
-    editor.getWrapper()?.components().forEach(configure)
-    applying.current = false
-    editor.clearDirtyCount()
-
     return () => {
       if (timer.current !== null) window.clearTimeout(timer.current)
       props.onReady(null)
@@ -244,22 +259,52 @@ export function CmsEditor(props: Props): JSX.Element {
     }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = instance.current
     if (!editor) return
+    const previous = rendered.current
+    if (
+      previous?.key === contextKey &&
+      previous.html === variant.html &&
+      previous.css === variant.css[props.mode]
+    )
+      return
+    if (previous) viewStates.current.set(previous.pageId, captureViewState(editor))
     const previousState = viewStates.current.get(props.page.id)
+    if (timer.current !== null) window.clearTimeout(timer.current)
+    timer.current = null
     applying.current = true
-    const content = nativeCanvas(props.page.content[props.lang], props.mode)
+    const content = nativeCanvas(variant, props.mode)
+    editor.select()
+    setSelected(null)
     editor.setComponents(content.html)
     editor.setStyle(parseCanvasCss(content.css, editor))
-    editor
-      .getWrapper()
-      ?.components()
-      .forEach((component: Component) => configureComponent(component))
+    const configure = (component: Component): void => {
+      configureComponent(component)
+      component.components().forEach(configure)
+    }
+    editor.getWrapper()?.components().forEach(configure)
+    editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
+    rendered.current = {
+      pageId: props.page.id,
+      key: contextKey,
+      html: variant.html,
+      css: variant.css[props.mode],
+    }
     applying.current = false
     editor.clearDirtyCount()
     if (previousState) restoreViewState(editor, previousState)
-  }, [props.page.id, props.lang, props.mode])
+  }, [contextKey, variant.html, variant.css[props.mode]])
+
+  useLayoutEffect(() => {
+    const host = compareHost.current
+    if (!host) return
+    const resize = (): void => setCompareScale(Math.min(1, host.clientWidth / compareWidth))
+    resize()
+    const observer = new ResizeObserver(resize)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [props.compare, compareWidth])
 
   useEffect(() => {
     const editor = instance.current
@@ -281,7 +326,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.AssetManager.clear()
     editor.AssetManager.add(
       props.assets
-        .filter((asset) => asset.mime.startsWith('image/') && !asset.archived)
+        .filter((asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at)
         .map((asset) => ({ src: mediaUrl(asset, SUPABASE_URL ?? ''), name: asset.name })),
     )
   }, [props.assets])
@@ -324,7 +369,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const duplicate = (): void =>
     mutateSelected((component) => {
       if (isProtected(component) || component.get('copyable') === false)
-        return props.onError('Det valda funktionsblocket kan inte dupliceras.')
+        return latest.current.onError('Det valda funktionsblocket kan inte dupliceras.')
       const copy = cloneComponent(component)
       component.parent()?.append(copy, { at: component.index() + 1 })
       instance.current?.select(copy)
@@ -337,16 +382,24 @@ export function CmsEditor(props: Props): JSX.Element {
   return (
     <>
       <div class="cms-editor-canvas" ref={host} />
-      {props.compare && (
+      {comparison && (
         <div class="cms-compare-pane">
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
           </div>
-          <iframe
-            title="Jämförelsevy"
-            sandbox=""
-            srcDoc={`<!doctype html><html><head><style>html,body{margin:0}${props.page.content[props.lang].css[props.mode]}</style></head><body>${props.page.content[props.lang].html}</body></html>`}
-          />
+          <div ref={compareHost} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <iframe
+              title="Jämförelsevy"
+              sandbox=""
+              style={{
+                width: `${compareWidth}px`,
+                height: `${100 / compareScale}%`,
+                transform: `scale(${compareScale})`,
+                transformOrigin: 'top left',
+              }}
+              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${comparison.css}</style></head><body>${comparison.html}</body></html>`}
+            />
+          </div>
         </div>
       )}
       <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper">
@@ -375,13 +428,20 @@ export function CmsEditor(props: Props): JSX.Element {
                 >
                   Förälder
                 </button>
-                <button type="button" disabled={isProtected(selected)} onClick={duplicate}>
+                <button
+                  type="button"
+                  disabled={isProtected(selected) || selected.get('copyable') === false}
+                  onClick={duplicate}
+                >
                   Duplicera
                 </button>
                 <button
                   type="button"
-                  disabled={isProtected(selected)}
-                  onClick={() => selected.remove()}
+                  disabled={isProtected(selected) || selected.get('removable') === false}
+                  onClick={() => {
+                    if (!isProtected(selected) && selected.get('removable') !== false)
+                      selected.remove()
+                  }}
                 >
                   Ta bort
                 </button>
@@ -391,7 +451,11 @@ export function CmsEditor(props: Props): JSX.Element {
                   Text
                   <textarea
                     value={selected.getEl()?.textContent ?? ''}
-                    onInput={(event) => selected.components(event.currentTarget.value)}
+                    onInput={(event) => {
+                      const text = document.createElement('span')
+                      text.textContent = event.currentTarget.value
+                      selected.components(text.innerHTML)
+                    }}
                   />
                 </label>
               )}

@@ -1,6 +1,7 @@
 import type { Component } from 'grapesjs'
 
 const controls = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
+const containers = new Set(['div', 'main', 'section', 'article', 'aside', 'header', 'footer', 'nav'])
 const svgLeaf = new Set([
   'path',
   'circle',
@@ -95,12 +96,14 @@ export const styleSectors = [
 ]
 
 export function isProtected(component: Component): boolean {
-  const id = String(component.getAttributes()['id'] ?? '')
-  if (protectedIds.has(id)) return true
   let current: Component | undefined = component
   while (current) {
     const attrs = current.getAttributes()
-    if (attrs['data-knc-slot'] || (current === component && attrs['data-knc-required'] === 'true'))
+    if (
+      protectedIds.has(String(attrs['id'] ?? '')) ||
+      attrs['data-knc-slot'] ||
+      (current === component && attrs['data-knc-required'] === 'true')
+    )
       return true
     current = current.parent()
   }
@@ -109,13 +112,18 @@ export function isProtected(component: Component): boolean {
 
 export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
+  const attrs = component.getAttributes()
   const protectedComponent = isProtected(component)
-  const retainedChildren = component.find('[data-knc-slot],[data-knc-required="true"]').length > 0
+  const retainedChildren =
+    component.find('[data-knc-slot],[data-knc-required="true"]').length > 0 ||
+    [...protectedIds].some((id) => component.find(`#${id}`).length > 0)
   component.set({
-    removable: !protectedComponent && !retainedChildren,
-    copyable: !protectedComponent && !retainedChildren,
-    draggable: !protectedComponent,
-    droppable: !protectedComponent,
+    removable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
+    copyable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
+    draggable: !protectedComponent && !attrs['data-knc-native'],
+    droppable:
+      !attrs['data-knc-native'] &&
+      (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag))),
     resizable: !protectedComponent && !controls.has(tag) && !svgLeaf.has(tag),
   })
 }

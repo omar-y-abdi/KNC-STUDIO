@@ -162,6 +162,7 @@ function safeAttribute(name: string, value: string): boolean {
 export function projectNativeTree(
   source: ReturnType<typeof nativeTree>,
   template: Element,
+  mode: CmsMode = 'light',
 ): ComponentChild {
   const identities = new Set<string>()
   for (const element of [
@@ -200,7 +201,10 @@ export function projectNativeTree(
       props['ref'] = original.ref
     } else {
       props['id'] = element.id || undefined
-      props['style'] = element.getAttribute('style') ?? ''
+      props['style'] =
+        (mode === 'dark' ? element.getAttribute('data-knc-dark') : null) ??
+        element.getAttribute('style') ??
+        ''
     }
     delete props['children']
     delete props['dangerouslySetInnerHTML']
@@ -249,7 +253,7 @@ export function useNativeSurface(
   return (
     <>
       {template && <style>{page?.content[lang].css[mode] ?? ''}</style>}
-      {template ? projectNativeTree(native, template) : native.tree}
+      {template ? projectNativeTree(native, template, mode) : native.tree}
     </>
   )
 }

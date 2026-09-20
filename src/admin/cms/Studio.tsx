@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
   type CmsAsset,
@@ -37,7 +37,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [, setVersion] = useState(0)
-  const [editorRevision, setEditorRevision] = useState(0)
   const [dialog, setDialog] = useState<
     'history' | 'resources' | 'business' | 'email' | 'delivery' | null
   >(null)
@@ -73,12 +72,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         )
       }
       setDraft(next)
-      if (seeded) {
-        saveBackup(document, loaded.revision, loaded.fingerprint)
+      if (seeded && !backup)
         setError(
-          'Kärnsidorna har skapats som ett opublicerat utkast. Granska och publicera när du är nöjd.',
+          'Originalwebbplatsen har lästs in som ett opublicerat utkast. Granska före publicering.',
         )
-      }
       setResources(loaded.assets)
       setVersion((value) => value + 1)
     } catch (reason) {
@@ -91,10 +88,19 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     void refresh()
   }, [])
 
+  useLayoutEffect(() => {
+    if (!draft) return
+    try {
+      if (draft.dirty) saveBackup(draft.document, draft.revision, draft.fingerprint)
+      else clearBackup()
+    } catch {
+      setError('Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.')
+    }
+  }, [draft?.document, draft?.revision, draft?.fingerprint])
+
   const commitDraft = (next: CmsDocument, group = ''): void => {
     if (!draft) return
     draft.change(next, group)
-    saveBackup(draft.document, draft.revision, draft.fingerprint)
     setVersion((value) => value + 1)
   }
   const replacePage = (page: CmsPage): void => {
@@ -119,7 +125,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         request.requestId,
       )
       draft.acknowledge(result.document, result.revision, result.fingerprint)
-      clearBackup()
       setVersion((value) => value + 1)
     } catch (reason) {
       const message =
@@ -138,7 +143,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           next.base = structuredClone(ensureCorePages(remote.document))
           setDraft(next)
           setVersion((value) => value + 1)
-          setEditorRevision((value) => value + 1)
           setError(
             merged.conflicts.length
               ? `Konflikt. Oberoende ändringar slogs ihop; ${merged.conflicts.length} område(n) kräver kontroll före ny publicering.`
@@ -153,6 +157,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }
   const openHistory = async (): Promise<void> => {
+    editor.current?.flush()
     setBusy(true)
     setError(null)
     try {
@@ -185,12 +190,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
   const importDraft = async (file: File): Promise<void> => {
     try {
+      editor.current?.flush()
       const parsed = JSON.parse(await file.text()) as unknown
       const checked = await cmsApi.validate(parsed as CmsDocument)
       const next = ensureCorePages(checked.document)
       commitDraft(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
-      setEditorRevision((value) => value + 1)
       setError('JSON-utkastet importerades och är ännu inte publicerat.')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'JSON-utkastet kunde inte importeras.')
@@ -198,13 +203,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   }
 
   const createPage = (): void => {
+    editor.current?.flush()
     const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
     if (
       !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
       /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
         path,
       ) ||
-      document.presentation.pages.some((item) => item.path === path)
+      draft.document.presentation.pages.some((item) => item.path === path)
     )
       return setError('Ange en unik, giltig adress som /hemsida.')
     const id = crypto.randomUUID()
@@ -227,7 +233,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         },
       },
     }
-    const next = structuredClone(document)
+    const next = structuredClone(draft.document)
     next.presentation.pages.push(created)
     commitDraft(next)
     setSelectedPage(id)
@@ -248,7 +254,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       data-inspector-open={mobilePanel === 'inspector'}
     >
       <header class="cms-topbar">
-        <button type="button" onClick={onExit}>
+        <button
+          type="button"
+          onClick={() => {
+            editor.current?.flush()
+            onExit()
+          }}
+        >
           ← Admin
         </button>
         <a href="/" target="_blank" rel="noreferrer">
@@ -283,7 +295,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => setDialog('resources')}>
+        <button
+          type="button"
+          onClick={() => {
+            editor.current?.flush()
+            setDialog('resources')
+          }}
+        >
           Resurser
         </button>
       </header>
@@ -356,11 +374,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 <button
                   type="button"
                   onClick={() => {
-                    const copy = structuredClone(page)
+                    editor.current?.flush()
+                    const current = draft.document.presentation.pages.find(
+                      (item) => item.id === page.id,
+                    )
+                    if (!current) return
+                    const copy = structuredClone(current)
                     copy.id = crypto.randomUUID()
                     copy.path = `${page.path}-kopia`
+                    while (draft.document.presentation.pages.some((item) => item.path === copy.path))
+                      copy.path += '-kopia'
                     copy.name = { sv: `${page.name.sv} kopia`, en: `${page.name.en} copy` }
-                    const next = structuredClone(document)
+                    const next = structuredClone(draft.document)
                     next.presentation.pages.push(copy)
                     commitDraft(next)
                     setSelectedPage(copy.id)
@@ -371,7 +396,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 <button
                   type="button"
                   onClick={() => {
-                    const next = structuredClone(document)
+                    editor.current?.flush()
+                    const next = structuredClone(draft.document)
                     next.presentation.pages = next.presentation.pages.filter(
                       (item) => item.id !== page.id,
                     )
@@ -402,6 +428,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button
             type="button"
             onClick={() => {
+              editor.current?.flush()
               setDialog('resources')
               setMobilePanel(null)
             }}
@@ -412,6 +439,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button
             type="button"
             onClick={() => {
+              editor.current?.flush()
               setDialog('business')
               setMobilePanel(null)
             }}
@@ -421,6 +449,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button
             type="button"
             onClick={() => {
+              editor.current?.flush()
               setDialog('email')
               setMobilePanel(null)
             }}
@@ -430,6 +459,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button
             type="button"
             onClick={() => {
+              editor.current?.flush()
               setDialog('delivery')
               setMobilePanel(null)
             }}
@@ -469,14 +499,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button
               type="button"
               aria-pressed={compare}
-              onClick={() => setCompare((value) => !value)}
+              onClick={() => {
+                editor.current?.flush()
+                setCompare((value) => !value)
+              }}
             >
               Jämför
             </button>
           </div>
           <div class="cms-editor-wrap">
             <CmsEditor
-              key={`${page.id}:${lang}:${mode}:${editorRevision}`}
               page={page}
               lang={lang}
               mode={mode}
@@ -522,10 +554,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           type="button"
           onClick={() => {
             editor.current?.flush()
-            if (draft.undo()) {
-              setVersion((v) => v + 1)
-              setEditorRevision((v) => v + 1)
-            }
+            if (draft.undo()) setVersion((v) => v + 1)
           }}
         >
           Ångra
@@ -533,10 +562,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           onClick={() => {
-            if (draft.redo()) {
-              setVersion((v) => v + 1)
-              setEditorRevision((v) => v + 1)
-            }
+            editor.current?.flush()
+            if (draft.redo()) setVersion((v) => v + 1)
           }}
         >
           Gör om
@@ -556,7 +583,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             editor.current?.flush()
             draft.revert()
             setVersion((v) => v + 1)
-            setEditorRevision((v) => v + 1)
           }}
         >
           Revert
@@ -564,14 +590,22 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button type="button" onClick={() => void openHistory()}>
           History
         </button>
-        <button type="button" aria-pressed={locked} onClick={() => setLocked((value) => !value)}>
+        <button
+          type="button"
+          aria-pressed={locked}
+          onClick={() => {
+            editor.current?.flush()
+            setLocked((value) => !value)
+          }}
+        >
           {locked ? 'Lås upp' : 'Lås vy'}
         </button>
         <button
           type="button"
           onClick={() => {
+            editor.current?.flush()
             const url = URL.createObjectURL(
-              new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }),
+              new Blob([JSON.stringify(draft.document, null, 2)], { type: 'application/json' }),
             )
             const link = window.document.createElement('a')
             link.href = url
@@ -654,16 +688,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                       void cmsApi
                         .revision(item.revision)
                         .then((old) => {
-                          const restored = new CmsDraft(
-                            ensureCorePages(old.document),
-                            draft.revision,
-                            draft.fingerprint,
-                          )
-                          restored.base = structuredClone(draft.base)
-                          restored.change(ensureCorePages(old.document))
-                          setDraft(restored)
-                          setVersion((v) => v + 1)
-                          setEditorRevision((v) => v + 1)
+                          commitDraft(ensureCorePages(old.document))
                           setDialog(null)
                         })
                         .catch((reason) =>
