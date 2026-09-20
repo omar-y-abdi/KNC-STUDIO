@@ -109,7 +109,7 @@ export function nativeTree(
         'div',
         {
           id: identity,
-          key: value.key ?? identity,
+          key: value.key ?? path,
           'data-knc-slot': identity,
           style: 'display:contents',
         },
@@ -124,7 +124,7 @@ export function nativeTree(
       {
         ...props,
         id: props['id'] ?? identity,
-        key: value.key ?? identity,
+        key: value.key ?? path,
         ref: value.ref,
         'data-knc-source': identity,
         ...(required ? { 'data-knc-required': 'true' } : {}),
