@@ -4,7 +4,7 @@
 // Supabase when configured, the local calendar adapter otherwise).
 
 import type { JSX } from 'preact'
-import { useContext, useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
 import { DEFAULT_BUSINESS, defaultClock } from '../config'
 import type { Clock } from '../config'
@@ -93,10 +93,10 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const setState = (
     u: Partial<BookingDraft> | ((s: BookingDraft) => Partial<BookingDraft>),
   ): void => setRaw((s) => ({ ...s, ...(typeof u === 'function' ? u(s) : u) }))
-  useEffect(() => {
+  useLayoutEffect(() => {
     const contact = props.initialContact
-    // Nonempty auto-fill still belongs to its verified profile. Only actual edits survive a
-    // profile switch/clear, including an intentionally emptied field.
+    // Synchronize before paint: deferred effects can expose the previous customer's auto-fill.
+    // Only actual edits survive a profile switch/clear, including an intentionally emptied field.
     setState((current) => ({
       form: {
         name: typedContact.current.name ? current.form.name : (contact?.name ?? ''),
