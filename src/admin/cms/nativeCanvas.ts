@@ -123,6 +123,6 @@ export function parseCanvasCss(
   }
   return editor.Parser.parseCss(generate(tree)).map((rule) => ({
     ...rule,
-    style: restore(rule.style ?? {}),
+    style: restore(rule['style'] ?? {}),
   }))
 }
