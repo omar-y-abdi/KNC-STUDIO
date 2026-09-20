@@ -118,10 +118,7 @@ for (const [engine, name] of [
           assert.equal(actual.color, expected, 'Compare must render the selected dark theme')
           await page.getByRole('button', { name: '390', exact: true }).click()
           await comparison.locator('[data-knc-surface="desktop-home"]').waitFor()
-          assert.equal(
-            await comparison.locator('html').evaluate(() => globalThis.innerWidth),
-            1440,
-          )
+          assert.equal(await comparison.locator('html').evaluate(() => globalThis.innerWidth), 1440)
         } else if (scenario === 'undo-redo') {
           await publish()
           await selectCopy()

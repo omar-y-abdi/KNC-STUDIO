@@ -94,7 +94,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       if (draft.dirty) saveBackup(draft.document, draft.revision, draft.fingerprint)
       else clearBackup()
     } catch {
-      setError('Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.')
+      setError(
+        'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.',
+      )
     }
   }, [draft?.document, draft?.revision, draft?.fingerprint])
 
@@ -382,7 +384,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     const copy = structuredClone(current)
                     copy.id = crypto.randomUUID()
                     copy.path = `${page.path}-kopia`
-                    while (draft.document.presentation.pages.some((item) => item.path === copy.path))
+                    while (
+                      draft.document.presentation.pages.some((item) => item.path === copy.path)
+                    )
                       copy.path += '-kopia'
                     copy.name = { sv: `${page.name.sv} kopia`, en: `${page.name.en} copy` }
                     const next = structuredClone(draft.document)
