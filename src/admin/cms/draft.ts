@@ -8,6 +8,7 @@ export class CmsDraft {
   undoStack: CmsDocument[] = []
   redoStack: CmsDocument[] = []
   pending: CmsSave | null = null
+  private submitted: CmsDocument | null = null
   private lastGroup = ''
   private lastChange = 0
 
@@ -66,21 +67,25 @@ export class CmsDraft {
   }
 
   beginSave(): CmsSave {
-    return (this.pending ??= {
+    const request = (this.pending ??= {
       document: structuredClone(this.document),
       baseRevision: this.revision,
       baseFingerprint: this.fingerprint,
       requestId: crypto.randomUUID(),
     })
+    // Editing invalidates a retry, not the snapshot of the request still in flight.
+    this.submitted = request.document
+    return request
   }
 
   acknowledge(document: CmsDocument, revision: number, fingerprint: string): void {
-    const currentEqualsSaved = same(this.document, this.pending?.document ?? document)
+    this.document = mergeCmsDocuments(this.submitted ?? document, this.document, document).document
     this.base = structuredClone(document)
-    if (currentEqualsSaved) this.document = structuredClone(document)
     this.revision = revision
     this.fingerprint = fingerprint
     this.pending = null
+    this.submitted = null
+    this.lastGroup = ''
   }
 }
 

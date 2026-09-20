@@ -126,6 +126,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         request.baseFingerprint,
         request.requestId,
       )
+      editor.current?.flush()
       draft.acknowledge(result.document, result.revision, result.fingerprint)
       setVersion((value) => value + 1)
     } catch (reason) {
