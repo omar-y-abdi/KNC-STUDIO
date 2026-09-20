@@ -12,6 +12,7 @@ export async function verifyNativeProjection(): Promise<string[]> {
   const host = document.createElement('div')
   document.body.replaceChildren(host)
   let rows = ['A']
+  let hours = 'Original hours'
   const checks: string[] = []
   const check = (condition: unknown, message: string): void => {
     if (!condition) throw new Error(message)
@@ -23,6 +24,14 @@ export async function verifyNativeProjection(): Promise<string[]> {
       <main>
         <p id="fixture-count">Clicks: {count}</p>
         <p id="fixture-removable">Owner may delete this paragraph</p>
+        <span id="fixture-live-hours">
+          <img src="/icons/clock.svg" alt="" />
+          {hours}
+        </span>
+        <span id="fixture-owned-hours">
+          <img src="/icons/clock.svg" alt="" />
+          {hours}
+        </span>
         <div id="fixture-roster">
           {rows.map((id) => (
             <button key={id} type="button" onClick={() => setCount((value) => value + 1)}>
@@ -96,6 +105,8 @@ export async function verifyNativeProjection(): Promise<string[]> {
   parsed.querySelector('#fixture-removable')?.remove()
   const barber = parsed.querySelector('#fixture-roster button')
   if (barber) barber.textContent = 'Owner barber A'
+  const ownedHours = parsed.querySelector('#fixture-owned-hours')?.lastChild
+  if (ownedHours) ownedHours.textContent = 'Owner hours'
   const edited = parsed.body.innerHTML
   const html = mergeModes(edited, edited)
   const css = `#${logo.id}{width:73px!important}#${gallery.id}{outline:3px solid rgb(12, 34, 56)!important}`
@@ -113,7 +124,20 @@ export async function verifyNativeProjection(): Promise<string[]> {
     },
   })
   rows = ['A', 'B']
+  hours = 'Updated live hours'
   await paint(false)
+  check(
+    host.querySelector('#fixture-live-hours')?.textContent === hours,
+    'Unedited mixed native text follows current runtime values',
+  )
+  check(
+    host.querySelector('#fixture-owned-hours')?.textContent === 'Owner hours',
+    'Owner-edited mixed text survives changed runtime values',
+  )
+  check(
+    host.querySelectorAll('#fixture-live-hours img, #fixture-owned-hours img').length === 2,
+    'Mixed text reconciliation retains native icons',
+  )
   check(
     Boolean(host.querySelector('img[alt="Owner logo description"]')),
     'Logo edit projects onto the existing live component',

@@ -82,6 +82,13 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const red = systemRed(dark)
   const port: ReviewsPort = props.port ?? defaultReviewsPort
   const sectionRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (previewPorts || window.location.pathname !== '/about') return
+    const frame = window.requestAnimationFrame(() =>
+      sectionRef.current?.scrollIntoView({ behavior: 'instant', block: 'start' }),
+    )
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
   const deferPublicData =
     props.port === undefined &&
     props.barbersPort === undefined &&

@@ -770,6 +770,7 @@ async function verifyCustomerBrowser() {
     VITE_SUPABASE_ANON_KEY: stack.ANON_KEY,
     VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
     CUSTOMER_GATEWAY_PROXY_URL: workerOrigin,
+    LOCAL_WORKER_DOCUMENTS: '1',
     LOCAL_HTTPS_KEY: key,
     LOCAL_HTTPS_CERT: cert,
   }

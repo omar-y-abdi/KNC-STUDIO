@@ -12,7 +12,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       const fixture = await import('/tools/e2e/cms-projection.tsx')
       return fixture.verifyNativeProjection()
     })
-    assert.equal(checks.length, 12)
+    assert.equal(checks.length, 15)
     await page.screenshot({ path: `/tmp/cms-native-${name}-component-projection.png` })
     console.log(`PASS ${name}: ${checks.join('; ')}`)
   } finally {

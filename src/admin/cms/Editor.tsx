@@ -390,6 +390,13 @@ export function CmsEditor(props: Props): JSX.Element {
   const attributes = selected?.getAttributes() ?? {}
   const tag = String(selected?.get('tagName') ?? '').toLowerCase()
   const textLike = selected && ['text', 'textnode', 'link'].includes(String(selected.get('type')))
+  const hasElementChildren = selected
+    ?.components()
+    .some((child: Component) => !child.is('textnode'))
+  const mixedTextNodes =
+    selected && hasElementChildren
+      ? selected.components().filter((child: Component) => child.is('textnode'))
+      : []
   const readOnly = selected ? isReadOnlyPreview(selected) : false
 
   return (
@@ -464,7 +471,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   Ta bort
                 </button>
               </div>
-              {textLike && (
+              {textLike && !hasElementChildren && (
                 <label>
                   Text
                   <textarea
@@ -477,6 +484,15 @@ export function CmsEditor(props: Props): JSX.Element {
                   />
                 </label>
               )}
+              {mixedTextNodes.map((node, index) => (
+                <label>
+                  {mixedTextNodes.length === 1 ? 'Text' : `Text ${index + 1}`}
+                  <textarea
+                    value={String(node.get('content') ?? '')}
+                    onInput={(event) => node.set('content', event.currentTarget.value)}
+                  />
+                </label>
+              ))}
               {tag === 'a' && (
                 <label>
                   Länk

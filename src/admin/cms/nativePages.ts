@@ -91,7 +91,10 @@ export function snapshotNative(root: Element, prefix: string): string {
         return identity ? [identity] : []
       }),
     )
-    if (node.children.length === 0) baseline['text'] = node.textContent ?? ''
+    baseline['text'] = [...node.childNodes]
+      .filter((child) => child.nodeType === 3)
+      .map((child) => child.textContent ?? '')
+      .join('')
     node.setAttribute('data-knc-baseline', JSON.stringify(baseline))
     node.setAttribute('data-knc-light', node.getAttribute('style') ?? '')
     node.removeAttribute('style')

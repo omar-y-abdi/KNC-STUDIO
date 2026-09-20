@@ -165,6 +165,27 @@ for (const [engine, name] of [
     )
     await live.screenshot({ path: `/tmp/cms-native-${name}-english-dark-reload.png` })
     console.log(`PASS populated ${name}: direct English/dark URL survives fresh public reload`)
+
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await live.setViewportSize(viewport)
+      await live.goto(`${base}/about`)
+      const aboutAtTop = () => {
+        const bounds = globalThis.document.getElementById('om-oss-heading')?.getBoundingClientRect()
+        return bounds && bounds.top >= 0 && bounds.top < 300
+      }
+      await live.waitForFunction(aboutAtTop)
+      await live.reload()
+      await live.waitForFunction(aboutAtTop)
+      await live.getByText('Fixture barber A', { exact: true }).waitFor()
+      await live.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
+      await live.screenshot({ path: `/tmp/cms-native-${name}-about-${viewport.width}-reload.png` })
+    }
+    console.log(
+      `PASS populated ${name}: direct About opens its existing section on desktop/mobile reload`,
+    )
   } catch (error) {
     failures.push(`${name}: ${error.message}`)
     console.error('POPULATED_OWNER_ERROR', error)

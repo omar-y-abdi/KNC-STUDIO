@@ -52,8 +52,9 @@ servers. It also signs in as a temporary owner, edits existing desktop/mobile co
 publishes through the real Edge Function, and runs customer scenarios with that published presentation.
 The gate checks authored copy after navigation and reload, restores its CMS changes, and deletes its
 temporary owner. It sends no provider email and rejects non-loopback database/API addresses. Logs and
-screenshots remain in the printed temporary directory. The frontend runs through Vite preview; CMS
-presentation and customer APIs run through the local Worker. This gate does not verify Worker SSR HTML.
+screenshots remain in the printed temporary directory. Vite preview provides the local TLS bridge;
+public page HTML, CMS presentation and customer APIs run through the actual Worker. The gate asserts
+both desktop/mobile edits in the initial Worker HTML before checking browser navigation and reload.
 
 For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`

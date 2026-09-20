@@ -49,6 +49,10 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
           ['mobile', '390'],
         ]) {
           await page.getByRole('button', { name: width, exact: true }).click()
+          await page.waitForFunction((expected) => {
+            const canvas = globalThis.document.querySelector('.gjs-frame')
+            return canvas && globalThis.getComputedStyle(canvas).width === `${expected}px`
+          }, width)
           await page.getByRole('button', { name: 'Fit', exact: true }).click()
           const surface = frame.locator(`[data-knc-surface="${device}-home"]`)
           await surface.waitFor({ state: 'visible' })
@@ -60,8 +64,9 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
                   ['DIV', 'P', 'SPAN'].includes(node.tagName) &&
                   !node.closest('[data-knc-slot]') &&
                   !node.hasAttribute('data-knc-required') &&
-                  node.children.length === 0 &&
-                  node.textContent.trim() &&
+                  [...node.childNodes].some(
+                    (child) => child.nodeType === 3 && child.textContent.trim(),
+                  ) &&
                   node.getBoundingClientRect().height > 0,
               )?.id,
           )
@@ -88,8 +93,18 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
         const home = stored.presentation.pages.find((item) => item.path === '/')
         assert.ok(home?.content.sv.html.includes(copy.desktop))
         assert.ok(home?.content.sv.html.includes(copy.mobile))
+        const initial = await page.request.get(`${origin}/`)
+        assert.equal(initial.status(), 200)
+        const html = await initial.text()
+        assert.ok(html.includes('id="cms-native-state"'), 'Worker native state is absent')
+        assert.ok(html.includes('data-cms-public="1"'), 'Worker did not render the public document')
+        const root = html.slice(html.indexOf('<div id="root"'))
+        assert.ok(root.includes(copy.desktop), 'Desktop edit is absent from Worker HTML')
+        assert.ok(root.includes(copy.mobile), 'Mobile edit is absent from Worker HTML')
         await page.screenshot({ path: join(work, 'cms-published-owner.png') })
-        console.log('CMS customer fixture published through the real owner UI, Edge and database.')
+        console.log(
+          'CMS customer fixture published through the real owner UI, Edge and database; Worker HTML contains both edits.',
+        )
       } catch (error) {
         console.error('CMS customer editor:', (await page.locator('body').innerText()).slice(-4000))
         await page.screenshot({ path: join(work, 'cms-owner-failure.png'), timeout: 3000 })

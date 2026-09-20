@@ -202,6 +202,7 @@ describe('local first-party transport boundaries', () => {
     vi.stubEnv('LOCAL_SUPABASE_URL', '')
     vi.stubEnv('LOCAL_HTTPS_KEY', '')
     vi.stubEnv('LOCAL_HTTPS_CERT', '')
+    vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '')
   })
   afterEach(() => vi.unstubAllEnvs())
 
@@ -265,6 +266,7 @@ describe('local first-party transport boundaries', () => {
       if (!address || typeof address === 'string') throw new Error('Expected TCP listener')
       vi.stubEnv('LOCAL_SUPABASE_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('CUSTOMER_GATEWAY_PROXY_URL', `http://127.0.0.1:${address.port}`)
+      vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '1')
       const config = await localTransportConfig()
       vite = await createViteServer({
         configFile: false,
@@ -293,6 +295,12 @@ describe('local first-party transport boundaries', () => {
         '/api/customer-bookings?x=1',
         '/api/cms/presentation',
         '/api/cms/presentation?x=1',
+        '/',
+        '/?lang=en&mode=dark',
+        '/about',
+        '/booking',
+        '/my-bookings?lang=en',
+        '/cms-public/source',
         `/${'a'.repeat(64)}`,
       ]) {
         const result = await fetch(`http://127.0.0.1:${server.port}${path}`, {
@@ -306,6 +314,10 @@ describe('local first-party transport boundaries', () => {
         '/api/customer-bookings/nested',
         '/api/cms/presentation-extra',
         '/api/cms/presentation/nested',
+        '/about-extra',
+        '/booking/private',
+        '/cms-public/source-extra',
+        '/admin/cms',
         '/rest/v1/private',
         '/other',
       ]) {

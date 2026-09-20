@@ -319,9 +319,35 @@ async function run(engine, name) {
       .first()
       .getByText('Owner edited the actual KNC site', { exact: true })
       .waitFor()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.getByRole('button', { name: '390', exact: true }).click()
+    await page.waitForFunction(() => {
+      const canvas = globalThis.document.querySelector('.gjs-frame')
+      return canvas && globalThis.getComputedStyle(canvas).width === '390px'
+    })
+    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    const mobileCopy = frame.locator(
+      '[data-knc-surface="mobile-home"] span:has(> img[src="/icons/clock.svg"])',
+    )
+    const clockId = await mobileCopy.locator('img').getAttribute('id')
+    await mobileCopy.click()
+    const editedHours = 'Owner mobile hours <today> & tomorrow'
+    await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(editedHours)
+    assert.equal(await mobileCopy.locator('img').getAttribute('id'), clockId)
+    await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+    await page.waitForFunction(() =>
+      globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
+    )
+    await live.setViewportSize({ width: 390, height: 844 })
+    await live.goto(base)
+    await live.getByText(editedHours, { exact: true }).waitFor()
+    await live.reload()
+    await live.getByText(editedHours, { exact: true }).waitFor()
+    assert.equal(await live.locator(`[id="${clockId}"]`).getAttribute('src'), '/icons/clock.svg')
+    await live.screenshot({ path: `/tmp/cms-native-${name}-mobile-copy.png` })
     assert.deepEqual(errors, [])
     console.log(
-      `PASS ${name}: actual layout, read-only source, real validation, edit, publish, reload, native booking, mobile canvas`,
+      `PASS ${name}: actual layout, read-only source, real validation, edit, publish, reload, native booking, mobile canvas, mobile text/icon preservation`,
     )
   } catch (error) {
     console.error('EDITOR_BODY', (await page.locator('body').innerText()).slice(0, 5000))

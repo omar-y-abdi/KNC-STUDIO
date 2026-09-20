@@ -290,11 +290,34 @@ export function projectNativeTree(
     }
     delete props['children']
     delete props['dangerouslySetInnerHTML']
-    const unchangedText =
-      original && element.children.length === 0 && before['text'] === element.textContent
-    const children = unchangedText
-      ? childrenOf(original.props['children'] as ComponentChildren)
-      : [...element.childNodes].map(visit)
+    const directText = [...element.childNodes]
+      .filter((child) => child.nodeType === 3)
+      .map((child) => child.textContent ?? '')
+      .join('')
+    const unchangedText = original && before['text'] === directText
+    const liveText = ['']
+    const readText = (value: ComponentChild): void => {
+      if (isValidElement(value)) {
+        if (value.type === Fragment) childrenOf(value.props.children).forEach(readText)
+        else liveText.push('')
+      } else if (typeof value === 'string' || typeof value === 'number') {
+        liveText[liveText.length - 1] += String(value)
+      }
+    }
+    if (unchangedText) childrenOf(original.props['children'] as ComponentChildren).forEach(readText)
+    let gap = 0
+    const children =
+      unchangedText && element.children.length === 0
+        ? childrenOf(original.props['children'] as ComponentChildren)
+        : [...element.childNodes].map((child) => {
+            if (child.nodeType === 1) gap++
+            if (child.nodeType === 3 && unchangedText) {
+              const text = liveText[gap] ?? ''
+              liveText[gap] = ''
+              return text
+            }
+            return visit(child)
+          })
     // Newly loaded entities and conditional runtime UI must not be frozen by an old snapshot.
     // The original child list distinguishes them from presentation children the owner removed.
     const previousChildren = baselineChildren(element)
