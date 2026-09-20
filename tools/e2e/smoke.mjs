@@ -12,6 +12,9 @@ import { customerCmsFixture } from './cms-customer.mjs'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
+// Playwright allows 30 seconds for graceful process shutdown before forcing cleanup.
+// The outer bound must let that cleanup finish; action/page/context waits remain unchanged.
+const BROWSER_CLOSE_TIMEOUT = 45_000
 const WATCHDOG_TIMEOUT = 180_000
 let currentPhase = 'startup'
 
@@ -38,6 +41,16 @@ async function bounded(promise, label, timeout = WAIT_TIMEOUT) {
   } finally {
     globalThis.clearTimeout(timer)
   }
+}
+
+async function closeBrowser(browser, label) {
+  phase(label)
+  const started = globalThis.performance.now()
+  await bounded(browser.close(), label, BROWSER_CLOSE_TIMEOUT)
+  assert(!browser.isConnected(), `${label} left the browser connected`)
+  console.log(
+    `${label} completed in ${Math.round(globalThis.performance.now() - started)}ms; disconnected`,
+  )
 }
 
 async function runCdpTouchSequence(client, label, startPoint, movePoints) {
@@ -1587,7 +1600,7 @@ async function verifyCustomerBrowser() {
           }
       } finally {
         try {
-          await bounded(browser.close(), `customer ${engine.name()} browser.close`)
+          await closeBrowser(browser, `customer ${engine.name()} browser.close`)
         } catch (error) {
           retainFailure(error)
         }
@@ -1677,7 +1690,7 @@ try {
   if (browser !== undefined) {
     try {
       phase('browser cleanup')
-      await bounded(browser.close(), 'browser.close')
+      await closeBrowser(browser, 'browser.close')
     } catch (error) {
       writeSync(
         2,

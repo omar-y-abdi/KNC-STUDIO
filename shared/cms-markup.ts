@@ -301,6 +301,7 @@ export function validateMarkup(
                   'alt',
                   'aria-label',
                   'text',
+                  'textGaps',
                   'children',
                 ].includes(key) ||
                 typeof item !== 'string'

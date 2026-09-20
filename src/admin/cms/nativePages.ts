@@ -95,6 +95,12 @@ export function snapshotNative(root: Element, prefix: string): string {
       .filter((child) => child.nodeType === 3)
       .map((child) => child.textContent ?? '')
       .join('')
+    const textGaps = [false]
+    for (const child of node.childNodes) {
+      if (child.nodeType === 1) textGaps.push(false)
+      else if (child.nodeType === 3 && child.textContent) textGaps[textGaps.length - 1] = true
+    }
+    baseline['textGaps'] = JSON.stringify(textGaps)
     node.setAttribute('data-knc-baseline', JSON.stringify(baseline))
     node.setAttribute('data-knc-light', node.getAttribute('style') ?? '')
     node.removeAttribute('style')

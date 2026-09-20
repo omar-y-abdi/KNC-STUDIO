@@ -32,6 +32,18 @@ export async function verifyNativeProjection(): Promise<string[]> {
           <img src="/icons/clock.svg" alt="" />
           {hours}
         </span>
+        <span id="fixture-deleted-icon">
+          <img src="/icons/clock.svg" alt="" />
+          {hours}
+        </span>
+        <span id="fixture-inserted-child">
+          <img src="/icons/clock.svg" alt="" />
+          {hours}
+        </span>
+        <span id="fixture-reordered-icons">
+          <img src="/icons/clock.svg" alt="" />
+          {hours}
+        </span>
         <div id="fixture-roster">
           {rows.map((id) => (
             <button key={id} type="button" onClick={() => setCount((value) => value + 1)}>
@@ -107,6 +119,13 @@ export async function verifyNativeProjection(): Promise<string[]> {
   if (barber) barber.textContent = 'Owner barber A'
   const ownedHours = parsed.querySelector('#fixture-owned-hours')?.lastChild
   if (ownedHours) ownedHours.textContent = 'Owner hours'
+  parsed.querySelector('#fixture-deleted-icon img')?.remove()
+  const inserted = parsed.createElement('b')
+  inserted.textContent = 'Inserted'
+  const insertedParent = parsed.querySelector('#fixture-inserted-child')
+  if (insertedParent) insertedParent.insertBefore(inserted, insertedParent.lastChild)
+  const reordered = parsed.querySelector('#fixture-reordered-icons')
+  if (reordered?.firstChild) reordered.appendChild(reordered.firstChild)
   const edited = parsed.body.innerHTML
   const html = mergeModes(edited, edited)
   const css = `#${logo.id}{width:73px!important}#${gallery.id}{outline:3px solid rgb(12, 34, 56)!important}`
@@ -137,6 +156,22 @@ export async function verifyNativeProjection(): Promise<string[]> {
   check(
     host.querySelectorAll('#fixture-live-hours img, #fixture-owned-hours img').length === 2,
     'Mixed text reconciliation retains native icons',
+  )
+  check(
+    !host.querySelector('#fixture-deleted-icon img') &&
+      host.querySelector('#fixture-deleted-icon')?.textContent === 'Original hours',
+    'Owner-deleted icons stay deleted without losing unchanged caption text',
+  )
+  check(
+    host.querySelector('#fixture-inserted-child')?.textContent === 'InsertedOriginal hours',
+    'An owner-inserted child does not erase adjacent unchanged text',
+  )
+  check(
+    host.querySelector('#fixture-reordered-icons')?.textContent === 'Original hours' &&
+      host.querySelector('#fixture-reordered-icons')?.firstChild?.nodeType === 3 &&
+      host.querySelector('#fixture-reordered-icons img')?.getAttribute('src') ===
+        '/icons/clock.svg',
+    'Owner-reordered icons retain their order and unchanged caption text',
   )
   check(
     Boolean(host.querySelector('img[alt="Owner logo description"]')),

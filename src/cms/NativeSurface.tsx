@@ -296,22 +296,44 @@ export function projectNativeTree(
       .join('')
     const unchangedText = original && before['text'] === directText
     const liveText = ['']
+    const liveElements: unknown[] = []
     const readText = (value: ComponentChild): void => {
       if (isValidElement(value)) {
         if (value.type === Fragment) childrenOf(value.props.children).forEach(readText)
-        else liveText.push('')
+        else {
+          liveText.push('')
+          const childProps = value.props as Record<string, unknown>
+          liveElements.push(childProps['data-knc-source'] ?? childProps['data-knc-slot'])
+        }
       } else if (typeof value === 'string' || typeof value === 'number') {
         liveText[liveText.length - 1] += String(value)
       }
     }
     if (unchangedText) childrenOf(original.props['children'] as ComponentChildren).forEach(readText)
+    const templateElements = [...element.children].map(
+      (child) => child.getAttribute('data-knc-source') ?? child.getAttribute('data-knc-slot'),
+    )
+    const textGaps = [false]
+    for (const child of element.childNodes) {
+      if (child.nodeType === 1) textGaps.push(false)
+      else if (child.nodeType === 3 && child.textContent) textGaps[textGaps.length - 1] = true
+    }
+    // Owner insertion/deletion/reorder changes gap positions. Preserve authored children then;
+    // substituting by the old source position could erase text or resurrect a removed icon.
+    const bothLeaves = templateElements.length === 0 && liveElements.length === 0
+    const alignedText =
+      unchangedText &&
+      (bothLeaves ||
+        (templateElements.length === liveElements.length &&
+          templateElements.every((id, index) => id === liveElements[index]) &&
+          before['textGaps'] === JSON.stringify(textGaps)))
     let gap = 0
     const children =
-      unchangedText && element.children.length === 0
+      alignedText && bothLeaves
         ? childrenOf(original.props['children'] as ComponentChildren)
         : [...element.childNodes].map((child) => {
             if (child.nodeType === 1) gap++
-            if (child.nodeType === 3 && unchangedText) {
+            if (child.nodeType === 3 && alignedText) {
               const text = liveText[gap] ?? ''
               liveText[gap] = ''
               return text
