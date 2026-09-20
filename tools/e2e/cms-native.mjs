@@ -33,7 +33,7 @@ export async function nativeBackend(context) {
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     }
     const reply = (value, status = 200) => route.fulfill({ status, headers, json: value })
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
+    if (request.method === 'OPTIONS') return route.fulfill({ status: 204, headers })
     if (path === '/functions/v1/cms-studio') {
       const body = request.postDataJSON()
       if (body.operation === 'state')
@@ -110,16 +110,20 @@ async function run(engine, name) {
   const appearance = (locator) =>
     locator.evaluate((node) => {
       const style = globalThis.getComputedStyle(node)
-      return Object.fromEntries(
-        [
-          'color',
-          'font-family',
-          'font-size',
-          'font-weight',
-          'letter-spacing',
-          'text-transform',
-        ].map((key) => [key, style.getPropertyValue(key)]),
-      )
+      return {
+        ...Object.fromEntries(
+          [
+            'width',
+            'color',
+            'font-family',
+            'font-size',
+            'font-weight',
+            'letter-spacing',
+            'text-transform',
+          ].map((key) => [key, style.getPropertyValue(key)]),
+        ),
+        parentPadding: globalThis.getComputedStyle(node.parentElement).padding,
+      }
     })
   const fitCanvas = async () => {
     await page.getByRole('button', { name: 'Fit', exact: true }).click()
@@ -192,7 +196,7 @@ async function run(engine, name) {
     assert.deepEqual(
       await appearance(frame.getByText('KNC source sv', { exact: true }).first()),
       desktopAppearance,
-      'The desktop canvas must retain the actual site typography and color',
+      'The desktop canvas must retain the actual site layout and typography',
     )
     assert.equal(await frame.getByText('Klipp.').count(), 0)
     assert.equal(await frame.locator('[data-knc-surface="desktop-home"]').count(), 1)
@@ -287,7 +291,7 @@ async function run(engine, name) {
           .getByRole('button', { name: 'Boka tid', exact: true }),
       ),
       mobileAppearance,
-      'The mobile canvas must retain the actual site typography and color',
+      'The mobile canvas must retain the actual site layout and typography',
     )
     await fitCanvas()
     await page.screenshot({ path: `/tmp/cms-native-${name}-mobile.png` })
