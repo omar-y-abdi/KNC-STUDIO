@@ -1440,3 +1440,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Device switches are geometry changes, not animation; keep Fit and hit targets stable. */
+.knc-cms-studio .gjs-frame-wrapper--anim {
+  transition: none;
+}

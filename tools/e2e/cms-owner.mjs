@@ -784,6 +784,10 @@ for (const [engine, name] of [
           await comparison.locator('[data-knc-surface="desktop-home"]').waitFor()
           assert.equal(await comparison.locator('html').evaluate(() => globalThis.innerWidth), 1440)
           await frame.locator('[data-knc-surface="mobile-home"]').waitFor({ state: 'visible' })
+          await page.waitForFunction(() => {
+            const frame = globalThis.document.querySelector('iframe.gjs-frame')
+            return frame?.contentWindow?.innerWidth === 390
+          })
           assert.equal(
             await frame.locator('html').evaluate(() => globalThis.innerWidth),
             390,
