@@ -36,6 +36,19 @@ function purposeOf(asset: CmsAsset): { purpose: Purpose; barberId?: string } {
   return { purpose: 'library' }
 }
 
+function resourceLabel(asset: CmsAsset): string {
+  const filename = asset.name.split('/').at(-1) ?? asset.name
+  if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}\.[a-z0-9]+$/i.test(filename)) return filename
+  const names = {
+    library: 'Bild',
+    salon: 'Salongsbild',
+    cuts: 'Klippbild',
+    logo: 'Logotyp',
+    profile: 'Profilbild',
+  }
+  return asset.alt.trim() || `${names[purposeOf(asset).purpose]} · ${asset.id.slice(0, 4)}`
+}
+
 interface Props {
   assets: CmsAsset[]
   document: CmsDocument
@@ -290,7 +303,7 @@ export function CmsResources(props: Props): JSX.Element {
                   ) : (
                     <span class="cms-font-preview">Aa</span>
                   )}
-                  <strong title={item.name}>{item.name.split('/').at(-1)}</strong>
+                  <strong title={item.name}>{resourceLabel(item)}</strong>
                   <small>
                     {item.width && item.height ? `${item.width} × ${item.height} · ` : ''}
                     {item.mime.split('/')[1]?.toUpperCase()}
@@ -302,7 +315,7 @@ export function CmsResources(props: Props): JSX.Element {
         </div>
         {asset ? (
           <aside class="cms-resource-detail">
-            <h2>{asset.name}</h2>
+            <h2>{resourceLabel(asset)}</h2>
             <label>
               Namn
               <input

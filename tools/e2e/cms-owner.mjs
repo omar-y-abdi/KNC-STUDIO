@@ -526,6 +526,11 @@ for (const [engine, name] of [
           await publicButton.click()
           await live.getByRole('button', { name: 'Spara val', exact: true }).waitFor()
         } else if (scenario === 'dialogs') {
+          await selectCopy()
+          const originalTranslate = await frame
+            .getByText('KNC source sv', { exact: true })
+            .first()
+            .evaluate((node) => globalThis.getComputedStyle(node).translate)
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })
             for (const [trigger, title] of [
@@ -544,6 +549,17 @@ for (const [engine, name] of [
               await button.click()
               const surface = page.getByRole('region', { name: title, exact: true })
               await surface.waitFor()
+              if (title === 'Bilder & typsnitt') {
+                await surface.getByLabel('Användning vid uppladdning').press('ArrowDown')
+                assert.equal(
+                  await frame
+                    .getByText('KNC source sv', { exact: true })
+                    .first()
+                    .evaluate((node) => globalThis.getComputedStyle(node).translate),
+                  originalTranslate,
+                  'Workspace keyboard input must never nudge a hidden selected page element',
+                )
+              }
               if (title === 'Leveransstatus') {
                 assert.equal(
                   await surface.getByRole('link').getAttribute('href'),
@@ -605,6 +621,10 @@ for (const [engine, name] of [
             await modal.waitFor({ state: 'detached' })
           }
         } else if (scenario === 'custom-page-styles') {
+          const languageColor = await frame
+            .locator('[data-knc-surface="desktop-home"]')
+            .getByRole('button', { name: 'SV', exact: true })
+            .evaluate((node) => globalThis.getComputedStyle(node).color)
           const library = page.locator('#cms-library')
           await library.getByRole('button', { name: '+ Ny sida', exact: true }).click()
           await page
@@ -613,6 +633,14 @@ for (const [engine, name] of [
             .click()
           const main = frame.locator('main')
           await frame.locator('#cms-site-header svg[role="img"]').waitFor()
+          assert.equal(
+            await frame
+              .locator('#cms-site-header')
+              .getByRole('link', { name: 'SV', exact: true })
+              .evaluate((node) => globalThis.getComputedStyle(node).color),
+            languageColor,
+            'Converting header controls to links must retain their original contrast',
+          )
           assert.equal(
             await frame.locator('h1').count(),
             1,

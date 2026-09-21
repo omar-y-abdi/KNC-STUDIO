@@ -237,11 +237,17 @@ export function CmsEditor(props: Props): JSX.Element {
         component.set('editable', true)
     })
     const keydown = (event: KeyboardEvent): void => {
-      if (latest.current.locked) return
+      if (latest.current.locked || host.current?.closest('[inert]')) return
       if (document.querySelector('dialog:modal')) return
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      )
+        return
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
       const component = editor.getSelected()
       if (!component || isProtected(component) || isReadOnlyPreview(component)) return
