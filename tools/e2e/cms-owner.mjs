@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { chromium, webkit } from 'playwright'
 import { nativeBackend } from './cms-native.mjs'
+import { emptyDocument, EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 const failures = []
@@ -13,7 +14,15 @@ const scenarios = [
   'literal-text',
   'undo-redo',
   'edit-during-save',
-]
+  'dialogs',
+  'custom-page-styles',
+  'logos',
+  'privacy-appearance',
+  'logo-replacement',
+  'legacy-preview-repair',
+].filter(
+  (scenario) => !process.env.CMS_OWNER_SCENARIO || scenario === process.env.CMS_OWNER_SCENARIO,
+)
 
 for (const [engine, name] of [
   [chromium, 'chromium'],
@@ -28,7 +37,50 @@ for (const [engine, name] of [
         reducedMotion: 'reduce',
       })
       context.setDefaultTimeout(10000)
-      const backend = await nativeBackend(context)
+      const seed = emptyDocument()
+      if (scenario === 'dialogs') {
+        seed.emails = EMAIL_NAMES.flatMap((template) =>
+          ['sv', 'en'].map((lang) => ({
+            template,
+            lang,
+            subject: 'Ditt besök hos Blade & Blend',
+            preheader: 'Information om din bokning',
+            title: 'Välkommen till salongen',
+            intro: 'Här hittar du uppgifterna för ditt besök.',
+            section_title: 'Bokningsuppgifter',
+            note: 'Kontakta salongen om du har frågor.',
+            cta_label: 'Visa bokningen',
+            contact_lead: 'Hör av dig till salongen.',
+            design: defaultEmailDesign(),
+          })),
+        )
+      }
+      const assets =
+        scenario === 'logo-replacement'
+          ? [
+              {
+                id: '22222222-2222-4222-8222-222222222222',
+                bucket: 'gallery',
+                path: 'logo/22222222-2222-4222-8222-222222222222.webp',
+                name: 'Ny logotyp',
+                alt: 'Vald logotyp',
+                mime: 'image/webp',
+                bytes: 100,
+                width: 300,
+                height: 200,
+                archived: false,
+                version: 1,
+              },
+            ]
+          : []
+      const backend = await nativeBackend(context, seed, assets)
+      if (assets.length)
+        await context.route('**/storage/v1/object/public/**', (route) =>
+          route.fulfill({
+            contentType: 'image/png',
+            path: 'public/og-image.png',
+          }),
+        )
       const page = await context.newPage()
       const frame = page.frameLocator('.gjs-frame').first()
       const inspector = page.locator('#cms-inspector')
@@ -57,7 +109,238 @@ for (const [engine, name] of [
       }
       try {
         await mount()
-        if (scenario === 'duplicate') {
+        if (scenario === 'logo-replacement') {
+          const logo = frame.locator('[data-knc-surface="desktop-home"] svg[role="img"]').first()
+          const id = await logo.getAttribute('id')
+          await logo.click({ position: { x: 3, y: 3 } })
+          await inspector
+            .getByRole('button', { name: 'Byt logotyp från biblioteket', exact: true })
+            .click()
+          const picker = page.getByRole('dialog', { name: 'Välj bild', exact: true })
+          assert.equal(await picker.evaluate((node) => node.matches(':modal')), true)
+          await picker.getByRole('button', { name: 'Vald logotyp Ny logotyp', exact: true }).click()
+          await picker.waitFor({ state: 'detached' })
+          await publish()
+          const live = await context.newPage()
+          await live.goto(base)
+          await live.getByAltText('Vald logotyp', { exact: true }).waitFor()
+          await live.reload()
+          await live.getByAltText('Vald logotyp', { exact: true }).waitFor()
+          assert.equal(await live.locator(`[id="${id}"]`).evaluate((node) => node.localName), 'img')
+        } else if (scenario === 'legacy-preview-repair') {
+          const result = await page.evaluate(async () => {
+            const { emptyDocument } = await import('/shared/cms.ts')
+            const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
+            const oldHtml =
+              '<div data-knc-native="1"><p data-knc-source="owned">Owner text</p><div data-knc-slot="opaque"><img src="/og-image.png"></div></div>'
+            const sourceHtml =
+              '<div data-knc-native="1"><p data-knc-source="owned">Source text</p><div data-knc-slot="opaque"><img src="/og-image.png" data-knc-baseline="{}" data-knc-light="width:210px"></div></div>'
+            const variant = (html) => ({ html, css: { light: '', dark: '' } })
+            const page = {
+              id: '10000000-0000-4000-8000-000000000001',
+              path: '/',
+              kind: 'page',
+              name: { sv: 'Hem', en: 'Home' },
+              title: { sv: '', en: '' },
+              description: { sv: '', en: '' },
+              inMenu: true,
+              content: { sv: variant(oldHtml), en: variant(oldHtml) },
+            }
+            const document = emptyDocument()
+            document.presentation.pages = [page]
+            const source = [
+              { ...page, content: { sv: variant(sourceHtml), en: variant(sourceHtml) } },
+            ]
+            const repaired = ensureCorePages(document, source)
+            return {
+              html: repaired.presentation.pages[0].content.sv.html,
+              stable:
+                JSON.stringify(ensureCorePages(repaired, source)) === JSON.stringify(repaired),
+              originalUntouched: document.presentation.pages[0].content.sv.html === oldHtml,
+            }
+          })
+          assert.ok(result.html.includes('Owner text') && !result.html.includes('Source text'))
+          assert.ok(result.html.includes('width:210px'))
+          assert.ok(result.stable && result.originalUntouched)
+        } else if (scenario === 'logos') {
+          const edits = []
+          for (const [device, title, selector, text] of [
+            ['1440', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'BNB'],
+            ['1440', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'STUDIO'],
+            ['390', 'Startsida', '[data-knc-surface="mobile-home"] svg text', 'STUDIO'],
+            ['390', 'Bokning', '[data-knc-surface="mobile-booking"] svg text', 'BNB'],
+          ]) {
+            await page
+              .locator('#cms-library')
+              .getByRole('button', { name: title, exact: true })
+              .click()
+            await page.getByRole('button', { name: device, exact: true }).click()
+            await page.getByRole('button', { name: 'Fit', exact: true }).click()
+            const lettering = frame
+              .locator(selector)
+              .filter({ hasText: text === 'BNB' ? /^BNB$/ : /^STUDIO$/ })
+              .first()
+            const id = await lettering.getAttribute('id')
+            const replacement = `${text} ${edits.length + 1}`
+            const logo = await lettering.evaluate((node) => ({
+              id: node.ownerSVGElement.id,
+              textIndex: [...node.ownerSVGElement.querySelectorAll('text')].indexOf(node) + 1,
+            }))
+            await frame.locator(`[id="${logo.id}"]`).click({ position: { x: 3, y: 3 } })
+            await inspector
+              .getByLabel(`Logotyptext ${logo.textIndex}`, { exact: true })
+              .fill(replacement)
+            const advanced = inspector.locator('.cms-advanced')
+            if ((await advanced.getAttribute('open')) === null)
+              await advanced.locator('summary').click()
+            await advanced.getByLabel('Egenskap', { exact: true }).fill('fill')
+            await advanced.getByLabel('Värde', { exact: true }).fill('rgb(100, 30, 60)')
+            await advanced.getByRole('button', { name: 'Tillämpa', exact: true }).click()
+            await publish()
+            edits.push({ id, replacement, device, title })
+          }
+          const live = await context.newPage()
+          for (const { id, replacement, device, title } of edits) {
+            await live.setViewportSize({ width: Number(device), height: 900 })
+            await live.goto(`${base}${title === 'Bokning' ? '/booking' : '/'}`)
+            await live.locator(`[id="${id}"]`).filter({ hasText: replacement }).waitFor()
+            await live.reload()
+            const lettering = live.locator(`[id="${id}"]`).filter({ hasText: replacement })
+            await lettering.waitFor()
+            assert.equal(
+              await lettering.evaluate((node) => globalThis.getComputedStyle(node).fill),
+              'rgb(100, 30, 60)',
+            )
+          }
+        } else if (scenario === 'privacy-appearance') {
+          const button = frame
+            .getByRole('button', { name: 'Hantera integritetsinställningar', exact: true })
+            .first()
+          const style = (locator) =>
+            locator.evaluate((node) => {
+              const css = globalThis.getComputedStyle(node)
+              return Object.fromEntries(
+                [
+                  'position',
+                  'border-radius',
+                  'padding',
+                  'font-size',
+                  'background-color',
+                  'color',
+                ].map((key) => [key, css.getPropertyValue(key)]),
+              )
+            })
+          const preview = await style(button)
+          assert.equal(preview.position, 'absolute')
+          assert.equal(preview['border-radius'], '999px')
+          await selectCopy()
+          await inspector.getByLabel('Text', { exact: true }).fill('Privacy style parity')
+          await publish()
+          const live = await context.newPage()
+          await live.goto(base)
+          await live.getByRole('button', { name: 'Avvisa valfri lagring', exact: true }).click()
+          const publicButton = live.getByRole('button', {
+            name: 'Hantera integritetsinställningar',
+            exact: true,
+          })
+          await publicButton.waitFor()
+          assert.deepEqual(
+            await style(publicButton),
+            preview,
+            'Preview and actual privacy control must have the same styling',
+          )
+          await publicButton.click()
+          await live.getByRole('button', { name: 'Spara val', exact: true }).waitFor()
+        } else if (scenario === 'dialogs') {
+          for (const width of [1440, 390]) {
+            await page.setViewportSize({ width, height: 900 })
+            for (const [trigger, title] of [
+              ['Resurser', 'Resurser'],
+              ['Business / SEO', 'Business / SEO'],
+              ['Mejl', 'Mejl'],
+              ['Leveransstatus ↗', 'Leveransstatus'],
+              ['History', 'Historik'],
+            ]) {
+              if (width === 390 && ['Business / SEO', 'Mejl', 'Leveransstatus ↗'].includes(trigger))
+                await page.getByRole('button', { name: 'Sidor', exact: true }).click()
+              const button = page.getByRole('button', { name: trigger, exact: true })
+              await button.click()
+              const modal = page.locator('dialog.cms-dialog')
+              await modal.waitFor()
+              const state = await modal.evaluate((dialog) => {
+                const bounds = dialog.getBoundingClientRect()
+                const body = dialog.querySelector('.cms-dialog-body').getBoundingClientRect()
+                return {
+                  modal: dialog.matches(':modal'),
+                  focusInside: dialog.contains(globalThis.document.activeElement),
+                  reachable: dialog.contains(
+                    globalThis.document.elementFromPoint(
+                      body.x + body.width / 2,
+                      body.y + Math.min(70, body.height / 2),
+                    ),
+                  ),
+                  fits:
+                    bounds.left >= 0 &&
+                    bounds.right <= globalThis.innerWidth &&
+                    bounds.top >= 0 &&
+                    bounds.bottom <= globalThis.innerHeight,
+                  overflows: dialog.scrollWidth > dialog.clientWidth,
+                  bodyOverflows:
+                    dialog.querySelector('.cms-dialog-body').scrollWidth >
+                    dialog.querySelector('.cms-dialog-body').clientWidth,
+                }
+              })
+              assert.deepEqual(
+                state,
+                {
+                  modal: true,
+                  focusInside: true,
+                  reachable: true,
+                  fits: true,
+                  overflows: false,
+                  bodyOverflows: false,
+                },
+                `${title} must be above the editor and usable at ${width}px`,
+              )
+              await page.screenshot({
+                path: `/tmp/cms-native-${name}-dialog-${trigger.replace(/[^a-z]/gi, '')}-${width}.png`,
+              })
+              await page.keyboard.press('Escape')
+              await modal.waitFor({ state: 'detached' })
+              assert.equal(
+                await button.evaluate((el) => el === globalThis.document.activeElement),
+                true,
+                'Closing restores focus to the opener',
+              )
+              if (width === 390 && ['Business / SEO', 'Mejl', 'Leveransstatus ↗'].includes(trigger))
+                await page.getByRole('button', { name: 'Sidor', exact: true }).click()
+            }
+          }
+        } else if (scenario === 'custom-page-styles') {
+          const library = page.locator('#cms-library')
+          await library.getByRole('button', { name: '+ Skapa sida', exact: true }).click()
+          const main = frame.locator('main')
+          const padding = () => main.evaluate((node) => globalThis.getComputedStyle(node).padding)
+          assert.equal(
+            await padding(),
+            '64px 32px',
+            'New-page inline styles must survive import into GrapesJS',
+          )
+          await publish()
+          await library.getByRole('button', { name: 'Startsida', exact: true }).click()
+          await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
+          assert.equal(
+            await padding(),
+            '64px 32px',
+            'Styles must survive page switches after publication',
+          )
+          await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+          assert.equal(
+            await padding(),
+            '64px 32px',
+            'Unedited dark variant must retain authored inline styles',
+          )
+        } else if (scenario === 'duplicate') {
           await selectCopy()
           await inspector.getByRole('button', { name: 'Duplicera', exact: true }).click()
           await inspector.getByLabel('Text', { exact: true }).fill('Owner duplicated the real site')

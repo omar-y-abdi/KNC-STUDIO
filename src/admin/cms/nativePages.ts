@@ -18,7 +18,6 @@ export function snapshotNative(root: Element, prefix: string): string {
     node.remove()
   const nodes = [copy, ...copy.querySelectorAll('*')]
   const ids = new Map<string, string>()
-  const opaqueNodes = new Set<Element>()
   const separateAbout = new Set(
     prefix === 'about' ? [] : nodes.filter((node) => node.closest('[data-knc-surface="about"]')),
   )
@@ -28,7 +27,6 @@ export function snapshotNative(root: Element, prefix: string): string {
       node.hasAttribute('data-knc-source') ||
       (node.hasAttribute('data-knc-slot') && node.parentElement?.closest('[data-knc-source]'))
     if (opaque && (separateAbout.has(node) || !adapted)) {
-      opaqueNodes.add(node)
       for (const attr of [...node.attributes])
         if (attr.name.startsWith('data-knc-')) node.removeAttribute(attr.name)
       const id = `preview-${prefix}-${index}`
@@ -78,7 +76,8 @@ export function snapshotNative(root: Element, prefix: string): string {
         )
       }
     }
-    if (opaqueNodes.has(node)) continue
+    // Read-only previews still need source styles for both themes and future reloads.
+    // They remain read-only because they have no data-knc-source identity.
     const baseline: Record<string, string> = Object.fromEntries(
       attrs.flatMap((name) =>
         node.hasAttribute(name) ? [[name, node.getAttribute(name) ?? '']] : [],

@@ -267,7 +267,13 @@ export function projectNativeTree(
     if (slot) return source.slots.get(slot) ?? null
     const identity = element.getAttribute('data-knc-source')
     const original = identity ? source.nodes.get(identity) : undefined
-    if (identity && (!original || original.type !== element.tagName.toLowerCase())) return null
+    const logoImage =
+      original?.type === 'svg' &&
+      original.props['role'] === 'img' &&
+      !original.props['data-knc-required'] &&
+      element.tagName.toLowerCase() === 'img'
+    if (identity && (!original || (original.type !== element.tagName.toLowerCase() && !logoImage)))
+      return null
     if (!original && !authoredTags.has(element.tagName.toLowerCase())) return null
     const props: Record<string, unknown> = original ? { ...original.props } : {}
     const before = baseline(element)
@@ -290,6 +296,11 @@ export function projectNativeTree(
     }
     delete props['children']
     delete props['dangerouslySetInnerHTML']
+    if (logoImage) {
+      delete props['viewBox']
+      delete props['fill']
+      return h('img', props)
+    }
     const directText = [...element.childNodes]
       .filter((child) => child.nodeType === 3)
       .map((child) => child.textContent ?? '')

@@ -10,9 +10,12 @@ for (const [engine, name] of [
   [chromium, 'chromium'],
   [webkit, 'webkit'],
 ]) {
+  if (process.env.CMS_BROWSER && process.env.CMS_BROWSER !== name) continue
   const browser = await engine.launch()
   try {
     for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-reload']) {
+      if (process.env.CMS_CONFLICT_SCENARIO && process.env.CMS_CONFLICT_SCENARIO !== scenario)
+        continue
       const context = await browser.newContext({
         viewport: { width: 1440, height: 900 },
         reducedMotion: 'reduce',

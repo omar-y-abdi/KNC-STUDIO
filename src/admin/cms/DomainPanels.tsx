@@ -298,8 +298,25 @@ export function EmailPanel({
           <h1 style={{ fontSize: `${email.design?.titleSize ?? 32}px` }}>{email.title}</h1>
           <p>{email.intro}</p>
           {email.section_title && <h2>{email.section_title}</h2>}
-          {email.note && <p class="cms-email-note">{email.note}</p>}
-          {email.cta_label && <button type="button">{email.cta_label}</button>}
+          {email.note && (
+            <p
+              class="cms-email-note"
+              style={{ color: email.design?.palettes[email.design.defaultMode].muted }}
+            >
+              {email.note}
+            </p>
+          )}
+          {email.cta_label && (
+            <button
+              type="button"
+              style={{
+                background: email.design?.palettes[email.design.defaultMode].button,
+                color: email.design?.palettes[email.design.defaultMode].buttonText,
+              }}
+            >
+              {email.cta_label}
+            </button>
+          )}
           {email.contact_lead && <p>{email.contact_lead}</p>}
         </div>
       </div>

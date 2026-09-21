@@ -102,6 +102,16 @@ for (const [engine, name] of [
     await frame.getByText('Fixture barber A', { exact: true }).first().waitFor()
     await page.screenshot({ path: `/tmp/cms-native-${name}-populated-about.png` })
     await library.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+    const galleryImage = frame.getByAltText('Fixture salon photo 1', { exact: true }).first()
+    await galleryImage.scrollIntoViewIfNeeded()
+    assert.equal(
+      await galleryImage.evaluate((node) => globalThis.getComputedStyle(node).width),
+      '208px',
+      'Locked home preview must retain gallery tile sizing instead of expanding original images',
+    )
+    await page.screenshot({ path: `/tmp/cms-native-${name}-locked-home-scroll.png` })
+    await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
     const copy = frame.getByText('KNC source sv', { exact: true }).first()
     await copy.click()
     await inspector.getByLabel('Text', { exact: true }).fill('Owner edited the populated site')

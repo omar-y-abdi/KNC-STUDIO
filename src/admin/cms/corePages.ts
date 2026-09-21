@@ -31,6 +31,30 @@ export function isInventedSite(document: CmsDocument): boolean {
   )
 }
 
+/** Upgrade old opaque previews whose inline styles were erased by the editor import order.
+ * These descendants were never editable. Native identities and owner-authored content stay intact.
+ */
+function repairReadOnlyPreviews(html: string, source: string): string {
+  if (typeof DOMParser === 'undefined' || !html.includes('data-knc-native="1"')) return html
+  const current = new DOMParser().parseFromString(html, 'text/html')
+  const original = new DOMParser().parseFromString(source, 'text/html')
+  const slots = new Map(
+    [...original.querySelectorAll('[data-knc-slot]')].map((node) => [
+      node.getAttribute('data-knc-slot'),
+      node,
+    ]),
+  )
+  let changed = false
+  for (const slot of current.querySelectorAll('[data-knc-slot]')) {
+    if (slot.querySelector('[data-knc-source],[data-knc-slot],[data-knc-baseline]')) continue
+    const replacement = slots.get(slot.getAttribute('data-knc-slot'))
+    if (!replacement?.querySelector('[data-knc-baseline]')) continue
+    slot.replaceChildren(...[...replacement.childNodes].map((node) => node.cloneNode(true)))
+    changed = true
+  }
+  return changed ? current.body.innerHTML : html
+}
+
 /** Missing pages may come only from the rendered production components or existing legal files. */
 export function ensureCorePages(
   document: CmsDocument,
@@ -42,6 +66,14 @@ export function ensureCorePages(
     if (!paths.has(page.path)) {
       next.presentation.pages.push(structuredClone(page))
       paths.add(page.path)
+    } else {
+      const existing = next.presentation.pages.find((item) => item.path === page.path)
+      if (existing)
+        for (const lang of ['sv', 'en'] as const)
+          existing.content[lang].html = repairReadOnlyPreviews(
+            existing.content[lang].html,
+            page.content[lang].html,
+          )
     }
   }
   return next

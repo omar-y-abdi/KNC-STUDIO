@@ -11,6 +11,7 @@ import {
 } from '../../../shared/cms.ts'
 import { validateDocumentMarkupPlacements } from '../../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
+import { CMS_RELEASE } from '../../../shared/cms-release.ts'
 
 const MAX_BODY = 2 * 1024 * 1024 + 4096
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -85,6 +86,7 @@ Deno.serve(async (request) => {
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'x-request-id': requestId,
+    'x-cms-release': CMS_RELEASE,
     'access-control-allow-methods': 'POST, OPTIONS',
     'access-control-allow-headers': 'authorization, apikey, x-client-info, content-type',
     vary: 'Origin',

@@ -260,6 +260,9 @@
   border-bottom: 1px solid #e4c86e;
 }
 .cms-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(720px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
   border: 1px solid var(--line);
@@ -267,21 +270,44 @@
   background: var(--panel);
   color: var(--ink);
   padding: 0;
+  overflow: hidden;
+}
+.cms-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.cms-dialog-wide {
+  width: min(1200px, calc(100vw - 24px));
 }
 .cms-dialog::backdrop {
   background: #0008;
 }
-.cms-dialog header {
+.cms-dialog > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
 }
 .cms-dialog-body {
   padding: 16px;
   overflow: auto;
-  max-height: calc(100dvh - 90px);
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+.cms-dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.cms-dialog-footer span {
+  flex: 1;
+  color: var(--muted);
+  font-size: 11px;
 }
 .cms-history-row {
   display: flex;
@@ -602,7 +628,12 @@
 .cms-domain-panel textarea {
   min-height: 80px;
 }
+.cms-domain-panel input[type='color'] {
+  height: 32px;
+  padding: 3px;
+}
 .cms-domain-panel fieldset {
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -617,6 +648,9 @@
   grid-template-columns: 160px minmax(220px, 0.7fr) minmax(280px, 1fr);
   gap: 14px;
   min-height: 480px;
+}
+.cms-email-workspace > * {
+  min-width: 0;
 }
 .cms-email-workspace > aside {
   display: grid;
@@ -657,6 +691,10 @@
 .cms-email-card p {
   line-height: 1.6;
 }
+.cms-email-card h1,
+.cms-email-card h2 {
+  font-family: inherit;
+}
 .cms-email-card button {
   background: #242427;
   color: #fff;
@@ -666,7 +704,7 @@
 }
 .cms-email-note {
   padding: 12px;
-  background: #f3f1ec;
+  background: transparent;
   border-radius: 8px;
 }
 @media (max-width: 760px) {

@@ -135,6 +135,7 @@ export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
   const protectedComponent = isProtected(component)
+  const readOnly = isReadOnlyPreview(component)
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
     const attributes = child.getAttributes()
@@ -145,14 +146,22 @@ export function configureComponent(component: Component): void {
     )
   })
   component.set({
-    ...(isReadOnlyPreview(component) ? { editable: false, stylable: false } : {}),
+    ...(readOnly ? { editable: false, stylable: false } : {}),
+    // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
+    ...(!readOnly && component.is('svg-in')
+      ? { selectable: true, hoverable: true, layerable: true, highlightable: true }
+      : {}),
     removable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
     copyable: !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
     draggable: !protectedComponent && !attrs['data-knc-native'],
     droppable:
       !attrs['data-knc-native'] &&
       (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag))),
-    resizable: !protectedComponent && !controls.has(tag) && !svgLeaf.has(tag),
+    resizable:
+      !readOnly &&
+      (!protectedComponent || tag === 'svg' || tag === 'img') &&
+      !controls.has(tag) &&
+      !svgLeaf.has(tag),
   })
   if (isReadOnlyPreview(component)) component.setTraits([])
 }

@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Check CMS backend release stamp
+        run: node tools/release/cms-release.mjs check
       - run: npm audit --omit=dev --audit-level=high
       - name: Check formatting and show required changes
         run: |

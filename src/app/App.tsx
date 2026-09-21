@@ -113,7 +113,12 @@ function takeCustomerAccessLink(): BookingAccessLink {
 export function App({
   preview,
 }: { preview?: SitePreview; children?: ComponentChildren } = {}): JSX.Element {
-  const privacy = usePrivacyPreferences()
+  const livePrivacy = usePrivacyPreferences()
+  // A source capture must not depend on the owner's personal consent cookie.
+  // Keep the reopening control visible without persisting any preview preference.
+  const privacy = preview
+    ? { ...livePrivacy, preferences: { functional: false }, expanded: false }
+    : livePrivacy
   useEffect(() => {
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
   }, [privacy.openPreferences])

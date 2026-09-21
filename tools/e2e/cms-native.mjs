@@ -7,7 +7,7 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 
-export async function nativeBackend(context, initialDocument = emptyDocument()) {
+export async function nativeBackend(context, initialDocument = emptyDocument(), assets = []) {
   // The CMS fixture uses local APIs, not a real third-party challenge on HTTP localhost.
   await context.route('https://challenges.cloudflare.com/**', (route) =>
     route.fulfill({
@@ -37,7 +37,7 @@ export async function nativeBackend(context, initialDocument = emptyDocument()) 
     if (path === '/functions/v1/cms-studio') {
       const body = request.postDataJSON()
       if (body.operation === 'state')
-        return reply({ revision, fingerprint: fingerprint(), assets: [], document })
+        return reply({ revision, fingerprint: fingerprint(), assets, document })
       if (body.operation === 'history') return reply([])
       if (['validate', 'publish'].includes(body.operation)) {
         const candidate = globalThis.structuredClone(body.document)
@@ -212,6 +212,17 @@ async function run(engine, name) {
       'The actual site layout styles were lost while loading GrapesJS',
     )
     assert.deepEqual(backend.writes, [], 'Opening the editor issued a public write')
+    await page.waitForFunction(
+      () => {
+        const host = globalThis.document
+          .querySelector('.cms-editor-canvas')
+          ?.getBoundingClientRect()
+        const canvas = globalThis.document.querySelector('.gjs-frame')?.getBoundingClientRect()
+        return host && canvas && canvas.left >= host.left - 1 && canvas.right <= host.right + 1
+      },
+      null,
+      { timeout: 3000 },
+    )
     await fitCanvas()
     await page.screenshot({ path: `/tmp/cms-native-${name}-desktop.png` })
 

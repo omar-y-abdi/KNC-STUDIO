@@ -15,6 +15,7 @@ import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS }
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
+import { CmsModal } from './Modal'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
@@ -356,7 +357,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
         <button
           type="button"
-          onClick={() => {
+          onClick={(event) => {
+            event.currentTarget.focus()
             editor.current?.flush()
             setDialog('resources')
           }}
@@ -499,10 +501,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <h2>Resurser</h2>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
+              event.currentTarget.focus()
               editor.current?.flush()
               setDialog('resources')
-              setMobilePanel(null)
             }}
           >
             Bilder & typsnitt · {resources.length}
@@ -510,30 +512,30 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <h2>KNC</h2>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
+              event.currentTarget.focus()
               editor.current?.flush()
               setDialog('business')
-              setMobilePanel(null)
             }}
           >
             Business / SEO
           </button>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
+              event.currentTarget.focus()
               editor.current?.flush()
               setDialog('email')
-              setMobilePanel(null)
             }}
           >
             Mejl
           </button>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
+              event.currentTarget.focus()
               editor.current?.flush()
               setDialog('delivery')
-              setMobilePanel(null)
             }}
           >
             Leveransstatus ↗
@@ -592,6 +594,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               fontCss={fontCss}
               tab={tab}
               onTab={setTab}
+              onZoom={setZoom}
               onChange={replacePage}
               onReady={(value) => {
                 editor.current = value
@@ -667,7 +670,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         >
           Revert
         </button>
-        <button type="button" onClick={() => void openHistory()}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.currentTarget.focus()
+            void openHistory()
+          }}
+        >
           History
         </button>
         <button
@@ -718,83 +727,95 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </span>
       </footer>
       {dialog && (
-        <dialog open class="cms-dialog">
-          <header>
-            <strong>
-              {dialog === 'history'
-                ? 'Historik'
-                : dialog === 'resources'
-                  ? 'Resurser'
-                  : dialog === 'business'
-                    ? 'Business / SEO'
-                    : dialog === 'delivery'
-                      ? 'Leveransstatus'
-                      : 'Mejl'}
-            </strong>
-            <button type="button" onClick={() => setDialog(null)}>
-              ×
-            </button>
-          </header>
-          <div class="cms-dialog-body">
-            {dialog === 'delivery' ? (
-              <div class="cms-domain-panel">
-                <h2>Operativ e-postleverans</h2>
-                <p>
-                  Leveransstatus och återförsök är operativ data och ligger därför utanför
-                  reversibel CMS-historik.
-                </p>
-                <a href="/admin?tab=operations" class="cms-external-link">
-                  Öppna leveranspanelen i Admin ↗
-                </a>
+        <CmsModal
+          wide={dialog === 'email'}
+          onClose={() => setDialog(null)}
+          title={
+            dialog === 'history'
+              ? 'Historik'
+              : dialog === 'resources'
+                ? 'Resurser'
+                : dialog === 'business'
+                  ? 'Business / SEO'
+                  : dialog === 'delivery'
+                    ? 'Leveransstatus'
+                    : 'Mejl'
+          }
+          footer={
+            <>
+              <span>
+                Ändringar i sidinnehåll publiceras med Save / Publicera när panelen stängts.
+              </span>
+              <button type="button" onClick={() => setDialog(null)}>
+                Klar
+              </button>
+            </>
+          }
+        >
+          {error && (
+            <div class="cms-notice" role="alert">
+              {error}
+              <button type="button" onClick={() => setError(null)}>
+                Stäng meddelande
+              </button>
+            </div>
+          )}
+          {dialog === 'delivery' ? (
+            <div class="cms-domain-panel">
+              <h2>Operativ e-postleverans</h2>
+              <p>
+                Leveransstatus och återförsök är operativ data och ligger därför utanför reversibel
+                CMS-historik.
+              </p>
+              <a href="/admin?tab=operations" class="cms-external-link">
+                Öppna leveranspanelen i Admin ↗
+              </a>
+            </div>
+          ) : dialog === 'business' ? (
+            <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
+          ) : dialog === 'email' ? (
+            <EmailPanel
+              document={draft.document}
+              lang={lang}
+              onChange={(next) => commitDraft(next)}
+            />
+          ) : dialog === 'history' ? (
+            history.map((item) => (
+              <div class="cms-history-row">
+                <strong>v{item.revision}</strong>
+                <span>
+                  {new Date(item.created_at).toLocaleString('sv-SE')} · {item.summary}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void cmsApi
+                      .revision(item.revision)
+                      .then((old) => {
+                        commitDraft(ensureCorePages(old.document))
+                        setDialog(null)
+                      })
+                      .catch((reason) =>
+                        setError(
+                          reason instanceof Error ? reason.message : 'Versionen kunde inte läsas.',
+                        ),
+                      )
+                  }
+                >
+                  Återställ till utkast
+                </button>
               </div>
-            ) : dialog === 'business' ? (
-              <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
-            ) : dialog === 'email' ? (
-              <EmailPanel
-                document={draft.document}
-                lang={lang}
-                onChange={(next) => commitDraft(next)}
-              />
-            ) : dialog === 'history' ? (
-              history.map((item) => (
-                <div class="cms-history-row">
-                  <strong>v{item.revision}</strong>
-                  <span>
-                    {new Date(item.created_at).toLocaleString('sv-SE')} · {item.summary}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void cmsApi
-                        .revision(item.revision)
-                        .then((old) => {
-                          commitDraft(ensureCorePages(old.document))
-                          setDialog(null)
-                        })
-                        .catch((reason) =>
-                          setError(
-                            reason instanceof Error
-                              ? reason.message
-                              : 'Versionen kunde inte läsas.',
-                          ),
-                        )
-                    }
-                  >
-                    Återställ till utkast
-                  </button>
-                </div>
-              ))
-            ) : (
-              <CmsResources
-                assets={resources}
-                document={draft.document}
-                onAssets={setResources}
-                onDocument={(next) => commitDraft(next)}
-                onError={setError}
-              />
-            )}
-          </div>
-        </dialog>
+            ))
+          ) : (
+            <CmsResources
+              assets={resources}
+              document={draft.document}
+              onAssets={setResources}
+              onDocument={(next) => commitDraft(next)}
+              onError={setError}
+            />
+          )}
+        </CmsModal>
       )}
     </div>
   )
