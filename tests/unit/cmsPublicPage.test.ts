@@ -61,12 +61,8 @@ describe('canonical CMS public page rendering', () => {
     expect(html).toContain('data-cms-public="1"')
     expect(html).toContain('data-cms-mode="dark"')
     expect(html).toContain('<main><h1>Hello</h1></main>')
-    expect(html).toContain(
-      '<style id="cms-page-light" media="(prefers-color-scheme: light)">body{color:#222}</style>',
-    )
-    expect(html).toContain(
-      '<style id="cms-page-dark" media="(prefers-color-scheme: dark)">body{color:#ddd}</style>',
-    )
+    expect(html).toContain('<style id="cms-page-light" media="not all">body{color:#222}</style>')
+    expect(html).toContain('<style id="cms-page-dark" media="all">body{color:#ddd}</style>')
     expect(html).toContain('English title')
     expect(html).toContain('English description')
     expect(html).toContain('href="https://bladeblendstudio.se/"')

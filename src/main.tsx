@@ -21,6 +21,10 @@ if (window.location.pathname === '/cms-public/source') {
 ) {
   void import('./cmsRuntime').then(({ mountCmsRuntime }) => mountCmsRuntime(root))
 } else {
+  // Server CSS is only the first paint. Native surfaces own the current mode after mounting;
+  // leaving the initial styles active leaks old colors/layout into subsequent theme switches.
+  for (const id of ['cms-page-light', 'cms-page-dark', 'cms-theme'])
+    document.getElementById(id)?.remove()
   root.replaceChildren()
   render(
     <NativeSiteProvider>

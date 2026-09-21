@@ -308,8 +308,8 @@ export function renderCmsPage(
   rendered = rendered.replace(
     '</head>',
     `<style id="cms-fonts">${fontCss}</style>` +
-      `<style id="cms-page-light" media="(prefers-color-scheme: light)">${repairDesktopCss(variant.css.light)}</style>` +
-      `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${repairDesktopCss(variant.css.dark)}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
+      `<style id="cms-page-light" media="${mode === 'light' ? 'all' : 'not all'}">${repairDesktopCss(variant.css.light)}</style>` +
+      `<style id="cms-page-dark" media="${mode === 'dark' ? 'all' : 'not all'}">${repairDesktopCss(variant.css.dark)}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
   )
   let markup = variant.html
   if (markup.includes('data-knc-native="1"')) {

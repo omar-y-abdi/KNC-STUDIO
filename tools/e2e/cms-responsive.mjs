@@ -91,6 +91,16 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       '10px',
       'Desktop layout must survive reload',
     )
+    // Simulate the server's initial CSS. The mounted app must take ownership so stale initial
+    // rules cannot override a different theme/device after hydration.
+    await context.route(`${base}/?*`, async (route) => {
+      const response = await route.fetch()
+      const html = (await response.text()).replace(
+        '</head>',
+        `<style id="cms-page-light">#${id}{translate:999px!important}</style><style id="cms-theme">:root{--knc-background:#ff0000}</style></head>`,
+      )
+      await route.fulfill({ response, body: html })
+    })
     // Render through the real public App and native projection, not the editor HTML.
     for (const width of [390, 1440, 1920]) {
       for (const mode of ['light', 'dark']) {
