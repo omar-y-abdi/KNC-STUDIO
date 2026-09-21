@@ -75,6 +75,9 @@ small page metadata from `public_cms_page_metadata`; `/api/cms/presentation` str
 RPC response. The browser validates and projects that document. Custom/legal pages retain server
 rendering. Apply migration `20260921164356_public_cms_page_metadata.sql` before this frontend.
 A missing metadata RPC falls back to business SEO without preventing native page delivery.
+If the separate metadata entrypoint throws or returns a server error, the outer Worker serves the
+app shell directly; the browser still loads the current published CMS. This also protects native
+routes from transient renderer CPU exhaustion while retaining error visibility in Worker logs.
 
 Home's derived About preview is reconstructed from the current About draft, not persisted into
 Home on each edit. Exports strip the derived subtree/CSS and duplicate rules. Existing publication

@@ -165,6 +165,33 @@ describe('Worker route policy', () => {
     })
   })
 
+  it.each(['/', '/about', '/booking', '/my-bookings'])(
+    'keeps %s available when metadata rendering fails',
+    async (path) => {
+      for (const failure of ['response', 'exception']) {
+        const env = createEnv()
+        const context = {
+          exports: {
+            PublicContent: {
+              fetch: async () => {
+                if (failure === 'exception') throw new Error('Worker exceeded CPU time limit')
+                return new Response('Unavailable', { status: 503 })
+              },
+            },
+          },
+        }
+        const response = await worker.fetch(
+          new Request(`https://bladeblendstudio.se${path}`),
+          env,
+          context,
+        )
+        expect(response.status).toBe(200)
+        expect(response.headers.get('Cache-Control')).toBe('no-store')
+        expect(await response.text()).toBe('<main>homepage</main>')
+      }
+    },
+  )
+
   it('moves permanent customer credentials into a fragment before loading assets', async () => {
     const env = createEnv()
     const token = 'a'.repeat(64)

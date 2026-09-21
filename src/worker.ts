@@ -45,6 +45,7 @@ interface WorkerContext {
 const CANONICAL_HOST = 'bladeblendstudio.se'
 const WWW_HOST = `www.${CANONICAL_HOST}`
 const SITE_URL = `https://${CANONICAL_HOST}`
+const NATIVE_PATHS = ['/', '/about', '/booking', '/my-bookings']
 
 const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
   '/privacy': '/privacy.html',
@@ -683,10 +684,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   if (pathname === '/index.html') return redirectTo(url, '/')
 
-  if (
-    ['/', '/about', '/booking', '/my-bookings'].includes(pathname) &&
-    ['GET', 'HEAD'].includes(request.method)
-  ) {
+  if (NATIVE_PATHS.includes(pathname) && ['GET', 'HEAD'].includes(request.method)) {
     // Native pages already render their CMS document in App. Parsing and embedding the entire
     // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
     const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
@@ -861,8 +859,11 @@ export class PublicContent extends WorkerEntrypoint<Env> {
   }
 }
 
-function isCacheablePublicContent(request: Request, url: URL): boolean {
-  return request.method === 'GET' && (url.pathname === '/' || url.pathname === '/llms.txt')
+function isPublicContentRequest(request: Request, url: URL): boolean {
+  return (
+    request.method === 'GET' &&
+    (NATIVE_PATHS.includes(url.pathname) || url.pathname === '/llms.txt')
+  )
 }
 
 export default {
@@ -877,8 +878,20 @@ export default {
     if (url.pathname === '/api/customer-bookings') return customerGateway(request, env)
     if (url.pathname === '/api/bookings') return customerGateway(request, env, 'submit-booking')
 
-    if (url.hostname === CANONICAL_HOST && isCacheablePublicContent(request, url)) {
-      return context.exports.PublicContent.fetch(request)
+    if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
+      try {
+        const response = await context.exports.PublicContent.fetch(request)
+        if (response.status < 500 || !NATIVE_PATHS.includes(url.pathname)) return response
+      } catch (error) {
+        if (!NATIVE_PATHS.includes(url.pathname)) throw error
+      }
+      // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
+      // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
+      console.warn('Native metadata renderer unavailable; serving the interactive app shell')
+      const asset = await serveAsset(request, env, '/index.html', true)
+      const headers = new Headers(asset.headers)
+      headers.set('Cache-Control', 'no-store')
+      return new Response(asset.body, { status: asset.status, headers })
     }
 
     const response = await fetchPublicContent(request, env)
