@@ -18,7 +18,7 @@ import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
 import { LivePreview } from './LivePreview'
 import type { CmsScene } from '../../cms/Scene'
-import { canvasBehavior } from './canvasBehavior'
+import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
 import {
   isSitePage,
   renderSitePage,
@@ -472,7 +472,7 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useEffect(() => {
     const editor = instance.current
-    return editor ? canvasBehavior(editor, props.scene) : undefined
+    return editor ? canvasBehavior(editor, props.scene, props.mode) : undefined
   }, [contextKey, props.scene])
 
   useLayoutEffect(() => {
@@ -586,7 +586,7 @@ export function CmsEditor(props: Props): JSX.Element {
                 transform: `scale(${compareScale})`,
                 transformOrigin: 'top left',
               }}
-              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
             />
           </div>
         </div>

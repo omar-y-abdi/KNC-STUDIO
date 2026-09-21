@@ -52,6 +52,22 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
           await frame
             .getByRole('button', { name: '10:30', exact: true })
             .waitFor({ state: 'visible' })
+        if (scene === 'booking-options') {
+          await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+          await page.waitForTimeout(300)
+          const colors = await frame
+            .locator('[data-knc-surface="booking-options"]')
+            .evaluate((n) => ({
+              background: globalThis.getComputedStyle(n).backgroundColor,
+              color: globalThis.getComputedStyle(n).color,
+              font: globalThis.getComputedStyle(n).fontFamily,
+            }))
+          assert.equal(colors.background, 'rgb(28, 28, 30)')
+          assert.equal(colors.color, 'rgb(245, 245, 247)')
+          assert.ok(colors.font.includes('Inter'))
+          await page.screenshot({ path: `/tmp/cms-scenes-${name}-dark-options.png` })
+          await page.getByRole('button', { name: 'Ljus', exact: true }).click()
+        }
         await text.click()
         await page
           .locator('#cms-inspector')
@@ -124,6 +140,12 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await page.getByRole('button', { name: 'Bokning', exact: true }).click()
       await page.getByRole('button', { name: 'Dator', exact: true }).click()
       await page.getByLabel('Visa i editorn', { exact: true }).selectOption('booking-details')
+      await page.getByRole('button', { name: 'Jämför', exact: true }).click()
+      await page
+        .frameLocator('iframe[title="Jämförelsevy"]')
+        .getByText('Dina uppgifter CMS', { exact: true })
+        .waitFor({ state: 'visible' })
+      await page.getByRole('button', { name: 'Jämför', exact: true }).click()
       await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
       await page
         .frameLocator('iframe[title="Förhandsvisning av sidan"]')
