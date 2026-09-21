@@ -61,6 +61,9 @@ Frontend defects shared a few causes:
   style controls retain the native component identity. Runtime actions remain code-owned.
 - Source capture depended on the owner's privacy cookie. Its reopening control now renders
   consistently without changing consent storage.
+- Inspector newlines were stored as collapsible HTML whitespace. Plain text now uses escaped
+  text plus `<br>` nodes, matching direct rich-text editing. Mixed text/icon elements retain their
+  children and preserve newlines; their text-node views refresh immediately.
 
 ## O-Y-A comparison
 

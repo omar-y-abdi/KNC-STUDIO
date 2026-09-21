@@ -447,7 +447,7 @@ export function CmsEditor(props: Props): JSX.Element {
     (['text', 'textnode', 'link'].includes(String(selected.get('type'))) || tag === 'text')
   const hasElementChildren = selected
     ?.components()
-    .some((child: Component) => !child.is('textnode'))
+    .some((child: Component) => !child.is('textnode') && child.get('tagName') !== 'br')
   const mixedTextNodes =
     selected && hasElementChildren
       ? selected.components().filter((child: Component) => child.is('textnode'))
@@ -545,11 +545,17 @@ export function CmsEditor(props: Props): JSX.Element {
                 <label>
                   Text
                   <textarea
-                    value={selected.getEl()?.textContent ?? ''}
+                    value={Array.from(selected.getEl()?.childNodes ?? [])
+                      .map((node) => (node.nodeName === 'BR' ? '\n' : (node.textContent ?? '')))
+                      .join('')}
                     onInput={(event) => {
                       const text = document.createElement('span')
                       text.textContent = event.currentTarget.value
-                      selected.components(text.innerHTML)
+                      // Plain HTML collapses literal newlines. Match the canvas rich-text editor's
+                      // line-break markup, after escaping user text so it cannot become HTML.
+                      selected.components(
+                        tag === 'text' ? text.innerHTML : text.innerHTML.replace(/\r?\n/g, '<br>'),
+                      )
                     }}
                   />
                 </label>
@@ -572,7 +578,14 @@ export function CmsEditor(props: Props): JSX.Element {
                   {mixedTextNodes.length === 1 ? 'Text' : `Text ${index + 1}`}
                   <textarea
                     value={String(node.get('content') ?? '')}
-                    onInput={(event) => node.set('content', event.currentTarget.value)}
+                    onInput={(event) => {
+                      node.set('content', event.currentTarget.value)
+                      // GrapesJS's text-node view does not rerender on change:content.
+                      node.getView()?.render()
+                      // Keep neighboring icons and native actions intact in mixed text elements.
+                      if (event.currentTarget.value.includes('\n'))
+                        selected.addStyle({ 'white-space': 'pre-wrap' })
+                    }}
                   />
                 </label>
               ))}

@@ -21,6 +21,7 @@ const scenarios = [
   'logo-replacement',
   'legacy-preview-repair',
   'live-preview',
+  'line-breaks',
 ].filter(
   (scenario) => !process.env.CMS_OWNER_SCENARIO || scenario === process.env.CMS_OWNER_SCENARIO,
 )
@@ -113,7 +114,62 @@ for (const [engine, name] of [
       }
       try {
         await mount()
-        if (scenario === 'live-preview') {
+        if (scenario === 'line-breaks') {
+          const id = await selectCopy()
+          const text = inspector.getByLabel('Text', { exact: true })
+          await text.fill('First line')
+          await text.press('End')
+          await text.press('Shift+Enter')
+          await text.pressSequentially('Second <literal> line')
+          await text.press('Tab')
+          const copy = frame.locator(`[id="${id}"]`)
+          assert.equal(await copy.innerText(), 'First line\nSecond <literal> line')
+          await publish()
+          const live = await context.newPage()
+          await live.goto(base)
+          await live.locator(`[id="${id}"]`).waitFor()
+          assert.equal(
+            await live.locator(`[id="${id}"]`).innerText(),
+            'First line\nSecond <literal> line',
+          )
+          await live.reload()
+          assert.equal(
+            await live.locator(`[id="${id}"]`).innerText(),
+            'First line\nSecond <literal> line',
+          )
+          // Direct rich-text editing must keep the same line break semantics.
+          await copy.dblclick()
+          await copy.press('ControlOrMeta+A')
+          await copy.pressSequentially('Direct first line')
+          await copy.press('Shift+Enter')
+          await copy.pressSequentially('Direct second line')
+          await inspector.getByRole('button', { name: 'Förälder', exact: true }).click()
+          assert.equal(await copy.innerText(), 'Direct first line\nDirect second line')
+          await publish()
+          await live.reload()
+          assert.equal(
+            await live.locator(`[id="${id}"]`).innerText(),
+            'Direct first line\nDirect second line',
+          )
+          await copy.click()
+          assert.equal(
+            await inspector.getByLabel('Text', { exact: true }).inputValue(),
+            'Direct first line\nDirect second line',
+          )
+          const phone = frame.locator('a[href^="tel:"]').first()
+          const phoneHref = await phone.getAttribute('href')
+          await phone.click()
+          await inspector.getByLabel('Text', { exact: true }).fill('Call\nnow')
+          await inspector.getByLabel('Text', { exact: true }).press('Tab')
+          assert.equal(await phone.innerText(), 'Call\nnow')
+          assert.equal(await phone.locator('img').count(), 1, 'Multiline text must retain its icon')
+          await publish()
+          await live.reload()
+          const publicPhone = live.locator('a[href^="tel:"]').first()
+          assert.equal(await publicPhone.innerText(), 'Call\nnow')
+          assert.equal(await publicPhone.getAttribute('href'), phoneHref)
+          assert.equal(await publicPhone.locator('img').count(), 1)
+        } else if (scenario === 'live-preview') {
           await selectCopy()
           await inspector.getByLabel('Text', { exact: true }).fill('Unpublished preview text')
           await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
