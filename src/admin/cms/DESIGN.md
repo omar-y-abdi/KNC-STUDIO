@@ -45,7 +45,7 @@ Inter is already shipped by the application. Default 13px/1.45; secondary labels
 
 ## Layout
 
-Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business and email are full workspace destinations. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
+Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a 300px palette/type form with a live public preview; below 1100px these stack. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
 
 Below 900px, page library and inspector become explicit drawers; workspace views fill available width. Forms stack and the dock becomes an independently scrollable bottom row. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
 
@@ -60,3 +60,5 @@ Buttons retain semantic disabled/pressed states and visible keyboard focus. The 
 ## Verification
 
 `tools/e2e/cms-owner.mjs` exercises full workspace destinations at 1440px and 390px in Chromium/WebKit, verifies reachable controls, no horizontal overflow, keyboard dismissal, real email rendering, custom page publication and editing behavior. `DESIGN.md` lint plus the skill's scoped audit are static checks; screenshots and behavior remain release evidence.
+
+Device layout is independent: desktop uses min-width 769px; mobile uses max-width 768px. Geometry carries between light/dark; appearance remains theme-specific. Text is shared between responsive views. Home derives its About preview from the current draft. In editable mobile snapshots the hero scrolls with the document; locked preview retains the real folding interaction.

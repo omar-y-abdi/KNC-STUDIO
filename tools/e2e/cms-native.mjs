@@ -254,7 +254,7 @@ async function run(engine, name) {
     })
     await frame.getByText('KNC source en', { exact: true }).first().waitFor()
     await page.getByRole('button', { name: 'SV', exact: true }).click()
-    await frame.getByText('Owner edited the actual KNC site', { exact: true }).waitFor()
+    await frame.getByText('Owner edited the actual KNC site', { exact: true }).first().waitFor()
     await page.evaluate(async (id) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
       const editor = cmsGrapes.editors.at(-1)
@@ -289,13 +289,13 @@ async function run(engine, name) {
 
     const live = await context.newPage()
     await live.goto(base)
-    await live.getByText('Owner edited the actual KNC site', { exact: true }).waitFor()
+    await live.getByText('Owner edited the actual KNC site', { exact: true }).first().waitFor()
     assert.equal(
       await live.locator(`#${edit.id}`).evaluate((node) => globalThis.getComputedStyle(node).color),
       'rgb(18, 52, 86)',
     )
     await live.reload()
-    await live.getByText('Owner edited the actual KNC site', { exact: true }).waitFor()
+    await live.getByText('Owner edited the actual KNC site', { exact: true }).first().waitFor()
     await live.getByRole('button', { name: 'Boka tid', exact: true }).click()
     await live.locator('[data-testid="fold-booking"]').waitFor({ state: 'visible' })
     await live.locator('[data-booking-step="barber"]').waitFor()
@@ -339,6 +339,7 @@ async function run(engine, name) {
       .frameLocator('.gjs-frame')
       .first()
       .getByText('Owner edited the actual KNC site', { exact: true })
+      .first()
       .waitFor()
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByRole('button', { name: 'Mobil', exact: true }).click()
@@ -365,6 +366,13 @@ async function run(engine, name) {
     await live.reload()
     await live.getByText(editedHours, { exact: true }).waitFor()
     assert.equal(await live.locator(`[id="${clockId}"]`).getAttribute('src'), '/icons/clock.svg')
+    await live.setViewportSize({ width: 1440, height: 900 })
+    await live.reload()
+    await live.getByText(editedHours, { exact: true }).waitFor()
+    assert.ok(
+      await live.getByText(editedHours, { exact: true }).isVisible(),
+      'Shared opening-hours text must update desktop without replacing its layout',
+    )
     await live.screenshot({ path: `/tmp/cms-native-${name}-mobile-copy.png` })
     assert.deepEqual(errors, [])
     console.log(
@@ -394,6 +402,7 @@ async function run(engine, name) {
 }
 
 if (process.argv[1]?.endsWith('/cms-native.mjs')) {
-  await run(chromium, 'chromium')
-  await run(webkit, 'webkit')
+  if (!process.env.CMS_BROWSER || process.env.CMS_BROWSER === 'chromium')
+    await run(chromium, 'chromium')
+  if (!process.env.CMS_BROWSER || process.env.CMS_BROWSER === 'webkit') await run(webkit, 'webkit')
 }

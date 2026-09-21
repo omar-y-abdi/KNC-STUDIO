@@ -17,6 +17,7 @@ import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsModal } from './Modal'
+import { ThemePanel } from './ThemePanel'
 import { CmsWorkspaceView } from './WorkspaceView'
 import { HistoryPanel } from './HistoryPanel'
 import { CmsResources } from './Resources'
@@ -48,7 +49,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   )
   const [, setVersion] = useState(0)
   const [dialog, setDialog] = useState<
-    'history' | 'resources' | 'business' | 'email' | 'new-page' | 'backup' | null
+    'theme' | 'history' | 'resources' | 'business' | 'email' | 'new-page' | 'backup' | null
   >(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
@@ -557,6 +558,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             </button>
             <button
               type="button"
+              class={workspaceView === 'theme' ? 'is-active' : ''}
+              onClick={() => {
+                editor.current?.flush()
+                setMobilePanel(null)
+                setDialog('theme')
+                setLocked(false)
+              }}
+            >
+              ◐ Webbplatsens stil
+            </button>
+            <button
+              type="button"
               class={workspaceView === 'business' ? 'is-active' : ''}
               onClick={(event) => {
                 event.currentTarget.focus()
@@ -707,7 +720,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           </div>
           {workspaceView && (
             <CmsWorkspaceView kind={workspaceView} onClose={() => setDialog(null)}>
-              {dialog === 'business' ? (
+              {dialog === 'theme' ? (
+                <ThemePanel
+                  mode={mode}
+                  onMode={setMode}
+                  document={draft.document}
+                  onChange={(next) => commitDraft(next)}
+                  lang={lang}
+                  fontCss={fontCss}
+                />
+              ) : dialog === 'business' ? (
                 <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
               ) : dialog === 'email' ? (
                 <EmailPanel

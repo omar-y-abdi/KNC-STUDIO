@@ -1,3 +1,5 @@
+import { themeDeclarations, siteThemeCss } from './site-theme.ts'
+import { repairDesktopCss } from './cms-device-css.ts'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
 import { parse, generate, walk } from 'css-tree'
@@ -96,7 +98,7 @@ export function renderSitePage(
     node.attrs.find((item) => item.name === `data-knc-${mode}`)?.value ??
     node.attrs.find((item) => item.name === 'data-knc-light')?.value ??
     attr(node, 'style')
-  const rootStyle = sourceStyle(surface)
+  const rootStyle = themeDeclarations(sourceStyle(surface), mode)
   const brand = find(header, (node) => node.tagName === 'h1')
   if (brand) {
     brand.tagName = 'a'
@@ -105,7 +107,7 @@ export function renderSitePage(
   }
   const chrome = (node: Element): string => {
     const clean = (current: Element): void => {
-      const style = sourceStyle(current)
+      const style = themeDeclarations(sourceStyle(current), mode)
       const baseline = attr(current, 'data-knc-baseline')
       const dark = attr(current, 'data-knc-dark-attrs')
       if (mode === 'dark' && baseline && dark) {
@@ -156,7 +158,7 @@ export function renderSitePage(
   const menu = `<a href="${href('/', lang, mode)}">${lang === 'sv' ? 'Hem' : 'Home'}</a><a href="${href('/booking', lang, mode)}">${lang === 'sv' ? 'Boka tid' : 'Book'}</a><a href="${href('/about', lang, mode)}">${lang === 'sv' ? 'Om oss' : 'About'}</a>${sitePageLinks(presentation.pages, lang, mode)}`
   return {
     html: `<div id="cms-site-shell" style="${escape(rootStyle)}"><header id="cms-site-header">${headerHtml}</header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}">${menu}</nav><div id="cms-site-content">${variant.html}</div><footer id="cms-site-footer">${infoHtml}${footerHtml}</footer></div>`,
-    css: `${home.css[mode]}\n${about?.css[mode] ?? ''}\n${variant.css[mode]}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}#cms-site-header a{text-decoration:none}#cms-site-header a:has(>svg){color:inherit}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
+    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}#cms-site-header a{text-decoration:none}#cms-site-header a:has(>svg){color:inherit}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
   }
 }
 

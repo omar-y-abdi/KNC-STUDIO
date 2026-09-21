@@ -1,3 +1,5 @@
+import { repairDesktopCss } from '../shared/cms-device-css'
+import { siteThemeCss, themeDeclarations } from '../shared/site-theme'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { isSitePage, renderSitePage } from '../shared/site-page'
 import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
@@ -306,8 +308,8 @@ export function renderCmsPage(
   rendered = rendered.replace(
     '</head>',
     `<style id="cms-fonts">${fontCss}</style>` +
-      `<style id="cms-page-light" media="(prefers-color-scheme: light)">${variant.css.light}</style>` +
-      `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${variant.css.dark}</style></head>`,
+      `<style id="cms-page-light" media="(prefers-color-scheme: light)">${repairDesktopCss(variant.css.light)}</style>` +
+      `<style id="cms-page-dark" media="(prefers-color-scheme: dark)">${repairDesktopCss(variant.css.dark)}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
   )
   let markup = variant.html
   if (markup.includes('data-knc-native="1"')) {
@@ -320,7 +322,13 @@ export function renderCmsPage(
           node.attrs.find((attr) => attr.name === 'data-knc-light')
         if (style) {
           node.attrs = node.attrs.filter((attr) => attr.name !== 'style')
-          node.attrs.push({ name: 'style', value: style.value })
+          node.attrs.push({
+            name: 'style',
+            value:
+              presentation && Object.keys(presentation.themes[mode]).length
+                ? themeDeclarations(style.value, mode)
+                : style.value,
+          })
         }
         if (mode === 'dark') {
           const read = (name: string): Record<string, string> => {

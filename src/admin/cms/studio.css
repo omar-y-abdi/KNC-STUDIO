@@ -1454,3 +1454,118 @@
   color: var(--accent);
   background: var(--selected);
 }
+
+.cms-theme-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 32px;
+  min-height: 640px;
+}
+.cms-theme-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.cms-theme-controls p,
+.cms-style-scope {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cms-theme-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 600;
+}
+.cms-theme-controls h2 {
+  margin: 8px 0 0;
+  font-size: 16px;
+}
+.cms-theme-color > span {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 8px;
+}
+.cms-theme-color input[type='color'] {
+  width: 42px;
+  height: 40px;
+  padding: 3px;
+  cursor: pointer;
+}
+.cms-theme-modes,
+.cms-theme-preview-toolbar,
+.cms-theme-preview-toolbar [role='group'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cms-theme-modes button[aria-pressed='true'],
+.cms-theme-preview-toolbar button[aria-pressed='true'] {
+  background: var(--selected);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.cms-theme-preview {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.cms-theme-preview-toolbar {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.cms-theme-preview-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cms-theme-preview-frame {
+  position: relative;
+  flex: 1;
+  min-height: 480px;
+}
+.cms-theme-preview-frame .cms-live-preview {
+  inset: 0;
+}
+@media (max-width: 1100px) {
+  .cms-theme-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cms-theme-preview-frame {
+    min-height: 580px;
+  }
+}
+
+.cms-theme-controls input,
+.cms-theme-controls select,
+.cms-theme-preview-toolbar select {
+  min-height: 40px;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 400;
+}
+.cms-theme-preview {
+  align-self: start;
+  position: sticky;
+  top: 0;
+  height: max(420px, calc(100dvh - 300px));
+  max-height: 740px;
+}
+.cms-theme-preview-frame {
+  min-height: 0;
+}
+@media (max-width: 1100px) {
+  .cms-theme-preview {
+    position: relative;
+    height: 580px;
+  }
+}

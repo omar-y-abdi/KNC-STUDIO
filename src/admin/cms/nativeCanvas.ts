@@ -1,3 +1,5 @@
+import { themeDeclarations } from '../../../shared/site-theme'
+import { repairDesktopCss } from '../../../shared/cms-device-css'
 import { generate, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
@@ -17,7 +19,7 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
 
 export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: string; css: string } {
   if (!variant.html.includes('data-knc-native="1"'))
-    return { html: variant.html, css: variant.css[mode] }
+    return { html: variant.html, css: repairDesktopCss(variant.css[mode]) }
   const doc = new DOMParser().parseFromString(variant.html, 'text/html')
   const rules: string[] = []
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
@@ -30,10 +32,14 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
     }
     const style =
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
-    if (style && element.id) rules.push(`#${CSS.escape(element.id)}{${style}}`)
+    if (style && element.id)
+      rules.push(`#${CSS.escape(element.id)}{${themeDeclarations(style, mode)}}`)
     element.removeAttribute('style')
   }
-  return { html: doc.body.innerHTML, css: rules.join('\n') + '\n' + variant.css[mode] }
+  return {
+    html: doc.body.innerHTML,
+    css: rules.join('\n') + '\n' + repairDesktopCss(variant.css[mode]),
+  }
 }
 
 /** Only owner changes override inline runtime styling; snapshots never freeze live layout state. */
@@ -47,8 +53,10 @@ export function exportNativeCanvas(
   const originalStyles = new Map<string, CSSStyleDeclaration>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const style = document.createElement('span').style
-    style.cssText =
-      element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
+    style.cssText = themeDeclarations(
+      element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? '',
+      mode,
+    )
     if (element.id) originalStyles.set(element.id, style)
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
@@ -73,7 +81,13 @@ export function exportNativeCanvas(
         const value = generate(declaration.value)
         const normalized = document.createElement('span').style
         normalized.setProperty(name, value)
-        if (normalized.getPropertyValue(name) === original.getPropertyValue(name))
+        const normalizeValue = (value: string): string =>
+          generate(parse(value, { context: 'value' }))
+        if (
+          !this.atrule &&
+          normalizeValue(normalized.getPropertyValue(name)) ===
+            normalizeValue(original.getPropertyValue(name))
+        )
           rule.block.children.remove(item)
         else declaration.important = true
       })

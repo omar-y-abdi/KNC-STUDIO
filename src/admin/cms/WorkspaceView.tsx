@@ -2,6 +2,11 @@ import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
 
 const views: Record<string, { title: string; description: string }> = {
+  theme: {
+    title: 'Webbplatsens stil',
+    description:
+      'Färger och typografi för hela webbplatsen. Se ändringarna direkt före publicering.',
+  },
   resources: {
     title: 'Bilder & typsnitt',
     description: 'Dina filer, samlade på ett ställe. Välj en resurs för att se var den används.',

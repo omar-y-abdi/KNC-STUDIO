@@ -1,3 +1,4 @@
+import { siteThemeCss } from '../../../shared/site-theme'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
@@ -138,7 +139,7 @@ export function LivePreview({
           }}
           {...(content
             ? {
-                srcDoc: `<!doctype html><html lang="${lang}"><head><style>${fontCss}${content.css}</style></head><body>${content.html}</body></html>`,
+                srcDoc: `<!doctype html><html lang="${lang}"><head><style>${fontCss}${siteThemeCss(presentation, mode)}${content.css}</style></head><body>${content.html}</body></html>`,
               }
             : { src: '/cms-public/source?preview=1' })}
         />
