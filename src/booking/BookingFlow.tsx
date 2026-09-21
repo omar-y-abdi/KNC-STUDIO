@@ -1,4 +1,5 @@
-import { useNativeChild } from '../cms/NativeSurface'
+import { NativeRegion, useNativeChild } from '../cms/NativeSurface'
+import { CmsSceneContext } from '../cms/Scene'
 // The 4-step booking flow (barber → date → service → time), ported from the original mock; the
 // details + confirmation modals live in their own components. Inline styles/literals match the
 // mock's rendering. Submit flows through the injectable `BookingPort` (default: env-selected —
@@ -74,6 +75,7 @@ export type BookingPopupText = Readonly<Pick<BookingStrings, BookingPopupTextKey
 export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const present = useNativeChild()
   const previewPorts = useContext(PreviewPorts)
+  const scene = useContext(CmsSceneContext)?.booking
   const [state, setRaw] = useState<BookingDraft>(initialDraft)
   const typedContact = useRef({ name: false, phone: false, email: false })
   // Port result, per-FIELD validation errors, and the generic SYSTEM/submit error all live
@@ -169,6 +171,22 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
     S.dateIso,
     previewPorts?.services ?? props.servicesPort,
   )
+  useEffect(() => {
+    if (!scene || !roster[0]) return
+    const date = new Date(today)
+    date.setDate(date.getDate() + 3)
+    setState({ barberId: roster[0].barber.id, dateIso: iso(date) })
+  }, [scene, roster])
+  useEffect(() => {
+    if (!scene || !barberServices[0]) return
+    setState({
+      service: barberServices[0],
+      time: '10:30',
+      showPopup: scene === 'details',
+      booked: scene === 'confirmation',
+      form: { name: 'Exempelkund', phone: '0700000000', email: 'kund@example.test' },
+    })
+  }, [scene, barberServices])
 
   // Load real availability whenever barber + date + service are all chosen. The result is the list of
   // AVAILABLE start times; the grid renders exactly those as chips. A `cancelled` flag drops stale
@@ -176,6 +194,27 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   // an empty list (the empty-state message shows; create_booking still validates the slot on submit).
   const serviceDur = S.service?.dur
   const serviceId = S.service?.id
+  useEffect(() => {
+    if (!scene) return
+    const ready =
+      S.barberId &&
+      S.service &&
+      !servicesLoading &&
+      !slotsLoading &&
+      availableTimes.length > 0 &&
+      (scene !== 'details' || S.showPopup) &&
+      (scene !== 'confirmation' || S.booked)
+    document.documentElement.dataset['kncExampleReady'] = ready ? `booking-${scene}` : ''
+  }, [
+    scene,
+    S.barberId,
+    S.service,
+    S.showPopup,
+    S.booked,
+    servicesLoading,
+    slotsLoading,
+    availableTimes,
+  ])
   useEffect(() => {
     if (
       S.barberId === null ||
@@ -599,188 +638,195 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
         </div>
 
         {showCalendar ? (
-          <div style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:26px;animation:kncFade .32s cubic-bezier(.32,.72,0,1) both;">
-            <div style="flex:1 1 300px;max-width:344px;min-width:0;">
-              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                <span style={s.badgeStyle}>2</span>
-                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                  {t.chooseDate}
-                </span>
-              </div>
-              <div style={s.panelStyle}>
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                  <button
-                    type="button"
-                    onClick={
-                      canPrev
-                        ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 }))
-                        : undefined
-                    }
-                    disabled={!canPrev}
-                    aria-label={t.previousMonth}
-                    style={navBtn(canPrev)}
-                  >
-                    <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
-                  </button>
-                  <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
-                    {monthLabelText}
+          <NativeRegion surface="booking-options" lang={lang} mode={props.mode ?? 'light'}>
+            <div style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:26px;animation:kncFade .32s cubic-bezier(.32,.72,0,1) both;">
+              <div style="flex:1 1 300px;max-width:344px;min-width:0;">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                  <span style={s.badgeStyle}>2</span>
+                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
+                    {t.chooseDate}
                   </span>
-                  <button
-                    type="button"
-                    onClick={
-                      canNext
-                        ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 }))
-                        : undefined
-                    }
-                    disabled={!canNext}
-                    aria-label={t.nextMonth}
-                    style={navBtn(canNext)}
-                  >
-                    <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
-                  </button>
                 </div>
-                <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
-                  {headerLabels(lang).map((hh, i) => (
-                    <span
-                      key={i}
-                      style="text-align:center;font-size:10.5px;font-weight:600;opacity:.45;letter-spacing:.2px;"
+                <div style={s.panelStyle}>
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                    <button
+                      type="button"
+                      onClick={
+                        canPrev
+                          ? () => setState((st) => ({ monthOffset: st.monthOffset - 1 }))
+                          : undefined
+                      }
+                      disabled={!canPrev}
+                      aria-label={t.previousMonth}
+                      style={navBtn(canPrev)}
                     >
-                      {hh}
+                      <img src="/icons/chevron.left.svg" alt="" style={s.navIconStyle} />
+                    </button>
+                    <span style="font-family:'Inter Variable';font-weight:600;font-size:15px;">
+                      {monthLabelText}
                     </span>
-                  ))}
-                </div>
-                {calendarWeeks.map((week, wi) => (
-                  <div key={wi} style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
-                    {week.map((cell, ci) =>
-                      cell.day === '' ? (
-                        <span key={ci} aria-hidden="true" style={cell.cellStyle}></span>
-                      ) : (
-                        <button
-                          key={ci}
-                          type="button"
-                          onClick={cell.onClick}
-                          disabled={cell.disabled}
-                          aria-label={cell.ariaLabel}
-                          aria-pressed={cell.selected}
-                          style={cell.cellStyle}
-                        >
-                          {cell.day}
-                        </button>
-                      ),
-                    )}
+                    <button
+                      type="button"
+                      onClick={
+                        canNext
+                          ? () => setState((st) => ({ monthOffset: st.monthOffset + 1 }))
+                          : undefined
+                      }
+                      disabled={!canNext}
+                      aria-label={t.nextMonth}
+                      style={navBtn(canNext)}
+                    >
+                      <img src="/icons/chevron.right.svg" alt="" style={s.navIconStyle} />
+                    </button>
                   </div>
-                ))}
-                <div style="display:flex;gap:14px;margin-top:11px;font-size:11px;opacity:.5;">
-                  <span style="display:flex;align-items:center;gap:5px;">
-                    <span style={s.legendChosenDot}></span>
-                    {t.legendChosen}
-                  </span>
-                  <span style="display:flex;align-items:center;gap:5px;">
-                    <span style={s.legendClosedDot}></span>
-                    {t.legendClosed}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style="flex:1 1 250px;min-width:0;">
-              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                <span style={s.badgeStyle}>3</span>
-                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                  {t.chooseService}
-                </span>
-              </div>
-              {servicesReady ? (
-                <div style="display:flex;flex-direction:column;gap:16px;">
-                  {serviceGroups.map((g, gi) => (
-                    <div key={gi}>
-                      {g.title !== '' ? (
-                        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;">
-                          <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;">
-                            {g.title}
-                          </span>
-                          <span style="font-size:11px;opacity:.4;">{g.note}</span>
-                        </div>
-                      ) : null}
-                      <div style={s.panelStyleFlush}>
-                        {g.items.map((it, ii) => (
-                          <button
-                            key={ii}
-                            data-testid="booking-service-option"
-                            onClick={it.onClick}
-                            style={it.rowStyle}
-                            class={pseudoClass('hover', it.rowHover)}
-                          >
-                            <span style="display:flex;flex-direction:column;gap:2px;text-align:left;">
-                              <span style="font-weight:500;font-size:15px;">{it.name}</span>
-                              <span style="font-size:12px;opacity:.5;">{it.dur}</span>
-                            </span>
-                            <span style="display:flex;align-items:center;gap:9px;">
-                              <span style="font-weight:600;font-size:15px;">{it.priceLabel}</span>
-                              {it.selected ? (
-                                <img
-                                  src="/icons/checkmark.circle.fill.svg"
-                                  alt=""
-                                  style={s.checkIconStyle}
-                                />
-                              ) : null}
-                              {it.notSelected ? (
-                                <img src="/icons/chevron.right.svg" alt="" style={s.chevronStyle} />
-                              ) : null}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {servicesReady && servicesLoading ? (
-                <div style={s.timePlaceholderStyle}>{t.loadingServices}</div>
-              ) : null}
-              {servicesReady && !servicesLoading && barberServices.length === 0 ? (
-                <div style={s.timePlaceholderStyle}>{t.noServices}</div>
-              ) : null}
-              {notServicesReady ? (
-                <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div>
-              ) : null}
-            </div>
-
-            <div style="flex:1 1 220px;min-width:0;">
-              <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
-                <span style={s.badgeStyle}>4</span>
-                <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
-                  {t.chooseTime}
-                </span>
-              </div>
-              {timesReady && slotsLoading ? (
-                <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
-              ) : null}
-              {timesReady && !slotsLoading && availableTimes.length > 0 ? (
-                <div>
-                  <div style="font-size:13px;opacity:.5;margin:0 0 13px 0;">{timeSubLabel}</div>
-                  <div style="display:flex;flex-wrap:wrap;gap:8px;">
-                    {timeSlots.map((slot, si) => (
-                      <button key={si} onClick={slot.onClick} style={slot.chipStyle}>
-                        {slot.label}
-                      </button>
+                  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
+                    {headerLabels(lang).map((hh, i) => (
+                      <span
+                        key={i}
+                        style="text-align:center;font-size:10.5px;font-weight:600;opacity:.45;letter-spacing:.2px;"
+                      >
+                        {hh}
+                      </span>
                     ))}
                   </div>
+                  {calendarWeeks.map((week, wi) => (
+                    <div key={wi} style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
+                      {week.map((cell, ci) =>
+                        cell.day === '' ? (
+                          <span key={ci} aria-hidden="true" style={cell.cellStyle}></span>
+                        ) : (
+                          <button
+                            key={ci}
+                            type="button"
+                            onClick={cell.onClick}
+                            disabled={cell.disabled}
+                            aria-label={cell.ariaLabel}
+                            aria-pressed={cell.selected}
+                            style={cell.cellStyle}
+                          >
+                            {cell.day}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  ))}
+                  <div style="display:flex;gap:14px;margin-top:11px;font-size:11px;opacity:.5;">
+                    <span style="display:flex;align-items:center;gap:5px;">
+                      <span style={s.legendChosenDot}></span>
+                      {t.legendChosen}
+                    </span>
+                    <span style="display:flex;align-items:center;gap:5px;">
+                      <span style={s.legendClosedDot}></span>
+                      {t.legendClosed}
+                    </span>
+                  </div>
                 </div>
-              ) : null}
-              {timesReady && !slotsLoading && availableTimes.length === 0 ? (
-                <div style={s.timePlaceholderStyle}>{t.noSlots}</div>
-              ) : null}
-              {notTimesReady ? (
-                <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div>
-              ) : null}
+              </div>
+
+              <div style="flex:1 1 250px;min-width:0;">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                  <span style={s.badgeStyle}>3</span>
+                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
+                    {t.chooseService}
+                  </span>
+                </div>
+                {servicesReady ? (
+                  <div style="display:flex;flex-direction:column;gap:16px;">
+                    {serviceGroups.map((g, gi) => (
+                      <div key={gi}>
+                        {g.title !== '' ? (
+                          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;">
+                            <span style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;opacity:.5;">
+                              {g.title}
+                            </span>
+                            <span style="font-size:11px;opacity:.4;">{g.note}</span>
+                          </div>
+                        ) : null}
+                        <div style={s.panelStyleFlush}>
+                          {g.items.map((it, ii) => (
+                            <button
+                              key={ii}
+                              data-testid="booking-service-option"
+                              onClick={it.onClick}
+                              style={it.rowStyle}
+                              class={pseudoClass('hover', it.rowHover)}
+                            >
+                              <span style="display:flex;flex-direction:column;gap:2px;text-align:left;">
+                                <span style="font-weight:500;font-size:15px;">{it.name}</span>
+                                <span style="font-size:12px;opacity:.5;">{it.dur}</span>
+                              </span>
+                              <span style="display:flex;align-items:center;gap:9px;">
+                                <span style="font-weight:600;font-size:15px;">{it.priceLabel}</span>
+                                {it.selected ? (
+                                  <img
+                                    src="/icons/checkmark.circle.fill.svg"
+                                    alt=""
+                                    style={s.checkIconStyle}
+                                  />
+                                ) : null}
+                                {it.notSelected ? (
+                                  <img
+                                    src="/icons/chevron.right.svg"
+                                    alt=""
+                                    style={s.chevronStyle}
+                                  />
+                                ) : null}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {servicesReady && servicesLoading ? (
+                  <div style={s.timePlaceholderStyle}>{t.loadingServices}</div>
+                ) : null}
+                {servicesReady && !servicesLoading && barberServices.length === 0 ? (
+                  <div style={s.timePlaceholderStyle}>{t.noServices}</div>
+                ) : null}
+                {notServicesReady ? (
+                  <div style={s.timePlaceholderStyle}>{t.pickDayForService}</div>
+                ) : null}
+              </div>
+
+              <div style="flex:1 1 220px;min-width:0;">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
+                  <span style={s.badgeStyle}>4</span>
+                  <span style="font-family:'Inter Variable';font-weight:600;font-size:18px;">
+                    {t.chooseTime}
+                  </span>
+                </div>
+                {timesReady && slotsLoading ? (
+                  <div style={s.timePlaceholderStyle}>{t.loadingTimes}</div>
+                ) : null}
+                {timesReady && !slotsLoading && availableTimes.length > 0 ? (
+                  <div>
+                    <div style="font-size:13px;opacity:.5;margin:0 0 13px 0;">{timeSubLabel}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                      {timeSlots.map((slot, si) => (
+                        <button key={si} onClick={slot.onClick} style={slot.chipStyle}>
+                          {slot.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {timesReady && !slotsLoading && availableTimes.length === 0 ? (
+                  <div style={s.timePlaceholderStyle}>{t.noSlots}</div>
+                ) : null}
+                {notTimesReady ? (
+                  <div style={s.timePlaceholderStyle}>{t.pickServiceForTime}</div>
+                ) : null}
+              </div>
             </div>
-          </div>
+          </NativeRegion>
         ) : null}
       </div>
 
       {S.showPopup ? (
         <DetailsDialog
+          cms={{ surface: 'booking-details', lang, mode: props.mode ?? 'light' }}
           t={t}
           s={s}
           closeLabel={myBookingsStrings(lang).ariaClose}
@@ -815,18 +861,21 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
 
       {S.booked ? (
         <ConfirmationDialog
+          cms={{ surface: 'booking-confirmation', lang, mode: props.mode ?? 'light' }}
           t={t}
           s={s}
           closeLabel={myBookingsStrings(lang).ariaClose}
           confirmSentLine={confirmSentLine}
-          {...(result?.ok && result.customerAccess
-            ? {
-                customerAccessNote:
-                  result.customerAccess === 'ready'
-                    ? myBookingsStrings(lang).deviceReady
-                    : myBookingsStrings(lang).deviceUnavailable,
-              }
-            : {})}
+          {...(scene === 'confirmation'
+            ? { customerAccessNote: myBookingsStrings(lang).deviceReady }
+            : result?.ok && result.customerAccess
+              ? {
+                  customerAccessNote:
+                    result.customerAccess === 'ready'
+                      ? myBookingsStrings(lang).deviceReady
+                      : myBookingsStrings(lang).deviceUnavailable,
+                }
+              : {})}
           sumBarber={sumBarber}
           sumWhen={sumWhen}
           sumService={sumService}

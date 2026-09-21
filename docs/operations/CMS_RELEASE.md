@@ -130,6 +130,28 @@ Mobile scrolling, folding navigation and privacy controls therefore retain their
 Custom and legal pages use a sandboxed HTML/CSS preview. Physical iPhone Safari and delivered-email
 pixel parity are not implied by these checks.
 
+## Conditional booking and customer views
+
+The Booking and My Bookings pages have a “Visa i editorn” selector. Booking exposes the barber
+view, date/service/time options, customer details and confirmation. My Bookings exposes link
+lookup and the populated booking list. These are independent native regions on their existing
+CMS pages, using the actual public components; no extra routes or database tables are needed.
+The isolated source/locked-preview context supplies example contacts, availability and customer
+bookings. Public catalog reads remain real, with explicit example entries only for an empty
+catalog. Every preview write remains denied. Public visitors never receive the example context.
+
+Missing region templates and mobile motion hooks are added to an unpublished draft without
+replacing existing owner-edited nodes. Publish after editing to apply the new templates. Customer
+card IDs are namespaced per actual booking, while all rows consume the same authored card template.
+Unchanged text and input values follow live runtime data; calendar cells keep their runtime tag
+when a different month changes empty cells into date buttons. Input placeholders are editable.
+
+Mobile editing uses the same collapse geometry as MobileSite. Its temporary canvas stylesheet
+animates the sticky panel, small logo, controls, hero fade and spacer. That stylesheet is outside
+the GrapesJS model, so scrolling cannot become a published layout change. Comparison screenshots
+remain static. Deploy the matching `cms-studio` stamp before the frontend because the native
+metadata validator now recognizes motion hooks and placeholder baselines.
+
 ## Rollback
 
 Redeploy compatible reviewed frontend and Function versions together; do not disable the release

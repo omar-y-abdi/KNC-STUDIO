@@ -5,7 +5,7 @@
 
 import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'
-import { Dialog } from '../ui/Dialog'
+import { Dialog, type DialogProps } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import type { BookingStyles } from './bookingStyles'
 import type { FieldErrors } from './validation'
@@ -14,6 +14,7 @@ const BACKDROP_STYLE =
   'position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:40;animation:kncOverlay .2s ease both;overflow:hidden;'
 
 export interface DetailsDialogProps {
+  readonly cms?: DialogProps['cms']
   readonly t: BookingStrings
   readonly s: BookingStyles
   readonly closeLabel: string
@@ -80,6 +81,7 @@ export function DetailsDialog(props: DetailsDialogProps): JSX.Element {
   return (
     <Dialog
       titleId="knc-details-title"
+      {...(props.cms ? { cms: props.cms } : {})}
       onClose={props.onClose}
       onBackdropClick={props.onBackdropClick}
       backdropClass="knc-sheet-backdrop"

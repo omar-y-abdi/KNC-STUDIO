@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
 import { isSitePage, renderSitePage } from '../../../shared/site-page'
+import type { CmsScene } from '../../cms/Scene'
 
 /** Isolated, read-only native runtime, using the same validated draft as publication. */
 export function LivePreview({
@@ -14,7 +15,9 @@ export function LivePreview({
   device,
   fontCss,
   onNavigate,
+  scene = 'default',
 }: {
+  scene?: CmsScene
   page: CmsPage
   presentation: CmsPresentation
   lang: CmsLang
@@ -81,15 +84,17 @@ export function LivePreview({
         path: page.path,
         presentation,
         scene:
-          page.path === '/booking'
-            ? 'booking'
-            : page.path === '/my-bookings'
-              ? 'my-bookings'
-              : 'home',
+          scene !== 'default'
+            ? scene
+            : page.path === '/booking'
+              ? 'booking'
+              : page.path === '/my-bookings'
+                ? 'my-bookings'
+                : 'home',
       },
       location.origin,
     )
-  }, [connected, native, page.path, presentation, lang, mode, device])
+  }, [connected, native, page.path, presentation, lang, mode, device, scene])
   const content = native
     ? null
     : isSitePage(page)
