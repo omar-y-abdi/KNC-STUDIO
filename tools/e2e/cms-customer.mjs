@@ -98,14 +98,21 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
         const initial = await page.request.get(`${origin}/`)
         assert.equal(initial.status(), 200)
         const html = await initial.text()
-        assert.ok(html.includes('id="cms-native-state"'), 'Worker native state is absent')
-        assert.ok(html.includes('data-cms-public="1"'), 'Worker did not render the public document')
-        const root = html.slice(html.indexOf('<div id="root"'))
-        assert.ok(root.includes(copy.desktop), 'Desktop edit is absent from Worker HTML')
-        assert.ok(root.includes(copy.mobile), 'Mobile edit is absent from Worker HTML')
+        assert.ok(html.length < 50000, 'Native HTML must stay bounded as CMS content grows')
+        assert.ok(
+          !html.includes('id="cms-native-state"'),
+          'Native HTML duplicates the CMS snapshot',
+        )
+        const publicState = await page.request.get(`${origin}/api/cms/presentation`)
+        assert.equal(publicState.status(), 200)
+        const published = (await publicState.json()).presentation.pages.find(
+          (item) => item.path === '/',
+        )
+        assert.ok(published.content.sv.html.includes(copy.desktop))
+        assert.ok(published.content.sv.html.includes(copy.mobile))
         await page.screenshot({ path: join(work, 'cms-published-owner.png') })
         console.log(
-          'CMS customer fixture published through the real owner UI, Edge and database; Worker HTML contains both edits.',
+          'CMS customer fixture published through the real owner UI, Edge and database; bounded Worker HTML and public presentation verified.',
         )
       } catch (error) {
         console.error('CMS customer editor:', (await page.locator('body').innerText()).slice(-4000))

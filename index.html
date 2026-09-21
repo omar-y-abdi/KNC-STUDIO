@@ -4,7 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <!-- Present at load so iOS honours it; JS updates it to the panel surface per light/dark. -->
-    <meta name="theme-color" content="#f4f3f0" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html,
+      body {
+        background-color: #f4f3f0;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background-color: #242427;
+        }
+      }
+    </style>
+    <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#242427" media="(prefers-color-scheme: dark)" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 

@@ -54,7 +54,8 @@ The gate checks authored copy after navigation and reload, restores its CMS chan
 temporary owner. It sends no provider email and rejects non-loopback database/API addresses. Logs and
 screenshots remain in the printed temporary directory. Vite preview provides the local TLS bridge;
 public page HTML, CMS presentation and customer APIs run through the actual Worker. The gate asserts
-both desktop/mobile edits in the initial Worker HTML before checking browser navigation and reload.
+bounded native HTML and both desktop/mobile edits in the public presentation API before checking
+visible copy through browser navigation and reload.
 
 For interactive development, configure `.env.local` with the local `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` from `npx supabase status`. Put the local `SUPABASE_URL`, `SUPABASE_ANON_KEY`
