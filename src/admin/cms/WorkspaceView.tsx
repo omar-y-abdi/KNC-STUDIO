@@ -19,10 +19,6 @@ const views: Record<string, { title: string; description: string }> = {
     title: 'Mejl från din salong',
     description: 'Redigera text och utseende. Förhandsvisningen använder samma mall som utskicken.',
   },
-  delivery: {
-    title: 'Leveransstatus',
-    description: 'Följ skickade mejl och hantera leveransproblem i Admin.',
-  },
 }
 
 /** Workspace destinations preserve the mounted editor and its selection/scroll state. */

@@ -48,7 +48,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   )
   const [, setVersion] = useState(0)
   const [dialog, setDialog] = useState<
-    'history' | 'resources' | 'business' | 'email' | 'delivery' | 'new-page' | 'backup' | null
+    'history' | 'resources' | 'business' | 'email' | 'new-page' | 'backup' | null
   >(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
@@ -581,19 +581,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             >
               Mejl
             </button>
-            <button
-              type="button"
-              class={workspaceView === 'delivery' ? 'is-active' : ''}
-              onClick={(event) => {
-                event.currentTarget.focus()
-                editor.current?.flush()
-                setMobilePanel(null)
-                setDialog('delivery')
-                setLocked(false)
-              }}
+            <a
+              class="cms-sidebar-link"
+              href="/admin?tab=mail"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => editor.current?.flush()}
             >
               Leveransstatus ↗
-            </button>
+            </a>
             <button
               type="button"
               onClick={() => {
@@ -711,23 +707,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           </div>
           {workspaceView && (
             <CmsWorkspaceView kind={workspaceView} onClose={() => setDialog(null)}>
-              {dialog === 'delivery' ? (
-                <div class="cms-domain-panel">
-                  <h2>Operativ e-postleverans</h2>
-                  <p>
-                    Leveransstatus och återförsök är operativ data och ligger därför utanför
-                    reversibel CMS-historik.
-                  </p>
-                  <a
-                    href="/admin?tab=mail"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="cms-external-link"
-                  >
-                    Öppna leveranspanelen i Admin ↗
-                  </a>
-                </div>
-              ) : dialog === 'business' ? (
+              {dialog === 'business' ? (
                 <BusinessPanel document={draft.document} onChange={(next) => commitDraft(next)} />
               ) : dialog === 'email' ? (
                 <EmailPanel

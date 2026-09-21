@@ -526,6 +526,18 @@ for (const [engine, name] of [
           await publicButton.click()
           await live.getByRole('button', { name: 'Spara val', exact: true }).waitFor()
         } else if (scenario === 'dialogs') {
+          assert.equal(
+            await page
+              .getByRole('link', { name: 'Leveransstatus ↗', exact: true })
+              .getAttribute('href'),
+            '/admin?tab=mail',
+          )
+          assert.equal(
+            await page
+              .getByRole('link', { name: 'Leveransstatus ↗', exact: true })
+              .getAttribute('target'),
+            '_blank',
+          )
           await selectCopy()
           const originalTranslate = await frame
             .getByText('KNC source sv', { exact: true })
@@ -537,7 +549,6 @@ for (const [engine, name] of [
               ['Resurser', 'Bilder & typsnitt'],
               ['Business / SEO', 'Företag & sökresultat'],
               ['Mejl', 'Mejl från din salong'],
-              ['Leveransstatus ↗', 'Leveransstatus'],
               ['History', 'Webbplatsens historik'],
             ]) {
               if (width === 390 && trigger !== 'History')
@@ -558,12 +569,6 @@ for (const [engine, name] of [
                     .evaluate((node) => globalThis.getComputedStyle(node).translate),
                   originalTranslate,
                   'Workspace keyboard input must never nudge a hidden selected page element',
-                )
-              }
-              if (title === 'Leveransstatus') {
-                assert.equal(
-                  await surface.getByRole('link').getAttribute('href'),
-                  '/admin?tab=mail',
                 )
               }
               const state = await surface.evaluate((view) => {

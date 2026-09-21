@@ -1441,7 +1441,16 @@
   white-space: nowrap;
 }
 
-/* Device switches are geometry changes, not animation; keep Fit and hit targets stable. */
-.knc-cms-studio .gjs-frame-wrapper--anim {
-  transition: none;
+.cms-sidebar-link {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 9px 6px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+.cms-sidebar-link:hover {
+  color: var(--accent);
+  background: var(--selected);
 }
