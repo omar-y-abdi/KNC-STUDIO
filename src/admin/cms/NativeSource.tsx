@@ -4,6 +4,8 @@ import { App, type SitePreviewSnapshot } from '../../app/App'
 import { NativeSiteProvider } from '../../cms/NativeSurface'
 import { PreviewPorts } from '../../cms/PreviewPorts'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+import { mediaUrl, validatePresentation, type CmsPresentation } from '../../../shared/cms'
+import { SUPABASE_URL } from '../../backend/config'
 
 interface SourceContext {
   id: string
@@ -11,10 +13,12 @@ interface SourceContext {
   mode: 'light' | 'dark'
   device: 'Desktop' | 'Mobile'
   scene: 'home' | 'booking' | 'my-bookings'
+  path?: string
+  presentation?: CmsPresentation
 }
 
 /** Renders public components with read-only ports, never private editor or customer state. */
-export function NativeSource(): JSX.Element {
+export function NativeSource({ interactive = false }: { interactive?: boolean }): JSX.Element {
   const [context, setContext] = useState<SourceContext>({
     id: 'initial',
     lang: 'sv',
@@ -65,6 +69,14 @@ export function NativeSource(): JSX.Element {
         !['home', 'booking', 'my-bookings'].includes(String(value['scene']))
       )
         return
+      if (interactive) {
+        try {
+          validatePresentation(value['presentation'])
+        } catch {
+          return
+        }
+        if (!['/', '/about', '/booking', '/my-bookings'].includes(String(value['path']))) return
+      }
       delete document.documentElement.dataset['kncSourceReady']
       delete document.documentElement.dataset['kncBookingReady']
       state.status.metadata = false
@@ -74,12 +86,17 @@ export function NativeSource(): JSX.Element {
         mode: value['mode'] as SourceContext['mode'],
         device: value['device'] as SourceContext['device'],
         scene: value['scene'] as SourceContext['scene'],
+        ...(interactive
+          ? { path: String(value['path']), presentation: value['presentation'] as CmsPresentation }
+          : {}),
       })
     }
     window.addEventListener('message', receive)
     document.documentElement.dataset['kncSourceListening'] = '1'
+    if (interactive)
+      window.parent.postMessage({ type: 'knc-preview-listening' }, window.location.origin)
     return () => window.removeEventListener('message', receive)
-  }, [state])
+  }, [state, interactive])
   useEffect(() => {
     let frame = 0
     let stable = 0
@@ -115,6 +132,8 @@ export function NativeSource(): JSX.Element {
       stable = ready ? stable + 1 : 0
       if (stable >= 3) {
         document.documentElement.dataset['kncSourceReady'] = context.id
+        if (interactive && context.path === '/about')
+          document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
         return
       }
       frame = requestAnimationFrame(settle)
@@ -124,7 +143,7 @@ export function NativeSource(): JSX.Element {
       stopped = true
       cancelAnimationFrame(frame)
     }
-  }, [context, state])
+  }, [context, state, interactive])
   const ready = (snapshot: SitePreviewSnapshot): void => {
     if (
       snapshot.lang !== context.lang ||
@@ -138,12 +157,63 @@ export function NativeSource(): JSX.Element {
     document.documentElement.lang = context.lang
     document.title = snapshot.chrome.business.seo[context.lang].title
   }
+  if (interactive && !context.presentation) return <p>Förhandsvisningen laddas…</p>
+  const fonts = Object.entries(context.presentation?.fonts ?? {})
+    .map(
+      ([id, font]) =>
+        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
+    )
+    .join('\n')
   return (
-    <div inert>
-      <NativeSiteProvider source>
+    <div
+      inert={!interactive}
+      onClickCapture={
+        interactive
+          ? (event) => {
+              const target = event.target
+              const anchor = target instanceof Element ? target.closest('a') : null
+              if (!anchor) return
+              // Keep all navigation inside the read-only runtime; never enter the live booking app.
+              event.preventDefault()
+              const url = new URL(anchor.href, window.location.origin)
+              if (url.origin === window.location.origin && url.hash) {
+                // The existing privacy link's native callback still runs during bubbling.
+                try {
+                  document
+                    .getElementById(decodeURIComponent(url.hash.slice(1)))
+                    ?.scrollIntoView({ block: 'start' })
+                } catch {
+                  /* Malformed fragment. */
+                }
+                return
+              }
+              if (
+                url.origin !== window.location.origin ||
+                !['/', '/about', '/booking', '/my-bookings'].includes(url.pathname)
+              )
+                return
+              setContext((current) => ({
+                ...current,
+                id: crypto.randomUUID(),
+                path: url.pathname,
+                scene:
+                  url.pathname === '/booking'
+                    ? 'booking'
+                    : url.pathname === '/my-bookings'
+                      ? 'my-bookings'
+                      : 'home',
+              }))
+            }
+          : undefined
+      }
+    >
+      {interactive && <style>{fonts}</style>}
+      <NativeSiteProvider source={!interactive} presentation={context.presentation ?? null}>
         <PreviewPorts.Provider value={state.ports}>
           <App
+            key={interactive ? context.id : 'source'}
             preview={{
+              interactive,
               lang: context.lang,
               mode: context.mode,
               view: context.scene === 'booking' ? 'booking' : 'home',

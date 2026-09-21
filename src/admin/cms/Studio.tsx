@@ -8,6 +8,7 @@ import {
   type CmsLang,
   type CmsMode,
   type CmsPage,
+  type CmsPresentation,
   type CmsRevision,
   type CmsState,
 } from '../../../shared/cms'
@@ -35,6 +36,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [zoom, setZoom] = useState(80)
   const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
+  const [preview, setPreview] = useState<CmsPresentation | null>(null)
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
   const [mobilePanel, setMobilePanel] = useState<Panel>(null)
   const [error, setError] = useState<string | null>(null)
@@ -217,6 +219,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setVersion((value) => value + 1)
   }
   const openHistory = async (): Promise<void> => {
+    setLocked(false)
     editor.current?.flush()
     setBusy(true)
     setError(null)
@@ -361,6 +364,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             event.currentTarget.focus()
             editor.current?.flush()
             setDialog('resources')
+            setLocked(false)
           }}
         >
           Resurser
@@ -401,7 +405,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               {item.name[lang] || item.path}
             </button>
           ))}
-          <div class="cms-page-meta">
+          <div class="cms-page-meta" inert={locked}>
             <label>
               Namn
               <input
@@ -485,7 +489,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             )}
           </div>
           <h2>Ny sida</h2>
-          <div class="cms-page-meta">
+          <div class="cms-page-meta" inert={locked}>
             <label>
               Namn
               <input value={newName} onInput={(e) => setNewName(e.currentTarget.value)} />
@@ -505,6 +509,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               event.currentTarget.focus()
               editor.current?.flush()
               setDialog('resources')
+              setLocked(false)
             }}
           >
             Bilder & typsnitt · {resources.length}
@@ -516,6 +521,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               event.currentTarget.focus()
               editor.current?.flush()
               setDialog('business')
+              setLocked(false)
             }}
           >
             Business / SEO
@@ -526,6 +532,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               event.currentTarget.focus()
               editor.current?.flush()
               setDialog('email')
+              setLocked(false)
             }}
           >
             Mejl
@@ -536,6 +543,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               event.currentTarget.focus()
               editor.current?.flush()
               setDialog('delivery')
+              setLocked(false)
             }}
           >
             Leveransstatus ↗
@@ -554,15 +562,24 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => setZoom(Math.max(30, zoom - 10))}>
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => setZoom(Math.max(30, zoom - 10))}
+            >
               −
             </button>
-            <span>{zoom}%</span>
-            <button type="button" onClick={() => setZoom(Math.min(120, zoom + 10))}>
+            <span>{locked ? 'Förhandsvisning' : `${zoom}%`}</span>
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => setZoom(Math.min(120, zoom + 10))}
+            >
               +
             </button>
             <button
               type="button"
+              disabled={locked}
               onClick={() => {
                 const nextZoom = editor.current?.fit()
                 if (nextZoom !== undefined) setZoom(nextZoom)
@@ -573,6 +590,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button
               type="button"
               aria-pressed={compare}
+              disabled={locked}
               onClick={() => {
                 editor.current?.flush()
                 setCompare((value) => !value)
@@ -590,6 +608,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               compare={compare}
               zoom={zoom}
               locked={locked}
+              preview={preview}
               assets={resources}
               fontCss={fontCss}
               tab={tab}
@@ -682,9 +701,31 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           aria-pressed={locked}
-          onClick={() => {
+          disabled={busy}
+          onClick={async () => {
             editor.current?.flush()
-            setLocked((value) => !value)
+            if (locked) {
+              setLocked(false)
+              return
+            }
+            const candidate = draft.document
+            setBusy(true)
+            setError(null)
+            try {
+              const checked = await cmsApi.validate(candidate)
+              if (candidate !== draft.document) {
+                setError('Utkastet ändrades medan förhandsvisningen laddades. Öppna den igen.')
+                return
+              }
+              setPreview(checked.document.presentation)
+              setLocked(true)
+            } catch (reason) {
+              setError(
+                reason instanceof Error ? reason.message : 'Förhandsvisningen kunde inte öppnas.',
+              )
+            } finally {
+              setBusy(false)
+            }
           }}
         >
           {locked ? 'Lås upp' : 'Lås vy'}
@@ -767,7 +808,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 Leveransstatus och återförsök är operativ data och ligger därför utanför reversibel
                 CMS-historik.
               </p>
-              <a href="/admin?tab=operations" class="cms-external-link">
+              <a
+                href="/admin?tab=mail"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="cms-external-link"
+              >
                 Öppna leveranspanelen i Admin ↗
               </a>
             </div>

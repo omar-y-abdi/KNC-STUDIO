@@ -2,7 +2,7 @@ import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
-import type { CmsAsset, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
+import type { CmsAsset, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
@@ -11,6 +11,7 @@ import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import { nativeCanvas, exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
+import { LivePreview } from './LivePreview'
 
 export interface EditorHandle {
   flush: () => void
@@ -25,6 +26,7 @@ interface Props {
   compare: boolean
   zoom: number
   locked: boolean
+  preview: CmsPresentation | null
   assets: CmsAsset[]
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
@@ -120,6 +122,8 @@ export function CmsEditor(props: Props): JSX.Element {
       storageManager: false,
       panels: { defaults: [] },
       avoidInlineStyle: true,
+      // O-Y-A also disables GrapesJS's default box-sizing reset: it is not site CSS.
+      protectedCss: '',
       canvas: {
         scripts: [],
         styles: [],
@@ -201,6 +205,7 @@ export function CmsEditor(props: Props): JSX.Element {
         component.set('editable', true)
     })
     const keydown = (event: KeyboardEvent): void => {
+      if (latest.current.locked) return
       if (document.querySelector('dialog:modal')) return
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target
@@ -378,13 +383,6 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.Canvas.setZoom(props.zoom)
   }, [props.zoom])
 
-  useEffect(() => {
-    const editor = instance.current
-    if (!editor) return
-    if (props.locked) editor.runCommand('preview')
-    else editor.stopCommand('preview')
-  }, [props.locked])
-
   const chooseImage = (): void => {
     const editor = instance.current
     const component = editor?.getSelected()
@@ -459,8 +457,22 @@ export function CmsEditor(props: Props): JSX.Element {
 
   return (
     <>
-      <div class="cms-editor-canvas" ref={host} />
-      {comparison && (
+      <div
+        class="cms-editor-canvas"
+        ref={host}
+        style={{ visibility: props.locked ? 'hidden' : 'visible' }}
+      />
+      {props.locked && props.preview && (
+        <LivePreview
+          page={props.page}
+          presentation={props.preview}
+          lang={props.lang}
+          mode={props.mode}
+          device={props.device}
+          fontCss={props.fontCss}
+        />
+      )}
+      {comparison && !props.locked && (
         <div class="cms-compare-pane">
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
@@ -480,7 +492,7 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
         </div>
       )}
-      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper">
+      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
         <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
             <button

@@ -7,7 +7,14 @@ import './ui/styles/global.css'
 const root = document.getElementById('root')
 if (root === null) throw new Error('Fatal: #root mount node not found')
 if (window.location.pathname === '/cms-public/source') {
-  void import('./admin/cms/NativeSource').then(({ NativeSource }) => render(<NativeSource />, root))
+  void import('./admin/cms/NativeSource').then(({ NativeSource }) =>
+    render(
+      <NativeSource
+        interactive={new URLSearchParams(window.location.search).get('preview') === '1'}
+      />,
+      root,
+    ),
+  )
 } else if (
   root.dataset['cmsPublic'] !== undefined &&
   !root.querySelector('[data-knc-native="1"]')

@@ -95,6 +95,7 @@ export interface SitePreviewSnapshot {
 }
 
 export interface SitePreview {
+  readonly interactive?: boolean
   readonly mode: Mode
   readonly lang: Lang
   readonly view: View
@@ -113,12 +114,7 @@ function takeCustomerAccessLink(): BookingAccessLink {
 export function App({
   preview,
 }: { preview?: SitePreview; children?: ComponentChildren } = {}): JSX.Element {
-  const livePrivacy = usePrivacyPreferences()
-  // A source capture must not depend on the owner's personal consent cookie.
-  // Keep the reopening control visible without persisting any preview preference.
-  const privacy = preview
-    ? { ...livePrivacy, preferences: { functional: false }, expanded: false }
-    : livePrivacy
+  const privacy = usePrivacyPreferences(Boolean(preview))
   useEffect(() => {
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
   }, [privacy.openPreferences])
@@ -520,7 +516,9 @@ export function App({
           bookingPopupText={bookingPopupText}
         />
         {myBookingsDialog}
-        {!preview && <PrivacyBanner lang={lang} dark={dark} controls={privacy} />}
+        {(!preview || preview.interactive) && (
+          <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+        )}
       </>
     )
   }
@@ -552,7 +550,9 @@ export function App({
         bookingPopupText={bookingPopupText}
       />
       {myBookingsDialog}
-      {!preview && <PrivacyBanner lang={lang} dark={dark} controls={privacy} />}
+      {(!preview || preview.interactive) && (
+        <PrivacyBanner lang={lang} dark={dark} controls={privacy} />
+      )}
     </>
   )
 }

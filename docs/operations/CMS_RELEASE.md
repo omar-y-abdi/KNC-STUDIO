@@ -82,8 +82,12 @@ checks locked home scrolling with gallery tiles and public reload with a roster.
 `cms-projection.mjs` and `cms-conflict.mjs` cover native appearance, live callbacks and conflict
 recovery. These suites use fixtures; live owner checks are a separate release step.
 
-Lock view is a non-editable GrapesJS canvas snapshot, not a live booking submission session.
-Physical iPhone Safari and delivered-email pixel parity are not implied by these checks.
+Lock view uses the real native app with the validated unpublished presentation in a separate
+same-origin frame. Booking, customer and review writes are blocked by read-only ports, privacy
+choices remain in frame-local memory, and links cannot navigate into the live booking app.
+Mobile scrolling, folding navigation and privacy controls therefore retain their actual behavior.
+Custom and legal pages use a sandboxed HTML/CSS preview. Physical iPhone Safari and delivered-email
+pixel parity are not implied by these checks.
 
 ## Rollback
 

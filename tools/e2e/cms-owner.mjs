@@ -20,6 +20,7 @@ const scenarios = [
   'privacy-appearance',
   'logo-replacement',
   'legacy-preview-repair',
+  'live-preview',
 ].filter(
   (scenario) => !process.env.CMS_OWNER_SCENARIO || scenario === process.env.CMS_OWNER_SCENARIO,
 )
@@ -92,6 +93,9 @@ for (const [engine, name] of [
         })
         await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
         await frame.getByText(expected, { exact: true }).first().waitFor()
+        await frame.locator('html').evaluate(async () => {
+          await globalThis.document.fonts.ready
+        })
         await page.getByRole('button', { name: 'Fit', exact: true }).click()
       }
       const selectCopy = async () => {
@@ -109,10 +113,56 @@ for (const [engine, name] of [
       }
       try {
         await mount()
-        if (scenario === 'logo-replacement') {
+        if (scenario === 'live-preview') {
+          await selectCopy()
+          await inspector.getByLabel('Text', { exact: true }).fill('Unpublished preview text')
+          await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+          const preview = page.frameLocator('.cms-live-preview iframe')
+          await preview.getByText('Unpublished preview text', { exact: true }).waitFor()
+          await preview.getByRole('button', { name: 'Boka tid', exact: true }).click()
+          await preview.locator('[data-knc-surface="desktop-booking"]').waitFor()
+          await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+          await frame.getByText('Unpublished preview text', { exact: true }).waitFor()
+          await page.getByRole('button', { name: '390', exact: true }).click()
+          const cookies = await context.cookies()
+          await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+          const mobile = page.frameLocator('.cms-live-preview iframe')
+          await mobile
+            .getByRole('button', { name: 'Hantera integritetsinställningar', exact: true })
+            .click()
+          await mobile.getByRole('button', { name: 'Spara val', exact: true }).click()
+          assert.deepEqual(
+            await context.cookies(),
+            cookies,
+            'Preview consent controls must not change live cookies',
+          )
+          const scroll = mobile.getByTestId('mobile-site-scroll')
+          await scroll.hover()
+          await page.mouse.wheel(0, 900)
+          await page.waitForFunction(() => {
+            const doc = globalThis.document.querySelector(
+              '.cms-live-preview iframe',
+            )?.contentDocument
+            const root = doc?.querySelector('[data-testid="mobile-site-scroll"]')
+            const panel = root?.firstElementChild
+            return root?.scrollTop > 100 && panel?.getBoundingClientRect().height < 250
+          })
+          assert.equal(
+            await mobile.locator('[data-gjs-type]').count(),
+            0,
+            'Locked preview must contain no editor selection layer',
+          )
+          assert.deepEqual(
+            backend.writes,
+            [],
+            'Preview must never publish, book, send email, or submit a review',
+          )
+          await page.screenshot({ path: `/tmp/cms-native-${name}-live-mobile-preview.png` })
+        } else if (scenario === 'logo-replacement') {
           const logo = frame.locator('[data-knc-surface="desktop-home"] svg[role="img"]').first()
           const id = await logo.getAttribute('id')
-          await logo.click({ position: { x: 3, y: 3 } })
+          await logo.locator('text').filter({ hasText: /^BNB$/ }).click()
+          await inspector.getByRole('button', { name: 'Förälder', exact: true }).click()
           await inspector
             .getByRole('button', { name: 'Byt logotyp från biblioteket', exact: true })
             .click()
@@ -267,6 +317,22 @@ for (const [engine, name] of [
               await button.click()
               const modal = page.locator('dialog.cms-dialog')
               await modal.waitFor()
+              if (title === 'Leveransstatus') {
+                const href = await modal.getByRole('link').getAttribute('href')
+                const target = await page.evaluate(async (href) => {
+                  const { tabFromAdminUrl } = await import('/src/admin/navigationState.ts')
+                  return tabFromAdminUrl(
+                    new URL(href, globalThis.location.origin).href,
+                    ['mail', 'schedule'],
+                    'schedule',
+                  )
+                }, href)
+                assert.equal(
+                  target,
+                  'mail',
+                  'Delivery status must reach the existing mail admin tab',
+                )
+              }
               const state = await modal.evaluate((dialog) => {
                 const bounds = dialog.getBoundingClientRect()
                 const body = dialog.querySelector('.cms-dialog-body').getBoundingClientRect()

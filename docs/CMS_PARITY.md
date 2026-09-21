@@ -31,7 +31,7 @@ Worker HTML rendering has unit coverage. Physical iPhone Safari, live production
 | Advanced CSS                              | PORTED     | Browser CSS.supports; server parser remains publication boundary.                              |
 | Global/per-element styling                | EXTENDED   | GrapesJS element styles plus light/dark document variants and uploaded fonts.                  |
 | View-state restoration                    | PORTED     | Selection + canvas scroll per page.                                                            |
-| Lock/preview                              | PORTED     | GrapesJS preview command.                                                                      |
+| Lock/preview                              | PORTED     | Validated draft in a read-only native runtime frame; custom pages use sandboxed HTML/CSS.      |
 | Page create/duplicate/rename/delete       | PORTED     | Protected core routes cannot be deleted.                                                       |
 | Page SEO/menu/internal links              | EXTENDED   | KNC localized title/description + menu state.                                                  |
 | Resource picker/AssetManager              | PORTED     | Same CMS inventory feeds GrapesJS.                                                             |

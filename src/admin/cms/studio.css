@@ -145,6 +145,24 @@
   min-width: 0;
   min-height: 0;
 }
+.cms-live-preview {
+  position: absolute;
+  inset: 0 310px 0 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--bg);
+}
+.cms-live-preview iframe {
+  display: block;
+  border: 0;
+  background: #fff;
+}
+@media (max-width: 900px) {
+  .cms-live-preview {
+    right: 0;
+  }
+}
 .cms-inspector {
   min-width: 0;
   overflow: hidden;
