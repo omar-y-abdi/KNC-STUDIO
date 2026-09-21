@@ -215,10 +215,14 @@ for (const [engine, name] of [
           )
           await page.screenshot({ path: `/tmp/cms-native-${name}-live-mobile-preview.png` })
         } else if (scenario === 'logo-replacement') {
-          const logo = frame.locator('[data-knc-surface="desktop-home"] svg[role="img"]').first()
+          // Use the full-sized hero logo for replacement. Small corner lettering is covered by
+          // the logos scenario; its subpixel glyph hit area varies with Linux/macOS fonts.
+          const logo = frame
+            .locator('[data-knc-surface="desktop-home"] svg[role="img"]')
+            .filter({ hasText: 'STUDIO' })
+            .first()
           const id = await logo.getAttribute('id')
-          await logo.locator('text').filter({ hasText: /^BNB$/ }).click()
-          await inspector.getByRole('button', { name: 'Förälder', exact: true }).click()
+          await logo.click({ position: { x: 3, y: 3 } })
           await inspector
             .getByRole('button', { name: 'Byt logotyp från biblioteket', exact: true })
             .click()
