@@ -887,7 +887,6 @@ export default {
       }
       // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
       // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
-      console.warn('Native metadata renderer unavailable; serving the interactive app shell')
       const asset = await serveAsset(request, env, '/index.html', true)
       const headers = new Headers(asset.headers)
       headers.set('Cache-Control', 'no-store')
