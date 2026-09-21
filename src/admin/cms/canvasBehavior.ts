@@ -1,9 +1,20 @@
 import type { Editor } from 'grapesjs'
 import { mobileFold } from '../../app/mobileFold'
 import type { CmsScene } from '../../cms/Scene'
+import { SITE_THEME_DEFAULTS } from '../../../shared/site-theme'
+import type { CmsMode } from '../../../shared/cms'
+
+export function sceneVisibilityCss(scene: CmsScene, mode: CmsMode): string {
+  const scenes = ['booking-options', 'booking-details', 'booking-confirmation', 'my-bookings-list']
+  return scene === 'default'
+    ? scenes
+        .map((name) => `[data-knc-native]>[data-knc-surface="${name}"]{display:none!important}`)
+        .join('')
+    : `body{background:var(--knc-background,${SITE_THEME_DEFAULTS[mode].background})} [data-knc-native]>[data-knc-surface]:not([data-knc-surface="${scene}"]){display:none!important}`
+}
 
 /** DOM-only preview state: no scroll geometry or hidden-scene styles enter the editor model. */
-export function canvasBehavior(editor: Editor, scene: CmsScene): () => void {
+export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): () => void {
   let dispose = (): void => undefined
   const attach = (): void => {
     dispose()
@@ -13,18 +24,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene): () => void {
     const style = doc.createElement('style')
     style.id = 'cms-canvas-behavior'
     doc.head.appendChild(style)
-    const scenes = [
-      'booking-options',
-      'booking-details',
-      'booking-confirmation',
-      'my-bookings-list',
-    ]
-    const visibility =
-      scene === 'default'
-        ? scenes
-            .map((name) => `[data-knc-native]>[data-knc-surface="${name}"]{display:none!important}`)
-            .join('')
-        : `[data-knc-native]>[data-knc-surface]:not([data-knc-surface="${scene}"]){display:none!important}`
+    const visibility = sceneVisibilityCss(scene, mode)
     let frame = 0
     const update = (): void => {
       frame = 0

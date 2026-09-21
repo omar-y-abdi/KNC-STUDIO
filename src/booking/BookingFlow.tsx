@@ -639,7 +639,19 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
 
         {showCalendar ? (
           <NativeRegion surface="booking-options" lang={lang} mode={props.mode ?? 'light'}>
-            <div style="display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start;margin-top:26px;animation:kncFade .32s cubic-bezier(.32,.72,0,1) both;">
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '26px',
+                alignItems: 'flex-start',
+                marginTop: '26px',
+                animation: 'kncFade .32s cubic-bezier(.32,.72,0,1) both',
+                fontFamily: s.rootStyle.fontFamily,
+                color: c.text,
+                background: c.bg,
+              }}
+            >
               <div style="flex:1 1 300px;max-width:344px;min-width:0;">
                 <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">
                   <span style={s.badgeStyle}>2</span>
