@@ -1,3 +1,5 @@
+import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
+import { repairDesktopCss } from '../../shared/cms-device-css'
 import { createContext, Fragment, h, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, JSX, VNode } from 'preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
@@ -57,7 +59,7 @@ export function useNativeChild(): (source: JSX.Element) => JSX.Element {
       isValidElement(source) && typeof source.type === 'string'
         ? source
         : h('div', { style: 'display:contents' }, source)
-    const native = nativeTree(root, context.identity)
+    const native = nativeTree(root, context.identity, context.mode)
     return (
       <RenderContext.Provider value={context}>
         {context.template ? projectNativeTree(native, context.template, context.mode) : native.tree}
@@ -148,6 +150,7 @@ function nodeIdentity(surface: string, path: string): string {
 export function nativeTree(
   source: ComponentChild,
   surface: string,
+  mode: CmsMode = 'light',
 ): {
   tree: ComponentChild
   nodes: Map<string, NativeNode>
@@ -184,11 +187,28 @@ export function nativeTree(
       slots.set(identity, slot)
       return slot
     }
+    const nativeStyle = props['style']
+    const themedStyle =
+      nativeStyle && typeof nativeStyle === 'object'
+        ? Object.fromEntries(
+            Object.entries(nativeStyle).map(([key, cell]) => [
+              key,
+              typeof cell === 'string'
+                ? themeStyleValue(
+                    key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`),
+                    cell,
+                    mode,
+                  )
+                : cell,
+            ]),
+          )
+        : nativeStyle
     const required = Boolean(value.ref) || Object.keys(props).some((key) => /^on[A-Z]/.test(key))
     const node = h<Record<string, unknown>>(
       value.type,
       {
         ...props,
+        style: themedStyle,
         id: props['id'] ?? identity,
         key: value.key ?? path,
         ref: value.ref,
@@ -406,11 +426,16 @@ export function useNativeSurface(
       .parseFromString(html, 'text/html')
       .querySelector(`[data-knc-surface="${surface}"]`)
   }, [html, surface])
-  if (!context || (!context.source && !template)) return h(Fragment, null, source)
-  const native = nativeTree(source, surface)
+  if (
+    !context ||
+    (!context.source && !template && !Object.keys(context.presentation?.themes[mode] ?? {}).length)
+  )
+    return h(Fragment, null, source)
+  const native = nativeTree(source, surface, mode)
   return (
     <>
-      {template && <style>{page?.content[lang].css[mode] ?? ''}</style>}
+      {context.presentation && <style>{siteThemeCss(context.presentation, mode)}</style>}
+      {template && <style>{repairDesktopCss(page?.content[lang].css[mode] ?? '')}</style>}
       <RenderContext.Provider value={{ template, mode }}>
         {template ? projectNativeTree(native, template, mode) : native.tree}
       </RenderContext.Provider>

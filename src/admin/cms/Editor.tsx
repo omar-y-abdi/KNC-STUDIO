@@ -7,10 +7,14 @@ import type { CmsAsset, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../..
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
+import { siteThemeCss } from '../../../shared/site-theme'
+import { composedCanvas } from './composedCanvas'
+import { syncResponsiveText } from './responsiveText'
+import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { nativeCanvas, exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
 import { LivePreview } from './LivePreview'
 import {
@@ -48,6 +52,9 @@ interface Props {
   onZoom: (zoom: number) => void
   onError: (message: string) => void
 }
+
+// Static canvases cannot run the hero's scroll-driven collapse; let it leave the viewport.
+const canvasScrollCss = '[data-knc-surface^="mobile-"]>div:first-child{position:relative!important}'
 
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
   return [
@@ -99,15 +106,18 @@ function fitEditor(editor: Editor): number {
 }
 
 function editorContextKey(props: Props): string {
-  const sharedChromeKey = isSitePage(props.page)
-    ? JSON.stringify(
-        props.presentation.pages.map((page) =>
-          ['/', '/about'].includes(page.path)
-            ? [page.path, page.content[props.lang]]
-            : [page.path, page.inMenu, page.name[props.lang]],
-        ),
-      )
-    : ''
+  const sharedChromeKey =
+    isSitePage(props.page) || props.page.path === '/'
+      ? JSON.stringify(
+          props.presentation.pages
+            .filter((page) => props.page.path !== '/' || page.path === '/about')
+            .map((page) =>
+              ['/', '/about'].includes(page.path)
+                ? [page.path, page.content[props.lang]]
+                : [page.path, page.inMenu, page.name[props.lang]],
+            ),
+        )
+      : ''
   return `${props.page.id}:${props.lang}:${props.mode}:${sharedChromeKey}`
 }
 
@@ -135,7 +145,7 @@ export function CmsEditor(props: Props): JSX.Element {
       props.compare
         ? isSitePage(props.page)
           ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
-          : nativeCanvas(variant, props.mode)
+          : composedCanvas(props.page, props.presentation, props.lang, props.mode)
         : null,
     [props.compare, variant.html, variant.css[props.mode], props.mode, props.presentation],
   )
@@ -164,7 +174,9 @@ export function CmsEditor(props: Props): JSX.Element {
       // Pointer-transparent public branding must still be selectable in the editor.
       // Canvas-only CSS is never exported to the published website.
       canvasCss:
-        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}',
+        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}' +
+        canvasScrollCss,
+      mediaCondition: 'min-width',
       selectorManager: { componentFirst: true },
       layerManager: { appendTo: '#cms-layers' },
       traitManager: { appendTo: '#cms-traits' },
@@ -213,7 +225,7 @@ export function CmsEditor(props: Props): JSX.Element {
       },
       deviceManager: {
         devices: [
-          { id: 'Desktop', name: 'Desktop', width: '1440px', height: '900px' },
+          { id: 'Desktop', name: 'Desktop', width: '1440px', height: '900px', widthMedia: '769px' },
           { id: 'Mobile', name: 'Mobile', width: '390px', height: '844px', widthMedia: '768px' },
         ],
       },
@@ -277,11 +289,24 @@ export function CmsEditor(props: Props): JSX.Element {
       timer.current = null
       if (applying.current || !checkpoint.current) return
       // GrapesJS updates its dirty counter asynchronously; a context switch cannot wait for it.
-      const html = editor.getHtml({ cleanId: false })
+      let html = editor.getHtml({ cleanId: false })
       const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
       if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
       const next = structuredClone(current.page)
+      applying.current = true
+      try {
+        syncResponsiveText(editor, current.page.content[current.lang].html, html)
+      } finally {
+        applying.current = false
+      }
+      html = editor.getHtml({ cleanId: false })
+      const baseVariant = isSitePage(current.page)
+        ? normalizeSitePageContent(
+            current.page.content[current.lang],
+            `${current.page.id}-${current.lang}`,
+          )
+        : current.page.content[current.lang]
       const exported = exportNativeCanvas(html, css, current.mode)
       if (isSitePage(current.page)) {
         exported.html = sitePageBody(exported.html)
@@ -290,13 +315,13 @@ export function CmsEditor(props: Props): JSX.Element {
       next.content[current.lang] = {
         html: exported.html,
         css: {
-          ...(isSitePage(current.page)
-            ? normalizeSitePageContent(
-                current.page.content[current.lang],
-                `${current.page.id}-${current.lang}`,
-              ).css
-            : next.content[current.lang].css),
+          ...baseVariant.css,
           [current.mode]: exported.css,
+          [current.mode === 'light' ? 'dark' : 'light']: syncLayout(
+            baseVariant.css[current.mode],
+            exported.css,
+            baseVariant.css[current.mode === 'light' ? 'dark' : 'light'],
+          ),
         },
       }
       rendered.current = {
@@ -359,7 +384,7 @@ export function CmsEditor(props: Props): JSX.Element {
     applying.current = true
     const content = isSitePage(props.page)
       ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
-      : nativeCanvas(variant, props.mode)
+      : composedCanvas(props.page, props.presentation, props.lang, props.mode)
     editor.select()
     setSelected(null)
     // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
@@ -409,8 +434,8 @@ export function CmsEditor(props: Props): JSX.Element {
       style.id = 'cms-uploaded-fonts'
       frame.head.appendChild(style)
     }
-    style.textContent = props.fontCss
-  }, [props.fontCss])
+    style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
+  }, [props.fontCss, props.presentation.themes, props.mode])
 
   useEffect(() => {
     const editor = instance.current
@@ -426,6 +451,7 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
+    editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
     editor.setDevice(props.device)
     latest.current.onZoom(fitEditor(editor))
   }, [props.device])
@@ -541,7 +567,7 @@ export function CmsEditor(props: Props): JSX.Element {
                 transform: `scale(${compareScale})`,
                 transformOrigin: 'top left',
               }}
-              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${comparison.css}</style></head><body>${comparison.html}</body></html>`}
+              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
             />
           </div>
         </div>
@@ -562,6 +588,10 @@ export function CmsEditor(props: Props): JSX.Element {
         <div hidden={props.tab !== 'design'} class="cms-inspector-scroll">
           <div class="cms-selection-head">
             <strong>{label(selected)}</strong>
+            <p class="cms-style-scope">
+              Layout: {props.device === 'Desktop' ? 'bara dator' : 'bara mobil'}. Text delas mellan
+              vyerna.
+            </p>
           </div>
           {selected && readOnly ? (
             <p class="cms-lock-note">
@@ -577,8 +607,10 @@ export function CmsEditor(props: Props): JSX.Element {
                 </>
               ) : (
                 <>
-                  Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen
-                  sida i sidlistan.
+                  Det här innehållet delas med Om oss. Ändringar där visas också här.
+                  <button type="button" onClick={() => props.onOpenPage('/about')}>
+                    Redigera Om oss
+                  </button>
                 </>
               )}
             </p>

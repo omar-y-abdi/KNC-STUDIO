@@ -25,6 +25,14 @@ const page: CmsPage = {
 const shell = `<!doctype html><html lang="sv"><head><title id="business-title">Old</title><meta id="business-description" name="description" content="old"><meta id="business-og-title" property="og:title" content="old"><meta id="business-og-description" property="og:description" content="old"><meta id="business-twitter-title" name="twitter:title" content="old"><meta id="business-twitter-description" name="twitter:description" content="old"><meta property="og:locale" content="sv_SE"><meta property="og:locale:alternate" content="en_US"><link rel="canonical" href="https://bladeblendstudio.se/"></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
 
 describe('canonical CMS public page rendering', () => {
+  it('repairs legacy desktop media in server-rendered CSS before the client mounts', () => {
+    const native = structuredClone(page)
+    native.content.sv.css.light =
+      '@media(max-width:1440px){#reviews{translate:264px 5px!important}}'
+    const result = renderCmsPage(shell, native, 'sv', 'light', 'https://bladeblendstudio.se/')
+    expect(result).toContain('(min-width:769px){#reviews')
+    expect(result).not.toContain('max-width:1440px')
+  })
   it('restores dark source attributes without replacing owner edits in the initial response', () => {
     const native = structuredClone(page)
     const metadata = `data-knc-baseline='{"src":"/icons/sun.max.svg","alt":"Light"}' data-knc-dark-attrs='{"src":"/icons/moon.svg","alt":"Dark"}'`
@@ -53,12 +61,8 @@ describe('canonical CMS public page rendering', () => {
     expect(html).toContain('data-cms-public="1"')
     expect(html).toContain('data-cms-mode="dark"')
     expect(html).toContain('<main><h1>Hello</h1></main>')
-    expect(html).toContain(
-      '<style id="cms-page-light" media="(prefers-color-scheme: light)">body{color:#222}</style>',
-    )
-    expect(html).toContain(
-      '<style id="cms-page-dark" media="(prefers-color-scheme: dark)">body{color:#ddd}</style>',
-    )
+    expect(html).toContain('<style id="cms-page-light" media="not all">body{color:#222}</style>')
+    expect(html).toContain('<style id="cms-page-dark" media="all">body{color:#ddd}</style>')
     expect(html).toContain('English title')
     expect(html).toContain('English description')
     expect(html).toContain('href="https://bladeblendstudio.se/"')
