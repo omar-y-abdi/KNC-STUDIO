@@ -66,6 +66,24 @@ Frontend defects shared a few causes:
   text plus `<br>` nodes, matching direct rich-text editing. Mixed text/icon elements retain their
   children and preserve newlines; their text-node views refresh immediately.
 
+## Native homepage CPU and viewport regression
+
+The September 21 publication at revision 21 exposed a Worker CPU limit: observability reported
+`exceededCpu` at 10 ms while native routes parsed and embedded large editor HTML/CSS plus a JSON
+snapshot that the browser would render again. The native routes now serve bounded app HTML and
+small page metadata from `public_cms_page_metadata`; `/api/cms/presentation` streams the published
+RPC response. The browser validates and projects that document. Custom/legal pages retain server
+rendering. Apply migration `20260921164356_public_cms_page_metadata.sql` before this frontend.
+A missing metadata RPC falls back to business SEO without preventing native page delivery.
+
+Home's derived About preview is reconstructed from the current About draft, not persisted into
+Home on each edit. Exports strip the derived subtree/CSS and duplicate rules. Existing publication
+content is left intact until the owner edits it; no automatic rollback or republishing is required.
+
+Viewport backgrounds and browser color hints follow the rendered native surface and selected
+color scheme, including CMS palette edits. Initial background and theme metadata respect system
+light/dark mode. Browser engine tests cover CSS and metadata, not physical iPhone Safari chrome.
+
 ## O-Y-A comparison
 
 O-Y-A has a backend: its Cloudflare Worker stores revisions and the current pointer in D1; R2

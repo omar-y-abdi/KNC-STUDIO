@@ -8,7 +8,7 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
-import { composedCanvas } from './composedCanvas'
+import { composedCanvas, stripComposedCanvas } from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
@@ -307,7 +307,8 @@ export function CmsEditor(props: Props): JSX.Element {
             `${current.page.id}-${current.lang}`,
           )
         : current.page.content[current.lang]
-      const exported = exportNativeCanvas(html, css, current.mode)
+      const nativeExport = exportNativeCanvas(html, css, current.mode)
+      const exported = stripComposedCanvas(nativeExport.html, nativeExport.css)
       if (isSitePage(current.page)) {
         exported.html = sitePageBody(exported.html)
         exported.css = sitePageCss(exported.css, exported.html)
@@ -324,6 +325,11 @@ export function CmsEditor(props: Props): JSX.Element {
           ),
         },
       }
+      const otherMode = current.mode === 'light' ? 'dark' : 'light'
+      next.content[current.lang].css[otherMode] = stripComposedCanvas(
+        html,
+        next.content[current.lang].css[otherMode],
+      ).css
       rendered.current = {
         pageId: current.page.id,
         key: editorContextKey(current),

@@ -130,13 +130,60 @@ function publicCmsFromWire(value: unknown): PublicCmsPresentation | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const wire = value as Record<string, unknown>
   if (typeof wire['revision'] !== 'number' || !Number.isSafeInteger(wire['revision'])) return null
-  const presentation = structuredClone(wire['presentation'])
+  const presentation = wire['presentation']
   try {
     validatePresentation(presentation)
   } catch {
     return null
   }
   return { revision: wire['revision'], presentation }
+}
+
+async function publicCmsResponse(
+  env: Env,
+  operation: string,
+  body: Record<string, string> = {},
+): Promise<Response | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  try {
+    return await fetch(`${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${operation}`, {
+      method: 'POST',
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(1800),
+    })
+  } catch {
+    return null
+  }
+}
+
+async function nativeMetadata(
+  env: Env,
+  path: string,
+  lang: CmsLang,
+): Promise<{ title: string; description: string } | null> {
+  const response = await publicCmsResponse(env, 'public_cms_page_metadata', {
+    p_path: path,
+    p_lang: lang,
+  })
+  if (!response?.ok) return null
+  const value: unknown = await response.json().catch(() => null)
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !('title' in value) ||
+    !('description' in value) ||
+    typeof value.title !== 'string' ||
+    typeof value.description !== 'string' ||
+    value.title.length > 2000 ||
+    value.description.length > 10000
+  )
+    return null
+  return { title: value.title, description: value.description }
 }
 
 async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
@@ -567,15 +614,22 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   if (pathname === '/api/cms/presentation') {
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
-    const cms = await loadPublicCms(env)
+    // Publication validates the database document; the browser validates its copy on receipt.
+    // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
+    const response = await publicCmsResponse(env, 'public_cms_presentation')
     return new Response(
-      request.method === 'HEAD' ? null : JSON.stringify(cms ?? { error: 'unavailable' }),
+      request.method === 'HEAD'
+        ? null
+        : response?.ok
+          ? response.body
+          : JSON.stringify({ error: 'unavailable' }),
       {
-        status: cms ? 200 : 503,
+        status: response?.ok ? 200 : 503,
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       },
     )
   }
+
   if (pathname === '/cms-public/source' && ['GET', 'HEAD'].includes(request.method)) {
     return cmsFrameResponse(await serveAsset(request, env, '/index.html', true), true)
   }
@@ -628,6 +682,50 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   if (pathname === '/index.html') return redirectTo(url, '/')
+
+  if (
+    ['/', '/about', '/booking', '/my-bookings'].includes(pathname) &&
+    ['GET', 'HEAD'].includes(request.method)
+  ) {
+    // Native pages already render their CMS document in App. Parsing and embedding the entire
+    // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
+    const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
+    const [asset, metadata, discovery] = await Promise.all([
+      serveAsset(request, env, '/index.html', true),
+      nativeMetadata(env, pathname, lang),
+      loadDiscovery(env),
+    ])
+    let body = await asset.text()
+    if (discovery) body = renderHomepageMetadata(body, discovery)
+    if (metadata) {
+      body = replaceElementText(body, 'business-title', metadata.title)
+      for (const id of ['business-og-title', 'business-twitter-title'])
+        body = replaceMetaContent(body, id, metadata.title)
+      for (const id of [
+        'business-description',
+        'business-og-description',
+        'business-twitter-description',
+      ])
+        body = replaceMetaContent(body, id, metadata.description)
+    }
+    body = body.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
+    body = body.replace(
+      /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
+      `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
+    )
+    body = body.replace(
+      /(<meta\b[^>]*property="og:locale:alternate"[^>]*content=")[^"]*(")/i,
+      `$1${lang === 'en' ? 'sv_SE' : 'en_US'}$2`,
+    )
+    body = body.replace(
+      /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
+      `$1${SITE_URL}${pathname}$2`,
+    )
+    const headers = new Headers(asset.headers)
+    for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
+    headers.set('Cache-Control', 'no-store')
+    return new Response(request.method === 'HEAD' ? null : body, { status: asset.status, headers })
+  }
 
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&

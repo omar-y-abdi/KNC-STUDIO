@@ -1,4 +1,4 @@
-import { generate, parse, walk } from 'css-tree'
+import { generate, parse, walk, type CssNode } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
 
@@ -71,4 +71,53 @@ export function composedCanvas(
     rules.push(generate(sheet))
   }
   return { html: doc.body.innerHTML, css: rules.join('\n') }
+}
+
+/** Derived About previews never belong to the Home document. Persist only their slot marker;
+ * the next render fills it from About again. Prune stale preview selectors and duplicate CSS. */
+export function stripComposedCanvas(html: string, css: string): { html: string; css: string } {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  if (!doc.querySelector('[data-knc-surface="desktop-home"],[data-knc-surface="mobile-home"]'))
+    return { html, css }
+  const discarded = new Set<string>()
+  for (const slot of doc.querySelectorAll('[data-knc-slot]')) {
+    const section = slot.querySelector(':scope > section[aria-labelledby]')
+    if (!section) continue
+    for (const node of [section, ...section.querySelectorAll('[id]')])
+      if (node.id) discarded.add(node.id)
+    section.replaceChildren()
+    // An inert marker keeps older source documents and future core-page preparation compatible.
+    for (const attr of [...section.attributes])
+      if (attr.name !== 'aria-labelledby') section.removeAttribute(attr.name)
+    section.setAttribute('data-knc-baseline', '{}')
+  }
+  const sheet = parse(css)
+  walk(sheet, {
+    visit: 'Rule',
+    enter(rule, item, list) {
+      let derived = false
+      walk(rule.prelude, {
+        visit: 'IdSelector',
+        enter(id) {
+          if (discarded.has(id.name) || id.name.startsWith('preview-shared-')) derived = true
+        },
+      })
+      if (derived && item && list) list.remove(item)
+    },
+  })
+  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
+  walk(sheet, {
+    leave(node: CssNode) {
+      if (node.type !== 'StyleSheet' && node.type !== 'Block') return
+      const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
+      node.children.forEach((child, item) => {
+        if (child.type !== 'Rule' && child.type !== 'Atrule') return
+        const key = generate(child)
+        const earlier = seen.get(key)
+        if (earlier) node.children.remove(earlier.item)
+        seen.set(key, { item })
+      })
+    },
+  })
+  return { html: doc.body.innerHTML, css: generate(sheet) }
 }

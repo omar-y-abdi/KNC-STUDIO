@@ -1,0 +1,12 @@
+begin;
+select plan(7);
+update public.cms_site set revision = 123, presentation = jsonb_set(presentation, '{pages}', jsonb_build_array(jsonb_build_object('path','/','title',jsonb_build_object('sv','CMS titel','en','CMS title'),'description',jsonb_build_object('sv','Beskrivning','en','Description'),'content',repeat('x',100000))));
+select ok(has_function_privilege('anon','public.public_cms_page_metadata(text,text)','EXECUTE'),'public metadata is available to anonymous visitors');
+select is(public.public_cms_page_metadata('/','sv')->>'title','CMS titel','Swedish title');
+select is(public.public_cms_page_metadata('/','en')->>'description','Description','English description');
+select is(public.public_cms_page_metadata('/','sv')->>'revision','123','Metadata uses current publication');
+select ok(octet_length(public.public_cms_page_metadata('/','sv')::text) < 200,'Response never includes large editor content');
+select is(public.public_cms_page_metadata('/missing','sv'),null::jsonb,'Missing page returns null');
+select is(public.public_cms_page_metadata('/','fr'),null::jsonb,'Unsupported language returns null');
+select * from finish();
+rollback;

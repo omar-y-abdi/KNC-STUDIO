@@ -1,3 +1,4 @@
+import { useCmsPresentation } from '../cms/NativeSurface'
 // Root component.
 // Owns state {mode, lang, view, myBookingsOpen}, the isMobile matchMedia switch, and the
 // theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
@@ -5,7 +6,7 @@
 // passed down so both layouts render identical controls.
 
 import type { JSX, ComponentChildren } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
@@ -298,9 +299,20 @@ export function App({
   //  - pageBg (html/body, behind the bottom URL bar): follows the content BELOW the header.
   const topBar = isMobile ? (dark ? '#242427' : '#f4f3f0') : c.bg
   const pageBg = isMobile ? (inSection ? c.bg : dark ? '#242427' : '#f4f3f0') : c.bg
-  useEffect(() => {
-    paintViewport(pageBg, topBar)
-  }, [pageBg, topBar])
+  const cmsPresentation = useCmsPresentation()
+  useLayoutEffect(() => {
+    const surface = document.querySelector(
+      `[data-knc-surface="${isMobile ? 'mobile' : 'desktop'}-${inSection ? 'booking' : 'home'}"]`,
+    )
+    const header = surface?.firstElementChild
+    const background = (element: Element | null | undefined, fallback: string): string => {
+      if (!element) return fallback
+      const value = getComputedStyle(element).backgroundColor
+      return value === 'transparent' || value === 'rgba(0, 0, 0, 0)' ? fallback : value
+    }
+    const top = background(header, topBar)
+    paintViewport(isMobile && !inSection ? top : background(surface, pageBg), top, state.mode)
+  }, [pageBg, topBar, isMobile, inSection, state.mode, cmsPresentation])
 
   const langMini = (on: boolean): JSX.CSSProperties => ({
     border: 'none',

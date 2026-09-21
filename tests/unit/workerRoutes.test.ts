@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { emptyPresentation } from '../../shared/cms'
 import worker, {
   PublicContent,
   customerAccessTokenFromPath,
@@ -281,31 +280,66 @@ describe('Worker route policy', () => {
     expect(response.headers.has('Last-Modified')).toBe(false)
   })
 
-  it('share-caches homepage metadata only after successful discovery', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input)
-      const body = url.includes('public_cms_presentation')
-        ? { revision: 2, presentation: emptyPresentation() }
-        : { settings: {}, barbers: [], services: [], schedules: [] }
-      return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
+  it.each(['/', '/about', '/booking', '/my-bookings'])(
+    'serves bounded native metadata for %s',
+    async (path) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const url = String(input)
+        const body = url.includes('public_cms_page_metadata')
+          ? { revision: 2, title: 'CMS title', description: 'CMS description' }
+          : { settings: {}, barbers: [], services: [], schedules: [] }
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
       })
-    })
-    const env = {
-      ...createEnv(),
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_ANON_KEY: 'test-anon-key',
-    }
+      const env = {
+        ...createEnv(),
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_ANON_KEY: 'test-anon-key',
+      }
+      env.ASSETS.fetch = async () =>
+        new Response(
+          '<!doctype html><html lang="sv"><head><title id="business-title">Old</title></head><body><div id="root"></div></body></html>',
+        )
 
+      try {
+        const response = await worker.fetch(
+          new Request(`https://bladeblendstudio.se${path}`),
+          env,
+          createWorkerContext(env),
+        )
+        expect(response.headers.get('Cache-Control')).toBe('no-store')
+        expect(await response.text()).toContain('CMS title')
+        expect(
+          fetchMock.mock.calls.some(([input]) => String(input).includes('public_cms_presentation')),
+        ).toBe(false)
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+      } finally {
+        fetchMock.mockRestore()
+      }
+    },
+  )
+  it('streams published CMS data without parsing it again at the edge', async () => {
+    const json = JSON.stringify({ revision: 21, presentation: { content: 'x'.repeat(1000000) } })
+    const upstream = new Response(json)
+    const parse = vi.spyOn(upstream, 'json')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream)
     try {
+      const env = {
+        ...createEnv(),
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_ANON_KEY: 'test',
+      }
       const response = await worker.fetch(
-        new Request('https://bladeblendstudio.se/'),
+        new Request('https://bladeblendstudio.se/api/cms/presentation'),
         env,
-        createWorkerContext(env),
       )
-      expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=300')
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+      expect(await response.text()).toBe(json)
+      expect(parse).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       fetchMock.mockRestore()
     }

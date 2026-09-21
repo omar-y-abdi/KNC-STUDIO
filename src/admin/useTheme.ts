@@ -31,7 +31,7 @@ export function useTheme(): ThemeState {
   // (matches the public site's edge-effect discipline). Light/dark only — no per-section nuance.
   useEffect(() => {
     const bg = dark ? '#1c1c1e' : '#ffffff'
-    paintViewport(bg, bg)
+    paintViewport(bg, bg, dark ? 'dark' : 'light')
   }, [dark])
 
   return {

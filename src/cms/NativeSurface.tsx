@@ -1,3 +1,5 @@
+import { mediaUrl } from '../../shared/cms'
+import { SUPABASE_URL } from '../backend/config'
 import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
 import { repairDesktopCss } from '../../shared/cms-device-css'
 import { createContext, Fragment, h, isValidElement } from 'preact'
@@ -15,6 +17,10 @@ const NativeContext = createContext<{
   presentation: CmsPresentation | null
   source: boolean
 } | null>(null)
+
+export function useCmsPresentation(): CmsPresentation | null {
+  return useContext(NativeContext)?.presentation ?? null
+}
 
 export function useCmsPageLinks(): readonly CmsPage[] {
   return (
@@ -107,10 +113,18 @@ export function NativeSiteProvider({
       })
     return () => controller.abort()
   }, [presentation, source])
+  const current = presentation === undefined ? published : presentation
+  const fonts = Object.entries(current?.fonts ?? {})
+    .map(
+      ([id, font]) =>
+        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
+    )
+    .join('\n')
   return (
     <NativeContext.Provider
       value={{ presentation: presentation === undefined ? published : presentation, source }}
     >
+      {fonts && <style>{fonts}</style>}
       {children}
     </NativeContext.Provider>
   )
