@@ -10,6 +10,6 @@ native components retain booking, customer-access and consent behavior. Editor s
 not proof of a completed publication.
 
 The September 21 repair addresses mismatched production backend code, obscured panels, discarded
-inline styles, unusable SVG logo controls and old unstyled preview subtrees. Acceptance requires
+inline styles, unusable SVG logo controls and old unstyled preview subtrees. The same repair now includes an O-Y-A-based workspace, actual outgoing email previews, shared site chrome for new pages, inspector line breaks and height-aware device fitting. Acceptance requires
 both browser regression coverage and an actual owner publish/public-reload check. See the release
 guide for source comparisons, release order, rollback and explicitly unverified surfaces.

@@ -6,12 +6,24 @@ import {
   type CmsLang,
   type CmsMode,
   type CmsPresentation,
+  type CmsPage,
 } from '../../shared/cms'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
   source: boolean
 } | null>(null)
+
+export function useCmsPageLinks(): readonly CmsPage[] {
+  return (
+    useContext(NativeContext)?.presentation?.pages.filter(
+      (page) =>
+        page.inMenu &&
+        page.kind === 'page' &&
+        !['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(page.path),
+    ) ?? []
+  )
+}
 
 interface NativeRenderContext {
   template: Element | null

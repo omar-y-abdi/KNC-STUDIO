@@ -2,6 +2,7 @@ import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
+import { isSitePage, renderSitePage } from '../../../shared/site-page'
 
 /** Isolated, read-only native runtime, using the same validated draft as publication. */
 export function LivePreview({
@@ -11,6 +12,7 @@ export function LivePreview({
   mode,
   device,
   fontCss,
+  onNavigate,
 }: {
   page: CmsPage
   presentation: CmsPresentation
@@ -18,6 +20,7 @@ export function LivePreview({
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
   fontCss: string
+  onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
 }): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
@@ -43,6 +46,18 @@ export function LivePreview({
   }, [width, height])
   useLayoutEffect(() => {
     const receive = (event: MessageEvent): void => {
+      if (event.origin !== location.origin || event.source !== frame.current?.contentWindow) return
+      if (
+        event.data?.type === 'knc-preview-page' &&
+        presentation.pages.some((item) => item.path === event.data.path)
+      ) {
+        onNavigate(
+          event.data.path,
+          event.data.lang === 'en' ? 'en' : 'sv',
+          event.data.mode === 'dark' ? 'dark' : 'light',
+        )
+        return
+      }
       if (
         event.origin === location.origin &&
         event.source === frame.current?.contentWindow &&
@@ -74,7 +89,11 @@ export function LivePreview({
       location.origin,
     )
   }, [connected, native, page.path, presentation, lang, mode, device])
-  const content = native ? null : nativeCanvas(page.content[lang], mode)
+  const content = native
+    ? null
+    : isSitePage(page)
+      ? renderSitePage(presentation, page, lang, mode)
+      : nativeCanvas(page.content[lang], mode)
   return (
     <div ref={host} class="cms-live-preview">
       <div style={{ width: `${width * scale}px`, height: `${height * scale}px` }}>
@@ -82,7 +101,35 @@ export function LivePreview({
           key={native ? 'native' : page.id}
           ref={frame}
           title="Förhandsvisning av sidan"
-          sandbox={native ? 'allow-scripts allow-same-origin' : ''}
+          sandbox={native ? 'allow-scripts allow-same-origin' : 'allow-same-origin'}
+          onLoad={() => {
+            if (native) return
+            frame.current?.contentDocument?.addEventListener('click', (event) => {
+              const target = event.target as Element | null
+              const anchor = target?.closest?.('a')
+              if (!anchor) return
+              event.preventDefault()
+              const url = new URL(anchor.getAttribute('href') ?? '', location.origin)
+              if (
+                url.origin !== location.origin ||
+                !presentation.pages.some((item) => item.path === url.pathname)
+              )
+                return
+              onNavigate(
+                url.pathname,
+                url.searchParams.get('lang') === 'en'
+                  ? 'en'
+                  : url.searchParams.get('lang') === 'sv'
+                    ? 'sv'
+                    : lang,
+                url.searchParams.get('mode') === 'dark'
+                  ? 'dark'
+                  : url.searchParams.get('mode') === 'light'
+                    ? 'light'
+                    : mode,
+              )
+            })
+          }}
           style={{
             width: `${width}px`,
             height: `${height}px`,

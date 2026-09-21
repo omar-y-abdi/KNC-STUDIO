@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers'
+import { isSitePage, renderSitePage } from '../shared/site-page'
 import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
   validatePresentation,
@@ -276,8 +277,13 @@ export function renderCmsPage(
   mode: CmsMode,
   canonicalUrl: string,
   fontCss = '',
+  presentation?: CmsPresentation,
 ): string {
-  const variant = page.content[lang]
+  const sitePage =
+    presentation && isSitePage(page) ? renderSitePage(presentation, page, lang, mode) : null
+  const variant = sitePage
+    ? { html: sitePage.html, css: { light: sitePage.css, dark: sitePage.css } }
+    : page.content[lang]
   let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
   rendered = replaceElementText(rendered, 'business-title', page.title[lang])
   rendered = replaceMetaContent(rendered, 'business-description', page.description[lang])
@@ -640,6 +646,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         mode,
         canonicalUrl,
         cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
+        cms?.presentation,
       )
       if (discovery) {
         const structured = buildBusinessStructuredData(

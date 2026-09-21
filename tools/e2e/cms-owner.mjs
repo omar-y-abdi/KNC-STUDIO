@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { chromium, webkit } from 'playwright'
 import { nativeBackend } from './cms-native.mjs'
 import { emptyDocument, EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
+import { renderSitePage } from '../../shared/site-page.ts'
+import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 const failures = []
@@ -22,6 +24,9 @@ const scenarios = [
   'legacy-preview-repair',
   'live-preview',
   'line-breaks',
+  'email-preview',
+  'history-review',
+  'resource-lifecycle',
 ].filter(
   (scenario) => !process.env.CMS_OWNER_SCENARIO || scenario === process.env.CMS_OWNER_SCENARIO,
 )
@@ -39,7 +44,33 @@ for (const [engine, name] of [
         reducedMotion: 'reduce',
       })
       context.setDefaultTimeout(10000)
+      let sourceCaptures = 0
+      context.on('request', (request) => {
+        const url = new URL(request.url())
+        if (url.pathname === '/cms-public/source' && !url.searchParams.has('preview'))
+          sourceCaptures++
+      })
       const seed = emptyDocument()
+      if (scenario === 'email-preview') {
+        seed.emails = EMAIL_NAMES.flatMap((template) =>
+          ['sv', 'en'].map((lang) => {
+            const copy = defaultEmailTemplate(template, lang)
+            return {
+              template,
+              lang,
+              subject: copy.subject,
+              preheader: copy.preheader,
+              title: copy.title,
+              intro: copy.intro,
+              section_title: copy.sectionTitle,
+              note: copy.note,
+              cta_label: copy.ctaLabel,
+              contact_lead: copy.contactLead,
+              design: null,
+            }
+          }),
+        )
+      }
       if (scenario === 'dialogs') {
         seed.emails = EMAIL_NAMES.flatMap((template) =>
           ['sv', 'en'].map((lang) => ({
@@ -57,25 +88,47 @@ for (const [engine, name] of [
           })),
         )
       }
-      const assets =
-        scenario === 'logo-replacement'
-          ? [
-              {
-                id: '22222222-2222-4222-8222-222222222222',
-                bucket: 'gallery',
-                path: 'logo/22222222-2222-4222-8222-222222222222.webp',
-                name: 'Ny logotyp',
-                alt: 'Vald logotyp',
-                mime: 'image/webp',
-                bytes: 100,
-                width: 300,
-                height: 200,
-                archived: false,
-                version: 1,
-              },
-            ]
-          : []
+      const assets = ['logo-replacement', 'resource-lifecycle'].includes(scenario)
+        ? [
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              bucket: 'gallery',
+              path: 'logo/22222222-2222-4222-8222-222222222222.webp',
+              name: 'Ny logotyp',
+              alt: 'Vald logotyp',
+              mime: 'image/webp',
+              bytes: 100,
+              width: 300,
+              height: 200,
+              archived: false,
+              version: 1,
+            },
+          ]
+        : []
+      if (scenario === 'resource-lifecycle')
+        assets.push({
+          ...assets[0],
+          id: '33333333-3333-4333-8333-333333333333',
+          path: 'logo/second.webp',
+          name: 'Andra logotypen',
+        })
       const backend = await nativeBackend(context, seed, assets)
+      if (scenario === 'resource-lifecycle')
+        await context.route('**/functions/v1/cms-studio', async (route) => {
+          const body = route.request().postDataJSON()
+          if (body.operation !== 'asset_lifecycle') return route.fallback()
+          const index = assets.findIndex((asset) => asset.id === body.id)
+          assert.equal(body.version, assets[index].version)
+          assets[index] = {
+            ...assets[index],
+            archived: body.action === 'archive',
+            version: assets[index].version + 1,
+          }
+          return route.fulfill({
+            json: { asset: assets[index] },
+            headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
+          })
+        })
       if (assets.length)
         await context.route('**/storage/v1/object/public/**', (route) =>
           route.fulfill({
@@ -114,7 +167,117 @@ for (const [engine, name] of [
       }
       try {
         await mount()
-        if (scenario === 'line-breaks') {
+        if (scenario === 'resource-lifecycle') {
+          await page.getByRole('button', { name: 'Resurser', exact: true }).click()
+          const cards = page.locator('.cms-resource-card')
+          assert.equal(await cards.count(), 2)
+          for (const box of await page.locator('.cms-resource-check input').all()) await box.check()
+          await page.getByRole('button', { name: 'Arkivera valda', exact: true }).click()
+          await cards.first().waitFor({ state: 'detached' })
+          await page.getByRole('button', { name: 'Arkiverade', exact: true }).click()
+          await cards.nth(1).waitFor()
+          assert.equal(
+            await cards.count(),
+            2,
+            'Both bulk updates must survive independent API responses',
+          )
+          for (const box of await page.locator('.cms-resource-check input').all()) await box.check()
+          await page.getByRole('button', { name: 'Återställ valda', exact: true }).click()
+          await cards.first().waitFor({ state: 'detached' })
+          await page.getByRole('button', { name: 'Aktiva', exact: true }).click()
+          await cards.nth(1).waitFor()
+          assert.ok(assets.every((asset) => !asset.archived && asset.version === 3))
+          assert.deepEqual(backend.writes, [], 'Resource lifecycle must not publish page content')
+        } else if (scenario === 'history-review') {
+          await publish()
+          await selectCopy()
+          await inspector.getByLabel('Text', { exact: true }).fill('Current published copy')
+          await publish()
+          await page.getByRole('button', { name: 'History', exact: true }).click()
+          const older = page
+            .locator('.cms-history-row')
+            .filter({ has: page.getByText('v2', { exact: true }) })
+          await older.getByRole('button', { name: 'Granska', exact: true }).click()
+          const review = page.getByRole('dialog', { name: 'Granska version 2', exact: true })
+          await review.waitFor()
+          await page
+            .frameLocator('.cms-history-preview iframe')
+            .getByText('KNC source sv', { exact: true })
+            .first()
+            .waitFor()
+          assert.equal(backend.writes.length, 2, 'Review must not publish')
+          await page.keyboard.press('Escape')
+          await review.waitFor({ state: 'detached' })
+          await page.getByRole('region', { name: 'Webbplatsens historik', exact: true }).waitFor()
+          await older.getByRole('button', { name: 'Återställ till utkast', exact: true }).click()
+          await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
+          assert.equal(backend.writes.length, 2, 'Restoring history must only change the draft')
+          const live = await context.newPage()
+          await live.goto(base)
+          await live.getByText('Current published copy', { exact: true }).waitFor()
+          await publish()
+          await live.reload()
+          await live.getByText('KNC source sv', { exact: true }).first().waitFor()
+        } else if (scenario === 'email-preview') {
+          await page.getByRole('button', { name: 'Mejl', exact: true }).click()
+          const modal = page.getByRole('region', { name: 'Mejl från din salong', exact: true })
+          const mail = page.frameLocator('iframe[title="Mejl som skickas"]')
+          for (const [template, label] of [
+            ['customer_confirmation', 'Kundbekräftelse'],
+            ['barber_confirmation', 'Barberarbekräftelse'],
+            ['customer_cancellation', 'Kundavbokning'],
+            ['barber_cancellation', 'Barberaravbokning'],
+            ['customer_reminder', 'Påminnelse'],
+            ['customer_booking_access', 'Kundens bokningsåtkomst'],
+            ['auth_recovery', 'Återställ lösenord'],
+            ['auth_email_change', 'Ändra e-post'],
+            ['auth_invite', 'Inbjudan'],
+          ]) {
+            await modal.getByRole('button', { name: label, exact: true }).click()
+            await mail
+              .getByRole('heading', {
+                name: defaultEmailTemplate(template, 'sv').title,
+                exact: true,
+              })
+              .waitFor()
+            assert.equal(
+              await mail
+                .locator('body')
+                .evaluate((node) => globalThis.getComputedStyle(node).backgroundColor),
+              'rgb(21, 21, 23)',
+              'Undesigned email preview must use the existing outgoing dark email, not the CMS sketch',
+            )
+            assert.ok(!(await mail.locator('body').innerText()).includes('{customer_name}'))
+          }
+          await modal.getByRole('button', { name: 'Kundbekräftelse', exact: true }).click()
+          await modal.getByLabel('Rubrik', { exact: true }).fill('Unpublished mail title')
+          await modal.getByLabel('Intro', { exact: true }).fill('Hej {customer_name}\nAndra raden')
+          await mail.getByRole('heading', { name: 'Unpublished mail title', exact: true }).waitFor()
+          await mail.locator('p').filter({ hasText: 'Hej Robin Andersson' }).waitFor()
+          assert.equal(
+            await mail.locator('p').filter({ hasText: 'Hej Robin Andersson' }).innerText(),
+            'Hej Robin Andersson\nAndra raden',
+          )
+          await mail.getByText('350 kr', { exact: true }).waitFor()
+          await modal.getByRole('button', { name: 'Mobil', exact: true }).click()
+          await page.screenshot({ path: `/tmp/cms-native-${name}-email-real-preview.png` })
+          await modal.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
+          await publish()
+          const captured = sourceCaptures
+          await mount()
+          assert.equal(
+            sourceCaptures,
+            captured,
+            'A complete published site must open without recapturing 24 native scenes',
+          )
+          await page.getByRole('button', { name: 'Mejl', exact: true }).click()
+          await mail.getByRole('heading', { name: 'Unpublished mail title', exact: true }).waitFor()
+          assert.deepEqual(
+            backend.writes,
+            ['publish'],
+            'Viewing email previews must never send mail',
+          )
+        } else if (scenario === 'line-breaks') {
           const id = await selectCopy()
           const text = inspector.getByLabel('Text', { exact: true })
           await text.fill('First line')
@@ -166,6 +329,7 @@ for (const [engine, name] of [
           await publish()
           await live.reload()
           const publicPhone = live.locator('a[href^="tel:"]').first()
+          await publicPhone.filter({ hasText: 'Call' }).waitFor()
           assert.equal(await publicPhone.innerText(), 'Call\nnow')
           assert.equal(await publicPhone.getAttribute('href'), phoneHref)
           assert.equal(await publicPhone.locator('img').count(), 1)
@@ -179,7 +343,7 @@ for (const [engine, name] of [
           await preview.locator('[data-knc-surface="desktop-booking"]').waitFor()
           await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
           await frame.getByText('Unpublished preview text', { exact: true }).waitFor()
-          await page.getByRole('button', { name: '390', exact: true }).click()
+          await page.getByRole('button', { name: 'Mobil', exact: true }).click()
           const cookies = await context.cookies()
           await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
           const mobile = page.frameLocator('.cms-live-preview iframe')
@@ -275,10 +439,10 @@ for (const [engine, name] of [
         } else if (scenario === 'logos') {
           const edits = []
           for (const [device, title, selector, text] of [
-            ['1440', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'BNB'],
-            ['1440', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'STUDIO'],
-            ['390', 'Startsida', '[data-knc-surface="mobile-home"] svg text', 'STUDIO'],
-            ['390', 'Bokning', '[data-knc-surface="mobile-booking"] svg text', 'BNB'],
+            ['Dator', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'BNB'],
+            ['Dator', 'Startsida', '[data-knc-surface="desktop-home"] svg text', 'STUDIO'],
+            ['Mobil', 'Startsida', '[data-knc-surface="mobile-home"] svg text', 'STUDIO'],
+            ['Mobil', 'Bokning', '[data-knc-surface="mobile-booking"] svg text', 'BNB'],
           ]) {
             await page
               .locator('#cms-library')
@@ -311,7 +475,7 @@ for (const [engine, name] of [
           }
           const live = await context.newPage()
           for (const { id, replacement, device, title } of edits) {
-            await live.setViewportSize({ width: Number(device), height: 900 })
+            await live.setViewportSize({ width: device === 'Dator' ? 1440 : 390, height: 900 })
             await live.goto(`${base}${title === 'Bokning' ? '/booking' : '/'}`)
             await live.locator(`[id="${id}"]`).filter({ hasText: replacement }).waitFor()
             await live.reload()
@@ -365,94 +529,150 @@ for (const [engine, name] of [
           for (const width of [1440, 390]) {
             await page.setViewportSize({ width, height: 900 })
             for (const [trigger, title] of [
-              ['Resurser', 'Resurser'],
-              ['Business / SEO', 'Business / SEO'],
-              ['Mejl', 'Mejl'],
+              ['Resurser', 'Bilder & typsnitt'],
+              ['Business / SEO', 'Företag & sökresultat'],
+              ['Mejl', 'Mejl från din salong'],
               ['Leveransstatus ↗', 'Leveransstatus'],
-              ['History', 'Historik'],
+              ['History', 'Webbplatsens historik'],
             ]) {
-              if (width === 390 && ['Business / SEO', 'Mejl', 'Leveransstatus ↗'].includes(trigger))
-                await page.getByRole('button', { name: 'Sidor', exact: true }).click()
+              if (width === 390 && trigger !== 'History')
+                await page
+                  .locator('.cms-mobile-tools')
+                  .getByRole('button', { name: 'Sidor', exact: true })
+                  .click()
               const button = page.getByRole('button', { name: trigger, exact: true })
               await button.click()
-              const modal = page.locator('dialog.cms-dialog')
-              await modal.waitFor()
+              const surface = page.getByRole('region', { name: title, exact: true })
+              await surface.waitFor()
               if (title === 'Leveransstatus') {
-                const href = await modal.getByRole('link').getAttribute('href')
-                const target = await page.evaluate(async (href) => {
-                  const { tabFromAdminUrl } = await import('/src/admin/navigationState.ts')
-                  return tabFromAdminUrl(
-                    new URL(href, globalThis.location.origin).href,
-                    ['mail', 'schedule'],
-                    'schedule',
-                  )
-                }, href)
                 assert.equal(
-                  target,
-                  'mail',
-                  'Delivery status must reach the existing mail admin tab',
+                  await surface.getByRole('link').getAttribute('href'),
+                  '/admin?tab=mail',
                 )
               }
-              const state = await modal.evaluate((dialog) => {
-                const bounds = dialog.getBoundingClientRect()
-                const body = dialog.querySelector('.cms-dialog-body').getBoundingClientRect()
+              const state = await surface.evaluate((view) => {
+                const bounds = view.getBoundingClientRect()
+                const body = view.querySelector('.cms-workspace-content')
                 return {
-                  modal: dialog.matches(':modal'),
-                  focusInside: dialog.contains(globalThis.document.activeElement),
-                  reachable: dialog.contains(
-                    globalThis.document.elementFromPoint(
-                      body.x + body.width / 2,
-                      body.y + Math.min(70, body.height / 2),
-                    ),
+                  focusInside: view.contains(globalThis.document.activeElement),
+                  reachable: view.contains(
+                    globalThis.document.elementFromPoint(bounds.x + 30, bounds.y + 30),
                   ),
                   fits:
                     bounds.left >= 0 &&
                     bounds.right <= globalThis.innerWidth &&
                     bounds.top >= 0 &&
                     bounds.bottom <= globalThis.innerHeight,
-                  overflows: dialog.scrollWidth > dialog.clientWidth,
-                  bodyOverflows:
-                    dialog.querySelector('.cms-dialog-body').scrollWidth >
-                    dialog.querySelector('.cms-dialog-body').clientWidth,
+                  overflows: view.scrollWidth > view.clientWidth,
+                  bodyOverflows: body.scrollWidth > body.clientWidth,
+                  editorInert: globalThis.document.querySelector('.cms-editor-wrap').inert,
                 }
               })
               assert.deepEqual(
                 state,
                 {
-                  modal: true,
                   focusInside: true,
                   reachable: true,
                   fits: true,
                   overflows: false,
                   bodyOverflows: false,
+                  editorInert: true,
                 },
-                `${title} must be above the editor and usable at ${width}px`,
+                `${title} must be a usable workspace at ${width}px`,
+              )
+              assert.equal(
+                await page.locator('dialog[open]').count(),
+                0,
+                'Workspace navigation must not open a modal',
               )
               await page.screenshot({
-                path: `/tmp/cms-native-${name}-dialog-${trigger.replace(/[^a-z]/gi, '')}-${width}.png`,
+                path: `/tmp/cms-native-${name}-workspace-${trigger.replace(/[^a-z]/gi, '')}-${width}.png`,
               })
               await page.keyboard.press('Escape')
-              await modal.waitFor({ state: 'detached' })
-              assert.equal(
-                await button.evaluate((el) => el === globalThis.document.activeElement),
-                true,
-                'Closing restores focus to the opener',
-              )
-              if (width === 390 && ['Business / SEO', 'Mejl', 'Leveransstatus ↗'].includes(trigger))
-                await page.getByRole('button', { name: 'Sidor', exact: true }).click()
+              await surface.waitFor({ state: 'detached' })
+              assert.equal(await page.locator('.cms-editor-wrap').evaluate((el) => el.inert), false)
             }
+            if (width === 390)
+              await page
+                .locator('.cms-mobile-tools')
+                .getByRole('button', { name: 'Sidor', exact: true })
+                .click()
+            await page.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+            const modal = page.getByRole('dialog', { name: 'Ny sida', exact: true })
+            await modal.waitFor()
+            assert.equal(await modal.evaluate((el) => el.matches(':modal')), true)
+            await page.keyboard.press('Escape')
+            await modal.waitFor({ state: 'detached' })
           }
         } else if (scenario === 'custom-page-styles') {
           const library = page.locator('#cms-library')
-          await library.getByRole('button', { name: '+ Skapa sida', exact: true }).click()
+          await library.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+          await page
+            .getByRole('dialog', { name: 'Ny sida', exact: true })
+            .getByRole('button', { name: 'Skapa sida', exact: true })
+            .click()
           const main = frame.locator('main')
+          await frame.locator('#cms-site-header svg[role="img"]').waitFor()
+          assert.equal(
+            await frame.locator('h1').count(),
+            1,
+            'The new page has one content title, not a blank unbranded canvas',
+          )
+          await frame
+            .locator('#cms-site-menu')
+            .getByRole('link', { name: 'Boka tid', exact: true })
+            .waitFor()
+          await frame
+            .locator('#cms-site-footer')
+            .getByRole('link', { name: 'Integritetspolicy', exact: true })
+            .waitFor()
           const padding = () => main.evaluate((node) => globalThis.getComputedStyle(node).padding)
           assert.equal(
             await padding(),
             '64px 32px',
             'New-page inline styles must survive import into GrapesJS',
           )
+          await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+          await page.locator('#cms-blocks').getByTitle('Text', { exact: true }).click()
+          await page.getByRole('tab', { name: 'Design', exact: true }).click()
+          await inspector.getByLabel('Text', { exact: true }).fill('New page extension content')
           await publish()
+          const created = backend.document.presentation.pages.find(
+            (item) => item.path === '/hemsida',
+          )
+          assert.ok(created)
+          assert.ok(
+            created.content.sv.html.includes('New page extension content'),
+            'Added blocks belong to authored content, not shared chrome',
+          )
+          assert.ok(
+            !created.content.sv.html.includes('cms-site-header'),
+            'Shared chrome is derived, never saved as a stale copy inside page content',
+          )
+          await context.route(`${base}/hemsida*`, (route) => {
+            const mode =
+              new URL(route.request().url()).searchParams.get('mode') === 'dark' ? 'dark' : 'light'
+            const page = backend.document.presentation.pages.find(
+              (item) => item.path === '/hemsida',
+            )
+            const rendered = renderSitePage(backend.document.presentation, page, 'sv', mode)
+            return route.fulfill({
+              contentType: 'text/html',
+              body: `<!doctype html><html><head><style>${rendered.css}</style></head><body>${rendered.html}</body></html>`,
+            })
+          })
+          const publicPage = await context.newPage()
+          await publicPage.goto(`${base}/hemsida?mode=dark`)
+          await publicPage.locator('#cms-site-header svg').waitFor()
+          await publicPage.getByRole('heading', { name: 'Ny sida', exact: true }).waitFor()
+          await publicPage.getByText('New page extension content', { exact: true }).waitFor()
+          await publicPage.reload()
+          assert.equal(
+            await publicPage.locator('#cms-site-header svg[role="img"]').count(),
+            1,
+            'The real logo remains in the public page header',
+          )
+          await publicPage.close()
           await library.getByRole('button', { name: 'Startsida', exact: true }).click()
           await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
           assert.equal(
@@ -466,6 +686,12 @@ for (const [engine, name] of [
             '64px 32px',
             'Unedited dark variant must retain authored inline styles',
           )
+          await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+          await page
+            .frameLocator('.cms-live-preview iframe')
+            .locator('#cms-site-header svg')
+            .first()
+            .waitFor()
         } else if (scenario === 'duplicate') {
           await selectCopy()
           await inspector.getByRole('button', { name: 'Duplicera', exact: true }).click()
@@ -526,9 +752,25 @@ for (const [engine, name] of [
             }))
           assert.equal(actual.width, 390, 'Compare must use the opposite device viewport')
           assert.equal(actual.color, expected, 'Compare must render the selected dark theme')
-          await page.getByRole('button', { name: '390', exact: true }).click()
+          await page.getByRole('button', { name: 'Mobil', exact: true }).click()
           await comparison.locator('[data-knc-surface="desktop-home"]').waitFor()
           assert.equal(await comparison.locator('html').evaluate(() => globalThis.innerWidth), 1440)
+          await frame.locator('[data-knc-surface="mobile-home"]').waitFor({ state: 'visible' })
+          assert.equal(
+            await frame.locator('html').evaluate(() => globalThis.innerWidth),
+            390,
+            'Editable canvas must switch to mobile alongside comparison',
+          )
+          await page.getByRole('button', { name: 'Fit', exact: true }).click()
+          const bounds = await page.locator('iframe.gjs-frame').boundingBox()
+          const stage = await page.locator('.cms-editor-canvas').boundingBox()
+          assert.ok(
+            bounds.x >= stage.x - 1 &&
+              bounds.x + bounds.width <= stage.x + stage.width + 1 &&
+              bounds.y >= stage.y - 1 &&
+              bounds.y + bounds.height <= stage.y + stage.height + 1,
+            'Fit must keep the complete mobile viewport inside its own comparison column',
+          )
         } else if (scenario === 'undo-redo') {
           await publish()
           await selectCopy()

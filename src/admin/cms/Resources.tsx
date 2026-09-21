@@ -1,3 +1,4 @@
+import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CmsAsset, CmsDocument } from '../../../shared/cms'
@@ -38,7 +39,7 @@ function purposeOf(asset: CmsAsset): { purpose: Purpose; barberId?: string } {
 interface Props {
   assets: CmsAsset[]
   document: CmsDocument
-  onAssets: (assets: CmsAsset[]) => void
+  onAssets: (assets: CmsAsset[] | ((current: CmsAsset[]) => CmsAsset[])) => void
   onDocument: (document: CmsDocument) => void
   onError: (message: string) => void
 }
@@ -87,7 +88,7 @@ export function CmsResources(props: Props): JSX.Element {
   }, [asset?.id, asset?.version])
 
   const updateAsset = (next: CmsAsset): void =>
-    props.onAssets(props.assets.map((item) => (item.id === next.id ? next : item)))
+    props.onAssets((current) => current.map((item) => (item.id === next.id ? next : item)))
 
   const transition = async (
     target: CmsAsset,
@@ -97,7 +98,7 @@ export function CmsResources(props: Props): JSX.Element {
     try {
       const result = await cmsApi.assetLifecycle(target, action)
       if (action === 'delete') {
-        props.onAssets(props.assets.filter((item) => item.id !== target.id))
+        props.onAssets((current) => current.filter((item) => item.id !== target.id))
         if (selectedId === target.id) setSelectedId(null)
       } else if (result.asset) updateAsset(result.asset)
       setUsage(result.usage ?? null)
@@ -115,7 +116,7 @@ export function CmsResources(props: Props): JSX.Element {
         ? purposeOf(replacement)
         : { purpose, ...(purpose === 'profile' ? { barberId } : {}) }
       const nextAsset = await cmsApi.uploadAsset(file, target.purpose, target.barberId)
-      props.onAssets([nextAsset, ...props.assets])
+      props.onAssets((current) => [nextAsset, ...current])
       setSelectedId(nextAsset.id)
       if (replacement) {
         const nextDocument = structuredClone(props.document)
@@ -143,16 +144,31 @@ export function CmsResources(props: Props): JSX.Element {
   }
 
   const bulk = async (action: 'archive' | 'restore' | 'trash'): Promise<void> => {
-    for (const id of selectedIds) {
-      const target = props.assets.find((item) => item.id === id)
-      if (target) await transition(target, action)
+    setBusy(true)
+    const remaining = new Set(selectedIds)
+    try {
+      for (const id of selectedIds) {
+        const target = props.assets.find((item) => item.id === id)
+        if (!target) continue
+        const result = await cmsApi.assetLifecycle(target, action)
+        if (result.asset) updateAsset(result.asset)
+        remaining.delete(id)
+      }
+    } catch (reason) {
+      props.onError(
+        reason instanceof Error
+          ? reason.message
+          : 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.',
+      )
+    } finally {
+      setSelectedIds(remaining)
+      setBusy(false)
     }
-    setSelectedIds(new Set())
   }
 
   const draftUsage = asset ? resourceUsage(props.document, asset, policy) : []
   return (
-    <div class="cms-resource-surface">
+    <div class="cms-resource-surface" aria-busy={busy}>
       <header class="cms-resource-toolbar">
         <div class="cms-segment">
           {(['active', 'archived', 'trash'] as const).map((value) => (
@@ -163,11 +179,13 @@ export function CmsResources(props: Props): JSX.Element {
         </div>
         <input
           type="search"
+          aria-label="Sök resurser"
           placeholder="Sök resurser"
           value={query}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
         <select
+          aria-label="Användning vid uppladdning"
           value={purpose}
           onChange={(event) => setPurpose(event.currentTarget.value as Purpose)}
         >
@@ -178,7 +196,11 @@ export function CmsResources(props: Props): JSX.Element {
           <option value="profile">Profilbild</option>
         </select>
         {purpose === 'profile' && (
-          <select value={barberId} onChange={(event) => setBarberId(event.currentTarget.value)}>
+          <select
+            aria-label="Barberare för profilbild"
+            value={barberId}
+            onChange={(event) => setBarberId(event.currentTarget.value)}
+          >
             {props.document.barbers.map((barber) => (
               <option value={barber.id}>{barber.name}</option>
             ))}
@@ -203,17 +225,17 @@ export function CmsResources(props: Props): JSX.Element {
         <div class="cms-resource-bulk">
           <strong>{selectedIds.size} valda</strong>
           {state === 'active' && (
-            <button type="button" onClick={() => void bulk('archive')}>
+            <button type="button" disabled={busy} onClick={() => void bulk('archive')}>
               Arkivera valda
             </button>
           )}
           {state !== 'active' && (
-            <button type="button" onClick={() => void bulk('restore')}>
+            <button type="button" disabled={busy} onClick={() => void bulk('restore')}>
               Återställ valda
             </button>
           )}
           {state !== 'trash' && (
-            <button type="button" onClick={() => void bulk('trash')}>
+            <button type="button" disabled={busy} onClick={() => void bulk('trash')}>
               Till papperskorg
             </button>
           )}
@@ -224,6 +246,26 @@ export function CmsResources(props: Props): JSX.Element {
       )}
       <div class="cms-resource-body">
         <div class="cms-resource-grid">
+          {visible.length === 0 && (
+            <div class="cms-resource-empty">
+              <strong>
+                {query
+                  ? 'Inga träffar'
+                  : state === 'active'
+                    ? 'Ditt bibliotek börjar här.'
+                    : state === 'trash'
+                      ? 'Papperskorgen är tom.'
+                      : 'Inga arkiverade resurser.'}
+              </strong>
+              <p>
+                {query
+                  ? 'Prova ett annat namn eller filformat.'
+                  : state === 'active'
+                    ? 'Ladda upp bilder, logotyper eller typsnitt till webbplatsen.'
+                    : 'Du kan gå tillbaka till Aktiva för att se dina filer.'}
+              </p>
+            </div>
+          )}
           {visible.map((item) => {
             const checked = selectedIds.has(item.id)
             return (
@@ -231,6 +273,8 @@ export function CmsResources(props: Props): JSX.Element {
                 <label class="cms-resource-check">
                   <input
                     type="checkbox"
+                    aria-label={`Markera ${item.name}`}
+                    disabled={busy}
                     checked={checked}
                     onChange={() => {
                       const next = new Set(selectedIds)
@@ -246,14 +290,17 @@ export function CmsResources(props: Props): JSX.Element {
                   ) : (
                     <span class="cms-font-preview">Aa</span>
                   )}
-                  <strong>{item.name}</strong>
-                  <small>{item.mime}</small>
+                  <strong title={item.name}>{item.name.split('/').at(-1)}</strong>
+                  <small>
+                    {item.width && item.height ? `${item.width} × ${item.height} · ` : ''}
+                    {item.mime.split('/')[1]?.toUpperCase()}
+                  </small>
                 </button>
               </article>
             )
           })}
         </div>
-        {asset && (
+        {asset ? (
           <aside class="cms-resource-detail">
             <h2>{asset.name}</h2>
             <label>
@@ -265,7 +312,7 @@ export function CmsResources(props: Props): JSX.Element {
             </label>
             <label>
               Alternativtext
-              <textarea
+              <CmsTextarea
                 value={asset.alt}
                 onInput={(event) => updateAsset({ ...asset, alt: event.currentTarget.value })}
               />
@@ -293,7 +340,7 @@ export function CmsResources(props: Props): JSX.Element {
               Spara metadata
             </button>
             <button type="button" disabled={busy} onClick={() => replace.current?.click()}>
-              Ersätt fil immutabelt
+              Ersätt fil
             </button>
             <input
               ref={replace}
@@ -355,6 +402,18 @@ export function CmsResources(props: Props): JSX.Element {
                 </button>
               </>
             )}
+          </aside>
+        ) : (
+          <aside class="cms-resource-detail">
+            <h2>Resursdetaljer</h2>
+            <p>
+              Välj en bild eller ett typsnitt. Här hittar du namn, alternativtext och användning på
+              webbplatsen.
+            </p>
+            <p>
+              Uppladdade filer sparas direkt i biblioteket. Ändringar på sidor publiceras med Save /
+              Publicera.
+            </p>
           </aside>
         )}
       </div>

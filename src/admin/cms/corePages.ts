@@ -12,7 +12,34 @@ export const CORE_PAGE_IDS = [
 let sourcePages: readonly CmsPage[] = []
 let loading: Promise<void> | undefined
 
-export function prepareCorePageSource(): Promise<void> {
+/** A published complete document already contains the source layout. Capture only missing/legacy
+ * templates instead of replaying 24 live scenes on every visit to Studio. */
+export function needsCorePageSource(document: CmsDocument): boolean {
+  for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
+    const page = document.presentation.pages.find((item) => item.path === path)
+    if (!page) return true
+    if (path === '/privacy' || path === '/terms') continue
+    for (const variant of Object.values(page.content)) {
+      if (!variant.html.includes('data-knc-native="1"')) return true
+      const tree = new DOMParser().parseFromString(variant.html, 'text/html')
+      for (const slot of tree.querySelectorAll('[data-knc-slot]'))
+        if (
+          slot.children.length &&
+          !slot.querySelector('[data-knc-source],[data-knc-slot],[data-knc-baseline]')
+        )
+          return true
+    }
+  }
+  return false
+}
+
+export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
+  if (existing && !needsCorePageSource(existing)) {
+    sourcePages = existing.presentation.pages.filter((page) =>
+      CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
+    )
+    return Promise.resolve()
+  }
   loading ??= import('./nativePages')
     .then(({ readCorePageSource }) => readCorePageSource())
     .then((pages) => {

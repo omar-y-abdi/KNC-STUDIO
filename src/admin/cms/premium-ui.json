@@ -1,0 +1,6 @@
+{
+  "sourceRoots": ["."],
+  "ownership": { "Select/Listbox": "native" },
+  "commands": { "typecheck": "npm run typecheck", "browser": "node tools/e2e/cms-owner.mjs" },
+  "requiredCommands": ["typecheck", "browser"]
+}

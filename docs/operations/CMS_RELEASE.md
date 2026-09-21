@@ -47,8 +47,9 @@ subsequent release adds the digest check above.
 Frontend defects shared a few causes:
 
 - Non-modal `<dialog open>` let the canvas cover panels and receive their clicks. Native
-  `showModal()` now provides the panels and image picker with a top-layer backdrop, keyboard
-  isolation, Escape and focus restoration.
+  `showModal()` fixes focused dialogs and the image picker. Resources, history, business and email
+  now use full workspace views instead of oversized modal overlays, following O-Y-A. Keyboard
+  focus, Escape and state preservation are covered in both desktop and mobile checks.
 - Loading HTML before replacing CSS erased imported inline styles, expanding gallery images,
   changing the privacy control and removing new-page spacing. The editor now removes the previous
   tree, loads CSS, then imports HTML. Removing the old tree first prevents its cleanup from
@@ -74,7 +75,23 @@ not fix stale validators, panel stacking or discarded styles.
 
 These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mjs` and `app.mjs`:
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
-Booking/auth components remain native to Blade & Blend.
+Booking/auth components remain native to Blade & Blend. `shared/site-page.ts` follows O-Y-A's
+layout wrapper: custom pages render the current home header/logo, contact strip and About footer
+in the editor, locked preview and public Worker. Only authored page content is stored on the new
+page. Menu links are derived from published page metadata.
+
+The editor's screenshot-driven visual contract lives in `src/admin/cms/DESIGN.md` and
+`UX-CONTRACT.md`. Chrome stays light when editing a dark website. Page settings appear in the
+right inspector when nothing is selected; fit considers viewport height as well as width.
+
+Email preview imports `shared/email-render.ts`, the same pure renderer re-exported by
+`supabase/functions/_shared/email.ts`. It expands sample variables and shows actual booking rows,
+sender and subject. It never sends mail. When that shared renderer changes, deploy all importing
+entrypoints: `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber`,
+`admin-manage-barber`, `external-cleanup` and `upload-image` (the last three import external actions).
+Preserve each function's existing JWT configuration; the CMS release stamp does not cover emails.
+A complete published native document opens directly; source scenes are recaptured only for missing
+or legacy templates.
 
 ## Verification boundaries
 

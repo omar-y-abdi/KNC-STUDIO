@@ -190,8 +190,22 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
               if (
                 url.origin !== window.location.origin ||
                 !['/', '/about', '/booking', '/my-bookings'].includes(url.pathname)
-              )
+              ) {
+                if (
+                  url.origin === window.location.origin &&
+                  context.presentation?.pages.some((page) => page.path === url.pathname)
+                )
+                  window.parent.postMessage(
+                    {
+                      type: 'knc-preview-page',
+                      path: url.pathname,
+                      lang: context.lang,
+                      mode: context.mode,
+                    },
+                    window.location.origin,
+                  )
                 return
+              }
               setContext((current) => ({
                 ...current,
                 id: crypto.randomUUID(),

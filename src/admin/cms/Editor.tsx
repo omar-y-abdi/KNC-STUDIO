@@ -1,4 +1,5 @@
-import type { JSX } from 'preact'
+import { CmsTextarea } from './Textarea'
+import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
@@ -12,6 +13,13 @@ import { captureViewState, restoreViewState, type CmsViewState } from './viewSta
 import { nativeCanvas, exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
 import { LivePreview } from './LivePreview'
+import {
+  isSitePage,
+  renderSitePage,
+  sitePageBody,
+  sitePageCss,
+  normalizeSitePageContent,
+} from '../../../shared/site-page'
 
 export interface EditorHandle {
   flush: () => void
@@ -19,6 +27,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  pageSettings: ComponentChildren
   page: CmsPage
   lang: CmsLang
   mode: CmsMode
@@ -27,6 +36,9 @@ interface Props {
   zoom: number
   locked: boolean
   preview: CmsPresentation | null
+  presentation: CmsPresentation
+  onOpenPage: (path: string) => void
+  onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
   assets: CmsAsset[]
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
@@ -71,7 +83,7 @@ const blocks = [
 ] as const
 
 function label(component: Component | null): string {
-  if (!component) return 'Inget valt'
+  if (!component) return 'Sida'
   const tag = String(component.get('tagName') ?? 'div').toUpperCase()
   const id = String(component.getAttributes()['id'] ?? '')
   return `${tag}${id ? ` · #${id}` : ''}`
@@ -80,10 +92,23 @@ function label(component: Component | null): string {
 function fitEditor(editor: Editor): number {
   editor.Canvas.fitViewport({
     gap: 16,
-    ignoreHeight: true,
+    ignoreHeight: false,
     zoom: (value) => Math.min(100, Math.floor(value)),
   })
   return editor.Canvas.getZoom()
+}
+
+function editorContextKey(props: Props): string {
+  const sharedChromeKey = isSitePage(props.page)
+    ? JSON.stringify(
+        props.presentation.pages.map((page) =>
+          ['/', '/about'].includes(page.path)
+            ? [page.path, page.content[props.lang]]
+            : [page.path, page.inMenu, page.name[props.lang]],
+        ),
+      )
+    : ''
+  return `${props.page.id}:${props.lang}:${props.mode}:${sharedChromeKey}`
 }
 
 export function CmsEditor(props: Props): JSX.Element {
@@ -100,14 +125,19 @@ export function CmsEditor(props: Props): JSX.Element {
   const viewStates = useRef(new Map<string, CmsViewState>())
   const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
-  const contextKey = `${props.page.id}:${props.lang}:${props.mode}`
+  const contextKey = editorContextKey(props)
   const variant = props.page.content[props.lang]
   const compareHost = useRef<HTMLDivElement>(null)
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
   const comparison = useMemo(
-    () => (props.compare ? nativeCanvas(variant, props.mode) : null),
-    [props.compare, variant.html, variant.css[props.mode], props.mode],
+    () =>
+      props.compare
+        ? isSitePage(props.page)
+          ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
+          : nativeCanvas(variant, props.mode)
+        : null,
+    [props.compare, variant.html, variant.css[props.mode], props.mode, props.presentation],
   )
 
   useLayoutEffect(() => {
@@ -162,6 +192,8 @@ export function CmsEditor(props: Props): JSX.Element {
           const wrapper = editor.getWrapper()
           const surfaces = wrapper?.find('[data-knc-surface]') ?? []
           let target = editor.getSelected()
+          if (isSitePage(latest.current.page) && !target?.getEl()?.closest('#cms-site-content'))
+            target = wrapper?.find('#cms-site-content')[0]
           while (
             target &&
             (target.get('droppable') === false ||
@@ -181,8 +213,8 @@ export function CmsEditor(props: Props): JSX.Element {
       },
       deviceManager: {
         devices: [
-          { id: 'Desktop', name: 'Desktop', width: '1440px' },
-          { id: 'Mobile', name: 'Mobile', width: '390px', widthMedia: '768px' },
+          { id: 'Desktop', name: 'Desktop', width: '1440px', height: '900px' },
+          { id: 'Mobile', name: 'Mobile', width: '390px', height: '844px', widthMedia: '768px' },
         ],
       },
       assetManager: { assets: [], upload: false, custom: true },
@@ -198,7 +230,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
     editor.on('component:dblclick', (component: Component) => {
-      if (isProtected(component)) return
+      if (isProtected(component) || isReadOnlyPreview(component)) return
       const type = String(component.get('type') ?? '')
       const tag = String(component.get('tagName') ?? '').toLowerCase()
       if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
@@ -212,7 +244,7 @@ export function CmsEditor(props: Props): JSX.Element {
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
       const component = editor.getSelected()
-      if (!component || isProtected(component)) return
+      if (!component || isProtected(component) || isReadOnlyPreview(component)) return
       const delta: [number, number] =
         event.key === 'ArrowLeft'
           ? [-1, 0]
@@ -245,13 +277,25 @@ export function CmsEditor(props: Props): JSX.Element {
       const current = latest.current
       const next = structuredClone(current.page)
       const exported = exportNativeCanvas(html, css, current.mode)
+      if (isSitePage(current.page)) {
+        exported.html = sitePageBody(exported.html)
+        exported.css = sitePageCss(exported.css, exported.html)
+      }
       next.content[current.lang] = {
         html: exported.html,
-        css: { ...next.content[current.lang].css, [current.mode]: exported.css },
+        css: {
+          ...(isSitePage(current.page)
+            ? normalizeSitePageContent(
+                current.page.content[current.lang],
+                `${current.page.id}-${current.lang}`,
+              ).css
+            : next.content[current.lang].css),
+          [current.mode]: exported.css,
+        },
       }
       rendered.current = {
         pageId: current.page.id,
-        key: `${current.page.id}:${current.lang}:${current.mode}`,
+        key: editorContextKey(current),
         ...exported,
       }
       current.onChange(next)
@@ -268,11 +312,12 @@ export function CmsEditor(props: Props): JSX.Element {
     const fit = (): void => {
       if (editor.Canvas.getBody()) latest.current.onZoom(fitEditor(editor))
     }
+    const resize = new ResizeObserver(fit)
     editor.on('load', () => {
       editor.clearDirtyCount()
+      resize.observe(editor.Canvas.getFrameEl())
       fit()
     })
-    const resize = new ResizeObserver(fit)
     resize.observe(host.current)
     props.onReady({
       flush,
@@ -306,7 +351,9 @@ export function CmsEditor(props: Props): JSX.Element {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
     applying.current = true
-    const content = nativeCanvas(variant, props.mode)
+    const content = isSitePage(props.page)
+      ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
+      : nativeCanvas(variant, props.mode)
     editor.select()
     setSelected(null)
     // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
@@ -470,6 +517,7 @@ export function CmsEditor(props: Props): JSX.Element {
           mode={props.mode}
           device={props.device}
           fontCss={props.fontCss}
+          onNavigate={props.onNavigate}
         />
       )}
       {comparison && !props.locked && (
@@ -511,8 +559,22 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
           {selected && readOnly ? (
             <p class="cms-lock-note">
-              Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen sida
-              i sidlistan.
+              {isSitePage(props.page) ? (
+                <>
+                  Sidhuvud, logotyp och sidfot delas med webbplatsen.
+                  <button type="button" onClick={() => props.onOpenPage('/')}>
+                    Redigera sidhuvud
+                  </button>
+                  <button type="button" onClick={() => props.onOpenPage('/about')}>
+                    Redigera sidfot
+                  </button>
+                </>
+              ) : (
+                <>
+                  Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen
+                  sida i sidlistan.
+                </>
+              )}
             </p>
           ) : selected ? (
             <section class="cms-inspector-section">
@@ -544,7 +606,7 @@ export function CmsEditor(props: Props): JSX.Element {
               {textLike && !hasElementChildren && (
                 <label>
                   Text
-                  <textarea
+                  <CmsTextarea
                     value={Array.from(selected.getEl()?.childNodes ?? [])
                       .map((node) => (node.nodeName === 'BR' ? '\n' : (node.textContent ?? '')))
                       .join('')}
@@ -576,7 +638,7 @@ export function CmsEditor(props: Props): JSX.Element {
               {mixedTextNodes.map((node, index) => (
                 <label>
                   {mixedTextNodes.length === 1 ? 'Text' : `Text ${index + 1}`}
-                  <textarea
+                  <CmsTextarea
                     value={String(node.get('content') ?? '')}
                     onInput={(event) => {
                       node.set('content', event.currentTarget.value)
@@ -660,10 +722,18 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
             </section>
           ) : (
-            <p class="cms-help">Välj ett element i sidan eller i Lager.</p>
+            <>
+              <p class="cms-help">
+                Klicka på text, bild eller logotyp för att redigera. Sidans namn och sökresultat
+                ändrar du här.
+              </p>
+              {props.pageSettings}
+            </>
           )}
-          <div id="cms-traits" />
-          <div id="cms-styles" />
+          <div hidden={!selected || readOnly}>
+            <div id="cms-traits" />
+            <div id="cms-styles" />
+          </div>
           {selected && !readOnly && (
             <details class="cms-advanced">
               <summary>Avancerad CSS</summary>
