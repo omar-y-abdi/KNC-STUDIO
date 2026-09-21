@@ -1,8 +1,9 @@
-import type { JSX } from 'preact'
+import { CmsTextarea } from './Textarea'
+import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
-import type { CmsAsset, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
+import type { CmsAsset, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
@@ -10,6 +11,15 @@ import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import { nativeCanvas, exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
+import { CmsModal } from './Modal'
+import { LivePreview } from './LivePreview'
+import {
+  isSitePage,
+  renderSitePage,
+  sitePageBody,
+  sitePageCss,
+  normalizeSitePageContent,
+} from '../../../shared/site-page'
 
 export interface EditorHandle {
   flush: () => void
@@ -17,6 +27,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  pageSettings: ComponentChildren
   page: CmsPage
   lang: CmsLang
   mode: CmsMode
@@ -24,12 +35,17 @@ interface Props {
   compare: boolean
   zoom: number
   locked: boolean
+  preview: CmsPresentation | null
+  presentation: CmsPresentation
+  onOpenPage: (path: string) => void
+  onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
   assets: CmsAsset[]
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
   onTab: (tab: 'design' | 'layers' | 'blocks') => void
   onChange: (page: CmsPage) => void
   onReady: (handle: EditorHandle | null) => void
+  onZoom: (zoom: number) => void
   onError: (message: string) => void
 }
 
@@ -67,10 +83,32 @@ const blocks = [
 ] as const
 
 function label(component: Component | null): string {
-  if (!component) return 'Inget valt'
+  if (!component) return 'Sida'
   const tag = String(component.get('tagName') ?? 'div').toUpperCase()
   const id = String(component.getAttributes()['id'] ?? '')
   return `${tag}${id ? ` · #${id}` : ''}`
+}
+
+function fitEditor(editor: Editor): number {
+  editor.Canvas.fitViewport({
+    gap: 16,
+    ignoreHeight: false,
+    zoom: (value) => Math.min(100, Math.floor(value)),
+  })
+  return editor.Canvas.getZoom()
+}
+
+function editorContextKey(props: Props): string {
+  const sharedChromeKey = isSitePage(props.page)
+    ? JSON.stringify(
+        props.presentation.pages.map((page) =>
+          ['/', '/about'].includes(page.path)
+            ? [page.path, page.content[props.lang]]
+            : [page.path, page.inMenu, page.name[props.lang]],
+        ),
+      )
+    : ''
+  return `${props.page.id}:${props.lang}:${props.mode}:${sharedChromeKey}`
 }
 
 export function CmsEditor(props: Props): JSX.Element {
@@ -81,19 +119,25 @@ export function CmsEditor(props: Props): JSX.Element {
   const applying = useRef(false)
   const timer = useRef<number | null>(null)
   const [selected, setSelected] = useState<Component | null>(null)
+  const [imageTarget, setImageTarget] = useState<Component | null>(null)
   const [advancedProperty, setAdvancedProperty] = useState('')
   const [advancedValue, setAdvancedValue] = useState('')
   const viewStates = useRef(new Map<string, CmsViewState>())
   const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
-  const contextKey = `${props.page.id}:${props.lang}:${props.mode}`
+  const contextKey = editorContextKey(props)
   const variant = props.page.content[props.lang]
   const compareHost = useRef<HTMLDivElement>(null)
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
   const comparison = useMemo(
-    () => (props.compare ? nativeCanvas(variant, props.mode) : null),
-    [props.compare, variant.html, variant.css[props.mode], props.mode],
+    () =>
+      props.compare
+        ? isSitePage(props.page)
+          ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
+          : nativeCanvas(variant, props.mode)
+        : null,
+    [props.compare, variant.html, variant.css[props.mode], props.mode, props.presentation],
   )
 
   useLayoutEffect(() => {
@@ -108,6 +152,8 @@ export function CmsEditor(props: Props): JSX.Element {
       storageManager: false,
       panels: { defaults: [] },
       avoidInlineStyle: true,
+      // O-Y-A also disables GrapesJS's default box-sizing reset: it is not site CSS.
+      protectedCss: '',
       canvas: {
         scripts: [],
         styles: [],
@@ -115,7 +161,10 @@ export function CmsEditor(props: Props): JSX.Element {
         // Default WebKit scrollbar styling reserves 10px that the actual mobile site does not.
         frameStyle: 'body{background-color:#fff}',
       },
-      canvasCss: 'html{scroll-behavior:auto!important}body{margin:0!important}',
+      // Pointer-transparent public branding must still be selectable in the editor.
+      // Canvas-only CSS is never exported to the published website.
+      canvasCss:
+        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}',
       selectorManager: { componentFirst: true },
       layerManager: { appendTo: '#cms-layers' },
       traitManager: { appendTo: '#cms-traits' },
@@ -143,6 +192,8 @@ export function CmsEditor(props: Props): JSX.Element {
           const wrapper = editor.getWrapper()
           const surfaces = wrapper?.find('[data-knc-surface]') ?? []
           let target = editor.getSelected()
+          if (isSitePage(latest.current.page) && !target?.getEl()?.closest('#cms-site-content'))
+            target = wrapper?.find('#cms-site-content')[0]
           while (
             target &&
             (target.get('droppable') === false ||
@@ -162,13 +213,16 @@ export function CmsEditor(props: Props): JSX.Element {
       },
       deviceManager: {
         devices: [
-          { id: 'Desktop', name: 'Desktop', width: '1440px' },
-          { id: 'Mobile', name: 'Mobile', width: '390px', widthMedia: '768px' },
+          { id: 'Desktop', name: 'Desktop', width: '1440px', height: '900px' },
+          { id: 'Mobile', name: 'Mobile', width: '390px', height: '844px', widthMedia: '768px' },
         ],
       },
-      assetManager: { assets: [], upload: false },
+      assetManager: { assets: [], upload: false, custom: true },
     })
     instance.current = editor
+    editor.on('asset:custom', ({ open }: { open: boolean }) => {
+      if (open) setImageTarget(editor.getSelected() ?? null)
+    })
     for (const [id, blockLabel, content] of blocks)
       editor.BlockManager.add(id, { label: blockLabel, content })
 
@@ -176,19 +230,27 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
     editor.on('component:dblclick', (component: Component) => {
-      if (isProtected(component)) return
+      if (isProtected(component) || isReadOnlyPreview(component)) return
       const type = String(component.get('type') ?? '')
       const tag = String(component.get('tagName') ?? '').toLowerCase()
       if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
         component.set('editable', true)
     })
     const keydown = (event: KeyboardEvent): void => {
+      if (latest.current.locked || host.current?.closest('[inert]')) return
+      if (document.querySelector('dialog:modal')) return
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      )
+        return
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
       const component = editor.getSelected()
-      if (!component || isProtected(component)) return
+      if (!component || isProtected(component) || isReadOnlyPreview(component)) return
       const delta: [number, number] =
         event.key === 'ArrowLeft'
           ? [-1, 0]
@@ -221,13 +283,25 @@ export function CmsEditor(props: Props): JSX.Element {
       const current = latest.current
       const next = structuredClone(current.page)
       const exported = exportNativeCanvas(html, css, current.mode)
+      if (isSitePage(current.page)) {
+        exported.html = sitePageBody(exported.html)
+        exported.css = sitePageCss(exported.css, exported.html)
+      }
       next.content[current.lang] = {
         html: exported.html,
-        css: { ...next.content[current.lang].css, [current.mode]: exported.css },
+        css: {
+          ...(isSitePage(current.page)
+            ? normalizeSitePageContent(
+                current.page.content[current.lang],
+                `${current.page.id}-${current.lang}`,
+              ).css
+            : next.content[current.lang].css),
+          [current.mode]: exported.css,
+        },
       }
       rendered.current = {
         pageId: current.page.id,
-        key: `${current.page.id}:${current.lang}:${current.mode}`,
+        key: editorContextKey(current),
         ...exported,
       }
       current.onChange(next)
@@ -241,22 +315,25 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     editor.on('update', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
-    editor.on('load', () => editor.clearDirtyCount())
+    const fit = (): void => {
+      if (editor.Canvas.getBody()) latest.current.onZoom(fitEditor(editor))
+    }
+    const resize = new ResizeObserver(fit)
+    editor.on('load', () => {
+      editor.clearDirtyCount()
+      resize.observe(editor.Canvas.getFrameEl())
+      fit()
+    })
+    resize.observe(host.current)
     props.onReady({
       flush,
-      fit: () => {
-        editor.Canvas.fitViewport({
-          gap: 16,
-          ignoreHeight: true,
-          zoom: (value) => Math.min(100, Math.floor(value)),
-        })
-        return editor.Canvas.getZoom()
-      },
+      fit: () => fitEditor(editor),
     })
 
     return () => {
       if (timer.current !== null) window.clearTimeout(timer.current)
       props.onReady(null)
+      resize.disconnect()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -280,11 +357,16 @@ export function CmsEditor(props: Props): JSX.Element {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
     applying.current = true
-    const content = nativeCanvas(variant, props.mode)
+    const content = isSitePage(props.page)
+      ? renderSitePage(props.presentation, props.page, props.lang, props.mode)
+      : nativeCanvas(variant, props.mode)
     editor.select()
     setSelected(null)
-    editor.setComponents(content.html)
+    // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
+    editor.setComponents('')
+    // Importing HTML extracts inline styles. Load CSS first so it cannot erase them.
     editor.setStyle(parseCanvasCss(content.css, editor))
+    editor.setComponents(content.html)
     const configure = (component: Component): void => {
       configureComponent(component)
       component.components().forEach(configure)
@@ -345,27 +427,51 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor) return
     editor.setDevice(props.device)
-    editor.Canvas.setZoom(props.zoom)
-  }, [props.device, props.zoom])
+    latest.current.onZoom(fitEditor(editor))
+  }, [props.device])
 
   useEffect(() => {
     const editor = instance.current
     if (!editor) return
-    if (props.locked) editor.runCommand('preview')
-    else editor.stopCommand('preview')
-  }, [props.locked])
+    editor.Canvas.setZoom(props.zoom)
+  }, [props.zoom])
 
   const chooseImage = (): void => {
     const editor = instance.current
     const component = editor?.getSelected()
-    if (!editor || !component || String(component.get('tagName') ?? '').toLowerCase() !== 'img')
+    if (
+      !editor ||
+      !component ||
+      !['img', 'svg'].includes(String(component.get('tagName') ?? '').toLowerCase())
+    )
       return props.onError('Välj en bild först.')
-    editor.AssetManager.open({
-      select(asset) {
-        component.addAttributes({ src: asset.getSrc() })
-        editor.AssetManager.close()
-      },
-    })
+    setImageTarget(component)
+  }
+  const closePicker = (): void => {
+    setImageTarget(null)
+    instance.current?.AssetManager.close()
+  }
+  const pickImage = (asset: CmsAsset): void => {
+    if (!imageTarget || isReadOnlyPreview(imageTarget)) return
+    const src = mediaUrl(asset, SUPABASE_URL ?? '')
+    const attrs = imageTarget.getAttributes()
+    const alt = asset.alt || String(attrs['alt'] ?? attrs['aria-label'] ?? '')
+    if (String(imageTarget.get('tagName')).toLowerCase() === 'svg') {
+      // Replace presentation only. The enclosing native component retains its identity and logic.
+      if (attrs['role'] !== 'img' || attrs['data-knc-required']) return
+      const retained = Object.fromEntries(
+        Object.entries(attrs).filter(
+          ([name]) => ['id', 'class', 'title'].includes(name) || name.startsWith('data-knc-'),
+        ),
+      )
+      const [image] = imageTarget.replaceWith({
+        type: 'image',
+        attributes: { ...retained, src, alt },
+        style: { ...imageTarget.getStyle(), 'object-fit': 'contain' },
+      })
+      instance.current?.select(image)
+    } else imageTarget.addAttributes({ src, alt })
+    closePicker()
   }
   const mutateSelected = (fn: (component: Component) => void): void => {
     const component = instance.current?.getSelected()
@@ -389,20 +495,38 @@ export function CmsEditor(props: Props): JSX.Element {
 
   const attributes = selected?.getAttributes() ?? {}
   const tag = String(selected?.get('tagName') ?? '').toLowerCase()
-  const textLike = selected && ['text', 'textnode', 'link'].includes(String(selected.get('type')))
+  const textLike =
+    selected &&
+    (['text', 'textnode', 'link'].includes(String(selected.get('type'))) || tag === 'text')
   const hasElementChildren = selected
     ?.components()
-    .some((child: Component) => !child.is('textnode'))
+    .some((child: Component) => !child.is('textnode') && child.get('tagName') !== 'br')
   const mixedTextNodes =
     selected && hasElementChildren
       ? selected.components().filter((child: Component) => child.is('textnode'))
       : []
   const readOnly = selected ? isReadOnlyPreview(selected) : false
+  const logoText = tag === 'svg' ? (selected?.find('text') ?? []) : []
 
   return (
     <>
-      <div class="cms-editor-canvas" ref={host} />
-      {comparison && (
+      <div
+        class="cms-editor-canvas"
+        ref={host}
+        style={{ visibility: props.locked ? 'hidden' : 'visible' }}
+      />
+      {props.locked && props.preview && (
+        <LivePreview
+          page={props.page}
+          presentation={props.preview}
+          lang={props.lang}
+          mode={props.mode}
+          device={props.device}
+          fontCss={props.fontCss}
+          onNavigate={props.onNavigate}
+        />
+      )}
+      {comparison && !props.locked && (
         <div class="cms-compare-pane">
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
@@ -422,7 +546,7 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
         </div>
       )}
-      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper">
+      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
         <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
             <button
@@ -441,8 +565,22 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
           {selected && readOnly ? (
             <p class="cms-lock-note">
-              Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen sida
-              i sidlistan.
+              {isSitePage(props.page) ? (
+                <>
+                  Sidhuvud, logotyp och sidfot delas med webbplatsen.
+                  <button type="button" onClick={() => props.onOpenPage('/')}>
+                    Redigera sidhuvud
+                  </button>
+                  <button type="button" onClick={() => props.onOpenPage('/about')}>
+                    Redigera sidfot
+                  </button>
+                </>
+              ) : (
+                <>
+                  Det här är en skrivskyddad runtime-förhandsvisning. Om oss redigeras på sin egen
+                  sida i sidlistan.
+                </>
+              )}
             </p>
           ) : selected ? (
             <section class="cms-inspector-section">
@@ -474,22 +612,48 @@ export function CmsEditor(props: Props): JSX.Element {
               {textLike && !hasElementChildren && (
                 <label>
                   Text
-                  <textarea
-                    value={selected.getEl()?.textContent ?? ''}
+                  <CmsTextarea
+                    value={Array.from(selected.getEl()?.childNodes ?? [])
+                      .map((node) => (node.nodeName === 'BR' ? '\n' : (node.textContent ?? '')))
+                      .join('')}
                     onInput={(event) => {
                       const text = document.createElement('span')
                       text.textContent = event.currentTarget.value
-                      selected.components(text.innerHTML)
+                      // Plain HTML collapses literal newlines. Match the canvas rich-text editor's
+                      // line-break markup, after escaping user text so it cannot become HTML.
+                      selected.components(
+                        tag === 'text' ? text.innerHTML : text.innerHTML.replace(/\r?\n/g, '<br>'),
+                      )
                     }}
                   />
                 </label>
               )}
+              {logoText.map((node, index) => (
+                <label>
+                  Logotyptext {index + 1}
+                  <input
+                    value={node.getEl()?.textContent ?? ''}
+                    onInput={(event) => {
+                      const text = document.createElement('span')
+                      text.textContent = event.currentTarget.value
+                      node.components(text.innerHTML)
+                    }}
+                  />
+                </label>
+              ))}
               {mixedTextNodes.map((node, index) => (
                 <label>
                   {mixedTextNodes.length === 1 ? 'Text' : `Text ${index + 1}`}
-                  <textarea
+                  <CmsTextarea
                     value={String(node.get('content') ?? '')}
-                    onInput={(event) => node.set('content', event.currentTarget.value)}
+                    onInput={(event) => {
+                      node.set('content', event.currentTarget.value)
+                      // GrapesJS's text-node view does not rerender on change:content.
+                      node.getView()?.render()
+                      // Keep neighboring icons and native actions intact in mixed text elements.
+                      if (event.currentTarget.value.includes('\n'))
+                        selected.addStyle({ 'white-space': 'pre-wrap' })
+                    }}
                   />
                 </label>
               ))}
@@ -504,20 +668,31 @@ export function CmsEditor(props: Props): JSX.Element {
                   />
                 </label>
               )}
-              {tag === 'img' && (
+              {(tag === 'img' || tag === 'svg') && (
                 <>
                   <label>
                     Alternativtext
                     <input
-                      value={String(attributes['alt'] ?? '')}
+                      value={String(attributes[tag === 'svg' ? 'aria-label' : 'alt'] ?? '')}
                       onInput={(event) =>
-                        selected.addAttributes({ alt: event.currentTarget.value })
+                        selected.addAttributes({
+                          [tag === 'svg' ? 'aria-label' : 'alt']: event.currentTarget.value,
+                        })
                       }
                     />
                   </label>
-                  <button type="button" onClick={chooseImage}>
-                    Byt bild från biblioteket
-                  </button>
+                  {(tag === 'img' ||
+                    (attributes['role'] === 'img' && !attributes['data-knc-required'])) && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.currentTarget.focus()
+                        chooseImage()
+                      }}
+                    >
+                      {tag === 'svg' ? 'Byt logotyp från biblioteket' : 'Byt bild från biblioteket'}
+                    </button>
+                  )}
                 </>
               )}
               <h3>Finjustera</h3>
@@ -553,10 +728,18 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
             </section>
           ) : (
-            <p class="cms-help">Välj ett element i sidan eller i Lager.</p>
+            <>
+              <p class="cms-help">
+                Klicka på text, bild eller logotyp för att redigera. Sidans namn och sökresultat
+                ändrar du här.
+              </p>
+              {props.pageSettings}
+            </>
           )}
-          <div id="cms-traits" />
-          <div id="cms-styles" />
+          <div hidden={!selected || readOnly}>
+            <div id="cms-traits" />
+            <div id="cms-styles" />
+          </div>
           {selected && !readOnly && (
             <details class="cms-advanced">
               <summary>Avancerad CSS</summary>
@@ -598,6 +781,23 @@ export function CmsEditor(props: Props): JSX.Element {
         <div id="cms-layers" hidden={props.tab !== 'layers'} class="cms-manager-panel" />
         <div id="cms-blocks" hidden={props.tab !== 'blocks'} class="cms-manager-panel" />
       </aside>
+      {imageTarget && (
+        <CmsModal title="Välj bild" onClose={closePicker}>
+          <p class="cms-help">Välj en bild. Ladda upp fler via Resurser.</p>
+          <div class="cms-resource-grid">
+            {props.assets
+              .filter(
+                (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
+              )
+              .map((asset) => (
+                <button type="button" class="cms-resource-card" onClick={() => pickImage(asset)}>
+                  <img src={mediaUrl(asset, SUPABASE_URL ?? '')} alt={asset.alt} />
+                  <span>{asset.name}</span>
+                </button>
+              ))}
+          </div>
+        </CmsModal>
+      )}
     </>
   )
 }

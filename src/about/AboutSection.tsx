@@ -1,3 +1,4 @@
+import { SitePageLinks } from '../cms/SitePageLinks'
 import { useNativeSurface } from '../cms/NativeSurface'
 import { useContext } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
@@ -673,6 +674,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
             {privacyStrings(props.lang).manage}
           </a>
         ) : null}
+        <SitePageLinks lang={props.lang} mode={props.mode} />
       </footer>
     </section>,
     'about',

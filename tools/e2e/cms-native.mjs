@@ -7,7 +7,7 @@ import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 
-export async function nativeBackend(context, initialDocument = emptyDocument()) {
+export async function nativeBackend(context, initialDocument = emptyDocument(), assets = []) {
   // The CMS fixture uses local APIs, not a real third-party challenge on HTTP localhost.
   await context.route('https://challenges.cloudflare.com/**', (route) =>
     route.fulfill({
@@ -18,6 +18,7 @@ export async function nativeBackend(context, initialDocument = emptyDocument()) 
   let document = globalThis.structuredClone(initialDocument)
   let revision = 1
   const writes = []
+  const revisions = new Map([[revision, globalThis.structuredClone(document)]])
   const fingerprint = () => createHash('md5').update(JSON.stringify(document)).digest('hex')
   await context.route('**/api/cms/presentation', (route) =>
     route.fulfill({
@@ -37,8 +38,16 @@ export async function nativeBackend(context, initialDocument = emptyDocument()) 
     if (path === '/functions/v1/cms-studio') {
       const body = request.postDataJSON()
       if (body.operation === 'state')
-        return reply({ revision, fingerprint: fingerprint(), assets: [], document })
-      if (body.operation === 'history') return reply([])
+        return reply({ revision, fingerprint: fingerprint(), assets, document })
+      if (body.operation === 'history')
+        return reply(
+          [...revisions.keys()].reverse().map((value) => ({
+            revision: value,
+            created_at: '2026-09-21T12:00:00Z',
+            summary: 'Publicerat sidinnehåll',
+          })),
+        )
+      if (body.operation === 'revision') return reply({ document: revisions.get(body.revision) })
       if (['validate', 'publish'].includes(body.operation)) {
         const candidate = globalThis.structuredClone(body.document)
         try {
@@ -65,6 +74,7 @@ export async function nativeBackend(context, initialDocument = emptyDocument()) 
         assert.equal(body.baseFingerprint, fingerprint())
         document = candidate
         revision++
+        revisions.set(revision, globalThis.structuredClone(document))
         writes.push('publish')
         return reply({ document, revision, fingerprint: fingerprint(), requestId: body.requestId })
       }
@@ -212,6 +222,17 @@ async function run(engine, name) {
       'The actual site layout styles were lost while loading GrapesJS',
     )
     assert.deepEqual(backend.writes, [], 'Opening the editor issued a public write')
+    await page.waitForFunction(
+      () => {
+        const host = globalThis.document
+          .querySelector('.cms-editor-canvas')
+          ?.getBoundingClientRect()
+        const canvas = globalThis.document.querySelector('.gjs-frame')?.getBoundingClientRect()
+        return host && canvas && canvas.left >= host.left - 1 && canvas.right <= host.right + 1
+      },
+      null,
+      { timeout: 3000 },
+    )
     await fitCanvas()
     await page.screenshot({ path: `/tmp/cms-native-${name}-desktop.png` })
 
@@ -285,7 +306,7 @@ async function run(engine, name) {
 
     await page.bringToFront()
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole('button', { name: '390', exact: true }).click()
+    await page.getByRole('button', { name: 'Mobil', exact: true }).click()
     // The mobile surface appears before GrapesJS finishes animating the device width.
     await page.waitForFunction(() => {
       const canvas = globalThis.document.querySelector('.gjs-frame')
@@ -320,7 +341,7 @@ async function run(engine, name) {
       .getByText('Owner edited the actual KNC site', { exact: true })
       .waitFor()
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.getByRole('button', { name: '390', exact: true }).click()
+    await page.getByRole('button', { name: 'Mobil', exact: true }).click()
     await page.waitForFunction(() => {
       const canvas = globalThis.document.querySelector('.gjs-frame')
       return canvas && globalThis.getComputedStyle(canvas).width === '390px'

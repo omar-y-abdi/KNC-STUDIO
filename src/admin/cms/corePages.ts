@@ -12,7 +12,34 @@ export const CORE_PAGE_IDS = [
 let sourcePages: readonly CmsPage[] = []
 let loading: Promise<void> | undefined
 
-export function prepareCorePageSource(): Promise<void> {
+/** A published complete document already contains the source layout. Capture only missing/legacy
+ * templates instead of replaying 24 live scenes on every visit to Studio. */
+export function needsCorePageSource(document: CmsDocument): boolean {
+  for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
+    const page = document.presentation.pages.find((item) => item.path === path)
+    if (!page) return true
+    if (path === '/privacy' || path === '/terms') continue
+    for (const variant of Object.values(page.content)) {
+      if (!variant.html.includes('data-knc-native="1"')) return true
+      const tree = new DOMParser().parseFromString(variant.html, 'text/html')
+      for (const slot of tree.querySelectorAll('[data-knc-slot]'))
+        if (
+          slot.children.length &&
+          !slot.querySelector('[data-knc-source],[data-knc-slot],[data-knc-baseline]')
+        )
+          return true
+    }
+  }
+  return false
+}
+
+export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
+  if (existing && !needsCorePageSource(existing)) {
+    sourcePages = existing.presentation.pages.filter((page) =>
+      CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
+    )
+    return Promise.resolve()
+  }
   loading ??= import('./nativePages')
     .then(({ readCorePageSource }) => readCorePageSource())
     .then((pages) => {
@@ -31,6 +58,30 @@ export function isInventedSite(document: CmsDocument): boolean {
   )
 }
 
+/** Upgrade old opaque previews whose inline styles were erased by the editor import order.
+ * These descendants were never editable. Native identities and owner-authored content stay intact.
+ */
+function repairReadOnlyPreviews(html: string, source: string): string {
+  if (typeof DOMParser === 'undefined' || !html.includes('data-knc-native="1"')) return html
+  const current = new DOMParser().parseFromString(html, 'text/html')
+  const original = new DOMParser().parseFromString(source, 'text/html')
+  const slots = new Map(
+    [...original.querySelectorAll('[data-knc-slot]')].map((node) => [
+      node.getAttribute('data-knc-slot'),
+      node,
+    ]),
+  )
+  let changed = false
+  for (const slot of current.querySelectorAll('[data-knc-slot]')) {
+    if (slot.querySelector('[data-knc-source],[data-knc-slot],[data-knc-baseline]')) continue
+    const replacement = slots.get(slot.getAttribute('data-knc-slot'))
+    if (!replacement?.querySelector('[data-knc-baseline]')) continue
+    slot.replaceChildren(...[...replacement.childNodes].map((node) => node.cloneNode(true)))
+    changed = true
+  }
+  return changed ? current.body.innerHTML : html
+}
+
 /** Missing pages may come only from the rendered production components or existing legal files. */
 export function ensureCorePages(
   document: CmsDocument,
@@ -42,6 +93,14 @@ export function ensureCorePages(
     if (!paths.has(page.path)) {
       next.presentation.pages.push(structuredClone(page))
       paths.add(page.path)
+    } else {
+      const existing = next.presentation.pages.find((item) => item.path === page.path)
+      if (existing)
+        for (const lang of ['sv', 'en'] as const)
+          existing.content[lang].html = repairReadOnlyPreviews(
+            existing.content[lang].html,
+            page.content[lang].html,
+          )
     }
   }
   return next

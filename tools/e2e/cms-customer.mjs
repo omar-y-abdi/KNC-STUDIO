@@ -48,7 +48,9 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
           ['desktop', '1440'],
           ['mobile', '390'],
         ]) {
-          await page.getByRole('button', { name: width, exact: true }).click()
+          await page
+            .getByRole('button', { name: device === 'desktop' ? 'Dator' : 'Mobil', exact: true })
+            .click()
           await page.waitForFunction((expected) => {
             const canvas = globalThis.document.querySelector('.gjs-frame')
             return canvas && globalThis.getComputedStyle(canvas).width === `${expected}px`

@@ -77,7 +77,7 @@ Production routing and cookie policy are unchanged.
 | `dev`              | Vite dev server with HMR                                                  |
 | `build`            | `tsc -b` (strict type-check) then `vite build` → `dist/`                  |
 | `preview`          | Serve the production build locally                                        |
-| `deploy`           | Build and deploy static assets to Cloudflare                              |
+| `deploy`           | Build, verify matching CMS backend, and deploy to Cloudflare              |
 | `deploy:dry-run`   | Build and validate Cloudflare deployment without publishing               |
 | `cloudflare:dev`   | Build and serve through Wrangler locally                                  |
 | `typecheck`        | `tsc -b` only                                                             |
@@ -89,6 +89,9 @@ Production routing and cookie policy are unchanged.
 ---
 
 ## Architecture
+
+CMS changes span Cloudflare and Supabase. Follow the [CMS release guide](docs/operations/CMS_RELEASE.md)
+before deploying; a Cloudflare build alone does not update the publication backend.
 
 Effects live at the edges; the domain stays pure and referentially transparent.
 [CODEBASE-MAP.md](CODEBASE-MAP.md) is the complete architectural index of the repo.

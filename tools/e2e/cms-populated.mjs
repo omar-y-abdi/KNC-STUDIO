@@ -88,6 +88,12 @@ for (const [engine, name] of [
   const frame = page.frameLocator('.gjs-frame').first()
   const inspector = page.locator('#cms-inspector')
   try {
+    await page.goto(base)
+    await page.getByRole('button', { name: 'Om oss', exact: true }).click()
+    const originalTileWidth = await page
+      .getByAltText('Fixture salon photo 1', { exact: true })
+      .first()
+      .evaluate((node) => globalThis.getComputedStyle(node).width)
     await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
     await page.evaluate(async () => {
       const harness = await import('/tools/e2e/admin-harness.tsx')
@@ -102,6 +108,19 @@ for (const [engine, name] of [
     await frame.getByText('Fixture barber A', { exact: true }).first().waitFor()
     await page.screenshot({ path: `/tmp/cms-native-${name}-populated-about.png` })
     await library.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+    const galleryImage = page
+      .frameLocator('.cms-live-preview iframe')
+      .getByAltText('Fixture salon photo 1', { exact: true })
+      .first()
+    await galleryImage.scrollIntoViewIfNeeded()
+    assert.equal(
+      await galleryImage.evaluate((node) => globalThis.getComputedStyle(node).width),
+      originalTileWidth,
+      'Locked home preview must retain gallery tile sizing instead of expanding original images',
+    )
+    await page.screenshot({ path: `/tmp/cms-native-${name}-locked-home-scroll.png` })
+    await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
     const copy = frame.getByText('KNC source sv', { exact: true }).first()
     await copy.click()
     await inspector.getByLabel('Text', { exact: true }).fill('Owner edited the populated site')

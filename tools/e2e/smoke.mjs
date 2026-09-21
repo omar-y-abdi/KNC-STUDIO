@@ -1210,6 +1210,9 @@ async function verifyCustomerBrowser() {
             second.setDefaultTimeout(WAIT_TIMEOUT)
             await second.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
             await showHistory(second, b)
+            // Return to the original tab before acting: Firefox may defer its fold animation
+            // while backgrounded, making the first click race the visibility transition.
+            await page.bringToFront()
             await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()
             await showHistory(page, b)
             await page.getByRole('button', { name: 'Stäng', exact: true }).click()

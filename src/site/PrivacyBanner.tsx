@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks'
 import type { Lang } from '../i18n/index'
 import { privacyStrings } from '../i18n/index'
 import type { PrivacyControls } from './usePrivacyPreferences'
+import { useNativeChild } from '../cms/NativeSurface'
 
 export interface PrivacyBannerProps {
   readonly lang: Lang
@@ -173,9 +174,10 @@ export function PrivacyManageButton({
   dark,
   controls,
 }: PrivacyBannerProps): JSX.Element | null {
+  const present = useNativeChild()
   if (controls.preferences === null) return null
   const tx = privacyStrings(lang)
-  return (
+  return present(
     <button
       type="button"
       aria-label={tx.manageLabel}
@@ -201,6 +203,6 @@ export function PrivacyManageButton({
       }}
     >
       {tx.manage}
-    </button>
+    </button>,
   )
 }

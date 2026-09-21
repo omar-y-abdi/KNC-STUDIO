@@ -1,12 +1,15 @@
+import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import {
   EMAIL_NAMES,
+  type CmsAsset,
   defaultEmailDesign,
   type CmsDocument,
   type CmsEmail,
   type CmsLang,
 } from '../../../shared/cms'
+import { renderEmailPreview } from './emailPreview'
 
 const businessFields = [
   ['business_name', 'Visningsnamn'],
@@ -95,7 +98,7 @@ export function BusinessPanel({
             <label>
               {label}
               {multiline ? (
-                <textarea
+                <CmsTextarea
                   value={barber[key]}
                   onInput={(e) => setBarber(index, key, e.currentTarget.value)}
                 />
@@ -125,12 +128,15 @@ function replaceEmail(document: CmsDocument, email: CmsEmail): CmsDocument {
 export function EmailPanel({
   document,
   lang,
+  assets,
   onChange,
 }: {
   document: CmsDocument
   lang: CmsLang
+  assets: readonly CmsAsset[]
   onChange: (document: CmsDocument) => void
 }): JSX.Element {
+  const [previewWidth, setPreviewWidth] = useState<'desktop' | 'mobile'>('desktop')
   const first = document.emails.find((email) => email.lang === lang) ?? document.emails[0]
   if (!first) return <div class="cms-domain-panel">Inga e-postmallar är konfigurerade.</div>
   const [selectedTemplate, setSelectedTemplate] = useState(first.template)
@@ -144,6 +150,12 @@ export function EmailPanel({
     if (!next.design) return
     mutate(next.design)
     onChange(replaceEmail(document, next))
+  }
+  let preview: ReturnType<typeof renderEmailPreview> | null = null
+  try {
+    preview = renderEmailPreview(document, email)
+  } catch {
+    // Incomplete number/color edits remain in the form; invalid CSS is never rendered.
   }
   return (
     <div class="cms-email-workspace">
@@ -173,83 +185,112 @@ export function EmailPanel({
           </button>
         )}
         {email.design && (
-          <fieldset>
-            <legend>Design</legend>
-            {emailDesignNumberFields.map(([key, label, min, max]) => (
+          <details class="cms-email-design">
+            <summary>Utseende</summary>
+            <fieldset>
+              <legend>Design</legend>
+              {emailDesignNumberFields.map(([key, label, min, max]) => (
+                <label>
+                  {label}
+                  <input
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={email.design?.[key]}
+                    onInput={(e) =>
+                      updateDesign((design) => {
+                        design[key] = Number(e.currentTarget.value)
+                      })
+                    }
+                  />
+                </label>
+              ))}
               <label>
-                {label}
-                <input
-                  type="number"
-                  min={min}
-                  max={max}
-                  value={email.design?.[key]}
-                  onInput={(e) =>
+                Standardtema
+                <select
+                  value={email.design.defaultMode}
+                  onChange={(e) =>
                     updateDesign((design) => {
-                      design[key] = Number(e.currentTarget.value)
+                      design.defaultMode = e.currentTarget.value as 'light' | 'dark'
                     })
                   }
-                />
+                >
+                  <option value="light">Ljus</option>
+                  <option value="dark">Mörk</option>
+                </select>
               </label>
-            ))}
-            <label>
-              Standardtema
-              <select
-                value={email.design.defaultMode}
-                onChange={(e) =>
-                  updateDesign((design) => {
-                    design.defaultMode = e.currentTarget.value as 'light' | 'dark'
-                  })
-                }
-              >
-                <option value="light">Ljus</option>
-                <option value="dark">Mörk</option>
-              </select>
-            </label>
-            {(['light', 'dark'] as const).map((paletteMode) => (
-              <fieldset>
-                <legend>{paletteMode === 'light' ? 'Ljus palett' : 'Mörk palett'}</legend>
-                {(
-                  [
-                    ['background', 'Bakgrund'],
-                    ['surface', 'Yta'],
-                    ['text', 'Text'],
-                    ['muted', 'Sekundär'],
-                    ['border', 'Kant'],
-                    ['button', 'Knapp'],
-                    ['buttonText', 'Knapptext'],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label>
-                    {label}
-                    <input
-                      type="color"
-                      value={email.design?.palettes[paletteMode][key] ?? '#000000'}
-                      onInput={(e) =>
-                        updateDesign((design) => {
-                          design.palettes[paletteMode][key] = e.currentTarget.value
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-              </fieldset>
-            ))}
-            <label>
-              Typsnitt
-              <select
-                value={email.design.font}
-                onChange={(e) =>
-                  updateDesign((design) => {
-                    design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
-                  })
-                }
-              >
-                <option value="system">System</option>
-                <option value="sans">Sans</option>
-                <option value="serif">Serif</option>
-              </select>
-            </label>
-          </fieldset>
+              {(['light', 'dark'] as const).map((paletteMode) => (
+                <fieldset>
+                  <legend>{paletteMode === 'light' ? 'Ljus palett' : 'Mörk palett'}</legend>
+                  {(
+                    [
+                      ['background', 'Bakgrund'],
+                      ['surface', 'Yta'],
+                      ['text', 'Text'],
+                      ['muted', 'Sekundär'],
+                      ['border', 'Kant'],
+                      ['button', 'Knapp'],
+                      ['buttonText', 'Knapptext'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label>
+                      {label}
+                      <input
+                        type="color"
+                        value={email.design?.palettes[paletteMode][key] ?? '#000000'}
+                        onInput={(e) =>
+                          updateDesign((design) => {
+                            design.palettes[paletteMode][key] = e.currentTarget.value
+                          })
+                        }
+                      />
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+              <label>
+                Logotyp
+                <select
+                  value={
+                    email.design.logo ? `${email.design.logo.bucket}/${email.design.logo.path}` : ''
+                  }
+                  onChange={(event) =>
+                    updateDesign((design) => {
+                      const asset = assets.find(
+                        (item) => `${item.bucket}/${item.path}` === event.currentTarget.value,
+                      )
+                      design.logo = asset ? { bucket: asset.bucket, path: asset.path } : null
+                    })
+                  }
+                >
+                  <option value="">Verksamhetens namn</option>
+                  {assets
+                    .filter(
+                      (asset) =>
+                        asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
+                    )
+                    .map((asset) => (
+                      <option value={`${asset.bucket}/${asset.path}`}>{asset.name}</option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Typsnitt
+                <select
+                  value={email.design.font}
+                  onChange={(e) =>
+                    updateDesign((design) => {
+                      design.font = e.currentTarget.value as 'system' | 'serif' | 'sans'
+                    })
+                  }
+                >
+                  <option value="system">System</option>
+                  <option value="sans">Sans</option>
+                  <option value="serif">Serif</option>
+                </select>
+              </label>
+            </fieldset>
+          </details>
         )}
         {(
           [
@@ -257,52 +298,63 @@ export function EmailPanel({
             ['preheader', 'Preheader'],
             ['title', 'Rubrik'],
             ['intro', 'Intro'],
+            ['section_title', 'Rubrik för bokningsuppgifter'],
             ['note', 'Notis'],
+            ['contact_lead', 'Kontakttext'],
             ['cta_label', 'CTA'],
           ] as const
         ).map(([key, label]) => (
           <label>
             {label}
             {key === 'intro' || key === 'note' ? (
-              <textarea value={email[key]} onInput={(e) => patch(key, e.currentTarget.value)} />
+              <CmsTextarea
+                value={email[key] ?? ''}
+                onInput={(e) => patch(key, e.currentTarget.value)}
+              />
             ) : (
-              <input value={email[key]} onInput={(e) => patch(key, e.currentTarget.value)} />
+              <input value={email[key] ?? ''} onInput={(e) => patch(key, e.currentTarget.value)} />
             )}
           </label>
         ))}
       </div>
-      <div
-        class="cms-email-preview"
-        style={{
-          background: email.design?.palettes[email.design.defaultMode].background,
-        }}
-      >
-        <div
-          class="cms-email-card"
-          style={{
-            maxWidth: `${email.design?.width ?? 600}px`,
-            padding: `${email.design?.padding ?? 28}px`,
-            borderRadius: `${email.design?.radius ?? 18}px`,
-            background: email.design?.palettes[email.design.defaultMode].surface,
-            color: email.design?.palettes[email.design.defaultMode].text,
-            fontSize: `${email.design?.textSize ?? 16}px`,
-            fontFamily:
-              email.design?.font === 'serif'
-                ? 'Georgia,serif'
-                : email.design?.font === 'sans'
-                  ? 'Arial,sans-serif'
-                  : 'system-ui,sans-serif',
-          }}
-        >
-          <small>{email.preheader}</small>
-          <h1 style={{ fontSize: `${email.design?.titleSize ?? 32}px` }}>{email.title}</h1>
-          <p>{email.intro}</p>
-          {email.section_title && <h2>{email.section_title}</h2>}
-          {email.note && <p class="cms-email-note">{email.note}</p>}
-          {email.cta_label && <button type="button">{email.cta_label}</button>}
-          {email.contact_lead && <p>{email.contact_lead}</p>}
+      <section class="cms-email-preview" aria-label="Förhandsvisning av mejl">
+        <div class="cms-email-preview-toolbar">
+          <div class="cms-segment" aria-label="Mejlbredd">
+            <button
+              type="button"
+              aria-pressed={previewWidth === 'desktop'}
+              onClick={() => setPreviewWidth('desktop')}
+            >
+              Desktop
+            </button>
+            <button
+              type="button"
+              aria-pressed={previewWidth === 'mobile'}
+              onClick={() => setPreviewWidth('mobile')}
+            >
+              Mobil
+            </button>
+          </div>
+          <small>Exempeluppgifter · samma mall som utskicket</small>
         </div>
-      </div>
+        {preview ? (
+          <>
+            <div class="cms-email-envelope">
+              <strong>Ämne</strong>
+              <span>{preview.subject}</span>
+              <small>{preview.from}</small>
+            </div>
+            <iframe
+              title="Mejl som skickas"
+              sandbox=""
+              srcDoc={preview.html}
+              style={{ width: previewWidth === 'mobile' ? '360px' : '100%' }}
+            />
+          </>
+        ) : (
+          <p role="status">Fyll i giltiga designvärden för att visa mejlet.</p>
+        )}
+      </section>
     </div>
   )
 }
