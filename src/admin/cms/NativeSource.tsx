@@ -6,13 +6,22 @@ import { PreviewPorts } from '../../cms/PreviewPorts'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
 import { mediaUrl, validatePresentation, type CmsPresentation } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
+import { CmsSceneContext } from '../../cms/Scene'
+import { exampleBookingPorts, exampleCustomerPort, exampleBookingId } from './exampleScenes'
 
 interface SourceContext {
   id: string
   lang: 'sv' | 'en'
   mode: 'light' | 'dark'
   device: 'Desktop' | 'Mobile'
-  scene: 'home' | 'booking' | 'my-bookings'
+  scene:
+    | 'home'
+    | 'booking'
+    | 'my-bookings'
+    | 'booking-options'
+    | 'booking-details'
+    | 'booking-confirmation'
+    | 'my-bookings-list'
   path?: string
   presentation?: CmsPresentation
 }
@@ -28,7 +37,8 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
   })
   const state = useMemo(() => {
     const status = { pending: 0, metadata: false, failed: false }
-    const ports = readOnlyHomepagePreviewPorts()
+    const read = readOnlyHomepagePreviewPorts()
+    const ports = context.scene.startsWith('booking-') ? exampleBookingPorts(read) : read
     for (const key of Object.keys(ports) as (keyof typeof ports)[]) {
       const target = ports[key]
       Object.assign(ports, {
@@ -52,7 +62,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       })
     }
     return { status, ports }
-  }, [])
+  }, [context.id])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>): void => {
       if (event.source !== window.parent || event.origin !== window.location.origin) return
@@ -66,7 +76,15 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         !['sv', 'en'].includes(String(value['lang'])) ||
         !['light', 'dark'].includes(String(value['mode'])) ||
         !['Desktop', 'Mobile'].includes(String(value['device'])) ||
-        !['home', 'booking', 'my-bookings'].includes(String(value['scene']))
+        ![
+          'home',
+          'booking',
+          'my-bookings',
+          'booking-options',
+          'booking-details',
+          'booking-confirmation',
+          'my-bookings-list',
+        ].includes(String(value['scene']))
       )
         return
       if (interactive) {
@@ -79,7 +97,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       }
       delete document.documentElement.dataset['kncSourceReady']
       delete document.documentElement.dataset['kncBookingReady']
-      state.status.metadata = false
+      delete document.documentElement.dataset['kncExampleReady']
       setContext({
         id: value['id'],
         lang: value['lang'] as SourceContext['lang'],
@@ -96,7 +114,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
     if (interactive)
       window.parent.postMessage({ type: 'knc-preview-listening' }, window.location.origin)
     return () => window.removeEventListener('message', receive)
-  }, [state, interactive])
+  }, [interactive])
   useEffect(() => {
     let frame = 0
     let stable = 0
@@ -118,13 +136,15 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         return
       }
       const surface =
-        context.scene === 'my-bookings'
-          ? 'my-bookings'
+        context.scene.startsWith('my-bookings') || context.scene.startsWith('booking-')
+          ? context.scene
           : `${context.device.toLowerCase()}-${context.scene}`
       const bookingReady =
         context.scene !== 'booking' || document.documentElement.dataset['kncBookingReady'] === '1'
       const ready =
         state.status.metadata &&
+        (!context.scene.startsWith('booking-') ||
+          document.documentElement.dataset['kncExampleReady'] === context.scene) &&
         state.status.pending === 0 &&
         bookingReady &&
         document.fonts.status === 'loaded' &&
@@ -149,8 +169,8 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       snapshot.lang !== context.lang ||
       snapshot.mode !== context.mode ||
       snapshot.mobile !== (context.device === 'Mobile') ||
-      snapshot.view !== (context.scene === 'booking' ? 'booking' : 'home') ||
-      snapshot.myBookings !== (context.scene === 'my-bookings')
+      snapshot.view !== (context.scene.startsWith('booking') ? 'booking' : 'home') ||
+      snapshot.myBookings !== context.scene.startsWith('my-bookings')
     )
       return
     state.status.metadata = true
@@ -223,19 +243,30 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
     >
       {interactive && <style>{fonts}</style>}
       <NativeSiteProvider source={!interactive} presentation={context.presentation ?? null}>
-        <PreviewPorts.Provider value={state.ports}>
-          <App
-            key={interactive ? context.id : 'source'}
-            preview={{
-              interactive,
-              lang: context.lang,
-              mode: context.mode,
-              view: context.scene === 'booking' ? 'booking' : 'home',
-              myBookings: context.scene === 'my-bookings',
-              onReady: ready,
-            }}
-          />
-        </PreviewPorts.Provider>
+        <CmsSceneContext.Provider
+          value={{
+            ...(context.scene.startsWith('booking-')
+              ? { booking: context.scene.slice(8) as 'options' | 'details' | 'confirmation' }
+              : {}),
+            ...(context.scene === 'my-bookings-list'
+              ? { customer: { port: exampleCustomerPort, expandedId: exampleBookingId } }
+              : {}),
+          }}
+        >
+          <PreviewPorts.Provider value={state.ports}>
+            <App
+              key={context.id}
+              preview={{
+                interactive,
+                lang: context.lang,
+                mode: context.mode,
+                view: context.scene.startsWith('booking') ? 'booking' : 'home',
+                myBookings: context.scene.startsWith('my-bookings'),
+                onReady: ready,
+              }}
+            />
+          </PreviewPorts.Provider>
+        </CmsSceneContext.Provider>
       </NativeSiteProvider>
     </div>
   )

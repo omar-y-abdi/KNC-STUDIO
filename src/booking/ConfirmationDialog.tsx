@@ -4,7 +4,7 @@
 
 import type { JSX } from 'preact'
 import type { BookingStrings } from '../i18n/index'
-import { Dialog } from '../ui/Dialog'
+import { Dialog, type DialogProps } from '../ui/Dialog'
 import { pseudoClass } from '../ui/pseudo'
 import type { BookingStyles } from './bookingStyles'
 
@@ -12,6 +12,7 @@ const BACKDROP_STYLE =
   'position:fixed;inset:0;box-sizing:border-box;background:rgba(10,10,12,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px 16px;z-index:50;animation:kncOverlay .2s ease both;overflow:hidden;'
 
 export interface ConfirmationDialogProps {
+  readonly cms?: DialogProps['cms']
   readonly t: BookingStrings
   readonly s: BookingStyles
   readonly closeLabel: string
@@ -39,6 +40,7 @@ export function ConfirmationDialog(props: ConfirmationDialogProps): JSX.Element 
   return (
     <Dialog
       titleId="knc-booked-title"
+      {...(props.cms ? { cms: props.cms } : {})}
       onClose={props.onReset}
       onBackdropClick={props.onBackdropClick}
       backdropClass="knc-sheet-backdrop"

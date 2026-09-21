@@ -7,6 +7,7 @@ The executable acceptance checks are:
 - `tools/e2e/cms-native.mjs`: original desktop/mobile appearance, editor source capture, publication and fresh public reload in Chromium and WebKit.
 - `tools/e2e/cms-owner.mjs` and `cms-populated.mjs`: owner edits and populated content through the editor and shared publication validators in both engines. These use a fixture backend.
 - `tools/e2e/cms-projection.mjs`: actual nested components retain published text/image/style edits, callbacks, state, and newly loaded live entries in both engines.
+- `tools/e2e/cms-scenes.mjs`: booking steps, details, confirmation and customer list editing/publication; ordinary runtime forms and changing customer data; mobile fold with no stored scroll styles. Chromium and WebKit, with optional published-presentation input.
 - `tools/e2e/cms-public-regression.mjs`: repeated Home edit/publication/reload, bounded stored content, theme color and viewport backgrounds in Chromium/WebKit.
 - `tools/e2e/cms-conflict.mjs`: explicit local/server conflict choices, stale backup recovery, and unresolved-conflict reload in both engines.
 - `tools/e2e/smoke.mjs` with the local Supabase stack: a real owner publishes existing desktop/mobile copy through Edge and the database before customer booking/access/cancellation scenarios run in Chromium, Firefox, and WebKit. Public documents and APIs use the actual Worker through a local TLS bridge. Native HTML size and both edits in the public presentation API are asserted before browser navigation and reload checks.

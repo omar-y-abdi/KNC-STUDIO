@@ -131,7 +131,17 @@ export function NativeSiteProvider({
 }
 
 type NativeNode = VNode<Record<string, unknown>>
-const editableAttributes = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label']
+const editableAttributes = [
+  'class',
+  'title',
+  'href',
+  'target',
+  'rel',
+  'src',
+  'alt',
+  'aria-label',
+  'placeholder',
+]
 const authoredTags = new Set(
   'a abbr address article aside b blockquote br div em figure figcaption footer h1 h2 h3 h4 h5 h6 header hr i img li main nav ol p pre section small span strong table tbody td th thead tr ul'.split(
     ' ',
@@ -318,8 +328,10 @@ export function projectNativeTree(
       original.props['role'] === 'img' &&
       !original.props['data-knc-required'] &&
       element.tagName.toLowerCase() === 'img'
-    if (identity && (!original || (original.type !== element.tagName.toLowerCase() && !logoImage)))
-      return null
+    if (identity && !original) return null
+    // A calendar cell can change between an empty span and a live date button. Preserve that
+    // runtime transition; the captured month's tag must never remove a later month's dates.
+    if (original && original.type !== element.tagName.toLowerCase() && !logoImage) return original
     if (!original && !authoredTags.has(element.tagName.toLowerCase())) return null
     const props: Record<string, unknown> = original ? { ...original.props } : {}
     const before = baseline(element)
@@ -422,37 +434,61 @@ export function useNativeSurface(
   surface: string,
   lang: CmsLang,
   mode: CmsMode,
+  instance?: string,
 ): JSX.Element {
   const context = useContext(NativeContext)
-  const path =
-    surface === 'my-bookings'
-      ? '/my-bookings'
-      : surface.endsWith('-booking')
-        ? '/booking'
-        : surface === 'about'
-          ? '/about'
-          : '/'
+  const path = surface.startsWith('my-booking')
+    ? '/my-bookings'
+    : surface.endsWith('-booking') || surface.startsWith('booking-')
+      ? '/booking'
+      : surface === 'about'
+        ? '/about'
+        : '/'
   const page = context?.presentation?.pages.find((candidate) => candidate.path === path)
   const html = context?.source ? '' : (page?.content[lang].html ?? '')
+  const runtimeSurface = instance
+    ? `${surface}-${instance.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+    : surface
+  const instantiate = (value: string): string =>
+    value.replaceAll(`knc-${surface}-`, `knc-${runtimeSurface}-`)
   const template = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
     return new DOMParser()
-      .parseFromString(html, 'text/html')
+      .parseFromString(instantiate(html), 'text/html')
       .querySelector(`[data-knc-surface="${surface}"]`)
-  }, [html, surface])
+  }, [html, surface, runtimeSurface])
   if (
     !context ||
     (!context.source && !template && !Object.keys(context.presentation?.themes[mode] ?? {}).length)
   )
     return h(Fragment, null, source)
-  const native = nativeTree(source, surface, mode)
+  const native = nativeTree(source, runtimeSurface, mode)
   return (
     <>
       {context.presentation && <style>{siteThemeCss(context.presentation, mode)}</style>}
-      {template && <style>{repairDesktopCss(page?.content[lang].css[mode] ?? '')}</style>}
+      {template && (
+        <style>{instantiate(repairDesktopCss(page?.content[lang].css[mode] ?? ''))}</style>
+      )}
       <RenderContext.Provider value={{ template, mode }}>
         {template ? projectNativeTree(native, template, mode) : native.tree}
       </RenderContext.Provider>
     </>
   )
+}
+
+/** A conditional runtime region with its own editable template on the owning page. */
+export function NativeRegion({
+  children,
+  surface,
+  lang,
+  mode,
+  instance,
+}: {
+  children: JSX.Element
+  surface: string
+  lang: CmsLang
+  mode: CmsMode
+  instance?: string
+}): JSX.Element {
+  return useNativeSurface(children, surface, lang, mode, instance)
 }

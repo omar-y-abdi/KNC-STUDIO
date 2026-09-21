@@ -4,7 +4,17 @@ import { generate, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 
-const attributes = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label']
+const attributes = [
+  'class',
+  'title',
+  'href',
+  'target',
+  'rel',
+  'src',
+  'alt',
+  'aria-label',
+  'placeholder',
+]
 
 function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   const value: unknown = JSON.parse(

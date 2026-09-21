@@ -1,4 +1,5 @@
 import type { CmsDocument, CmsPage } from '../../../shared/cms'
+import { pageScenes } from '../../cms/Scene'
 
 export const CORE_PAGE_IDS = [
   '10000000-0000-4000-8000-000000000001',
@@ -22,6 +23,13 @@ export function needsCorePageSource(document: CmsDocument): boolean {
     for (const variant of Object.values(page.content)) {
       if (!variant.html.includes('data-knc-native="1"')) return true
       const tree = new DOMParser().parseFromString(variant.html, 'text/html')
+      if (
+        pageScenes(path).some(
+          ({ id }) => id !== 'default' && !tree.querySelector(`[data-knc-surface="${id}"]`),
+        )
+      )
+        return true
+      if (path === '/' && !tree.querySelector('[data-knc-fold="panel"]')) return true
       for (const slot of tree.querySelectorAll('[data-knc-slot]'))
         if (
           slot.children.length &&
@@ -96,11 +104,36 @@ export function ensureCorePages(
     } else {
       const existing = next.presentation.pages.find((item) => item.path === page.path)
       if (existing)
-        for (const lang of ['sv', 'en'] as const)
+        for (const lang of ['sv', 'en'] as const) {
           existing.content[lang].html = repairReadOnlyPreviews(
             existing.content[lang].html,
             page.content[lang].html,
           )
+          if (typeof DOMParser === 'undefined') continue
+          const current = new DOMParser().parseFromString(existing.content[lang].html, 'text/html')
+          const fresh = new DOMParser().parseFromString(page.content[lang].html, 'text/html')
+          let added = false
+          for (const { id } of pageScenes(page.path)) {
+            if (id === 'default' || current.querySelector(`[data-knc-surface="${id}"]`)) continue
+            const region = fresh.querySelector(`[data-knc-surface="${id}"]`)
+            if (region) {
+              ;(current.querySelector('[data-knc-native]') ?? current.body).appendChild(
+                region.cloneNode(true),
+              )
+              added = true
+            }
+          }
+          // Add motion hooks by stable source identity without replacing authored text/styles.
+          for (const node of fresh.querySelectorAll('[data-knc-fold]')) {
+            const target = current.getElementById(node.id)
+            if (target)
+              target.setAttribute('data-knc-fold', node.getAttribute('data-knc-fold') ?? '')
+          }
+          existing.content[lang].html = current.body.innerHTML
+          if (added)
+            for (const mode of ['light', 'dark'] as const)
+              existing.content[lang].css[mode] += '\n' + page.content[lang].css[mode]
+        }
     }
   }
   return next

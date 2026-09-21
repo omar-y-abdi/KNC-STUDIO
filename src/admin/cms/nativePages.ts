@@ -1,7 +1,7 @@
 import type { CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { CORE_PAGE_IDS } from './corePages'
 
-const attrs = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label']
+const attrs = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label', 'placeholder']
 const responsive =
   '@media(max-width:768px){[data-knc-surface^="desktop-"]{display:none!important}}@media(min-width:769px){[data-knc-surface^="mobile-"]{display:none!important}}'
 
@@ -160,7 +160,20 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     for (const lang of ['sv', 'en'] as const)
       for (const mode of ['light', 'dark'] as const)
         for (const device of ['Desktop', 'Mobile'] as const)
-          for (const scene of ['home', 'booking', 'my-bookings'] as const) {
+          for (const scene of [
+            'home',
+            'booking',
+            'my-bookings',
+            'booking-options',
+            'booking-details',
+            'booking-confirmation',
+            'my-bookings-list',
+          ] as const) {
+            if (
+              device === 'Mobile' &&
+              (scene.startsWith('booking-') || scene === 'my-bookings-list')
+            )
+              continue
             frame.style.width = device === 'Desktop' ? '1440px' : '390px'
             frame.style.height = device === 'Desktop' ? '900px' : '844px'
             const id = crypto.randomUUID()
@@ -190,7 +203,8 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
               add('/', `${device.toLowerCase()}-home`)
               if (device === 'Desktop') add('/about', 'about')
             } else if (scene === 'booking') add('/booking', `${device.toLowerCase()}-booking`)
-            else if (device === 'Desktop') add('/my-bookings', 'my-bookings')
+            else if (scene.startsWith('booking-')) add('/booking', scene)
+            else if (device === 'Desktop') add('/my-bookings', scene)
           }
   } finally {
     frame.remove()

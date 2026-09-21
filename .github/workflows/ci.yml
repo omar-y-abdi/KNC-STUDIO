@@ -77,7 +77,7 @@ jobs:
   cms-shell:
     name: CMS shell browsers
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -101,6 +101,7 @@ jobs:
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-projection.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-responsive.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-scenes.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-public-regression.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-populated.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-conflict.mjs || status=1

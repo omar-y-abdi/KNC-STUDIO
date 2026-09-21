@@ -25,6 +25,7 @@ import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
 import './studio.css'
+import { pageScenes, type CmsScene } from '../../cms/Scene'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
 
@@ -39,6 +40,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [zoom, setZoom] = useState(80)
   const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
+  const [scene, setScene] = useState<CmsScene>('default')
+  useLayoutEffect(() => setScene('default'), [selectedPage])
   const [preview, setPreview] = useState<CmsPresentation | null>(null)
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
   const [mobilePanel, setMobilePanel] = useState<Panel>(null)
@@ -675,12 +678,35 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               </button>
             </div>
           </div>
+          {pageScenes(page.path).length > 0 && (
+            <div class="cms-scene-bar">
+              <label>
+                Visa i editorn{' '}
+                <select
+                  aria-label="Visa i editorn"
+                  value={scene}
+                  onChange={(event) => {
+                    editor.current?.flush()
+                    setScene(event.currentTarget.value as CmsScene)
+                  }}
+                >
+                  {pageScenes(page.path).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
+            </div>
+          )}
           <div
             class="cms-editor-wrap"
             inert={Boolean(workspaceView)}
             aria-hidden={workspaceView ? true : undefined}
           >
             <CmsEditor
+              scene={scene}
               pageSettings={pageSettings}
               page={page}
               lang={lang}

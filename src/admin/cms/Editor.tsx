@@ -17,6 +17,8 @@ import { captureViewState, restoreViewState, type CmsViewState } from './viewSta
 import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
 import { LivePreview } from './LivePreview'
+import type { CmsScene } from '../../cms/Scene'
+import { canvasBehavior } from './canvasBehavior'
 import {
   isSitePage,
   renderSitePage,
@@ -31,6 +33,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  scene: CmsScene
   pageSettings: ComponentChildren
   page: CmsPage
   lang: CmsLang
@@ -53,7 +56,7 @@ interface Props {
   onError: (message: string) => void
 }
 
-// Static canvases cannot run the hero's scroll-driven collapse; let it leave the viewport.
+// The comparison frame is static; the editing canvas runs the shared fold behavior.
 const canvasScrollCss = '[data-knc-surface^="mobile-"]>div:first-child{position:relative!important}'
 
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
@@ -174,8 +177,7 @@ export function CmsEditor(props: Props): JSX.Element {
       // Pointer-transparent public branding must still be selectable in the editor.
       // Canvas-only CSS is never exported to the published website.
       canvasCss:
-        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}' +
-        canvasScrollCss,
+        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}',
       mediaCondition: 'min-width',
       selectorManager: { componentFirst: true },
       layerManager: { appendTo: '#cms-layers' },
@@ -468,6 +470,16 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.Canvas.setZoom(props.zoom)
   }, [props.zoom])
 
+  useEffect(() => {
+    const editor = instance.current
+    return editor ? canvasBehavior(editor, props.scene) : undefined
+  }, [contextKey, props.scene])
+
+  useLayoutEffect(() => {
+    instance.current?.select()
+    setSelected(null)
+  }, [props.scene])
+
   const chooseImage = (): void => {
     const editor = instance.current
     const component = editor?.getSelected()
@@ -549,6 +561,7 @@ export function CmsEditor(props: Props): JSX.Element {
       />
       {props.locked && props.preview && (
         <LivePreview
+          scene={props.scene}
           page={props.page}
           presentation={props.preview}
           lang={props.lang}
@@ -663,6 +676,17 @@ export function CmsEditor(props: Props): JSX.Element {
                         tag === 'text' ? text.innerHTML : text.innerHTML.replace(/\r?\n/g, '<br>'),
                       )
                     }}
+                  />
+                </label>
+              )}
+              {['input', 'textarea'].includes(tag) && (
+                <label>
+                  Platshållartext
+                  <CmsTextarea
+                    value={String(attributes['placeholder'] ?? '')}
+                    onInput={(event) =>
+                      selected.addAttributes({ placeholder: event.currentTarget.value })
+                    }
                   />
                 </label>
               )}
