@@ -1,0 +1,152 @@
+name: CMS final acceptance
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-completion-final.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      tree: ${{ steps.source.outputs.tree }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 644137582f600f21d6e95782769b3f1eafe7cec6
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply the reviewed delta with a local Git tree identity gate
+        id: source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-final-source
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/admin/cms/Studio.tsx');s=p.read_text();assert s.count('inert={mobileDialog}')==1;s=s.replace('inert={mobileDialog}', 'inert={drawerOpen}').replace('class="cms-add-page"\n', 'class="cms-add-page"\n              aria-label="Skapa ny sida"\n');p.write_text(s)
+          p=Path('src/admin/cms/Resources.tsx');s=p.read_text();old='<button type="button" aria-pressed={state === value} onClick={() => setState(value)}>';assert s.count(old)==1;s=s.replace(old,'<button\n              type="button"\n              aria-pressed={state === value}\n              onClick={() => {\n                if (value === state) return\n                setState(value)\n                setSelectedId(null)\n                setSelectedIds(new Set())\n                setUsage(null)\n              }}\n            >');p.write_text(s)
+          p=Path('tools/e2e/cms-owner.mjs');s=p.read_text();s=s.replace("await page.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()");s=s.replace("await library.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await library.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()",1);s=s.replace("await library.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await library.getByRole('navigation', { name: 'Sidor', exact: true }).getByRole('button', { name: 'Ny sida', exact: true }).click()");p.write_text(s)
+          p=Path('tools/e2e/cms-workspace-views.mjs');s=p.read_text().replace("await page.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()");p.write_text(s)
+          p=Path('src/admin/cms/DESIGN.md');s=p.read_text();s=s.replace('Forms stack and the dark command dock uses six touch-sized cells; secondary draft actions live in Utkast & backup.', 'Forms stack. The dark command dock separates two panel selectors from five editing actions; short landscape screens use one compact row. Backup and import remain in Utkast & backup.');s=s.replace('Resources, history, business, email and website style are full workspace destinations.', 'Resources, history, business, email and website style are full workspace destinations. The page library uses one scroll region with its heading anchored; the block picker uses a two-column grid with named, keyboard-activatable tiles.');s=s.replace('Native preview loading, timeout and retry are explicit.', 'Native preview loading, timeout and retry are explicit. Interactive readiness uses a bounded timer so an offscreen or initially hidden WebKit frame can acknowledge readiness; source capture retains animation-frame settling.');p.write_text(s)
+          p=Path('src/admin/cms/UX-CONTRACT.md');s=p.read_text();s=s.replace('Mobile editing exposes the full page with the original mobile scroll container; only locked runtime preview simulates the folding hero.', 'Mobile editing retains the original scroll container and shared folding geometry; its temporary motion stylesheet never enters the saved component model. Locked preview runs the actual read-only public runtime.');s=s.replace('- History review is read-only. Restore copies a revision into the draft; Save creates a new revision.', '- History review is read-only and follows the selected device. Restore copies a revision into the draft; Publicera creates a new revision.');s=s.replace('- Typing changes a draft. Save validates and publishes;', '- Typing changes a draft. Publicera validates and publishes;');s += '\n## Compact workspace and readiness\n\n- Editor chrome becomes compact at 900px, independently of the public site’s 768px breakpoint. The operator can still select either canvas device.\n- Only one compact drawer is active. It has dialog semantics, a close control, focus containment and an inert background. Escape returns focus to the actual opener or its visible compact equivalent.\n- Inspector tabs support arrow keys and Home/End. Collapsible style sectors and block tiles support Enter/Space. Generated field labels belong to editor chrome and never mutate published content.\n- Preview readiness must come from the current same-origin frame and match the current request. Stale replies cannot acknowledge a newer draft or replace its status. Loading, timeout and retry preserve the draft and remain reachable.\n- Browser interaction tests wait for the preview host to become non-busy and non-inert; visible text inside an iframe alone is not evidence that the owner can interact with it.\n';p.write_text(s)
+          PY
+          git add -u
+          test "$(git write-tree)" = 232ad56ebd2803c09d6ddcc7d2772f3a733b3181
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-final-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-final-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS refinement' -c user.email='cms-refinement@users.noreply.github.com' commit -m 'fix: retain resource selection reset and finish accessible CMS error handling'
+          git rev-parse HEAD > /tmp/cms-final-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-final-source/source-tree.txt
+          git diff --binary 644137582f600f21d6e95782769b3f1eafe7cec6 HEAD > /tmp/cms-final-source/final.patch
+          git bundle create /tmp/cms-final-source/candidate.bundle HEAD
+          test "$(git ls-remote origin refs/heads/verify/cms-consolidated-20260922 | cut -f1)" = 644137582f600f21d6e95782769b3f1eafe7cec6
+          git push origin HEAD:refs/heads/verify/cms-consolidated-20260922
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-final-acceptance-source-${{ github.run_number }}
+          path: /tmp/cms-final-source
+          retention-days: 14
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, native, owner, surfaces-chromium, surfaces-webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Establish exact source identity and remote runtime
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          mkdir -p /tmp/cms-acceptance
+          test "$(git rev-parse HEAD^{tree})" = '${{ needs.prepare.outputs.tree }}'
+          git rev-parse HEAD > /tmp/cms-acceptance/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-acceptance/source-tree.txt
+          npm ci > /tmp/cms-acceptance/install.log 2>&1
+          bash tools/ci/setup-furl.sh
+          if [ "$GROUP" != core ]; then npx playwright install --with-deps chromium webkit > /tmp/cms-acceptance/browsers.log 2>&1; fi
+          if [[ "$GROUP" == surfaces-* ]]; then npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-acceptance/axe.log 2>&1; fi
+      - name: Run all acceptance checks and keep individual results
+        env:
+          GROUP: ${{ matrix.group }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/cms-acceptance
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+        run: |
+          if [ "$GROUP" = core ]; then
+            set +e
+            for command in typecheck lint format:check test build; do
+              npm run "$command" > "/tmp/cms-acceptance/${command//:/-}.log" 2>&1
+              echo "$?" > "/tmp/cms-acceptance/${command//:/-}.exit-code"
+            done
+          else
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-acceptance/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+            if [ "$GROUP" = native ]; then suites='cms-native cms-responsive cms-projection cms-scenes cms-public-regression cms-populated cms-conflict';
+            elif [ "$GROUP" = owner ]; then suites='cms-owner';
+            else export CMS_ENGINE="${GROUP#surfaces-}"; suites='cms-workspace cms-workspace-edge cms-workspace-views'; fi
+            set +e
+            for suite in $suites; do
+              timeout 18m node "tools/e2e/$suite.mjs" > "/tmp/cms-acceptance/$suite.log" 2>&1
+              echo "$?" > "/tmp/cms-acceptance/$suite.exit-code"
+            done
+          fi
+          git diff --exit-code > /tmp/cms-acceptance/tracked-source-diff.log 2>&1
+          echo "$?" > /tmp/cms-acceptance/tracked-source-diff.exit-code
+      - name: Preserve screenshots and Furl summaries
+        if: always()
+        run: |
+          mkdir -p /tmp/cms-acceptance
+          shopt -s nullglob
+          for image in /tmp/cms-native-*.png /tmp/cms-responsive-*.png /tmp/cms-scene-*.png /tmp/cms-populated-*.png; do cp "$image" /tmp/cms-acceptance/; done
+          if command -v furl > /dev/null; then for log in /tmp/cms-acceptance/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done; fi
+          python3 - <<'PY'
+          import json,pathlib
+          root=pathlib.Path('/tmp/cms-acceptance')
+          checks={p.stem:int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          (root/'check-summary.json').write_text(json.dumps(checks,indent=2))
+          print(json.dumps(checks,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-final-acceptance-${{ matrix.group }}-${{ github.run_number }}
+          path: /tmp/cms-acceptance
+          retention-days: 14
+      - name: Enforce all results
+        if: always()
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,os
+          p=pathlib.Path('/tmp/cms-acceptance/check-summary.json')
+          checks=json.loads(p.read_text()) if p.exists() else {}
+          group=os.environ['GROUP']
+          required={'typecheck','lint','format-check','test','build'} if group=='core' else {'cms-native','cms-responsive','cms-projection','cms-scenes','cms-public-regression','cms-populated','cms-conflict'} if group=='native' else {'cms-owner'} if group=='owner' else {'cms-workspace','cms-workspace-edge','cms-workspace-views'}
+          required.add('tracked-source-diff')
+          assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
+          assert all(v==0 for v in checks.values()),checks
+          PY
