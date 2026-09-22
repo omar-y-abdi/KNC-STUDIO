@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: b6591df3eff129783c108c217b5b5a93dc680cca
+          ref: 8cb1a5a15ddf254851db0bac05fbb8b6a4a63582
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           ENGINE: ${{ matrix.engine }}
         run: |
           mkdir -p /tmp/cms-release
-          test "$(git rev-parse HEAD^{tree})" = 2481a1ddcc29a94ba5d999cbd85e682bc5ebc196
+          test "$(git rev-parse HEAD^{tree})" = f589b6409ce1d3009e749e2029dd7ce2247f7dff
           git rev-parse HEAD > /tmp/cms-release/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/cms-release/source-tree.txt
           npm ci > /tmp/cms-release/install.log 2>&1
