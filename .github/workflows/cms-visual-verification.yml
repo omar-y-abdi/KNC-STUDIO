@@ -34,7 +34,7 @@ jobs:
       - name: Materialize and format exact candidate
         id: source
         env:
-          BASE: aca22b5458bdd9b49dfd405c00bdcd3309068aa8
+          BASE: beee2ce95a3b5f5dbaf8b5c20ef735c7a8d269fb
           PR_HEAD: eaca9b67af86777459f00f18f6e20c12d00ba0f4
         run: |
           set -euo pipefail
