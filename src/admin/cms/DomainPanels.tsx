@@ -414,7 +414,7 @@ export function EmailPanel({
       </div>
       <section class="cms-email-preview" aria-label="Förhandsvisning av mejl">
         <div class="cms-email-preview-toolbar">
-          <div class="cms-segment" aria-label="Mejlbredd">
+          <div class="cms-segment" role="group" aria-label="Mejlbredd">
             <button
               type="button"
               aria-pressed={previewWidth === 'desktop'}

@@ -114,6 +114,20 @@ for (const [engine, name] of [
       )
       await shot('inspector-contrast')
     })
+    await run('layer-type', async () => {
+      await page.getByRole('tab', { name: 'Lager', exact: true }).click()
+      const layers = page.locator('.gjs-layer-name')
+      await layers.first().waitFor()
+      const weights = await layers.evaluateAll((nodes) =>
+        nodes.map((node) => Number(globalThis.getComputedStyle(node).fontWeight)),
+      )
+      check(
+        weights.length > 0 && weights.every((weight) => weight >= 400),
+        `${name}: nested layer labels retain a readable body weight`,
+        weights,
+      )
+      await shot('layer-type')
+    })
     await run('block-grid', async () => {
       await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
       const tiles = page.locator('#cms-blocks .gjs-block')
@@ -263,6 +277,39 @@ for (const [engine, name] of [
       )
       await shot('preview-recovered')
       await page.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
+    })
+    await run('landscape-drawer', async () => {
+      await page.setViewportSize({ width: 844, height: 390 })
+      await page
+        .locator('.cms-mobile-tools')
+        .getByRole('button', { name: 'Egenskaper', exact: true })
+        .click()
+      const panel = page.locator('#cms-inspector')
+      await panel.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+      const bounds = await panel
+        .locator('.gjs-block')
+        .first()
+        .evaluate((node) => {
+          const tile = node.getBoundingClientRect()
+          const content = node.closest('.cms-manager-panel').getBoundingClientRect()
+          return {
+            top: tile.top,
+            bottom: tile.bottom,
+            contentTop: content.top,
+            contentBottom: content.bottom,
+            height: content.height,
+          }
+        })
+      check(
+        bounds.top >= bounds.contentTop &&
+          bounds.bottom <= Math.min(bounds.contentBottom, 390) &&
+          bounds.height >= 180,
+        `${name}: a landscape drawer exposes a whole block and a usable scroll aperture`,
+        bounds,
+      )
+      await shot('landscape-blocks')
+      await panel.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+      await page.setViewportSize({ width: 1440, height: 900 })
     })
     await run('first-revert', async () => {
       assert.equal(

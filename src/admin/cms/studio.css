@@ -1595,6 +1595,10 @@
   font-size: 11px;
   font-weight: 400;
 }
+.knc-cms-studio .gjs-layer-name {
+  color: var(--ink);
+  font-weight: 500;
+}
 .knc-cms-studio .gjs-layer-title {
   font-size: 12px;
   border-bottom: 1px solid var(--line);
@@ -2191,6 +2195,17 @@
   }
 }
 @media (max-height: 550px) and (max-width: 900px) {
+  /* Short viewports need the whole height for the active modal drawer. */
+  .cms-library,
+  .cms-inspector {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    height: auto;
+  }
+  .cms-backdrop {
+    position: fixed;
+  }
   .cms-topbar {
     min-height: 88px;
     padding-block: 6px;

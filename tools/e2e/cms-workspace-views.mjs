@@ -402,6 +402,10 @@ for (const [engine, engineName, widths] of [
         await inspect('20-email', async () => {
           await open('Mejl')
           await page.getByRole('heading', { name: 'Kundbekräftelse · SV', exact: true }).waitFor()
+          check(
+            (await page.getByRole('group', { name: 'Mejlbredd', exact: true }).count()) === 1,
+            `${prefix}: email viewport controls form a named accessible group`,
+          )
           await capture('20-email-editor', true)
           await scrollSeries(
             '20-email-editor',

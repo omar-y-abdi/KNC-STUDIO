@@ -249,7 +249,7 @@ export function CmsResources(props: Props): JSX.Element {
           </select>
         )}
         <button type="button" disabled={busy} onClick={() => upload.current?.click()}>
-          <CmsIcon name="plus" /> + Ladda upp
+          <CmsIcon name="plus" /> Ladda upp
         </button>
         <input
           ref={upload}
@@ -491,7 +491,7 @@ export function CmsResources(props: Props): JSX.Element {
               webbplatsen.
             </p>
             <p>
-              Uppladdade filer sparas direkt i biblioteket. Ändringar på sidor publiceras med Save /
+              Uppladdade filer sparas direkt i biblioteket. Ändringar på sidor publiceras med
               Publicera.
             </p>
           </aside>
