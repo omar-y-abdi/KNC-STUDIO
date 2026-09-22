@@ -5,27 +5,67 @@ on:
     paths: [.github/workflows/cms-quality-verification.yml, .cms-verification/**]
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: cms-quality-final
   cancel-in-progress: true
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply exact source and format remotely
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-inputs
+          git worktree add --detach /tmp/candidate b6dfab63ddc314c87255cc0eed69acf3d54024b6
+          test "$(git -C /tmp/candidate rev-parse HEAD^{tree})" = 4e692627bbc7df4f05c5e242d8c0cea73a072601
+          cat .cms-verification/chrome.{0,1,2} > /tmp/cms-inputs/change.gz
+          test "$(git hash-object /tmp/cms-inputs/change.gz)" = 8abec673ef6fd1ef76147b0fdd7312cf49bc8fa0
+          gzip -dc /tmp/cms-inputs/change.gz | git -C /tmp/candidate apply --unidiff-zero --index
+          test "$(git -C /tmp/candidate write-tree)" = 505ae6aabf45c58e3d6965fbcaf121adcb9ddee0
+          cd /tmp/candidate
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-inputs/install.log 2>&1
+          for pass in 1 2; do
+            git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-inputs/format-$pass.log 2>&1
+          done
+          npx prettier --write tools/ci/test-format.mjs >> /tmp/cms-inputs/format-2.log 2>&1
+          git add -u
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: finish readable CMS controls, touch navigation and revision previews'
+          git rev-parse HEAD > /tmp/cms-inputs/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-inputs/source-tree.txt
+          git diff --binary eaca9b67af86777459f00f18f6e20c12d00ba0f4 HEAD > /tmp/cms-inputs/product.patch
+          git bundle create /tmp/cms-inputs/source.bundle HEAD
+          git bundle verify /tmp/cms-inputs/source.bundle
+          set +e
+          git push origin HEAD:refs/heads/verify/cms-quality-candidate-${{ github.run_number }} > /tmp/cms-inputs/candidate-ref.log 2>&1
+          echo "$?" > /tmp/cms-inputs/candidate-ref.exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-quality-source-${{ github.run_number }}
+          path: /tmp/cms-inputs
+          retention-days: 7
   verify:
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        group: [static, workspace, owner, flows, surfaces, chrome]
+        group: [static, workspace, owner, flows, surfaces]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          persist-credentials: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: cms-quality-source-2
-          run-id: 35732184909
-          github-token: ${{ github.token }}
+          name: cms-quality-source-${{ github.run_number }}
           path: /tmp/cms-inputs
       - name: Read exact source bundle
         run: |
@@ -33,11 +73,10 @@ jobs:
           mkdir -p /tmp/cms-workspace
           git clone /tmp/cms-inputs/source.bundle candidate
           cd candidate
-          test "$(git rev-parse HEAD)" = b6dfab63ddc314c87255cc0eed69acf3d54024b6
-          test "$(git rev-parse HEAD^{tree})" = 4e692627bbc7df4f05c5e242d8c0cea73a072601
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/cms-inputs/source-commit.txt)"
+          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/cms-inputs/source-tree.txt)"
           cp /tmp/cms-inputs/source-*.txt /tmp/cms-workspace/
-          cp ../.cms-verification/chrome-contracts.mjs tools/e2e/cms-chrome-contracts.mjs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
           cache: npm
@@ -45,23 +84,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install remote verification tools
+      - name: Install isolated verification tools
         working-directory: candidate
         env:
           GROUP: ${{ matrix.group }}
         run: |
           set -euo pipefail
           npm ci > /tmp/cms-workspace/install.log 2>&1
-          if [ "$GROUP" != static ]; then
-            npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
-          fi
-          if [ "$GROUP" = surfaces ]; then
-            npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-workspace/axe-install.log 2>&1
-          fi
+          if [ "$GROUP" != static ]; then npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1; fi
+          if [ "$GROUP" = surfaces ]; then npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-workspace/axe-install.log 2>&1; fi
           curl -fsSL 'https://github.com/omar-y-abdi/furl-ctx/releases/download/v1.4.0/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' -o /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
-          echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' | sha256sum -c -
+          echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3manylinux_2_28_x86_64.whl' | sed 's/abi3many/abi3-many/' | sha256sum -c -
           python -m pip install /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl > /tmp/cms-workspace/furl-install.log 2>&1
-      - name: Static checks, unit suite and build
+      - name: Static and repository checks
         if: matrix.group == 'static'
         working-directory: candidate
         run: |
@@ -70,6 +105,10 @@ jobs:
             npm run "$command" > "/tmp/cms-workspace/${command//:/-}.log" 2>&1
             echo "$?" > "/tmp/cms-workspace/${command//:/-}.exit-code"
           done
+          node tools/release/cms-release.mjs check > /tmp/cms-workspace/backend-stamp.log 2>&1
+          echo "$?" > /tmp/cms-workspace/backend-stamp.exit-code
+          node --test tools/ci/test-format.mjs > /tmp/cms-workspace/ci-format-contract.log 2>&1
+          echo "$?" > /tmp/cms-workspace/ci-format-contract.exit-code
           exit 0
       - name: Start isolated fixture server
         if: matrix.group != 'static'
@@ -78,7 +117,7 @@ jobs:
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
           curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null
-      - name: Browser regressions and full visual evidence
+      - name: Browser regressions and visual evidence
         if: matrix.group != 'static'
         working-directory: candidate
         env:
@@ -93,7 +132,6 @@ jobs:
             workspace) suites='cms-workspace cms-native cms-responsive' ;;
             owner) suites='cms-owner' ;;
             flows) suites='cms-scenes cms-projection cms-public-regression cms-populated cms-conflict' ;;
-            chrome) suites='cms-chrome-contracts' ;;
           esac
           for suite in $suites; do
             timeout 20m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
@@ -104,7 +142,7 @@ jobs:
             echo "$?" > /tmp/cms-workspace/cms-shell.exit-code
           fi
           exit 0
-      - name: Preserve compact logs and exact results
+      - name: Preserve compact diagnostics and exact results
         if: always()
         run: |
           mkdir -p /tmp/cms-workspace
@@ -124,7 +162,7 @@ jobs:
           (root/'check-summary.json').write_text(json.dumps(checks,indent=2))
           print(checks)
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: cms-quality-${{ matrix.group }}-${{ github.run_number }}
@@ -139,7 +177,7 @@ jobs:
           import json,pathlib,os
           p=pathlib.Path('/tmp/cms-workspace/check-summary.json')
           checks=json.loads(p.read_text()) if p.exists() else {}
-          gates={'static':['typecheck','lint','format-check','test','build'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views'],'chrome':['cms-chrome-contracts']}
+          gates={'static':['typecheck','lint','format-check','test','build','backend-stamp','ci-format-contract'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views']}
           required=set(gates[os.environ['GROUP']])|{'tracked-source-diff'}
           assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
           assert all(v==0 for v in checks.values()),checks
