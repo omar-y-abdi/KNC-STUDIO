@@ -29,8 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/review-source
-          base=369692ec9f084e27980a10905812f34074457c68
-          expected=452462c399525840f1c1e27002c912076c824ed9
+          base=5d4ecbfeed6e0687012ff3cab87f69fa51fa3e63
+          expected=6fbe47ecd3fa89ceb2c18f85a4fc595d0a8266fc
           git worktree add --detach /tmp/review-candidate "$base"
           base64 -d .cms-review/patch.b64 | gzip -d | git -C /tmp/review-candidate apply --index
           test "$(git -C /tmp/review-candidate write-tree)" = "$expected"
@@ -38,7 +38,7 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund > /tmp/review-source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/review-source/format.log 2>&1
           git add -u
-          git -c user.name='CMS code review' -c user.email='cms-review@users.noreply.github.com' commit -m 'test: reproduce resource races, unsafe local deletion and owner CSS regression'
+          git -c user.name='CMS code review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: narrow resource wire payloads and expose independent concurrency failures'
           git rev-parse HEAD > /tmp/review-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/review-source/source-tree.txt
           echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
