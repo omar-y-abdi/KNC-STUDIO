@@ -114,6 +114,71 @@ jobs:
             /tmp/visual-diff/*.png
           retention-days: 7
 
+  cms-workspace:
+    needs: format
+    name: CMS workspace (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    env:
+      BASE_URL: http://127.0.0.1:4188
+      CMS_BROWSER: ${{ matrix.browser }}
+      CMS_EVIDENCE_DIR: /tmp/cms-workspace
+      AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download formatted changes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-format
+      - name: Apply formatting from first job
+        shell: bash
+        run: git apply --allow-empty "$RUNNER_TEMP/ci-format/format.patch"
+      - name: Set up Furl log reduction
+        shell: bash
+        run: bash tools/ci/setup-furl.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install isolated inspection tools
+        run: |
+          npx playwright install --with-deps "$CMS_BROWSER"
+          npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1
+      - name: Exercise workspace, preview, accessibility and touch contracts
+        run: |
+          mkdir -p "$CMS_EVIDENCE_DIR"
+          git rev-parse HEAD > "$CMS_EVIDENCE_DIR/source-commit.txt"
+          cp "$RUNNER_TEMP/ci-format/format.patch" "$CMS_EVIDENCE_DIR/source-format.patch"
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > "$CMS_EVIDENCE_DIR/server.log" 2>&1 &
+          dev_pid=$!
+          trap 'kill "$dev_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break
+            sleep 1
+          done
+          status=0
+          for suite in cms-workspace cms-preview-state cms-workspace-views cms-touch; do
+            result=0
+            node "tools/e2e/$suite.mjs" > "$CMS_EVIDENCE_DIR/$suite.log" 2>&1 || result=$?
+            printf '%s\n' "$result" > "$CMS_EVIDENCE_DIR/$suite.exit-code"
+            furl compress "$CMS_EVIDENCE_DIR/$suite.log" --json > "$CMS_EVIDENCE_DIR/$suite.furl.json"
+            if [ "$result" -ne 0 ]; then cat "$CMS_EVIDENCE_DIR/$suite.log"; status=1; fi
+          done
+          exit "$status"
+      - name: Preserve complete workspace evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cms-workspace-${{ matrix.browser }}-${{ github.run_attempt }}
+          path: /tmp/cms-workspace
+          retention-days: 7
+
   cms-shell:
     needs: format
     name: CMS shell browsers
