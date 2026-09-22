@@ -2,32 +2,72 @@ name: CMS visual laboratory
 on:
   push:
     branches: [verify/cms-visual-20260922]
+    paths: [.cms-visual-candidate.json]
 permissions:
   contents: read
-  actions: read
 concurrency:
   group: cms-visual-lab
   cancel-in-progress: true
 jobs:
+  candidate:
+    name: Record exact candidate tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.record.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - name: Reconstruct verified local bytes on a disposable branch
+        id: record
+        run: |
+          set -euo pipefail
+          cp .cms-visual-candidate.json /tmp/candidate.json
+          python - <<'PY'
+          import base64, gzip, json, pathlib, re
+          p = json.loads(pathlib.Path('/tmp/candidate.json').read_text())
+          assert all(re.fullmatch('[0-9a-f]{40}', p[k]) for k in ('base', 'tree'))
+          pathlib.Path('/tmp/candidate.patch').write_bytes(gzip.decompress(base64.b64decode(p['patch'], validate=True)))
+          pathlib.Path('/tmp/candidate-base').write_text(p['base'])
+          pathlib.Path('/tmp/candidate-tree').write_text(p['tree'])
+          PY
+          base=$(cat /tmp/candidate-base)
+          expected=$(cat /tmp/candidate-tree)
+          parent=$(git rev-parse --verify refs/remotes/origin/verify/cms-visual-candidate 2>/dev/null || echo "$base")
+          git checkout --detach "$base"
+          git apply --index /tmp/candidate.patch
+          tree=$(git write-tree)
+          test "$tree" = "$expected"
+          git config user.name 'CMS verification'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          sha=$(git commit-tree "$tree" -p "$parent" -m 'CMS workspace visual candidate: exact local tree')
+          git push origin "$sha:refs/heads/verify/cms-visual-candidate"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          printf 'Candidate `%s`\n\nTree `%s`\n' "$sha" "$tree" >> "$GITHUB_STEP_SUMMARY"
   browser:
     name: Visual evidence (${{ matrix.suite }})
+    needs: candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        suite: [workspace, regressions]
+        suite: [chromium, webkit, regressions]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          fetch-depth: 0
+          ref: ${{ needs.candidate.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - name: Run browser checks on disposable branch
+      - name: Run real CMS browser checks
         env:
           SUITE: ${{ matrix.suite }}
           BASE_URL: http://127.0.0.1:4188
@@ -44,43 +84,12 @@ jobs:
             sleep 1
           done
           status=0
-          if [ "$SUITE" = workspace ]; then
-            CMS_OWNER_SCENARIO=dialogs node tools/e2e/cms-owner.mjs > /tmp/cms-evidence/workspaces.log 2>&1 || status=1
-            CMS_OWNER_SCENARIO=email-preview node tools/e2e/cms-owner.mjs > /tmp/cms-evidence/email.log 2>&1 || status=1
-            if [ -f tools/e2e/cms-workspace.mjs ]; then
-              node tools/e2e/cms-workspace.mjs > /tmp/cms-evidence/workspace-contract.log 2>&1 || status=1
-            else
-              cat > tools/e2e/.cms-probe.mjs <<'JS'
-          import { chromium } from 'playwright'
-          import { nativeBackend } from './cms-native.mjs'
-          import assert from 'node:assert/strict'
-          import { writeFile } from 'node:fs/promises'
-          const browser = await chromium.launch()
-          const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
-          await nativeBackend(context)
-          const page = await context.newPage()
-          await page.goto(process.env.BASE_URL + '/tools/e2e/admin-harness.html?view=cms-studio')
-          await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
-          await page.locator('.gjs-frame').first().waitFor({timeout:90000})
-          await page.frameLocator('.gjs-frame').first().getByText('KNC source sv',{exact:true}).first().waitFor({timeout:90000})
-          await page.screenshot({path:'/tmp/cms-native-baseline-mobile.png'})
-          const results = await page.evaluate(() => ({
-            statusVisible: document.querySelector('.cms-status').checkVisibility(),
-            touchTargets: [...document.querySelectorAll('.cms-topbar button,.cms-mobile-tools button,.cms-bottom button')].filter(el=>el.checkVisibility()).map(el=>({name:el.textContent.trim(),height:el.getBoundingClientRect().height})),
-            inspectorClose: !!document.querySelector('#cms-inspector [aria-label="Stäng egenskaper"]')
-          }))
-          await writeFile('/tmp/cms-evidence/baseline-contract.json',JSON.stringify(results,null,2))
-          await browser.close()
-          assert.ok(results.statusVisible, 'Publication status must remain visible on mobile')
-          assert.ok(results.inspectorClose, 'A mobile inspector must have an explicit close control')
-          assert.ok(results.touchTargets.every(x=>x.height>=44), 'Mobile command targets must be at least 44px high')
-          JS
-              node tools/e2e/.cms-probe.mjs > /tmp/cms-evidence/workspace-contract.log 2>&1 || status=1
-            fi
-          else
-            for suite in native responsive scenes; do
+          if [ "$SUITE" = regressions ]; then
+            for suite in native responsive scenes projection owner public-regression populated conflict; do
               node tools/e2e/cms-$suite.mjs > /tmp/cms-evidence/$suite.log 2>&1 || status=1
             done
+          else
+            CMS_BROWSER="$SUITE" node tools/e2e/cms-workspace.mjs > /tmp/cms-evidence/workspace.log 2>&1 || status=1
           fi
           exit "$status"
       - name: Preserve exact source evidence and raw logs
@@ -92,13 +101,17 @@ jobs:
             /tmp/cms-native-*.png
             /tmp/cms-workspace-*.png
             /tmp/cms-evidence
-          retention-days: 7
+          retention-days: 14
   checks:
     name: Code checks
+    needs: candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
@@ -118,4 +131,4 @@ jobs:
         with:
           name: cms-checks-${{ github.run_number }}
           path: /tmp/cms-checks
-          retention-days: 7
+          retention-days: 14
