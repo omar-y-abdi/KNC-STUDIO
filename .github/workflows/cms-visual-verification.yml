@@ -1,0 +1,115 @@
+name: CMS visual verification
+on:
+  push:
+    branches: [verify/cms-visual-refinement-20260922]
+    paths: [.github/workflows/cms-visual-verification.yml, .cms-verification/**]
+permissions:
+  contents: write
+concurrency:
+  group: cms-visual-verification
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare verification runtime
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+          mkdir -p /tmp/cms-visual
+      - name: Start isolated CMS fixture server
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-visual/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
+      - name: Capture incumbent desktop and phone workspaces
+        run: |
+          cat > tools/e2e/cms-visual-baseline.mjs <<'JS'
+          import { chromium } from 'playwright'
+          import { writeFile } from 'node:fs/promises'
+          import { nativeBackend } from './cms-native.mjs'
+          import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
+          import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
+          const report = []
+          const browser = await chromium.launch()
+          try {
+            for (const width of [1440, 390]) {
+              const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, reducedMotion: 'reduce' })
+              context.setDefaultTimeout(12000)
+              const seed = emptyDocument()
+              seed.emails = EMAIL_NAMES.flatMap(template => ['sv', 'en'].map(lang => {
+                const copy = defaultEmailTemplate(template, lang)
+                return { template, lang, subject: copy.subject, preheader: copy.preheader, title: copy.title, intro: copy.intro, section_title: copy.sectionTitle, note: copy.note, cta_label: copy.ctaLabel, contact_lead: copy.contactLead, design: null }
+              }))
+              await nativeBackend(context, seed)
+              const page = await context.newPage()
+              page.on('pageerror', error => report.push({ width, error: error.message }))
+              const capture = async name => {
+                await page.screenshot({ path: `/tmp/cms-visual/before-${width}-${name}.png` })
+                const metrics = await page.evaluate(() => {
+                  const bounds = selector => {
+                    const node = document.querySelector(selector)
+                    if (!node) return null
+                    const box = node.getBoundingClientRect()
+                    return { x: box.x, y: box.y, width: box.width, height: box.height, inert: node.inert, reachable: node.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)) }
+                  }
+                  return { publish: bounds('.cms-publish'), canvas: bounds('.cms-editor-canvas'), frame: bounds('.gjs-frame'), toolbar: bounds('.cms-canvas-toolbar'), library: bounds('#cms-library'), inspector: bounds('#cms-inspector') }
+                })
+                report.push({ width, name, metrics })
+              }
+              await page.goto('http://127.0.0.1:4188/tools/e2e/admin-harness.html?view=cms-studio')
+              await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
+              await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+              const frame = page.frameLocator('.gjs-frame').first()
+              await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
+              await capture('initial')
+              await page.getByRole('button', { name: 'Fit', exact: true }).click()
+              await capture('fitted')
+              for (const [trigger, title, name] of [
+                ['Resurser', 'Bilder & typsnitt', 'resources'],
+                ['Business / SEO', 'Företag & sökresultat', 'business'],
+                ['Mejl', 'Mejl från din salong', 'email'],
+                ['◐ Webbplatsens stil', 'Webbplatsens stil', 'style'],
+                ['History', 'Webbplatsens historik', 'history'],
+              ]) {
+                if (width === 390 && trigger !== 'History') await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Sidor', exact: true }).click()
+                await page.getByRole('button', { name: trigger, exact: true }).click()
+                await page.getByRole('region', { name: title, exact: true }).waitFor()
+                await capture(name)
+                await page.keyboard.press('Escape')
+              }
+              if (width === 390) {
+                await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Sidor', exact: true }).click()
+                await capture('library')
+              }
+              await page.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+              await page.getByRole('dialog', { name: 'Ny sida', exact: true }).waitFor()
+              await capture('new-page')
+              await page.keyboard.press('Escape')
+              if (width === 390) await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+              await context.close()
+            }
+          } finally {
+            await writeFile('/tmp/cms-visual/baseline.json', JSON.stringify(report, null, 2))
+            await browser.close()
+          }
+          JS
+          node tools/e2e/cms-visual-baseline.mjs > /tmp/cms-visual/baseline.log 2>&1
+      - name: Record source identity
+        if: always()
+        run: |
+          git rev-parse HEAD > /tmp/cms-visual/verification-commit.txt
+          git rev-parse c47fff39948823dd9651d2d72e002f3daa7cd2e2^{tree} > /tmp/cms-visual/source-tree.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-visual-baseline-${{ github.run_number }}
+          path: /tmp/cms-visual
+          retention-days: 7
