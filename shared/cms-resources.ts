@@ -24,9 +24,13 @@ export function resourceUsage(
     if (email.design?.logo && mediaKey(email.design.logo) === key)
       places.push(`Mejl: ${email.template}/${email.lang}`)
   const variants = [
-    ...document.presentation.pages.map((page) => ({ label: page.path, content: page.content })),
+    ...document.presentation.pages.map((page) => ({
+      label: page.path,
+      content: page.content,
+      nativeAllowed: ['/', '/about', '/booking', '/my-bookings'].includes(page.path),
+    })),
     ...Object.entries(document.presentation.regions).flatMap(([name, content]) =>
-      content ? [{ label: name, content }] : [],
+      content ? [{ label: name, content, nativeAllowed: false }] : [],
     ),
   ]
   for (const entry of variants)
@@ -34,9 +38,11 @@ export function resourceUsage(
       for (const mode of ['light', 'dark'] as const) {
         const value = entry.content[lang]
         if (
-          validateMarkup(value.html, value.css[mode], policy).refs.some(
-            (ref) => mediaKey(ref) === key,
-          )
+          // Native captures use the same bounded contract as publication, not the
+          // smaller authored-page allowance. Shared regions never inherit it.
+          validateMarkup(value.html, value.css[mode], policy, {
+            native: entry.nativeAllowed && value.html.includes('data-knc-native="1"'),
+          }).refs.some((ref) => mediaKey(ref) === key)
         )
           places.push(`${entry.label} · ${lang}/${mode}`)
       }

@@ -139,6 +139,15 @@ for (const [engine, name] of [
           )
           await trigger.click()
         }
+        const pageList = await library.locator('.cms-page-list').evaluate((node) => ({
+          available: node.clientHeight,
+          content: node.scrollHeight,
+        }))
+        check(
+          pageList.content <= pageList.available + 1,
+          `${prefix}: library pages use the drawer's scroll flow, not a crushed nested list`,
+          pageList,
+        )
         const search = page.getByRole('searchbox', { name: 'Sök sidor' })
         await search.fill('no-page-with-this-name')
         check(

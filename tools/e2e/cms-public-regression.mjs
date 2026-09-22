@@ -100,7 +100,37 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       assert.ok(id, 'Editable homepage copy must exist')
       await frame.locator(`[id="${id}"]`).click()
       const copy = `Regression publication ${round}`
-      await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(copy)
+      try {
+        await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(copy)
+      } catch (error) {
+        const selection = await page.evaluate(async () => {
+          const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+          const selected = cmsGrapes.editors.at(-1).getSelected()
+          return {
+            selected: selected && {
+              id: selected.getId(),
+              type: selected.get('type'),
+              tag: selected.get('tagName'),
+              content: selected.get('content'),
+              html: selected.getEl()?.outerHTML,
+              children: selected
+                .components()
+                .map((c) => ({
+                  type: c.get('type'),
+                  tag: c.get('tagName'),
+                  content: c.get('content'),
+                })),
+            },
+            inspector: globalThis.document.querySelector('#cms-inspector')?.innerText,
+          }
+        })
+        fs.writeFileSync(
+          `/tmp/cms-public-selection-${name}.json`,
+          JSON.stringify({ round, id, selection }, null, 2),
+        )
+        await page.screenshot({ path: `/tmp/cms-public-selection-${name}.png` })
+        throw error
+      }
       await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),

@@ -18,17 +18,13 @@ export function connectEditorAccessibility(
           ?.textContent?.replace(/\s+/g, ' ')
           .trim()
         if (!label) return
-        property
-          .querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-            'input, select, textarea',
-          )
-          .forEach((field) => {
-            // Composite fields carry their own more precise labels.
-            if (field.closest('.gjs-sm-property, .gjs-trt-trait') !== property) return
-            const units = field.matches('.gjs-input-unit')
-            if (!field.getAttribute('aria-label'))
-              field.setAttribute('aria-label', `${label}${units ? ' – enhet' : ''}`)
-          })
+        property.querySelectorAll<HTMLElement>('input, select, textarea').forEach((field) => {
+          // Composite fields carry their own more precise labels.
+          if (field.closest('.gjs-sm-property, .gjs-trt-trait') !== property) return
+          const units = field.matches('.gjs-input-unit')
+          if (!field.getAttribute('aria-label'))
+            field.setAttribute('aria-label', `${label}${units ? ' – enhet' : ''}`)
+        })
         property.querySelectorAll<HTMLButtonElement>('button[data-add-layer]').forEach((button) => {
           button.setAttribute('aria-label', `Lägg till lager: ${label}`)
           button.title = `Lägg till lager: ${label}`

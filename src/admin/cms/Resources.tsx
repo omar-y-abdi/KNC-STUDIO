@@ -89,6 +89,7 @@ export function CmsResources(props: Props): JSX.Element {
       return
     }
     let active = true
+    setUsage(null)
     void cmsApi
       .assetUsage(asset.id)
       .then((value) => active && setUsage(value))
@@ -189,7 +190,17 @@ export function CmsResources(props: Props): JSX.Element {
     }
   }
 
-  const draftUsage = asset ? resourceUsage(props.document, asset, policy) : []
+  const draftReferences = useMemo(() => {
+    try {
+      return { places: asset ? resourceUsage(props.document, asset, policy) : [], error: null }
+    } catch (reason) {
+      // A malformed local draft must not crash the library or look unreferenced.
+      return {
+        places: null,
+        error: reason instanceof Error ? reason.message : 'Referenserna kunde inte läsas.',
+      }
+    }
+  }, [props.document, asset?.bucket, asset?.path])
   return (
     <div class="cms-resource-surface" aria-busy={busy}>
       <header class="cms-resource-toolbar">
@@ -375,12 +386,22 @@ export function CmsResources(props: Props): JSX.Element {
               {(asset.bytes / 1024).toFixed(1)} KB · v{asset.version}
             </p>
             <p>
-              Utkast: {draftUsage.length} placeringar · Publicerat:{' '}
-              {usage?.currentReferences ?? '…'} · Historik: {usage?.historyReferences ?? '…'}
+              Utkast:{' '}
+              {draftReferences.places
+                ? `${draftReferences.places.length} placeringar`
+                : 'ej kontrollerat'}{' '}
+              · Publicerat: {usage?.currentReferences ?? '…'} · Historik:{' '}
+              {usage?.historyReferences ?? '…'}
             </p>
-            {draftUsage.length > 0 && (
+            {draftReferences.error && (
+              <p class="cms-inline-error" role="alert">
+                Utkastets referenser kunde inte kontrolleras. Rätta sidans innehåll innan filer tas
+                bort. {draftReferences.error}
+              </p>
+            )}
+            {draftReferences.places && draftReferences.places.length > 0 && (
               <ul>
-                {draftUsage.map((place) => (
+                {draftReferences.places.map((place) => (
                   <li>{place}</li>
                 ))}
               </ul>
@@ -426,7 +447,7 @@ export function CmsResources(props: Props): JSX.Element {
                 </button>
                 <button
                   type="button"
-                  disabled={busy || (usage?.currentReferences ?? 1) > 0}
+                  disabled={busy || !draftReferences.places || (usage?.currentReferences ?? 1) > 0}
                   onClick={() => void transition(asset, 'trash')}
                 >
                   Flytta till papperskorg
@@ -446,6 +467,7 @@ export function CmsResources(props: Props): JSX.Element {
                   type="button"
                   disabled={
                     busy ||
+                    !draftReferences.places ||
                     (usage?.currentReferences ?? 1) > 0 ||
                     (usage?.historyReferences ?? 1) > 0
                   }

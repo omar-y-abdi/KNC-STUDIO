@@ -126,7 +126,10 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     await page.getByLabel('Bakgrund hex', { exact: true }).press('Tab')
     await page.getByLabel('Text hex', { exact: true }).fill('#273749')
     await page.getByLabel('Text hex', { exact: true }).press('Tab')
-    await page.getByLabel('Typsnitt', { exact: true }).selectOption('Georgia, serif')
+    await page
+      .getByRole('region', { name: 'Webbplatsens stilinställningar' })
+      .getByLabel('Typsnitt', { exact: true })
+      .selectOption('Georgia, serif')
     const themePreview = page.frameLocator('.cms-theme-preview iframe')
     await themePreview.locator('[data-knc-surface="desktop-home"]').waitFor()
     await page.waitForFunction(() => {
