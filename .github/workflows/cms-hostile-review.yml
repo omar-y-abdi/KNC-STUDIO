@@ -1,0 +1,122 @@
+name: CMS adversarial review
+on:
+  push:
+    branches: [verify/pr71-review-20260922]
+    paths: [.cms-review/**, .github/workflows/cms-hostile-review.yml]
+permissions:
+  contents: read
+concurrency:
+  group: cms-adversarial-review
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare the exact review candidate
+        id: source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/review-source
+          git worktree add --detach /tmp/review-candidate 369692ec9f084e27980a10905812f34074457c68
+          gzip -dc .cms-review/changes.gz | git -C /tmp/review-candidate apply --index
+          cd /tmp/review-candidate
+          test "$(git write-tree)" = 0cbaa9afee0bb0372242e33ae0c9db431c51a19c
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/review-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/review-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS review' -c user.email='cms-review@users.noreply.github.com' commit -m 'test: reproduce CMS asset wire and delayed-update defects'
+          git rev-parse HEAD > /tmp/review-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/review-source/source-tree.txt
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git bundle create /tmp/review-source/source.bundle HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-review-source-${{ github.run_number }}
+          path: /tmp/review-source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [unit, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-review-source-${{ github.run_number }}
+          path: /tmp/review-source
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up the immutable candidate and tools
+        env:
+          SOURCE: ${{ needs.prepare.outputs.source }}
+          TASK: ${{ matrix.task }}
+        run: |
+          set -euo pipefail
+          git fetch /tmp/review-source/source.bundle HEAD
+          git checkout --detach "$SOURCE"
+          mkdir -p /tmp/cms-review
+          cp /tmp/review-source/source-*.txt /tmp/cms-review/
+          npm ci --no-audit --no-fund
+          if [ "$TASK" != unit ]; then npx playwright install --with-deps "$TASK"; fi
+          bash tools/ci/setup-furl.sh
+      - name: Exercise adversarial contracts
+        env:
+          CMS_ENGINE: ${{ matrix.task }}
+          CMS_EVIDENCE_DIR: /tmp/cms-review
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          set -euo pipefail
+          if [ "$CMS_ENGINE" = unit ]; then
+            set +e
+            npx vitest run tests/unit/cmsWireContracts.test.ts > /tmp/cms-review/unit.log 2>&1
+            echo "$?" > /tmp/cms-review/unit.exit-code
+          else
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-review/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+            set +e
+            timeout 12m node tools/e2e/cms-adversarial.mjs > /tmp/cms-review/browser.log 2>&1
+            echo "$?" > /tmp/cms-review/browser.exit-code
+          fi
+      - name: Summarize outcomes with Furl
+        if: always()
+        run: |
+          mkdir -p /tmp/cms-review
+          for log in /tmp/cms-review/*.log; do
+            test -f "$log" || continue
+            furl compress "$log" --json > "$log.furl.json" || true
+          done
+          cat /tmp/cms-review/*.exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-review-${{ matrix.task }}-${{ github.run_number }}
+          path: /tmp/cms-review
+          retention-days: 14
+      - name: Enforce the contract outcome
+        if: always()
+        env:
+          TASK: ${{ matrix.task }}
+        run: |
+          if [ "$TASK" = unit ]; then result=unit; else result=browser; fi
+          test "$(cat /tmp/cms-review/$result.exit-code)" = 0
