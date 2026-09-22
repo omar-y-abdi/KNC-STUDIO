@@ -6,7 +6,7 @@ permissions:
   contents: read
 defaults:
   run:
-    shell: ${{ runner.temp }}/knc-furl/bin/python3 tools/ci/furl_ci.py {0}
+    shell: python3 tools/ci/furl_ci.py {0}
 concurrency:
   group: cms-hostile-review
   cancel-in-progress: true
