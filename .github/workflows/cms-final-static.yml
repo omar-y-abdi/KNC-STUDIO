@@ -1,0 +1,48 @@
+name: CMS final static verification
+on:
+  push:
+    branches: [verify/cms-workspace-a11y-20260922]
+    paths: [.github/workflows/cms-final-static.yml]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: python3 tools/ci/furl_ci.py {0}
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: dc819f21daf341356c63d4bba9479ae87d5189f4
+          persist-credentials: false
+      - name: Set up Furl
+        shell: bash
+        run: bash tools/ci/setup-furl.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify final source
+        run: |
+          mkdir -p /tmp/cms-final-static
+          git rev-parse HEAD > /tmp/cms-final-static/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-final-static/source-tree.txt
+          status=0
+          for command in lint format:check typecheck test build; do
+            result=0
+            npm run "$command" > "/tmp/cms-final-static/${command//:/-}.log" 2>&1 || result=$?
+            echo "$result" > "/tmp/cms-final-static/${command//:/-}.exit-code"
+            furl compress "/tmp/cms-final-static/${command//:/-}.log" --json > "/tmp/cms-final-static/${command//:/-}.furl.json"
+            if [ "$result" -ne 0 ]; then status=1; fi
+          done
+          git diff --exit-code
+          exit "$status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-final-static
+          path: /tmp/cms-final-static
+          retention-days: 7
