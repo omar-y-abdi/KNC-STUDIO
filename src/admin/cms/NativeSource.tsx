@@ -133,6 +133,11 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
           booking: document.documentElement.dataset['kncBookingReady'],
         })
         document.documentElement.dataset['kncSourceError'] = context.id
+        if (interactive)
+          window.parent.postMessage(
+            { type: 'knc-preview-error', id: context.id },
+            window.location.origin,
+          )
         return
       }
       const surface =
@@ -152,6 +157,11 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       stable = ready ? stable + 1 : 0
       if (stable >= 3) {
         document.documentElement.dataset['kncSourceReady'] = context.id
+        if (interactive)
+          window.parent.postMessage(
+            { type: 'knc-preview-ready', id: context.id },
+            window.location.origin,
+          )
         if (interactive && context.path === '/about')
           document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
         return

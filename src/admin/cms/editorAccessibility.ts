@@ -9,9 +9,7 @@ export function editorAccessibility(host: HTMLElement, inspector: HTMLElement | 
         .querySelector(':scope > [data-sm-label] .gjs-sm-icon')
         ?.textContent?.trim()
       if (!label) continue
-      for (const field of property.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
-        'input, select',
-      )) {
+      for (const field of property.querySelectorAll<HTMLElement>('input, select')) {
         // Composite properties contain child properties with their own labels.
         if (field.closest('.gjs-sm-property') !== property) continue
         field.setAttribute(

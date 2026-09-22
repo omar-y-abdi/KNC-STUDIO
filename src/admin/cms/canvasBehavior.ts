@@ -47,7 +47,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
     doc.addEventListener('scroll', schedule, true)
     win.addEventListener('resize', schedule)
     editor.on('component:mount', schedule)
-    schedule()
+    update()
     dispose = () => {
       doc.removeEventListener('scroll', schedule, true)
       win.removeEventListener('resize', schedule)

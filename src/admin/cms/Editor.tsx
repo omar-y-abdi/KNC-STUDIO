@@ -492,7 +492,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.Canvas.setZoom(props.zoom)
   }, [props.zoom])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = instance.current
     return editor ? canvasBehavior(editor, props.scene, props.mode) : undefined
   }, [contextKey, props.scene])

@@ -12,6 +12,18 @@
   --sidebar-width: 220px;
   --radius: 7px;
   --scroll-thumb: #b2bba6;
+  --gjs-primary-color: var(--panel);
+  --gjs-secondary-color: var(--ink);
+  --gjs-tertiary-color: var(--selected);
+  --gjs-quaternary-color: var(--accent);
+  --gjs-main-color: var(--panel);
+  --gjs-font-color: var(--ink);
+  --gjs-font-color-active: var(--accent);
+  --gjs-secondary-light-color: var(--muted);
+  --gjs-secondary-dark-color: var(--field);
+  --gjs-main-dark-color: #e9eddf;
+  --gjs-arrow-color: var(--muted);
+  --gjs-color-warn: #8b5f00;
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -689,6 +701,32 @@
   overflow: hidden;
   background: var(--bg);
 }
+.cms-preview-feedback {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.cms-preview-feedback p {
+  margin: 0;
+  max-width: 40ch;
+}
+.cms-preview-feedback[data-blocking='true'] {
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  background: var(--bg);
+}
 .cms-live-preview iframe {
   display: block;
   border: 0;
@@ -1168,12 +1206,27 @@
 /* Real email renderer, with an explicit editing/preview choice on a compact screen. */
 .cms-email-workspace {
   display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
   grid-template-columns: 156px minmax(260px, 0.9fr) minmax(320px, 1.3fr);
   gap: 20px;
   align-items: start;
 }
 .cms-email-workspace > * {
   min-width: 0;
+  min-height: 0;
+}
+.cms-email-workspace > aside,
+.cms-email-workspace > .cms-domain-panel {
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.cms-email-workspace > .cms-domain-panel {
+  height: 100%;
+  align-content: start;
 }
 .cms-email-workspace > aside {
   display: grid;
@@ -1219,11 +1272,17 @@
   margin-bottom: 14px;
 }
 .cms-email-preview {
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
   min-width: 0;
+}
+.cms-email-preview-toolbar,
+.cms-email-envelope {
+  flex-shrink: 0;
 }
 .cms-email-preview-toolbar {
   display: flex;
@@ -1256,8 +1315,10 @@
   overflow-wrap: anywhere;
 }
 .cms-email-preview iframe {
+  flex: 1;
+  width: 100%;
   max-width: 100%;
-  min-height: 780px;
+  min-height: 0;
   border: 0;
   background: transparent;
 }
@@ -1482,6 +1543,11 @@
   font-size: 12px;
   letter-spacing: 0;
 }
+.knc-cms-studio .gjs-sm-sector,
+.knc-cms-studio .gjs-trt-trait,
+.knc-cms-studio .gjs-layer {
+  font-weight: 400;
+}
 .knc-cms-studio .gjs-sm-sector {
   border-bottom: 1px solid var(--line);
 }
@@ -1514,6 +1580,7 @@
     display: none;
   }
   .cms-email-workspace {
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(240px, 0.85fr) minmax(280px, 1.15fr);
   }
   .cms-email-workspace > aside {
@@ -1917,6 +1984,9 @@
     height: 40px;
   }
   .cms-email-workspace {
+    height: auto;
+    overflow: visible;
+    grid-template-rows: auto;
     grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
@@ -1958,6 +2028,12 @@
   }
   .cms-email-preview iframe {
     min-height: 740px;
+  }
+  .cms-email-workspace > .cms-domain-panel,
+  .cms-email-preview {
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
   .cms-email-workspace .cms-domain-panel {
     padding: 20px;

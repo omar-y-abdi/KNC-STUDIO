@@ -194,7 +194,17 @@ export function CmsResources(props: Props): JSX.Element {
       <header class="cms-resource-toolbar">
         <div class="cms-segment">
           {(['active', 'archived', 'trash'] as const).map((value) => (
-            <button type="button" aria-pressed={state === value} onClick={() => setState(value)}>
+            <button
+              type="button"
+              aria-pressed={state === value}
+              onClick={() => {
+                if (value === state) return
+                setState(value)
+                setSelectedId(null)
+                setSelectedIds(new Set())
+                setUsage(null)
+              }}
+            >
               {value === 'active' ? 'Aktiva' : value === 'archived' ? 'Arkiverade' : 'Papperskorg'}
             </button>
           ))}
@@ -402,7 +412,7 @@ export function CmsResources(props: Props): JSX.Element {
                 event.currentTarget.value = ''
               }}
             />
-            {state === 'active' && (
+            {stateOf(asset) === 'active' && (
               <button
                 type="button"
                 disabled={busy}
@@ -411,7 +421,7 @@ export function CmsResources(props: Props): JSX.Element {
                 Arkivera
               </button>
             )}
-            {state === 'archived' && (
+            {stateOf(asset) === 'archived' && (
               <>
                 <button
                   type="button"
@@ -429,7 +439,7 @@ export function CmsResources(props: Props): JSX.Element {
                 </button>
               </>
             )}
-            {state === 'trash' && (
+            {stateOf(asset) === 'trash' && (
               <>
                 <button
                   type="button"

@@ -17,6 +17,7 @@ for (const [engine, name] of [
   [chromium, 'chromium'],
   [webkit, 'webkit'],
 ]) {
+  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
   const browser = await engine.launch()
   try {
     for (const width of [1440, 390, 320]) {
@@ -50,7 +51,7 @@ for (const [engine, name] of [
         const metrics = await page.evaluate(() => {
           const publish = globalThis.document.querySelector('.cms-publish')
           const box = publish.getBoundingClientRect()
-          const controls = [...document.querySelectorAll('.cms-bottom button')].filter(
+          const controls = [...globalThis.document.querySelectorAll('.cms-bottom button')].filter(
             (node) => node.getClientRects().length,
           )
           const clipped = controls
@@ -66,10 +67,7 @@ for (const [engine, name] of [
           return {
             headerPublish: Boolean(publish.closest('.cms-topbar')),
             publishReachable: publish.contains(
-              globalThis.globalThis.document.elementFromPoint(
-                box.x + box.width / 2,
-                box.y + box.height / 2,
-              ),
+              globalThis.document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
             ),
             publishHeight: box.height,
             clipped,

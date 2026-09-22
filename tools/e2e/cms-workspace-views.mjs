@@ -125,6 +125,22 @@ for (const [engine, engineName, widths] of [
         await page.evaluate(async () => {
           await globalThis.document.fonts.ready
         })
+        // Wait for completed native frames, not merely a mounted, initially blank iframe.
+        for (const preview of await page.locator('.cms-live-preview').all()) {
+          if (!(await preview.isVisible())) continue
+          await preview.locator('iframe').waitFor({ timeout: 30000 })
+          if ((await preview.locator('iframe').getAttribute('src'))?.includes('/cms-public/source'))
+            await preview
+              .locator('iframe')
+              .contentFrame()
+              .locator('html[data-knc-source-ready]')
+              .waitFor({ timeout: 30000 })
+          await page.waitForFunction(() =>
+            [...globalThis.document.querySelectorAll('.cms-live-preview')]
+              .filter((node) => node.getClientRects().length)
+              .every((node) => node.getAttribute('aria-busy') !== 'true'),
+          )
+        }
         const filename = `${prefix}-${name}.png`
         await page.screenshot({
           path: `${out}/${filename}`,
@@ -387,7 +403,10 @@ for (const [engine, engineName, widths] of [
           await open('Mejl')
           await page.getByRole('heading', { name: 'Kundbekräftelse · SV', exact: true }).waitFor()
           await capture('20-email-editor', true)
-          await scrollSeries('20-email-editor', '.cms-workspace-content')
+          await scrollSeries(
+            '20-email-editor',
+            compact ? '.cms-workspace-content' : '.cms-email-workspace > .cms-domain-panel',
+          )
           await page.getByLabel('Rubrik', { exact: true }).fill('Din nästa klippning börjar här')
           if (compact) await page.getByRole('button', { name: 'Förhandsvisa', exact: true }).click()
           const mail = page.frameLocator('iframe[title="Mejl som skickas"]')
@@ -418,7 +437,25 @@ for (const [engine, engineName, widths] of [
           await page.getByRole('button', { name: 'Aktivera design', exact: true }).click()
           await page.getByText('Utseende', { exact: true }).click()
           await capture('23-email-design', true)
-          await scrollSeries('23-email-design', '.cms-workspace-content')
+          await scrollSeries(
+            '23-email-design',
+            compact ? '.cms-workspace-content' : '.cms-email-workspace > .cms-domain-panel',
+          )
+          if (!compact) {
+            await page.locator('.cms-email-workspace > .cms-domain-panel').evaluate((node) => {
+              node.scrollTop = node.scrollHeight
+            })
+            const bounds = await page.locator('.cms-email-preview iframe').evaluate((node) => {
+              const rect = node.getBoundingClientRect()
+              return { top: rect.top, bottom: rect.bottom, height: rect.height }
+            })
+            check(
+              bounds.top > 0 && bounds.bottom <= 900 && bounds.height >= 180,
+              `${prefix}: email preview remains visible while editing the final design fields`,
+              bounds,
+            )
+            await capture('23-email-design-bottom')
+          }
         })
         await inspect('24-history', async () => {
           await open('History')
@@ -453,6 +490,13 @@ for (const [engine, engineName, widths] of [
           for (const scene of ['booking-options', 'booking-details', 'booking-confirmation']) {
             await page.getByLabel('Visa i editorn', { exact: true }).selectOption(scene)
             await frame.locator(`[data-knc-surface="${scene}"]`).waitFor()
+            await frame.locator('#cms-canvas-behavior').waitFor({ state: 'attached' })
+            await page.waitForFunction((selected) => {
+              const doc = globalThis.document.querySelector('.gjs-frame')?.contentDocument
+              return doc
+                ?.querySelector('#cms-canvas-behavior')
+                ?.textContent.includes(`:not([data-knc-surface="${selected}"])`)
+            }, scene)
             await capture(`27-${scene}`)
           }
         })
