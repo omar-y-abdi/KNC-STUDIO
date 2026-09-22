@@ -1,0 +1,216 @@
+diff --git a/src/admin/cms/Editor.tsx b/src/admin/cms/Editor.tsx
+index ec4daa7..78f221b 100644
+--- a/src/admin/cms/Editor.tsx
++++ b/src/admin/cms/Editor.tsx
+@@ -172,6 +172,7 @@ export function CmsEditor(props: Props): JSX.Element {
+   const compareHost = useRef<HTMLDivElement>(null)
+   const [compareScale, setCompareScale] = useState(1)
+   const compareWidth = props.device === 'Desktop' ? 390 : 1440
++  const compareHeight = props.device === 'Desktop' ? 844 : 900
+   const comparison = useMemo(
+     () =>
+       props.compare
+@@ -470,12 +471,15 @@ export function CmsEditor(props: Props): JSX.Element {
+   useLayoutEffect(() => {
+     const host = compareHost.current
+     if (!host) return
+-    const resize = (): void => setCompareScale(Math.min(1, host.clientWidth / compareWidth))
++    const resize = (): void =>
++      setCompareScale(
++        Math.min(1, host.clientWidth / compareWidth, host.clientHeight / compareHeight),
++      )
+     resize()
+     const observer = new ResizeObserver(resize)
+     observer.observe(host)
+     return () => observer.disconnect()
+-  }, [props.compare, compareWidth])
++  }, [props.compare, props.locked, compareWidth, compareHeight])
+ 
+   useEffect(() => {
+     const editor = instance.current
+@@ -623,18 +627,25 @@ export function CmsEditor(props: Props): JSX.Element {
+           <div class="cms-compare-label">
+             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
+           </div>
+-          <div ref={compareHost} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+-            <iframe
+-              title="Jämförelsevy"
+-              sandbox=""
++          <div ref={compareHost} class="cms-compare-viewport">
++            <div
+               style={{
+-                width: `${compareWidth}px`,
+-                height: `${100 / compareScale}%`,
+-                transform: `scale(${compareScale})`,
+-                transformOrigin: 'top left',
++                width: `${compareWidth * compareScale}px`,
++                height: `${compareHeight * compareScale}px`,
+               }}
+-              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+-            />
++            >
++              <iframe
++                title="Jämförelsevy"
++                sandbox=""
++                style={{
++                  width: `${compareWidth}px`,
++                  height: `${compareHeight}px`,
++                  transform: `scale(${compareScale})`,
++                  transformOrigin: 'top left',
++                }}
++                srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
++              />
++            </div>
+           </div>
+         </div>
+       )}
+diff --git a/src/admin/cms/studio.css b/src/admin/cms/studio.css
+index b0c4c2d..5144256 100644
+--- a/src/admin/cms/studio.css
++++ b/src/admin/cms/studio.css
+@@ -764,9 +764,17 @@
+   font-size: 11px;
+   font-weight: 650;
+ }
++.cms-compare-viewport {
++  flex: 1;
++  min-height: 0;
++  display: flex;
++  justify-content: center;
++  align-items: flex-start;
++  overflow: hidden;
++  background: var(--bg);
++}
+ .cms-compare-pane iframe {
+-  width: 100%;
+-  height: 100%;
++  display: block;
+   border: 0;
+   background: #fff;
+ }
+@@ -1549,6 +1557,11 @@
+   width: 100%;
+   height: 100%;
+ }
++.knc-cms-studio .gjs-block__media svg,
++.knc-cms-studio .gjs-block__media svg path {
++  fill: none;
++  stroke: currentColor;
++}
+ .knc-cms-studio .gjs-block:focus-visible {
+   outline: 2px solid var(--accent);
+   outline-offset: 2px;
+diff --git a/tools/e2e/admin-state.mjs b/tools/e2e/admin-state.mjs
+index 0a7ba76..1d0c3a2 100644
+--- a/tools/e2e/admin-state.mjs
++++ b/tools/e2e/admin-state.mjs
+@@ -114,6 +114,7 @@ async function verifyCmsStudioShell(page) {
+     'CMS studio did not run at the real phone-sized viewport',
+   )
+ 
++  const commandDockIsInert = (page) => page.locator('.cms-bottom').evaluate((node) => node.inert)
+   const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
+   const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
+   const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
+@@ -126,6 +127,13 @@ async function verifyCmsStudioShell(page) {
+   await pages.click()
+   assert(await library.isVisible(), 'Sidor did not open the mobile library drawer')
+   assert(!(await inspector.isVisible()), 'Opening Sidor also opened Egenskaper')
++  assert(
++    await commandDockIsInert(page),
++    'The open modal library must isolate the background command dock',
++  )
++  await library.getByRole('button', { name: 'Stäng panel', exact: true }).click()
++  assert(!(await library.isVisible()), 'The library close control did not dismiss Sidor')
++  assert(await pages.evaluate((node) => node === globalThis.document.activeElement), 'Sidor lost return focus')
+   await properties.click()
+   assert(!(await library.isVisible()), 'Opening Egenskaper left Sidor open')
+   assert(await inspector.isVisible(), 'Egenskaper did not open the mobile inspector drawer')
+@@ -137,9 +145,22 @@ async function verifyCmsStudioShell(page) {
+     assert((await tab.getAttribute('aria-selected')) === 'true', `${name} is not touch-usable`)
+   }
+ 
++  await inspector.getByRole('button', { name: 'Stäng panel', exact: true }).click()
++  assert(!(await inspector.isVisible()), 'The inspector close control did not dismiss Egenskaper')
++  assert(!(await commandDockIsInert(page)), 'The closed drawer left the command dock inert')
++
++  const publish = page.locator('.cms-topbar').getByRole('button', { name: 'Publicera', exact: true })
++  assert((await publish.count()) === 1, 'Publication is missing from the persistent header')
++  assert(
++    await publish.evaluate((node) => {
++      const box = node.getBoundingClientRect()
++      return node.contains(globalThis.document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
++    }),
++    'The header publication control is obscured on mobile',
++  )
+   const commandbar = page.locator('.cms-bottom')
+   await commandbar.waitFor({ state: 'visible' })
+-  for (const name of ['Ångra', 'Gör om', 'Publicera', 'Revert', 'Historik', 'Lås vy']) {
++  for (const name of ['Ångra', 'Gör om', 'Återställ', 'Historik', 'Lås vy']) {
+     const button = commandbar.getByRole('button', { name, exact: true })
+     assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
+     await button.scrollIntoViewIfNeeded()
+@@ -151,9 +172,6 @@ async function verifyCmsStudioShell(page) {
+     `Mobile command bar escaped the viewport: ${JSON.stringify(box)}`,
+   )
+ 
+-  await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+-  assert(!(await inspector.isVisible()), 'Backdrop did not close the mobile inspector')
+-
+   await page.setViewportSize({ width: 1280, height: 900 })
+   const geometry = await page.evaluate(() => {
+     const library = globalThis.document.querySelector('#cms-library')?.getBoundingClientRect()
+diff --git a/tools/e2e/cms-workspace-edge.mjs b/tools/e2e/cms-workspace-edge.mjs
+index 567a3f0..9dd523c 100644
+--- a/tools/e2e/cms-workspace-edge.mjs
++++ b/tools/e2e/cms-workspace-edge.mjs
+@@ -157,9 +157,49 @@ for (const [engine, name] of [
+         geometry.every((tile) => tile.role === 'button' && tile.label && tile.tab === 0),
+         `${name}: every block is named and keyboard reachable`,
+       )
++      const icons = await page.locator('#cms-blocks .gjs-block__media svg path').evaluateAll((nodes) =>
++        nodes.map((node) => ({
++          fill: globalThis.getComputedStyle(node).fill,
++          stroke: globalThis.getComputedStyle(node).stroke,
++        })),
++      )
++      check(
++        icons.length === 8 && icons.every((icon) => icon.fill === 'none' && icon.stroke !== 'none'),
++        `${name}: the eight outline block icons remain distinct rather than solid tiles`,
++        icons,
++      )
+       await shot('block-grid')
+       await page.getByRole('tab', { name: 'Design', exact: true }).click()
+     })
++    await run('comparison-geometry', async () => {
++      for (const width of [1440, 390]) {
++        await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
++        await page.getByRole('button', { name: width === 1440 ? 'Dator' : 'Mobil', exact: true }).click()
++        const toggle = page.getByRole('button', { name: 'Jämför', exact: true })
++        if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
++        const comparison = page.locator('iframe[title="Jämförelsevy"]')
++        const expected = width === 1440 ? { width: 390, height: 844 } : { width: 1440, height: 900 }
++        const dimensions = await comparison.evaluate((node) => ({
++          width: node.clientWidth,
++          height: node.clientHeight,
++        }))
++        check(
++          dimensions.width === expected.width && dimensions.height === expected.height,
++          `${name}/${width}: comparison preserves the opposite device's actual viewport`,
++          { dimensions, expected },
++        )
++        const withinHost = await comparison.evaluate((node) => {
++          const frame = node.getBoundingClientRect()
++          const host = node.closest('.cms-compare-viewport').getBoundingClientRect()
++          return frame.left >= host.left - 1 && frame.right <= host.right + 1 && frame.bottom <= host.bottom + 1
++        })
++        check(withinHost, `${name}/${width}: the complete comparison viewport fits its host`)
++        await shot(`compare-${width}`)
++        await toggle.click()
++      }
++      await page.setViewportSize({ width: 1440, height: 900 })
++      await page.getByRole('button', { name: 'Dator', exact: true }).click()
++    })
+     await run('resources', async () => {
+       await page.getByRole('button', { name: 'Resurser', exact: true }).click()
+       await page.locator('.cms-resource-card button').first().click()
