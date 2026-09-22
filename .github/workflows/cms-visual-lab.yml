@@ -6,8 +6,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cms-visual-lab
-  cancel-in-progress: true
+  group: cms-visual-lab-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   candidate:
     name: Record exact candidate tree
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
-      - name: Reconstruct verified local bytes on a disposable branch
+      - name: Reconstruct exact local bytes on a disposable branch
         id: record
         run: |
           set -euo pipefail
@@ -36,7 +36,12 @@ jobs:
           PY
           base=$(cat /tmp/candidate-base)
           expected=$(cat /tmp/candidate-tree)
-          parent=$(git rev-parse --verify refs/remotes/origin/verify/cms-visual-candidate 2>/dev/null || echo "$base")
+          parent=$(git rev-parse --verify refs/remotes/origin/verify/cms-visual-candidate)
+          if [ "$(git rev-parse "$parent^{tree}")" = "$expected" ]; then
+            echo "sha=$parent" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$parent" = "$base"
           git checkout --detach "$base"
           git apply --index /tmp/candidate.patch
           tree=$(git write-tree)
@@ -55,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [chromium, webkit, regressions]
+        suite: [chromium, webkit, native, owner, public]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -84,8 +89,14 @@ jobs:
             sleep 1
           done
           status=0
-          if [ "$SUITE" = regressions ]; then
-            for suite in native responsive scenes projection owner public-regression populated conflict; do
+          case "$SUITE" in
+            native) suites='native responsive scenes projection' ;;
+            owner) suites='owner' ;;
+            public) suites='public-regression populated conflict' ;;
+            *) suites='' ;;
+          esac
+          if [ -n "$suites" ]; then
+            for suite in $suites; do
               node tools/e2e/cms-$suite.mjs > /tmp/cms-evidence/$suite.log 2>&1 || status=1
             done
           else
@@ -100,6 +111,8 @@ jobs:
           path: |
             /tmp/cms-native-*.png
             /tmp/cms-workspace-*.png
+            /tmp/cms-scenes-*.png
+            /tmp/cms-theme-*.png
             /tmp/cms-evidence
           retention-days: 14
   checks:
