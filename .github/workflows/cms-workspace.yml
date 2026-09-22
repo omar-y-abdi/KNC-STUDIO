@@ -1,0 +1,52 @@
+name: CMS workspace visual QA
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: cms-workspace-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace:
+    name: Workspace (${{ matrix.browser }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Inspect real CMS workspace
+        env:
+          CMS_BROWSER: ${{ matrix.browser }}
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          mkdir -p /tmp/cms-evidence
+          git rev-parse HEAD > /tmp/cms-evidence/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-evidence/tree.txt
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-evidence/vite.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            curl --fail --silent "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break
+            sleep 1
+          done
+          node tools/e2e/cms-workspace.mjs
+      - name: Preserve screenshots and coverage manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-workspace-${{ matrix.browser }}-${{ github.run_attempt }}
+          path: |
+            /tmp/cms-workspace-*.png
+            /tmp/cms-evidence
+          retention-days: 14
