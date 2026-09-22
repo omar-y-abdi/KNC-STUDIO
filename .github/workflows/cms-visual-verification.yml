@@ -13,8 +13,7 @@ defaults:
     shell: python3 tools/ci/furl_ci.py {0}
 env:
   SOURCE_BASE: eaca9b67af86777459f00f18f6e20c12d00ba0f4
-  PRIOR_BASE: c47fff39948823dd9651d2d72e002f3daa7cd2e2
-  PRIOR_CANDIDATE: a60e2e4fb6fc44ef1b464a9168a16500c4272ebd
+  SOURCE_CANDIDATE: bc0f780cffc992d370d44bbea36f1614acda6247
 jobs:
   prepare:
     runs-on: ubuntu-24.04
@@ -38,32 +37,23 @@ jobs:
       - name: Materialize and format the guarded candidate
         id: candidate
         env:
-          EXPECTED_CANDIDATE: ''
+          EXPECTED_CANDIDATE: bc0f780cffc992d370d44bbea36f1614acda6247
         run: |
           set -euo pipefail
           mkdir -p /tmp/cms-prepare
           git fetch origin --prune
           test "$(git rev-parse origin/codex/cms-flow-scenes)" = "$SOURCE_BASE"
-          git worktree add --detach /tmp/cms-candidate "$SOURCE_BASE"
-          git diff --binary "$PRIOR_BASE" "$PRIOR_CANDIDATE" | git -C /tmp/cms-candidate apply --index
-          cat .cms-verification/repair.part1 .cms-verification/repair.part2 | xz -dc | git -C /tmp/cms-candidate apply --index
+          git merge-base --is-ancestor "$SOURCE_BASE" "$SOURCE_CANDIDATE"
+          git worktree add --detach /tmp/cms-candidate "$SOURCE_CANDIDATE"
+          xz -dc .cms-verification/next.patch.xz | git -C /tmp/cms-candidate apply --index
           test "$(git -C /tmp/cms-candidate write-tree)" = "$(cat .cms-verification/expected-tree)"
           cp .cms-verification/expected-tree /tmp/cms-prepare/input-tree.txt
           cd /tmp/cms-candidate
           npm ci > /tmp/cms-prepare/install.log 2>&1
-          # Demonstrate the new regression fails for the old resource inspector.
-          git show "$SOURCE_BASE:shared/cms-resources.ts" > shared/cms-resources.ts
-          set +e
-          npm test -- tests/unit/cmsResourceUsage.test.ts > /tmp/cms-prepare/resource-red.log 2>&1
-          red=$?
-          set -e
-          git restore --worktree shared/cms-resources.ts
-          test "$red" -ne 0
-          grep -q 'Page exceeds its size limit' /tmp/cms-prepare/resource-red.log
           bash tools/ci/format.sh > /tmp/cms-prepare/format.log 2>&1
           cp "$RUNNER_TEMP/format.patch" /tmp/cms-prepare/format.patch
           git add -u
-          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'feat: refine CMS workspace and repair verified interaction failures'
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'feat: finish preview state feedback and static verification fixes'
           candidate_ref=refs/heads/verify/cms-candidate-current
           test "$(git ls-remote origin "$candidate_ref" | cut -f1)" = "$EXPECTED_CANDIDATE"
           git push --force-with-lease="$candidate_ref:$EXPECTED_CANDIDATE" origin "HEAD:$candidate_ref"
@@ -93,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [static, workspace, owner, regressions, surfaces-chromium, surfaces-webkit]
+        group: [static, workspace, owner, regressions, preview, surfaces-chromium, surfaces-webkit]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -145,6 +135,7 @@ jobs:
           case "$GROUP" in
             workspace) suites='cms-workspace cms-responsive cms-scenes' ;;
             owner) suites='cms-native cms-owner' ;;
+            preview) suites='cms-preview-state' ;;
             regressions) suites='cms-projection cms-public-regression cms-populated cms-conflict' ;;
             surfaces-*) suites='cms-workspace-views'; export CMS_BROWSER="${GROUP#surfaces-}" ;;
           esac
@@ -190,6 +181,7 @@ jobs:
             'static': {'typecheck','lint','format-check','test','build'},
             'workspace': {'cms-workspace','cms-responsive','cms-scenes'},
             'owner': {'cms-native','cms-owner'},
+            'preview': {'cms-preview-state'},
             'regressions': {'cms-projection','cms-public-regression','cms-populated','cms-conflict'},
           }
           required=groups.get(os.environ['GROUP'],{'cms-workspace-views'}) | {'tracked-source-diff'}
