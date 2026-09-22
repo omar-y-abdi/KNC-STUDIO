@@ -16,6 +16,8 @@ import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
+import { CmsIcon } from './Icon'
+import { compactWorkspace } from './useResponsivePanels'
 import { LivePreview } from './LivePreview'
 import type { CmsScene } from '../../cms/Scene'
 import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
@@ -33,6 +35,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  onClosePanel: () => void
   scene: CmsScene
   pageSettings: ComponentChildren
   page: CmsPage
@@ -100,6 +103,18 @@ function label(component: Component | null): string {
 }
 
 function fitEditor(editor: Editor): number {
+  const mobile = editor.Devices.get('Mobile')
+  const bounds = editor.getContainer()?.getBoundingClientRect()
+  if (mobile && bounds && bounds.width > 40 && bounds.height > 40) {
+    // On a phone, fit the editing aperture to the available screen instead of
+    // shrinking an entire 844px page. This is viewport state, never saved content.
+    const scale = Math.min(1, (bounds.width - 40) / 390)
+    const height =
+      compactWorkspace() && editor.getDevice() === 'Mobile'
+        ? Math.max(260, Math.min(844, Math.floor((bounds.height - 40) / scale)))
+        : 844
+    if (mobile.get('height') !== `${height}px`) mobile.set('height', `${height}px`)
+  }
   editor.Canvas.fitViewport({
     gap: 16,
     ignoreHeight: false,
@@ -592,11 +607,49 @@ export function CmsEditor(props: Props): JSX.Element {
         </div>
       )}
       <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
-        <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
+        <div class="cms-inspector-heading">
+          <strong>Egenskaper</strong>
+          <button
+            type="button"
+            class="cms-panel-close"
+            aria-label="Stäng panel"
+            onClick={props.onClosePanel}
+          >
+            <CmsIcon name="close" />
+          </button>
+        </div>
+        <div
+          class="cms-panel-tabs"
+          role="tablist"
+          aria-label="Egenskapspanel"
+          onKeyDown={(event) => {
+            const tabs = ['design', 'layers', 'blocks'] as const
+            const index = tabs.indexOf(props.tab)
+            const next =
+              event.key === 'ArrowRight'
+                ? (index + 1) % tabs.length
+                : event.key === 'ArrowLeft'
+                  ? (index + tabs.length - 1) % tabs.length
+                  : event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? tabs.length - 1
+                      : null
+            if (next === null) return
+            event.preventDefault()
+            event.stopPropagation()
+            const tab = tabs[next]
+            if (tab) props.onTab(tab)
+            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+          }}
+        >
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
             <button
               type="button"
               role="tab"
+              id={`cms-tab-${tab}`}
+              aria-controls={tab === 'design' ? 'cms-design' : `cms-${tab}`}
+              tabIndex={props.tab === tab ? 0 : -1}
               aria-selected={props.tab === tab}
               onClick={() => props.onTab(tab)}
             >
@@ -604,7 +657,13 @@ export function CmsEditor(props: Props): JSX.Element {
             </button>
           ))}
         </div>
-        <div hidden={props.tab !== 'design'} class="cms-inspector-scroll">
+        <div
+          id="cms-design"
+          role="tabpanel"
+          aria-labelledby="cms-tab-design"
+          hidden={props.tab !== 'design'}
+          class="cms-inspector-scroll"
+        >
           <div class="cms-selection-head">
             <strong>{label(selected)}</strong>
             <p class="cms-style-scope">
@@ -759,17 +818,37 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
               <h3>Finjustera</h3>
               <div class="cms-nudge-grid">
-                <button type="button" onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}>
-                  ←
+                <button
+                  type="button"
+                  aria-label="Flytta åt vänster"
+                  title="Flytta åt vänster · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowLeft" />
                 </button>
-                <button type="button" onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}>
-                  ↑
+                <button
+                  type="button"
+                  aria-label="Flytta uppåt"
+                  title="Flytta uppåt · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowUp" />
                 </button>
-                <button type="button" onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}>
-                  ↓
+                <button
+                  type="button"
+                  aria-label="Flytta nedåt"
+                  title="Flytta nedåt · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowDown" />
                 </button>
-                <button type="button" onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}>
-                  →
+                <button
+                  type="button"
+                  aria-label="Flytta åt höger"
+                  title="Flytta åt höger · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowRight" />
                 </button>
                 <button
                   type="button"
@@ -840,12 +919,33 @@ export function CmsEditor(props: Props): JSX.Element {
             </details>
           )}
         </div>
-        <div id="cms-layers" hidden={props.tab !== 'layers'} class="cms-manager-panel" />
-        <div id="cms-blocks" hidden={props.tab !== 'blocks'} class="cms-manager-panel" />
+        <div
+          id="cms-layers"
+          role="tabpanel"
+          aria-labelledby="cms-tab-layers"
+          hidden={props.tab !== 'layers'}
+          class="cms-manager-panel"
+        />
+        <div
+          id="cms-blocks"
+          role="tabpanel"
+          aria-labelledby="cms-tab-blocks"
+          hidden={props.tab !== 'blocks'}
+          class="cms-manager-panel"
+        />
       </aside>
       {imageTarget && (
         <CmsModal title="Välj bild" onClose={closePicker}>
           <p class="cms-help">Välj en bild. Ladda upp fler via Resurser.</p>
+          {!props.assets.some(
+            (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
+          ) && (
+            <div class="cms-resource-empty">
+              <CmsIcon name="image" />
+              <strong>Inga bilder att välja ännu</strong>
+              <p>Ladda upp en bild i Resurser och öppna sedan bildväljaren igen.</p>
+            </div>
+          )}
           <div class="cms-resource-grid">
             {props.assets
               .filter(
