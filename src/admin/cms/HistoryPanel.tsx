@@ -5,6 +5,7 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi } from './api'
 import { CmsModal } from './Modal'
+import { CmsIcon } from './Icon'
 import { LivePreview } from './LivePreview'
 
 export function HistoryPanel({
@@ -56,7 +57,16 @@ export function HistoryPanel({
   return (
     <>
       <div class="cms-history-list">
-        {history.length === 0 && <p>Inga publicerade versioner ännu.</p>}
+        {history.length === 0 && (
+          <div class="cms-resource-empty">
+            <CmsIcon name="history" />
+            <strong>Inga publicerade versioner ännu.</strong>
+            <p>
+              När du publicerar sparas en version här. Du kan granska tidigare versioner utan att
+              ändra den aktiva webbplatsen.
+            </p>
+          </div>
+        )}
         {history.map((item) => (
           <div class="cms-history-row">
             <strong class={`cms-version-badge${item.revision === revision ? ' is-current' : ''}`}>
