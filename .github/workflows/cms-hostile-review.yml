@@ -1,0 +1,64 @@
+name: CMS adversarial review
+on:
+  push:
+    branches: [verify/cms-hostile-review-20260923]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: ${{ runner.temp }}/knc-furl/bin/python3 tools/ci/furl_ci.py {0}
+concurrency:
+  group: cms-hostile-review
+  cancel-in-progress: true
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Furl
+        shell: bash
+        run: bash tools/ci/setup-furl.sh
+      - name: Prepare browser tools
+        run: |
+          npm ci
+          npx playwright install --with-deps ${{ matrix.engine }}
+      - name: Record source
+        run: |
+          mkdir -p /tmp/cms-engineering
+          git rev-parse HEAD > /tmp/cms-engineering/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-engineering/source-tree.txt
+      - name: Exercise adversarial contracts
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          CMS_EVIDENCE_DIR: /tmp/cms-engineering
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-engineering/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            curl --fail --silent http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break
+            sleep 1
+          done
+          set +e
+          node tools/e2e/cms-engineering.mjs > /tmp/cms-engineering/review.log 2>&1
+          status=$?
+          echo "$status" > /tmp/cms-engineering/review.exit-code
+          cat /tmp/cms-engineering/review.log
+          exit "$status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-hostile-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/cms-engineering
+          retention-days: 7
