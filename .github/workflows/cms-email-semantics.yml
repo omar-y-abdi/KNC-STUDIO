@@ -1,4 +1,4 @@
-name: CMS email semantics contract
+name: CMS final visual review contracts
 on:
   push:
     branches: [verify/cms-final-20260922]
@@ -8,54 +8,48 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 9fba1c49316a6a12eff3821f55aa32b8fc29cae4
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Prepare remote browser
+      - name: Install only the new tests against unchanged product source
         run: |
-          mkdir -p /tmp/cms-email-semantics
-          npm ci > /tmp/cms-email-semantics/install.log 2>&1
-          npx playwright install --with-deps chromium > /tmp/cms-email-semantics/browser.log 2>&1
+          mkdir -p /tmp/cms-review-red
+          cp .cms-completion/final-review-tests.patch /tmp/cms-review-red/
+          git checkout --detach 9fba1c49316a6a12eff3821f55aa32b8fc29cae4
+          git apply /tmp/cms-review-red/final-review-tests.patch
+          git rev-parse HEAD > /tmp/cms-review-red/source-commit.txt
+          npm ci > /tmp/cms-review-red/install.log 2>&1
+          npx playwright install --with-deps chromium > /tmp/cms-review-red/browser.log 2>&1
           bash tools/ci/setup-furl.sh
-      - name: Verify named group for related viewport controls
+      - name: Exercise visible drawer aperture and email group semantics
+        env:
+          CMS_ENGINE: chromium
+          CMS_WIDTH: 1440
+          CMS_EVIDENCE_DIR: /tmp/cms-review-red
+          BASE_URL: http://127.0.0.1:4188
         run: |
-          cat > tools/e2e/cms-email-semantics.mjs <<'JS'
-          import assert from 'node:assert/strict'
-          import { chromium } from 'playwright'
-          import { nativeBackend } from './cms-native.mjs'
-          const browser = await chromium.launch()
-          try {
-            const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
-            await nativeBackend(context)
-            const page = await context.newPage()
-            await page.goto('http://127.0.0.1:4188/tools/e2e/admin-harness.html?view=cms-studio')
-            await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
-            await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
-            await page.getByRole('button', { name: 'Mejl', exact: true }).click()
-            await page.locator('.cms-email-preview-toolbar').waitFor()
-            const group = page.getByRole('group', { name: 'Mejlbredd', exact: true })
-            assert.equal(await group.count(), 1, 'Email viewport choices must form one named accessible group')
-            assert.equal(await group.getByRole('button').count(), 2)
-          } finally { await browser.close() }
-          JS
-          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-email-semantics/server.log 2>&1 &
-          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-review-red/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
           set +e
-          node tools/e2e/cms-email-semantics.mjs > /tmp/cms-email-semantics/test.log 2>&1
-          status=$?
-          echo "$status" > /tmp/cms-email-semantics/test.exit-code
-          furl compress /tmp/cms-email-semantics/test.log --json > /tmp/cms-email-semantics/test.furl.json
+          status=0
+          for suite in cms-workspace-edge cms-workspace-views; do
+            node "tools/e2e/$suite.mjs" > "/tmp/cms-review-red/$suite.log" 2>&1
+            result=$?
+            echo "$result" > "/tmp/cms-review-red/$suite.exit-code"
+            test "$result" = 0 || status=1
+            furl compress "/tmp/cms-review-red/$suite.log" --json > "/tmp/cms-review-red/$suite.furl.json"
+          done
           exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cms-email-semantics-red
-          path: /tmp/cms-email-semantics
+          name: cms-final-review-red
+          path: /tmp/cms-review-red
           retention-days: 14
