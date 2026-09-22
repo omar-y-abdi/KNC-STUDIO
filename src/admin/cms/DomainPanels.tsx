@@ -79,17 +79,35 @@ export function BusinessPanel({
     <div class="cms-domain-panel">
       <h2>Business & SEO</h2>
       <p>Operativa bokningsregler ligger kvar utanför CMS-historiken.</p>
-      <div class="cms-domain-grid">
-        {businessFields.map(([key, label]) => (
-          <label>
-            {label}
-            <input
-              value={document.settings[key] ?? ''}
-              onInput={(e) => set(key, e.currentTarget.value)}
-            />
-          </label>
-        ))}
-      </div>
+      {(
+        [
+          ['Salongen', businessFields.slice(0, 3)],
+          ['Kontakt & besöksadress', businessFields.slice(3, 10)],
+          ['Sökresultat · svenska & engelska', businessFields.slice(10)],
+        ] as const
+      ).map(([title, fields]) => (
+        <section class="cms-domain-section">
+          <h3>{title}</h3>
+          <div class="cms-domain-grid">
+            {fields.map(([key, label]) => (
+              <label>
+                {label}
+                {key.startsWith('seo_description') ? (
+                  <CmsTextarea
+                    value={document.settings[key] ?? ''}
+                    onInput={(e) => set(key, e.currentTarget.value)}
+                  />
+                ) : (
+                  <input
+                    value={document.settings[key] ?? ''}
+                    onInput={(e) => set(key, e.currentTarget.value)}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </section>
+      ))}
       <h3>Barberare</h3>
       {document.barbers.map((barber, index) => (
         <fieldset>
@@ -159,11 +177,12 @@ export function EmailPanel({
   }
   return (
     <div class="cms-email-workspace">
-      <aside>
+      <aside aria-label="E-postmallar">
         {EMAIL_NAMES.map((name) => (
           <button
             type="button"
             class={selectedTemplate === name ? 'is-active' : ''}
+            aria-pressed={selectedTemplate === name}
             onClick={() => setSelectedTemplate(name)}
           >
             {emailLabel[name]}

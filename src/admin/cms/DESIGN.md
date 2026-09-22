@@ -8,7 +8,7 @@ colors:
   surface: '#fffef9'
   text: '#252a24'
   muted: '#697260'
-  border: '#e0e5d9'
+  border: '#dce2d4'
   selected: '#edf0ff'
 typography:
   sans:
@@ -16,12 +16,12 @@ typography:
   mono:
     fontFamily: 'ui-monospace, monospace'
 rounded:
-  DEFAULT: '6px'
+  DEFAULT: '8px'
   dialog: '14px'
 spacing:
   sidebar: '220px'
   inspector: '284px'
-  header: '65px'
+  header: '68px'
 components:
   button: {}
   input: {}
@@ -45,13 +45,13 @@ Inter is already shipped by the application. Default 13px/1.45; secondary labels
 
 ## Layout
 
-Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a 300px palette/type form with a live public preview; below 1100px these stack. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
+Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 68px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a 300px palette/type form with a live public preview; below 1100px these stack. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
 
-Below 900px, page library and inspector become explicit drawers; workspace views fill available width. Forms stack and the dock becomes an independently scrollable bottom row. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
+Below 900px, page library and inspector become explicit drawers; workspace views fill available width. Publication status remains visible. Forms stack and the dock becomes a six-column touch bar with all commands visible. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
 
 ## Elevation and shapes
 
-Borders and surface tones carry hierarchy. Only the floating dock, mobile drawers and modal backdrop use elevation. Controls use the 6px radius; dialogs use 14px. No decorative cards around every setting, gradients or entrance animation.
+Borders and surface tones carry hierarchy. Only the floating dock, mobile drawers and modal backdrop use elevation. Controls use the 8px radius; dialogs use 14px. No decorative cards around every setting, gradients or entrance animation.
 
 ## Components and states
 

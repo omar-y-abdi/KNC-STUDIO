@@ -26,6 +26,7 @@ import { clearBackup, loadBackup, saveBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
 import './studio.css'
 import { pageScenes, type CmsScene } from '../../cms/Scene'
+import { CmsIcon } from './Icon'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
 
@@ -36,7 +37,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
   const [mode, setMode] = useState<CmsMode>('light')
-  const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
+  const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
+    window.matchMedia('(max-width: 900px)').matches ? 'Mobile' : 'Desktop',
+  )
   const [zoom, setZoom] = useState(80)
   const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
@@ -60,6 +63,39 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [pageQuery, setPageQuery] = useState('')
   const [newPath, setNewPath] = useState('/hemsida')
   const editor = useRef<EditorHandle | null>(null)
+  const panelOpener = useRef<HTMLButtonElement | null>(null)
+  const closePanel = (): void => {
+    setMobilePanel(null)
+    panelOpener.current?.focus()
+  }
+  const togglePanel = (panel: Exclude<Panel, null>, opener: HTMLButtonElement): void => {
+    panelOpener.current = opener
+    setMobilePanel((current) => (current === panel ? null : panel))
+  }
+  useLayoutEffect(() => {
+    if (!mobilePanel) return
+    const panel = window.document.getElementById(`cms-${mobilePanel}`)
+    panel
+      ?.querySelector<HTMLElement>(
+        'input[type="search"], [role="tab"][aria-selected="true"], button',
+      )
+      ?.focus()
+    const dismiss = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || window.document.querySelector('dialog[open]')) return
+      event.preventDefault()
+      closePanel()
+    }
+    window.addEventListener('keydown', dismiss)
+    return () => window.removeEventListener('keydown', dismiss)
+  }, [mobilePanel])
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 900px)')
+    const resize = (): void => {
+      if (!query.matches) setMobilePanel(null)
+    }
+    query.addEventListener('change', resize)
+    return () => query.removeEventListener('change', resize)
+  }, [])
 
   const refresh = async (): Promise<void> => {
     setBusy(true)
@@ -243,7 +279,37 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   if (!draft)
     return (
       <div class="knc-cms-studio">
-        <div class="cms-notice">{error ?? 'Laddar Studio…'}</div>
+        <div class="cms-startup" aria-busy={busy}>
+          <span class="cms-brand-mark" aria-hidden="true">
+            BNB
+          </span>
+          <span class="cms-eyebrow">Din webbplats / Studio</span>
+          <h1>{error ? 'Studion kunde inte öppnas' : 'Vi förbereder din arbetsyta'}</h1>
+          <p role={error ? 'alert' : 'status'}>
+            {error ?? 'Läser in sidor, resurser och ditt senaste utkast…'}
+          </p>
+          {error ? (
+            <div class="cms-actions-row">
+              <button
+                type="button"
+                class="cms-primary"
+                disabled={busy}
+                onClick={() => void refresh()}
+              >
+                Försök igen
+              </button>
+              <button type="button" onClick={onExit}>
+                Tillbaka till Admin
+              </button>
+            </div>
+          ) : (
+            <div class="cms-startup-skeleton" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+          )}
+        </div>
       </div>
     )
   const document = draft.document
@@ -397,6 +463,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     </div>
   )
   const workspaceView = dialog && !['new-page', 'backup'].includes(dialog) ? dialog : null
+  const visiblePages = document.presentation.pages.filter((item) =>
+    `${item.name[lang]} ${item.path}`.toLocaleLowerCase().includes(pageQuery.toLocaleLowerCase()),
+  )
 
   return (
     <div
@@ -426,7 +495,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           Din webbplats
         </span>
         <div class="cms-topbar-spacer" />
-        <span class="cms-status" role="status">
+        <span
+          class="cms-status"
+          role="status"
+          data-state={busy ? 'busy' : draft.dirty ? 'draft' : 'published'}
+        >
+          <i aria-hidden="true" />
           {busy
             ? 'Arbetar…'
             : draft.dirty
@@ -467,7 +541,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       </header>
       {error && (
         <div class="cms-notice" role="alert">
-          {error}{' '}
+          <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>
             Stäng
           </button>
@@ -485,8 +559,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       <div class="cms-workspace">
-        <aside id="cms-library" class="cms-library">
-          <h2>Din webbplats</h2>
+        <aside id="cms-library" class="cms-library" aria-label="Sidbibliotek">
+          <div class="cms-library-heading">
+            <h2>
+              Din webbplats <span>{document.presentation.pages.length} sidor</span>
+            </h2>
+            <button
+              type="button"
+              class="cms-panel-close"
+              aria-label="Stäng sidor"
+              onClick={closePanel}
+            >
+              <CmsIcon name="close" />
+            </button>
+          </div>
           <div class="cms-library-tabs" aria-label="Bibliotek">
             <button type="button" aria-pressed={!workspaceView} onClick={() => setDialog(null)}>
               Sidor
@@ -512,40 +598,38 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             onInput={(event) => setPageQuery(event.currentTarget.value)}
           />
           <nav class="cms-page-list" aria-label="Sidor">
-            {document.presentation.pages
-              .filter((item) =>
-                `${item.name[lang]} ${item.path}`
-                  .toLocaleLowerCase()
-                  .includes(pageQuery.toLocaleLowerCase()),
-              )
-              .map((item) => (
-                <>
-                  {item.path === '/privacy' && (
-                    <div class="cms-library-group">Informationssidor</div>
-                  )}
-                  <button
-                    type="button"
-                    class={item.id === page.id && !workspaceView ? 'is-active' : ''}
-                    aria-current={item.id === page.id && !workspaceView ? 'page' : undefined}
-                    onClick={() => {
-                      editor.current?.flush()
-                      setSelectedPage(item.id)
-                      setDialog(null)
-                      setMobilePanel(null)
-                    }}
-                  >
-                    <span class="cms-page-symbol" aria-hidden="true">
-                      {item.path === '/'
-                        ? '⌂'
-                        : item.path === '/privacy' || item.path === '/terms'
-                          ? '§'
-                          : '↗'}
-                    </span>
-                    <span>{item.name[lang] || item.path}</span>
-                    <i />
-                  </button>
-                </>
-              ))}
+            {visiblePages.length === 0 && (
+              <div class="cms-page-empty" role="status">
+                <CmsIcon name="pages" />
+                <strong>Inga sidor hittades.</strong>
+                <p>Prova sidans namn eller adress.</p>
+                <button type="button" onClick={() => setPageQuery('')}>
+                  Visa alla sidor
+                </button>
+              </div>
+            )}
+            {visiblePages.map((item) => (
+              <>
+                {item.path === '/privacy' && <div class="cms-library-group">Informationssidor</div>}
+                <button
+                  type="button"
+                  class={item.id === page.id && !workspaceView ? 'is-active' : ''}
+                  aria-current={item.id === page.id && !workspaceView ? 'page' : undefined}
+                  onClick={() => {
+                    editor.current?.flush()
+                    setSelectedPage(item.id)
+                    setDialog(null)
+                    setMobilePanel(null)
+                  }}
+                >
+                  <span class="cms-page-symbol" aria-hidden="true">
+                    <CmsIcon name={item.path === '/' ? 'home' : 'pages'} />
+                  </span>
+                  <span title={item.name[lang] || item.path}>{item.name[lang] || item.path}</span>
+                  <i />
+                </button>
+              </>
+            ))}
           </nav>
           <div class="cms-sidebar-bottom">
             <button
@@ -569,7 +653,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              ◐ Webbplatsens stil
+              <CmsIcon name="settings" /> Webbplatsens stil
             </button>
             <button
               type="button"
@@ -582,7 +666,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              Business / SEO
+              <CmsIcon name="settings" /> Business / SEO
             </button>
             <button
               type="button"
@@ -595,7 +679,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              Mejl
+              <CmsIcon name="mail" /> Mejl
             </button>
             <a
               class="cms-sidebar-link"
@@ -614,14 +698,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setMobilePanel(null)
               }}
             >
-              Utkast & backup
+              <CmsIcon name="backup" /> Utkast & backup
             </button>
           </div>
         </aside>
         <main class="cms-canvas-shell">
           <div class="cms-canvas-toolbar" inert={Boolean(workspaceView)}>
             <div class="cms-canvas-breadcrumb">
-              <strong>{page.name[lang]}</strong>
+              <CmsIcon name="pages" />
+              <strong title={page.name[lang]}>{page.name[lang]}</strong>
               <span>{page.path}</span>
             </div>
             <div class="cms-device-controls">
@@ -634,6 +719,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     aria-pressed={device === value && !compare}
                     onClick={() => setDevice(value)}
                   >
+                    <CmsIcon name={value === 'Desktop' ? 'desktop' : 'mobile'} />
                     {value === 'Desktop' ? 'Dator' : 'Mobil'}
                   </button>
                 ))}
@@ -654,6 +740,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <button
                 type="button"
                 disabled={locked}
+                aria-label="Zooma ut"
                 onClick={() => setZoom(Math.max(30, zoom - 10))}
               >
                 −
@@ -662,6 +749,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <button
                 type="button"
                 disabled={locked}
+                aria-label="Zooma in"
                 onClick={() => setZoom(Math.min(120, zoom + 10))}
               >
                 +
@@ -679,7 +767,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             </div>
           </div>
           {pageScenes(page.path).length > 0 && (
-            <div class="cms-scene-bar">
+            <div class="cms-scene-bar" inert={Boolean(workspaceView)}>
               <label>
                 Visa i editorn{' '}
                 <select
@@ -736,6 +824,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               fontCss={fontCss}
               tab={tab}
               onTab={setTab}
+              onCloseInspector={closePanel}
               onZoom={setZoom}
               onChange={replacePage}
               onReady={(value) => {
@@ -792,24 +881,30 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           type="button"
           class="cms-backdrop"
           aria-label="Stäng panel"
-          onClick={() => setMobilePanel(null)}
+          onClick={closePanel}
+          tabIndex={-1}
         />
       </div>
       <nav class="cms-mobile-tools" aria-label="Mobilverktyg">
         <button
           type="button"
-          onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
+          aria-controls="cms-library"
+          aria-expanded={mobilePanel === 'library'}
+          onClick={(event) => togglePanel('library', event.currentTarget)}
         >
-          Sidor
+          <CmsIcon name="pages" /> Sidor
         </button>
         <button
           type="button"
-          onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
+          aria-controls="cms-inspector"
+          aria-expanded={mobilePanel === 'inspector'}
+          disabled={Boolean(workspaceView) || locked}
+          onClick={(event) => togglePanel('inspector', event.currentTarget)}
         >
-          Egenskaper
+          <CmsIcon name="settings" /> Egenskaper
         </button>
       </nav>
-      <footer class="cms-bottom">
+      <footer class="cms-bottom" aria-label="Utkast och publicering">
         <button
           type="button"
           onClick={() => {
@@ -817,7 +912,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             if (draft.undo()) setVersion((v) => v + 1)
           }}
         >
-          Ångra
+          <CmsIcon name="undo" /> Ångra
         </button>
         <button
           type="button"
@@ -826,15 +921,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             if (draft.redo()) setVersion((v) => v + 1)
           }}
         >
-          Gör om
+          <CmsIcon name="redo" /> Gör om
         </button>
         <button
           type="button"
           class="cms-publish"
+          aria-label="Save / Publicera"
           disabled={busy || Boolean(conflict) || !draft.dirty}
           onClick={() => void publish()}
         >
-          Save / Publicera
+          <CmsIcon name="publish" /> Publicera
         </button>
         <button
           type="button"
@@ -853,7 +949,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             setVersion((v) => v + 1)
           }}
         >
-          Revert
+          <CmsIcon name="history" /> Revert
         </button>
         <button
           type="button"
@@ -862,7 +958,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             void openHistory()
           }}
         >
-          History
+          <CmsIcon name="history" /> History
         </button>
         <button
           type="button"
@@ -894,7 +990,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             }
           }}
         >
-          {locked ? 'Lås upp' : 'Lås vy'}
+          <CmsIcon name="preview" /> {locked ? 'Lås upp' : 'Lås vy'}
         </button>
       </footer>
       {(dialog === 'new-page' || dialog === 'backup') && (

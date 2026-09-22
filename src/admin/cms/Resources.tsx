@@ -1,4 +1,5 @@
 import { CmsTextarea } from './Textarea'
+import { CmsIcon } from './Icon'
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CmsAsset, CmsDocument } from '../../../shared/cms'
@@ -68,6 +69,13 @@ export function CmsResources(props: Props): JSX.Element {
   const [busy, setBusy] = useState(false)
   const upload = useRef<HTMLInputElement>(null)
   const replace = useRef<HTMLInputElement>(null)
+  const detail = useRef<HTMLElement>(null)
+  const selectedTrigger = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!selectedId || !window.matchMedia('(max-width: 900px)').matches) return
+    detail.current?.scrollIntoView({ block: 'start' })
+    detail.current?.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true })
+  }, [selectedId])
   const asset = props.assets.find((item) => item.id === selectedId) ?? null
   const visible = useMemo(
     () =>
@@ -297,7 +305,14 @@ export function CmsResources(props: Props): JSX.Element {
                     }}
                   />
                 </label>
-                <button type="button" onClick={() => setSelectedId(item.id)}>
+                <button
+                  type="button"
+                  aria-pressed={item.id === selectedId}
+                  onClick={(event) => {
+                    selectedTrigger.current = event.currentTarget
+                    setSelectedId(item.id)
+                  }}
+                >
                   {item.mime.startsWith('image/') ? (
                     <img src={mediaUrl(item, storageOrigin)} alt={item.alt} />
                   ) : (
@@ -314,8 +329,20 @@ export function CmsResources(props: Props): JSX.Element {
           })}
         </div>
         {asset ? (
-          <aside class="cms-resource-detail">
-            <h2>{resourceLabel(asset)}</h2>
+          <aside ref={detail} class="cms-resource-detail" aria-label="Resursdetaljer">
+            <header class="cms-resource-detail-heading">
+              <h2 tabIndex={-1}>{resourceLabel(asset)}</h2>
+              <button
+                type="button"
+                aria-label="Stäng resursdetaljer"
+                onClick={() => {
+                  setSelectedId(null)
+                  selectedTrigger.current?.focus()
+                }}
+              >
+                <CmsIcon name="close" />
+              </button>
+            </header>
             <label>
               Namn
               <input

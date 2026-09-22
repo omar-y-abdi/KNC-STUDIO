@@ -1,5 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
+import { CmsIcon } from './Icon'
 
 const views: Record<string, { title: string; description: string }> = {
   theme: {
@@ -78,7 +79,7 @@ export function CmsWorkspaceView({
           <p>{view.description}</p>
         </div>
         <button type="button" onClick={onClose}>
-          Tillbaka till sidan <span aria-hidden="true">↗</span>
+          <CmsIcon name="arrow" /> Tillbaka till sidan
         </button>
       </header>
       <div class="cms-workspace-content">{children}</div>

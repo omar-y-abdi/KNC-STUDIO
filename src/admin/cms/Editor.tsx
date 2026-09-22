@@ -1,4 +1,5 @@
 import { CmsTextarea } from './Textarea'
+import { CmsIcon } from './Icon'
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
@@ -50,6 +51,7 @@ interface Props {
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
   onTab: (tab: 'design' | 'layers' | 'blocks') => void
+  onCloseInspector: () => void
   onChange: (page: CmsPage) => void
   onReady: (handle: EditorHandle | null) => void
   onZoom: (zoom: number) => void
@@ -592,11 +594,45 @@ export function CmsEditor(props: Props): JSX.Element {
         </div>
       )}
       <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
-        <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
+        <div class="cms-inspector-heading">
+          <strong>Egenskaper</strong>
+          <button
+            type="button"
+            class="cms-panel-close"
+            aria-label="Stäng egenskaper"
+            onClick={props.onCloseInspector}
+          >
+            <CmsIcon name="close" />
+          </button>
+        </div>
+        <div
+          class="cms-panel-tabs"
+          role="tablist"
+          aria-label="Egenskapspanel"
+          onKeyDown={(event) => {
+            const tabs = ['design', 'layers', 'blocks'] as const
+            let index = tabs.indexOf(props.tab)
+            if (event.key === 'ArrowRight') index = (index + 1) % tabs.length
+            else if (event.key === 'ArrowLeft') index = (index + tabs.length - 1) % tabs.length
+            else if (event.key === 'Home') index = 0
+            else if (event.key === 'End') index = tabs.length - 1
+            else return
+            event.preventDefault()
+            event.stopPropagation()
+            const next = tabs[index]
+            if (next) {
+              props.onTab(next)
+              event.currentTarget.querySelector<HTMLButtonElement>(`#cms-tab-${next}`)?.focus()
+            }
+          }}
+        >
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
             <button
               type="button"
               role="tab"
+              id={`cms-tab-${tab}`}
+              aria-controls={tab === 'design' ? 'cms-design' : `cms-${tab}`}
+              tabIndex={props.tab === tab ? 0 : -1}
               aria-selected={props.tab === tab}
               onClick={() => props.onTab(tab)}
             >
@@ -604,7 +640,13 @@ export function CmsEditor(props: Props): JSX.Element {
             </button>
           ))}
         </div>
-        <div hidden={props.tab !== 'design'} class="cms-inspector-scroll">
+        <div
+          id="cms-design"
+          role="tabpanel"
+          aria-labelledby="cms-tab-design"
+          hidden={props.tab !== 'design'}
+          class="cms-inspector-scroll"
+        >
           <div class="cms-selection-head">
             <strong>{label(selected)}</strong>
             <p class="cms-style-scope">
@@ -840,8 +882,20 @@ export function CmsEditor(props: Props): JSX.Element {
             </details>
           )}
         </div>
-        <div id="cms-layers" hidden={props.tab !== 'layers'} class="cms-manager-panel" />
-        <div id="cms-blocks" hidden={props.tab !== 'blocks'} class="cms-manager-panel" />
+        <div
+          id="cms-layers"
+          role="tabpanel"
+          aria-labelledby="cms-tab-layers"
+          hidden={props.tab !== 'layers'}
+          class="cms-manager-panel"
+        />
+        <div
+          id="cms-blocks"
+          role="tabpanel"
+          aria-labelledby="cms-tab-blocks"
+          hidden={props.tab !== 'blocks'}
+          class="cms-manager-panel"
+        />
       </aside>
       {imageTarget && (
         <CmsModal title="Välj bild" onClose={closePicker}>
