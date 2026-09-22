@@ -41,7 +41,7 @@ function fixture(t, files) {
 }
 
 test('workflow formats first and shares the same patch with every dependent job', () => {
-  assert.match(workflow, /^jobs:\n  format:/m)
+  assert.match(workflow, /^jobs:\n {2}format:/m)
   assert.match(workflow, /contents: read/)
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|continue-on-error/)
   const jobs = ['format', 'frontend', 'cms-shell', 'edge-functions', 'database']
@@ -55,7 +55,7 @@ test('workflow formats first and shares the same patch with every dependent job'
   for (const [index, job] of jobs.entries()) {
     if (job === 'format') continue
     const body = section(job, index)
-    assert.match(body, /^    needs: format$/m)
+    assert.match(body, /^ {4}needs: format$/m)
     assert.match(body, /actions\/download-artifact@[0-9a-f]{40}/)
     assert.match(body, /git apply --allow-empty "\$RUNNER_TEMP\/ci-format\/format.patch"/)
     assert.ok(body.indexOf('git apply') < body.indexOf('npm ci'))
