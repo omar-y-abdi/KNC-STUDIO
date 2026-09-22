@@ -10,65 +10,22 @@ concurrency:
   group: cms-quality-final
   cancel-in-progress: true
 jobs:
-  prepare:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          name: cms-focus-source-2
-          run-id: 35727528861
-          github-token: ${{ github.token }}
-          path: /tmp/cms-original
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Reconcile and identify the exact candidate
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/cms-inputs
-          git fetch /tmp/cms-original/source.bundle HEAD
-          test "$(git rev-parse FETCH_HEAD)" = 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
-          git worktree add --detach /tmp/cms-candidate eaca9b67af86777459f00f18f6e20c12d00ba0f4
-          git -C /tmp/cms-candidate -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' cherry-pick a60e2e4fb6fc44ef1b464a9168a16500c4272ebd 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
-          test "$(git -C /tmp/cms-candidate rev-parse HEAD^{tree})" = 336f9b67a413c9a558f4a55e564cbdf40a9e1157
-          gzip -dc .cms-verification/candidate.patch.gz | git -C /tmp/cms-candidate apply --index
-          test "$(git -C /tmp/cms-candidate write-tree)" = cda0c7107911f3c206ac462cdf9b6f5d21b82f34
-          cd /tmp/cms-candidate
-          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-inputs/install.log 2>&1
-          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-inputs/format.log 2>&1
-          git add -u
-          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: preserve native resource validation and unique accessible editor controls'
-          git rev-parse HEAD > /tmp/cms-inputs/source-commit.txt
-          git rev-parse HEAD^{tree} > /tmp/cms-inputs/source-tree.txt
-          git diff --binary eaca9b67af86777459f00f18f6e20c12d00ba0f4 HEAD > /tmp/cms-inputs/product.patch
-          git bundle create /tmp/cms-inputs/source.bundle HEAD
-          git push origin HEAD:refs/heads/verify/cms-quality-candidate-${{ github.run_number }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: cms-quality-source-${{ github.run_number }}
-          path: /tmp/cms-inputs
-          retention-days: 7
   verify:
-    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        group: [static, workspace, owner, flows, surfaces]
+        group: [static, workspace, owner, flows, surfaces, chrome]
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: cms-quality-source-${{ github.run_number }}
+          name: cms-quality-source-2
+          run-id: 35732184909
+          github-token: ${{ github.token }}
           path: /tmp/cms-inputs
       - name: Read exact source bundle
         run: |
@@ -76,9 +33,10 @@ jobs:
           mkdir -p /tmp/cms-workspace
           git clone /tmp/cms-inputs/source.bundle candidate
           cd candidate
-          test "$(git rev-parse HEAD)" = "$(cat /tmp/cms-inputs/source-commit.txt)"
-          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/cms-inputs/source-tree.txt)"
+          test "$(git rev-parse HEAD)" = b6dfab63ddc314c87255cc0eed69acf3d54024b6
+          test "$(git rev-parse HEAD^{tree})" = 4e692627bbc7df4f05c5e242d8c0cea73a072601
           cp /tmp/cms-inputs/source-*.txt /tmp/cms-workspace/
+          cp ../.cms-verification/chrome-contracts.mjs tools/e2e/cms-chrome-contracts.mjs
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -135,6 +93,7 @@ jobs:
             workspace) suites='cms-workspace cms-native cms-responsive' ;;
             owner) suites='cms-owner' ;;
             flows) suites='cms-scenes cms-projection cms-public-regression cms-populated cms-conflict' ;;
+            chrome) suites='cms-chrome-contracts' ;;
           esac
           for suite in $suites; do
             timeout 20m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
@@ -180,7 +139,7 @@ jobs:
           import json,pathlib,os
           p=pathlib.Path('/tmp/cms-workspace/check-summary.json')
           checks=json.loads(p.read_text()) if p.exists() else {}
-          gates={'static':['typecheck','lint','format-check','test','build'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views']}
+          gates={'static':['typecheck','lint','format-check','test','build'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views'],'chrome':['cms-chrome-contracts']}
           required=set(gates[os.environ['GROUP']])|{'tracked-source-diff'}
           assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
           assert all(v==0 for v in checks.values()),checks
