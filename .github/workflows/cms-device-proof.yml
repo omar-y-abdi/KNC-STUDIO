@@ -1,0 +1,118 @@
+name: CMS device evidence
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-device-proof.yml]
+permissions:
+  contents: read
+jobs:
+  devices:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c224999ea3d78c7aefde7e0da594146560b3b3a8
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare isolated browser runtime
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          mkdir -p /tmp/cms-devices
+          git rev-parse HEAD > /tmp/cms-devices/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-devices/source-tree.txt
+          npm ci > /tmp/cms-devices/install.log 2>&1
+          npx playwright install --with-deps "$ENGINE" > /tmp/cms-devices/browser.log 2>&1
+          bash tools/ci/setup-furl.sh
+      - name: Exercise actual touch input and alternate geometry
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          cat > tools/e2e/cms-device-proof.mjs <<'JS'
+          import assert from 'node:assert/strict'
+          import { writeFile } from 'node:fs/promises'
+          import { chromium, webkit } from 'playwright'
+          import { nativeBackend } from './cms-native.mjs'
+          const name=process.env.ENGINE
+          const browser=await ({chromium,webkit}[name]).launch()
+          const results=[],failures=[],screenshots=[]
+          try {
+            for(const [width,height] of [[320,568],[390,844],[844,390],[768,1024],[1920,1080]]) {
+              const touch=width<=900
+              const context=await browser.newContext({viewport:{width,height},hasTouch:touch,isMobile:touch,reducedMotion:'reduce'})
+              context.setDefaultTimeout(15000)
+              const backend=await nativeBackend(context)
+              const page=await context.newPage()
+              const id=`${name}-${width}x${height}`
+              page.on('pageerror',e=>failures.push(`${id}: ${e.message}`))
+              const press=locator=>touch?locator.tap():locator.click()
+              const capture=async state=>{
+                const filename=`${id}-${state}.png`
+                await page.screenshot({path:`/tmp/cms-devices/${filename}`,animations:'disabled'})
+                screenshots.push({filename,engine:name,width,height,touch,state})
+                assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${id}/${state}: no horizontal overflow`)
+              }
+              try {
+                await page.goto('http://127.0.0.1:4188/tools/e2e/admin-harness.html?view=cms-studio')
+                await page.evaluate(async()=> (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
+                await page.locator('.cms-canvas-shell').waitFor({timeout:90000})
+                await page.frameLocator('.gjs-frame').first().locator(`[data-knc-surface="${touch?'mobile':'desktop'}-home"]`).waitFor()
+                const buttons=await page.locator('.cms-bottom button').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(n=>{const r=n.getBoundingClientRect();return {name:n.textContent.trim(),x:r.x,y:r.y,w:r.width,h:r.height}}))
+                assert.ok(buttons.every(r=>r.x>=-1&&r.y>=0&&r.x+r.w<=width+1&&r.y+r.h<=height+1),`${id}: every dock action fits`)
+                await capture('editor')
+                if(touch) {
+                  await press(page.locator('.cms-mobile-tools').getByRole('button',{name:'Sidor',exact:true}))
+                  await page.locator('#cms-library[aria-modal="true"]').waitFor()
+                  await capture('pages')
+                  await press(page.locator('#cms-library').getByRole('button',{name:'Stäng panel',exact:true}))
+                  await press(page.locator('.cms-mobile-tools').getByRole('button',{name:'Egenskaper',exact:true}))
+                  await page.locator('#cms-inspector[aria-modal="true"]').waitFor()
+                }
+                await press(page.getByRole('tab',{name:'Lägg till',exact:true}))
+                const tiles=await page.locator('#cms-blocks .gjs-block').evaluateAll(nodes=>nodes.slice(0,2).map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}))
+                assert.equal(tiles.length,2)
+                assert.ok(Math.abs(tiles[0].y-tiles[1].y)<2&&tiles[1].x>tiles[0].x+tiles[0].w&&tiles.every(t=>t.w>=90&&t.h>=44),`${id}: two readable block columns`)
+                await capture('blocks')
+                if(touch) await press(page.locator('#cms-inspector').getByRole('button',{name:'Stäng panel',exact:true}))
+                await press(page.getByRole('button',{name:'Jämför',exact:true}))
+                const compare=page.locator('.cms-compare-pane iframe')
+                await compare.waitFor()
+                const dimensions=await compare.evaluate(n=>({width:n.clientWidth,height:n.clientHeight}))
+                assert.deepEqual(dimensions,touch?{width:1440,height:900}:{width:390,height:844},`${id}: correct comparison viewport`)
+                await compare.contentFrame().locator('html[data-knc-source-ready]').waitFor({timeout:30000})
+                await capture('compare')
+                assert.equal(backend.writes.length,0,`${id}: inspection never publishes or changes booking state`)
+                results.push({id,passed:true,buttons,tiles,dimensions})
+              } catch(e) {
+                failures.push(`${id}: ${e.message}`)
+                await capture('failure').catch(()=>undefined)
+              } finally {await context.close()}
+            }
+          } finally {await browser.close();await writeFile('/tmp/cms-devices/results.json',JSON.stringify({results,failures,screenshots},null,2))}
+          console.log(JSON.stringify({results:results.map(r=>({id:r.id,passed:r.passed})),failures}))
+          assert.deepEqual(failures,[])
+          JS
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-devices/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
+          set +e
+          node tools/e2e/cms-device-proof.mjs > /tmp/cms-devices/test.log 2>&1
+          status=$?
+          echo "$status" > /tmp/cms-devices/test.exit-code
+          cp tools/e2e/cms-device-proof.mjs /tmp/cms-devices/proof.mjs
+          furl compress /tmp/cms-devices/test.log --json > /tmp/cms-devices/test.furl.json
+          git diff --exit-code
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-device-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/cms-devices
+          retention-days: 14
