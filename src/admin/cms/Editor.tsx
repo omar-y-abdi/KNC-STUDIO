@@ -172,6 +172,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const compareHost = useRef<HTMLDivElement>(null)
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
+  const compareHeight = props.device === 'Desktop' ? 844 : 900
   const comparison = useMemo(
     () =>
       props.compare
@@ -470,12 +471,15 @@ export function CmsEditor(props: Props): JSX.Element {
   useLayoutEffect(() => {
     const host = compareHost.current
     if (!host) return
-    const resize = (): void => setCompareScale(Math.min(1, host.clientWidth / compareWidth))
+    const resize = (): void =>
+      setCompareScale(
+        Math.min(1, host.clientWidth / compareWidth, host.clientHeight / compareHeight),
+      )
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(host)
     return () => observer.disconnect()
-  }, [props.compare, compareWidth])
+  }, [props.compare, props.locked, compareWidth, compareHeight])
 
   useEffect(() => {
     const editor = instance.current
@@ -623,18 +627,25 @@ export function CmsEditor(props: Props): JSX.Element {
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
           </div>
-          <div ref={compareHost} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <iframe
-              title="Jämförelsevy"
-              sandbox=""
+          <div ref={compareHost} class="cms-compare-viewport">
+            <div
               style={{
-                width: `${compareWidth}px`,
-                height: `${100 / compareScale}%`,
-                transform: `scale(${compareScale})`,
-                transformOrigin: 'top left',
+                width: `${compareWidth * compareScale}px`,
+                height: `${compareHeight * compareScale}px`,
               }}
-              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
-            />
+            >
+              <iframe
+                title="Jämförelsevy"
+                sandbox=""
+                style={{
+                  width: `${compareWidth}px`,
+                  height: `${compareHeight}px`,
+                  transform: `scale(${compareScale})`,
+                  transformOrigin: 'top left',
+                }}
+                srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+              />
+            </div>
           </div>
         </div>
       )}

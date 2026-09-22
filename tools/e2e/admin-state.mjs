@@ -114,6 +114,7 @@ async function verifyCmsStudioShell(page) {
     'CMS studio did not run at the real phone-sized viewport',
   )
 
+  const commandDockIsInert = (page) => page.locator('.cms-bottom').evaluate((node) => node.inert)
   const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
   const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
   const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
@@ -126,6 +127,16 @@ async function verifyCmsStudioShell(page) {
   await pages.click()
   assert(await library.isVisible(), 'Sidor did not open the mobile library drawer')
   assert(!(await inspector.isVisible()), 'Opening Sidor also opened Egenskaper')
+  assert(
+    await commandDockIsInert(page),
+    'The open modal library must isolate the background command dock',
+  )
+  await library.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  assert(!(await library.isVisible()), 'The library close control did not dismiss Sidor')
+  assert(
+    await pages.evaluate((node) => node === globalThis.document.activeElement),
+    'Sidor lost return focus',
+  )
   await properties.click()
   assert(!(await library.isVisible()), 'Opening Egenskaper left Sidor open')
   assert(await inspector.isVisible(), 'Egenskaper did not open the mobile inspector drawer')
@@ -137,9 +148,26 @@ async function verifyCmsStudioShell(page) {
     assert((await tab.getAttribute('aria-selected')) === 'true', `${name} is not touch-usable`)
   }
 
+  await inspector.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  assert(!(await inspector.isVisible()), 'The inspector close control did not dismiss Egenskaper')
+  assert(!(await commandDockIsInert(page)), 'The closed drawer left the command dock inert')
+
+  const publish = page
+    .locator('.cms-topbar')
+    .getByRole('button', { name: 'Publicera', exact: true })
+  assert((await publish.count()) === 1, 'Publication is missing from the persistent header')
+  assert(
+    await publish.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      return node.contains(
+        globalThis.document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+      )
+    }),
+    'The header publication control is obscured on mobile',
+  )
   const commandbar = page.locator('.cms-bottom')
   await commandbar.waitFor({ state: 'visible' })
-  for (const name of ['Ångra', 'Gör om', 'Publicera', 'Revert', 'Historik', 'Lås vy']) {
+  for (const name of ['Ångra', 'Gör om', 'Återställ', 'Historik', 'Lås vy']) {
     const button = commandbar.getByRole('button', { name, exact: true })
     assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
     await button.scrollIntoViewIfNeeded()
@@ -150,9 +178,6 @@ async function verifyCmsStudioShell(page) {
     box !== null && box.y >= 0 && box.y + box.height <= 844,
     `Mobile command bar escaped the viewport: ${JSON.stringify(box)}`,
   )
-
-  await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
-  assert(!(await inspector.isVisible()), 'Backdrop did not close the mobile inspector')
 
   await page.setViewportSize({ width: 1280, height: 900 })
   const geometry = await page.evaluate(() => {

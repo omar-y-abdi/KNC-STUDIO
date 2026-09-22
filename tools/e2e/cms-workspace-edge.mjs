@@ -157,8 +157,56 @@ for (const [engine, name] of [
         geometry.every((tile) => tile.role === 'button' && tile.label && tile.tab === 0),
         `${name}: every block is named and keyboard reachable`,
       )
+      const icons = await page
+        .locator('#cms-blocks .gjs-block__media svg path')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            fill: globalThis.getComputedStyle(node).fill,
+            stroke: globalThis.getComputedStyle(node).stroke,
+          })),
+        )
+      check(
+        icons.length === 8 && icons.every((icon) => icon.fill === 'none' && icon.stroke !== 'none'),
+        `${name}: the eight outline block icons remain distinct rather than solid tiles`,
+        icons,
+      )
       await shot('block-grid')
       await page.getByRole('tab', { name: 'Design', exact: true }).click()
+    })
+    await run('comparison-geometry', async () => {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
+        await page
+          .getByRole('button', { name: width === 1440 ? 'Dator' : 'Mobil', exact: true })
+          .click()
+        const toggle = page.getByRole('button', { name: 'Jämför', exact: true })
+        if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
+        const comparison = page.locator('iframe[title="Jämförelsevy"]')
+        const expected = width === 1440 ? { width: 390, height: 844 } : { width: 1440, height: 900 }
+        const dimensions = await comparison.evaluate((node) => ({
+          width: node.clientWidth,
+          height: node.clientHeight,
+        }))
+        check(
+          dimensions.width === expected.width && dimensions.height === expected.height,
+          `${name}/${width}: comparison preserves the opposite device's actual viewport`,
+          { dimensions, expected },
+        )
+        const withinHost = await comparison.evaluate((node) => {
+          const frame = node.getBoundingClientRect()
+          const host = node.closest('.cms-compare-viewport').getBoundingClientRect()
+          return (
+            frame.left >= host.left - 1 &&
+            frame.right <= host.right + 1 &&
+            frame.bottom <= host.bottom + 1
+          )
+        })
+        check(withinHost, `${name}/${width}: the complete comparison viewport fits its host`)
+        await shot(`compare-${width}`)
+        await toggle.click()
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.getByRole('button', { name: 'Dator', exact: true }).click()
     })
     await run('resources', async () => {
       await page.getByRole('button', { name: 'Resurser', exact: true }).click()
