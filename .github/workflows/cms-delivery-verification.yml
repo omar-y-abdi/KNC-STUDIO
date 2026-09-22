@@ -1,0 +1,148 @@
+name: CMS delivery verification
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-delivery-verification.yml]
+permissions:
+  contents: read
+concurrency:
+  group: cms-delivery-verification
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.candidate.outputs.commit }}
+      tree: ${{ steps.candidate.outputs.tree }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply exact reviewed bytes and format the changed files
+        id: candidate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-delivery
+          cp .cms-delivery/geometry.patch /tmp/cms-delivery/reviewed.patch
+          git checkout --detach 8cb1a5a15ddf254851db0bac05fbb8b6a4a63582
+          test "$(git rev-parse origin/verify/cms-consolidated-20260922)" = 8cb1a5a15ddf254851db0bac05fbb8b6a4a63582
+          git apply --index /tmp/cms-delivery/reviewed.patch
+          test "$(git write-tree)" = 1f19b990e7c3470a15101eaa8b1e52fbc64c1285
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-delivery/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-delivery/format.log 2>&1
+          git add -u
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: preserve device comparison geometry and outline block icons'
+          git diff --exit-code
+          git push origin HEAD:refs/heads/verify/cms-consolidated-20260922
+          git bundle create /tmp/cms-delivery/source.bundle HEAD
+          git rev-parse HEAD > /tmp/cms-delivery/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-delivery/source-tree.txt
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-delivery-source-${{ github.run_number }}
+          path: /tmp/cms-delivery
+          retention-days: 14
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, admin, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Establish exact source and tools
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          mkdir -p /tmp/cms-delivery
+          test "$(git rev-parse HEAD^{tree})" = '${{ needs.prepare.outputs.tree }}'
+          git rev-parse HEAD > /tmp/cms-delivery/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-delivery/source-tree.txt
+          npm ci > /tmp/cms-delivery/install.log 2>&1
+          bash tools/ci/setup-furl.sh
+          if [ "$GROUP" = admin ]; then
+            npx playwright install --with-deps chromium firefox webkit > /tmp/cms-delivery/browser.log 2>&1
+          elif [ "$GROUP" != core ]; then
+            npx playwright install --with-deps "$GROUP" > /tmp/cms-delivery/browser.log 2>&1
+            npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-delivery/axe-install.log 2>&1
+          fi
+      - name: Run all required checks and preserve every outcome
+        env:
+          GROUP: ${{ matrix.group }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/cms-delivery
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+        run: |
+          check() {
+            name=$1; shift
+            set +e
+            "$@" > "/tmp/cms-delivery/$name.log" 2>&1
+            echo "$?" > "/tmp/cms-delivery/$name.exit-code"
+            set -e
+          }
+          if [ "$GROUP" = core ]; then
+            for name in typecheck lint format:check test build; do check "${name//:/-}" npm run "$name"; done
+          else
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-delivery/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" ${preview:-} 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+            if [ "$GROUP" = admin ]; then
+              check admin node tools/e2e/admin-state.mjs
+              check build npm run build
+              npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/cms-delivery/preview.log 2>&1 &
+              preview=$!
+              for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4173/ > /dev/null && break; sleep 1; done
+              check smoke env BASE_URL=http://127.0.0.1:4173 node tools/e2e/smoke.mjs
+              check visual-capture env BASE=http://127.0.0.1:4173 OUT=/tmp/cms-delivery/public-capture node tools/visual/capture.mjs
+              check visual-compare env BASELINE=tools/visual/baseline-linux CANDIDATE=/tmp/cms-delivery/public-capture DIFF=/tmp/cms-delivery/public-diff node tools/visual/compare.mjs
+            else
+              export CMS_ENGINE="$GROUP"
+              for suite in cms-workspace cms-workspace-edge cms-workspace-views; do check "$suite" timeout 15m node "tools/e2e/$suite.mjs"; done
+            fi
+          fi
+          check tracked-source-diff git diff --exit-code
+      - name: Compact logs and enforce complete evidence
+        if: always()
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          for log in /tmp/cms-delivery/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          python3 - <<'PY'
+          import json,pathlib,os
+          root=pathlib.Path('/tmp/cms-delivery')
+          checks={p.stem:int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          (root/'check-summary.json').write_text(json.dumps(checks,indent=2))
+          print(json.dumps(checks,indent=2))
+          group=os.environ['GROUP']
+          required={'typecheck','lint','format-check','test','build'} if group=='core' else {'admin','build','smoke','visual-capture','visual-compare'} if group=='admin' else {'cms-workspace','cms-workspace-edge','cms-workspace-views'}
+          required.add('tracked-source-diff')
+          assert required.issubset(checks), f'Missing: {required-set(checks)}'
+          assert all(code==0 for code in checks.values()),checks
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-delivery-${{ matrix.group }}-${{ github.run_number }}
+          path: /tmp/cms-delivery
+          retention-days: 14
