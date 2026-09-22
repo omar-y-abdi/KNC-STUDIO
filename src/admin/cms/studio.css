@@ -9,6 +9,21 @@
   --selected: #edf0ff;
   --field: #f8f9f4;
   --inspector-width: 292px;
+  /* GrapesJS managers share the studio theme; its iframe keeps the website theme. */
+  --gjs-main-color: var(--panel);
+  --gjs-primary-color: var(--panel);
+  --gjs-secondary-color: var(--ink);
+  --gjs-tertiary-color: var(--selected);
+  --gjs-quaternary-color: var(--accent);
+  --gjs-font-color: var(--ink);
+  --gjs-font-color-active: var(--accent);
+  --gjs-main-dark-color: #28391f12;
+  --gjs-secondary-dark-color: var(--field);
+  --gjs-main-light-color: var(--selected);
+  --gjs-secondary-light-color: var(--muted);
+  --gjs-arrow-color: var(--muted);
+  --gjs-color-warn: #86541b;
+  --gjs-color-yellow: #86541b;
   --sidebar-width: 220px;
   --radius: 7px;
   --scroll-thumb: #b2bba6;
@@ -285,12 +300,18 @@
   overscroll-behavior: contain;
 }
 .cms-library-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 62px;
+  margin-inline: -12px;
+  background: var(--panel);
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 62px;
   gap: 12px;
-  padding: 0 8px;
+  padding: 0 20px;
 }
 .cms-library h2 {
   margin: 0;
@@ -316,6 +337,7 @@
   font-weight: 600;
 }
 .cms-library-tabs {
+  flex: 0 0 auto;
   display: flex;
   gap: 20px;
   padding: 0 8px;
@@ -345,11 +367,12 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
-  min-height: 150px;
-  overflow: auto;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
 }
 .cms-page-list button {
+  flex: 0 0 auto;
   min-height: 42px;
   gap: 11px;
   padding: 10px;
@@ -383,6 +406,7 @@
   font-weight: 600;
 }
 .cms-sidebar-bottom {
+  flex: 0 0 auto;
   display: grid;
   gap: 3px;
   border-top: 1px solid var(--line);
@@ -1445,14 +1469,41 @@
   box-shadow: 0 10px 28px #26351b20;
   outline: 1px solid #cbd4c1;
 }
+.knc-cms-studio #cms-blocks .gjs-blocks-c {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
 .knc-cms-studio .gjs-block {
-  width: calc(50% - 10px);
-  min-height: 82px;
+  width: 100%;
+  min-width: 0;
+  min-height: 94px;
+  margin: 0;
+  padding: 16px 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 500;
   background: var(--field);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: none;
   color: var(--ink);
+}
+.knc-cms-studio .gjs-block__media {
+  margin: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+.knc-cms-studio .gjs-block__media svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.knc-cms-studio .gjs-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .knc-cms-studio .gjs-block:hover {
   border-color: var(--accent);
@@ -1466,6 +1517,7 @@
 }
 .knc-cms-studio .gjs-field input,
 .knc-cms-studio .gjs-field select {
+  font-weight: 400;
   min-height: 0;
   height: 100%;
   border: 0;
@@ -1482,6 +1534,11 @@
   font-weight: 650;
   font-size: 12px;
   letter-spacing: 0;
+}
+.knc-cms-studio .gjs-sm-sector,
+.knc-cms-studio .gjs-trt-trait,
+.knc-cms-studio .gjs-layer {
+  font-weight: 400;
 }
 .knc-cms-studio .gjs-sm-sector {
   border-bottom: 1px solid var(--line);
@@ -1647,9 +1704,6 @@
   .cms-library .cms-panel-close {
     width: 44px;
     margin-left: auto;
-  }
-  .cms-page-list {
-    min-height: 120px;
   }
   .cms-editor-wrap {
     grid-template-columns: minmax(0, 1fr);
@@ -2121,6 +2175,30 @@
     min-height: 50px;
   }
   .cms-bottom button {
+    min-height: 44px;
+  }
+  .cms-workspace-view {
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .cms-workspace-content {
+    overflow: visible;
+    flex: 0 0 auto;
+  }
+}
+@media (max-height: 550px) and (min-width: 600px) and (max-width: 900px) {
+  .knc-cms-studio .cms-bottom {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .cms-mobile-tools {
+    grid-column: span 2;
+    border-bottom: 0;
+    border-right: 1px solid #56604d;
+    padding-bottom: 0;
+  }
+  .cms-bottom .cms-mobile-tools button {
+    flex-direction: column;
+    font-size: 10px;
     min-height: 44px;
   }
 }

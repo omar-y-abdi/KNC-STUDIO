@@ -113,13 +113,11 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
               tag: selected.get('tagName'),
               content: selected.get('content'),
               html: selected.getEl()?.outerHTML,
-              children: selected
-                .components()
-                .map((c) => ({
-                  type: c.get('type'),
-                  tag: c.get('tagName'),
-                  content: c.get('content'),
-                })),
+              children: selected.components().map((c) => ({
+                type: c.get('type'),
+                tag: c.get('tagName'),
+                content: c.get('content'),
+              })),
             },
             inspector: globalThis.document.querySelector('#cms-inspector')?.innerText,
           }
@@ -131,7 +129,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         await page.screenshot({ path: `/tmp/cms-public-selection-${name}.png` })
         throw error
       }
-      await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
       )

@@ -138,7 +138,7 @@ async function run(engine, name) {
   const scrollbarWidth = (locator) =>
     locator.evaluate((node) => globalThis.getComputedStyle(node, '::-webkit-scrollbar').width)
   const fitCanvas = async () => {
-    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
     await page.waitForFunction(
       () => {
         const host = globalThis.document
@@ -275,7 +275,7 @@ async function run(engine, name) {
       if (globalThis.getComputedStyle(node).letterSpacing !== '3px')
         throw new Error('An immediate theme switch lost the pending style edit')
     })
-    await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
     await page.waitForFunction(() =>
       globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
     )
@@ -355,7 +355,7 @@ async function run(engine, name) {
       const canvas = globalThis.document.querySelector('.gjs-frame')
       return canvas && globalThis.getComputedStyle(canvas).width === '390px'
     })
-    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
     const mobileCopy = frame.locator(
       '[data-knc-surface="mobile-home"] span:has(> img[src="/icons/clock.svg"])',
     )
@@ -364,7 +364,7 @@ async function run(engine, name) {
     const editedHours = 'Owner mobile hours <today> & tomorrow'
     await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(editedHours)
     assert.equal(await mobileCopy.locator('img').getAttribute('id'), clockId)
-    await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
     await page.waitForFunction(() =>
       globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
     )

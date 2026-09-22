@@ -89,7 +89,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         .locator('#cms-inspector')
         .getByLabel('Text', { exact: true })
         .fill('Din barberare CMS')
-      await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
       )

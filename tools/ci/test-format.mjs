@@ -27,7 +27,11 @@ function fixture(t, files) {
   const { scripts } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   writeFileSync(
     join(directory, 'package.json'),
-    JSON.stringify({ scripts: { format: scripts.format, 'format:check': scripts['format:check'] } }, null, 2) + '\n',
+    JSON.stringify(
+      { scripts: { format: scripts.format, 'format:check': scripts['format:check'] } },
+      null,
+      2,
+    ) + '\n',
   )
   writeFileSync(join(directory, '.prettierrc.json'), readFileSync(join(root, '.prettierrc.json')))
   writeFileSync(join(directory, '.prettierignore'), 'ignored.js\nformat.patch\n')
@@ -77,10 +81,11 @@ test('formats supported files, leaves unsupported and ignored files intact, and 
   const f = fixture(t, files)
   const result = f.run('bash', [script])
   assert.equal(result.status, 0, result.stdout + result.stderr)
-  const formatted = 'export const value = { name: \'Omar\', count: 1 }\n'
+  const formatted = "export const value = { name: 'Omar', count: 1 }\n"
   assert.equal(f.read('file with spaces.ts'), formatted)
   for (const name of ['style.css', 'settings.json']) assert.notEqual(f.read(name), files[name])
-  for (const name of ['ignored.js', 'query.sql', 'script.py']) assert.equal(f.read(name), files[name])
+  for (const name of ['ignored.js', 'query.sql', 'script.py'])
+    assert.equal(f.read(name), files[name])
   assert.deepEqual(readFileSync(join(f.directory, 'image.bin')), files['image.bin'])
   const patch = f.read('format.patch')
   assert.match(patch, /file with spaces\.ts/)

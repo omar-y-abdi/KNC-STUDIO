@@ -19,9 +19,16 @@ for (const [engine, name] of [
 ]) {
   const browser = await engine.launch()
   try {
-    for (const width of [1440, 390, 320]) {
+    for (const [width, height] of [
+      [1440, 900],
+      [390, 844],
+      [320, 844],
+      [844, 390],
+    ]) {
       const context = await browser.newContext({
-        viewport: { width, height: width === 1440 ? 900 : 844 },
+        viewport: { width, height },
+        hasTouch: width <= 900,
+        isMobile: width <= 900,
         reducedMotion: 'reduce',
         colorScheme: 'light',
       })
@@ -102,7 +109,7 @@ for (const [engine, name] of [
         const tools = page.locator('.cms-mobile-tools')
         if (width <= 900) {
           const trigger = tools.getByRole('button', { name: 'Sidor', exact: true })
-          await trigger.click()
+          await trigger.tap()
           const state = await library.evaluate((node) => ({
             dialog:
               node.getAttribute('role') === 'dialog' && node.getAttribute('aria-modal') === 'true',
@@ -137,7 +144,7 @@ for (const [engine, name] of [
             await trigger.evaluate((node) => node === globalThis.document.activeElement),
             `${prefix}: Escape restores opener focus`,
           )
-          await trigger.click()
+          await trigger.tap()
         }
         const pageList = await library.locator('.cms-page-list').evaluate((node) => ({
           available: node.clientHeight,
@@ -158,7 +165,7 @@ for (const [engine, name] of [
         check((await search.inputValue()) === '', `${prefix}: empty search has a working reset`)
         if (width <= 900) {
           // Native dialogs must own focus without an enclosing drawer fighting them.
-          await library.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+          await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
           const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
           await dialog.waitFor()
           check(
@@ -202,9 +209,19 @@ for (const [engine, name] of [
           )
           await tools.getByRole('button', { name: 'Sidor', exact: true }).click()
         }
-        await page.getByRole('button', { name: 'Business / SEO', exact: true }).click()
+        await page.getByRole('button', { name: 'Företag & SEO', exact: true }).click()
         const workspace = page.getByRole('region', { name: 'Företag & sökresultat', exact: true })
         await workspace.waitFor()
+        await page.screenshot({
+          path: `${out}/${name}-${width}-business.png`,
+          animations: 'disabled',
+        })
+        const field = workspace.getByRole('textbox').first()
+        await field.scrollIntoViewIfNeeded()
+        check(
+          await field.isVisible(),
+          `${prefix}: workspace form remains reachable in short viewports`,
+        )
         check(
           await page.locator('.cms-editor-wrap').evaluate((node) => node.inert),
           `${prefix}: workspace isolates the mounted canvas`,

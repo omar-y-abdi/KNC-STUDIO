@@ -55,7 +55,7 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
             const canvas = globalThis.document.querySelector('.gjs-frame')
             return canvas && globalThis.getComputedStyle(canvas).width === `${expected}px`
           }, width)
-          await page.getByRole('button', { name: 'Fit', exact: true }).click()
+          await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
           const surface = frame.locator(`[data-knc-surface="${device}-home"]`)
           await surface.waitFor({ state: 'visible' })
           // Pick ordinary existing copy without replacing handlers, runtime islands or controls.
@@ -85,7 +85,7 @@ export async function customerCmsFixture({ db, stack, origin, work }) {
             response.request().method() === 'POST' &&
             response.request().postDataJSON()?.operation === 'publish',
         )
-        await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        await page.getByRole('button', { name: 'Publicera', exact: true }).click()
         const response = await publication
         assert.equal(response.status(), 200, await response.text())
         await page.waitForFunction(() =>

@@ -523,7 +523,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           class="cms-publish cms-primary"
-          aria-label="Save / Publicera"
+          aria-label="Publicera"
           disabled={busy || Boolean(conflict) || !draft.dirty}
           onClick={() => void publish()}
         >
@@ -658,12 +658,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setDialog('new-page')
               }}
             >
-              <CmsIcon name="plus" /> + Ny sida
+              <CmsIcon name="plus" /> Ny sida
             </button>
             <button
               type="button"
               class={workspaceView === 'theme' ? 'is-active' : ''}
-              aria-label="◐ Webbplatsens stil"
+              aria-label="Webbplatsens stil"
               onClick={() => {
                 editor.current?.flush()
                 setMobilePanel(null)
@@ -685,7 +685,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              <CmsIcon name="business" /> Business / SEO
+              <CmsIcon name="business" /> Företag & SEO
             </button>
             <button
               type="button"
@@ -780,8 +780,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   const nextZoom = editor.current?.fit()
                   if (nextZoom !== undefined) setZoom(nextZoom)
                 }}
+                aria-label="Anpassa vyn"
+                title="Anpassa vyn till arbetsytan"
               >
-                Fit
+                <CmsIcon name="fit" />
               </button>
             </div>
           </div>
@@ -879,6 +881,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   revision={draft.revision}
                   lang={lang}
                   mode={mode}
+                  device={device}
                   onError={setError}
                   onRestore={(old) => {
                     commitDraft(ensureCorePages(old))
@@ -957,7 +960,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
         <button type="button" disabled={!draft.dirty} class="cms-revert" onClick={revertDraft}>
           <CmsIcon name="history" />
-          <span>Revert</span>
+          <span>Återställ</span>
         </button>
         <button
           type="button"
@@ -967,7 +970,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           }}
         >
           <CmsIcon name="history" />
-          <span>History</span>
+          <span>Historik</span>
         </button>
         <button
           type="button"
@@ -1069,7 +1072,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     setDialog(null)
                   }}
                 >
-                  Revert
+                  Återställ
                 </button>
                 <button
                   type="button"

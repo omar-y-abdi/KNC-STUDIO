@@ -7,8 +7,8 @@ colors:
   background: '#f2f4ee'
   surface: '#fffef9'
   text: '#252a24'
-  muted: '#697260'
-  border: '#e0e5d9'
+  muted: '#5e6856'
+  border: '#dbe2d2'
   selected: '#edf0ff'
 typography:
   sans:
@@ -16,12 +16,12 @@ typography:
   mono:
     fontFamily: 'ui-monospace, monospace'
 rounded:
-  DEFAULT: '6px'
+  DEFAULT: '7px'
   dialog: '14px'
 spacing:
   sidebar: '220px'
-  inspector: '284px'
-  header: '65px'
+  inspector: '292px'
+  header: '72px'
 components:
   button: {}
   input: {}
@@ -31,34 +31,34 @@ components:
 
 # CMS design
 
-## Overview
+## Purpose and visual direction
 
-Scope: `/admin/cms` only. Owner-provided O-Y-A screenshots and `/Users/k/dev/o-y-a/src/cms/styles.css` define the visual direction: quiet paper panels, pale green canvas, blue selection, contextual inspector and a floating dark command dock. This is a working editor for a Swedish salon owner; Swedish UI edits separate Swedish and English website content. Website branding and light/dark variants remain independent from editor chrome.
+Scope: `/admin/cms` only. The existing BNB mark anchors a paper-colored editor with a pale sage canvas, blue selection and a dark olive command dock. The working page stays central; chrome must not compete with salon content. Swedish controls edit separate Swedish and English content. Website branding and light/dark variants remain independent of the editor theme.
 
-## Colors and token ownership
+## Canonical tokens
 
-Model B: `studio.css` is canonical. This file mirrors its tokens. `primary → --accent`, `background → --bg`, `surface → --panel`, `text → --ink`, `muted → --muted`, `border → --line`, `selected → --selected`. Every CMS component consumes these variables directly; no framework adapter or generated theme exists. Review token changes together with this mapping and browser screenshots. Blue identifies selection, focus and publication. Errors include text and use the existing notice surface.
+`studio.css` owns the tokens above: `primary → --accent`, `background → --bg`, `surface → --panel`, `text → --ink`, `muted → --muted`, `border → --line`, `selected → --selected`. GrapesJS manager tokens map to the same surfaces and text colors; inherited-property indicators use darker amber on paper, never the vendor's dark-theme yellow. The canvas iframe does not inherit chrome tokens. No token generator or new UI dependency is involved.
 
-## Typography
+## Typography and hierarchy
 
-Inter is already shipped by the application. Default 13px/1.45; secondary labels 11–12px; workspace headings 24–34px with restrained negative tracking. Technical paths use monospace. The compact BNB serif mark identifies the editor. Content in frames keeps its own typography.
+The application's existing Inter Variable is used at 13px/1.5. Supporting labels are 11–12px; property values retain normal 400 weight, even inside GrapesJS sectors. Inputs use 16px on compact touch layouts. Paths use monospace. Publication is the only persistent filled blue action. Selection, text, icon and focus indicators accompany color; errors use a persistent textual alert.
 
-## Layout
+## Layout and responsive behavior
 
-Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a 300px palette/type form with a live public preview; below 1100px these stack. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
+Above 900px: a 220px page library, flexible canvas and 292px inspector. The header is at least 72px, the canvas toolbar at least 58px. Below 1100px the side panels tighten. Resource, business, email, theme and history destinations overlay the canvas without destroying its mounted state.
 
-Below 900px, page library and inspector become explicit drawers; workspace views fill available width. Forms stack and the dock becomes an independently scrollable bottom row. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
+At 900px and below, pages and properties become mutually exclusive modal drawers with their own close control, trapped focus and inert background. The page library uses one scroll flow with a sticky heading, not a shrinking nested list. The full-width dock has a navigation row and command row; phone landscape condenses it into one row. Short workspaces scroll as a whole so headings cannot consume the form's only scrolling area.
 
-## Elevation and shapes
-
-Borders and surface tones carry hierarchy. Only the floating dock, mobile drawers and modal backdrop use elevation. Controls use the 6px radius; dialogs use 14px. No decorative cards around every setting, gradients or entrance animation.
+The initial canvas follows the operator's device. Dator/Mobil remains an explicit independent choice thereafter. Fit considers both viewport dimensions. Comparison keeps a second, independently sized viewport. History review follows the selected device; palette and email editors have explicit touch preview destinations. The block catalogue is a two-column grid of named, keyboard-operable controls with restrained structural icons.
 
 ## Components and states
 
-Buttons retain semantic disabled/pressed states and visible keyboard focus. The header owns publication status; errors remain readable until dismissed. Language/theme switches affect page content only. Workspace headings receive focus on navigation; Escape returns to the editor. Native dialogs trap focus and return it to their opener. Resources have explicit empty/search-empty states and show dimensions/type before selection. Forms use persistent labels. Default loading is textual and keeps the surrounding shell stable. Scrollbars inherit tokenized colors, with system colors in forced-colors mode.
+`useResponsivePanels.ts` owns compact drawer behavior. `focus.ts`, `Modal.tsx` and `WorkspaceView.tsx` keep focus inside active tasks and restore it to a visible opener. `editorAccessibility.ts` names externally rendered manager controls and provides keyboard activation without changing page models.
 
-## Verification
+Publication stays in the header across destinations. Loading, unpublished changes, conflicts and failures remain explicit. Empty page search offers reset. Resources distinguish active, archived and trashed assets; an invalid reference scan displays an unchecked state rather than a false zero. Local usage inspection observes the same native-page allowances as publication while authored content retains its narrower limits.
 
-`tools/e2e/cms-owner.mjs` exercises full workspace destinations at 1440px and 390px in Chromium/WebKit, verifies reachable controls, no horizontal overflow, keyboard dismissal, real email rendering, custom page publication and editing behavior. `DESIGN.md` lint plus the skill's scoped audit are static checks; screenshots and behavior remain release evidence.
+## Review and regression evidence
 
-Device layout is independent: desktop uses min-width 769px; mobile uses max-width 768px. Geometry carries between light/dark; appearance remains theme-specific. Text is shared between responsive views. Home derives its About preview from the current draft. In editable mobile snapshots the hero scrolls with the document; locked preview retains the real folding interaction.
+Run browser verification against isolated fixture APIs, not production credentials. `cms-workspace.mjs` checks drawer semantics, keyboard navigation, touch-sized commands, single-flow navigation and phone landscape. `cms-workspace-views.mjs` captures every destination, long-content scroll positions, dialogs, error states, both content themes and historical previews, with optional axe audits via `AXE_PATH`. `cms-owner.mjs` exercises keyboard block insertion, publication, reload, media lifecycle, real email rendering and revision restoration in Chromium and WebKit.
+
+The public-layout breakpoint is separate from chrome: mobile through 768px, desktop above it. Mobile canvas folding uses temporary display geometry outside the saved page model. Existing native, responsive, scene, projection, conflict and public reload suites remain required. Screenshots are evidence for a named source tree, not substitutes for interaction tests.

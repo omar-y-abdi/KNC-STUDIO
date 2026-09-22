@@ -13,6 +13,7 @@ export function HistoryPanel({
   revision,
   lang,
   mode,
+  device,
   onRestore,
   onError,
 }: {
@@ -20,6 +21,7 @@ export function HistoryPanel({
   revision: number
   lang: CmsLang
   mode: CmsMode
+  device: 'Desktop' | 'Mobile'
   onRestore: (document: CmsDocument) => void
   onError: (message: string) => void
 }): JSX.Element {
@@ -130,7 +132,7 @@ export function HistoryPanel({
                 presentation={review.document.presentation}
                 lang={lang}
                 mode={mode}
-                device="Desktop"
+                device={device}
                 fontCss={Object.entries(review.document.presentation.fonts ?? {})
                   .map(
                     ([id, font]) =>

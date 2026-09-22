@@ -9,7 +9,7 @@ Scope: salon owner's `/admin/cms`. Swedish controls, separate SV/EN content, dat
 | Permissions and publication  | `supabase/functions/cms-studio/index.ts`, `shared/cms.ts` | Owner authorization, validation, revision conflict checks remain server-side                 | Edge tests, real publication smoke  |
 | Draft lifecycle              | `draft.ts`, `backup.ts`, `Studio.tsx`                     | Local edits, undo/redo, recoverable backup, explicit publication                             | owner/conflict browser suites       |
 | Workspace navigation         | `WorkspaceView.tsx`, `Studio.tsx`                         | Pages/resources/history/business/email/style retain editor state; active destination visible | desktop/mobile browser suite        |
-| Dialog and focus             | `Modal.tsx`                                               | Native modal, Escape, focus restoration; only focused tasks use dialogs                      | image picker/new-page browser tests |
+| Dialog and focus             | `focus.ts`, `Modal.tsx`, `useResponsivePanels.ts`         | Native modal, Escape, focus restoration; only focused tasks use dialogs                      | image picker/new-page browser tests |
 | Resource selection/lifecycle | `Resources.tsx`, `api.ts`                                 | Native checkboxes/selects; archive/trash reversible; server reference guards for deletion    | API/resource tests                  |
 | Form fields                  | Native input/textarea/select in CMS components            | Persistent labels, native keyboard/IME, errors retain draft                                  | owner browser tests                 |
 | Page rendering               | `shared/site-page.ts`, `NativeSurface.tsx`                | New pages share real header/footer; native booking behavior remains authoritative            | unit + public reload tests          |
@@ -23,9 +23,9 @@ Scope: salon owner's `/admin/cms`. Swedish controls, separate SV/EN content, dat
 
 ## Flow rules
 
-- Typing changes a draft. Save validates and publishes; errors preserve edits. Newer edits during a pending save remain unpublished.
+- Typing changes a draft. Publicera validates and publishes; errors preserve edits. Newer edits during a pending save remain unpublished.
 - Changing page or workspace flushes canvas edits. Returning preserves selection and scroll. Opening a preview never publishes.
-- History review is read-only. Restore copies a revision into the draft; Save creates a new revision.
+- History review is read-only and uses the selected canvas device. Restore copies a revision into the draft; Publicera creates a new revision.
 - New pages inherit current site chrome in editor, preview and public output; only authored body content is stored on the page. Shared chrome edits originate on their source pages.
 - Resource uploads and metadata save directly to the resource library. Page references publish with the document. Historical references protect older files from deletion.
 - Delivery status opens the existing mail operations tab. Previewing templates never sends email.
@@ -43,6 +43,16 @@ Native select/listbox ownership is explicit: browser select is canonical for sma
 - Geometry changes synchronize between light/dark. Colors and effects remain theme-specific. Editing text on a shared component affects both responsive views.
 - Matching original text bindings in the separate desktop/mobile shell trees synchronize text without copying geometry or replacing adjacent icons. Ambiguous repeated captions and SVG lettering remain independent.
 - Home composes the current About draft instead of preserving a stale embedded preview. Shared content links directly to its editing page.
-- Mobile editing exposes the full page with the original mobile scroll container; only locked runtime preview simulates the folding hero.
+- Mobile editing exposes the full page with the original mobile scroll container; a temporary stylesheet restores its folding hero without changing the saved editor model.
 - Website style edits the existing `presentation.themes` contract. Original component values remain CSS-variable fallbacks; explicit owner element CSS wins. Reset removes theme overrides for the selected mode. Theme changes participate in normal draft/history/conflict/publication handling.
 - `tools/e2e/cms-responsive.mjs` verifies inspector nudges, shared text, publication/reload, themes and actual public rendering at 390, 1440 and 1920px, plus unlocked mobile scrolling and palette publication/reset in Chromium and WebKit.
+
+## Editor chrome, keyboard and verification
+
+The chrome breakpoint is 900px, independent of the public-page breakpoint above. Compact drawers are mutually exclusive modal regions. Escape closes the active task; Tab stays inside it and close restores focus to a visible opener. Inspector tabs support ArrowLeft/ArrowRight and Home/End. Style sectors and block controls activate with Enter/Space. Arrow keys on form controls do not nudge canvas content.
+
+One scroll flow owns the page library. Workspaces on short phone screens retain reachable forms and commands. Opening a destination keeps the canvas mounted but inert. The initial canvas matches the operator's device; changing it explicitly does not change the chrome layout.
+
+Local media usage scanning retains every native-page reference under the same native size allowance as publication. Invalid documents produce an explicit unchecked state and disable unsafe removal; they never masquerade as having zero references. These checks do not widen server authorization, authored-page or shared-region allowances.
+
+Use the remote Chromium/WebKit workspace, full-surface and owner suites alongside the unchanged public and backend gates. Viewport emulation, real touch events, keyboard assertions, screenshots and optional axe audits are complementary evidence; none alone proves correctness on physical devices.

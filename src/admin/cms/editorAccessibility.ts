@@ -42,7 +42,8 @@ export function connectEditorAccessibility(
   const keydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     const target = event.target
-    if (!(target instanceof HTMLElement) || !target.matches('.gjs-sm-sector-title')) return
+    if (!(target instanceof HTMLElement) || !target.matches('.gjs-sm-sector-title, .gjs-block'))
+      return
     event.preventDefault()
     target.click()
   }

@@ -147,12 +147,12 @@ async function verifyCmsStudioShell(page) {
   assert(!(await inspector.isVisible()), 'Close control did not dismiss the inspector')
   const publication = page
     .locator('.cms-topbar')
-    .getByRole('button', { name: 'Save / Publicera', exact: true })
+    .getByRole('button', { name: 'Publicera', exact: true })
   assert(await publication.isVisible(), 'Publication is missing from the persistent header')
 
   const commandbar = page.locator('.cms-bottom')
   await commandbar.waitFor({ state: 'visible' })
-  for (const name of ['Ångra', 'Gör om', 'Revert', 'History', 'Lås vy']) {
+  for (const name of ['Ångra', 'Gör om', 'Återställ', 'Historik', 'Lås vy']) {
     const button = commandbar.getByRole('button', { name, exact: true })
     assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
     await button.scrollIntoViewIfNeeded()

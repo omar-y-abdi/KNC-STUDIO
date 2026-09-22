@@ -150,7 +150,7 @@ for (const [engine, name] of [
         await frame.locator('html').evaluate(async () => {
           await globalThis.document.fonts.ready
         })
-        await page.getByRole('button', { name: 'Fit', exact: true }).click()
+        await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
       }
       const selectCopy = async () => {
         const copy = frame.getByText('KNC source sv', { exact: true }).first()
@@ -160,7 +160,7 @@ for (const [engine, name] of [
         return id
       }
       const publish = async () => {
-        await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        await page.getByRole('button', { name: 'Publicera', exact: true }).click()
         await page.waitForFunction(() =>
           globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
         )
@@ -193,7 +193,7 @@ for (const [engine, name] of [
           await selectCopy()
           await inspector.getByLabel('Text', { exact: true }).fill('Current published copy')
           await publish()
-          await page.getByRole('button', { name: 'History', exact: true }).click()
+          await page.getByRole('button', { name: 'Historik', exact: true }).click()
           const older = page
             .locator('.cms-history-row')
             .filter({ has: page.getByText('v2', { exact: true }) })
@@ -449,7 +449,7 @@ for (const [engine, name] of [
               .getByRole('button', { name: title, exact: true })
               .click()
             await page.getByRole('button', { name: device, exact: true }).click()
-            await page.getByRole('button', { name: 'Fit', exact: true }).click()
+            await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
             const lettering = frame
               .locator(selector)
               .filter({ hasText: text === 'BNB' ? /^BNB$/ : /^STUDIO$/ })
@@ -547,11 +547,11 @@ for (const [engine, name] of [
             await page.setViewportSize({ width, height: 900 })
             for (const [trigger, title] of [
               ['Resurser', 'Bilder & typsnitt'],
-              ['Business / SEO', 'Företag & sökresultat'],
+              ['Företag & SEO', 'Företag & sökresultat'],
               ['Mejl', 'Mejl från din salong'],
-              ['History', 'Webbplatsens historik'],
+              ['Historik', 'Webbplatsens historik'],
             ]) {
-              if (width === 390 && trigger !== 'History')
+              if (width === 390 && trigger !== 'Historik')
                 await page
                   .locator('.cms-mobile-tools')
                   .getByRole('button', { name: 'Sidor', exact: true })
@@ -618,7 +618,7 @@ for (const [engine, name] of [
                 .locator('.cms-mobile-tools')
                 .getByRole('button', { name: 'Sidor', exact: true })
                 .click()
-            await page.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+            await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
             const modal = page.getByRole('dialog', { name: 'Ny sida', exact: true })
             await modal.waitFor()
             assert.equal(await modal.evaluate((el) => el.matches(':modal')), true)
@@ -631,7 +631,7 @@ for (const [engine, name] of [
             .getByRole('button', { name: 'SV', exact: true })
             .evaluate((node) => globalThis.getComputedStyle(node).color)
           const library = page.locator('#cms-library')
-          await library.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+          await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
           await page
             .getByRole('dialog', { name: 'Ny sida', exact: true })
             .getByRole('button', { name: 'Skapa sida', exact: true })
@@ -738,7 +738,11 @@ for (const [engine, name] of [
           await live.getByText('Owner duplicated the real site', { exact: true }).waitFor()
         } else if (scenario === 'add-block') {
           await inspector.getByRole('tab', { name: 'Lägg till', exact: true }).click()
-          await page.locator('#cms-blocks').getByTitle('Rubrik', { exact: true }).click()
+          await page
+            .locator('#cms-blocks')
+            .getByRole('button', { name: 'Lägg till rubrik', exact: true })
+            .focus()
+          await page.keyboard.press('Enter')
           await frame.getByRole('heading', { name: 'Ny rubrik', exact: true }).waitFor()
           await publish()
           const live = await context.newPage()
@@ -753,7 +757,7 @@ for (const [engine, name] of [
           await page.waitForFunction(() =>
             globalThis.document.querySelector('.cms-status')?.textContent?.includes('Opublicerade'),
           )
-          await page.getByRole('button', { name: 'Revert', exact: true }).click()
+          await page.getByRole('button', { name: 'Återställ', exact: true }).click()
           await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
           await mount()
           assert.equal(await frame.getByText('Discard this owner edit', { exact: true }).count(), 0)
@@ -798,7 +802,7 @@ for (const [engine, name] of [
             390,
             'Editable canvas must switch to mobile alongside comparison',
           )
-          await page.getByRole('button', { name: 'Fit', exact: true }).click()
+          await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
           const bounds = await page.locator('iframe.gjs-frame').boundingBox()
           const stage = await page.locator('.cms-editor-canvas').boundingBox()
           assert.ok(
@@ -843,7 +847,7 @@ for (const [engine, name] of [
             const started = page.waitForRequest(
               (request) => request.url().endsWith('/cms-studio') && isPublish(request),
             )
-            await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+            await page.getByRole('button', { name: 'Publicera', exact: true }).click()
             await started
             await inspector.getByLabel('Text', { exact: true }).fill('Newer unsaved owner edit')
           } finally {

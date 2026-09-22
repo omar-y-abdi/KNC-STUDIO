@@ -89,6 +89,8 @@ for (const [engine, engineName, widths] of [
         viewport: { width, height: compact ? 844 : 900 },
         reducedMotion: 'reduce',
         colorScheme: 'light',
+        hasTouch: compact,
+        isMobile: compact,
       })
       context.setDefaultTimeout(12000)
       const backend = await nativeBackend(context, seed, assets)
@@ -206,7 +208,7 @@ for (const [engine, engineName, widths] of [
       }
       const open = async (name) => {
         await reset()
-        if (name !== 'History') await library()
+        if (name !== 'Historik') await library()
         await page.getByRole('button', { name, exact: true }).click()
         await page.locator('.cms-workspace-view h1').waitFor()
       }
@@ -226,9 +228,9 @@ for (const [engine, engineName, widths] of [
         )
         await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
         await frame.locator(`[data-knc-surface="${compact ? 'mobile' : 'desktop'}-home"]`).waitFor()
-        await page.getByRole('button', { name: 'Fit', exact: true }).click()
+        await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
         await capture('01-editor-initial', true)
-        await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        await page.getByRole('button', { name: 'Publicera', exact: true }).click()
         await page.waitForFunction(() =>
           globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
         )
@@ -253,6 +255,18 @@ for (const [engine, engineName, widths] of [
               .locator('.cms-mobile-tools')
               .getByRole('button', { name: 'Egenskaper', exact: true })
               .click()
+          await page.locator('#cms-styles .gjs-sm-sector-title').first().waitFor()
+          const weights = await page
+            .locator('#cms-styles')
+            .evaluate((root) =>
+              [...root.querySelectorAll('input,select')]
+                .filter((field) => field.getClientRects().length && !field.disabled)
+                .map((field) => Number.parseFloat(globalThis.getComputedStyle(field).fontWeight)),
+            )
+          check(
+            weights.length > 0 && weights.every((weight) => weight >= 400),
+            `${prefix}: property values have readable type weight`,
+          )
           await capture('05-inspector-design', true)
           const sector = page.locator('#cms-styles .gjs-sm-sector-title').first()
           await sector.focus()
@@ -272,12 +286,33 @@ for (const [engine, engineName, widths] of [
           await page.getByRole('tab', { name: 'Lager', exact: true }).click()
           await capture('06-inspector-layers', true)
           await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+          const blockBoxes = await page.locator('#cms-blocks .gjs-block').evaluateAll((blocks) =>
+            blocks.map((block) => ({
+              ...block.getBoundingClientRect().toJSON(),
+              role: block.getAttribute('role'),
+              tabIndex: block.tabIndex,
+              name: block.getAttribute('aria-label'),
+            })),
+          )
+          check(
+            blockBoxes.length >= 2 && Math.abs(blockBoxes[0].y - blockBoxes[1].y) < 2,
+            `${prefix}: blocks use both catalogue columns`,
+          )
+          check(
+            blockBoxes.every(
+              (block) =>
+                block.role === 'button' &&
+                block.tabIndex === 0 &&
+                block.name?.startsWith('Lägg till '),
+            ),
+            `${prefix}: catalogue entries are named keyboard buttons`,
+          )
           await capture('07-inspector-blocks', true)
           await page.getByRole('tab', { name: 'Design', exact: true }).click()
         })
         await inspect('08-page-dialog', async () => {
           await library()
-          await page.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+          await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
           const dialog = page.getByRole('dialog', {
             name: 'Ny sida',
             exact: true,
@@ -313,7 +348,7 @@ for (const [engine, engineName, widths] of [
           await capture('10-backup', true)
         })
         await inspect('11-business', async () => {
-          await open('Business / SEO')
+          await open('Företag & SEO')
           await capture('11-business', true)
           await scrollSeries('11-business', '.cms-workspace-content')
           await page.keyboard.press('Escape')
@@ -360,7 +395,7 @@ for (const [engine, engineName, widths] of [
           await capture('16-resources-trash')
         })
         await inspect('17-theme', async () => {
-          await open('◐ Webbplatsens stil')
+          await open('Webbplatsens stil')
           await capture('17-theme-light', true)
           await scrollSeries('17-theme-light', '.cms-workspace-content')
           const mobilePreview = page.getByRole('button', {
@@ -420,7 +455,7 @@ for (const [engine, engineName, widths] of [
           await scrollSeries('23-email-design', '.cms-workspace-content')
         })
         await inspect('24-history', async () => {
-          await open('History')
+          await open('Historik')
           await page.locator('.cms-history-row').first().waitFor()
           await capture('24-history', true)
           await page
@@ -429,11 +464,24 @@ for (const [engine, engineName, widths] of [
             .getByRole('button', { name: 'Granska', exact: true })
             .click()
           await page.getByRole('dialog', { name: /Granska version/ }).waitFor()
+          const historyPreview = page.frameLocator('.cms-history-preview iframe')
+          await historyPreview
+            .locator(`[data-knc-surface="${compact ? 'mobile' : 'desktop'}-home"]`)
+            .waitFor()
+          await historyPreview.locator('body').evaluate(async () => {
+            await globalThis.document.fonts.ready
+          })
+          check(
+            (await page
+              .locator('.cms-history-preview iframe')
+              .evaluate((node) => node.style.width)) === (compact ? '390px' : '1440px'),
+            `${prefix}: historical preview follows the selected canvas device`,
+          )
           await capture('25-history-review', true)
         })
         await inspect('26-history-error', async () => {
           failHistory = true
-          await open('History')
+          await open('Historik')
           await page.getByRole('alert').waitFor()
           await capture('26-history-error', true)
           failHistory = false
