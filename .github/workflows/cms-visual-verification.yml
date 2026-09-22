@@ -33,7 +33,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: /tmp/cms-candidate/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -74,8 +73,12 @@ jobs:
       - name: Compress logs and record exact evidence
         if: always()
         run: |
+          shopt -s nullglob
           git rev-parse HEAD > /tmp/cms-workspace/verification-commit.txt
-          for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          for image in /tmp/cms-native-*.png /tmp/cms-responsive-*.png; do cp "$image" /tmp/cms-workspace/; done
+          if command -v furl > /dev/null; then
+            for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          fi
           python - <<'PY'
           import json,pathlib
           root=pathlib.Path('/tmp/cms-workspace')
@@ -91,8 +94,7 @@ jobs:
           retention-days: 7
       - name: Preserve candidate source bundle
         if: always()
-        run: |
-          git -C /tmp/cms-candidate bundle create /tmp/cms-candidate.bundle HEAD
+        run: git -C /tmp/cms-candidate bundle create /tmp/cms-candidate.bundle HEAD
       - uses: actions/upload-artifact@v4
         if: always()
         with:
