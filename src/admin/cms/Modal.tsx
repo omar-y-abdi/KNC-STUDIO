@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
 import { CmsIcon } from './Icon'
+import { restoreCmsFocus } from './focus'
 
 /** Native top-layer modal, as in o-y-a: canvas stacking must never cover a panel. */
 export function CmsModal({
@@ -24,7 +25,7 @@ export function CmsModal({
     element.showModal()
     return () => {
       element.close()
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+      restoreCmsFocus(opener)
     }
   }, [])
   return (

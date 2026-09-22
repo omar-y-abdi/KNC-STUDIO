@@ -3,6 +3,8 @@ import { useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { SITE_THEME_DEFAULTS } from '../../../shared/site-theme'
 import { LivePreview } from './LivePreview'
+import { compactWorkspace } from './useResponsivePanels'
+import { CmsIcon } from './Icon'
 
 const colors = {
   background: 'Bakgrund',
@@ -36,8 +38,11 @@ export function ThemePanel({
   mode: CmsMode
   onMode: (mode: CmsMode) => void
 }): JSX.Element {
-  const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
+  const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
+    compactWorkspace() ? 'Mobile' : 'Desktop',
+  )
   const [path, setPath] = useState('/')
+  const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit')
   const page =
     document.presentation.pages.find((page) => page.path === path) ??
     (document.presentation.pages[0] as CmsPage)
@@ -51,8 +56,32 @@ export function ThemePanel({
     onChange(next)
   }
   return (
-    <div class="cms-theme-layout">
-      <section class="cms-theme-controls" aria-label="Webbplatsens stilinställningar">
+    <div class="cms-theme-layout" data-mobile-view={mobileView}>
+      <div class="cms-theme-mobile-toolbar" role="group" aria-label="Stilverktyg">
+        <div class="cms-segment">
+          <button
+            type="button"
+            aria-pressed={mobileView === 'edit'}
+            aria-controls="cms-theme-controls"
+            onClick={() => setMobileView('edit')}
+          >
+            <CmsIcon name="sliders" /> Redigera stil
+          </button>
+          <button
+            type="button"
+            aria-pressed={mobileView === 'preview'}
+            aria-controls="cms-theme-preview"
+            onClick={() => setMobileView('preview')}
+          >
+            <CmsIcon name="eye" /> Förhandsvisa stil
+          </button>
+        </div>
+      </div>
+      <section
+        id="cms-theme-controls"
+        class="cms-theme-controls"
+        aria-label="Webbplatsens stilinställningar"
+      >
         <div class="cms-theme-modes" role="group" aria-label="Färgläge att redigera">
           {(['light', 'dark'] as const).map((value) => (
             <button type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>
@@ -114,7 +143,7 @@ export function ThemePanel({
           Återställ {mode === 'light' ? 'ljust' : 'mörkt'} tema
         </button>
       </section>
-      <section class="cms-theme-preview" aria-label="Stilförhandsvisning">
+      <section id="cms-theme-preview" class="cms-theme-preview" aria-label="Stilförhandsvisning">
         <div class="cms-theme-preview-toolbar">
           <label>
             Sida

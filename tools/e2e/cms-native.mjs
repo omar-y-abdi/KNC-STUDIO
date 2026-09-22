@@ -335,6 +335,14 @@ async function run(engine, name) {
       harness.mountCmsStudioHarness()
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    // A phone now opens the mobile editing viewport. The desktop copy is still
+    // persisted, but is intentionally hidden until the owner selects Dator.
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .locator('[data-knc-surface="mobile-home"]')
+      .waitFor()
+    await page.getByRole('button', { name: 'Dator', exact: true }).click()
     await page
       .frameLocator('.gjs-frame')
       .first()

@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
 import { CmsIcon } from './Icon'
+import { restoreCmsFocus } from './focus'
 
 const views: Record<string, { title: string; description: string }> = {
   theme: {
@@ -43,7 +44,7 @@ export function CmsWorkspaceView({
     const opener = document.activeElement
     heading.current?.focus()
     return () => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+      restoreCmsFocus(opener)
     }
   }, [kind])
   return (

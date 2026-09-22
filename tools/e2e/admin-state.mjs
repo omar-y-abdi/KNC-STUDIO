@@ -126,6 +126,12 @@ async function verifyCmsStudioShell(page) {
   await pages.click()
   assert(await library.isVisible(), 'Sidor did not open the mobile library drawer')
   assert(!(await inspector.isVisible()), 'Opening Sidor also opened Egenskaper')
+  assert((await library.getAttribute('aria-modal')) === 'true', 'Library is not a modal drawer')
+  await library.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  assert(
+    await pages.evaluate((node) => node === globalThis.document.activeElement),
+    'Library lost opener focus',
+  )
   await properties.click()
   assert(!(await library.isVisible()), 'Opening Egenskaper left Sidor open')
   assert(await inspector.isVisible(), 'Egenskaper did not open the mobile inspector drawer')
@@ -137,9 +143,16 @@ async function verifyCmsStudioShell(page) {
     assert((await tab.getAttribute('aria-selected')) === 'true', `${name} is not touch-usable`)
   }
 
+  await inspector.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  assert(!(await inspector.isVisible()), 'Close control did not dismiss the inspector')
+  const publication = page
+    .locator('.cms-topbar')
+    .getByRole('button', { name: 'Save / Publicera', exact: true })
+  assert(await publication.isVisible(), 'Publication is missing from the persistent header')
+
   const commandbar = page.locator('.cms-bottom')
   await commandbar.waitFor({ state: 'visible' })
-  for (const name of ['Ångra', 'Gör om', 'Save / Publicera', 'Revert', 'History', 'Lås vy']) {
+  for (const name of ['Ångra', 'Gör om', 'Revert', 'History', 'Lås vy']) {
     const button = commandbar.getByRole('button', { name, exact: true })
     assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
     await button.scrollIntoViewIfNeeded()
@@ -150,9 +163,6 @@ async function verifyCmsStudioShell(page) {
     box !== null && box.y >= 0 && box.y + box.height <= 844,
     `Mobile command bar escaped the viewport: ${JSON.stringify(box)}`,
   )
-
-  await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
-  assert(!(await inspector.isVisible()), 'Backdrop did not close the mobile inspector')
 
   await page.setViewportSize({ width: 1280, height: 900 })
   const geometry = await page.evaluate(() => {

@@ -1,6 +1,6 @@
 import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CmsAsset, CmsDocument } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { replaceDocumentResource, resourceUsage } from '../../../shared/cms-resources'
@@ -8,6 +8,7 @@ import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi, type AssetUsage } from './api'
 import { CmsIcon } from './Icon'
+import { compactWorkspace } from './useResponsivePanels'
 
 type State = 'active' | 'archived' | 'trash'
 type Purpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
@@ -69,6 +70,8 @@ export function CmsResources(props: Props): JSX.Element {
   const [busy, setBusy] = useState(false)
   const upload = useRef<HTMLInputElement>(null)
   const replace = useRef<HTMLInputElement>(null)
+  const detailHeading = useRef<HTMLHeadingElement>(null)
+  const selectionOpener = useRef<HTMLButtonElement>(null)
   const asset = props.assets.find((item) => item.id === selectedId) ?? null
   const visible = useMemo(
     () =>
@@ -100,6 +103,12 @@ export function CmsResources(props: Props): JSX.Element {
       active = false
     }
   }, [asset?.id, asset?.version])
+
+  useLayoutEffect(() => {
+    if (!asset || !compactWorkspace()) return
+    detailHeading.current?.focus({ preventScroll: true })
+    detailHeading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [asset?.id])
 
   const updateAsset = (next: CmsAsset): void =>
     props.onAssets((current) => current.map((item) => (item.id === next.id ? next : item)))
@@ -307,7 +316,16 @@ export function CmsResources(props: Props): JSX.Element {
                     }}
                   />
                 </label>
-                <button type="button" onClick={() => setSelectedId(item.id)}>
+                <button
+                  type="button"
+                  data-asset-id={item.id}
+                  aria-pressed={item.id === selectedId}
+                  aria-label={`Visa ${resourceLabel(item)}`}
+                  onClick={(event) => {
+                    selectionOpener.current = event.currentTarget
+                    setSelectedId(item.id)
+                  }}
+                >
                   {item.mime.startsWith('image/') ? (
                     <img src={mediaUrl(item, storageOrigin)} alt={item.alt} />
                   ) : (
@@ -325,7 +343,19 @@ export function CmsResources(props: Props): JSX.Element {
         </div>
         {asset ? (
           <aside class="cms-resource-detail">
-            <h2>{resourceLabel(asset)}</h2>
+            <button
+              type="button"
+              class="cms-resource-back"
+              onClick={() => {
+                selectionOpener.current?.focus({ preventScroll: true })
+                selectionOpener.current?.scrollIntoView({ block: 'center', behavior: 'instant' })
+              }}
+            >
+              <CmsIcon name="arrowLeft" /> Tillbaka till filer
+            </button>
+            <h2 ref={detailHeading} tabIndex={-1}>
+              {resourceLabel(asset)}
+            </h2>
             <label>
               Namn
               <input

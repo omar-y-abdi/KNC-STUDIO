@@ -11,6 +11,7 @@ const paths = {
   history: 'M3 11a9 9 0 1 1 2.7 7M3 4v7h7M12 7v5l3 2',
   backup: 'M4 4h14l3 3v14H3V4ZM7 4v6h10V4M7 21v-7h10v7',
   plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
   close: 'm6 6 12 12M6 18 18 6',
   external: 'M14 3h7v7M21 3 10 14M10 3H3v18h18v-7',
   desktop: 'M3 4h18v13H3ZM8 21h8M12 17v4',

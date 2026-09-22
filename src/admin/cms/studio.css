@@ -1261,6 +1261,7 @@
   border: 0;
   background: transparent;
 }
+.cms-resource-back,
 .cms-email-mobile-toolbar,
 .cms-theme-mobile-toolbar {
   display: none;
@@ -1773,7 +1774,7 @@
     padding: 5px 6px max(5px, env(safe-area-inset-bottom));
     margin: 0;
     display: grid;
-    grid-template-columns: 1fr 1.3fr repeat(4, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 0;
     flex: 0 0 auto;
     border-radius: 0;
@@ -1781,21 +1782,30 @@
     border: 0;
   }
   .cms-mobile-tools {
-    display: contents;
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-bottom: 1px solid #56604d;
+    padding-bottom: 4px;
+  }
+  .cms-bottom .cms-mobile-tools button {
+    flex-direction: row;
+    min-height: 40px;
+    font-size: 12px;
   }
   .cms-bottom button {
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-width: 0;
-    min-height: 56px;
+    min-height: 48px;
     padding: 6px 2px;
     font-size: 10px;
     line-height: 1.2;
     letter-spacing: -0.01em;
   }
   .cms-bottom .cms-revert {
-    display: none;
+    display: flex;
   }
   .knc-cms-studio .cms-mobile-revert {
     display: inline-flex;
@@ -1860,6 +1870,7 @@
   .cms-domain-panel textarea,
   .cms-domain-panel select,
   .cms-page-meta input,
+  .cms-page-meta textarea,
   .cms-inspector-section input,
   .cms-inspector-section textarea,
   .cms-resource-toolbar input,
@@ -1906,6 +1917,14 @@
   .cms-resource-detail {
     position: static;
   }
+  .cms-resource-back {
+    display: inline-flex;
+    width: fit-content;
+    margin-bottom: 12px;
+  }
+  .cms-resource-detail h2 {
+    scroll-margin-block: 16px;
+  }
   .cms-resource-empty {
     padding: 28px 22px;
   }
@@ -1923,6 +1942,7 @@
   .cms-email-workspace > aside {
     display: none;
   }
+  .cms-theme-mobile-toolbar,
   .cms-email-mobile-toolbar {
     display: grid;
     gap: 14px;
@@ -1944,10 +1964,12 @@
     min-height: 44px;
     font-size: 16px;
   }
+  .cms-theme-mobile-toolbar .cms-segment,
   .cms-email-mobile-toolbar .cms-segment {
     width: 100%;
     background: var(--panel);
   }
+  .cms-theme-mobile-toolbar .cms-segment button,
   .cms-email-mobile-toolbar .cms-segment button {
     flex: 1;
     min-height: 40px;
@@ -1965,6 +1987,10 @@
   .cms-theme-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
+  }
+  .cms-theme-layout[data-mobile-view='edit'] .cms-theme-preview,
+  .cms-theme-layout[data-mobile-view='preview'] .cms-theme-controls {
+    display: none;
   }
   .cms-theme-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2062,6 +2088,10 @@
   }
   .cms-business-panel {
     padding: 16px;
+  }
+  .cms-theme-layout[data-mobile-view='edit'] .cms-theme-preview,
+  .cms-theme-layout[data-mobile-view='preview'] .cms-theme-controls {
+    display: none;
   }
   .cms-theme-controls {
     grid-template-columns: minmax(0, 1fr);

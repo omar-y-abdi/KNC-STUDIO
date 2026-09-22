@@ -152,6 +152,7 @@ jobs:
           status=0
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-projection.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 CMS_EVIDENCE_DIR=/tmp/cms-workspace node tools/e2e/cms-workspace.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-responsive.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-scenes.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-public-regression.mjs || status=1
@@ -165,6 +166,7 @@ jobs:
           name: cms-browser-${{ github.run_attempt }}
           path: |
             /tmp/cms-native-*.png
+            /tmp/cms-workspace/
             /tmp/blade-cms-shell.log
           retention-days: 7
 
