@@ -16,6 +16,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
+      - name: Strengthen the incumbent probes against stale DOM and thin input text
+        run: |
+          python - <<'PYPROBE'
+          from pathlib import Path
+          p=Path('tools/e2e/cms-workspace-edge.mjs')
+          s=p.read_text().replace('  const page = await context.newPage()', '  const page = await context.newPage()\n  page.on(\'pageerror\', error => failures.push(`${name}: ${error.message}`))').replace('return { color, background: bg, ratio:', 'return { color, weight: getComputedStyle(node).fontWeight, background: bg, ratio:').replace("      await shot('inspector-contrast')", "      check(Number(contrast.weight) >= 400, `${name}: property values use a readable body weight`, contrast)\n      await shot('inspector-contrast')")
+          p.write_text(s)
+          PYPROBE
       - name: Exercise the incumbent before the fixes
         run: |
           mkdir -p /tmp/cms-edge
@@ -25,6 +33,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cms-workspace-edge-red
+          name: cms-workspace-edge-red-2
           path: /tmp/cms-edge
           retention-days: 7
