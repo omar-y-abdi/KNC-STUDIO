@@ -8,7 +8,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: write
     outputs:
@@ -17,36 +17,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 644137582f600f21d6e95782769b3f1eafe7cec6
+          ref: c224999ea3d78c7aefde7e0da594146560b3b3a8
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Apply the reviewed delta with a local Git tree identity gate
+      - name: Preserve the drawer until creation succeeds
         id: source
         run: |
           set -euo pipefail
           mkdir -p /tmp/cms-final-source
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('src/admin/cms/Studio.tsx');s=p.read_text();assert s.count('inert={mobileDialog}')==1;s=s.replace('inert={mobileDialog}', 'inert={drawerOpen}').replace('class="cms-add-page"\n', 'class="cms-add-page"\n              aria-label="Skapa ny sida"\n');p.write_text(s)
-          p=Path('src/admin/cms/Resources.tsx');s=p.read_text();old='<button type="button" aria-pressed={state === value} onClick={() => setState(value)}>';assert s.count(old)==1;s=s.replace(old,'<button\n              type="button"\n              aria-pressed={state === value}\n              onClick={() => {\n                if (value === state) return\n                setState(value)\n                setSelectedId(null)\n                setSelectedIds(new Set())\n                setUsage(null)\n              }}\n            >');p.write_text(s)
-          p=Path('tools/e2e/cms-owner.mjs');s=p.read_text();s=s.replace("await page.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()");s=s.replace("await library.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await library.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()",1);s=s.replace("await library.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await library.getByRole('navigation', { name: 'Sidor', exact: true }).getByRole('button', { name: 'Ny sida', exact: true }).click()");p.write_text(s)
-          p=Path('tools/e2e/cms-workspace-views.mjs');s=p.read_text().replace("await page.getByRole('button', { name: 'Ny sida', exact: true }).click()", "await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()");p.write_text(s)
-          p=Path('src/admin/cms/DESIGN.md');s=p.read_text();s=s.replace('Forms stack and the dark command dock uses six touch-sized cells; secondary draft actions live in Utkast & backup.', 'Forms stack. The dark command dock separates two panel selectors from five editing actions; short landscape screens use one compact row. Backup and import remain in Utkast & backup.');s=s.replace('Resources, history, business, email and website style are full workspace destinations.', 'Resources, history, business, email and website style are full workspace destinations. The page library uses one scroll region with its heading anchored; the block picker uses a two-column grid with named, keyboard-activatable tiles.');s=s.replace('Native preview loading, timeout and retry are explicit.', 'Native preview loading, timeout and retry are explicit. Interactive readiness uses a bounded timer so an offscreen or initially hidden WebKit frame can acknowledge readiness; source capture retains animation-frame settling.');p.write_text(s)
-          p=Path('src/admin/cms/UX-CONTRACT.md');s=p.read_text();s=s.replace('Mobile editing exposes the full page with the original mobile scroll container; only locked runtime preview simulates the folding hero.', 'Mobile editing retains the original scroll container and shared folding geometry; its temporary motion stylesheet never enters the saved component model. Locked preview runs the actual read-only public runtime.');s=s.replace('- History review is read-only. Restore copies a revision into the draft; Save creates a new revision.', '- History review is read-only and follows the selected device. Restore copies a revision into the draft; Publicera creates a new revision.');s=s.replace('- Typing changes a draft. Save validates and publishes;', '- Typing changes a draft. Publicera validates and publishes;');s += '\n## Compact workspace and readiness\n\n- Editor chrome becomes compact at 900px, independently of the public site’s 768px breakpoint. The operator can still select either canvas device.\n- Only one compact drawer is active. It has dialog semantics, a close control, focus containment and an inert background. Escape returns focus to the actual opener or its visible compact equivalent.\n- Inspector tabs support arrow keys and Home/End. Collapsible style sectors and block tiles support Enter/Space. Generated field labels belong to editor chrome and never mutate published content.\n- Preview readiness must come from the current same-origin frame and match the current request. Stale replies cannot acknowledge a newer draft or replace its status. Loading, timeout and retry preserve the draft and remain reachable.\n- Browser interaction tests wait for the preview host to become non-busy and non-inert; visible text inside an iframe alone is not evidence that the owner can interact with it.\n';p.write_text(s)
+          p=Path('src/admin/cms/Studio.tsx')
+          s=p.read_text()
+          old="setNewPath('/hemsida')\n    setDialog(null)"
+          assert s.count(old)==1
+          s=s.replace(old,"setNewPath('/hemsida')\n    setDialog(null)\n    setMobilePanel(null)")
+          old="setError(null)\n                setMobilePanel(null)\n                setDialog('new-page')"
+          assert s.count(old)==1
+          s=s.replace(old,"setError(null)\n                setDialog('new-page')")
+          p.write_text(s)
           PY
           git add -u
-          test "$(git write-tree)" = 232ad56ebd2803c09d6ddcc7d2772f3a733b3181
-          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-final-source/install.log 2>&1
-          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-final-source/format.log 2>&1
-          git add -u
-          git -c user.name='CMS refinement' -c user.email='cms-refinement@users.noreply.github.com' commit -m 'fix: retain resource selection reset and finish accessible CMS error handling'
+          test "$(git write-tree)" = 37c440852ff47a4868cb033c6f8688cafba5e709
+          git -c user.name='CMS refinement' -c user.email='cms-refinement@users.noreply.github.com' commit -m 'fix: retain the page drawer beneath a cancellable creation dialog'
           git rev-parse HEAD > /tmp/cms-final-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/cms-final-source/source-tree.txt
-          git diff --binary 644137582f600f21d6e95782769b3f1eafe7cec6 HEAD > /tmp/cms-final-source/final.patch
+          git diff --binary c224999ea3d78c7aefde7e0da594146560b3b3a8 HEAD > /tmp/cms-final-source/final.patch
           git bundle create /tmp/cms-final-source/candidate.bundle HEAD
-          test "$(git ls-remote origin refs/heads/verify/cms-consolidated-20260922 | cut -f1)" = 644137582f600f21d6e95782769b3f1eafe7cec6
+          test "$(git ls-remote origin refs/heads/verify/cms-consolidated-20260922 | cut -f1)" = c224999ea3d78c7aefde7e0da594146560b3b3a8
           git push origin HEAD:refs/heads/verify/cms-consolidated-20260922
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
