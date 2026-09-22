@@ -1,0 +1,87 @@
+name: CMS release check
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-release-check.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b6591df3eff129783c108c217b5b5a93dc680cca
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare isolated tools
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          mkdir -p /tmp/cms-release
+          test "$(git rev-parse HEAD^{tree})" = 2481a1ddcc29a94ba5d999cbd85e682bc5ebc196
+          git rev-parse HEAD > /tmp/cms-release/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-release/source-tree.txt
+          npm ci > /tmp/cms-release/install.log 2>&1
+          npx playwright install --with-deps "$ENGINE" > /tmp/cms-release/browser.log 2>&1
+          npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-release/axe.log 2>&1
+          bash tools/ci/setup-furl.sh
+      - name: Verify formatting, responsive editing and all workspace surfaces
+        env:
+          CMS_BROWSER: ${{ matrix.engine }}
+          CMS_ENGINE: ${{ matrix.engine }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/cms-release
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-release/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+          set +e
+          npm run format:check > /tmp/cms-release/format.log 2>&1
+          echo "$?" > /tmp/cms-release/format.exit-code
+          for suite in cms-responsive cms-workspace cms-workspace-edge cms-workspace-views; do
+            timeout 12m node "tools/e2e/$suite.mjs" > "/tmp/cms-release/$suite.log" 2>&1
+            echo "$?" > "/tmp/cms-release/$suite.exit-code"
+          done
+          git diff --exit-code > /tmp/cms-release/tracked-source-diff.log 2>&1
+          echo "$?" > /tmp/cms-release/tracked-source-diff.exit-code
+      - name: Compact results
+        if: always()
+        run: |
+          mkdir -p /tmp/cms-release
+          if command -v furl > /dev/null; then for log in /tmp/cms-release/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done; fi
+          python3 - <<'PY'
+          import json,pathlib
+          r=pathlib.Path('/tmp/cms-release')
+          result={p.stem:int(p.read_text().strip()) for p in r.glob('*.exit-code')}
+          (r/'check-summary.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-release-${{ matrix.engine }}
+          path: /tmp/cms-release
+          retention-days: 14
+      - name: Enforce all checks
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('/tmp/cms-release/check-summary.json')
+          result=json.loads(p.read_text()) if p.exists() else {}
+          required={'format','cms-responsive','cms-workspace','cms-workspace-edge','cms-workspace-views','tracked-source-diff'}
+          assert required.issubset(result),result
+          assert all(v==0 for v in result.values()),result
+          PY
