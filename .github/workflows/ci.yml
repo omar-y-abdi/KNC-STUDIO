@@ -12,18 +12,56 @@ concurrency:
 permissions:
   contents: read
 
-# Run scripts are unchanged; only successful verbose output is compacted.
+# Compact successful verbose output; keep complete diagnostics on failure.
 defaults:
   run:
     shell: python3 tools/ci/furl_ci.py {0}
 
 jobs:
+  format:
+    name: Auto-format and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Furl log reduction
+        shell: bash
+        run: bash tools/ci/setup-furl.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Auto-format supported files
+        run: bash tools/ci/format.sh
+      - run: npm run lint
+      - name: Verify formatting and error handling
+        run: node --test tools/ci/test-format.mjs
+      - name: Share formatted changes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          # Keep the name stable for re-runs of failed downstream jobs.
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/format.patch
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
   frontend:
+    needs: format
     name: Frontend and browser
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download formatted changes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-format
+      - name: Apply formatting from first job
+        shell: bash
+        run: git apply --allow-empty "$RUNNER_TEMP/ci-format/format.patch"
       - name: Set up Furl log reduction
         shell: bash
         run: bash tools/ci/setup-furl.sh
@@ -38,15 +76,6 @@ jobs:
       - name: Check CMS backend release stamp
         run: node tools/release/cms-release.mjs check
       - run: npm audit --omit=dev --audit-level=high
-      - name: Check formatting and show required changes
-        run: |
-          if ! npm run format:check; then
-            while IFS= read -r file; do
-              npx prettier "$file" | diff -u "$file" - || true
-            done < <(npx prettier --list-different .)
-            exit 1
-          fi
-      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -86,11 +115,20 @@ jobs:
           retention-days: 7
 
   cms-shell:
+    needs: format
     name: CMS shell browsers
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download formatted changes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-format
+      - name: Apply formatting from first job
+        shell: bash
+        run: git apply --allow-empty "$RUNNER_TEMP/ci-format/format.patch"
       - name: Set up Furl log reduction
         shell: bash
         run: bash tools/ci/setup-furl.sh
@@ -130,11 +168,20 @@ jobs:
           retention-days: 7
 
   edge-functions:
+    needs: format
     name: Edge Functions
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download formatted changes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-format
+      - name: Apply formatting from first job
+        shell: bash
+        run: git apply --allow-empty "$RUNNER_TEMP/ci-format/format.patch"
       - name: Set up Furl log reduction
         shell: bash
         run: bash tools/ci/setup-furl.sh
@@ -153,11 +200,20 @@ jobs:
           done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
 
   database:
+    needs: format
     name: Database and integration
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download formatted changes
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ci-format-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-format
+      - name: Apply formatting from first job
+        shell: bash
+        run: git apply --allow-empty "$RUNNER_TEMP/ci-format/format.patch"
       - name: Set up Furl log reduction
         shell: bash
         run: bash tools/ci/setup-furl.sh
