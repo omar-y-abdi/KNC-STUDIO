@@ -7,6 +7,7 @@ import { replaceDocumentResource, resourceUsage } from '../../../shared/cms-reso
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi, type AssetUsage } from './api'
+import { CmsIcon } from './Icon'
 
 type State = 'active' | 'archived' | 'trash'
 type Purpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
@@ -220,7 +221,7 @@ export function CmsResources(props: Props): JSX.Element {
           </select>
         )}
         <button type="button" disabled={busy} onClick={() => upload.current?.click()}>
-          + Ladda upp
+          <CmsIcon name="plus" /> + Ladda upp
         </button>
         <input
           ref={upload}
@@ -261,6 +262,7 @@ export function CmsResources(props: Props): JSX.Element {
         <div class="cms-resource-grid">
           {visible.length === 0 && (
             <div class="cms-resource-empty">
+              <CmsIcon name="image" />
               <strong>
                 {query
                   ? 'Inga träffar'
@@ -277,12 +279,20 @@ export function CmsResources(props: Props): JSX.Element {
                     ? 'Ladda upp bilder, logotyper eller typsnitt till webbplatsen.'
                     : 'Du kan gå tillbaka till Aktiva för att se dina filer.'}
               </p>
+              {query && (
+                <button type="button" onClick={() => setQuery('')}>
+                  Rensa sökning
+                </button>
+              )}
             </div>
           )}
           {visible.map((item) => {
             const checked = selectedIds.has(item.id)
             return (
-              <article class={`cms-resource-card${item.id === selectedId ? ' is-selected' : ''}`}>
+              <article
+                key={item.id}
+                class={`cms-resource-card${item.id === selectedId ? ' is-selected' : ''}`}
+              >
                 <label class="cms-resource-check">
                   <input
                     type="checkbox"

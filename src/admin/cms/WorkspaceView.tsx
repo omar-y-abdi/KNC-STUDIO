@@ -1,5 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
+import { CmsIcon } from './Icon'
 
 const views: Record<string, { title: string; description: string }> = {
   theme: {
@@ -62,23 +63,13 @@ export function CmsWorkspaceView({
     >
       <header class="cms-workspace-heading">
         <div>
-          <span class="cms-eyebrow">
-            Din webbplats /{' '}
-            {kind === 'resources'
-              ? 'Resurser'
-              : kind === 'history'
-                ? 'Historik'
-                : kind === 'email'
-                  ? 'Mejl'
-                  : 'Inställningar'}
-          </span>
           <h1 ref={heading} tabIndex={-1}>
             {view.title}
           </h1>
           <p>{view.description}</p>
         </div>
         <button type="button" onClick={onClose}>
-          Tillbaka till sidan <span aria-hidden="true">↗</span>
+          <CmsIcon name="arrowLeft" /> Tillbaka till sidan
         </button>
       </header>
       <div class="cms-workspace-content">{children}</div>
