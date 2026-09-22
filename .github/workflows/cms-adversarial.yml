@@ -1,0 +1,122 @@
+name: CMS adversarial review
+on:
+  push:
+    branches: [verify/cms-adversarial-20260922]
+    paths: [.cms-review/**, .github/workflows/cms-adversarial.yml]
+permissions:
+  contents: read
+concurrency:
+  group: cms-adversarial-review
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+      tree: ${{ steps.source.outputs.tree }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Reconcile exact review source
+        id: source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/review-source
+          base=369692ec9f084e27980a10905812f34074457c68
+          expected=452462c399525840f1c1e27002c912076c824ed9
+          git worktree add --detach /tmp/review-candidate "$base"
+          base64 -d .cms-review/patch.b64 | gzip -d | git -C /tmp/review-candidate apply --index
+          test "$(git -C /tmp/review-candidate write-tree)" = "$expected"
+          cd /tmp/review-candidate
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/review-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/review-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS code review' -c user.email='cms-review@users.noreply.github.com' commit -m 'test: reproduce resource races, unsafe local deletion and owner CSS regression'
+          git rev-parse HEAD > /tmp/review-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/review-source/source-tree.txt
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          git bundle create /tmp/review-source/source.bundle HEAD
+          git push origin HEAD:refs/heads/verify/cms-adversarial-candidate-${{ github.run_number }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-review-source-${{ github.run_number }}
+          path: /tmp/review-source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare remote runtime
+        env:
+          SUITE: ${{ matrix.suite }}
+          EXPECTED_TREE: ${{ needs.prepare.outputs.tree }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-review-evidence
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          git rev-parse HEAD > /tmp/cms-review-evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-review-evidence/source-tree.txt
+          npm ci
+          bash tools/ci/setup-furl.sh
+          if [ "$SUITE" != unit ]; then npx playwright install --with-deps "$SUITE"; fi
+      - name: Reproduce adversarial contracts
+        env:
+          SUITE: ${{ matrix.suite }}
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_EVIDENCE_DIR: /tmp/cms-review-evidence
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          set -euo pipefail
+          if [ "$SUITE" = unit ]; then
+            set +e
+            npx vitest run tests/unit/cmsResourceReplacement.test.ts > /tmp/cms-review-evidence/test.log 2>&1
+            echo "$?" > /tmp/cms-review-evidence/test.exit-code
+          else
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-review-evidence/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+            set +e
+            timeout 10m node tools/e2e/cms-adversarial.mjs > /tmp/cms-review-evidence/test.log 2>&1
+            echo "$?" > /tmp/cms-review-evidence/test.exit-code
+          fi
+      - name: Compact repetitive logs without hiding failures
+        if: always()
+        run: |
+          for log in /tmp/cms-review-evidence/*.log; do
+            test -f "$log" || continue
+            furl compress "$log" --json > "$log.furl.json" || true
+          done
+          cat /tmp/cms-review-evidence/test.exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-review-${{ matrix.suite }}-${{ github.run_number }}
+          path: /tmp/cms-review-evidence
+          retention-days: 7
+      - name: Enforce the test result
+        if: always()
+        run: test "$(cat /tmp/cms-review-evidence/test.exit-code)" = 0
