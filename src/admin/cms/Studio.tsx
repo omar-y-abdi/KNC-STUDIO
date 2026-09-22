@@ -373,6 +373,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setNewName('Ny sida')
     setNewPath('/hemsida')
     setDialog(null)
+    setMobilePanel(null)
   }
   const editMeta = (key: 'name' | 'title' | 'description', value: string): void => {
     const next = structuredClone(page)
@@ -662,7 +663,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               onClick={() => {
                 editor.current?.flush()
                 setError(null)
-                setMobilePanel(null)
                 setDialog('new-page')
               }}
             >
