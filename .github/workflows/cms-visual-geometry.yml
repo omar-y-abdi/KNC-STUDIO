@@ -1,0 +1,87 @@
+name: CMS visual geometry
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-visual-geometry.yml]
+permissions:
+  contents: read
+jobs:
+  geometry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 8cb1a5a15ddf254851db0bac05fbb8b6a4a63582
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare isolated browser runtime
+        run: |
+          mkdir -p /tmp/cms-geometry
+          npm ci > /tmp/cms-geometry/install.log 2>&1
+          npx playwright install --with-deps chromium webkit > /tmp/cms-geometry/browser.log 2>&1
+          bash tools/ci/setup-furl.sh
+      - name: Exercise visible geometry contracts
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-geometry/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
+          cat > tools/e2e/cms-visual-geometry.mjs <<'JS'
+          import { chromium, webkit } from 'playwright'
+          import { writeFile } from 'node:fs/promises'
+          import { nativeBackend } from './cms-native.mjs'
+          const checks = []
+          for (const [name, engine] of Object.entries({ chromium, webkit })) {
+            const browser = await engine.launch()
+            try {
+              const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })
+              await nativeBackend(context)
+              const page = await context.newPage()
+              await page.goto('http://127.0.0.1:4188/tools/e2e/admin-harness.html?view=cms-studio')
+              await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
+              await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+              await page.frameLocator('.gjs-frame').first().getByText('KNC source sv', { exact: true }).first().waitFor()
+              await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+              const fills = await page.locator('#cms-blocks .gjs-block__media svg path').evaluateAll(nodes => nodes.map(node => ({ fill: getComputedStyle(node).fill, stroke: getComputedStyle(node).stroke })))
+              checks.push({ name: `${name}: outlined block icons`, pass: fills.length === 8 && fills.every(style => style.fill === 'none' && style.stroke !== 'none'), actual: fills })
+              await page.screenshot({ path: `/tmp/cms-geometry/${name}-block-icons.png` })
+              for (const width of [1440, 390]) {
+                await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
+                await page.getByRole('button', { name: width === 1440 ? 'Dator' : 'Mobil', exact: true }).click()
+                const toggle = page.getByRole('button', { name: 'Jämför', exact: true })
+                if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click()
+                const frame = page.locator('iframe[title="Jämförelsevy"]')
+                await frame.waitFor()
+                const dimensions = await frame.evaluate(node => ({ width: node.clientWidth, height: node.clientHeight }))
+                const expected = width === 1440 ? { width: 390, height: 844 } : { width: 1440, height: 900 }
+                checks.push({ name: `${name}/${width}: comparison preserves actual device dimensions`, pass: dimensions.width === expected.width && dimensions.height === expected.height, actual: dimensions, expected })
+                await page.screenshot({ path: `/tmp/cms-geometry/${name}-${width}-compare.png` })
+              }
+              await context.close()
+            } finally { await browser.close() }
+          }
+          await writeFile('/tmp/cms-geometry/checks.json', JSON.stringify(checks, null, 2))
+          console.log(JSON.stringify(checks, null, 2))
+          if (checks.some(check => !check.pass)) process.exitCode = 1
+          JS
+          set +e
+          node tools/e2e/cms-visual-geometry.mjs > /tmp/cms-geometry/result.log 2>&1
+          status=$?
+          echo "$status" > /tmp/cms-geometry/exit-code.txt
+          exit "$status"
+      - name: Record source and compress logs
+        if: always()
+        run: |
+          git rev-parse HEAD > /tmp/cms-geometry/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-geometry/source-tree.txt
+          for log in /tmp/cms-geometry/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-visual-geometry-${{ github.run_number }}
+          path: /tmp/cms-geometry
+          retention-days: 14
