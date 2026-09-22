@@ -38,7 +38,10 @@ jobs:
           mkdir -p /tmp/cms-engineering
           git rev-parse HEAD > /tmp/cms-engineering/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/cms-engineering/source-tree.txt
+      - name: Resource replacement contracts
+        run: npx vitest run tests/unit/cmsResourceReplacement.test.ts
       - name: Exercise adversarial contracts
+        if: success() || failure()
         env:
           CMS_ENGINE: ${{ matrix.engine }}
           CMS_EVIDENCE_DIR: /tmp/cms-engineering
@@ -56,6 +59,9 @@ jobs:
           echo "$status" > /tmp/cms-engineering/review.exit-code
           cat /tmp/cms-engineering/review.log
           exit "$status"
+      - name: Preserve exact review inputs
+        if: always()
+        run: git archive --format=tar.gz HEAD > /tmp/cms-engineering/source.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
