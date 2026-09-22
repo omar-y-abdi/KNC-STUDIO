@@ -1,0 +1,121 @@
+name: CMS visual laboratory
+on:
+  push:
+    branches: [verify/cms-visual-20260922]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cms-visual-lab
+  cancel-in-progress: true
+jobs:
+  browser:
+    name: Visual evidence (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [workspace, regressions]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Run browser checks on disposable branch
+        env:
+          SUITE: ${{ matrix.suite }}
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/cms-evidence
+          git rev-parse HEAD > /tmp/cms-evidence/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-evidence/tree.txt
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-evidence/vite.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            curl --fail --silent "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break
+            sleep 1
+          done
+          status=0
+          if [ "$SUITE" = workspace ]; then
+            CMS_OWNER_SCENARIO=dialogs node tools/e2e/cms-owner.mjs > /tmp/cms-evidence/workspaces.log 2>&1 || status=1
+            CMS_OWNER_SCENARIO=email-preview node tools/e2e/cms-owner.mjs > /tmp/cms-evidence/email.log 2>&1 || status=1
+            if [ -f tools/e2e/cms-workspace.mjs ]; then
+              node tools/e2e/cms-workspace.mjs > /tmp/cms-evidence/workspace-contract.log 2>&1 || status=1
+            else
+              cat > tools/e2e/.cms-probe.mjs <<'JS'
+          import { chromium } from 'playwright'
+          import { nativeBackend } from './cms-native.mjs'
+          import assert from 'node:assert/strict'
+          import { writeFile } from 'node:fs/promises'
+          const browser = await chromium.launch()
+          const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
+          await nativeBackend(context)
+          const page = await context.newPage()
+          await page.goto(process.env.BASE_URL + '/tools/e2e/admin-harness.html?view=cms-studio')
+          await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
+          await page.locator('.gjs-frame').first().waitFor({timeout:90000})
+          await page.frameLocator('.gjs-frame').first().getByText('KNC source sv',{exact:true}).first().waitFor({timeout:90000})
+          await page.screenshot({path:'/tmp/cms-native-baseline-mobile.png'})
+          const results = await page.evaluate(() => ({
+            statusVisible: document.querySelector('.cms-status').checkVisibility(),
+            touchTargets: [...document.querySelectorAll('.cms-topbar button,.cms-mobile-tools button,.cms-bottom button')].filter(el=>el.checkVisibility()).map(el=>({name:el.textContent.trim(),height:el.getBoundingClientRect().height})),
+            inspectorClose: !!document.querySelector('#cms-inspector [aria-label="Stäng egenskaper"]')
+          }))
+          await writeFile('/tmp/cms-evidence/baseline-contract.json',JSON.stringify(results,null,2))
+          await browser.close()
+          assert.ok(results.statusVisible, 'Publication status must remain visible on mobile')
+          assert.ok(results.inspectorClose, 'A mobile inspector must have an explicit close control')
+          assert.ok(results.touchTargets.every(x=>x.height>=44), 'Mobile command targets must be at least 44px high')
+          JS
+              node tools/e2e/.cms-probe.mjs > /tmp/cms-evidence/workspace-contract.log 2>&1 || status=1
+            fi
+          else
+            for suite in native responsive scenes; do
+              node tools/e2e/cms-$suite.mjs > /tmp/cms-evidence/$suite.log 2>&1 || status=1
+            done
+          fi
+          exit "$status"
+      - name: Preserve exact source evidence and raw logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-visual-${{ matrix.suite }}-${{ github.run_number }}
+          path: |
+            /tmp/cms-native-*.png
+            /tmp/cms-workspace-*.png
+            /tmp/cms-evidence
+          retention-days: 7
+  checks:
+    name: Code checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check candidate
+        run: |
+          mkdir -p /tmp/cms-checks
+          status=0
+          for command in format:check lint typecheck test build; do
+            npm run "$command" > "/tmp/cms-checks/${command//:/-}.log" 2>&1 || status=1
+          done
+          exit "$status"
+      - name: Preserve check results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cms-checks-${{ github.run_number }}
+          path: /tmp/cms-checks
+          retention-days: 7
