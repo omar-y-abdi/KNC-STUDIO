@@ -1,0 +1,34 @@
+name: CMS preview diagnostic
+on:
+  push:
+    branches: [verify/cms-preview-probe-20260922]
+permissions:
+  contents: read
+jobs:
+  geometry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: bash tools/ci/setup-furl.sh
+      - name: Trace the actual frame lifecycle and interaction
+        run: |
+          mkdir -p /tmp/cms-preview-probe
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-preview-probe/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break; sleep 1; done
+          node tools/e2e/cms-preview-probe.mjs > /tmp/cms-preview-probe/probe.log 2>&1
+      - name: Compact output
+        if: always()
+        run: furl compress /tmp/cms-preview-probe/probe.log --json > /tmp/cms-preview-probe/probe.furl.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-preview-probe
+          path: /tmp/cms-preview-probe
+          retention-days: 7
