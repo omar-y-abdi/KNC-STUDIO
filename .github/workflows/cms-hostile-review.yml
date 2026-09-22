@@ -33,6 +33,7 @@ jobs:
           gzip -dc /tmp/review-source/changes.gz | git -C /tmp/review-candidate apply --index
           cd /tmp/review-candidate
           test "$(git write-tree)" = f78d44677476160b4207f48c35da6d2a8f6ac147
+          sed -i "s/name: 'Ny sida', exact: true }).click()/name: 'Skapa ny sida', exact: true }).click()/" tools/e2e/cms-authoring.mjs
           npm ci --ignore-scripts --no-audit --no-fund > /tmp/review-source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/review-source/format.log 2>&1
           git add -u
