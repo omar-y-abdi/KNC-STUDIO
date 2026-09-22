@@ -30,8 +30,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/cms-source
-          git worktree add --detach /tmp/cms-candidate f5e40ccfa6ed3f38dd17d9a0fa9e5388176600db
-          xz -dc .cms-verification/polish.patch.xz | git -C /tmp/cms-candidate apply --index
+          git worktree add --detach /tmp/cms-candidate 11a9349d76a8b9d37f9bd4092362205b25e86e30
+          xz -dc .cms-verification/polish.patch.xz | git -C /tmp/cms-candidate apply --index --exclude=.github/workflows/cms-workspace.yml
           cd /tmp/cms-candidate
           raw=$(git write-tree)
           test "$raw" = 'c272ec697524644ad1ada05f2467fa50adb3633a'
@@ -42,13 +42,14 @@ jobs:
           git add -u
           git diff --cached --binary "$raw" > /tmp/cms-source/format.patch
           git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: complete CMS feedback, resource actions, readable inspector and persistent mail preview'
-          git push origin HEAD:refs/heads/verify/cms-final-candidate-${{ github.run_number }}
           git rev-parse HEAD > /tmp/cms-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/cms-source/source-tree.txt
           git bundle create /tmp/cms-source/candidate.bundle HEAD
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          git push origin HEAD:refs/heads/verify/cms-final-candidate-${{ github.run_number }}
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: cms-final-source-${{ github.run_number }}
           path: /tmp/cms-source
