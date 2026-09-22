@@ -1,0 +1,70 @@
+name: CMS preview readiness contract
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-preview-contract.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [navigation, theme]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2567711c3f22c386fdb6f1323bb39660d0f49175
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare remote runtime
+        run: |
+          npm ci > /tmp/install.log 2>&1
+          npx playwright install --with-deps chromium webkit > /tmp/browsers.log 2>&1
+          bash tools/ci/setup-furl.sh
+      - name: Apply a bounded scheduling probe and explicit readiness assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/admin/cms/NativeSource.tsx')
+          s=p.read_text()
+          s=s.replace('frame = requestAnimationFrame(settle)', 'frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)')
+          s=s.replace('cancelAnimationFrame(frame)', 'if (interactive) window.clearTimeout(frame)\n      else cancelAnimationFrame(frame)')
+          p.write_text(s)
+          p=Path('tools/e2e/cms-owner.mjs')
+          s=p.read_text().replace("await page.getByRole('button', { name: 'Lås vy', exact: true }).click()", "await page.getByRole('button', { name: 'Lås vy', exact: true }).click()\n          await page.waitForFunction(() => {const host=document.querySelector('.cms-live-preview');return host?.getAttribute('aria-busy')==='false' && !host.querySelector('[inert]') && !host.querySelector('[role=alert]')})")
+          p.write_text(s)
+          PY
+      - name: Exercise unchanged booking, consent and theme expectations
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/preview-contract
+        run: |
+          mkdir -p /tmp/preview-contract
+          git rev-parse HEAD > /tmp/preview-contract/source-commit.txt
+          git diff > /tmp/preview-contract/probe.patch
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/preview-contract/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          set +e
+          if [ "$SCENARIO" = navigation ]; then
+            CMS_OWNER_SCENARIO=live-preview node tools/e2e/cms-owner.mjs > /tmp/preview-contract/test.log 2>&1
+          else
+            CMS_ENGINE=webkit CMS_WIDTH=390 node tools/e2e/cms-workspace-views.mjs > /tmp/preview-contract/test.log 2>&1
+          fi
+          status=$?
+          echo "$status" > /tmp/preview-contract/test.exit-code
+          for image in /tmp/cms-native-*-live-mobile-preview.png /tmp/cms-native-*-owner-live-preview-failure.png; do test ! -f "$image" || cp "$image" /tmp/preview-contract/; done
+          furl compress /tmp/preview-contract/test.log --json > /tmp/preview-contract/test.furl.json
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-preview-contract-${{ matrix.scenario }}-${{ github.run_number }}
+          path: /tmp/preview-contract
+          retention-days: 7
