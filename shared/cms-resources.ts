@@ -34,9 +34,11 @@ export function resourceUsage(
       for (const mode of ['light', 'dark'] as const) {
         const value = entry.content[lang]
         if (
-          validateMarkup(value.html, value.css[mode], policy).refs.some(
-            (ref) => mediaKey(ref) === key,
-          )
+          validateMarkup(value.html, value.css[mode], policy, {
+            native:
+              ['/', '/about', '/booking', '/my-bookings'].includes(entry.label) &&
+              value.html.includes('data-knc-native="1"'),
+          }).refs.some((ref) => mediaKey(ref) === key)
         )
           places.push(`${entry.label} · ${lang}/${mode}`)
       }

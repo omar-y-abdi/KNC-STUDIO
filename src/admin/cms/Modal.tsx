@@ -1,5 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
+import { CmsIcon } from './Icon'
 
 /** Native top-layer modal, as in o-y-a: canvas stacking must never cover a panel. */
 export function CmsModal({
@@ -31,6 +32,7 @@ export function CmsModal({
       ref={ref}
       class={`cms-dialog${wide ? ' cms-dialog-wide' : ''}`}
       aria-label={title}
+      aria-modal="true"
       onCancel={(event) => {
         event.preventDefault()
         onClose()
@@ -39,7 +41,7 @@ export function CmsModal({
       <header>
         <strong>{title}</strong>
         <button type="button" aria-label="Stäng panel" onClick={onClose}>
-          ×
+          <CmsIcon name="close" />
         </button>
       </header>
       <div class="cms-dialog-body">{children}</div>

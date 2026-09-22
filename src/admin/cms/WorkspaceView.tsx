@@ -1,5 +1,6 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
+import { CmsIcon } from './Icon'
 
 const views: Record<string, { title: string; description: string }> = {
   theme: {
@@ -40,9 +41,27 @@ export function CmsWorkspaceView({
   const view = views[kind] ?? { title: 'Din webbplats', description: '' }
   useLayoutEffect(() => {
     const opener = document.activeElement
-    heading.current?.focus()
+    let mounted = true
+    // Let the drawer teardown and new inert props settle before focusing the destination.
+    queueMicrotask(() => {
+      if (mounted) heading.current?.focus({ preventScroll: true })
+    })
     return () => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus()
+      mounted = false
+      queueMicrotask(() => {
+        if (document.querySelector('.cms-workspace-view, dialog:modal')) return
+        const visible =
+          opener instanceof HTMLElement &&
+          opener.isConnected &&
+          !opener.closest('[inert]') &&
+          opener.getClientRects().length > 0 &&
+          opener.getBoundingClientRect().right > 0 &&
+          opener.getBoundingClientRect().left < window.innerWidth
+        const target = visible
+          ? opener
+          : document.querySelector<HTMLElement>('.cms-mobile-tools [aria-controls="cms-library"]')
+        target?.focus({ preventScroll: true })
+      })
     }
   }, [kind])
   return (
@@ -62,23 +81,13 @@ export function CmsWorkspaceView({
     >
       <header class="cms-workspace-heading">
         <div>
-          <span class="cms-eyebrow">
-            Din webbplats /{' '}
-            {kind === 'resources'
-              ? 'Resurser'
-              : kind === 'history'
-                ? 'Historik'
-                : kind === 'email'
-                  ? 'Mejl'
-                  : 'Inställningar'}
-          </span>
           <h1 ref={heading} tabIndex={-1}>
             {view.title}
           </h1>
           <p>{view.description}</p>
         </div>
         <button type="button" onClick={onClose}>
-          Tillbaka till sidan <span aria-hidden="true">↗</span>
+          <CmsIcon name="arrowLeft" /> Tillbaka till sidan
         </button>
       </header>
       <div class="cms-workspace-content">{children}</div>

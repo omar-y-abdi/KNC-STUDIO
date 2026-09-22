@@ -34,7 +34,9 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     const reviews = frame.getByRole('heading', { name: 'Omdömen', exact: true })
     await reviews.click()
     const id = await reviews.getAttribute('id')
-    await page.getByRole('button', { name: '→', exact: true }).click({ modifiers: ['Shift'] })
+    await page
+      .getByRole('button', { name: 'Flytta åt höger', exact: true })
+      .click({ modifiers: ['Shift'] })
     await publish()
     const css = backend.document.presentation.pages.find((p) => p.path === '/about').content.sv.css
     let desktopRule = false
@@ -60,7 +62,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       'Desktop nudge must not move mobile',
     )
     await reviews.click()
-    await page.getByRole('button', { name: '←', exact: true }).click()
+    await page.getByRole('button', { name: 'Flytta åt vänster', exact: true }).click()
     await page
       .locator('#cms-inspector')
       .getByLabel('Text', { exact: true })

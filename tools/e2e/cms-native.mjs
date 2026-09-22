@@ -338,9 +338,13 @@ async function run(engine, name) {
     await page
       .frameLocator('.gjs-frame')
       .first()
+      .locator('[data-knc-surface="mobile-home"]')
+      .waitFor({ state: 'visible' })
+    await page.getByRole('button', { name: 'Dator', exact: true }).click()
+    await frame
+      .locator('[data-knc-surface="desktop-home"]')
       .getByText('Owner edited the actual KNC site', { exact: true })
-      .first()
-      .waitFor()
+      .waitFor({ state: 'visible' })
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByRole('button', { name: 'Mobil', exact: true }).click()
     await page.waitForFunction(() => {
