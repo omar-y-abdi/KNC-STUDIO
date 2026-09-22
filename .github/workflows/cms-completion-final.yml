@@ -8,7 +8,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
     outputs:
@@ -17,33 +17,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: c224999ea3d78c7aefde7e0da594146560b3b3a8
           fetch-depth: 0
-      - name: Preserve the drawer until creation succeeds
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply the exact visually reviewed delta
         id: source
         run: |
           set -euo pipefail
           mkdir -p /tmp/cms-final-source
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('src/admin/cms/Studio.tsx')
-          s=p.read_text()
-          old="setNewPath('/hemsida')\n    setDialog(null)"
-          assert s.count(old)==1
-          s=s.replace(old,"setNewPath('/hemsida')\n    setDialog(null)\n    setMobilePanel(null)")
-          old="setError(null)\n                setMobilePanel(null)\n                setDialog('new-page')"
-          assert s.count(old)==1
-          s=s.replace(old,"setError(null)\n                setDialog('new-page')")
-          p.write_text(s)
-          PY
+          cp .cms-completion/review-fix.py .cms-completion/final-review-tests.patch /tmp/cms-final-source/
+          git checkout --detach 9fba1c49316a6a12eff3821f55aa32b8fc29cae4
+          git apply --index /tmp/cms-final-source/final-review-tests.patch
+          python3 /tmp/cms-final-source/review-fix.py
           git add -u
-          test "$(git write-tree)" = 37c440852ff47a4868cb033c6f8688cafba5e709
-          git -c user.name='CMS refinement' -c user.email='cms-refinement@users.noreply.github.com' commit -m 'fix: retain the page drawer beneath a cancellable creation dialog'
+          test "$(git write-tree)" = b3348bc1db3a576d4bb2ba5f18f03d51898aef4a
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-final-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-final-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS refinement' -c user.email='cms-refinement@users.noreply.github.com' commit -m 'fix: finish short-screen drawers and readable layer navigation'
           git rev-parse HEAD > /tmp/cms-final-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/cms-final-source/source-tree.txt
-          git diff --binary c224999ea3d78c7aefde7e0da594146560b3b3a8 HEAD > /tmp/cms-final-source/final.patch
+          git diff --binary 9fba1c49316a6a12eff3821f55aa32b8fc29cae4 HEAD > /tmp/cms-final-source/final.patch
           git bundle create /tmp/cms-final-source/candidate.bundle HEAD
-          test "$(git ls-remote origin refs/heads/verify/cms-consolidated-20260922 | cut -f1)" = c224999ea3d78c7aefde7e0da594146560b3b3a8
+          test "$(git ls-remote origin refs/heads/verify/cms-consolidated-20260922 | cut -f1)" = 9fba1c49316a6a12eff3821f55aa32b8fc29cae4
           git push origin HEAD:refs/heads/verify/cms-consolidated-20260922
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
