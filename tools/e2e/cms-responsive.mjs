@@ -24,7 +24,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
     }
     const publish = async () => {
-      await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
       )
@@ -121,7 +121,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         await publicPage.close()
       }
     }
-    await page.getByRole('button', { name: '◐ Webbplatsens stil', exact: true }).click()
+    await page.getByRole('button', { name: 'Webbplatsens stil', exact: true }).click()
     await page.getByLabel('Bakgrund hex', { exact: true }).fill('#f0e4d4')
     await page.getByLabel('Bakgrund hex', { exact: true }).press('Tab')
     await page.getByLabel('Text hex', { exact: true }).fill('#273749')

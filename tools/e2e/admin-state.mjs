@@ -139,7 +139,7 @@ async function verifyCmsStudioShell(page) {
 
   const commandbar = page.locator('.cms-bottom')
   await commandbar.waitFor({ state: 'visible' })
-  for (const name of ['Ångra', 'Gör om', 'Save / Publicera', 'Revert', 'History', 'Lås vy']) {
+  for (const name of ['Ångra', 'Gör om', 'Publicera', 'Revert', 'Historik', 'Lås vy']) {
     const button = commandbar.getByRole('button', { name, exact: true })
     assert((await button.count()) === 1, `Bottom command bar is missing ${name}`)
     await button.scrollIntoViewIfNeeded()

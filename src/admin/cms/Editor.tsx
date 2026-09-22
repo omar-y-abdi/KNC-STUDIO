@@ -17,8 +17,9 @@ import { captureViewState, restoreViewState, type CmsViewState } from './viewSta
 import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
+import { connectEditorAccessibility } from './editorAccessibility'
+import { editorLocale } from './editorLocale'
 import { compactWorkspace } from './useResponsivePanels'
-import { editorAccessibility } from './editorAccessibility'
 import { LivePreview } from './LivePreview'
 import type { CmsScene } from '../../cms/Scene'
 import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
@@ -36,8 +37,8 @@ export interface EditorHandle {
 }
 
 interface Props {
-  canvasInert: boolean
   onClosePanel: () => void
+  inspectorModal: boolean
   scene: CmsScene
   pageSettings: ComponentChildren
   page: CmsPage
@@ -96,6 +97,17 @@ const blocks = [
   ],
   ['divider', 'Avdelare', '<hr style="border:0;border-top:1px solid currentColor;margin:32px 0">'],
 ] as const
+
+const blockGlyphs = {
+  section: 'M3 4h18v16H3ZM3 9h18M7 13h10M7 16h6',
+  container: 'M4 4h16v16H4ZM8 8h8v8H8Z',
+  columns: 'M3 4h7v16H3ZM14 4h7v16h-7Z',
+  heading: 'M5 5v14M19 5v14M5 12h14M3 5h4M17 5h4M3 19h4M17 19h4',
+  text: 'M4 5h16M4 10h16M4 15h16M4 20h10',
+  image: 'M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M16 7h.01',
+  link: 'M3 7h18v10H3ZM8 12h8m-3-3 3 3-3 3',
+  divider: 'M3 12h18M7 6h10M7 18h10',
+} as const
 
 function label(component: Component | null): string {
   if (!component) return 'Sida'
@@ -178,6 +190,7 @@ export function CmsEditor(props: Props): JSX.Element {
       width: '100%',
       fromElement: false,
       telemetry: false,
+      i18n: editorLocale,
       noticeOnUnload: false,
       storageManager: false,
       panels: { defaults: [] },
@@ -251,15 +264,26 @@ export function CmsEditor(props: Props): JSX.Element {
       assetManager: { assets: [], upload: false, custom: true },
     })
     instance.current = editor
-    const stopAccessibility = editorAccessibility(
-      host.current,
-      document.getElementById('cms-inspector'),
-    )
+    const inspector = host.current
+      .closest('.cms-editor-wrap')
+      ?.querySelector<HTMLElement>('#cms-inspector')
+    const releaseAccessibility = inspector
+      ? connectEditorAccessibility(host.current, inspector)
+      : undefined
     editor.on('asset:custom', ({ open }: { open: boolean }) => {
       if (open) setImageTarget(editor.getSelected() ?? null)
     })
     for (const [id, blockLabel, content] of blocks)
-      editor.BlockManager.add(id, { label: blockLabel, content })
+      editor.BlockManager.add(id, {
+        label: blockLabel,
+        content,
+        attributes: {
+          role: 'button',
+          tabindex: '0',
+          'aria-label': `Lägg till ${blockLabel.toLowerCase()}`,
+        },
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${blockGlyphs[id]}" /></svg>`,
+      })
 
     editor.on('component:create', configureComponent)
     editor.on('component:selected', (component: Component) => setSelected(component))
@@ -388,8 +412,8 @@ export function CmsEditor(props: Props): JSX.Element {
       if (timer.current !== null) window.clearTimeout(timer.current)
       props.onReady(null)
       resize.disconnect()
+      releaseAccessibility?.()
       window.removeEventListener('keydown', keydown)
-      stopAccessibility()
       editor.destroy()
       instance.current = null
     }
@@ -578,7 +602,7 @@ export function CmsEditor(props: Props): JSX.Element {
     <>
       <div
         class="cms-editor-canvas"
-        inert={props.canvasInert}
+        inert={props.inspectorModal}
         ref={host}
         style={{ visibility: props.locked ? 'hidden' : 'visible' }}
       />
@@ -595,7 +619,7 @@ export function CmsEditor(props: Props): JSX.Element {
         />
       )}
       {comparison && !props.locked && (
-        <div class="cms-compare-pane">
+        <div class="cms-compare-pane" inert={props.inspectorModal}>
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
           </div>
@@ -614,7 +638,15 @@ export function CmsEditor(props: Props): JSX.Element {
           </div>
         </div>
       )}
-      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
+      <aside
+        id="cms-inspector"
+        class="cms-inspector"
+        aria-label="Egenskaper"
+        role={props.inspectorModal ? 'dialog' : undefined}
+        aria-modal={props.inspectorModal ? true : undefined}
+        tabIndex={-1}
+        inert={props.locked}
+      >
         <div class="cms-inspector-heading">
           <strong>Egenskaper</strong>
           <button
@@ -667,6 +699,7 @@ export function CmsEditor(props: Props): JSX.Element {
         </div>
         <div
           id="cms-design"
+          tabIndex={0}
           role="tabpanel"
           aria-labelledby="cms-tab-design"
           hidden={props.tab !== 'design'}

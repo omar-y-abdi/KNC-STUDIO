@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact'
 import { useLayoutEffect, useRef } from 'preact/hooks'
 import { CmsIcon } from './Icon'
+import { restoreCmsFocus } from './focus'
 
 const views: Record<string, { title: string; description: string }> = {
   theme: {
@@ -50,17 +51,7 @@ export function CmsWorkspaceView({
       mounted = false
       queueMicrotask(() => {
         if (document.querySelector('.cms-workspace-view, dialog:modal')) return
-        const visible =
-          opener instanceof HTMLElement &&
-          opener.isConnected &&
-          !opener.closest('[inert]') &&
-          opener.getClientRects().length > 0 &&
-          opener.getBoundingClientRect().right > 0 &&
-          opener.getBoundingClientRect().left < window.innerWidth
-        const target = visible
-          ? opener
-          : document.querySelector<HTMLElement>('.cms-mobile-tools [aria-controls="cms-library"]')
-        target?.focus({ preventScroll: true })
+        restoreCmsFocus(opener)
       })
     }
   }, [kind])

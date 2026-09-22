@@ -59,7 +59,7 @@ for (const [engine, name] of [
       await action()
     } catch (error) {
       failures.push(`${name}/${label}: ${error.message}`)
-      await shot(`${label}-failure`).catch(() => {})
+      await shot(`${label}-failure`).catch(() => undefined)
     }
   }
   try {
@@ -70,7 +70,7 @@ for (const [engine, name] of [
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const frame = page.frameLocator('.gjs-frame').first()
     await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
-    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
     await run('contrast', async () => {
       await frame.getByText('KNC source sv', { exact: true }).first().click()
       const field = page.locator('.gjs-sm-property__width input').first()
@@ -114,6 +114,38 @@ for (const [engine, name] of [
       )
       await shot('inspector-contrast')
     })
+    await run('block-grid', async () => {
+      await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
+      const tiles = page.locator('#cms-blocks .gjs-block')
+      const geometry = await tiles.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const box = node.getBoundingClientRect()
+          return {
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            role: node.getAttribute('role'),
+            label: node.getAttribute('aria-label'),
+            tab: node.tabIndex,
+          }
+        }),
+      )
+      check(
+        geometry.length === 8 &&
+          Math.abs(geometry[0].y - geometry[1].y) < 1 &&
+          geometry[1].x > geometry[0].x + geometry[0].width &&
+          geometry.every((tile) => tile.width >= 90 && tile.height >= 44),
+        `${name}: block tiles fill a readable two-column grid`,
+        geometry,
+      )
+      check(
+        geometry.every((tile) => tile.role === 'button' && tile.label && tile.tab === 0),
+        `${name}: every block is named and keyboard reachable`,
+      )
+      await shot('block-grid')
+      await page.getByRole('tab', { name: 'Design', exact: true }).click()
+    })
     await run('resources', async () => {
       await page.getByRole('button', { name: 'Resurser', exact: true }).click()
       await page.locator('.cms-resource-card button').first().click()
@@ -149,7 +181,7 @@ for (const [engine, name] of [
             }
           }),
       )
-      await page.getByRole('button', { name: '◐ Webbplatsens stil', exact: true }).click()
+      await page.getByRole('button', { name: 'Webbplatsens stil', exact: true }).click()
       await page.locator('.cms-live-preview iframe').waitFor({ state: 'attached' })
       // A deliberately withheld document must produce feedback, not a blank preview.
       check(
@@ -213,7 +245,7 @@ for (const [engine, name] of [
     })
     await run('preview-retry', async () => {
       await context.route('**/cms-public/source?preview=1', (route) => route.abort())
-      await page.getByRole('button', { name: '◐ Webbplatsens stil', exact: true }).click()
+      await page.getByRole('button', { name: 'Webbplatsens stil', exact: true }).click()
       const preview = page.locator('.cms-live-preview')
       await preview.getByRole('alert').waitFor({ timeout: 26000 })
       await shot('preview-network-error')
@@ -238,7 +270,7 @@ for (const [engine, name] of [
         0,
         'This is a genuinely unpublished first-run fixture',
       )
-      await page.getByRole('button', { name: 'Revert', exact: true }).click()
+      await page.getByRole('button', { name: 'Återställ', exact: true }).click()
       check(
         await page.locator('.cms-canvas-shell').isVisible(),
         `${name}: reverting an unpublished first draft keeps the real website editable`,

@@ -1,33 +1,64 @@
-/** Label third-party editor chrome without touching components or exported page markup. */
-export function editorAccessibility(host: HTMLElement, inspector: HTMLElement | null): () => void {
-  const labelControls = (): void => {
-    for (const frame of host.querySelectorAll<HTMLIFrameElement>('iframe.gjs-frame'))
-      frame.title = 'Sidans redigerbara förhandsvisning'
-    if (!inspector) return
-    for (const property of inspector.querySelectorAll<HTMLElement>('.gjs-sm-property')) {
-      const label = property
-        .querySelector(':scope > [data-sm-label] .gjs-sm-icon')
-        ?.textContent?.trim()
-      if (!label) continue
-      for (const field of property.querySelectorAll<HTMLElement>('input, select')) {
-        // Composite properties contain child properties with their own labels.
-        if (field.closest('.gjs-sm-property') !== property) continue
-        field.setAttribute(
-          'aria-label',
-          `${label}${field.matches('.gjs-input-unit') ? ' · enhet' : ''}`,
-        )
-      }
-      for (const button of property.querySelectorAll<HTMLButtonElement>('[data-add-layer]')) {
-        if (button.closest('.gjs-sm-property') !== property) continue
-        button.setAttribute('aria-label', `Lägg till ${label.toLowerCase()}`)
-      }
-    }
+/**
+ * GrapesJS renders its controls outside Preact. Name those UI controls without
+ * touching the editable iframe body or any component model/publication data.
+ */
+export function connectEditorAccessibility(
+  canvas: HTMLElement,
+  inspector: HTMLElement,
+): () => void {
+  const enhance = (): void => {
+    canvas.querySelectorAll<HTMLIFrameElement>('iframe.gjs-frame').forEach((frame) => {
+      frame.title = 'Redigera webbplatsen'
+    })
+    inspector
+      .querySelectorAll<HTMLElement>('#cms-styles .gjs-sm-property, #cms-traits .gjs-trt-trait')
+      .forEach((property) => {
+        const label = property
+          .querySelector<HTMLElement>('.gjs-sm-label, .gjs-label')
+          ?.textContent?.replace(/\s+/g, ' ')
+          .trim()
+        if (!label) return
+        property.querySelectorAll<HTMLElement>('input, select, textarea').forEach((field) => {
+          // Composite fields carry their own more precise labels.
+          if (field.closest('.gjs-sm-property, .gjs-trt-trait') !== property) return
+          const units = field.matches('.gjs-input-unit')
+          if (!field.getAttribute('aria-label'))
+            field.setAttribute('aria-label', `${label}${units ? ' – enhet' : ''}`)
+        })
+        property.querySelectorAll<HTMLButtonElement>('button[data-add-layer]').forEach((button) => {
+          button.setAttribute('aria-label', `Lägg till lager: ${label}`)
+          button.title = `Lägg till lager: ${label}`
+        })
+      })
+    inspector.querySelectorAll<HTMLElement>('.gjs-sm-sector-title').forEach((title) => {
+      title.tabIndex = 0
+      title.setAttribute('role', 'button')
+      title.setAttribute(
+        'aria-expanded',
+        String(title.parentElement?.classList.contains('gjs-sm-open') ?? false),
+      )
+    })
   }
-  // GrapesJS recreates fields when the selected component or a style stack changes.
-  // Observe structure only: writing our labels must not trigger another observation.
-  const observer = new MutationObserver(labelControls)
-  observer.observe(host, { childList: true, subtree: true })
-  if (inspector) observer.observe(inspector, { childList: true, subtree: true })
-  labelControls()
-  return () => observer.disconnect()
+  const keydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !target.matches('.gjs-sm-sector-title, .gjs-block'))
+      return
+    event.preventDefault()
+    target.click()
+  }
+  const observer = new MutationObserver(enhance)
+  observer.observe(canvas, { childList: true, subtree: true })
+  observer.observe(inspector, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class'],
+  })
+  inspector.addEventListener('keydown', keydown)
+  enhance()
+  return () => {
+    observer.disconnect()
+    inspector.removeEventListener('keydown', keydown)
+  }
 }

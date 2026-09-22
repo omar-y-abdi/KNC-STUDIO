@@ -54,7 +54,7 @@ for (const [engine, name] of [
         })
         await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
         await canvas(page).getByText(expected, { exact: true }).first().waitFor()
-        await page.getByRole('button', { name: 'Fit', exact: true }).click()
+        await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
       }
       const edit = async (page, value) => {
         await canvas(page).getByText('KNC source sv', { exact: true }).first().click()
@@ -64,7 +64,7 @@ for (const [engine, name] of [
         )
       }
       const publish = async (page) => {
-        await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        await page.getByRole('button', { name: 'Publicera', exact: true }).click()
         await page.waitForFunction(() =>
           globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
         )
@@ -77,7 +77,7 @@ for (const [engine, name] of [
         await edit(first, 'Remote owner change')
         await publish(first)
         if (scenario === 'stale-backup') await mount(second, 'Local owner change')
-        else await second.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        else await second.getByRole('button', { name: 'Publicera', exact: true }).click()
 
         if (scenario === 'conflict-reload') {
           await second
@@ -96,7 +96,7 @@ for (const [engine, name] of [
         await keepLocal.waitFor()
         await keepServer.waitFor()
         assert.equal(
-          await second.getByRole('button', { name: 'Save / Publicera', exact: true }).isDisabled(),
+          await second.getByRole('button', { name: 'Publicera', exact: true }).isDisabled(),
           true,
           'Unresolved conflicts must block publication',
         )

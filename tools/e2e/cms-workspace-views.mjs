@@ -223,7 +223,7 @@ for (const [engine, engineName, widths] of [
       }
       const open = async (name) => {
         await reset()
-        if (name !== 'History') await library()
+        if (name !== 'Historik') await library()
         await page.getByRole('button', { name, exact: true }).click()
         await page.locator('.cms-workspace-view h1').waitFor()
       }
@@ -243,9 +243,9 @@ for (const [engine, engineName, widths] of [
         )
         await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
         await frame.locator(`[data-knc-surface="${compact ? 'mobile' : 'desktop'}-home"]`).waitFor()
-        await page.getByRole('button', { name: 'Fit', exact: true }).click()
+        await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
         await capture('01-editor-initial', true)
-        await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+        await page.getByRole('button', { name: 'Publicera', exact: true }).click()
         await page.waitForFunction(() =>
           globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
         )
@@ -275,14 +275,14 @@ for (const [engine, engineName, widths] of [
             (await page
               .locator('.gjs-sm-property__width input')
               .first()
-              .getAttribute('aria-label')) === 'Width',
+              .getAttribute('aria-label')) === 'Bredd',
             `${prefix}: generated dimension field uses its visible property name`,
           )
           check(
             (await page
               .locator('.gjs-sm-property__width select')
               .first()
-              .getAttribute('aria-label')) === 'Width · enhet',
+              .getAttribute('aria-label')) === 'Bredd – enhet',
             `${prefix}: generated unit selector is distinguished from the value`,
           )
           await capture('05-inspector-design', true)
@@ -295,7 +295,7 @@ for (const [engine, engineName, widths] of [
         })
         await inspect('08-page-dialog', async () => {
           await library()
-          await page.getByRole('button', { name: '+ Ny sida', exact: true }).click()
+          await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
           const dialog = page.getByRole('dialog', {
             name: 'Ny sida',
             exact: true,
@@ -328,7 +328,7 @@ for (const [engine, engineName, widths] of [
           await capture('10-backup', true)
         })
         await inspect('11-business', async () => {
-          await open('Business / SEO')
+          await open('Företag & SEO')
           await capture('11-business', true)
           await scrollSeries('11-business', '.cms-workspace-content')
           await page.keyboard.press('Escape')
@@ -375,7 +375,7 @@ for (const [engine, engineName, widths] of [
           await capture('16-resources-trash')
         })
         await inspect('17-theme', async () => {
-          await open('◐ Webbplatsens stil')
+          await open('Webbplatsens stil')
           await capture('17-theme-light', true)
           await scrollSeries('17-theme-light', '.cms-workspace-content')
           const mobilePreview = page.getByRole('button', {
@@ -458,7 +458,7 @@ for (const [engine, engineName, widths] of [
           }
         })
         await inspect('24-history', async () => {
-          await open('History')
+          await open('Historik')
           await page.locator('.cms-history-row').first().waitFor()
           await capture('24-history', true)
           await page
@@ -471,7 +471,7 @@ for (const [engine, engineName, widths] of [
         })
         await inspect('26-history-error', async () => {
           failHistory = true
-          await open('History')
+          await open('Historik')
           await page.getByRole('alert').waitFor()
           await capture('26-history-error', true)
           failHistory = false

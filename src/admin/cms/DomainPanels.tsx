@@ -396,7 +396,7 @@ export function EmailPanel({
             ['section_title', 'Rubrik för bokningsuppgifter'],
             ['note', 'Notis'],
             ['contact_lead', 'Kontakttext'],
-            ['cta_label', 'CTA'],
+            ['cta_label', 'Knapptext'],
           ] as const
         ).map(([key, label]) => (
           <label>
@@ -420,7 +420,7 @@ export function EmailPanel({
               aria-pressed={previewWidth === 'desktop'}
               onClick={() => setPreviewWidth('desktop')}
             >
-              Desktop
+              Dator
             </button>
             <button
               type="button"

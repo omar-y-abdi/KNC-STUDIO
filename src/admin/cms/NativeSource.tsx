@@ -166,12 +166,15 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
           document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
         return
       }
-      frame = requestAnimationFrame(settle)
+      frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
     }
-    frame = requestAnimationFrame(settle)
+    // WebKit may suspend animation frames in a hidden or offscreen preview.
+    // Runtime readiness must not depend on the paint we are waiting to reveal.
+    frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
     return () => {
       stopped = true
-      cancelAnimationFrame(frame)
+      if (interactive) window.clearTimeout(frame)
+      else cancelAnimationFrame(frame)
     }
   }, [context, state, interactive])
   const ready = (snapshot: SitePreviewSnapshot): void => {

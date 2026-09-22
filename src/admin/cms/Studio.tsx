@@ -26,6 +26,7 @@ import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
 import { clearBackup, loadBackup, saveBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
+import { CmsTextarea } from './Textarea'
 import './studio.css'
 import { pageScenes, type CmsScene } from '../../cms/Scene'
 
@@ -64,7 +65,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [newPath, setNewPath] = useState('/hemsida')
   const editor = useRef<EditorHandle | null>(null)
   const shell = useRef<HTMLDivElement>(null)
-  useResponsivePanels(shell, mobilePanel, () => setMobilePanel(null), Boolean(draft))
+  const panelOpener = useRef<HTMLElement>(null)
+  const importInput = useRef<HTMLInputElement>(null)
+  const compact = useResponsivePanels(
+    shell,
+    mobilePanel,
+    () => setMobilePanel(null),
+    Boolean(draft),
+    panelOpener,
+  )
+  const drawerOpen = compact && mobilePanel !== null
+  const libraryModal = compact && mobilePanel === 'library'
 
   const refresh = async (): Promise<void> => {
     setBusy(true)
@@ -385,7 +396,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       </label>
       <label>
         Beskrivning
-        <input
+        <CmsTextarea
           value={page.description[lang]}
           onInput={(e) => editMeta('description', e.currentTarget.value)}
         />
@@ -445,7 +456,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     </div>
   )
   const workspaceView = dialog && !['new-page', 'backup'].includes(dialog) ? dialog : null
-  const mobileDialog = compactWorkspace() && mobilePanel !== null
 
   return (
     <div
@@ -456,7 +466,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       data-library-open={mobilePanel === 'library'}
       data-inspector-open={mobilePanel === 'inspector'}
     >
-      <header class="cms-topbar" inert={mobileDialog}>
+      <header class="cms-topbar" inert={drawerOpen}>
         <button
           class="cms-brand"
           type="button"
@@ -519,7 +529,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           class="cms-publish cms-primary"
-          aria-label="Save / Publicera"
+          aria-label="Publicera"
           disabled={busy || Boolean(conflict) || !draft.dirty}
           onClick={() => void publish()}
         >
@@ -528,7 +538,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </button>
       </header>
       {notice && !error && (
-        <div class="cms-notice cms-notice-info" role="status" inert={mobileDialog}>
+        <div class="cms-notice cms-notice-info" role="status" inert={drawerOpen}>
           <CmsIcon name="info" />
           <span>{notice}</span>
           <button type="button" aria-label="Stäng meddelande" onClick={() => setNotice(null)}>
@@ -546,7 +556,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       {conflict && (
-        <div class="cms-notice" role="alert" inert={mobileDialog}>
+        <div class="cms-notice" role="alert" inert={drawerOpen}>
           Publicering är blockerad tills konflikten är löst.
           <button type="button" onClick={() => resolveConflict('local')}>
             Behåll mina konfliktändringar
@@ -561,7 +571,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           id="cms-library"
           class="cms-library"
           aria-label="Sidor och resurser"
-          inert={mobileDialog && mobilePanel !== 'library'}
+          role={libraryModal ? 'dialog' : undefined}
+          aria-modal={libraryModal ? true : undefined}
+          tabIndex={-1}
+          inert={compact && mobilePanel === 'inspector'}
         >
           <div class="cms-library-heading">
             <h2>Din webbplats</h2>
@@ -574,7 +587,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <CmsIcon name="close" />
             </button>
           </div>
-          <div class="cms-library-tabs" aria-label="Bibliotek">
+          <div class="cms-library-tabs" role="group" aria-label="Bibliotek">
             <button type="button" aria-pressed={!workspaceView} onClick={() => setDialog(null)}>
               Sidor
             </button>
@@ -648,15 +661,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               onClick={() => {
                 editor.current?.flush()
                 setError(null)
+                setMobilePanel(null)
                 setDialog('new-page')
               }}
             >
-              <CmsIcon name="plus" /> + Ny sida
+              <CmsIcon name="plus" /> Ny sida
             </button>
             <button
               type="button"
               class={workspaceView === 'theme' ? 'is-active' : ''}
-              aria-label="◐ Webbplatsens stil"
+              aria-label="Webbplatsens stil"
               onClick={() => {
                 editor.current?.flush()
                 setMobilePanel(null)
@@ -678,7 +692,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              <CmsIcon name="business" /> Business / SEO
+              <CmsIcon name="business" /> Företag & SEO
             </button>
             <button
               type="button"
@@ -714,8 +728,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             </button>
           </div>
         </aside>
-        <main class="cms-canvas-shell" inert={mobileDialog && mobilePanel === 'library'}>
-          <div class="cms-canvas-toolbar" inert={Boolean(workspaceView) || mobileDialog}>
+        <main class="cms-canvas-shell" inert={libraryModal}>
+          <div class="cms-canvas-toolbar" inert={drawerOpen || Boolean(workspaceView)}>
             <div class="cms-canvas-breadcrumb">
               <strong>{page.name[lang]}</strong>
               <span>{page.path}</span>
@@ -755,7 +769,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 aria-label="Zooma ut"
                 onClick={() => setZoom(Math.max(30, zoom - 10))}
               >
-                −
+                <CmsIcon name="minus" />
               </button>
               <span>{locked ? 'Förhandsvisning' : `${zoom}%`}</span>
               <button
@@ -764,7 +778,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 aria-label="Zooma in"
                 onClick={() => setZoom(Math.min(120, zoom + 10))}
               >
-                +
+                <CmsIcon name="plus" />
               </button>
               <button
                 type="button"
@@ -773,13 +787,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   const nextZoom = editor.current?.fit()
                   if (nextZoom !== undefined) setZoom(nextZoom)
                 }}
+                aria-label="Anpassa vyn"
+                title="Anpassa vyn till arbetsytan"
               >
-                Fit
+                <CmsIcon name="fit" />
               </button>
             </div>
           </div>
           {pageScenes(page.path).length > 0 && (
-            <div class="cms-scene-bar" inert={Boolean(workspaceView) || mobileDialog}>
+            <div class="cms-scene-bar" inert={drawerOpen || Boolean(workspaceView)}>
               <label>
                 Visa i editorn{' '}
                 <select
@@ -806,9 +822,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             aria-hidden={workspaceView ? true : undefined}
           >
             <CmsEditor
-              canvasInert={mobileDialog}
               scene={scene}
               onClosePanel={() => setMobilePanel(null)}
+              inspectorModal={compact && mobilePanel === 'inspector'}
               pageSettings={pageSettings}
               page={page}
               lang={lang}
@@ -872,6 +888,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   revision={draft.revision}
                   lang={lang}
                   mode={mode}
+                  device={device}
                   onError={setError}
                   onRestore={(old) => {
                     commitDraft(ensureCorePages(old))
@@ -899,13 +916,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         />
       </div>
 
-      <footer class="cms-bottom" aria-label="Redigeringsverktyg" inert={mobileDialog}>
+      <footer class="cms-bottom" aria-label="Redigeringsverktyg" inert={drawerOpen}>
         <nav class="cms-mobile-tools" aria-label="Mobilverktyg">
           <button
             type="button"
             aria-expanded={mobilePanel === 'library'}
             aria-controls="cms-library"
-            onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
+            onClick={(event) => {
+              panelOpener.current = event.currentTarget
+              setMobilePanel((value) => (value === 'library' ? null : 'library'))
+            }}
           >
             <CmsIcon name="page" />
             <span>Sidor</span>
@@ -915,7 +935,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             aria-expanded={mobilePanel === 'inspector'}
             aria-controls="cms-inspector"
             disabled={Boolean(workspaceView) || locked}
-            onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
+            onClick={(event) => {
+              panelOpener.current = event.currentTarget
+              setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))
+            }}
           >
             <CmsIcon name="sliders" />
             <span>Egenskaper</span>
@@ -944,7 +967,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
         <button type="button" disabled={!draft.dirty} class="cms-revert" onClick={revertDraft}>
           <CmsIcon name="history" />
-          <span>Revert</span>
+          <span>Återställ</span>
         </button>
         <button
           type="button"
@@ -954,7 +977,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           }}
         >
           <CmsIcon name="history" />
-          <span>History</span>
+          <span>Historik</span>
         </button>
         <button
           type="button"
@@ -1056,7 +1079,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     setDialog(null)
                   }}
                 >
-                  Revert
+                  Återställ
                 </button>
                 <button
                   type="button"
@@ -1076,19 +1099,24 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 >
                   Export
                 </button>
-                <label class="cms-import-button">
+                <button
+                  type="button"
+                  class="cms-import-button"
+                  onClick={() => importInput.current?.click()}
+                >
                   Import
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    hidden
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0]
-                      if (file) void importDraft(file)
-                      event.currentTarget.value = ''
-                    }}
-                  />
-                </label>
+                </button>
+                <input
+                  ref={importInput}
+                  type="file"
+                  accept="application/json,.json"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0]
+                    if (file) void importDraft(file)
+                    event.currentTarget.value = ''
+                  }}
+                />
               </div>
             </div>
           )}

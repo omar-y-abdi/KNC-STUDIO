@@ -1,16 +1,17 @@
-import { expect, it } from 'vitest'
-import { emptyDocument, type CmsPage } from '../../shared/cms'
+import { describe, expect, it } from 'vitest'
+import { emptyDocument, mediaUrl, type CmsPage, type MediaRef } from '../../shared/cms'
 import { resourceUsage } from '../../shared/cms-resources'
+import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
 
-const policy = {
-  siteOrigin: 'https://bladeblendstudio.se',
-  storageOrigin: 'https://fixture.supabase.co',
+const policy = { siteOrigin: 'https://salon.example', storageOrigin: 'https://fixture.supabase.co' }
+const image: MediaRef = {
+  bucket: 'cms-library',
+  path: 'images/22222222-2222-4222-8222-222222222222.webp',
 }
-const asset = { bucket: 'cms-library' as const, path: 'images/example.webp' }
-const src = `${policy.storageOrigin}/storage/v1/object/public/${asset.bucket}/${asset.path}`
-function fixture(path = '/', native = true, size = 160_000) {
+const url = mediaUrl(image, policy.storageOrigin)
+function fixture(native = true, path = '/') {
   const document = emptyDocument()
-  const html = `<main${native ? ' data-knc-native="1"' : ''}><img src="${src}" alt="Salongen"><p>${'x'.repeat(size)}</p></main>`
+  const html = `<main${native ? ' data-knc-native="1"' : ''}><p>${'x'.repeat(130_000)}</p><img src="${url}" alt="Salong" /></main>`
   const page: CmsPage = {
     id: '10000000-0000-4000-8000-000000000001',
     path,
@@ -25,31 +26,47 @@ function fixture(path = '/', native = true, size = 160_000) {
     },
   }
   document.presentation.pages.push(page)
-  return document
+  return { document, page }
 }
 
-it('inspects resources on the full native site without applying the smaller custom-page limit', () => {
-  const document = fixture()
-  const before = structuredClone(document)
-  expect(resourceUsage(document, asset, policy)).toEqual([
-    '/ · sv/light',
-    '/ · sv/dark',
-    '/ · en/light',
-    '/ · en/dark',
-  ])
-  expect(document).toEqual(before)
-})
-
-it('does not grant native limits to custom pages or ordinary markup', () => {
-  expect(() => resourceUsage(fixture('/custom'), asset, policy)).toThrow('size limit')
-  expect(() => resourceUsage(fixture('/', false), asset, policy)).toThrow('size limit')
-  expect(() => resourceUsage(fixture('/', true, 500_000), asset, policy)).toThrow('size limit')
-})
-
-it('still rejects unsafe native markup instead of making resource inspection a validation bypass', () => {
-  const document = fixture('/', true, 1)
-  const page = document.presentation.pages[0]
-  if (!page) throw new Error('Missing fixture page')
-  page.content.sv.html = '<main data-knc-native="1"><img src="javascript:alert(1)"></main>'
-  expect(() => resourceUsage(document, asset, policy)).toThrow()
+describe('resource references in the real native site', () => {
+  it('accepts the same populated native pages as publication and retains every reference', () => {
+    const { document } = fixture()
+    expect(() => validateDocumentMarkupPlacements(structuredClone(document), policy)).not.toThrow()
+    const before = structuredClone(document)
+    expect(resourceUsage(document, image, policy)).toEqual([
+      '/ · sv/light',
+      '/ · sv/dark',
+      '/ · en/light',
+      '/ · en/dark',
+    ])
+    expect(document).toEqual(before)
+  })
+  it('does not lend the native allowance to authored pages or shared regions', () => {
+    expect(() => resourceUsage(fixture(false).document, image, policy)).toThrow(
+      'Page exceeds its size limit',
+    )
+    expect(() => resourceUsage(fixture(true, '/offers').document, image, policy)).toThrow()
+    const { document, page } = fixture()
+    document.presentation.regions.header = page.content
+    document.presentation.pages = []
+    expect(() => resourceUsage(document, image, policy)).toThrow()
+  })
+  it('does not hide invalid native HTML or CSS behind an empty usage list', () => {
+    const { document, page } = fixture()
+    page.content.sv.html += '<script>alert(1)</script>'
+    expect(() => resourceUsage(document, image, policy)).toThrow()
+    const scriptUrl = fixture()
+    scriptUrl.page.content.sv.html =
+      '<main data-knc-native="1"><img src="javascript:alert(1)"></main>'
+    expect(() => resourceUsage(scriptUrl.document, image, policy)).toThrow()
+    const oversized = fixture()
+    oversized.page.content.sv.html = `<main data-knc-native="1">${'x'.repeat(500_001)}</main>`
+    expect(() => resourceUsage(oversized.document, image, policy)).toThrow(
+      'Page exceeds its size limit',
+    )
+    const css = fixture()
+    css.page.content.sv.css.dark = `body{background:url("https://outside.invalid/image.png")}`
+    expect(() => resourceUsage(css.document, image, policy)).toThrow()
+  })
 })
