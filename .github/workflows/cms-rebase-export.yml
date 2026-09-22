@@ -1,0 +1,59 @@
+name: Rebase and export CMS workspace
+on:
+  push:
+    branches: [verify/cms-visual-refinement-20260922]
+    paths: [.github/workflows/cms-rebase-export.yml]
+permissions:
+  contents: write
+concurrency:
+  group: cms-workspace-rebase
+  cancel-in-progress: false
+jobs:
+  rebase:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rebase with explicit source checks and a force-with-lease
+        env:
+          EXPECTED_MAIN: c00368c571804c4d9bfed02698f771093b2769d4
+          EXPECTED_PR: eaca9b67af86777459f00f18f6e20c12d00ba0f4
+          OLD_PR: c47fff39948823dd9651d2d72e002f3daa7cd2e2
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-export
+          branch=verify/cms-visual-refinement-20260922
+          git fetch origin --prune
+          test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN"
+          test "$(git rev-parse origin/codex/cms-flow-scenes)" = "$EXPECTED_PR"
+          test "$(git rev-parse origin/$branch)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$EXPECTED_MAIN" "$EXPECTED_PR"
+          git merge-base --is-ancestor "$OLD_PR" "$GITHUB_SHA"
+          git config user.name 'CMS verification'
+          git config user.email 'cms-verification@users.noreply.github.com'
+          git checkout -B cms-rebase-work "$GITHUB_SHA"
+          git rebase --onto "$EXPECTED_PR" "$OLD_PR"
+          git diff --exit-code "$GITHUB_SHA" HEAD -- .cms-verification .github/workflows/cms-visual-verification.yml
+          git range-diff "$OLD_PR..$GITHUB_SHA" "$EXPECTED_PR..HEAD" > /tmp/cms-export/rebase-range-diff.txt
+          git merge-base --is-ancestor "$EXPECTED_MAIN" HEAD
+          test "$(git ls-remote origin refs/heads/codex/cms-flow-scenes | cut -f1)" = "$EXPECTED_PR"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          git push --force-with-lease="refs/heads/$branch:$GITHUB_SHA" origin "HEAD:refs/heads/$branch"
+          printf 'main=%s\npr=%s\nverification_before=%s\nverification_after=%s\n' "$EXPECTED_MAIN" "$EXPECTED_PR" "$GITHUB_SHA" "$(git rev-parse HEAD)" > /tmp/cms-export/refs.txt
+      - name: Export complete current repository and preserved candidate work
+        run: |
+          set -euo pipefail
+          git fetch --all --tags --prune
+          git bundle create /tmp/cms-export/repo.bundle --all
+          git bundle verify /tmp/cms-export/repo.bundle > /tmp/cms-export/bundle-verification.txt 2>&1
+          git fsck --full > /tmp/cms-export/git-fsck.txt 2>&1
+          sha256sum /tmp/cms-export/repo.bundle > /tmp/cms-export/SHA256SUMS
+          cp .cms-verification/expected-tree /tmp/cms-export/candidate-original-tree.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-current-workspace
+          path: /tmp/cms-export
+          retention-days: 2
