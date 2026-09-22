@@ -137,7 +137,6 @@ for (const [engine, name] of [
           }),
         )
       const page = await context.newPage()
-
       const frame = page.frameLocator('.gjs-frame').first()
       const inspector = page.locator('#cms-inspector')
       const mount = async (expected = 'KNC source sv') => {

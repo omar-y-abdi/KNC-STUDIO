@@ -2118,6 +2118,55 @@
     min-height: 44px;
   }
 }
+/* Short touch viewports keep the preview itself on screen, not below its toolbar.
+   Offscreen native frames may suspend animation-frame readiness checks in WebKit. */
+@media (max-width: 900px) {
+  .cms-theme-layout[data-theme-view='preview'] {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+  }
+  .cms-theme-layout[data-theme-view='preview'] .cms-theme-mobile-toolbar {
+    position: static;
+    padding: 0;
+    border: 0;
+  }
+  .cms-theme-layout[data-theme-view='preview'] .cms-theme-preview {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+  }
+}
+@media (max-height: 550px) and (min-width: 600px) and (max-width: 900px) {
+  .cms-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'brand status variants publish';
+    min-height: 56px;
+    padding-block: 6px;
+  }
+  .cms-status {
+    text-align: center;
+  }
+  .cms-workspace-heading {
+    flex-direction: row;
+    align-items: center;
+    padding-block: 8px;
+  }
+  .cms-workspace-heading h1 {
+    margin: 0;
+  }
+  .cms-workspace-content {
+    padding-block: 8px;
+  }
+  .cms-theme-layout[data-theme-view='preview'] {
+    gap: 8px;
+  }
+  .cms-theme-preview-toolbar {
+    padding: 6px 10px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .knc-cms-studio button {
     transition: none;

@@ -17,6 +17,7 @@ for (const [engine, name] of [
   [chromium, 'chromium'],
   [webkit, 'webkit'],
 ]) {
+  if (process.env.CMS_BROWSER && process.env.CMS_BROWSER !== name) continue
   const browser = await engine.launch()
   try {
     for (const width of [1440, 390, 320]) {
