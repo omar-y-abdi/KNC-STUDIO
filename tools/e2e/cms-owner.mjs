@@ -636,7 +636,7 @@ for (const [engine, name] of [
                 .locator('.cms-mobile-tools')
                 .getByRole('button', { name: 'Sidor', exact: true })
                 .click()
-            await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
+            await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
             const modal = page.getByRole('dialog', { name: 'Ny sida', exact: true })
             await modal.waitFor()
             assert.equal(await modal.evaluate((el) => el.matches(':modal')), true)
@@ -649,7 +649,7 @@ for (const [engine, name] of [
             .getByRole('button', { name: 'SV', exact: true })
             .evaluate((node) => globalThis.getComputedStyle(node).color)
           const library = page.locator('#cms-library')
-          await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
+          await library.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
           await page
             .getByRole('dialog', { name: 'Ny sida', exact: true })
             .getByRole('button', { name: 'Skapa sida', exact: true })
@@ -725,7 +725,10 @@ for (const [engine, name] of [
           )
           await publicPage.close()
           await library.getByRole('button', { name: 'Startsida', exact: true }).click()
-          await library.getByRole('button', { name: 'Ny sida', exact: true }).click()
+          await library
+            .getByRole('navigation', { name: 'Sidor', exact: true })
+            .getByRole('button', { name: 'Ny sida', exact: true })
+            .click()
           assert.equal(
             await padding(),
             '64px 32px',

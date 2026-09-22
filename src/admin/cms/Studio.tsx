@@ -547,7 +547,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       {error && dialog !== 'new-page' && dialog !== 'backup' && (
-        <div class="cms-notice" role="alert" inert={mobileDialog}>
+        <div class="cms-notice" role="alert" inert={drawerOpen}>
           <CmsIcon name="info" />
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>
@@ -657,6 +657,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <button
               type="button"
               class="cms-add-page"
+              aria-label="Skapa ny sida"
               disabled={locked}
               onClick={() => {
                 editor.current?.flush()

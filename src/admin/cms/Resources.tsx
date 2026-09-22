@@ -204,7 +204,17 @@ export function CmsResources(props: Props): JSX.Element {
       <header class="cms-resource-toolbar">
         <div class="cms-segment">
           {(['active', 'archived', 'trash'] as const).map((value) => (
-            <button type="button" aria-pressed={state === value} onClick={() => setState(value)}>
+            <button
+              type="button"
+              aria-pressed={state === value}
+              onClick={() => {
+                if (value === state) return
+                setState(value)
+                setSelectedId(null)
+                setSelectedIds(new Set())
+                setUsage(null)
+              }}
+            >
               {value === 'active' ? 'Aktiva' : value === 'archived' ? 'Arkiverade' : 'Papperskorg'}
             </button>
           ))}

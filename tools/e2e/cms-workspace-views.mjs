@@ -295,7 +295,7 @@ for (const [engine, engineName, widths] of [
         })
         await inspect('08-page-dialog', async () => {
           await library()
-          await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
+          await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
           const dialog = page.getByRole('dialog', {
             name: 'Ny sida',
             exact: true,
