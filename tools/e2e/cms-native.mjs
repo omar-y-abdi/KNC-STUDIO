@@ -335,6 +335,12 @@ async function run(engine, name) {
       harness.mountCmsStudioHarness()
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    assert.equal(
+      await page.getByRole('button', { name: 'Mobil', exact: true }).getAttribute('aria-pressed'),
+      'true',
+      'Reloading on a phone starts with its own canvas, not a clipped desktop page',
+    )
+    await page.getByRole('button', { name: 'Dator', exact: true }).click()
     await page
       .frameLocator('.gjs-frame')
       .first()

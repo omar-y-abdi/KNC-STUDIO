@@ -1,12 +1,14 @@
 import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CmsAsset, CmsDocument } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { replaceDocumentResource, resourceUsage } from '../../../shared/cms-resources'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
 import { cmsApi, type AssetUsage } from './api'
+import { CmsIcon } from './Icon'
+import { compactWorkspace } from './useResponsivePanels'
 
 type State = 'active' | 'archived' | 'trash'
 type Purpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
@@ -66,6 +68,7 @@ export function CmsResources(props: Props): JSX.Element {
   const [purpose, setPurpose] = useState<Purpose>('library')
   const [barberId, setBarberId] = useState(props.document.barbers[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
+  const details = useRef<HTMLHeadingElement>(null)
   const upload = useRef<HTMLInputElement>(null)
   const replace = useRef<HTMLInputElement>(null)
   const asset = props.assets.find((item) => item.id === selectedId) ?? null
@@ -99,6 +102,12 @@ export function CmsResources(props: Props): JSX.Element {
       active = false
     }
   }, [asset?.id, asset?.version])
+
+  useLayoutEffect(() => {
+    if (!selectedId || !compactWorkspace()) return
+    details.current?.focus({ preventScroll: true })
+    details.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [selectedId])
 
   const updateAsset = (next: CmsAsset): void =>
     props.onAssets((current) => current.map((item) => (item.id === next.id ? next : item)))
@@ -179,7 +188,18 @@ export function CmsResources(props: Props): JSX.Element {
     }
   }
 
-  const draftUsage = asset ? resourceUsage(props.document, asset, policy) : []
+  const { places: draftUsage, error: usageError } = useMemo(() => {
+    try {
+      return { places: asset ? resourceUsage(props.document, asset, policy) : [], error: null }
+    } catch {
+      // Incomplete edits must not crash the library or claim that an asset is unused.
+      return {
+        places: [],
+        error:
+          'Utkastets referenser kunde inte kontrolleras. Granska sidans innehåll före publicering.',
+      }
+    }
+  }, [asset?.id, asset?.path, props.document])
   return (
     <div class="cms-resource-surface" aria-busy={busy}>
       <header class="cms-resource-toolbar">
@@ -220,7 +240,7 @@ export function CmsResources(props: Props): JSX.Element {
           </select>
         )}
         <button type="button" disabled={busy} onClick={() => upload.current?.click()}>
-          + Ladda upp
+          <CmsIcon name="plus" /> + Ladda upp
         </button>
         <input
           ref={upload}
@@ -261,6 +281,7 @@ export function CmsResources(props: Props): JSX.Element {
         <div class="cms-resource-grid">
           {visible.length === 0 && (
             <div class="cms-resource-empty">
+              <CmsIcon name="image" />
               <strong>
                 {query
                   ? 'Inga träffar'
@@ -277,12 +298,20 @@ export function CmsResources(props: Props): JSX.Element {
                     ? 'Ladda upp bilder, logotyper eller typsnitt till webbplatsen.'
                     : 'Du kan gå tillbaka till Aktiva för att se dina filer.'}
               </p>
+              {query && (
+                <button type="button" onClick={() => setQuery('')}>
+                  Rensa sökning
+                </button>
+              )}
             </div>
           )}
           {visible.map((item) => {
             const checked = selectedIds.has(item.id)
             return (
-              <article class={`cms-resource-card${item.id === selectedId ? ' is-selected' : ''}`}>
+              <article
+                key={item.id}
+                class={`cms-resource-card${item.id === selectedId ? ' is-selected' : ''}`}
+              >
                 <label class="cms-resource-check">
                   <input
                     type="checkbox"
@@ -315,7 +344,9 @@ export function CmsResources(props: Props): JSX.Element {
         </div>
         {asset ? (
           <aside class="cms-resource-detail">
-            <h2>{resourceLabel(asset)}</h2>
+            <h2 ref={details} tabIndex={-1}>
+              {resourceLabel(asset)}
+            </h2>
             <label>
               Namn
               <input
@@ -335,9 +366,14 @@ export function CmsResources(props: Props): JSX.Element {
               {(asset.bytes / 1024).toFixed(1)} KB · v{asset.version}
             </p>
             <p>
-              Utkast: {draftUsage.length} placeringar · Publicerat:{' '}
+              Utkast: {usageError ? 'okänt antal' : draftUsage.length} placeringar · Publicerat:{' '}
               {usage?.currentReferences ?? '…'} · Historik: {usage?.historyReferences ?? '…'}
             </p>
+            {usageError && (
+              <p role="status" class="cms-help">
+                {usageError}
+              </p>
+            )}
             {draftUsage.length > 0 && (
               <ul>
                 {draftUsage.map((place) => (

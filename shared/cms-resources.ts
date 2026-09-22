@@ -2,7 +2,11 @@ import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 // @deno-types="npm:@types/css-tree@2.3.11"
 import { parse, walk, generate } from 'css-tree'
 import { mediaKey, mediaUrl, type CmsDocument, type MediaRef } from './cms.ts'
-import { resourceReference, validateMarkup, type MarkupPolicy } from './cms-markup.ts'
+import {
+  resourceReference,
+  validateDocumentMarkupPlacements,
+  type MarkupPolicy,
+} from './cms-markup.ts'
 
 export function resourceUsage(
   document: CmsDocument,
@@ -23,23 +27,31 @@ export function resourceUsage(
   for (const email of document.emails)
     if (email.design?.logo && mediaKey(email.design.logo) === key)
       places.push(`Mejl: ${email.template}/${email.lang}`)
+  // Validation normalizes markup. Inspect a copy so opening the library cannot edit
+  // the draft; use the same native-page limits and placement identities as publishing.
+  const references = validateDocumentMarkupPlacements(structuredClone(document), policy)
+    .filter(({ ref }) => mediaKey(ref) === key)
+    .map(({ placement }) => placement)
   const variants = [
-    ...document.presentation.pages.map((page) => ({ label: page.path, content: page.content })),
+    ...document.presentation.pages.map((page) => ({
+      prefix: `presentation.pages:${page.id}`,
+      label: page.path,
+    })),
     ...Object.entries(document.presentation.regions).flatMap(([name, content]) =>
-      content ? [{ label: name, content }] : [],
+      content ? [{ prefix: `presentation.regions:${name}`, label: name }] : [],
     ),
   ]
-  for (const entry of variants)
+  for (const { prefix, label } of variants)
     for (const lang of ['sv', 'en'] as const)
-      for (const mode of ['light', 'dark'] as const) {
-        const value = entry.content[lang]
+      for (const mode of ['light', 'dark'] as const)
         if (
-          validateMarkup(value.html, value.css[mode], policy).refs.some(
-            (ref) => mediaKey(ref) === key,
+          references.some(
+            (placement) =>
+              placement.startsWith(`${prefix}:${lang}:html:`) ||
+              placement.startsWith(`${prefix}:${lang}:css:${mode}:`),
           )
         )
-          places.push(`${entry.label} · ${lang}/${mode}`)
-      }
+          places.push(`${label} · ${lang}/${mode}`)
   return [...new Set(places)]
 }
 export function replaceDocumentResource(

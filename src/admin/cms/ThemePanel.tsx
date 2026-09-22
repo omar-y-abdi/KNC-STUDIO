@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { SITE_THEME_DEFAULTS } from '../../../shared/site-theme'
 import { LivePreview } from './LivePreview'
+import { compactWorkspace } from './useResponsivePanels'
 
 const colors = {
   background: 'Bakgrund',
@@ -36,7 +37,10 @@ export function ThemePanel({
   mode: CmsMode
   onMode: (mode: CmsMode) => void
 }): JSX.Element {
-  const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
+  const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
+    compactWorkspace() ? 'Mobile' : 'Desktop',
+  )
+  const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit')
   const [path, setPath] = useState('/')
   const page =
     document.presentation.pages.find((page) => page.path === path) ??
@@ -51,7 +55,25 @@ export function ThemePanel({
     onChange(next)
   }
   return (
-    <div class="cms-theme-layout">
+    <div class="cms-theme-layout" data-theme-view={mobileView}>
+      <div class="cms-theme-mobile-toolbar">
+        <div class="cms-segment" role="group" aria-label="Stilverktyg">
+          <button
+            type="button"
+            aria-pressed={mobileView === 'edit'}
+            onClick={() => setMobileView('edit')}
+          >
+            Redigera stil
+          </button>
+          <button
+            type="button"
+            aria-pressed={mobileView === 'preview'}
+            onClick={() => setMobileView('preview')}
+          >
+            Förhandsvisa stil
+          </button>
+        </div>
+      </div>
       <section class="cms-theme-controls" aria-label="Webbplatsens stilinställningar">
         <div class="cms-theme-modes" role="group" aria-label="Färgläge att redigera">
           {(['light', 'dark'] as const).map((value) => (

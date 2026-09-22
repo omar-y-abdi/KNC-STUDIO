@@ -3,6 +3,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
+  isPagePath,
   type CmsAsset,
   type CmsDocument,
   type CmsLang,
@@ -17,6 +18,8 @@ import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsModal } from './Modal'
+import { CmsIcon } from './Icon'
+import { compactWorkspace, useResponsivePanels, type CmsPanel } from './useResponsivePanels'
 import { ThemePanel } from './ThemePanel'
 import { CmsWorkspaceView } from './WorkspaceView'
 import { HistoryPanel } from './HistoryPanel'
@@ -29,14 +32,14 @@ import { pageScenes, type CmsScene } from '../../cms/Scene'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
 
-type Panel = 'library' | 'inspector' | null
-
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [draft, setDraft] = useState<CmsDraft | null>(null)
   const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
   const [mode, setMode] = useState<CmsMode>('light')
-  const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
+  const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
+    compactWorkspace() ? 'Mobile' : 'Desktop',
+  )
   const [zoom, setZoom] = useState(80)
   const [compare, setCompare] = useState(false)
   const [locked, setLocked] = useState(false)
@@ -44,8 +47,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   useLayoutEffect(() => setScene('default'), [selectedPage])
   const [preview, setPreview] = useState<CmsPresentation | null>(null)
   const [tab, setTab] = useState<'design' | 'layers' | 'blocks'>('design')
-  const [mobilePanel, setMobilePanel] = useState<Panel>(null)
+  const [mobilePanel, setMobilePanel] = useState<CmsPanel>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
     null,
@@ -60,10 +64,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [pageQuery, setPageQuery] = useState('')
   const [newPath, setNewPath] = useState('/hemsida')
   const editor = useRef<EditorHandle | null>(null)
+  const shell = useRef<HTMLDivElement>(null)
+  useResponsivePanels(shell, mobilePanel, () => setMobilePanel(null), Boolean(draft))
 
   const refresh = async (): Promise<void> => {
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
       const loaded = await cmsApi.state()
       await prepareCorePageSource(loaded.document)
@@ -75,7 +82,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       if (seeded) next.base = structuredClone(loaded.document)
       if (backup && isInventedSite(backup.document)) {
         localStorage.setItem('knc-cms-retained-template-draft', JSON.stringify(backup))
-        setError('Det äldre mallutkastet har bevarats lokalt men används inte som din webbplats.')
+        setNotice('Det äldre mallutkastet har bevarats lokalt men används inte som din webbplats.')
       }
       if (
         backup &&
@@ -99,14 +106,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             'Det lokala utkastet och servern har olika ändringar. Välj hur konflikten ska lösas före publicering.',
           )
         } else {
-          setError(
+          setNotice(
             `Ett lokalt utkast från ${new Date(backup.savedAt).toLocaleString('sv-SE')} återställdes.`,
           )
         }
       }
       setDraft(next)
       if (seeded && !backup)
-        setError(
+        setNotice(
           'Originalwebbplatsen har lästs in som ett opublicerat utkast. Granska före publicering.',
         )
       setResources(loaded.assets)
@@ -167,6 +174,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       editor.current?.flush()
       draft.acknowledge(result.document, result.revision, result.fingerprint)
+      setNotice(null)
       setVersion((value) => value + 1)
     } catch (reason) {
       const message =
@@ -205,6 +213,21 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       setBusy(false)
     }
   }
+  const revertDraft = (): void => {
+    if (!draft) return
+
+    editor.current?.flush()
+    if (conflict) {
+      const next = new CmsDraft(
+        conflict.remote.document,
+        conflict.remote.revision,
+        conflict.remote.fingerprint,
+      )
+      setDraft(next)
+      setConflict(null)
+    } else draft.revert()
+    setVersion((v) => v + 1)
+  }
   const resolveConflict = (resolution: 'local' | 'remote'): void => {
     if (!draft || !conflict) return
     editor.current?.flush()
@@ -222,7 +245,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     next.change(resolved)
     setDraft(next)
     setConflict(null)
-    setError('Konflikten är löst i utkastet. Granska före publicering.')
+    setNotice('Konflikten är löst i utkastet. Granska före publicering.')
+    setError(null)
     setVersion((value) => value + 1)
   }
   const openHistory = async (): Promise<void> => {
@@ -243,7 +267,26 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   if (!draft)
     return (
       <div class="knc-cms-studio">
-        <div class="cms-notice">{error ?? 'Laddar Studio…'}</div>
+        <div class="cms-loading" aria-busy={busy}>
+          <span class="cms-brand-mark">BNB</span>
+          <h1>{error ? 'Studion kunde inte öppnas' : 'Laddar Studio…'}</h1>
+          <p role={error ? 'alert' : 'status'}>
+            {error ?? 'Hämtar ditt utkast och förbereder webbplatsen för redigering.'}
+          </p>
+          {error && (
+            <button
+              class="cms-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              Försök igen
+            </button>
+          )}
+          <button type="button" onClick={onExit}>
+            Tillbaka till Admin
+          </button>
+        </div>
       </div>
     )
   const document = draft.document
@@ -266,54 +309,56 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const next = ensureCorePages(checked.document)
       commitDraft(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
-      setError('JSON-utkastet importerades och är ännu inte publicerat.')
+      setNotice('JSON-utkastet importerades och är ännu inte publicerat.')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'JSON-utkastet kunde inte importeras.')
     }
   }
 
   const createPage = (): void => {
-    editor.current?.flush()
-    const path = newPath.trim().replace(/\/+$/, '') || '/hemsida'
+    const path = newPath.trim().replace(/\/+$/, '')
     if (
-      !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
-      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
-        path,
-      ) ||
+      path === '/' ||
+      !isPagePath(path) ||
       draft.document.presentation.pages.some((item) => item.path === path)
     )
       return setError('Ange en unik, giltig adress som /hemsida.')
-    const id = crypto.randomUUID()
-    const heading = window.document.createElement('span')
-    heading.textContent = newName.trim() || 'Ny sida'
-    const pageBody = (language: CmsLang): string =>
-      `<main style="max-width:1120px;min-height:55vh;margin:0 auto;padding:64px 32px"><h1 style="font-size:40px;line-height:1.15;letter-spacing:-1px;margin:0 0 24px">${heading.innerHTML}</h1><p style="font-size:17px;line-height:1.7">${language === 'sv' ? 'Skriv din text här.' : 'Write your page here.'}</p></main>`
-    const created: CmsPage = {
-      id,
-      kind: 'page',
-      path,
-      inMenu: true,
-      name: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
-      title: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
-      description: { sv: '', en: '' },
-      content: {
-        sv: {
-          html: pageBody('sv'),
-          css: { light: '', dark: '' },
+    try {
+      editor.current?.flush()
+      const id = crypto.randomUUID()
+      const heading = window.document.createElement('span')
+      heading.textContent = newName.trim() || 'Ny sida'
+      const pageBody = (language: CmsLang): string =>
+        `<main style="max-width:1120px;min-height:55vh;margin:0 auto;padding:64px 32px"><h1 style="font-size:40px;line-height:1.15;letter-spacing:-1px;margin:0 0 24px">${heading.innerHTML}</h1><p style="font-size:17px;line-height:1.7">${language === 'sv' ? 'Skriv din text här.' : 'Write your page here.'}</p></main>`
+      const created: CmsPage = {
+        id,
+        kind: 'page',
+        path,
+        inMenu: true,
+        name: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
+        title: { sv: newName.trim() || 'Ny sida', en: newName.trim() || 'New page' },
+        description: { sv: '', en: '' },
+        content: {
+          sv: {
+            html: pageBody('sv'),
+            css: { light: '', dark: '' },
+          },
+          en: {
+            html: pageBody('en'),
+            css: { light: '', dark: '' },
+          },
         },
-        en: {
-          html: pageBody('en'),
-          css: { light: '', dark: '' },
-        },
-      },
+      }
+      const next = structuredClone(draft.document)
+      next.presentation.pages.push(created)
+      commitDraft(next)
+      setSelectedPage(id)
+      setNewName('Ny sida')
+      setNewPath('/hemsida')
+      setDialog(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Sidan kunde inte skapas.')
     }
-    const next = structuredClone(draft.document)
-    next.presentation.pages.push(created)
-    commitDraft(next)
-    setSelectedPage(id)
-    setNewName('Ny sida')
-    setNewPath('/hemsida')
-    setDialog(null)
   }
   const editMeta = (key: 'name' | 'title' | 'description', value: string): void => {
     const next = structuredClone(page)
@@ -400,6 +445,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
   return (
     <div
+      ref={shell}
       class="knc-cms-studio"
       data-mode={mode}
       data-workspace-view={workspaceView ?? 'page'}
@@ -433,41 +479,63 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               ? 'Opublicerade ändringar'
               : `Publicerad · rev ${draft.revision}`}
         </span>
-        <div class="cms-segment" aria-label="Språk">
-          {(['sv', 'en'] as const).map((value) => (
-            <button
-              type="button"
-              aria-pressed={lang === value}
-              onClick={() => {
-                editor.current?.flush()
-                setLang(value)
-              }}
-            >
-              {value.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <div class="cms-segment" aria-label="Tema">
-          {(['light', 'dark'] as const).map((value) => (
-            <button
-              type="button"
-              aria-pressed={mode === value}
-              onClick={() => {
-                editor.current?.flush()
-                setMode(value)
-              }}
-            >
-              {value === 'light' ? 'Ljus' : 'Mörk'}
-            </button>
-          ))}
+        <div class="cms-variants">
+          <div class="cms-segment" role="group" aria-label="Språk">
+            {(['sv', 'en'] as const).map((value) => (
+              <button
+                type="button"
+                aria-pressed={lang === value}
+                onClick={() => {
+                  editor.current?.flush()
+                  setLang(value)
+                }}
+              >
+                {value.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <div class="cms-segment" role="group" aria-label="Tema">
+            {(['light', 'dark'] as const).map((value) => (
+              <button
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => {
+                  editor.current?.flush()
+                  setMode(value)
+                }}
+              >
+                {value === 'light' ? 'Ljus' : 'Mörk'}
+              </button>
+            ))}
+          </div>
         </div>
         <a class="cms-visit-site" href="/" target="_blank" rel="noopener noreferrer">
-          Visa webbplats <span>↗</span>
+          Visa webbplats <CmsIcon name="external" />
         </a>
+        <button
+          type="button"
+          class="cms-publish cms-primary"
+          aria-label="Save / Publicera"
+          disabled={busy || Boolean(conflict) || !draft.dirty}
+          onClick={() => void publish()}
+        >
+          <CmsIcon name="check" />
+          <span>{busy ? 'Arbetar…' : 'Publicera'}</span>
+        </button>
       </header>
+      {notice && !error && (
+        <div class="cms-notice cms-notice-info" role="status">
+          <CmsIcon name="info" />
+          <span>{notice}</span>
+          <button type="button" aria-label="Stäng meddelande" onClick={() => setNotice(null)}>
+            <CmsIcon name="close" />
+          </button>
+        </div>
+      )}
       {error && (
         <div class="cms-notice" role="alert">
-          {error}{' '}
+          <CmsIcon name="info" />
+          <span>{error}</span>
           <button type="button" onClick={() => setError(null)}>
             Stäng
           </button>
@@ -485,8 +553,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       <div class="cms-workspace">
-        <aside id="cms-library" class="cms-library">
-          <h2>Din webbplats</h2>
+        <aside id="cms-library" class="cms-library" aria-label="Sidor och resurser">
+          <div class="cms-library-heading">
+            <h2>Din webbplats</h2>
+            <button
+              type="button"
+              class="cms-panel-close"
+              aria-label="Stäng panel"
+              onClick={() => setMobilePanel(null)}
+            >
+              <CmsIcon name="close" />
+            </button>
+          </div>
           <div class="cms-library-tabs" aria-label="Bibliotek">
             <button type="button" aria-pressed={!workspaceView} onClick={() => setDialog(null)}>
               Sidor
@@ -534,18 +612,24 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                       setMobilePanel(null)
                     }}
                   >
-                    <span class="cms-page-symbol" aria-hidden="true">
-                      {item.path === '/'
-                        ? '⌂'
-                        : item.path === '/privacy' || item.path === '/terms'
-                          ? '§'
-                          : '↗'}
-                    </span>
+                    <CmsIcon name={item.path === '/' ? 'home' : 'page'} />
                     <span>{item.name[lang] || item.path}</span>
                     <i />
                   </button>
                 </>
               ))}
+            {!document.presentation.pages.some((item) =>
+              `${item.name[lang]} ${item.path}`.toLowerCase().includes(pageQuery.toLowerCase()),
+            ) && (
+              <div class="cms-search-empty" role="status">
+                <CmsIcon name="search" />
+                <strong>Ingen sida hittades</strong>
+                <p>Prova ett annat namn eller en adress.</p>
+                <button type="button" onClick={() => setPageQuery('')}>
+                  Rensa sökning
+                </button>
+              </div>
+            )}
           </nav>
           <div class="cms-sidebar-bottom">
             <button
@@ -557,11 +641,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setDialog('new-page')
               }}
             >
-              + Ny sida
+              <CmsIcon name="plus" /> + Ny sida
             </button>
             <button
               type="button"
               class={workspaceView === 'theme' ? 'is-active' : ''}
+              aria-label="◐ Webbplatsens stil"
               onClick={() => {
                 editor.current?.flush()
                 setMobilePanel(null)
@@ -569,7 +654,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              ◐ Webbplatsens stil
+              <CmsIcon name="palette" />
+              <span>Webbplatsens stil</span>
             </button>
             <button
               type="button"
@@ -582,7 +668,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              Business / SEO
+              <CmsIcon name="business" /> Business / SEO
             </button>
             <button
               type="button"
@@ -595,7 +681,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setLocked(false)
               }}
             >
-              Mejl
+              <CmsIcon name="mail" /> Mejl
             </button>
             <a
               class="cms-sidebar-link"
@@ -604,7 +690,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               rel="noopener noreferrer"
               onClick={() => editor.current?.flush()}
             >
-              Leveransstatus ↗
+              <CmsIcon name="external" /> Leveransstatus ↗
             </a>
             <button
               type="button"
@@ -614,7 +700,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 setMobilePanel(null)
               }}
             >
-              Utkast & backup
+              <CmsIcon name="backup" /> Utkast & backup
             </button>
           </div>
         </aside>
@@ -634,7 +720,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     aria-pressed={device === value && !compare}
                     onClick={() => setDevice(value)}
                   >
-                    {value === 'Desktop' ? 'Dator' : 'Mobil'}
+                    <CmsIcon name={value === 'Desktop' ? 'desktop' : 'mobile'} />
+                    <span>{value === 'Desktop' ? 'Dator' : 'Mobil'}</span>
                   </button>
                 ))}
               </div>
@@ -647,13 +734,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   setCompare((value) => !value)
                 }}
               >
-                Jämför
+                <CmsIcon name="compare" />
+                <span>Jämför</span>
               </button>
             </div>
             <div class="cms-zoom-controls">
               <button
                 type="button"
                 disabled={locked}
+                aria-label="Zooma ut"
                 onClick={() => setZoom(Math.max(30, zoom - 10))}
               >
                 −
@@ -662,6 +751,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <button
                 type="button"
                 disabled={locked}
+                aria-label="Zooma in"
                 onClick={() => setZoom(Math.min(120, zoom + 10))}
               >
                 +
@@ -707,6 +797,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           >
             <CmsEditor
               scene={scene}
+              onClosePanel={() => setMobilePanel(null)}
               pageSettings={pageSettings}
               page={page}
               lang={lang}
@@ -791,25 +882,34 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         <button
           type="button"
           class="cms-backdrop"
-          aria-label="Stäng panel"
+          aria-hidden="true"
+          tabIndex={-1}
           onClick={() => setMobilePanel(null)}
         />
       </div>
-      <nav class="cms-mobile-tools" aria-label="Mobilverktyg">
-        <button
-          type="button"
-          onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
-        >
-          Sidor
-        </button>
-        <button
-          type="button"
-          onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
-        >
-          Egenskaper
-        </button>
-      </nav>
-      <footer class="cms-bottom">
+
+      <footer class="cms-bottom" aria-label="Redigeringsverktyg">
+        <nav class="cms-mobile-tools" aria-label="Mobilverktyg">
+          <button
+            type="button"
+            aria-expanded={mobilePanel === 'library'}
+            aria-controls="cms-library"
+            onClick={() => setMobilePanel((value) => (value === 'library' ? null : 'library'))}
+          >
+            <CmsIcon name="page" />
+            <span>Sidor</span>
+          </button>
+          <button
+            type="button"
+            aria-expanded={mobilePanel === 'inspector'}
+            aria-controls="cms-inspector"
+            disabled={Boolean(workspaceView) || locked}
+            onClick={() => setMobilePanel((value) => (value === 'inspector' ? null : 'inspector'))}
+          >
+            <CmsIcon name="sliders" />
+            <span>Egenskaper</span>
+          </button>
+        </nav>
         <button
           type="button"
           onClick={() => {
@@ -817,7 +917,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             if (draft.undo()) setVersion((v) => v + 1)
           }}
         >
-          Ångra
+          <CmsIcon name="undo" />
+          <span>Ångra</span>
         </button>
         <button
           type="button"
@@ -826,34 +927,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             if (draft.redo()) setVersion((v) => v + 1)
           }}
         >
-          Gör om
+          <CmsIcon name="redo" />
+          <span>Gör om</span>
         </button>
-        <button
-          type="button"
-          class="cms-publish"
-          disabled={busy || Boolean(conflict) || !draft.dirty}
-          onClick={() => void publish()}
-        >
-          Save / Publicera
-        </button>
-        <button
-          type="button"
-          disabled={!draft.dirty}
-          onClick={() => {
-            editor.current?.flush()
-            if (conflict) {
-              const next = new CmsDraft(
-                conflict.remote.document,
-                conflict.remote.revision,
-                conflict.remote.fingerprint,
-              )
-              setDraft(next)
-              setConflict(null)
-            } else draft.revert()
-            setVersion((v) => v + 1)
-          }}
-        >
-          Revert
+
+        <button type="button" disabled={!draft.dirty} class="cms-revert" onClick={revertDraft}>
+          <CmsIcon name="history" />
+          <span>Revert</span>
         </button>
         <button
           type="button"
@@ -862,7 +942,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             void openHistory()
           }}
         >
-          History
+          <CmsIcon name="history" />
+          <span>History</span>
         </button>
         <button
           type="button"
@@ -894,7 +975,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             }
           }}
         >
-          {locked ? 'Lås upp' : 'Lås vy'}
+          <CmsIcon name={locked ? 'edit' : 'eye'} />
+          <span>{locked ? 'Lås upp' : 'Lås vy'}</span>
         </button>
       </footer>
       {(dialog === 'new-page' || dialog === 'backup') && (
@@ -954,7 +1036,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 innan du byter dator. Publicerade versioner finns i Historik.
               </p>
               <div class="cms-actions-row">
-                {' '}
+                <button
+                  class="cms-mobile-revert"
+                  type="button"
+                  disabled={!draft.dirty}
+                  onClick={() => {
+                    revertDraft()
+                    setDialog(null)
+                  }}
+                >
+                  Revert
+                </button>
                 <button
                   type="button"
                   onClick={() => {
