@@ -1,0 +1,64 @@
+name: CMS history device contract
+on:
+  push:
+    branches: [verify/cms-quality-final-20260922]
+    paths: [.github/workflows/cms-history-contract.yml]
+permissions:
+  contents: read
+jobs:
+  history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b6dfab63ddc314c87255cc0eed69acf3d54024b6
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare isolated runtime
+        run: |
+          mkdir -p /tmp/history-proof
+          npm ci > /tmp/history-proof/install.log 2>&1
+          npx playwright install --with-deps chromium > /tmp/history-proof/browser.log 2>&1
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/history-proof/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break; sleep 1; done
+      - name: Assert history respects a phone workspace
+        run: |
+          cat > tools/e2e/history-contract.mjs <<'JS'
+          import assert from 'node:assert/strict'
+          import { chromium } from 'playwright'
+          import { writeFile } from 'node:fs/promises'
+          import { emptyDocument } from '../../shared/cms.ts'
+          import { nativeBackend } from './cms-native.mjs'
+          const seed = emptyDocument()
+          const variant = {html:'<main><h1>Revisionens innehåll</h1></main>', css:{light:'',dark:''}}
+          seed.presentation.pages.push({id:'10000000-0000-4000-8000-000000000001',path:'/history-proof',kind:'page',name:{sv:'Historiktest',en:'History'},title:{sv:'',en:''},description:{sv:'',en:''},inMenu:false,content:{sv:variant,en:variant}})
+          const browser = await chromium.launch()
+          try {
+            const context = await browser.newContext({ viewport:{width:390,height:844},isMobile:true,hasTouch:true })
+            const backend = await nativeBackend(context, seed)
+            const page = await context.newPage()
+            await page.goto('http://127.0.0.1:4188/tools/e2e/admin-harness.html?view=cms-studio')
+            await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
+            await page.locator('.cms-canvas-shell').waitFor({timeout:90000})
+            await page.getByRole('button',{name:'History',exact:true}).click()
+            await page.getByRole('button',{name:'Granska',exact:true}).first().click()
+            const frame = page.frameLocator('.cms-history-preview iframe')
+            await frame.getByRole('heading',{name:'Revisionens innehåll',exact:true}).waitFor()
+            const actual = await page.locator('.cms-history-preview iframe').evaluate(node=>({width:node.style.width,height:node.style.height}))
+            await page.screenshot({path:'/tmp/history-proof/mobile-history.png'})
+            await writeFile('/tmp/history-proof/result.json',JSON.stringify({expectedWidth:'390px',actual,writes:backend.writes},null,2))
+            assert.equal(actual.width,'390px','Revision review must follow the selected mobile canvas, not force desktop')
+            assert.equal(backend.writes.length,0)
+          } finally { await browser.close() }
+          JS
+          node tools/e2e/history-contract.mjs > /tmp/history-proof/contract.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-history-device-red
+          path: /tmp/history-proof
+          retention-days: 7
