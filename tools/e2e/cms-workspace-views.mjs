@@ -402,10 +402,6 @@ for (const [engine, engineName, widths] of [
         await inspect('20-email', async () => {
           await open('Mejl')
           await page.getByRole('heading', { name: 'Kundbekräftelse · SV', exact: true }).waitFor()
-          check(
-            (await page.getByRole('group', { name: 'Mejlbredd', exact: true }).count()) === 1,
-            `${prefix}: email viewport controls form a named accessible group`,
-          )
           await capture('20-email-editor', true)
           await scrollSeries(
             '20-email-editor',
@@ -413,6 +409,10 @@ for (const [engine, engineName, widths] of [
           )
           await page.getByLabel('Rubrik', { exact: true }).fill('Din nästa klippning börjar här')
           if (compact) await page.getByRole('button', { name: 'Förhandsvisa', exact: true }).click()
+          check(
+            (await page.getByRole('group', { name: 'Mejlbredd', exact: true }).count()) === 1,
+            `${prefix}: email viewport controls form a named accessible group`,
+          )
           const mail = page.frameLocator('iframe[title="Mejl som skickas"]')
           await mail
             .getByRole('heading', {
