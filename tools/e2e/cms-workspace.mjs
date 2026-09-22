@@ -70,9 +70,28 @@ for (const [engine, name] of [
   context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context, seed, assets)
   await context.route('**/storage/v1/object/public/**', (route) =>
-    route.fulfill({ contentType: 'image/png', path: 'public/og-image.png' }),
+    route.request().url().endsWith('.woff2')
+      ? route.fulfill({ contentType: 'font/woff2', path: 'public/fonts/InterVariable-Latin.woff2' })
+      : route.fulfill({ contentType: 'image/png', path: 'public/og-image.png' }),
   )
-  await context.route('**/functions/v1/cms-studio', (route) => {
+  let finishStartup
+  let failStartup = true
+  const startupResponse = new Promise((resolve) => {
+    finishStartup = resolve
+  })
+  await context.route('**/functions/v1/cms-studio', async (route) => {
+    if (
+      route.request().method() !== 'OPTIONS' &&
+      route.request().postDataJSON().operation === 'state' &&
+      failStartup
+    ) {
+      await startupResponse
+      return route.fulfill({
+        status: 503,
+        json: { message: 'Anslutningen avbröts. Ditt publicerade innehåll är oförändrat.' },
+        headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
+      })
+    }
     if (
       route.request().method() !== 'OPTIONS' &&
       route.request().postDataJSON().operation === 'asset_usage'
@@ -85,11 +104,13 @@ for (const [engine, name] of [
   })
   const page = await context.newPage()
   const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  let lastState = 'startup'
+  page.on('pageerror', (error) => errors.push(`${lastState}: ${error.stack}`))
   const library = page.locator('#cms-library')
   const inspector = page.locator('#cms-inspector')
   const frame = page.frameLocator('.gjs-frame').first()
   const capture = async (label) => {
+    lastState = label
     const filename = `cms-workspace-${name}-${page.viewportSize().width}-${label}.png`
     await page.screenshot({ path: `/tmp/${filename}`, animations: 'disabled' })
     captures.push({ filename, browser: name, viewport: page.viewportSize(), state: label })
@@ -100,8 +121,8 @@ for (const [engine, name] of [
   const overflow = async () => {
     const result = await page.evaluate(() =>
       [
-        ...document.querySelectorAll(
-          '.cms-topbar,.cms-workspace-view,.cms-workspace-content,.cms-dialog[open],.cms-mobile-tools',
+        ...globalThis.document.querySelectorAll(
+          '.cms-topbar,.cms-canvas-toolbar,.cms-bottom,.cms-workspace-view,.cms-workspace-content,.cms-dialog[open],.cms-mobile-tools',
         ),
       ]
         .filter((node) => node.checkVisibility())
@@ -126,6 +147,17 @@ for (const [engine, name] of [
     await page.evaluate(async () =>
       (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
     )
+    await page.locator('.cms-startup').waitFor()
+    await capture('loading')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await capture('loading')
+    finishStartup()
+    await page.getByRole('heading', { name: 'Studion kunde inte öppnas' }).waitFor()
+    await capture('startup-error')
+    await page.setViewportSize({ width: 1440, height: 960 })
+    await capture('startup-error')
+    failStartup = false
+    await page.getByRole('button', { name: 'Försök igen', exact: true }).click()
     await frame.getByText('KNC source sv', { exact: true }).first().waitFor({ timeout: 90000 })
     await page.locator('.cms-notice').getByRole('button', { name: 'Stäng', exact: true }).click()
     await page.getByRole('button', { name: 'Fit', exact: true }).click()
@@ -142,6 +174,49 @@ for (const [engine, name] of [
       await page.getByRole('button', { name: 'Fit', exact: true }).click()
       check(await page.locator('.cms-status').isVisible(), 'Publication status is hidden')
       await capture('canvas')
+      // Select real content, not just the empty inspector. Verify its entire scrollable surface.
+      const home = frame.locator(
+        `[data-knc-surface="${width === 390 ? 'mobile' : 'desktop'}-home"]`,
+      )
+      await home
+        .getByText(width === 390 ? 'Om oss' : 'KNC source sv', { exact: true })
+        .first()
+        .click()
+      if (width === 390 && !(await inspector.isVisible()))
+        await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Egenskaper' }).click()
+      await inspector.getByLabel('Text', { exact: true }).waitFor()
+      await capture('selected-text')
+      const controls = inspector.locator('.cms-inspector-scroll')
+      const extent = await controls.evaluate((node) => ({
+        height: node.clientHeight,
+        total: node.scrollHeight,
+      }))
+      for (let top = extent.height; top < extent.total; top += extent.height) {
+        await controls.evaluate((node, offset) => {
+          node.scrollTop = offset
+        }, top)
+        await capture(`selected-text-scroll-${top}`)
+      }
+      await controls.evaluate((node) => {
+        node.scrollTop = 0
+      })
+      if (width === 390) await inspector.getByRole('button', { name: 'Stäng egenskaper' }).click()
+      // The SVG logo keeps its native identity while the picker is open.
+      const logo = frame
+        .locator(
+          `[data-knc-surface="${width === 390 ? 'mobile' : 'desktop'}-home"] svg[role="img"]`,
+        )
+        .filter({ hasText: 'STUDIO' })
+        .first()
+      await logo.click({ position: { x: 3, y: 3 } })
+      if (width === 390 && !(await inspector.isVisible()))
+        await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Egenskaper' }).click()
+      await inspector.getByRole('button', { name: 'Byt logotyp från biblioteket' }).click()
+      const picker = page.getByRole('dialog', { name: 'Välj bild', exact: true })
+      await picker.waitFor()
+      await capture('image-picker')
+      await page.keyboard.press('Escape')
+      if (width === 390) await inspector.getByRole('button', { name: 'Stäng egenskaper' }).click()
       await openLibrary()
       await capture('pages')
       await library.getByRole('searchbox', { name: 'Sök sidor' }).fill('there-is-no-such-page')
@@ -201,9 +276,41 @@ for (const [engine, name] of [
           .click()
         await page.locator('.cms-workspace-view h1').waitFor()
         await overflow()
+        if (state === 'style') {
+          await page
+            .locator('.cms-theme-preview')
+            .frameLocator('iframe')
+            .getByText('KNC source sv', { exact: true })
+            .first()
+            .waitFor()
+        }
+        if (state === 'email') {
+          await page
+            .locator('.cms-email-preview')
+            .frameLocator('iframe')
+            .getByText('Din tid är bokad', { exact: true })
+            .waitFor()
+        }
         await capture(state)
         if (state === 'style') {
           await page.getByRole('button', { name: 'Mörkt tema', exact: true }).click()
+          await page
+            .locator('.cms-theme-preview')
+            .frameLocator('iframe')
+            .getByText('KNC source sv', { exact: true })
+            .first()
+            .waitFor()
+          await page.waitForFunction(() => {
+            const doc = globalThis.document.querySelector(
+              '.cms-theme-preview iframe',
+            )?.contentDocument
+            return (
+              doc?.documentElement.dataset.kncSourceReady &&
+              doc.defaultView.getComputedStyle(
+                doc.querySelector('[data-knc-surface="desktop-home"]'),
+              ).color === 'rgb(245, 245, 247)'
+            )
+          })
           await capture('style-dark')
           await page.getByRole('button', { name: 'Ljust tema', exact: true }).click()
         }
@@ -213,7 +320,15 @@ for (const [engine, name] of [
           await page.getByRole('searchbox', { name: 'Sök resurser' }).fill('')
           await page.locator('.cms-resource-card').first().getByRole('button').click()
           await page.locator('.cms-resource-detail').waitFor()
+          await page.getByRole('heading', { name: 'Salongens logotyp', exact: true }).waitFor()
           await capture('resource-detail')
+          await page.getByRole('button', { name: 'Stäng resursdetaljer' }).click()
+          assert.equal(await page.locator('.cms-resource-detail').count(), 0)
+          await page.getByRole('button', { name: 'Arkiverade', exact: true }).click()
+          await capture('resources-archived')
+          await page.getByRole('button', { name: 'Papperskorg', exact: true }).click()
+          await capture('resources-trash')
+          await page.getByRole('button', { name: 'Aktiva', exact: true }).click()
         }
         const view = page.locator('.cms-workspace-view')
         const scroll = await view.evaluate((node) => ({
@@ -260,7 +375,7 @@ for (const [engine, name] of [
       await overflow()
       const targets = await page.evaluate(() =>
         [
-          ...document.querySelectorAll(
+          ...globalThis.document.querySelectorAll(
             '.cms-topbar button,.cms-mobile-tools button,.cms-bottom button',
           ),
         ]

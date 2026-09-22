@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { emptyDocument, validateDocument, type CmsPage } from '../../shared/cms'
+import { resourceUsage } from '../../shared/cms-resources'
 import { validateMarkup } from '../../shared/cms-markup'
 
 const policy = {
@@ -61,4 +62,30 @@ it('still rejects a native document exceeding the combined 2 MiB limit', () => {
     },
   )
   expect(() => validateDocument(document)).toThrow('Maximum document size is 2 MiB')
+})
+
+// Resource details must accept the same native capture that can be published.
+it('finds resources in large native captures without mutating the draft', () => {
+  const reference = { bucket: 'gallery', path: 'logo/studio.webp' }
+  const html = `<main data-knc-native="1">${'x'.repeat(160_000)}<img src="${policy.storageOrigin}/storage/v1/object/public/gallery/logo/studio.webp" alt="Studio"></main>`
+  const document = documentWith(html)
+  const before = structuredClone(document)
+  expect(resourceUsage(document, reference, policy)).toEqual([
+    '/ · sv/light',
+    '/ · sv/dark',
+    '/ · en/light',
+    '/ · en/dark',
+  ])
+  expect(document).toEqual(before)
+})
+
+it('does not grant native resource-inspection limits to authored pages or shared regions', () => {
+  const reference = { bucket: 'gallery', path: 'logo/studio.webp' }
+  const document = documentWith(nativeHtml(160_000))
+  const page = document.presentation.pages[0]!
+  page.path = '/custom'
+  expect(() => resourceUsage(document, reference, policy)).toThrow('Page exceeds its size limit')
+  document.presentation.pages = []
+  document.presentation.regions.header = page.content
+  expect(() => resourceUsage(document, reference, policy)).toThrow('Page exceeds its size limit')
 })
