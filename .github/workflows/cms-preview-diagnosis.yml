@@ -1,0 +1,74 @@
+name: CMS preview diagnosis
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-preview-diagnosis.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [navigation, theme]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2567711c3f22c386fdb6f1323bb39660d0f49175
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare remote tools
+        run: |
+          npm ci > /tmp/install.log 2>&1
+          npx playwright install --with-deps chromium webkit > /tmp/browsers.log 2>&1
+          bash tools/ci/setup-furl.sh
+      - name: Trace existing failing scenarios
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/diagnosis
+        run: |
+          mkdir -p /tmp/diagnosis
+          git rev-parse HEAD > /tmp/diagnosis/source-commit.txt
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/diagnosis/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          node --input-type=module <<'JS'
+          import { readFile, writeFile } from 'node:fs/promises'
+          const file = process.env.SCENARIO === 'navigation' ? 'tools/e2e/cms-owner.mjs' : 'tools/e2e/cms-workspace-views.mjs'
+          let source = await readFile(file, 'utf8')
+          const marker = 'const page = await context.newPage()'
+          if (!source.includes(marker)) throw new Error('Missing instrumentation insertion point')
+          source = source.replace(marker, `
+          await context.addInitScript(() => {
+            const snap = () => ({url: location.pathname+location.search, ready: document.documentElement.dataset.kncSourceReady, error: document.documentElement.dataset.kncSourceError, failure: document.documentElement.dataset.kncSourceFailure, surfaces: [...document.querySelectorAll('[data-knc-surface]')].map(n => n.getAttribute('data-knc-surface')), busy: document.querySelector('.cms-live-preview')?.getAttribute('aria-busy'), inert: document.querySelector('.cms-live-preview>div')?.inert, fonts: document.fonts.status})
+            addEventListener('message', e => {if (e.data?.type?.startsWith('knc-')) console.log('TRACE message', JSON.stringify({type:e.data.type,id:e.data.id,path:e.data.path,scene:e.data.scene,snapshot:snap()}))})
+            addEventListener('click', e => { const b=e.target.closest?.('button'); if (b && (b.textContent.includes('Boka') || b.textContent.includes('Lås') || b.textContent.includes('stil'))) {console.log('TRACE click',b.textContent,JSON.stringify(snap()));setTimeout(()=>console.log('TRACE after-click',JSON.stringify(snap())),600)} },true)
+            if(location.search.includes('preview=1')) {let i=0; const timer=setInterval(()=>{console.log('TRACE tick',JSON.stringify(snap()));if(++i>=24)clearInterval(timer)},1000)}
+          })
+          const page = await context.newPage()
+          page.on('console', msg => { if(msg.text().startsWith('TRACE')) console.log(msg.text()) })
+          page.on('pageerror', error => console.log('TRACE pageerror',error.message))
+          `)
+          await writeFile(file, source)
+          JS
+          set +e
+          if [ "$SCENARIO" = navigation ]; then
+            CMS_OWNER_SCENARIO=live-preview node tools/e2e/cms-owner.mjs > /tmp/diagnosis/probe.log 2>&1
+          else
+            CMS_ENGINE=webkit CMS_WIDTH=390 node tools/e2e/cms-workspace-views.mjs > /tmp/diagnosis/probe.log 2>&1
+          fi
+          echo "$?" > /tmp/diagnosis/probe.exit-code
+          grep 'TRACE' /tmp/diagnosis/probe.log > /tmp/diagnosis/trace.log || true
+          for image in /tmp/cms-native-*-owner-live-preview-failure.png; do test ! -f "$image" || cp "$image" /tmp/diagnosis/; done
+          furl compress /tmp/diagnosis/probe.log --json > /tmp/diagnosis/probe.furl.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-preview-diagnosis-${{ matrix.scenario }}-${{ github.run_number }}
+          path: /tmp/diagnosis
+          retention-days: 7
