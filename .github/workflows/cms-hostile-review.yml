@@ -28,13 +28,15 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/review-source
           git worktree add --detach /tmp/review-candidate 369692ec9f084e27980a10905812f34074457c68
-          gzip -dc .cms-review/changes.gz | git -C /tmp/review-candidate apply --index
+          cat .cms-review/part-*.b64 | base64 --decode > /tmp/review-source/changes.gz
+          echo "f956186290d13c851040eaec293b4070a2bb39e26454e7e60a517498bf876037  /tmp/review-source/changes.gz" | sha256sum -c -
+          gzip -dc /tmp/review-source/changes.gz | git -C /tmp/review-candidate apply --index
           cd /tmp/review-candidate
-          test "$(git write-tree)" = 0cbaa9afee0bb0372242e33ae0c9db431c51a19c
+          test "$(git write-tree)" = f78d44677476160b4207f48c35da6d2a8f6ac147
           npm ci --ignore-scripts --no-audit --no-fund > /tmp/review-source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/review-source/format.log 2>&1
           git add -u
-          git -c user.name='CMS review' -c user.email='cms-review@users.noreply.github.com' commit -m 'test: reproduce CMS asset wire and delayed-update defects'
+          git -c user.name='CMS review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: protect resource editing and expose remaining authoring contracts'
           git rev-parse HEAD > /tmp/review-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/review-source/source-tree.txt
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -51,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: [unit, chromium, webkit]
+        task: [unit, chromium, webkit, baseline-chromium]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -72,10 +74,11 @@ jobs:
           set -euo pipefail
           git fetch /tmp/review-source/source.bundle HEAD
           git checkout --detach "$SOURCE"
+          if [ "$TASK" = baseline-chromium ]; then git restore --source=369692ec9f084e27980a10905812f34074457c68 -- src shared; fi
           mkdir -p /tmp/cms-review
           cp /tmp/review-source/source-*.txt /tmp/cms-review/
           npm ci --no-audit --no-fund
-          if [ "$TASK" != unit ]; then npx playwright install --with-deps "$TASK"; fi
+          if [ "$TASK" != unit ]; then npx playwright install --with-deps "${TASK#baseline-}"; fi
           bash tools/ci/setup-furl.sh
       - name: Exercise adversarial contracts
         env:
@@ -86,7 +89,7 @@ jobs:
           set -euo pipefail
           if [ "$CMS_ENGINE" = unit ]; then
             set +e
-            npx vitest run tests/unit/cmsWireContracts.test.ts > /tmp/cms-review/unit.log 2>&1
+            npx vitest run tests/unit/cmsWireContracts.test.ts tests/unit/cmsBackup.test.ts > /tmp/cms-review/unit.log 2>&1
             echo "$?" > /tmp/cms-review/unit.exit-code
           else
             VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-review/server.log 2>&1 &
@@ -95,8 +98,15 @@ jobs:
             for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
             curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
             set +e
-            timeout 12m node tools/e2e/cms-adversarial.mjs > /tmp/cms-review/browser.log 2>&1
-            echo "$?" > /tmp/cms-review/browser.exit-code
+            export CMS_ENGINE="${CMS_ENGINE#baseline-}"
+            status=0
+            for suite in cms-adversarial cms-authoring; do
+              timeout 12m node "tools/e2e/$suite.mjs" > "/tmp/cms-review/$suite.log" 2>&1
+              result=$?
+              echo "$result" > "/tmp/cms-review/$suite.exit-code"
+              if [ "$result" != 0 ]; then status=1; fi
+            done
+            echo "$status" > /tmp/cms-review/browser.exit-code
           fi
       - name: Summarize outcomes with Furl
         if: always()
