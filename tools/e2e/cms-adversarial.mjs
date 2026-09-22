@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
 import { emptyDocument } from '../../shared/cms.ts'
+import { nativeBackend } from './cms-native.mjs'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 const out = process.env.CMS_EVIDENCE_DIR ?? '/tmp/cms-adversarial'
@@ -201,13 +202,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       const delay = { operation: 'upload', started: gate(), done: gate() }
       await mount(page, context, { document, delay })
       await page.locator('.cms-resource-card button').click()
-      await page
-        .locator('.cms-resource-detail input[type=file]')
-        .setInputFiles({
-          name: 'new.webp',
-          mimeType: 'image/webp',
-          buffer: Buffer.from('fixture-response-is-intercepted'),
-        })
+      await page.locator('.cms-resource-detail input[type=file]').setInputFiles({
+        name: 'new.webp',
+        mimeType: 'image/webp',
+        buffer: Buffer.from('fixture-response-is-intercepted'),
+      })
       await delay.started.promise
       await page.evaluate(async () =>
         (await import('/tools/e2e/cms-resources-harness.tsx')).changeBusinessName(
@@ -348,6 +347,74 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       )
       assert.equal(result.untouched, true)
       assert.equal(result.idempotent, true)
+    })
+    await run('email-authoritative-limits', async (page) => {
+      await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+      await page.evaluate(async () => {
+        const { h, render } = await import('/tools/e2e/admin-harness.tsx')
+        const { EmailPanel } = await import('/src/admin/cms/DomainPanels.tsx')
+        const { emptyDocument, defaultEmailDesign } = await import('/shared/cms.ts')
+        const state = emptyDocument()
+        state.emails.push({
+          template: 'customer_confirmation',
+          lang: 'sv',
+          subject: 'Bokning',
+          preheader: 'Bokning',
+          title: 'Bokning',
+          intro: 'Välkommen',
+          section_title: null,
+          note: 'Tack',
+          cta_label: 'Visa',
+          contact_lead: null,
+          design: defaultEmailDesign(),
+        })
+        render(
+          h(EmailPanel, { document: state, lang: 'sv', assets: [], onChange: () => {} }),
+          document.getElementById('root'),
+        )
+      })
+      await page.getByText('Utseende', { exact: true }).click()
+      const limits = await page
+        .locator('.cms-email-design input[type=number]')
+        .evaluateAll((inputs) =>
+          inputs.map((input) => ({
+            label: input.parentElement.textContent.trim(),
+            min: Number(input.min),
+            max: Number(input.max),
+          })),
+        )
+      assert.deepEqual(
+        limits,
+        [
+          { label: 'Bredd', min: 320, max: 800 },
+          { label: 'Hörnradie', min: 0, max: 40 },
+          { label: 'Padding', min: 12, max: 60 },
+          { label: 'Rubrikstorlek', min: 20, max: 48 },
+          { label: 'Textstorlek', min: 12, max: 24 },
+        ],
+        'editor ranges must agree with the authoritative validator',
+      )
+    })
+    await run('page-path-validation', async (page, context) => {
+      await nativeBackend(context)
+      await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+      await page.evaluate(async () =>
+        (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+      )
+      await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+      await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
+      await dialog.getByLabel('Adress', { exact: true }).fill('/bad_name')
+      await dialog.getByRole('button', { name: 'Skapa sida', exact: true }).click()
+      assert.equal(
+        await dialog.isVisible(),
+        true,
+        'invalid page paths must be rejected before a draft is created',
+      )
+      assert.equal(
+        await page.locator('#cms-library').getByText('/bad_name', { exact: true }).count(),
+        0,
+      )
     })
   } finally {
     await browser.close()

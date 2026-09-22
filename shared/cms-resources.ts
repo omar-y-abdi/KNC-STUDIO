@@ -58,7 +58,7 @@ export function replaceDocumentResource(
   if (previous.path.endsWith('.woff2') !== next.path.endsWith('.woff2'))
     throw new Error('Ersätt ett typsnitt med ett typsnitt och en bild med en bild.')
   for (const font of Object.values(document.presentation.fonts ?? {}))
-    if (mediaKey(font.ref) === oldKey) font.ref = { ...next }
+    if (mediaKey(font.ref) === oldKey) font.ref = { bucket: next.bucket, path: next.path }
   if (previous.bucket !== next.bucket)
     throw new Error(
       'Ersätt med en fil från samma kategori, så att befintliga databaskopplingar bevaras.',
@@ -104,10 +104,10 @@ export function replaceDocumentResource(
     document.settings['homepage_logo_path'] = next.path
   }
   for (const image of Object.values(document.presentation.images))
-    if (mediaKey(image.ref) === oldKey) image.ref = { ...next }
+    if (mediaKey(image.ref) === oldKey) image.ref = { bucket: next.bucket, path: next.path }
   for (const email of document.emails)
     if (email.design?.logo && mediaKey(email.design.logo) === oldKey)
-      email.design.logo = { ...next }
+      email.design.logo = { bucket: next.bucket, path: next.path }
   for (const content of [
     ...document.presentation.pages.map((page) => page.content),
     ...Object.values(document.presentation.regions),
