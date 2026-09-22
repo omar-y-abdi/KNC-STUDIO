@@ -1,0 +1,30 @@
+name: CMS workspace edge proof
+on:
+  push:
+    branches: [verify/cms-workspace-edge-20260922]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Exercise the incumbent before the fixes
+        run: |
+          mkdir -p /tmp/cms-edge
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-edge/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break; sleep 1; done
+          CMS_EVIDENCE_DIR=/tmp/cms-edge node tools/e2e/cms-workspace-edge.mjs > /tmp/cms-edge/edge.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-workspace-edge-red
+          path: /tmp/cms-edge
+          retention-days: 7
