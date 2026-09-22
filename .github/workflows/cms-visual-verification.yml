@@ -1,12 +1,12 @@
 name: CMS visual verification
 on:
   push:
-    branches: [verify/cms-visual-refinement-20260922]
+    branches: [verify/cms-workspace-a11y-20260922]
     paths: [.github/workflows/cms-visual-verification.yml, .cms-verification/**]
 permissions:
   contents: read
 concurrency:
-  group: cms-visual-verification
+  group: cms-workspace-a11y-verification
   cancel-in-progress: true
 defaults:
   run:
