@@ -1,0 +1,45 @@
+diff --git a/tools/e2e/cms-workspace-edge.mjs b/tools/e2e/cms-workspace-edge.mjs
+index 50abd17d..21913483 100644
+--- a/tools/e2e/cms-workspace-edge.mjs
++++ b/tools/e2e/cms-workspace-edge.mjs
+@@ -264,6 +264,25 @@ for (const [engine, name] of [
+       await shot('preview-recovered')
+       await page.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
+     })
++    await run('landscape-drawer', async () => {
++      await page.setViewportSize({ width: 844, height: 390 })
++      await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Egenskaper', exact: true }).click()
++      const panel = page.locator('#cms-inspector')
++      await panel.getByRole('tab', { name: 'Lägg till', exact: true }).click()
++      const bounds = await panel.locator('.gjs-block').first().evaluate((node) => {
++        const tile = node.getBoundingClientRect()
++        const content = node.closest('.cms-manager-panel').getBoundingClientRect()
++        return { top: tile.top, bottom: tile.bottom, contentTop: content.top, contentBottom: content.bottom, height: content.height }
++      })
++      check(
++        bounds.top >= bounds.contentTop && bounds.bottom <= Math.min(bounds.contentBottom, 390) && bounds.height >= 180,
++        `${name}: a landscape drawer exposes a whole block and a usable scroll aperture`,
++        bounds,
++      )
++      await shot('landscape-blocks')
++      await panel.getByRole('button', { name: 'Stäng panel', exact: true }).click()
++      await page.setViewportSize({ width: 1440, height: 900 })
++    })
+     await run('first-revert', async () => {
+       assert.equal(
+         backend.document.presentation.pages.length,
+diff --git a/tools/e2e/cms-workspace-views.mjs b/tools/e2e/cms-workspace-views.mjs
+index 2b252fc4..a1380624 100644
+--- a/tools/e2e/cms-workspace-views.mjs
++++ b/tools/e2e/cms-workspace-views.mjs
+@@ -402,6 +402,10 @@ for (const [engine, engineName, widths] of [
+         await inspect('20-email', async () => {
+           await open('Mejl')
+           await page.getByRole('heading', { name: 'Kundbekräftelse · SV', exact: true }).waitFor()
++          check(
++            (await page.getByRole('group', { name: 'Mejlbredd', exact: true }).count()) === 1,
++            `${prefix}: email viewport controls form a named accessible group`,
++          )
+           await capture('20-email-editor', true)
+           await scrollSeries(
+             '20-email-editor',
