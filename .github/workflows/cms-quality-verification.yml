@@ -1,0 +1,83 @@
+name: CMS quality verification
+on:
+  push:
+    branches: [verify/cms-quality-final-20260922]
+    paths: [.github/workflows/cms-quality-verification.yml, .cms-verification/**]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cms-quality-final
+  cancel-in-progress: true
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: cms-focus-source-2
+          run-id: 35727528861
+          github-token: ${{ github.token }}
+          path: /tmp/cms-inputs
+      - name: Reconcile the existing candidate with the current PR
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-workspace
+          git fetch /tmp/cms-inputs/source.bundle HEAD
+          test "$(git rev-parse FETCH_HEAD)" = 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
+          git worktree add --detach /tmp/candidate eaca9b67af86777459f00f18f6e20c12d00ba0f4
+          git -C /tmp/candidate -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' cherry-pick a60e2e4fb6fc44ef1b464a9168a16500c4272ebd 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
+          test "$(git -C /tmp/candidate rev-parse HEAD^{tree})" = 336f9b67a413c9a558f4a55e564cbdf40a9e1157
+          cp .cms-verification/resource-unit.ts /tmp/candidate/tests/unit/cmsResourceUsage.test.ts
+          cp .cms-verification/selection-probe.mjs /tmp/candidate/tools/e2e/cms-selection-probe.mjs
+          git -C /tmp/candidate rev-parse HEAD^{tree} > /tmp/cms-workspace/source-tree.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install isolated remote tools
+        working-directory: /tmp/candidate
+        run: |
+          npm ci > /tmp/cms-workspace/install.log 2>&1
+          npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
+          curl -fsSL 'https://github.com/omar-y-abdi/furl-ctx/releases/download/v1.4.0/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' -o /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
+          echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' | sha256sum -c -
+          python -m pip install /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl > /tmp/cms-workspace/furl-install.log 2>&1
+      - name: Start fixture server
+        working-directory: /tmp/candidate
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null
+      - name: Run the resource regression before its fix and inspect actual selection
+        working-directory: /tmp/candidate
+        env:
+          CMS_EVIDENCE_DIR: /tmp/cms-workspace
+        run: |
+          set +e
+          npx vitest run tests/unit/cmsResourceUsage.test.ts > /tmp/cms-workspace/resource-red.log 2>&1
+          echo "$?" > /tmp/cms-workspace/resource-red.exit-code
+          node tools/e2e/cms-selection-probe.mjs > /tmp/cms-workspace/selection.log 2>&1
+          echo "$?" > /tmp/cms-workspace/selection.exit-code
+          exit 0
+      - name: Preserve compact diagnostic evidence
+        if: always()
+        run: |
+          for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-quality-probe-${{ github.run_number }}
+          path: /tmp/cms-workspace
+          retention-days: 7
+      - name: Report the uncorrected product regression
+        if: always()
+        run: test "$(cat /tmp/cms-workspace/resource-red.exit-code)" = 0
