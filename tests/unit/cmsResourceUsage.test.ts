@@ -40,7 +40,9 @@ describe('resource usage in the real-site editor', () => {
 
   it('reports CSS-only references in the correct language and theme', () => {
     const document = documentWith('<main></main>', '/galleri')
-    document.presentation.pages[0]!.content.en.css.dark = `.hero{background-image:url("${url}")}`
+    const page = document.presentation.pages[0]
+    if (!page) throw new Error('Missing fixture page')
+    page.content.en.css.dark = `.hero{background-image:url("${url}")}`
     expect(resourceUsage(document, image, policy)).toEqual(['/galleri · en/dark'])
   })
 

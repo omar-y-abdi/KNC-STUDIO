@@ -7,11 +7,12 @@ export function labelEditorChrome(root: HTMLElement): () => void {
     for (const frame of root.querySelectorAll<HTMLIFrameElement>('iframe.gjs-frame'))
       frame.title = 'Redigerbar webbplats'
 
-    for (const field of root.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
+    const labeled = new Set([...root.querySelectorAll('label')].map((label) => label.control))
+    for (const field of root.querySelectorAll<HTMLElement>(
       '#cms-styles input, #cms-styles select, #cms-traits input, #cms-traits select',
     )) {
       if (
-        field.labels?.length ||
+        labeled.has(field) ||
         field.hasAttribute('aria-label') ||
         field.hasAttribute('aria-labelledby')
       )

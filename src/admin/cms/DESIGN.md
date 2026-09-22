@@ -45,9 +45,9 @@ Inter is already shipped by the application. Default 13px/1.45; secondary labels
 
 ## Layout
 
-Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a 300px palette/type form with a live public preview; below 1100px these stack. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
+Desktop: 220px page library, flexible canvas, 284px contextual inspector. Header 65px; canvas toolbar 58px. Page settings appear only when no element is selected. Resources, history, business, email and website style are full workspace destinations. Website style pairs a palette/type form with a live public preview. Compact screens have explicit editing and preview destinations instead of forcing a full-width page beneath a long form. New-page, backup, image selection and revision review are focused dialogs. Canvas state stays mounted while visiting another destination.
 
-Below 900px, page library and inspector become explicit drawers; workspace views fill available width. Forms stack and the dock becomes an independently scrollable bottom row. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
+Below 900px, page library and inspector become mutually exclusive modal drawers with focus trapping, background isolation, an in-panel close button and focus return. Workspace views fill available width. Forms stack and touch commands occupy a persistent bottom dock without clipping. Publication remains in the header. The initial canvas matches the operator's device; subsequent desktop/mobile choice is explicit. Compare uses two adjacent viewports, not an overlay. Fit considers viewport width and height (1440×900 desktop, 390×844 mobile).
 
 ## Elevation and shapes
 
@@ -55,10 +55,10 @@ Borders and surface tones carry hierarchy. Only the floating dock, mobile drawer
 
 ## Components and states
 
-Buttons retain semantic disabled/pressed states and visible keyboard focus. The header owns publication status; errors remain readable until dismissed. Language/theme switches affect page content only. Workspace headings receive focus on navigation; Escape returns to the editor. Native dialogs trap focus and return it to their opener. Resources have explicit empty/search-empty states and show dimensions/type before selection. Forms use persistent labels. Default loading is textual and keeps the surrounding shell stable. Scrollbars inherit tokenized colors, with system colors in forced-colors mode.
+Buttons retain semantic disabled/pressed states and visible keyboard focus. The header owns the publication action and its status; errors remain readable until dismissed. Language/theme switches affect page content only. Workspace headings receive focus on navigation; Escape returns to the editor. Native dialogs trap focus and return it to their opener. Resources have explicit empty/search-empty states and show dimensions/type before selection. Forms use persistent labels. Loading is textual and keeps the surrounding shell stable. Native preview readiness follows the renderer's matching context, with a visible failure state and retry instead of a blank frame. Scrollbars inherit tokenized colors, with system colors in forced-colors mode.
 
 ## Verification
 
 `tools/e2e/cms-owner.mjs` exercises full workspace destinations at 1440px and 390px in Chromium/WebKit, verifies reachable controls, no horizontal overflow, keyboard dismissal, real email rendering, custom page publication and editing behavior. `DESIGN.md` lint plus the skill's scoped audit are static checks; screenshots and behavior remain release evidence.
 
-Device layout is independent: desktop uses min-width 769px; mobile uses max-width 768px. Geometry carries between light/dark; appearance remains theme-specific. Text is shared between responsive views. Home derives its About preview from the current draft. In editable mobile snapshots the hero scrolls with the document; locked preview retains the real folding interaction.
+Device layout is independent: desktop uses min-width 769px; mobile uses max-width 768px. Geometry carries between light/dark; appearance remains theme-specific. Text is shared between responsive views. Home derives its About preview from the current draft. In editable mobile snapshots the original folding geometry is applied by a temporary canvas stylesheet outside the saved model; locked preview uses the actual runtime.

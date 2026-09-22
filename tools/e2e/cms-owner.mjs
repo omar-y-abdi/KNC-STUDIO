@@ -137,9 +137,7 @@ for (const [engine, name] of [
           }),
         )
       const page = await context.newPage()
-      page.on('console', (message) => {
-        if (message.text().startsWith('CMS_LOGO_HIT')) console.log(name, message.text())
-      })
+
       const frame = page.frameLocator('.gjs-frame').first()
       const inspector = page.locator('#cms-inspector')
       const mount = async (expected = 'KNC source sv') => {
@@ -463,27 +461,6 @@ for (const [engine, name] of [
               id: node.ownerSVGElement.id,
               textIndex: [...node.ownerSVGElement.querySelectorAll('text')].indexOf(node) + 1,
             }))
-            await frame.locator(`[id="${logo.id}"]`).evaluate((node) => {
-              node.ownerDocument.addEventListener(
-                'mousedown',
-                (event) => {
-                  console.log(
-                    'CMS_LOGO_HIT',
-                    JSON.stringify({
-                      requested: node.id,
-                      actual:
-                        event.target instanceof globalThis.Element
-                          ? event.target.outerHTML.slice(0, 1000)
-                          : null,
-                      x: event.clientX,
-                      y: event.clientY,
-                      rect: node.getBoundingClientRect().toJSON(),
-                    }),
-                  )
-                },
-                { once: true },
-              )
-            })
             await frame.locator(`[id="${logo.id}"]`).click({ position: { x: 3, y: 3 } })
             await inspector
               .getByLabel(`Logotyptext ${logo.textIndex}`, { exact: true })

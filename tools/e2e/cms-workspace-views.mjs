@@ -123,6 +123,14 @@ for (const [engine, engineName, widths] of [
         await page.evaluate(async () => {
           await globalThis.document.fonts.ready
         })
+        const previews = page.locator('.cms-live-preview:visible')
+        for (const preview of await previews.all()) {
+          await page.waitForFunction(
+            (node) => node?.dataset.previewState === 'ready',
+            await preview.elementHandle(),
+            { timeout: 30000 },
+          )
+        }
         const filename = `${prefix}-${name}.png`
         await page.screenshot({
           path: `${out}/${filename}`,

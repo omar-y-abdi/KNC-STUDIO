@@ -1,6 +1,6 @@
 import { siteThemeCss } from '../../../shared/site-theme'
 import type { JSX } from 'preact'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
 import { isSitePage, renderSitePage } from '../../../shared/site-page'
@@ -29,6 +29,8 @@ export function LivePreview({
   const host = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const [connected, setConnected] = useState(0)
+  const [attempt, setAttempt] = useState(0)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [scale, setScale] = useState(1)
   const width = device === 'Desktop' ? 1440 : 390
   const height = device === 'Desktop' ? 900 : 844
@@ -72,44 +74,101 @@ export function LivePreview({
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
   }, [])
-  useEffect(() => {
-    if (!connected || !native) return
-    frame.current?.contentWindow?.postMessage(
-      {
-        type: 'knc-source-context',
-        id: crypto.randomUUID(),
-        lang,
-        mode,
-        device,
-        path: page.path,
-        presentation,
-        scene:
-          scene !== 'default'
-            ? scene
-            : page.path === '/booking'
-              ? 'booking'
-              : page.path === '/my-bookings'
-                ? 'my-bookings'
-                : 'home',
-      },
-      location.origin,
+  useLayoutEffect(() => {
+    setStatus('loading')
+    // Even a frame that never boots must leave the loading state.
+    const timeout = window.setTimeout(
+      () => setStatus((value) => (value === 'loading' ? 'error' : value)),
+      20_000,
     )
-  }, [connected, native, page.path, presentation, lang, mode, device, scene])
+    let observer: MutationObserver | undefined
+    if (connected && native) {
+      const id = crypto.randomUUID()
+      const root = frame.current?.contentDocument?.documentElement
+      const receiveReadiness = (): void => {
+        if (root?.dataset['kncSourceError'] === id) {
+          window.clearTimeout(timeout)
+          setStatus('error')
+        } else if (root?.dataset['kncSourceReady'] === id) {
+          window.clearTimeout(timeout)
+          setStatus('ready')
+        }
+      }
+      if (root) {
+        observer = new MutationObserver(receiveReadiness)
+        observer.observe(root, {
+          attributes: true,
+          attributeFilter: ['data-knc-source-ready', 'data-knc-source-error'],
+        })
+      }
+      frame.current?.contentWindow?.postMessage(
+        {
+          type: 'knc-source-context',
+          id,
+          lang,
+          mode,
+          device,
+          path: page.path,
+          presentation,
+          scene:
+            scene !== 'default'
+              ? scene
+              : page.path === '/booking'
+                ? 'booking'
+                : page.path === '/my-bookings'
+                  ? 'my-bookings'
+                  : 'home',
+        },
+        location.origin,
+      )
+    }
+    return () => {
+      window.clearTimeout(timeout)
+      observer?.disconnect()
+    }
+  }, [attempt, connected, native, page.path, presentation, lang, mode, device, scene])
   const content = native
     ? null
     : isSitePage(page)
       ? renderSitePage(presentation, page, lang, mode)
       : nativeCanvas(page.content[lang], mode)
   return (
-    <div ref={host} class="cms-live-preview">
+    <div
+      ref={host}
+      class="cms-live-preview"
+      data-preview-state={status}
+      aria-busy={status === 'loading'}
+    >
+      {status !== 'ready' && (
+        <div class="cms-preview-status">
+          {status === 'loading' ? (
+            <p role="status">Förhandsvisningen laddas…</p>
+          ) : (
+            <>
+              <p role="alert">Förhandsvisningen kunde inte laddas.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setConnected(0)
+                  setAttempt((value) => value + 1)
+                }}
+              >
+                Försök igen
+              </button>
+            </>
+          )}
+        </div>
+      )}
       <div style={{ width: `${width * scale}px`, height: `${height * scale}px` }}>
         <iframe
-          key={native ? 'native' : page.id}
+          key={`${native ? 'native' : page.id}-${attempt}`}
           ref={frame}
           title="Förhandsvisning av sidan"
+          tabIndex={status === 'ready' ? 0 : -1}
           sandbox={native ? 'allow-scripts allow-same-origin' : 'allow-same-origin'}
           onLoad={() => {
             if (native) return
+            setStatus('ready')
             frame.current?.contentDocument?.addEventListener('click', (event) => {
               const target = event.target as Element | null
               const anchor = target?.closest?.('a')

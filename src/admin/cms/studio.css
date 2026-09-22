@@ -689,6 +689,23 @@
   overflow: hidden;
   background: var(--bg);
 }
+.cms-preview-status {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--muted);
+  text-align: center;
+}
+.cms-preview-status p {
+  margin: 0;
+}
 .cms-live-preview iframe {
   display: block;
   border: 0;
