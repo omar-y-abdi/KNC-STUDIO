@@ -10,74 +10,178 @@ concurrency:
   group: cms-quality-final
   cancel-in-progress: true
 jobs:
-  probe:
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: cms-focus-source-2
           run-id: 35727528861
           github-token: ${{ github.token }}
-          path: /tmp/cms-inputs
-      - name: Reconcile the existing candidate with the current PR
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/cms-workspace
-          git fetch /tmp/cms-inputs/source.bundle HEAD
-          test "$(git rev-parse FETCH_HEAD)" = 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
-          git worktree add --detach /tmp/candidate eaca9b67af86777459f00f18f6e20c12d00ba0f4
-          git -C /tmp/candidate -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' cherry-pick a60e2e4fb6fc44ef1b464a9168a16500c4272ebd 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
-          test "$(git -C /tmp/candidate rev-parse HEAD^{tree})" = 336f9b67a413c9a558f4a55e564cbdf40a9e1157
-          cp .cms-verification/resource-unit.ts /tmp/candidate/tests/unit/cmsResourceUsage.test.ts
-          cp .cms-verification/selection-probe.mjs /tmp/candidate/tools/e2e/cms-selection-probe.mjs
-          git -C /tmp/candidate rev-parse HEAD^{tree} > /tmp/cms-workspace/source-tree.txt
+          path: /tmp/cms-original
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - name: Reconcile and identify the exact candidate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-inputs
+          git fetch /tmp/cms-original/source.bundle HEAD
+          test "$(git rev-parse FETCH_HEAD)" = 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
+          git worktree add --detach /tmp/cms-candidate eaca9b67af86777459f00f18f6e20c12d00ba0f4
+          git -C /tmp/cms-candidate -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' cherry-pick a60e2e4fb6fc44ef1b464a9168a16500c4272ebd 110b5756c587ec6937dc1eaa2c9081b2e2a22d47
+          test "$(git -C /tmp/cms-candidate rev-parse HEAD^{tree})" = 336f9b67a413c9a558f4a55e564cbdf40a9e1157
+          gzip -dc .cms-verification/candidate.patch.gz | git -C /tmp/cms-candidate apply --index
+          test "$(git -C /tmp/cms-candidate write-tree)" = cda0c7107911f3c206ac462cdf9b6f5d21b82f34
+          cd /tmp/cms-candidate
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-inputs/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-inputs/format.log 2>&1
+          git add -u
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: preserve native resource validation and unique accessible editor controls'
+          git rev-parse HEAD > /tmp/cms-inputs/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-inputs/source-tree.txt
+          git diff --binary eaca9b67af86777459f00f18f6e20c12d00ba0f4 HEAD > /tmp/cms-inputs/product.patch
+          git bundle create /tmp/cms-inputs/source.bundle HEAD
+          git push origin HEAD:refs/heads/verify/cms-quality-candidate-${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-quality-source-${{ github.run_number }}
+          path: /tmp/cms-inputs
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [static, workspace, owner, flows, surfaces]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cms-quality-source-${{ github.run_number }}
+          path: /tmp/cms-inputs
+      - name: Read exact source bundle
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-workspace
+          git clone /tmp/cms-inputs/source.bundle candidate
+          cd candidate
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/cms-inputs/source-commit.txt)"
+          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/cms-inputs/source-tree.txt)"
+          cp /tmp/cms-inputs/source-*.txt /tmp/cms-workspace/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install isolated remote tools
-        working-directory: /tmp/candidate
+      - name: Install remote verification tools
+        working-directory: candidate
+        env:
+          GROUP: ${{ matrix.group }}
         run: |
+          set -euo pipefail
           npm ci > /tmp/cms-workspace/install.log 2>&1
-          npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
+          if [ "$GROUP" != static ]; then
+            npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
+          fi
+          if [ "$GROUP" = surfaces ]; then
+            npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-workspace/axe-install.log 2>&1
+          fi
           curl -fsSL 'https://github.com/omar-y-abdi/furl-ctx/releases/download/v1.4.0/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' -o /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
           echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' | sha256sum -c -
           python -m pip install /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl > /tmp/cms-workspace/furl-install.log 2>&1
-      - name: Start fixture server
-        working-directory: /tmp/candidate
+      - name: Static checks, unit suite and build
+        if: matrix.group == 'static'
+        working-directory: candidate
+        run: |
+          set +e
+          for command in typecheck lint format:check test build; do
+            npm run "$command" > "/tmp/cms-workspace/${command//:/-}.log" 2>&1
+            echo "$?" > "/tmp/cms-workspace/${command//:/-}.exit-code"
+          done
+          exit 0
+      - name: Start isolated fixture server
+        if: matrix.group != 'static'
+        working-directory: candidate
         run: |
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
           curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null
-      - name: Run the resource regression before its fix and inspect actual selection
-        working-directory: /tmp/candidate
+      - name: Browser regressions and full visual evidence
+        if: matrix.group != 'static'
+        working-directory: candidate
         env:
+          BASE_URL: http://127.0.0.1:4188
           CMS_EVIDENCE_DIR: /tmp/cms-workspace
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+          GROUP: ${{ matrix.group }}
         run: |
           set +e
-          npx vitest run tests/unit/cmsResourceUsage.test.ts > /tmp/cms-workspace/resource-red.log 2>&1
-          echo "$?" > /tmp/cms-workspace/resource-red.exit-code
-          node tools/e2e/cms-selection-probe.mjs > /tmp/cms-workspace/selection.log 2>&1
-          echo "$?" > /tmp/cms-workspace/selection.exit-code
+          case "$GROUP" in
+            surfaces) suites='cms-workspace-views' ;;
+            workspace) suites='cms-workspace cms-native cms-responsive' ;;
+            owner) suites='cms-owner' ;;
+            flows) suites='cms-scenes cms-projection cms-public-regression cms-populated cms-conflict' ;;
+          esac
+          for suite in $suites; do
+            timeout 20m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
+            echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
+          done
+          if [ "$GROUP" = workspace ]; then
+            ADMIN_E2E_SCENARIO=cms-shell node tools/e2e/admin-state.mjs > /tmp/cms-workspace/cms-shell.log 2>&1
+            echo "$?" > /tmp/cms-workspace/cms-shell.exit-code
+          fi
           exit 0
-      - name: Preserve compact diagnostic evidence
+      - name: Preserve compact logs and exact results
         if: always()
         run: |
-          for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          mkdir -p /tmp/cms-workspace
+          shopt -s nullglob
+          for file in /tmp/cms-*.png /tmp/admin-*.png /tmp/cms-public-selection-*.json; do cp "$file" /tmp/cms-workspace/; done
+          set +e
+          git -C candidate diff --exit-code > /tmp/cms-workspace/tracked-source-diff.log 2>&1
+          echo "$?" > /tmp/cms-workspace/tracked-source-diff.exit-code
+          set -e
+          if command -v furl > /dev/null; then
+            for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          fi
+          python - <<'PY'
+          import json,pathlib
+          root=pathlib.Path('/tmp/cms-workspace')
+          checks={p.stem:int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          (root/'check-summary.json').write_text(json.dumps(checks,indent=2))
+          print(checks)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cms-quality-probe-${{ github.run_number }}
+          name: cms-quality-${{ matrix.group }}-${{ github.run_number }}
           path: /tmp/cms-workspace
           retention-days: 7
-      - name: Report the uncorrected product regression
+      - name: Enforce every expected gate
         if: always()
-        run: test "$(cat /tmp/cms-workspace/resource-red.exit-code)" = 0
+        env:
+          GROUP: ${{ matrix.group }}
+        run: |
+          python - <<'PY'
+          import json,pathlib,os
+          p=pathlib.Path('/tmp/cms-workspace/check-summary.json')
+          checks=json.loads(p.read_text()) if p.exists() else {}
+          gates={'static':['typecheck','lint','format-check','test','build'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views']}
+          required=set(gates[os.environ['GROUP']])|{'tracked-source-diff'}
+          assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
+          assert all(v==0 for v in checks.values()),checks
+          PY
