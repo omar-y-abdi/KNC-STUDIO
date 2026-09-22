@@ -1,0 +1,29 @@
+name: CMS candidate reconciliation
+on:
+  push:
+    branches: [verify/cms-final-20260922]
+    paths: [.github/workflows/cms-reconcile-source.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preserve all candidate Git objects
+        run: |
+          mkdir -p /tmp/cms-reconciliation
+          git bundle create /tmp/cms-reconciliation/repo.bundle --all
+          git bundle verify /tmp/cms-reconciliation/repo.bundle
+          git diff --stat 2567711c3f22c386fdb6f1323bb39660d0f49175 38631f7221d497821b0b5a70ee565c503c662002 > /tmp/cms-reconciliation/candidate-differences.txt
+          git diff --binary 2567711c3f22c386fdb6f1323bb39660d0f49175 38631f7221d497821b0b5a70ee565c503c662002 > /tmp/cms-reconciliation/candidate-differences.patch
+          git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin > /tmp/cms-reconciliation/refs.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cms-candidate-reconciliation
+          path: /tmp/cms-reconciliation
+          retention-days: 7
