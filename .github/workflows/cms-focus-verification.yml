@@ -11,87 +11,86 @@ concurrency:
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    outputs:
-      commit: ${{ steps.candidate.outputs.commit }}
-      tree: ${{ steps.candidate.outputs.tree }}
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Preserve current sources for reconciliation
-        run: |
-          git fetch --all --prune
-          git bundle create /tmp/cms-sources.bundle --all
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cms-source-reconciliation-${{ github.run_number }}
-          path: /tmp/cms-sources.bundle
-          retention-days: 7
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Prepare exact candidate without transport files
-        id: candidate
+      - name: Prepare and identify the exact candidate
         run: |
           set -euo pipefail
           mkdir -p /tmp/cms-inputs
-          git worktree add --detach /tmp/cms-candidate aadafcb4b936d50ad4c90045de2607f63c62df31
-          cat .cms-verification/fix-0.b64 .cms-verification/fix-1.b64 .cms-verification/fix-2.b64 | base64 -d | xz -d | git -C /tmp/cms-candidate apply --index
-          test "$(git -C /tmp/cms-candidate write-tree)" = '4ff4917e8f91527d2ed41dd765162f78db488150'
-          gzip -dc .cms-verification/capture.mjs.gz > /tmp/cms-inputs/capture.mjs
+          git worktree add --detach /tmp/cms-candidate a60e2e4fb6fc44ef1b464a9168a16500c4272ebd
+          cat .cms-verification/final-{0,1,2,3}.b64 | base64 -d | gzip -d | git -C /tmp/cms-candidate apply --index
+          test "$(git -C /tmp/cms-candidate write-tree)" = '72fa806a6fe639604966a42eb6765ee2a5bc4a80'
           cd /tmp/cms-candidate
-          npm ci --ignore-scripts --no-audit --no-fund > /tmp/install.log 2>&1
-          git diff --cached --name-only -z | xargs -0 npx prettier --write
+          npm ci --ignore-scripts --no-audit --no-fund > /tmp/cms-inputs/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-inputs/format.log 2>&1
           git add -u
-          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: isolate CMS drawers and keep workspace commands accessible'
-          git push origin HEAD:refs/heads/verify/cms-focus-candidate-${{ github.run_number }}
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'feat: finish responsive CMS panels and accessible editor controls'
+          git rev-parse HEAD > /tmp/cms-inputs/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-inputs/source-tree.txt
+          git bundle create /tmp/cms-inputs/source.bundle HEAD
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: cms-focus-inputs-${{ github.run_number }}
+          name: cms-focus-source-${{ github.run_number }}
           path: /tmp/cms-inputs
           retention-days: 7
   verify:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        group: [core, surfaces]
+        group: [static, workspace, owner, flows, surfaces]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          ref: ${{ needs.prepare.outputs.commit }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Record exact source
+          name: cms-focus-source-${{ github.run_number }}
+          path: /tmp/cms-inputs
+      - name: Read the source bundle, not a mutable branch
         run: |
+          set -euo pipefail
           mkdir -p /tmp/cms-workspace
-          test "$(git rev-parse HEAD^{tree})" = '${{ needs.prepare.outputs.tree }}'
-          git rev-parse HEAD > /tmp/cms-workspace/source-commit.txt
-          git rev-parse HEAD^{tree} > /tmp/cms-workspace/source-tree.txt
+          git clone /tmp/cms-inputs/source.bundle candidate
+          cd candidate
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/cms-inputs/source-commit.txt)"
+          test "$(git rev-parse HEAD^{tree})" = "$(cat /tmp/cms-inputs/source-tree.txt)"
+          cp /tmp/cms-inputs/source-*.txt /tmp/cms-workspace/
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: candidate/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install verification tools
+      - name: Install remote verification tools
+        working-directory: candidate
+        env:
+          GROUP: ${{ matrix.group }}
         run: |
+          set -euo pipefail
           npm ci > /tmp/cms-workspace/install.log 2>&1
-          npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
+          if [ "$GROUP" != static ]; then
+            npx playwright install --with-deps chromium webkit > /tmp/cms-workspace/browser-install.log 2>&1
+          fi
+          if [ "$GROUP" = surfaces ]; then
+            npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1 > /tmp/cms-workspace/axe-install.log 2>&1
+          fi
           curl -fsSL 'https://github.com/omar-y-abdi/furl-ctx/releases/download/v1.4.0/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' -o /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
           echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' | sha256sum -c -
           python -m pip install /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl > /tmp/cms-workspace/furl-install.log 2>&1
       - name: Static checks, unit suite and build
-        if: matrix.group == 'core'
+        if: matrix.group == 'static'
+        working-directory: candidate
         run: |
           set +e
           for command in typecheck lint format:check test build; do
@@ -99,45 +98,50 @@ jobs:
             echo "$?" > "/tmp/cms-workspace/${command//:/-}.exit-code"
           done
           exit 0
-      - uses: actions/download-artifact@v4
-        if: matrix.group == 'surfaces'
-        with:
-          name: cms-focus-inputs-${{ github.run_number }}
-          path: /tmp/cms-inputs
       - name: Start isolated fixture server
+        if: matrix.group != 'static'
+        working-directory: candidate
         run: |
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
-      - name: Browser regressions and visual evidence
+          curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null
+      - name: Browser regressions and full visual evidence
+        if: matrix.group != 'static'
+        working-directory: candidate
         env:
           BASE_URL: http://127.0.0.1:4188
           CMS_EVIDENCE_DIR: /tmp/cms-workspace
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
           GROUP: ${{ matrix.group }}
         run: |
           set +e
-          if [ "$GROUP" = surfaces ]; then
-            cp /tmp/cms-inputs/capture.mjs tools/e2e/cms-visual-surfaces.mjs
-            suites='cms-visual-surfaces'
-          else
-            suites='cms-workspace cms-native cms-responsive cms-owner cms-scenes'
-          fi
+          case "$GROUP" in
+            surfaces) suites='cms-workspace-views' ;;
+            workspace) suites='cms-workspace cms-native cms-responsive' ;;
+            owner) suites='cms-owner' ;;
+            flows) suites='cms-scenes cms-projection cms-public-regression cms-populated cms-conflict' ;;
+          esac
           for suite in $suites; do
-            timeout 15m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
+            timeout 20m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
             echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
           done
-          if [ "$GROUP" = core ]; then
+          if [ "$GROUP" = workspace ]; then
             ADMIN_E2E_SCENARIO=cms-shell node tools/e2e/admin-state.mjs > /tmp/cms-workspace/cms-shell.log 2>&1
             echo "$?" > /tmp/cms-workspace/cms-shell.exit-code
           fi
           exit 0
-      - name: Preserve compact logs and results
+      - name: Preserve compact logs and exact results
         if: always()
+        env:
+          GROUP: ${{ matrix.group }}
         run: |
+          mkdir -p /tmp/cms-workspace
           shopt -s nullglob
-          for image in /tmp/cms-native-*.png /tmp/cms-responsive-*.png; do cp "$image" /tmp/cms-workspace/; done
+          for image in /tmp/cms-*.png /tmp/admin-*.png; do cp "$image" /tmp/cms-workspace/; done
           if command -v furl > /dev/null; then
             for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
           fi
+          git -C candidate diff --exit-code > /tmp/cms-workspace/tracked-source-diff.log 2>&1
           python - <<'PY'
           import json,pathlib
           root=pathlib.Path('/tmp/cms-workspace')
@@ -151,7 +155,7 @@ jobs:
           name: cms-focus-${{ matrix.group }}-${{ github.run_number }}
           path: /tmp/cms-workspace
           retention-days: 7
-      - name: Enforce completed gates
+      - name: Enforce every expected gate
         if: always()
         env:
           GROUP: ${{ matrix.group }}
@@ -160,7 +164,8 @@ jobs:
           import json,pathlib,os
           p=pathlib.Path('/tmp/cms-workspace/check-summary.json')
           checks=json.loads(p.read_text()) if p.exists() else {}
-          required={'cms-visual-surfaces'} if os.environ['GROUP']=='surfaces' else {'typecheck','lint','format-check','test','build','cms-workspace','cms-native','cms-responsive','cms-owner','cms-scenes','cms-shell'}
+          gates={'static':['typecheck','lint','format-check','test','build'],'workspace':['cms-workspace','cms-native','cms-responsive','cms-shell'],'owner':['cms-owner'],'flows':['cms-scenes','cms-projection','cms-public-regression','cms-populated','cms-conflict'],'surfaces':['cms-workspace-views']}
+          required=set(gates[os.environ['GROUP']])
           assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
           assert all(v==0 for v in checks.values()),checks
           PY
