@@ -1,0 +1,93 @@
+name: CMS workspace quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: cms-workspace-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace:
+    name: CMS workspace (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Record tested source
+        run: |
+          mkdir -p /tmp/cms-workspace
+          git rev-parse HEAD > /tmp/cms-workspace/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-workspace/source-tree.txt
+      - name: Prepare browser and audit tools
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          npm ci
+          npx playwright install --with-deps "$ENGINE"
+          npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1
+          bash tools/ci/setup-furl.sh
+      - name: Exercise the real CMS with isolated example data
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          BASE_URL: http://127.0.0.1:4188
+          CMS_EVIDENCE_DIR: /tmp/cms-workspace
+          AXE_PATH: /tmp/cms-a11y/node_modules/axe-core/axe.min.js
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+          set +e
+          for suite in cms-workspace cms-workspace-edge cms-workspace-views; do
+            timeout 15m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
+            echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
+          done
+          git diff --exit-code > /tmp/cms-workspace/tracked-source-diff.log 2>&1
+          echo "$?" > /tmp/cms-workspace/tracked-source-diff.exit-code
+      - name: Preserve compact logs and check outcomes
+        if: always()
+        run: |
+          if command -v furl > /dev/null; then
+            for log in /tmp/cms-workspace/*.log; do
+              test -f "$log" || continue
+              furl compress "$log" --json > "$log.furl.json" || true
+            done
+          fi
+          python3 - <<'PY'
+          import json, pathlib
+          root = pathlib.Path('/tmp/cms-workspace')
+          root.mkdir(exist_ok=True)
+          checks = {p.stem: int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          (root / 'check-summary.json').write_text(json.dumps(checks, indent=2))
+          print(json.dumps(checks, indent=2))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-workspace-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/cms-workspace
+          retention-days: 14
+      - name: Enforce every gate
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          path = pathlib.Path('/tmp/cms-workspace/check-summary.json')
+          checks = json.loads(path.read_text()) if path.exists() else {}
+          required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'tracked-source-diff'}
+          assert required.issubset(checks), f'Missing checks: {required-set(checks)}'
+          assert all(value == 0 for value in checks.values()), checks
+          PY
