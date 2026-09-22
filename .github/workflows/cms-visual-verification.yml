@@ -11,50 +11,102 @@ concurrency:
 jobs:
   inspect:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Materialize exact candidate without transport files
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-workspace
+          git worktree add --detach /tmp/cms-candidate c47fff39948823dd9651d2d72e002f3daa7cd2e2
+          xz -dc .cms-verification/candidate.patch.xz | git -C /tmp/cms-candidate apply --index
+          actual=$(git -C /tmp/cms-candidate write-tree)
+          test "$actual" = "$(cat .cms-verification/expected-tree)"
+          echo "$actual" > /tmp/cms-workspace/source-tree.txt
+          cd /tmp/cms-candidate
+          git -c user.name='CMS verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'feat: refine responsive CMS workspace, controls and accessible drawers'
+          git rev-parse HEAD > /tmp/cms-workspace/source-commit.txt
+          git push origin HEAD:refs/heads/verify/cms-candidate-${{ github.run_number }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: /tmp/cms-candidate/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
       - name: Prepare remote verification tools
+        working-directory: /tmp/cms-candidate
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
-          mkdir -p /tmp/cms-workspace
           curl -fL 'https://github.com/omar-y-abdi/furl-ctx/releases/download/v1.4.0/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' -o /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
           echo '3b1236a0398b5959cd35dfa9b84ababb59949fa88c1a62aef709dedaba2a82e5  /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl' | sha256sum -c -
           python -m pip install /tmp/furl_ctx-1.4.0-cp310-abi3-manylinux_2_28_x86_64.whl
+      - name: Static checks, complete unit suite and production build
+        working-directory: /tmp/cms-candidate
+        run: |
+          set +e
+          for command in typecheck lint format:check test build; do
+            npm run "$command" > "/tmp/cms-workspace/${command//:/-}.log" 2>&1
+            echo "$?" > "/tmp/cms-workspace/${command//:/-}.exit-code"
+          done
+          exit 0
       - name: Start isolated CMS fixture server
+        working-directory: /tmp/cms-candidate
         run: |
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-workspace/server.log 2>&1 &
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html > /dev/null && break; sleep 1; done
-      - name: Exercise responsive and keyboard acceptance contracts
+      - name: Responsive contracts and existing real editor regressions
+        working-directory: /tmp/cms-candidate
         env:
+          BASE_URL: http://127.0.0.1:4188
           CMS_EVIDENCE_DIR: /tmp/cms-workspace
         run: |
-          cp .cms-verification/contracts.mjs tools/e2e/cms-workspace-contracts.mjs
           set +e
-          node tools/e2e/cms-workspace-contracts.mjs > /tmp/cms-workspace/contracts.log 2>&1
-          status=$?
-          set -e
-          echo "$status" > /tmp/cms-workspace/contracts.exit-code
-          furl compress /tmp/cms-workspace/contracts.log --json > /tmp/cms-workspace/contracts.furl.json
-          exit "$status"
-      - name: Record source identity
+          for suite in cms-workspace cms-native cms-responsive; do
+            node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
+            echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
+          done
+          exit 0
+      - name: Compress logs and record exact evidence
         if: always()
         run: |
           git rev-parse HEAD > /tmp/cms-workspace/verification-commit.txt
-          git rev-parse c47fff39948823dd9651d2d72e002f3daa7cd2e2^{tree} > /tmp/cms-workspace/source-tree.txt
+          for log in /tmp/cms-workspace/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+          python - <<'PY'
+          import json,pathlib
+          root=pathlib.Path('/tmp/cms-workspace')
+          checks={p.stem:int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          (root/'check-summary.json').write_text(json.dumps(checks,indent=2))
+          print(json.dumps(checks,indent=2))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: cms-workspace-contracts-${{ github.run_number }}
+          name: cms-candidate-evidence-${{ github.run_number }}
           path: /tmp/cms-workspace
           retention-days: 7
+      - name: Preserve candidate source bundle
+        if: always()
+        run: |
+          git -C /tmp/cms-candidate bundle create /tmp/cms-candidate.bundle HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cms-candidate-source-${{ github.run_number }}
+          path: /tmp/cms-candidate.bundle
+          retention-days: 7
+      - name: Enforce all completed gates
+        if: always()
+        run: |
+          python - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('/tmp/cms-workspace/check-summary.json')
+          checks=json.loads(p.read_text()) if p.exists() else {}
+          required={'typecheck','lint','format-check','test','build','cms-workspace','cms-native','cms-responsive'}
+          assert required.issubset(checks),f'Missing checks: {required-set(checks)}'
+          assert all(value==0 for value in checks.values()),checks
+          PY
