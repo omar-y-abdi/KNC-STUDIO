@@ -1,0 +1,192 @@
+diff --git a/shared/cms.ts b/shared/cms.ts
+index 4401076..669a057 100644
+--- a/shared/cms.ts
++++ b/shared/cms.ts
+@@ -148,6 +148,8 @@ export interface CmsPage {
+   description: Localized
+   content: Record<CmsLang, PageVariant>
+   inMenu: boolean
++  /** New authored pages own their complete layout, including a freely editable header/footer. */
++  layout?: 'independent'
+ }
+ export const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
+ export type CmsRegion = (typeof REGION_NAMES)[number]
+@@ -701,7 +703,7 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
+   }
+   for (const raw of pages) {
+     const page = object(raw, 'page')
+-    keys(page, ['id', 'kind', 'path', 'name', 'title', 'description', 'content', 'inMenu'], 'page')
++    keys(page, ['id', 'kind', 'path', 'name', 'title', 'description', 'content', 'inMenu', 'layout'], 'page')
+     const id = text(page['id'], 'page.id', 36)
+     if (!UUID.test(id)) fail('page.id', 'Invalid page identity')
+     ids.push(id)
+@@ -710,6 +712,13 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
+       if (path !== `/${page['kind']}`) fail(path, 'Legal page path is fixed')
+     } else if (page['kind'] !== 'page' || !isPagePath(path))
+       fail(path, 'Reserved or invalid page path')
++    if (
++      page['layout'] !== undefined &&
++      (page['layout'] !== 'independent' ||
++        page['kind'] !== 'page' ||
++        ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(path))
++    )
++      fail('page.layout', 'Independent layouts are only allowed on authored pages')
+     paths.push(path)
+     localized(page['name'], 'page.name', 80)
+     localized(page['title'], 'page.title', 120)
+diff --git a/shared/site-page.ts b/shared/site-page.ts
+index 72703a7..8ef5373 100644
+--- a/shared/site-page.ts
++++ b/shared/site-page.ts
+@@ -2,7 +2,6 @@ import { themeDeclarations, siteThemeCss } from './site-theme.ts'
+ import { repairDesktopCss } from './cms-device-css.ts'
+ import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
+ import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
+-import { parse, generate, walk } from 'css-tree'
+ 
+ type Node = DefaultTreeAdapterMap['node']
+ type Element = DefaultTreeAdapterMap['element']
+@@ -83,7 +82,7 @@ export function renderSitePage(
+   mode: CmsMode,
+ ): { html: string; css: string } {
+   const variant = normalizeSitePageContent(page.content[lang], `${page.id}-${lang}`)
+-  if (find(parseFragment(variant.html), (node) => attr(node, 'id') === 'cms-site-shell'))
++  if (page.layout === 'independent')
+     return { html: variant.html, css: repairDesktopCss(variant.css[mode]) }
+   const home = presentation.pages.find((item) => item.path === '/')?.content[lang]
+   if (!home || !isSitePage(page)) return { html: variant.html, css: variant.css[mode] }
+@@ -169,6 +168,7 @@ export function renderSitePage(
+  * attach them to the currently selected device's media query. */
+ export function createSitePage(presentation: CmsPresentation, page: CmsPage): CmsPage {
+   const next = structuredClone(page)
++  if (page.layout === 'independent') return next
+   for (const lang of ['sv', 'en'] as const) {
+     const render = (mode: CmsMode) => {
+       const rendered = renderSitePage(presentation, page, lang, mode)
+@@ -184,34 +184,7 @@ export function createSitePage(presentation: CmsPresentation, page: CmsPage): Cm
+       css: { light: light.css.light, dark: dark.css.dark },
+     }
+   }
++  next.layout = 'independent'
+   return next
+ }
+ 
+-/** Chrome belongs to the homepage. Save only content authored inside the new page. */
+-export function sitePageBody(html: string): string {
+-  const body = find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-content')
+-  return body ? serialize(body) : html
+-}
+-
+-export function sitePageCss(css: string, body: string): string {
+-  const content = parseFragment(body)
+-  const tree = parse(css)
+-  walk(tree, {
+-    visit: 'Rule',
+-    enter(rule, item, list) {
+-      let chromeRule = false
+-      walk(rule.prelude, {
+-        visit: 'IdSelector',
+-        enter(selector) {
+-          if (
+-            /^(cms-site-|knc-|preview-)/.test(selector.name) &&
+-            !find(content, (node) => attr(node, 'id') === selector.name)
+-          )
+-            chromeRule = true
+-        },
+-      })
+-      if (chromeRule && item && list) list.remove(item)
+-    },
+-  })
+-  return generate(tree)
+-}
+diff --git a/src/admin/cms/Editor.tsx b/src/admin/cms/Editor.tsx
+index bb2f49c..ea242d7 100644
+--- a/src/admin/cms/Editor.tsx
++++ b/src/admin/cms/Editor.tsx
+@@ -236,7 +236,7 @@ export function CmsEditor(props: Props): JSX.Element {
+           const wrapper = editor.getWrapper()
+           const surfaces = wrapper?.find('[data-knc-surface]') ?? []
+           let target = editor.getSelected()
+-          if (isSitePage(latest.current.page) && !target?.getEl()?.closest('#cms-site-content'))
++          if (isSitePage(latest.current.page) && !target)
+             target = wrapper?.find('#cms-site-content')[0]
+           while (
+             target &&
+@@ -345,6 +345,7 @@ export function CmsEditor(props: Props): JSX.Element {
+       if (html === checkpoint.current.html && css === checkpoint.current.css) return
+       const current = latest.current
+       const next = structuredClone(current.page)
++      if (isSitePage(next)) next.layout = 'independent'
+       applying.current = true
+       try {
+         syncResponsiveText(editor, current.page.content[current.lang].html, html)
+diff --git a/src/admin/cms/Studio.tsx b/src/admin/cms/Studio.tsx
+index 4c4f429..475a432 100644
+--- a/src/admin/cms/Studio.tsx
++++ b/src/admin/cms/Studio.tsx
+@@ -1113,8 +1113,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+             <div class="cms-domain-panel">
+               <h2>En ny del av webbplatsen</h2>
+               <p>
+-                Sidan får samma logotyp, sidhuvud, sidfot, språk och färger som resten av
+-                webbplatsen.
++                Sidan börjar med webbplatsens logotyp, sidhuvud, sidfot och färger. Du kan sedan
++                redigera hela sidan oberoende av originalsidorna.
+               </p>
+               <label>
+                 Sidnamn
+diff --git a/tests/unit/cmsSitePage.test.ts b/tests/unit/cmsSitePage.test.ts
+index a86832b..82e9083 100644
+--- a/tests/unit/cmsSitePage.test.ts
++++ b/tests/unit/cmsSitePage.test.ts
+@@ -3,8 +3,6 @@ import { emptyDocument, type CmsPage } from '../../shared/cms'
+ import {
+   renderSitePage,
+   createSitePage,
+-  sitePageBody,
+-  sitePageCss,
+   normalizeSitePageContent,
+ } from '../../shared/site-page'
+ import { renderCmsPage } from '../../src/worker'
+@@ -95,20 +93,12 @@ describe('new pages extend the published website', () => {
+     expect(renderSitePage(document.presentation, page, 'sv', 'dark').html).toContain('Updated logo')
+     expect(page.content.sv.html).not.toContain('logo')
+   })
+-  it('saves only authored content and its styles, never a stale chrome copy', () => {
++  it('does not resurrect chrome after the owner deletes the full seeded layout', () => {
+     const { document, page } = fixture()
+-    const rendered = renderSitePage(document.presentation, page, 'sv', 'light')
+-    expect(sitePageBody(rendered.html)).toBe(page.content.sv.html)
+-    expect(
+-      sitePageCss(
+-        '#knc-header{color:red}#cms-site-menu{display:flex}#owner-content{color:blue}',
+-        page.content.sv.html,
+-      ),
+-    ).toBe('#owner-content{color:blue}')
+-    page.inMenu = false
+-    const menu = renderSitePage(document.presentation, page, 'sv', 'light')
+-      .html.split('<nav id="cms-site-menu"')[1]
+-      ?.split('</nav>')[0]
+-    expect(menu).not.toContain('href="/extra?')
++    const created = createSitePage(document.presentation, page)
++    created.content.sv.html = '<p>Just my content</p>'
++    const rendered = renderSitePage(document.presentation, created, 'sv', 'light')
++    expect(rendered.html).toBe('<p>Just my content</p>')
++    expect(rendered.html).not.toContain('cms-site-header')
+   })
+ })
+diff --git a/tools/e2e/cms-owner.mjs b/tools/e2e/cms-owner.mjs
+index b7b3251..0c854c1 100644
+--- a/tools/e2e/cms-owner.mjs
++++ b/tools/e2e/cms-owner.mjs
+@@ -697,8 +697,8 @@ for (const [engine, name] of [
+             'Added blocks belong to authored content, not shared chrome',
+           )
+           assert.ok(
+-            !created.content.sv.html.includes('cms-site-header'),
+-            'Shared chrome is derived, never saved as a stale copy inside page content',
++            created.content.sv.html.includes('cms-site-header'),
++            'An independent page owns its editable header instead of a locked homepage projection',
+           )
+           await context.route(`${base}/hemsida*`, (route) => {
+             const mode =
