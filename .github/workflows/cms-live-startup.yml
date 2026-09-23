@@ -1,0 +1,33 @@
+name: CMS deployed startup
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-live-startup.yml]
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: bash tools/ci/setup-furl.sh
+      - name: Read-only deployed Safari diagnostic
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          cp .startup/live.mjs tools/e2e/live-startup.mjs
+          node tools/e2e/live-startup.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-live-startup
+          path: /tmp/live-cms
+          retention-days: 7
