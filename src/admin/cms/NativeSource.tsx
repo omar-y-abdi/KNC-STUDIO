@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
 import { App, type SitePreviewSnapshot } from '../../app/App'
 import { NativeSiteProvider } from '../../cms/NativeSurface'
 import { PreviewPorts } from '../../cms/PreviewPorts'
+import { sourceReadSnapshot } from './sourceReadCache'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
 import { mediaUrl, validatePresentation, type CmsPresentation } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
@@ -35,9 +36,10 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
     device: 'Desktop',
     scene: 'home',
   })
+  const snapshot = useMemo(() => sourceReadSnapshot(), [])
   const state = useMemo(() => {
     const status = { pending: 0, metadata: false, failed: false }
-    const read = readOnlyHomepagePreviewPorts()
+    const read = interactive ? readOnlyHomepagePreviewPorts() : { ...snapshot.ports }
     const ports = context.scene.startsWith('booking-') ? exampleBookingPorts(read) : read
     for (const key of Object.keys(ports) as (keyof typeof ports)[]) {
       const target = ports[key]
@@ -62,7 +64,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       })
     }
     return { status, ports }
-  }, [context.id])
+  }, [context.id, interactive, snapshot])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>): void => {
       if (event.source !== window.parent || event.origin !== window.location.origin) return
@@ -166,15 +168,14 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
           document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
         return
       }
-      frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
+      frame = window.setTimeout(settle, 20)
     }
     // WebKit may suspend animation frames in a hidden or offscreen preview.
     // Runtime readiness must not depend on the paint we are waiting to reveal.
-    frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
+    frame = window.setTimeout(settle, 20)
     return () => {
       stopped = true
-      if (interactive) window.clearTimeout(frame)
-      else cancelAnimationFrame(frame)
+      window.clearTimeout(frame)
     }
   }, [context, state, interactive])
   const ready = (snapshot: SitePreviewSnapshot): void => {
@@ -271,6 +272,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
               key={context.id}
               preview={{
                 interactive,
+                ...(!interactive ? { chromePort: snapshot.chrome } : {}),
                 lang: context.lang,
                 mode: context.mode,
                 view: context.scene.startsWith('booking') ? 'booking' : 'home',

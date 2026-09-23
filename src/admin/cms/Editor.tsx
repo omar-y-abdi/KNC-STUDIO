@@ -191,6 +191,7 @@ export function CmsEditor(props: Props): JSX.Element {
       width: '100%',
       fromElement: false,
       telemetry: false,
+      cssIcons: '', // The workspace supplies its own icons; no external icon-font stylesheet.
       i18n: editorLocale,
       noticeOnUnload: false,
       storageManager: false,
@@ -286,7 +287,11 @@ export function CmsEditor(props: Props): JSX.Element {
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${blockGlyphs[id]}" /></svg>`,
       })
 
-    editor.on('component:create', configureComponent)
+    editor.on('component:create', (component: Component) => {
+      // Imports configure the complete tree below, once parent identities exist.
+      // Avoid repeating that work for every component while the parser builds it.
+      if (!applying.current) configureComponent(component)
+    })
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
     editor.on('component:dblclick', (component: Component) => {

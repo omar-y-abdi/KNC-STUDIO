@@ -10,11 +10,29 @@ export const CORE_PAGE_IDS = [
   '10000000-0000-4000-8000-000000000006',
 ] as const
 
+/** Stored layouts are already editable. Missing optional scenes/motion metadata
+ * are an upgrade, not a prerequisite for opening the owner's document. */
+export function hasCorePageLayouts(document: CmsDocument): boolean {
+  return ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].every((path) => {
+    const page = document.presentation.pages.find((item) => item.path === path)
+    return (
+      page &&
+      ['sv', 'en'].every((lang) => {
+        const html = page.content[lang as 'sv' | 'en'].html
+        return (
+          html.trim() &&
+          (path === '/privacy' || path === '/terms' || html.includes('data-knc-native="1"'))
+        )
+      })
+    )
+  })
+}
+
 let sourcePages: readonly CmsPage[] = []
 let loading: Promise<void> | undefined
 
 /** A published complete document already contains the source layout. Capture only missing/legacy
- * templates instead of replaying 24 live scenes on every visit to Studio. */
+ * templates instead of replaying every live scene on each visit to Studio. */
 export function needsCorePageSource(document: CmsDocument): boolean {
   for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
     const page = document.presentation.pages.find((item) => item.path === path)
@@ -41,11 +59,17 @@ export function needsCorePageSource(document: CmsDocument): boolean {
   return false
 }
 
+/** Keep authoritative layouts available for old backups/imports even when optional
+ * source capture is deferred or unavailable. Never seed unrelated authored pages. */
+export function retainCorePageLayouts(existing: CmsDocument): void {
+  sourcePages = existing.presentation.pages.filter((page) =>
+    CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
+  )
+}
+
 export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
   if (existing && !needsCorePageSource(existing)) {
-    sourcePages = existing.presentation.pages.filter((page) =>
-      CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
-    )
+    retainCorePageLayouts(existing)
     return Promise.resolve()
   }
   loading ??= import('./nativePages')

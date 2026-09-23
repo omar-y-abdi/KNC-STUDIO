@@ -260,6 +260,15 @@
   color: inherit;
   flex-shrink: 0;
 }
+.cms-conflict-notice {
+  flex-wrap: wrap;
+}
+.cms-conflict-notice > span {
+  flex: 1 1 240px;
+}
+.cms-conflict-notice > button {
+  margin-left: 0;
+}
 .cms-notice-info {
   background: #eaf0e2;
   border-color: #d7e1cc;

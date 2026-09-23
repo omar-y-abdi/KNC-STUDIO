@@ -1,0 +1,65 @@
+name: CMS production startup
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: cms-startup-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  startup:
+    name: Production startup (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    env:
+      VITE_SUPABASE_URL: https://admin-harness.invalid
+      VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+      CMS_ENGINE: ${{ matrix.engine }}
+      CMS_STARTUP_BUILT: '1'
+      CMS_EVIDENCE_DIR: /tmp/cms-startup
+      BASE_URL: http://127.0.0.1:4188
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare build tools
+        run: |
+          mkdir -p "$CMS_EVIDENCE_DIR"
+          git rev-parse HEAD > "$CMS_EVIDENCE_DIR/commit.txt"
+          git rev-parse HEAD^{tree} > "$CMS_EVIDENCE_DIR/tree.txt"
+          bash tools/ci/setup-furl.sh
+      - name: Build and exercise production routes under CSP
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npm run build
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run preview -- --host 127.0.0.1 --port 4188 > "$CMS_EVIDENCE_DIR/server.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL" >/dev/null
+          node tools/e2e/cms-startup.mjs
+      - name: Compress server diagnostics
+        if: always()
+        run: |
+          for log in "$CMS_EVIDENCE_DIR"/*.log; do
+            test -f "$log" || continue
+            furl compress "$log" --json > "$log.furl.json" || true
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-production-startup-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/cms-startup
+          retention-days: 7

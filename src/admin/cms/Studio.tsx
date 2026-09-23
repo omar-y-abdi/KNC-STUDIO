@@ -13,10 +13,19 @@ import {
   type CmsRevision,
   type CmsState,
 } from '../../../shared/cms'
-import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS } from './corePages'
+import {
+  ensureCorePages,
+  prepareCorePageSource,
+  isInventedSite,
+  hasCorePageLayouts,
+  retainCorePageLayouts,
+  needsCorePageSource,
+  CORE_PAGE_IDS,
+} from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
+import { CmsEditorBoundary } from './EditorBoundary'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
 import { compactWorkspace, useResponsivePanels, type CmsPanel } from './useResponsivePanels'
@@ -54,6 +63,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [sourceLoading, setSourceLoading] = useState(false)
+  const [sourceFailure, setSourceFailure] = useState<string | null>(null)
+  const [sourceAttempt, setSourceAttempt] = useState(0)
   const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
     null,
   )
@@ -86,8 +98,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setNotice(null)
     try {
       const loaded = await cmsApi.state()
-      await prepareCorePageSource(loaded.document)
-      const document = ensureCorePages(loaded.document)
+      const stored = hasCorePageLayouts(loaded.document)
+      if (stored) retainCorePageLayouts(loaded.document)
+      else await prepareCorePageSource(loaded.document)
+      const document = stored ? loaded.document : ensureCorePages(loaded.document)
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
@@ -102,7 +116,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        const local = ensureCorePages(backup.document)
+        const local = hasCorePageLayouts(backup.document)
+          ? backup.document
+          : ensureCorePages(backup.document)
         const sameHead =
           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
         const merged =
@@ -140,6 +156,34 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    if (!draft || !needsCorePageSource(draft.document)) return
+    let stopped = false
+    setSourceLoading(true)
+    setSourceFailure(null)
+    // The owner can edit the existing page while optional source scenes load.
+    // Never replace that work with the document which started this request.
+    void prepareCorePageSource(draft.document)
+      .then(() => {
+        if (stopped || currentDraft.current !== draft) return
+        editor.current?.flush()
+        draft.change(ensureCorePages(draft.document))
+        setVersion((value) => value + 1)
+      })
+      .catch((reason: unknown) => {
+        if (!stopped)
+          setSourceFailure(
+            reason instanceof Error ? reason.message : 'Nya redigeringsvyer kunde inte förberedas.',
+          )
+      })
+      .finally(() => {
+        if (!stopped) setSourceLoading(false)
+      })
+    return () => {
+      stopped = true
+    }
+  }, [draft, sourceAttempt])
 
   useLayoutEffect(() => {
     if (!draft) return
@@ -560,13 +604,25 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       {conflict && (
-        <div class="cms-notice" role="alert" inert={drawerOpen}>
-          Publicering är blockerad tills konflikten är löst.
+        <div class="cms-notice cms-conflict-notice" role="alert" inert={drawerOpen}>
+          <span>Publicering är blockerad tills konflikten är löst.</span>
           <button type="button" onClick={() => resolveConflict('local')}>
             Behåll mina konfliktändringar
           </button>
           <button type="button" onClick={() => resolveConflict('remote')}>
             Använd serverns konfliktändringar
+          </button>
+        </div>
+      )}
+      {sourceFailure && (
+        <div class="cms-notice" role="alert" inert={drawerOpen}>
+          <CmsIcon name="info" />
+          <span>
+            Fler redigeringsvyer kunde inte förberedas. Dina befintliga sidor går fortfarande att
+            redigera. {sourceFailure}
+          </span>
+          <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>
+            Försök igen
           </button>
         </div>
       )}
@@ -811,13 +867,21 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   }}
                 >
                   {pageScenes(page.path).map((item) => (
-                    <option key={item.id} value={item.id}>
+                    <option
+                      key={item.id}
+                      value={item.id}
+                      disabled={
+                        item.id !== 'default' &&
+                        !page.content[lang].html.includes(`data-knc-surface="${item.id}"`)
+                      }
+                    >
                       {item.label}
                     </option>
                   ))}
                 </select>
               </label>
               {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
+              {sourceLoading && <span role="status">Förbereder fler redigeringsvyer…</span>}
             </div>
           )}
           <div
@@ -825,46 +889,48 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             inert={Boolean(workspaceView)}
             aria-hidden={workspaceView ? true : undefined}
           >
-            <CmsEditor
-              scene={scene}
-              onClosePanel={() => setMobilePanel(null)}
-              inspectorModal={compact && mobilePanel === 'inspector'}
-              pageSettings={pageSettings}
-              page={page}
-              lang={lang}
-              mode={mode}
-              device={device}
-              compare={compare}
-              zoom={zoom}
-              locked={locked}
-              preview={preview}
-              presentation={document.presentation}
-              onOpenPage={(path) => {
-                editor.current?.flush()
-                setSelectedPage(
-                  document.presentation.pages.find((item) => item.path === path)?.id ??
-                    CORE_PAGE_IDS[0],
-                )
-              }}
-              onNavigate={(path, nextLang, nextMode) => {
-                const next = document.presentation.pages.find((item) => item.path === path)
-                if (!next) return
-                editor.current?.flush()
-                setSelectedPage(next.id)
-                setLang(nextLang)
-                setMode(nextMode)
-              }}
-              assets={resources}
-              fontCss={fontCss}
-              tab={tab}
-              onTab={setTab}
-              onZoom={setZoom}
-              onChange={replacePage}
-              onReady={(value) => {
-                editor.current = value
-              }}
-              onError={setError}
-            />
+            <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
+              <CmsEditor
+                scene={scene}
+                onClosePanel={() => setMobilePanel(null)}
+                inspectorModal={compact && mobilePanel === 'inspector'}
+                pageSettings={pageSettings}
+                page={page}
+                lang={lang}
+                mode={mode}
+                device={device}
+                compare={compare}
+                zoom={zoom}
+                locked={locked}
+                preview={preview}
+                presentation={document.presentation}
+                onOpenPage={(path) => {
+                  editor.current?.flush()
+                  setSelectedPage(
+                    document.presentation.pages.find((item) => item.path === path)?.id ??
+                      CORE_PAGE_IDS[0],
+                  )
+                }}
+                onNavigate={(path, nextLang, nextMode) => {
+                  const next = document.presentation.pages.find((item) => item.path === path)
+                  if (!next) return
+                  editor.current?.flush()
+                  setSelectedPage(next.id)
+                  setLang(nextLang)
+                  setMode(nextMode)
+                }}
+                assets={resources}
+                fontCss={fontCss}
+                tab={tab}
+                onTab={setTab}
+                onZoom={setZoom}
+                onChange={replacePage}
+                onReady={(value) => {
+                  editor.current = value
+                }}
+                onError={setError}
+              />
+            </CmsEditorBoundary>
           </div>
           {workspaceView && (
             <CmsWorkspaceView kind={workspaceView} onClose={() => setDialog(null)}>
