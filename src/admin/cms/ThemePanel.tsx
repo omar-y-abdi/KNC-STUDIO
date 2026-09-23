@@ -1,8 +1,10 @@
 import type { JSX } from 'preact'
-import { useState } from 'preact/hooks'
+import { useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { SITE_THEME_DEFAULTS } from '../../../shared/site-theme'
 import { LivePreview } from './LivePreview'
+import { CmsIcon } from './Icon'
+import { compactWorkspace } from './useResponsivePanels'
 
 const colors = {
   background: 'Bakgrund',
@@ -36,7 +38,11 @@ export function ThemePanel({
   mode: CmsMode
   onMode: (mode: CmsMode) => void
 }): JSX.Element {
-  const [device, setDevice] = useState<'Desktop' | 'Mobile'>('Desktop')
+  const [device, setDevice] = useState<'Desktop' | 'Mobile'>(() =>
+    compactWorkspace() ? 'Mobile' : 'Desktop',
+  )
+  const preview = useRef<HTMLElement>(null)
+  const controls = useRef<HTMLElement>(null)
   const [path, setPath] = useState('/')
   const page =
     document.presentation.pages.find((page) => page.path === path) ??
@@ -52,7 +58,23 @@ export function ThemePanel({
   }
   return (
     <div class="cms-theme-layout">
-      <section class="cms-theme-controls" aria-label="Webbplatsens stilinställningar">
+      <div class="cms-theme-mobile-toolbar">
+        <button
+          type="button"
+          onClick={() => {
+            preview.current?.scrollIntoView({ block: 'start' })
+            preview.current?.focus({ preventScroll: true })
+          }}
+        >
+          <CmsIcon name="eye" /> Förhandsvisa stil
+        </button>
+      </div>
+      <section
+        ref={controls}
+        tabIndex={-1}
+        class="cms-theme-controls"
+        aria-label="Webbplatsens stilinställningar"
+      >
         <div class="cms-theme-modes" role="group" aria-label="Färgläge att redigera">
           {(['light', 'dark'] as const).map((value) => (
             <button type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>
@@ -114,7 +136,22 @@ export function ThemePanel({
           Återställ {mode === 'light' ? 'ljust' : 'mörkt'} tema
         </button>
       </section>
-      <section class="cms-theme-preview" aria-label="Stilförhandsvisning">
+      <section
+        ref={preview}
+        tabIndex={-1}
+        class="cms-theme-preview"
+        aria-label="Stilförhandsvisning"
+      >
+        <button
+          class="cms-theme-back"
+          type="button"
+          onClick={() => {
+            controls.current?.scrollIntoView({ block: 'start' })
+            controls.current?.focus({ preventScroll: true })
+          }}
+        >
+          <CmsIcon name="arrowLeft" /> Till stilinställningarna
+        </button>
         <div class="cms-theme-preview-toolbar">
           <label>
             Sida

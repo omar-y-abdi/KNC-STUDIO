@@ -101,7 +101,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await frame.locator(`[id="${id}"]`).click()
       const copy = `Regression publication ${round}`
       await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill(copy)
-      await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
       )

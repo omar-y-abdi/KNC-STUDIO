@@ -16,6 +16,8 @@
 import type { JSX, Ref } from 'preact'
 import { useContext, useEffect, useRef, useState } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
+import { CmsSceneContext } from '../cms/Scene'
+import { NativeRegion } from '../cms/NativeSurface'
 import { Dialog } from '../ui/Dialog'
 import { FOCUS_CLS } from '../ui/pseudo'
 import { buildBookingStyles, palette, systemRed } from '../booking/bookingStyles'
@@ -72,6 +74,7 @@ export function MyBookingsDialog(props: MyBookingsDialogProps): JSX.Element {
 }
 
 function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
+  const example = useContext(CmsSceneContext)?.customer
   const previewPorts = useContext(PreviewPorts)
   const lang = props.lang
   const t = myBookingsStrings(lang)
@@ -109,7 +112,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
   // List-view local state.
   const [pastOpen, setPastOpen] = useState<boolean>(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(example?.expandedId ?? null)
   const [cancelFor, setCancelFor] = useState<string | null>(null)
   const [cancelBusy, setCancelBusy] = useState<boolean>(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
@@ -167,7 +170,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
       props.onProfile?.(result.profile)
       // Initial link token is used only for this request. Subsequent operations use HttpOnly cookie.
       setAccessToken('')
-      setExpandedId(null)
+      setExpandedId(example?.expandedId ?? null)
       setCancelFor(null)
       setPastOpen(false)
       setNotice(null)
@@ -340,135 +343,145 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     const open = expandedId === b.id
     const confirming = cancelFor === b.id
     return (
-      <div
+      <NativeRegion
         key={b.id}
-        style={{
-          border: '.5px solid ' + c.line,
-          borderRadius: '12px',
-          background: c.card,
-          overflow: 'hidden',
-        }}
+        surface="my-booking-card"
+        lang={lang}
+        mode={props.mode}
+        {...(example ? {} : { instance: b.id })}
       >
-        <button
-          type="button"
-          onClick={() => toggleRow(b.id)}
-          aria-expanded={open}
-          aria-label={`${b.whenLabel} — ${t.ariaExpandRow}`}
+        <div
+          key={b.id}
           style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
-            padding: '13px 14px',
-            border: 'none',
-            background: 'transparent',
-            color: c.text,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-            textAlign: 'left',
+            border: '.5px solid ' + c.line,
+            borderRadius: '12px',
+            background: c.card,
+            overflow: 'hidden',
           }}
         >
-          <span style="font-size:14.5px;font-weight:600;">{b.whenLabel}</span>
-          {chevron(open)}
-        </button>
-        {open ? (
-          <div
+          <button
+            type="button"
+            onClick={() => toggleRow(b.id)}
+            aria-expanded={open}
+            aria-label={`${b.whenLabel} — ${t.ariaExpandRow}`}
             style={{
-              borderTop: '.5px solid ' + c.line,
-              background: c.subtle,
-              padding: '12px 14px',
+              width: '100%',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '10px',
+              padding: '13px 14px',
+              border: 'none',
+              background: 'transparent',
+              color: c.text,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            {detailRow(t.fBarber, b.barber.name)}
-            {detailRow(t.fService, `${b.serviceName} · ${b.price} kr`)}
-            {detailRow(t.fDuration, `${b.durationMin} ${t.min}`)}
-            {upcoming ? (
-              confirming ? (
-                <div style={{ marginTop: '4px' }}>
-                  <p style="font-size:13px;line-height:1.45;margin:0 0 10px;">{t.cancelConfirmQ}</p>
-                  {cancelError !== null ? (
-                    <p role="alert" style={{ ...s.submitErrorStyle, margin: '0 0 10px' }}>
-                      {cancelError}
+            <span style="font-size:14.5px;font-weight:600;">{b.whenLabel}</span>
+            {chevron(open)}
+          </button>
+          {open ? (
+            <div
+              style={{
+                borderTop: '.5px solid ' + c.line,
+                background: c.subtle,
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              {detailRow(t.fBarber, b.barber.name)}
+              {detailRow(t.fService, `${b.serviceName} · ${b.price} kr`)}
+              {detailRow(t.fDuration, `${b.durationMin} ${t.min}`)}
+              {upcoming ? (
+                confirming ? (
+                  <div style={{ marginTop: '4px' }}>
+                    <p style="font-size:13px;line-height:1.45;margin:0 0 10px;">
+                      {t.cancelConfirmQ}
                     </p>
-                  ) : null}
-                  <div style="display:flex;gap:10px;">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelFor(null)
-                        setCancelError(null)
-                      }}
-                      disabled={cancelBusy}
-                      style={{
-                        flex: 1,
-                        padding: '11px',
-                        borderRadius: '10px',
-                        border: '1px solid ' + c.inputLine,
-                        background: c.input,
-                        color: c.text,
-                        fontFamily: 'inherit',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        cursor: cancelBusy ? 'default' : 'pointer',
-                        opacity: cancelBusy ? 0.6 : 1,
-                      }}
-                    >
-                      {t.cancelConfirmNo}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelBusy ? undefined : () => void onConfirmCancel(b)}
-                      disabled={cancelBusy}
-                      style={{
-                        flex: 1,
-                        padding: '11px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        background: red,
-                        color: '#fff',
-                        fontFamily: 'inherit',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        cursor: cancelBusy ? 'default' : 'pointer',
-                        opacity: cancelBusy ? 0.7 : 1,
-                      }}
-                    >
-                      {cancelBusy ? t.cancelling : t.cancelConfirmYes}
-                    </button>
+                    {cancelError !== null ? (
+                      <p role="alert" style={{ ...s.submitErrorStyle, margin: '0 0 10px' }}>
+                        {cancelError}
+                      </p>
+                    ) : null}
+                    <div style="display:flex;gap:10px;">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelFor(null)
+                          setCancelError(null)
+                        }}
+                        disabled={cancelBusy}
+                        style={{
+                          flex: 1,
+                          padding: '11px',
+                          borderRadius: '10px',
+                          border: '1px solid ' + c.inputLine,
+                          background: c.input,
+                          color: c.text,
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          cursor: cancelBusy ? 'default' : 'pointer',
+                          opacity: cancelBusy ? 0.6 : 1,
+                        }}
+                      >
+                        {t.cancelConfirmNo}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelBusy ? undefined : () => void onConfirmCancel(b)}
+                        disabled={cancelBusy}
+                        style={{
+                          flex: 1,
+                          padding: '11px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: red,
+                          color: '#fff',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          cursor: cancelBusy ? 'default' : 'pointer',
+                          opacity: cancelBusy ? 0.7 : 1,
+                        }}
+                      >
+                        {cancelBusy ? t.cancelling : t.cancelConfirmYes}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCancelFor(b.id)
-                    setCancelError(null)
-                  }}
-                  style={{
-                    marginTop: '2px',
-                    alignSelf: 'flex-start',
-                    padding: '9px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid ' + red,
-                    background: 'transparent',
-                    color: red,
-                    fontFamily: 'inherit',
-                    fontSize: '13.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t.cancelBtn}
-                </button>
-              )
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelFor(b.id)
+                      setCancelError(null)
+                    }}
+                    style={{
+                      marginTop: '2px',
+                      alignSelf: 'flex-start',
+                      padding: '9px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid ' + red,
+                      background: 'transparent',
+                      color: red,
+                      fontFamily: 'inherit',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t.cancelBtn}
+                  </button>
+                )
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </NativeRegion>
     )
   }
 
@@ -528,8 +541,12 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
 
   return (
     <Dialog
-      titleId="knc-mybookings-title"
-      cms={{ surface: 'my-bookings', lang, mode: props.mode }}
+      titleId={step === 'list' ? 'knc-mybookings-list-title' : 'knc-mybookings-title'}
+      cms={{
+        surface: step === 'list' ? 'my-bookings-list' : 'my-bookings',
+        lang,
+        mode: props.mode,
+      }}
       onClose={props.onClose}
       onBackdropClick={onBackdrop}
       backdropClass="knc-sheet-backdrop"
@@ -539,7 +556,7 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
     >
       <div style={s.overlayHeaderStyle}>
         <span
-          id="knc-mybookings-title"
+          id={step === 'list' ? 'knc-mybookings-list-title' : 'knc-mybookings-title'}
           style="font-family:'Inter Variable';font-weight:600;font-size:17px;"
         >
           {t.title}

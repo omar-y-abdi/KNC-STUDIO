@@ -16,7 +16,13 @@ import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
 import { CmsModal } from './Modal'
+import { CmsIcon } from './Icon'
+import { connectEditorAccessibility } from './editorAccessibility'
+import { editorLocale } from './editorLocale'
+import { compactWorkspace } from './useResponsivePanels'
 import { LivePreview } from './LivePreview'
+import type { CmsScene } from '../../cms/Scene'
+import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
 import {
   isSitePage,
   renderSitePage,
@@ -31,6 +37,9 @@ export interface EditorHandle {
 }
 
 interface Props {
+  onClosePanel: () => void
+  inspectorModal: boolean
+  scene: CmsScene
   pageSettings: ComponentChildren
   page: CmsPage
   lang: CmsLang
@@ -53,7 +62,7 @@ interface Props {
   onError: (message: string) => void
 }
 
-// Static canvases cannot run the hero's scroll-driven collapse; let it leave the viewport.
+// The comparison frame is static; the editing canvas runs the shared fold behavior.
 const canvasScrollCss = '[data-knc-surface^="mobile-"]>div:first-child{position:relative!important}'
 
 function fontFamilyOptions(assets: CmsAsset[]): { id: string; label: string }[] {
@@ -89,6 +98,17 @@ const blocks = [
   ['divider', 'Avdelare', '<hr style="border:0;border-top:1px solid currentColor;margin:32px 0">'],
 ] as const
 
+const blockGlyphs = {
+  section: 'M3 4h18v16H3ZM3 9h18M7 13h10M7 16h6',
+  container: 'M4 4h16v16H4ZM8 8h8v8H8Z',
+  columns: 'M3 4h7v16H3ZM14 4h7v16h-7Z',
+  heading: 'M5 5v14M19 5v14M5 12h14M3 5h4M17 5h4M3 19h4M17 19h4',
+  text: 'M4 5h16M4 10h16M4 15h16M4 20h10',
+  image: 'M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M16 7h.01',
+  link: 'M3 7h18v10H3ZM8 12h8m-3-3 3 3-3 3',
+  divider: 'M3 12h18M7 6h10M7 18h10',
+} as const
+
 function label(component: Component | null): string {
   if (!component) return 'Sida'
   const tag = String(component.get('tagName') ?? 'div').toUpperCase()
@@ -97,6 +117,18 @@ function label(component: Component | null): string {
 }
 
 function fitEditor(editor: Editor): number {
+  const mobile = editor.Devices.get('Mobile')
+  const bounds = editor.getContainer()?.getBoundingClientRect()
+  if (mobile && bounds && bounds.width > 40 && bounds.height > 40) {
+    // On a phone, fit the editing aperture to the available screen instead of
+    // shrinking an entire 844px page. This is viewport state, never saved content.
+    const scale = Math.min(1, (bounds.width - 40) / 390)
+    const height =
+      compactWorkspace() && editor.getDevice() === 'Mobile'
+        ? Math.max(260, Math.min(844, Math.floor((bounds.height - 40) / scale)))
+        : 844
+    if (mobile.get('height') !== `${height}px`) mobile.set('height', `${height}px`)
+  }
   editor.Canvas.fitViewport({
     gap: 16,
     ignoreHeight: false,
@@ -140,6 +172,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const compareHost = useRef<HTMLDivElement>(null)
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
+  const compareHeight = props.device === 'Desktop' ? 844 : 900
   const comparison = useMemo(
     () =>
       props.compare
@@ -158,6 +191,7 @@ export function CmsEditor(props: Props): JSX.Element {
       width: '100%',
       fromElement: false,
       telemetry: false,
+      i18n: editorLocale,
       noticeOnUnload: false,
       storageManager: false,
       panels: { defaults: [] },
@@ -174,8 +208,7 @@ export function CmsEditor(props: Props): JSX.Element {
       // Pointer-transparent public branding must still be selectable in the editor.
       // Canvas-only CSS is never exported to the published website.
       canvasCss:
-        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}' +
-        canvasScrollCss,
+        'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}',
       mediaCondition: 'min-width',
       selectorManager: { componentFirst: true },
       layerManager: { appendTo: '#cms-layers' },
@@ -232,11 +265,26 @@ export function CmsEditor(props: Props): JSX.Element {
       assetManager: { assets: [], upload: false, custom: true },
     })
     instance.current = editor
+    const inspector = host.current
+      .closest('.cms-editor-wrap')
+      ?.querySelector<HTMLElement>('#cms-inspector')
+    const releaseAccessibility = inspector
+      ? connectEditorAccessibility(host.current, inspector)
+      : undefined
     editor.on('asset:custom', ({ open }: { open: boolean }) => {
       if (open) setImageTarget(editor.getSelected() ?? null)
     })
     for (const [id, blockLabel, content] of blocks)
-      editor.BlockManager.add(id, { label: blockLabel, content })
+      editor.BlockManager.add(id, {
+        label: blockLabel,
+        content,
+        attributes: {
+          role: 'button',
+          tabindex: '0',
+          'aria-label': `Lägg till ${blockLabel.toLowerCase()}`,
+        },
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${blockGlyphs[id]}" /></svg>`,
+      })
 
     editor.on('component:create', configureComponent)
     editor.on('component:selected', (component: Component) => setSelected(component))
@@ -365,6 +413,7 @@ export function CmsEditor(props: Props): JSX.Element {
       if (timer.current !== null) window.clearTimeout(timer.current)
       props.onReady(null)
       resize.disconnect()
+      releaseAccessibility?.()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -422,12 +471,15 @@ export function CmsEditor(props: Props): JSX.Element {
   useLayoutEffect(() => {
     const host = compareHost.current
     if (!host) return
-    const resize = (): void => setCompareScale(Math.min(1, host.clientWidth / compareWidth))
+    const resize = (): void =>
+      setCompareScale(
+        Math.min(1, host.clientWidth / compareWidth, host.clientHeight / compareHeight),
+      )
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(host)
     return () => observer.disconnect()
-  }, [props.compare, compareWidth])
+  }, [props.compare, props.locked, compareWidth, compareHeight])
 
   useEffect(() => {
     const editor = instance.current
@@ -467,6 +519,16 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!editor) return
     editor.Canvas.setZoom(props.zoom)
   }, [props.zoom])
+
+  useLayoutEffect(() => {
+    const editor = instance.current
+    return editor ? canvasBehavior(editor, props.scene, props.mode) : undefined
+  }, [contextKey, props.scene])
+
+  useLayoutEffect(() => {
+    instance.current?.select()
+    setSelected(null)
+  }, [props.scene])
 
   const chooseImage = (): void => {
     const editor = instance.current
@@ -544,11 +606,13 @@ export function CmsEditor(props: Props): JSX.Element {
     <>
       <div
         class="cms-editor-canvas"
+        inert={props.inspectorModal}
         ref={host}
         style={{ visibility: props.locked ? 'hidden' : 'visible' }}
       />
       {props.locked && props.preview && (
         <LivePreview
+          scene={props.scene}
           page={props.page}
           presentation={props.preview}
           lang={props.lang}
@@ -559,31 +623,84 @@ export function CmsEditor(props: Props): JSX.Element {
         />
       )}
       {comparison && !props.locked && (
-        <div class="cms-compare-pane">
+        <div class="cms-compare-pane" inert={props.inspectorModal}>
           <div class="cms-compare-label">
             Jämför · {props.device === 'Desktop' ? '390' : '1440'}
           </div>
-          <div ref={compareHost} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <iframe
-              title="Jämförelsevy"
-              sandbox=""
+          <div ref={compareHost} class="cms-compare-viewport">
+            <div
               style={{
-                width: `${compareWidth}px`,
-                height: `${100 / compareScale}%`,
-                transform: `scale(${compareScale})`,
-                transformOrigin: 'top left',
+                width: `${compareWidth * compareScale}px`,
+                height: `${compareHeight * compareScale}px`,
               }}
-              srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
-            />
+            >
+              <iframe
+                title="Jämförelsevy"
+                sandbox=""
+                style={{
+                  width: `${compareWidth}px`,
+                  height: `${compareHeight}px`,
+                  transform: `scale(${compareScale})`,
+                  transformOrigin: 'top left',
+                }}
+                srcDoc={`<!doctype html><html lang="${props.lang}"><head><style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+              />
+            </div>
           </div>
         </div>
       )}
-      <aside id="cms-inspector" class="cms-inspector" aria-label="Egenskaper" inert={props.locked}>
-        <div class="cms-panel-tabs" role="tablist" aria-label="Egenskapspanel">
+      <aside
+        id="cms-inspector"
+        class="cms-inspector"
+        aria-label="Egenskaper"
+        role={props.inspectorModal ? 'dialog' : undefined}
+        aria-modal={props.inspectorModal ? true : undefined}
+        tabIndex={-1}
+        inert={props.locked}
+      >
+        <div class="cms-inspector-heading">
+          <strong>Egenskaper</strong>
+          <button
+            type="button"
+            class="cms-panel-close"
+            aria-label="Stäng panel"
+            onClick={props.onClosePanel}
+          >
+            <CmsIcon name="close" />
+          </button>
+        </div>
+        <div
+          class="cms-panel-tabs"
+          role="tablist"
+          aria-label="Egenskapspanel"
+          onKeyDown={(event) => {
+            const tabs = ['design', 'layers', 'blocks'] as const
+            const index = tabs.indexOf(props.tab)
+            const next =
+              event.key === 'ArrowRight'
+                ? (index + 1) % tabs.length
+                : event.key === 'ArrowLeft'
+                  ? (index + tabs.length - 1) % tabs.length
+                  : event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? tabs.length - 1
+                      : null
+            if (next === null) return
+            event.preventDefault()
+            event.stopPropagation()
+            const tab = tabs[next]
+            if (tab) props.onTab(tab)
+            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+          }}
+        >
           {(['design', 'layers', 'blocks'] as const).map((tab) => (
             <button
               type="button"
               role="tab"
+              id={`cms-tab-${tab}`}
+              aria-controls={tab === 'design' ? 'cms-design' : `cms-${tab}`}
+              tabIndex={props.tab === tab ? 0 : -1}
               aria-selected={props.tab === tab}
               onClick={() => props.onTab(tab)}
             >
@@ -591,7 +708,14 @@ export function CmsEditor(props: Props): JSX.Element {
             </button>
           ))}
         </div>
-        <div hidden={props.tab !== 'design'} class="cms-inspector-scroll">
+        <div
+          id="cms-design"
+          tabIndex={0}
+          role="tabpanel"
+          aria-labelledby="cms-tab-design"
+          hidden={props.tab !== 'design'}
+          class="cms-inspector-scroll"
+        >
           <div class="cms-selection-head">
             <strong>{label(selected)}</strong>
             <p class="cms-style-scope">
@@ -666,6 +790,17 @@ export function CmsEditor(props: Props): JSX.Element {
                   />
                 </label>
               )}
+              {['input', 'textarea'].includes(tag) && (
+                <label>
+                  Platshållartext
+                  <CmsTextarea
+                    value={String(attributes['placeholder'] ?? '')}
+                    onInput={(event) =>
+                      selected.addAttributes({ placeholder: event.currentTarget.value })
+                    }
+                  />
+                </label>
+              )}
               {logoText.map((node, index) => (
                 <label>
                   Logotyptext {index + 1}
@@ -735,17 +870,37 @@ export function CmsEditor(props: Props): JSX.Element {
               )}
               <h3>Finjustera</h3>
               <div class="cms-nudge-grid">
-                <button type="button" onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}>
-                  ←
+                <button
+                  type="button"
+                  aria-label="Flytta åt vänster"
+                  title="Flytta åt vänster · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(-1, 0, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowLeft" />
                 </button>
-                <button type="button" onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}>
-                  ↑
+                <button
+                  type="button"
+                  aria-label="Flytta uppåt"
+                  title="Flytta uppåt · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(0, -1, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowUp" />
                 </button>
-                <button type="button" onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}>
-                  ↓
+                <button
+                  type="button"
+                  aria-label="Flytta nedåt"
+                  title="Flytta nedåt · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(0, 1, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowDown" />
                 </button>
-                <button type="button" onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}>
-                  →
+                <button
+                  type="button"
+                  aria-label="Flytta åt höger"
+                  title="Flytta åt höger · 1 px, Skift 10 px"
+                  onClick={(e) => nudge(1, 0, e.shiftKey ? 10 : 1)}
+                >
+                  <CmsIcon name="arrowRight" />
                 </button>
                 <button
                   type="button"
@@ -816,12 +971,35 @@ export function CmsEditor(props: Props): JSX.Element {
             </details>
           )}
         </div>
-        <div id="cms-layers" hidden={props.tab !== 'layers'} class="cms-manager-panel" />
-        <div id="cms-blocks" hidden={props.tab !== 'blocks'} class="cms-manager-panel" />
+        <div
+          id="cms-layers"
+          tabIndex={0}
+          role="tabpanel"
+          aria-labelledby="cms-tab-layers"
+          hidden={props.tab !== 'layers'}
+          class="cms-manager-panel"
+        />
+        <div
+          id="cms-blocks"
+          tabIndex={0}
+          role="tabpanel"
+          aria-labelledby="cms-tab-blocks"
+          hidden={props.tab !== 'blocks'}
+          class="cms-manager-panel"
+        />
       </aside>
       {imageTarget && (
         <CmsModal title="Välj bild" onClose={closePicker}>
           <p class="cms-help">Välj en bild. Ladda upp fler via Resurser.</p>
+          {!props.assets.some(
+            (asset) => asset.mime.startsWith('image/') && !asset.archived && !asset.trashed_at,
+          ) && (
+            <div class="cms-resource-empty">
+              <CmsIcon name="image" />
+              <strong>Inga bilder att välja ännu</strong>
+              <p>Ladda upp en bild i Resurser och öppna sedan bildväljaren igen.</p>
+            </div>
+          )}
           <div class="cms-resource-grid">
             {props.assets
               .filter(

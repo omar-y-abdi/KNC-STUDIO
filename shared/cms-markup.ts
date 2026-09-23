@@ -275,6 +275,7 @@ export function validateMarkup(
               'data-knc-dark',
               'data-knc-baseline',
               'data-knc-dark-attrs',
+              'data-knc-fold',
             ].includes(name)
           )
             reject('html', 'Unknown native presentation metadata')
@@ -300,6 +301,7 @@ export function validateMarkup(
                   'src',
                   'alt',
                   'aria-label',
+                  'placeholder',
                   'text',
                   'textGaps',
                   'children',

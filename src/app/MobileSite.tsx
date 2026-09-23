@@ -1,4 +1,5 @@
 import { useNativeSurface } from '../cms/NativeSurface'
+import { mobileFold } from './mobileFold'
 // Mobile (M3) layout — folding panel (hero <-> compact header) + booking below.
 //
 // Invariants:
@@ -81,15 +82,16 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
     props.privacy !== undefined && (props.privacy.preferences === null || props.privacy.expanded)
   const [collapse, setCollapse] = useState(0)
   const scrollFrame = useRef<number | null>(null)
-  const collapseLimit = (): number => Math.max(0, window.innerHeight - 112)
   const compactPanel = inSection || collapse > 0
   const syncCollapse = (): void => {
     if (inSection) return
-    const limit = collapseLimit()
-    const scrolled = Math.max(0, scrollRoot.current?.scrollTop ?? 0)
     // Leave the whole hero scrollable above an open privacy panel, then retain the normal
     // compact navigation once About begins. The spacer preserves the document position.
-    const next = privacyOpen ? (scrolled >= limit ? limit : 0) : Math.min(limit, scrolled)
+    const next = mobileFold(
+      scrollRoot.current?.scrollTop ?? 0,
+      window.innerHeight,
+      privacyOpen,
+    ).collapse
     setCollapse((current) => (current === next ? current : next))
   }
   const onScroll = (): void => {
@@ -117,9 +119,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
   const phoneShift = compactPanel ? '24px' : '0px'
   // Muted, theme-aware colour for the underlined hero links (sits on the panel surface).
   const heroLinkColor = dark ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.6)'
-  const heroOpacity = inSection
-    ? 0
-    : Math.max(0, 1 - collapse / Math.max(1, collapseLimit() * 0.45))
+  const heroOpacity = inSection ? 0 : mobileFold(collapse, window.innerHeight).opacity
 
   const foldingPanelStyle: StyleWithVars = {
     position: 'relative',
@@ -259,6 +259,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
       data-testid="mobile-site-scroll"
     >
       <div
+        data-knc-fold="panel"
         style={{
           ...foldingPanelStyle,
           position: privacyOpen && !compactPanel ? 'relative' : 'sticky',
@@ -269,6 +270,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
         <div style={panelTopStyle}>
           <div style={{ height: 'calc(env(safe-area-inset-top, 0px) + 30px)' }}></div>
           <div
+            data-knc-fold="controls"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -312,6 +314,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
               {props.langToggle}
               {props.themeToggle}
               <button
+                data-knc-fold="return"
                 onClick={props.scrollMobToHero}
                 style={expandChevStyle}
                 title={tx.ariaBackHome}
@@ -326,11 +329,11 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           </div>
         </div>
 
-        <div style={headerMarkStyle} aria-hidden="true">
+        <div data-knc-fold="mark" style={headerMarkStyle} aria-hidden="true">
           <CornerMark height={26} />
         </div>
 
-        <div style={heroExtrasStyle} inert={heroOpacity === 0}>
+        <div data-knc-fold="hero" style={heroExtrasStyle} inert={heroOpacity === 0}>
           <h1 style={{ margin: 0, display: 'flex', justifyContent: 'center' }}>
             <HomepageLogo
               logo={props.homepageLogo}
@@ -434,7 +437,9 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
 
       {/* Keep panel + spacer at one viewport tall. At max collapse About begins exactly below the
           compact top panel, while reverse scrolling recreates the hero without a mode switch. */}
-      {!inSection ? <div aria-hidden="true" style={{ height: collapse + 'px' }} /> : null}
+      {!inSection ? (
+        <div data-knc-fold="spacer" aria-hidden="true" style={{ height: collapse + 'px' }} />
+      ) : null}
       <div style={m3BodyStyle}>
         {inSection ? (
           <LazySurface

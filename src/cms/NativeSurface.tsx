@@ -2,6 +2,7 @@ import { mediaUrl } from '../../shared/cms'
 import { SUPABASE_URL } from '../backend/config'
 import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
 import { repairDesktopCss } from '../../shared/cms-device-css'
+import { createInstanceScope, nativeNodeId, type InstanceScope } from './instanceScope'
 import { createContext, Fragment, h, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, JSX, VNode } from 'preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
@@ -36,6 +37,7 @@ export function useCmsPageLinks(): readonly CmsPage[] {
 interface NativeRenderContext {
   template: Element | null
   mode: CmsMode
+  scope?: InstanceScope | null
 }
 const RenderContext = createContext<NativeRenderContext | null>(null)
 const SlotContext = createContext<(NativeRenderContext & { identity: string }) | null>(null)
@@ -66,9 +68,12 @@ export function useNativeChild(): (source: JSX.Element) => JSX.Element {
         ? source
         : h('div', { style: 'display:contents' }, source)
     const native = nativeTree(root, context.identity, context.mode)
+    const projected = context.template
+      ? projectNativeTree(native, context.template, context.mode)
+      : native.tree
     return (
       <RenderContext.Provider value={context}>
-        {context.template ? projectNativeTree(native, context.template, context.mode) : native.tree}
+        {context.scope ? context.scope.tree(projected) : projected}
       </RenderContext.Provider>
     )
   }
@@ -131,7 +136,17 @@ export function NativeSiteProvider({
 }
 
 type NativeNode = VNode<Record<string, unknown>>
-const editableAttributes = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label']
+const editableAttributes = [
+  'class',
+  'title',
+  'href',
+  'target',
+  'rel',
+  'src',
+  'alt',
+  'aria-label',
+  'placeholder',
+]
 const authoredTags = new Set(
   'a abbr address article aside b blockquote br div em figure figcaption footer h1 h2 h3 h4 h5 h6 header hr i img li main nav ol p pre section small span strong table tbody td th thead tr ul'.split(
     ' ',
@@ -148,16 +163,6 @@ function childKey(value: ComponentChild, index: number): string {
     .split('')
     .map((char) => char.charCodeAt(0).toString(16))
     .join('x')}`
-}
-
-function nodeIdentity(surface: string, path: string): string {
-  const identity = `knc-${surface}-${path}`
-  if (identity.length <= 120) return identity
-  // Nested component paths and entity UUIDs still need to fit the public element-ID contract.
-  let hash = 14695981039346656037n
-  for (const char of identity)
-    hash = BigInt.asUintN(64, (hash ^ BigInt(char.charCodeAt(0))) * 1099511628211n)
-  return `knc-node-${hash.toString(16)}`
 }
 
 /** Keep actual handlers, refs and component instances; HTML supplies presentation only. */
@@ -177,7 +182,7 @@ export function nativeTree(
   const visit = (value: ComponentChild, path: string, parent?: string): ComponentChild => {
     if (!isValidElement(value)) return value
     const props = value.props as Record<string, unknown>
-    const identity = nodeIdentity(surface, path)
+    const identity = nativeNodeId(surface, path)
     if (value.type === Fragment)
       return h(
         Fragment,
@@ -318,8 +323,10 @@ export function projectNativeTree(
       original.props['role'] === 'img' &&
       !original.props['data-knc-required'] &&
       element.tagName.toLowerCase() === 'img'
-    if (identity && (!original || (original.type !== element.tagName.toLowerCase() && !logoImage)))
-      return null
+    if (identity && !original) return null
+    // A calendar cell can change between an empty span and a live date button. Preserve that
+    // runtime transition; the captured month's tag must never remove a later month's dates.
+    if (original && original.type !== element.tagName.toLowerCase() && !logoImage) return original
     if (!original && !authoredTags.has(element.tagName.toLowerCase())) return null
     const props: Record<string, unknown> = original ? { ...original.props } : {}
     const before = baseline(element)
@@ -422,16 +429,16 @@ export function useNativeSurface(
   surface: string,
   lang: CmsLang,
   mode: CmsMode,
+  instance?: string,
 ): JSX.Element {
   const context = useContext(NativeContext)
-  const path =
-    surface === 'my-bookings'
-      ? '/my-bookings'
-      : surface.endsWith('-booking')
-        ? '/booking'
-        : surface === 'about'
-          ? '/about'
-          : '/'
+  const path = surface.startsWith('my-booking')
+    ? '/my-bookings'
+    : surface.endsWith('-booking') || surface.startsWith('booking-')
+      ? '/booking'
+      : surface === 'about'
+        ? '/about'
+        : '/'
   const page = context?.presentation?.pages.find((candidate) => candidate.path === path)
   const html = context?.source ? '' : (page?.content[lang].html ?? '')
   const template = useMemo(() => {
@@ -440,19 +447,41 @@ export function useNativeSurface(
       .parseFromString(html, 'text/html')
       .querySelector(`[data-knc-surface="${surface}"]`)
   }, [html, surface])
+  const scope = useMemo(
+    () => (instance === undefined ? null : createInstanceScope(surface, instance, template)),
+    [surface, instance, template],
+  )
   if (
     !context ||
     (!context.source && !template && !Object.keys(context.presentation?.themes[mode] ?? {}).length)
   )
     return h(Fragment, null, source)
   const native = nativeTree(source, surface, mode)
+  const projected = template ? projectNativeTree(native, template, mode) : native.tree
+  const output = scope ? scope.tree(projected) : projected
+  const css = repairDesktopCss(page?.content[lang].css[mode] ?? '')
   return (
     <>
       {context.presentation && <style>{siteThemeCss(context.presentation, mode)}</style>}
-      {template && <style>{repairDesktopCss(page?.content[lang].css[mode] ?? '')}</style>}
-      <RenderContext.Provider value={{ template, mode }}>
-        {template ? projectNativeTree(native, template, mode) : native.tree}
-      </RenderContext.Provider>
+      {template && <style>{scope ? scope.css(css) : css}</style>}
+      <RenderContext.Provider value={{ template, mode, scope }}>{output}</RenderContext.Provider>
     </>
   )
+}
+
+/** A conditional runtime region with its own editable template on the owning page. */
+export function NativeRegion({
+  children,
+  surface,
+  lang,
+  mode,
+  instance,
+}: {
+  children: JSX.Element
+  surface: string
+  lang: CmsLang
+  mode: CmsMode
+  instance?: string
+}): JSX.Element {
+  return useNativeSurface(children, surface, lang, mode, instance)
 }

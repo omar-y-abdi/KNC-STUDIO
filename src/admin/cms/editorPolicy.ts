@@ -178,5 +178,8 @@ export function configureComponent(component: Component): void {
       !controls.has(tag) &&
       !svgLeaf.has(tag),
   })
-  if (isReadOnlyPreview(component)) component.setTraits([])
+  if (readOnly) component.setTraits([])
+  // The image inspector already owns the accessible alt-text field. Keep one
+  // editor for that attribute instead of exposing a second, unsynchronized trait.
+  else if (tag === 'img') component.removeTrait('alt')
 }

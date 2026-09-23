@@ -101,7 +101,7 @@ for (const [engine, name] of [
     })
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
-    await page.getByRole('button', { name: 'Fit', exact: true }).click()
+    await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
     const library = page.locator('#cms-library')
     await library.getByRole('button', { name: 'Om oss', exact: true }).click()
     await frame.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
@@ -124,7 +124,7 @@ for (const [engine, name] of [
     const copy = frame.getByText('KNC source sv', { exact: true }).first()
     await copy.click()
     await inspector.getByLabel('Text', { exact: true }).fill('Owner edited the populated site')
-    await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
     await page.waitForFunction(() =>
       globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
     )
@@ -154,7 +154,7 @@ for (const [engine, name] of [
     await page.bringToFront()
     await frame.getByAltText('Blade & Blend Studio', { exact: true }).first().click()
     await inspector.getByLabel('Alternativtext', { exact: true }).fill('Owner logo description')
-    await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
     await page.waitForFunction(() =>
       globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
     )

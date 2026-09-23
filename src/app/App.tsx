@@ -1,4 +1,5 @@
 import { useCmsPresentation } from '../cms/NativeSurface'
+import { CmsSceneContext } from '../cms/Scene'
 // Root component.
 // Owns state {mode, lang, view, myBookingsOpen}, the isMobile matchMedia switch, and the
 // theme-color / body-background edge effect, then renders MobileSite | DesktopSite. The layout
@@ -6,7 +7,7 @@ import { useCmsPresentation } from '../cms/NativeSurface'
 // passed down so both layouts render identical controls.
 
 import type { JSX, ComponentChildren } from 'preact'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { AppStrings, Lang } from '../i18n/index'
 import { appStrings } from '../i18n/index'
 import type { BookingPopupText } from '../booking/BookingFlow'
@@ -116,6 +117,7 @@ export function App({
   preview,
 }: { preview?: SitePreview; children?: ComponentChildren } = {}): JSX.Element {
   const privacy = usePrivacyPreferences(Boolean(preview))
+  const example = useContext(CmsSceneContext)
   useEffect(() => {
     if (window.location.hash === '#privacy-preferences') privacy.openPreferences()
   }, [privacy.openPreferences])
@@ -486,7 +488,7 @@ export function App({
     >
       <LazyMyBookingsDialog
         key={accessSequence.current}
-        {...(preview ? { port: previewCustomerPort } : {})}
+        {...(preview ? { port: example?.customer?.port ?? previewCustomerPort } : {})}
         mode={state.mode}
         lang={lang}
         onClose={closeMyBookings}

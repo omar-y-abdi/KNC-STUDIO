@@ -3,6 +3,7 @@ import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import {
   EMAIL_NAMES,
+  EMAIL_DESIGN_LIMITS,
   type CmsAsset,
   defaultEmailDesign,
   type CmsDocument,
@@ -10,22 +11,41 @@ import {
   type CmsLang,
 } from '../../../shared/cms'
 import { renderEmailPreview } from './emailPreview'
+import { CmsIcon } from './Icon'
 
-const businessFields = [
-  ['business_name', 'Visningsnamn'],
-  ['business_legal_name', 'Juridiskt namn'],
-  ['business_org_number', 'Organisationsnummer'],
-  ['business_email', 'E-post'],
-  ['business_phone_display', 'Telefon'],
-  ['business_phone_tel', 'Telefonlänk'],
-  ['business_street', 'Adress'],
-  ['business_postal_code', 'Postnummer'],
-  ['business_city', 'Stad'],
-  ['business_maps_href', 'Kartlänk'],
-  ['seo_title_sv', 'SEO titel SV'],
-  ['seo_description_sv', 'SEO beskrivning SV'],
-  ['seo_title_en', 'SEO title EN'],
-  ['seo_description_en', 'SEO description EN'],
+const businessGroups = [
+  {
+    title: 'Salongen',
+    description: 'Namnet som möter kunden och uppgifterna i dina juridiska texter.',
+    fields: [
+      ['business_name', 'Visningsnamn'],
+      ['business_legal_name', 'Juridiskt namn'],
+      ['business_org_number', 'Organisationsnummer'],
+    ],
+  },
+  {
+    title: 'Kontakt & adress',
+    description: 'Gemensamma kontaktuppgifter på webbplatsen och i utskicken.',
+    fields: [
+      ['business_email', 'E-post'],
+      ['business_phone_display', 'Telefon'],
+      ['business_phone_tel', 'Telefonlänk'],
+      ['business_street', 'Adress'],
+      ['business_postal_code', 'Postnummer'],
+      ['business_city', 'Stad'],
+      ['business_maps_href', 'Kartlänk'],
+    ],
+  },
+  {
+    title: 'Sökresultat',
+    description: 'Sidans titel och beskrivning när webbplatsen visas i ett sökresultat.',
+    fields: [
+      ['seo_title_sv', 'SEO titel SV'],
+      ['seo_description_sv', 'SEO beskrivning SV'],
+      ['seo_title_en', 'SEO title EN'],
+      ['seo_description_en', 'SEO description EN'],
+    ],
+  },
 ] as const
 
 const barberFields = [
@@ -37,11 +57,11 @@ const barberFields = [
 ] as const
 
 const emailDesignNumberFields = [
-  ['width', 'Bredd', 320, 760],
-  ['radius', 'Hörnradie', 0, 48],
-  ['padding', 'Padding', 12, 64],
-  ['titleSize', 'Rubrikstorlek', 18, 56],
-  ['textSize', 'Textstorlek', 12, 24],
+  ['width', 'Bredd'],
+  ['radius', 'Hörnradie'],
+  ['padding', 'Padding'],
+  ['titleSize', 'Rubrikstorlek'],
+  ['textSize', 'Textstorlek'],
 ] as const
 
 const emailLabel: Record<(typeof EMAIL_NAMES)[number], string> = {
@@ -76,21 +96,46 @@ export function BusinessPanel({
     onChange(next)
   }
   return (
-    <div class="cms-domain-panel">
-      <h2>Business & SEO</h2>
-      <p>Operativa bokningsregler ligger kvar utanför CMS-historiken.</p>
-      <div class="cms-domain-grid">
-        {businessFields.map(([key, label]) => (
-          <label>
-            {label}
-            <input
-              value={document.settings[key] ?? ''}
-              onInput={(e) => set(key, e.currentTarget.value)}
-            />
-          </label>
-        ))}
-      </div>
-      <h3>Barberare</h3>
+    <div class="cms-domain-panel cms-business-panel">
+      {businessGroups.map((group) => (
+        <fieldset class="cms-business-group" key={group.title}>
+          <legend>{group.title}</legend>
+          <p>{group.description}</p>
+          <div class="cms-domain-grid">
+            {group.fields.map(([key, label]) => (
+              <label key={key}>
+                {label}
+                {key.includes('description') ? (
+                  <CmsTextarea
+                    value={document.settings[key] ?? ''}
+                    onInput={(event) => set(key, event.currentTarget.value)}
+                  />
+                ) : (
+                  <input
+                    type={
+                      key === 'business_email'
+                        ? 'email'
+                        : key.includes('phone')
+                          ? 'tel'
+                          : key === 'business_maps_href'
+                            ? 'url'
+                            : 'text'
+                    }
+                    value={document.settings[key] ?? ''}
+                    onInput={(event) => set(key, event.currentTarget.value)}
+                  />
+                )}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      <h2>Barberare</h2>
+      {document.barbers.length === 0 && (
+        <p class="cms-inline-empty">
+          Barberare läggs till i Admin. Här redigerar du deras namn, roller och presentation.
+        </p>
+      )}
       {document.barbers.map((barber, index) => (
         <fieldset>
           <legend>{barber.name}</legend>
@@ -112,6 +157,10 @@ export function BusinessPanel({
           ))}
         </fieldset>
       ))}
+      <p class="cms-form-note">
+        <CmsIcon name="info" />
+        Operativa bokningsregler ligger kvar utanför CMS-historiken.
+      </p>
     </div>
   )
 }
@@ -137,14 +186,34 @@ export function EmailPanel({
   onChange: (document: CmsDocument) => void
 }): JSX.Element {
   const [previewWidth, setPreviewWidth] = useState<'desktop' | 'mobile'>('desktop')
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<CmsEmail['template']>('customer_confirmation')
+  const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit')
   const first = document.emails.find((email) => email.lang === lang) ?? document.emails[0]
-  if (!first) return <div class="cms-domain-panel">Inga e-postmallar är konfigurerade.</div>
-  const [selectedTemplate, setSelectedTemplate] = useState(first.template)
+  if (!first)
+    return (
+      <div class="cms-resource-empty">
+        <CmsIcon name="mail" />
+        <strong>Inga e-postmallar är konfigurerade.</strong>
+        <p>
+          Mallarna behöver finnas på servern innan de kan redigeras här. Inga mejl skickas från
+          studion.
+        </p>
+      </div>
+    )
   const email =
     document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ??
     first
-  const patch = (key: keyof CmsEmail, value: string): void =>
-    onChange(replaceEmail(document, { ...email, [key]: value }))
+  const patch = (
+    key: Exclude<keyof CmsEmail, 'template' | 'lang' | 'design'>,
+    value: string,
+  ): void =>
+    onChange(
+      replaceEmail(document, {
+        ...email,
+        [key]: value === '' && (key === 'section_title' || key === 'contact_lead') ? null : value,
+      }),
+    )
   const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
     const next = structuredClone(email)
     if (!next.design) return
@@ -158,12 +227,47 @@ export function EmailPanel({
     // Incomplete number/color edits remain in the form; invalid CSS is never rendered.
   }
   return (
-    <div class="cms-email-workspace">
-      <aside>
+    <div class="cms-email-workspace" data-email-view={mobileView}>
+      <div class="cms-email-mobile-toolbar">
+        <label>
+          Mejlmall
+          <select
+            aria-label="Mejlmall"
+            value={email.template}
+            onChange={(event) =>
+              setSelectedTemplate(event.currentTarget.value as CmsEmail['template'])
+            }
+          >
+            {EMAIL_NAMES.map((name) => (
+              <option value={name}>{emailLabel[name]}</option>
+            ))}
+          </select>
+        </label>
+        <div class="cms-segment" role="group" aria-label="Mejlverktyg">
+          <button
+            type="button"
+            aria-pressed={mobileView === 'edit'}
+            onClick={() => setMobileView('edit')}
+          >
+            <CmsIcon name="edit" />
+            Redigera
+          </button>
+          <button
+            type="button"
+            aria-pressed={mobileView === 'preview'}
+            onClick={() => setMobileView('preview')}
+          >
+            <CmsIcon name="eye" />
+            Förhandsvisa
+          </button>
+        </div>
+      </div>
+      <aside aria-label="Mejlmallar">
         {EMAIL_NAMES.map((name) => (
           <button
             type="button"
-            class={selectedTemplate === name ? 'is-active' : ''}
+            class={email.template === name ? 'is-active' : ''}
+            aria-pressed={email.template === name}
             onClick={() => setSelectedTemplate(name)}
           >
             {emailLabel[name]}
@@ -189,13 +293,13 @@ export function EmailPanel({
             <summary>Utseende</summary>
             <fieldset>
               <legend>Design</legend>
-              {emailDesignNumberFields.map(([key, label, min, max]) => (
+              {emailDesignNumberFields.map(([key, label]) => (
                 <label>
                   {label}
                   <input
                     type="number"
-                    min={min}
-                    max={max}
+                    min={EMAIL_DESIGN_LIMITS[key][0]}
+                    max={EMAIL_DESIGN_LIMITS[key][1]}
                     value={email.design?.[key]}
                     onInput={(e) =>
                       updateDesign((design) => {
@@ -301,7 +405,7 @@ export function EmailPanel({
             ['section_title', 'Rubrik för bokningsuppgifter'],
             ['note', 'Notis'],
             ['contact_lead', 'Kontakttext'],
-            ['cta_label', 'CTA'],
+            ['cta_label', 'Knapptext'],
           ] as const
         ).map(([key, label]) => (
           <label>
@@ -319,13 +423,13 @@ export function EmailPanel({
       </div>
       <section class="cms-email-preview" aria-label="Förhandsvisning av mejl">
         <div class="cms-email-preview-toolbar">
-          <div class="cms-segment" aria-label="Mejlbredd">
+          <div class="cms-segment" role="group" aria-label="Mejlbredd">
             <button
               type="button"
               aria-pressed={previewWidth === 'desktop'}
               onClick={() => setPreviewWidth('desktop')}
             >
-              Desktop
+              Dator
             </button>
             <button
               type="button"

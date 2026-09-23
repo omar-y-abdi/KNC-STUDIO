@@ -24,7 +24,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
     }
     const publish = async () => {
-      await page.getByRole('button', { name: 'Save / Publicera', exact: true }).click()
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
       await page.waitForFunction(() =>
         globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
       )
@@ -34,7 +34,9 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     const reviews = frame.getByRole('heading', { name: 'Omdömen', exact: true })
     await reviews.click()
     const id = await reviews.getAttribute('id')
-    await page.getByRole('button', { name: '→', exact: true }).click({ modifiers: ['Shift'] })
+    await page
+      .getByRole('button', { name: 'Flytta åt höger', exact: true })
+      .click({ modifiers: ['Shift'] })
     await publish()
     const css = backend.document.presentation.pages.find((p) => p.path === '/about').content.sv.css
     let desktopRule = false
@@ -60,7 +62,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       'Desktop nudge must not move mobile',
     )
     await reviews.click()
-    await page.getByRole('button', { name: '←', exact: true }).click()
+    await page.getByRole('button', { name: 'Flytta åt vänster', exact: true }).click()
     await page
       .locator('#cms-inspector')
       .getByLabel('Text', { exact: true })
@@ -119,12 +121,15 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         await publicPage.close()
       }
     }
-    await page.getByRole('button', { name: '◐ Webbplatsens stil', exact: true }).click()
+    await page.getByRole('button', { name: 'Webbplatsens stil', exact: true }).click()
     await page.getByLabel('Bakgrund hex', { exact: true }).fill('#f0e4d4')
     await page.getByLabel('Bakgrund hex', { exact: true }).press('Tab')
     await page.getByLabel('Text hex', { exact: true }).fill('#273749')
     await page.getByLabel('Text hex', { exact: true }).press('Tab')
-    await page.getByLabel('Typsnitt', { exact: true }).selectOption('Georgia, serif')
+    await page
+      .getByRole('region', { name: 'Webbplatsens stilinställningar', exact: true })
+      .getByLabel('Typsnitt', { exact: true })
+      .selectOption('Georgia, serif')
     const themePreview = page.frameLocator('.cms-theme-preview iframe')
     await themePreview.locator('[data-knc-surface="desktop-home"]').waitFor()
     await page.waitForFunction(() => {

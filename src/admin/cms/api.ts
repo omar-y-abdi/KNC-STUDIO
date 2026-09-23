@@ -53,7 +53,15 @@ export const cmsApi = {
   revision: (revision: number): Promise<CmsState> => invoke({ operation: 'revision', revision }),
   asset: (
     asset: Pick<CmsAsset, 'id' | 'version' | 'name' | 'alt' | 'archived'>,
-  ): Promise<CmsAsset> => invoke({ operation: 'asset', ...asset }),
+  ): Promise<CmsAsset> =>
+    invoke({
+      operation: 'asset',
+      id: asset.id,
+      version: asset.version,
+      name: asset.name,
+      alt: asset.alt,
+      archived: asset.archived,
+    }),
   assetUsage: (id: string): Promise<AssetUsage> => invoke({ operation: 'asset_usage', id }),
   assetLifecycle: (
     asset: Pick<CmsAsset, 'id' | 'version'>,
