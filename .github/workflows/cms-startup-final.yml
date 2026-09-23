@@ -1,0 +1,114 @@
+name: CMS startup final
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-startup-final.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare reviewed candidate
+        id: source
+        run: |
+          mkdir -p /tmp/source
+          cp .startup/finish.patch /tmp/finish.patch
+          git checkout --detach 7ba996b5bedabfcbe789af899b2abb78d53cb3c4
+          git apply --index /tmp/finish.patch
+          test "$(git write-tree)" = 544c279a8a7312f3419494b0a061eee727afabf8
+          npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS startup fix' -c user.email='cms-fix@users.noreply.github.com' commit -m 'fix: keep page failures local and gate CMS startup regressions'
+          git rev-parse HEAD > /tmp/source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/source/tree.txt
+          git bundle create /tmp/source/source.bundle HEAD
+          git push origin HEAD:refs/heads/fix/cms-startup-20260923
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-final-source
+          path: /tmp/source
+          retention-days: 7
+  built:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: bash tools/ci/setup-furl.sh
+      - name: Production build and startup acceptance
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          VITE_SUPABASE_URL: https://admin-harness.invalid
+          VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+          CMS_STARTUP_BUILT: '1'
+          CMS_EVIDENCE_DIR: /tmp/cms-startup
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          mkdir -p /tmp/cms-startup
+          git rev-parse HEAD > /tmp/cms-startup/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-startup/tree.txt
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test > /tmp/cms-startup/unit.log 2>&1
+          npm run build
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/cms-startup/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          node tools/e2e/cms-startup.mjs > /tmp/cms-startup/acceptance.log 2>&1
+      - name: Read-only published-content startup measurement
+        if: success()
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          CMS_STARTUP_BUILT: '1'
+          CMS_STARTUP_PRESENTATION: /tmp/presentation.json
+          CMS_EVIDENCE_DIR: /tmp/cms-startup/published
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          curl -fsS https://bladeblendstudio.se/api/cms/presentation > /tmp/presentation.json
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/cms-startup/published-server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          node tools/e2e/cms-startup.mjs > /tmp/cms-startup/published.log 2>&1
+      - name: Compress logs
+        if: always()
+        run: |
+          for f in /tmp/cms-startup/*.log; do furl compress "$f" --json > "$f.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-final-${{ matrix.engine }}
+          path: /tmp/cms-startup
+          retention-days: 7
