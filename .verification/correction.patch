@@ -1,0 +1,150 @@
+diff --git a/shared/cms-email.ts b/shared/cms-email.ts
+index 4762dc6b..0023a0ac 100644
+--- a/shared/cms-email.ts
++++ b/shared/cms-email.ts
+@@ -107,5 +107,5 @@ export function renderDesignedEmail(
+     design.logo && input.copy.designLogoUrl
+       ? `<img src="${escape(input.copy.designLogoUrl)}" width="160" alt="${escape(business.name)}" style="max-width:160px;max-height:100px;object-fit:contain;display:block">`
+       : 'BLADE &amp; BLEND'
+-  return `<!doctype html><html lang="${input.lang}" style="color-scheme:${mode};supported-color-schemes:${mode}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="${mode}"><meta name="supported-color-schemes" content="${mode}"><title>${escape(expand(input.copy.subject, variables))}</title></head><body bgcolor="${colors.background}" style="margin:0;padding:0;background:${colors.background};color:${colors.text};font-family:${font}"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escape(expand(input.copy.preheader, variables))}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${colors.background}" style="width:100%;background:${colors.background}"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${colors.surface}" style="width:100%;max-width:${design.width}px;background:${colors.surface};border:1px solid ${colors.border};border-radius:${design.radius}px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px ${design.padding}px 0"><a href="https://bladeblendstudio.se" style="display:inline-block;color:${colors.text};text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">${logo}</a></td></tr><tr><td style="padding:40px ${design.padding}px ${design.padding}px">${design.order.map((part) => parts[part]).join('')}</td></tr></table></td></tr></table></body></html>`
++  return `<!doctype html><html lang="${input.lang}" style="color-scheme:${mode};supported-color-schemes:${mode}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="${mode}"><meta name="supported-color-schemes" content="${mode}"><title>${escape(expand(input.copy.subject, variables))}</title></head><body bgcolor="${colors.background}" style="margin:0;padding:0;background:${colors.background};color:${colors.text};font-family:${font}"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escape(expand(input.copy.preheader, variables))}&#847;&zwnj;&nbsp;&#8199;</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${colors.background}" style="width:100%;background:${colors.background}"><tr><td align="center" style="padding:34px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${colors.surface}" style="width:100%;max-width:${design.width}px;background:${colors.surface};border:1px solid ${colors.border};border-radius:${design.radius}px;border-collapse:separate;overflow:hidden"><tr><td style="padding:32px ${design.padding}px 0"><a href="https://bladeblendstudio.se" aria-label="${escape(business.name)}" style="display:inline-block;color:${colors.text};text-decoration:none;font-size:18px;font-weight:750;letter-spacing:-.025em">${logo}</a></td></tr><tr><td style="padding:40px ${design.padding}px ${design.padding}px">${design.order.map((part) => parts[part]).join('')}</td></tr></table></td></tr></table></body></html>`
+ }
+diff --git a/shared/site-page.ts b/shared/site-page.ts
+index 934a99f8..33e98a35 100644
+--- a/shared/site-page.ts
++++ b/shared/site-page.ts
+@@ -1,5 +1,6 @@
+ import { themeDeclarations, siteThemeCss } from './site-theme.ts'
+ import { repairDesktopCss } from './cms-device-css.ts'
++import { generate, parse, walk } from 'css-tree'
+ import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
+ import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
+ 
+@@ -163,6 +164,26 @@ export function renderSitePage(
+   }
+ }
+ 
++/** Derived chrome needs strong overrides while it still contains inline runtime
++ * styles. Once materialized, these are editable defaults below owner ID rules. */
++function editableChromeCss(css: string): string {
++  const tree = parse(css)
++  walk(tree, {
++    visit: 'Rule',
++    enter(rule) {
++      const selector = generate(rule.prelude)
++      if (!selector.startsWith('#cms-site-')) return
++      rule.prelude = parse(selector.replace(/#(cms-site-[\w-]+)/g, '[id="$1"]'), {
++        context: 'selectorList',
++      })
++      rule.block.children.forEach(declaration => {
++        if (declaration.type === 'Declaration') declaration.important = false
++      })
++    },
++  })
++  return generate(tree)
++}
++
+ /** Materialize an independent page once. Its chrome becomes authored content, not
+  * a locked preview of another page. Normalize inline styles before GrapesJS can
+  * attach them to the currently selected device's media query. */
+@@ -172,6 +193,7 @@ export function createSitePage(presentation: CmsPresentation, page: CmsPage): Cm
+   for (const lang of ['sv', 'en'] as const) {
+     const render = (mode: CmsMode) => {
+       const rendered = renderSitePage(presentation, page, lang, mode)
++      rendered.css = editableChromeCss(rendered.css)
+       return normalizeSitePageContent(
+         { html: rendered.html, css: { light: rendered.css, dark: rendered.css } },
+         `${page.id}-${lang}`,
+diff --git a/src/admin/cms/Editor.tsx b/src/admin/cms/Editor.tsx
+index 60ff8f34..85201d3b 100644
+--- a/src/admin/cms/Editor.tsx
++++ b/src/admin/cms/Editor.tsx
+@@ -345,8 +345,10 @@ export function CmsEditor(props: Props): JSX.Element {
+       const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
+       if (html === checkpoint.current.html && css === checkpoint.current.css) return
+       const current = latest.current
+-      const next = structuredClone(current.page)
+-      if (isSitePage(next)) next.layout = 'independent'
++      // Ownership is page-wide: materialize both languages before editing either.
++      const next = isSitePage(current.page)
++        ? createSitePage(current.presentation, current.page)
++        : structuredClone(current.page)
+       applying.current = true
+       try {
+         syncResponsiveText(editor, current.page.content[current.lang].html, html)
+@@ -354,9 +356,7 @@ export function CmsEditor(props: Props): JSX.Element {
+         applying.current = false
+       }
+       html = editor.getHtml({ cleanId: false })
+-      const baseVariant = isSitePage(current.page)
+-        ? createSitePage(current.presentation, current.page).content[current.lang]
+-        : current.page.content[current.lang]
++      const baseVariant = next.content[current.lang]
+       const nativeExport = exportNativeCanvas(html, css, current.mode)
+       const exported = stripComposedCanvas(nativeExport.html, nativeExport.css)
+       next.content[current.lang] = {
+diff --git a/tests/unit/cmsModeCss.test.ts b/tests/unit/cmsModeCss.test.ts
+index 76b994e8..40e363ea 100644
+--- a/tests/unit/cmsModeCss.test.ts
++++ b/tests/unit/cmsModeCss.test.ts
+@@ -8,7 +8,7 @@ describe('explicit CMS theme', () => {
+     const resolved = modeCss(css, 'dark')
+     expect(resolved).not.toContain('prefers-color-scheme')
+     expect(resolved).toContain(':root{color:white;background:black}')
+-    expect(resolved).toContain('@media(max-width:768px)')
++    expect(resolved).toMatch(/@media\s*\(max-width:768px\)/)
+   })
+   it('does not import dark palette rules into the light variant', () => {
+     expect(modeCss(css, 'light')).not.toContain('background:black')
+diff --git a/tools/e2e/cms-owner.mjs b/tools/e2e/cms-owner.mjs
+index 0c854c16..d6267d07 100644
+--- a/tools/e2e/cms-owner.mjs
++++ b/tools/e2e/cms-owner.mjs
+@@ -35,6 +35,7 @@ for (const [engine, name] of [
+   [chromium, 'chromium'],
+   [webkit, 'webkit'],
+ ]) {
++  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
+   const browser = await engine.launch()
+   try {
+     for (const scenario of scenarios) {
+diff --git a/tools/e2e/cms-reported.mjs b/tools/e2e/cms-reported.mjs
+index 3dbb7817..38e1ffc9 100644
+--- a/tools/e2e/cms-reported.mjs
++++ b/tools/e2e/cms-reported.mjs
+@@ -163,13 +163,14 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+     await check('2-owner-controls-survive-publication', async ({ page, frame, shot, backend }) => {
+       await create(page)
+       await select(page, '#cms-site-header > div')
+-      // Exercise the production style manager, not a CSS injection into the frame.
+-      await page.evaluate(async () => {
+-        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+-        const editor = cmsGrapes.editors.at(-1)
+-        editor.StyleManager.getProperty('surface', 'background-color').upValue('#123456')
+-        editor.StyleManager.getProperty('spacing', 'padding').upValue('33px')
+-      })
++      await page.getByRole('button', { name: 'Yta & kanter', exact: true }).click()
++      const background = page.getByRole('textbox', { name: 'Bakgrundsfärg', exact: true })
++      await background.fill('#123456')
++      await background.press('Enter')
++      await page.getByRole('button', { name: 'Avstånd', exact: true }).click()
++      const padding = page.locator('.gjs-sm-property').filter({ has: page.locator('.gjs-sm-label').getByText('Inre avstånd', { exact: true }) }).first()
++      await padding.getByLabel('Ovanför', { exact: true }).fill('33')
++      await padding.getByLabel('Ovanför', { exact: true }).press('Enter')
+       const styled = () => frame.locator('#cms-site-header > div').evaluate(node => ({ background: getComputedStyle(node).backgroundColor, padding: getComputedStyle(node).paddingTop }))
+       const before = await styled()
+       await shot('header-styled')
+diff --git a/tools/e2e/cms-scenes.mjs b/tools/e2e/cms-scenes.mjs
+index 391642f0..56395143 100644
+--- a/tools/e2e/cms-scenes.mjs
++++ b/tools/e2e/cms-scenes.mjs
+@@ -5,7 +5,8 @@ import { chromium, webkit } from 'playwright'
+ import { nativeBackend } from './cms-native.mjs'
+ const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+-  if (process.env.CMS_BROWSER && process.env.CMS_BROWSER !== name) continue
++  const selectedEngine = process.env.CMS_ENGINE ?? process.env.CMS_BROWSER
++  if (selectedEngine && selectedEngine !== name) continue
+   const browser = await engine.launch()
+   try {
+     const context = await browser.newContext({
