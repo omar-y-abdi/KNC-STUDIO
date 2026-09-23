@@ -29,9 +29,10 @@ jobs:
           python3 - <<'PY'
           import hashlib
           from pathlib import Path
-          patch = Path('.startup/final-fix.patch').read_text().replace('\n diff --git ', '\ndiff --git ')
-          assert hashlib.sha256(patch.encode()).hexdigest() == '16811c17060e18e85e583d57b04b2e5b023c41781d8c08034fa7e24ff882676a'
-          Path('/tmp/final-fix.patch').write_text(patch)
+          for name, digest in [('final-fix','16811c17060e18e85e583d57b04b2e5b023c41781d8c08034fa7e24ff882676a'), ('last','c43fa2e34d75bd42ba88d5e2f05eb1fc3b41c5976897f9968d4c0cb799fa736c')]:
+              patch = Path(f'.startup/{name}.patch').read_text().replace('\n diff --git ', '\ndiff --git ')
+              assert hashlib.sha256(patch.encode()).hexdigest() == digest, name
+              Path(f'/tmp/{name}.patch').write_text(patch)
           PY
           git checkout --detach 51a37d05a927b4b58a02c92b6a3c902700c377ba
           git apply --index /tmp/acceptance.patch
@@ -56,15 +57,28 @@ jobs:
           test "$(git write-tree)" = 2af855fedaf7fcc708eff96d5beef0f02f2d0678
           git diff --cached --name-only -z | xargs -0 npx prettier --write
           git add -u
-          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: preserve legacy drafts and verify production CMS startup'
+          test "$(git write-tree)" = 7bd7bbf5f9f5ff02f079dde29b267a49a2f84a18
+          git apply --index /tmp/last.patch
+          test "$(git write-tree)" = fd0cc6d5c0c71e4b0519625e6a32f33cd7ae075c
+          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: remove blocking CMS recapture and preserve recoverable owner drafts'
           git rev-parse HEAD > /tmp/startup/commit.txt
           git rev-parse HEAD^{tree} > /tmp/startup/tree.txt
           git bundle create /tmp/startup/source.bundle HEAD
           if test "$CMS_ENGINE" = chromium; then
-            git push origin HEAD:refs/heads/verify/cms-startup-product > /tmp/startup/transport.log 2>&1 || cat /tmp/startup/transport.log
+            export GIT_INDEX_FILE=/tmp/publish.index
+            git read-tree HEAD
+            git update-index --force-remove .github/workflows/cms-startup.yml
+            tree=$(git write-tree)
+            test "$tree" = 5f852cb31a2c0abd3523bd1dbef7a73abaa3b1a1
+            transport=$(git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit-tree "$tree" -p 51a37d05a927b4b58a02c92b6a3c902700c377ba -m 'fix: verified startup candidate awaiting workflow transport')
+            unset GIT_INDEX_FILE
+            echo "$transport" > /tmp/startup/transport-commit.txt
+            echo "$tree" > /tmp/startup/transport-tree.txt
+            git push origin "$transport":refs/heads/verify/cms-startup-product
           fi
           npm run typecheck
           npm run lint
+          npm run format:check
           npm test > /tmp/startup/unit.log 2>&1
           npm run build
           npx playwright install --with-deps "$CMS_ENGINE"
