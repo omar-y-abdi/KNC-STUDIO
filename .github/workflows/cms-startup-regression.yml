@@ -1,0 +1,37 @@
+name: CMS startup regression
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-startup-regression.yml]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: bash tools/ci/setup-furl.sh
+      - name: Stored startup contract
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+          cp .startup/regressions.mjs tools/e2e/cms-startup-regression.mjs
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/startup-server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
+          node tools/e2e/cms-startup-regression.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-regression-${{ github.run_number }}
+          path: /tmp/startup-regressions
+          retention-days: 7
