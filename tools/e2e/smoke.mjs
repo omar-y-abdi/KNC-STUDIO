@@ -16,7 +16,11 @@ const WAIT_TIMEOUT = 15_000
 // Playwright allows 30 seconds for graceful process shutdown before forcing cleanup.
 // The outer bound must let that cleanup finish; action/page/context waits remain unchanged.
 const BROWSER_CLOSE_TIMEOUT = 45_000
-const WATCHDOG_TIMEOUT = 180_000
+const customerSuite = process.argv.includes('--customer')
+// Customer coverage builds and boots the local stack, publishes through the CMS, then runs
+// three browser engines serially. Give the full suite its own budget; individual action and
+// browser-shutdown bounds still detect hangs without waiting for this outer safety net.
+const WATCHDOG_TIMEOUT = customerSuite ? 600_000 : 180_000
 let currentPhase = 'startup'
 
 function phase(label) {
@@ -1754,7 +1758,7 @@ let browser
 let testError
 let failurePhase
 try {
-  if (process.argv.includes('--customer')) {
+  if (customerSuite) {
     await verifyCustomerBrowser()
   } else {
     phase('browser launch')

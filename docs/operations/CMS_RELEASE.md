@@ -1,7 +1,10 @@
 # CMS release and recovery
 
 The CMS spans two deployments: the Cloudflare Worker/frontend and the Supabase `cms-studio`
-Edge Function. A merged PR or successful Cloudflare build does not deploy Supabase Functions.
+Edge Function. Supabase's GitHub integration deploys functions declared in `supabase/config.toml`,
+including `cms-studio`. Cloudflare builds run separately, so a merge does not guarantee the backend
+finishes first. If the frontend release check fails, verify or deploy the matching backend below,
+then retry the Cloudflare build for that commit. Keep the compatibility check enabled.
 
 ## Release order
 
@@ -133,6 +136,11 @@ A complete published native document opens directly; source scenes are recapture
 or legacy templates.
 
 ## Verification boundaries
+
+`npm run test:e2e -- --customer` builds the local frontend, publishes through the real local
+Worker/Edge/database stack, and runs customer flows serially in Chromium, Firefox and WebKit.
+Its whole-suite watchdog is ten minutes; the ordinary public smoke retains three minutes.
+Individual action waits remain 15 seconds and browser shutdown remains bounded at 45 seconds.
 
 `cms-owner.mjs` covers desktop/mobile panels, SVG text/color, logo replacement, privacy appearance
 and callback, custom-page styles, legacy-preview repair, additions, duplication, undo/redo,
