@@ -1,0 +1,307 @@
+diff --git a/.github/workflows/cms-workspace.yml b/.github/workflows/cms-workspace.yml
+index 7939de6..9b374f5 100644
+--- a/.github/workflows/cms-workspace.yml
++++ b/.github/workflows/cms-workspace.yml
+@@ -51,7 +51,7 @@ jobs:
+           for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+           curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+           set +e
+-          for suite in cms-workspace cms-workspace-edge cms-workspace-views cms-engineering cms-adversarial; do
++          for suite in cms-workspace cms-workspace-edge cms-workspace-views cms-startup cms-engineering cms-adversarial; do
+             timeout 15m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
+             echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
+           done
+@@ -87,7 +87,7 @@ jobs:
+           import json, pathlib
+           path = pathlib.Path('/tmp/cms-workspace/check-summary.json')
+           checks = json.loads(path.read_text()) if path.exists() else {}
+-          required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-engineering', 'cms-adversarial', 'tracked-source-diff'}
++          required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-startup', 'cms-engineering', 'cms-adversarial', 'tracked-source-diff'}
+           assert required.issubset(checks), f'Missing checks: {required-set(checks)}'
+           assert all(value == 0 for value in checks.values()), checks
+           PY
+diff --git a/src/admin/cms/EditorBoundary.tsx b/src/admin/cms/EditorBoundary.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/admin/cms/EditorBoundary.tsx
+@@ -0,0 +1,41 @@
++import { Component, type ComponentChildren } from 'preact'
++
++interface Props {
++  children: ComponentChildren
++  contextKey: string
++}
++interface State {
++  failure: string | null
++}
++
++/** The canvas owns third-party parsing and DOM effects. A failed page must not
++ * unmount the owner's draft, page navigation or backup/export controls. */
++export class CmsEditorBoundary extends Component<Props, State> {
++  override state: State = { failure: null }
++
++  static override getDerivedStateFromError(error: unknown): State {
++    return { failure: error instanceof Error ? error.message : 'Okänt renderingsfel' }
++  }
++
++  override componentDidUpdate(previous: Props): void {
++    if (this.state.failure !== null && previous.contextKey !== this.props.contextKey)
++      this.setState({ failure: null })
++  }
++
++  override render(): ComponentChildren {
++    if (this.state.failure === null) return this.props.children
++    return (
++      <div class="cms-loading" role="alert">
++        <h2>Sidan kunde inte öppnas i editorn</h2>
++        <p>
++          Ditt utkast finns kvar. Välj en annan sida eller exportera en kopia under Utkast &amp; backup.
++        </p>
++        <details>
++          <summary>Teknisk felinformation</summary>
++          <p>{this.state.failure}</p>
++        </details>
++        <button type="button" onClick={() => this.setState({ failure: null })}>Försök igen</button>
++      </div>
++    )
++  }
++}
+diff --git a/src/admin/cms/Studio.tsx b/src/admin/cms/Studio.tsx
+index 011dc4b..0e342d0 100644
+--- a/src/admin/cms/Studio.tsx
++++ b/src/admin/cms/Studio.tsx
+@@ -24,6 +24,7 @@ import {
+ import { CmsDraft, mergeCmsDocuments } from './draft'
+ import { cmsApi } from './api'
+ import { CmsEditor, type EditorHandle } from './Editor'
++import { CmsEditorBoundary } from './EditorBoundary'
+ import { CmsModal } from './Modal'
+ import { CmsIcon } from './Icon'
+ import { compactWorkspace, useResponsivePanels, type CmsPanel } from './useResponsivePanels'
+@@ -609,6 +610,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+           </button>
+         </div>
+       )}
++      {sourceFailure && (
++        <div class="cms-notice" role="alert" inert={drawerOpen}>
++          <CmsIcon name="info" />
++          <span>Fler redigeringsvyer kunde inte förberedas. Dina befintliga sidor går fortfarande att redigera. {sourceFailure}</span>
++          <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>Försök igen</button>
++        </div>
++      )}
+       <div class="cms-workspace">
+         <aside
+           id="cms-library"
+@@ -865,14 +873,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+               </label>
+               {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
+               {sourceLoading && <span role="status">Förbereder fler redigeringsvyer…</span>}
+-              {sourceFailure && (
+-                <span role="alert">
+-                  {sourceFailure}{' '}
+-                  <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>
+-                    Försök igen
+-                  </button>
+-                </span>
+-              )}
++
+             </div>
+           )}
+           <div
+@@ -880,6 +881,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+             inert={Boolean(workspaceView)}
+             aria-hidden={workspaceView ? true : undefined}
+           >
++            <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
+             <CmsEditor
+               scene={scene}
+               onClosePanel={() => setMobilePanel(null)}
+@@ -920,6 +922,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+               }}
+               onError={setError}
+             />
++            </CmsEditorBoundary>
+           </div>
+           {workspaceView && (
+             <CmsWorkspaceView kind={workspaceView} onClose={() => setDialog(null)}>
+diff --git a/tests/unit/cmsCorePages.test.ts b/tests/unit/cmsCorePages.test.ts
+index 1f0be1d..73d6b14 100644
+--- a/tests/unit/cmsCorePages.test.ts
++++ b/tests/unit/cmsCorePages.test.ts
+@@ -36,7 +36,7 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
+   expect(hasCorePageLayouts(document)).toBe(false)
+   const paths = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']
+   document.presentation.pages = paths.map((path, index) => ({
+-    id: CORE_PAGE_IDS[index]!,
++    id: CORE_PAGE_IDS[index] ?? CORE_PAGE_IDS[0],
+     path,
+     kind: 'page',
+     inMenu: false,
+@@ -49,6 +49,8 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
+     },
+   }))
+   expect(hasCorePageLayouts(document)).toBe(true)
+-  document.presentation.pages[0]!.content.sv.html = ''
++  const first = document.presentation.pages[0]
++  if (!first) throw new Error('Missing stored home page')
++  first.content.sv.html = ''
+   expect(hasCorePageLayouts(document)).toBe(false)
+ })
+diff --git a/tests/unit/cmsEditorBoundary.test.ts b/tests/unit/cmsEditorBoundary.test.ts
+new file mode 100644
+--- /dev/null
++++ b/tests/unit/cmsEditorBoundary.test.ts
+@@ -0,0 +1,11 @@
++import { expect, it } from 'vitest'
++import { CmsEditorBoundary } from '../../src/admin/cms/EditorBoundary'
++
++it('retains a caught canvas failure while leaving the parent workspace outside the boundary', () => {
++  const boundary = new CmsEditorBoundary({ children: 'editor', contextKey: 'home' }, {})
++  expect(boundary.render()).toBe('editor')
++  boundary.state = CmsEditorBoundary.getDerivedStateFromError(new Error('Invalid page metadata'))
++  expect(boundary.state.failure).toBe('Invalid page metadata')
++  expect(boundary.render()).not.toBe('editor')
++  expect(CmsEditorBoundary.getDerivedStateFromError(null).failure).toBe('Okänt renderingsfel')
++})
+diff --git a/tools/e2e/cms-startup.mjs b/tools/e2e/cms-startup.mjs
+new file mode 100644
+--- /dev/null
++++ b/tools/e2e/cms-startup.mjs
+@@ -0,0 +1,137 @@
++/* global window, document, location */
++import assert from 'node:assert/strict'
++import { mkdir, readFile, writeFile } from 'node:fs/promises'
++import { chromium, webkit, devices } from 'playwright'
++import { emptyDocument } from '../../shared/cms.ts'
++import { nativeBackend } from './cms-native.mjs'
++
++const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
++const out = process.env.CMS_EVIDENCE_DIR ?? '/tmp/cms-startup'
++await mkdir(out, { recursive: true })
++const results = []
++
++function storedDocument() {
++  const doc = emptyDocument()
++  doc.presentation.pages = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].map((path, index) => {
++    const html = '<div data-knc-native="1"><main data-knc-surface="mobile-home"><h1 id="owner-heading">Stored owner heading</h1></main></div>'
++    return { id: `10000000-0000-4000-8000-00000000000${index + 1}`, path, kind: 'page', inMenu: true,
++      name: { sv: path, en: path }, title: { sv: '', en: '' }, description: { sv: '', en: '' },
++      content: { sv: { html, css: { light: '', dark: '' } }, en: { html, css: { light: '', dark: '' } } } }
++  })
++  return doc
++}
++
++async function ownerSession(context) {
++  const user = { id: '20000000-0000-4000-8000-000000000001', email: 'cms-test@example.invalid', aud: 'authenticated', role: 'authenticated' }
++  const exp = Math.floor(Date.now() / 1000) + 3600
++  const jwt = [Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'), Buffer.from(JSON.stringify({ sub: user.id, exp, role: 'authenticated' })).toString('base64url'), 'fixture'].join('.')
++  await context.addInitScript(session => localStorage.setItem('knc-admin-auth', JSON.stringify(session)), { user, access_token: jwt, refresh_token: 'fixture', expires_at: exp, expires_in: 3600, token_type: 'bearer' })
++  await context.route('https://admin-harness.invalid/rest/v1/profiles*', route => route.fulfill({
++    headers: { 'access-control-allow-origin': new URL(base).origin, 'access-control-allow-headers': '*' },
++    json: { role: 'owner', barber_id: null, must_change_password: false, account_enabled: true },
++  }))
++}
++
++// The built route inherits the same script policy as production. Only the HTTPS
++// upgrade directive is omitted for the loopback HTTP test transport.
++const headerFile = await readFile(new URL('../../public/_headers', import.meta.url), 'utf8')
++const policy = headerFile.match(/Content-Security-Policy:\s*([^\n]+)/)?.[1]
++assert.ok(policy, 'production CSP must be present')
++async function csp(context) {
++  await context.route(`${base}/**`, async route => {
++    if (route.request().resourceType() !== 'document') return route.fallback()
++    const response = await route.fetch()
++    const value = policy.replace(/;?\s*upgrade-insecure-requests/g, '')
++      .replace("connect-src 'self'", "connect-src 'self' https://admin-harness.invalid")
++      .replace("frame-src https://challenges.cloudflare.com", "frame-src 'self' https://challenges.cloudflare.com")
++      .replace(/frame-ancestors [^;]+/, "frame-ancestors 'self'")
++    await route.fulfill({ response, headers: { ...response.headers(), 'content-security-policy': value } })
++  })
++}
++
++for (const [name, engine] of Object.entries({ chromium, webkit })) {
++  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
++  const browser = await engine.launch()
++  const check = async (scenario, test) => {
++    const context = await browser.newContext({ ...devices['iPhone 15'], reducedMotion: 'reduce' })
++    const page = await context.newPage()
++    page.setDefaultTimeout(5000)
++    const errors = []
++    page.on('pageerror', error => errors.push(error.message))
++    const start = Date.now()
++    try {
++      if (process.env.CMS_STARTUP_BUILT === '1') await csp(context)
++      const metrics = await test(page, context)
++      assert.deepEqual(errors, [], 'no unhandled errors')
++      results.push({ engine: name, scenario, passed: true, elapsed: Date.now() - start, ...metrics })
++    } catch (error) {
++      results.push({ engine: name, scenario, passed: false, error: error.stack, errors })
++    } finally {
++      await page.screenshot({ path: `${out}/${name}-${scenario}.png` }).catch(() => { /* Preserve the assertion if the browser itself closed. */ })
++      await context.close()
++      await writeFile(`${out}/startup-results.json`, JSON.stringify(results, null, 2))
++    }
++  }
++  try {
++    await check('stored-page-independent-of-source', async (page, context) => {
++      const doc = storedDocument()
++      if (process.env.CMS_STARTUP_PRESENTATION) doc.presentation = JSON.parse(await readFile(process.env.CMS_STARTUP_PRESENTATION, 'utf8')).presentation
++      const backend = await nativeBackend(context, doc)
++      await ownerSession(context)
++      // A failed optional source has the real protocol but no usable snapshot.
++      await context.route('**/cms-public/source', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>' }))
++      const start = Date.now()
++      await page.goto(`${base}/admin/cms/`)
++      await page.locator('.gjs-frame').first().waitFor({ timeout: 2000 })
++      await page.frameLocator('.gjs-frame').first().locator('[data-knc-surface="mobile-home"]').waitFor({ timeout: 1000 })
++      const readyMs = Date.now() - start
++      await page.getByRole('alert').filter({ hasText: 'Dina befintliga sidor går fortfarande att redigera' }).waitFor()
++      await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Egenskaper', exact: true }).click()
++      await page.getByLabel('Namn', { exact: true }).fill('Owner edit after source failure')
++      await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
++      assert.equal(await page.locator('.cms-canvas-breadcrumb strong').innerText(), 'Owner edit after source failure')
++      assert.deepEqual(backend.writes, [])
++      return { readyMs }
++    })
++    await check('page-import-failure-keeps-workspace', async (page, context) => {
++      const doc = storedDocument()
++      for (const variant of Object.values(doc.presentation.pages[0].content)) variant.html = variant.html.replace('id="owner-heading"', 'id="owner-heading" data-knc-baseline="broken-json"')
++      await nativeBackend(context, doc)
++      await ownerSession(context)
++      await context.route('**/cms-public/source', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body>Source unavailable</body></html>' }))
++      await page.goto(`${base}/admin/cms/`)
++      await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).waitFor()
++      assert.equal(await page.locator('.cms-topbar').isVisible(), true)
++      await page.getByText('Teknisk felinformation', { exact: true }).click()
++      assert.ok((await page.locator('details').innerText()).length > 'Teknisk felinformation'.length)
++      await page.locator('.cms-mobile-tools').getByRole('button', { name: 'Sidor', exact: true }).click()
++      await page.locator('.cms-page-list button').filter({ hasText: '/terms' }).click()
++      await page.locator('.gjs-frame').first().waitFor()
++      assert.equal(await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).count(), 0)
++    })
++    await check('capture-without-animation-frames', async (page, context) => {
++      const backend = await nativeBackend(context)
++      const reads = [], challenges = []
++      context.on('request', request => {
++        if (request.url().includes('/rest/v1/site_content')) reads.push(request.url())
++        if (request.url().includes('challenges.cloudflare.com')) challenges.push(request.url())
++      })
++      await context.addInitScript(() => { window.requestAnimationFrame = () => 0 })
++      await page.goto(`${base}/cms-public/source`)
++      await page.waitForFunction(() => document.documentElement.dataset.kncSourceListening === '1', null, { polling: 20 })
++      for (const [index, scene] of ['home', 'my-bookings', 'home'].entries()) {
++        const id = `capture-${index}`
++        await page.evaluate(({ id, scene, index }) => window.postMessage({ type: 'knc-source-context', id, scene, lang: 'sv', mode: index === 2 ? 'dark' : 'light', device: 'Desktop' }, location.origin), { id, scene, index })
++        await page.waitForFunction(id => document.documentElement.dataset.kncSourceReady === id, id, { polling: 20 })
++      }
++      assert.equal(reads.length, 1, 'source copy is loaded once, not once per scene/theme')
++      assert.deepEqual(challenges, [], 'read-only previews never mount a Turnstile challenge')
++      assert.deepEqual(backend.writes, [])
++      return { copyReads: reads.length }
++    })
++  } finally {
++    await browser.close()
++  }
++}
++console.log(JSON.stringify(results, null, 2))
++assert.ok(results.every(result => result.passed), 'CMS startup regressions')
