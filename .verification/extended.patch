@@ -1,0 +1,71 @@
+diff --git a/tools/e2e/cms-reported.mjs b/tools/e2e/cms-reported.mjs
+index 9f581688..3dbb7817 100644
+--- a/tools/e2e/cms-reported.mjs
++++ b/tools/e2e/cms-reported.mjs
+@@ -160,6 +160,66 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+       await shot('edited')
+       return controls
+     })
++    await check('2-owner-controls-survive-publication', async ({ page, frame, shot, backend }) => {
++      await create(page)
++      await select(page, '#cms-site-header > div')
++      // Exercise the production style manager, not a CSS injection into the frame.
++      await page.evaluate(async () => {
++        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
++        const editor = cmsGrapes.editors.at(-1)
++        editor.StyleManager.getProperty('surface', 'background-color').upValue('#123456')
++        editor.StyleManager.getProperty('spacing', 'padding').upValue('33px')
++      })
++      const styled = () => frame.locator('#cms-site-header > div').evaluate(node => ({ background: getComputedStyle(node).backgroundColor, padding: getComputedStyle(node).paddingTop }))
++      const before = await styled()
++      await shot('header-styled')
++      assert.deepEqual(before, { background: 'rgb(18, 52, 86)', padding: '33px' }, 'all new-page controls affect rendered pixels, including seeded header padding')
++      await select(page, '#cms-site-header')
++      await page.getByRole('tab', { name: 'Lägg till', exact: true }).click()
++      await page.getByRole('button', { name: 'Lägg till text', exact: true }).click()
++      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
++      await page.waitForFunction(() => globalThis.document.querySelector('.cms-status')?.textContent.includes('Publicerad'))
++      const published = structuredClone(backend.document.presentation.pages.find(item => item.path === '/reported-page'))
++      assert.equal(published.layout, 'independent')
++      assert.ok(published.content.sv.html.includes('cms-site-header'), 'header is saved, not discarded')
++      await page.reload()
++      await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
++      await page.locator('.cms-canvas-shell').waitFor()
++      await page.getByRole('button', { name: 'Reported page', exact: true }).click()
++      await page.getByRole('button', { name: 'Mörk', exact: true }).click()
++      await page.getByRole('button', { name: 'Mobil', exact: true }).click()
++      await frame.getByRole('heading', { name: 'Reported page', exact: true }).waitFor()
++      assert.deepEqual(await styled(), before, 'published header edits survive reload')
++      await shot('reloaded')
++    })
++    await check('2-legacy-page-language-preservation', async ({ page, frame, backend, shot }) => {
++      await create(page)
++      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
++      await page.waitForFunction(() => globalThis.document.querySelector('.cms-status')?.textContent.includes('Publicerad'))
++      // Replay a real pre-upgrade body-only record at the persistence boundary.
++      const legacy = backend.document.presentation.pages.find(item => item.path === '/reported-page')
++      delete legacy.layout
++      legacy.content = {
++        sv: { html: '<main><h1>Legacy Swedish</h1></main>', css: { light: '', dark: '' } },
++        en: { html: '<main><h1>Legacy English</h1></main>', css: { light: '', dark: '' } },
++      }
++      await page.reload()
++      await page.evaluate(async () => (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness())
++      await page.locator('.cms-canvas-shell').waitFor()
++      await page.getByRole('button', { name: 'Reported page', exact: true }).click()
++      await frame.getByRole('heading', { name: 'Legacy Swedish', exact: true }).waitFor()
++      await select(page, '#cms-site-content h1')
++      await page.locator('#cms-inspector').getByLabel('Text', { exact: true }).fill('Swedish owner edit')
++      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
++      await page.waitForFunction(() => globalThis.document.querySelector('.cms-status')?.textContent.includes('Publicerad'))
++      const saved = backend.document.presentation.pages.find(item => item.path === '/reported-page')
++      assert.equal(saved.layout, 'independent')
++      assert.ok(saved.content.en.html.includes('cms-site-header'), 'editing Swedish must also preserve the unedited English layout')
++      await page.getByRole('button', { name: 'EN', exact: true }).click()
++      await frame.getByRole('heading', { name: 'Legacy English', exact: true }).waitFor()
++      await frame.locator('#cms-site-header').waitFor()
++      await shot('english-preserved')
++    })
+     await check('2-device-switch-styles', async ({ page, frame, shot }) => {
+       await create(page)
+       const snapshots = []
