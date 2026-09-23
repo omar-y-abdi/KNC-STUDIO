@@ -1,0 +1,138 @@
+name: CMS hardening release verification
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/cms-hardening-finish.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 497fa4fde65d9e1d7e76e4be0952d0fb5e4e00a7
+          fetch-depth: 0
+      - name: Apply exact lint declaration cleanup
+        id: source
+        run: |
+          mkdir -p /tmp/source
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/cms-adversarial.mjs')
+          s=p.read_text()
+          old='/* global window, document, DOMParser, location, structuredClone, getComputedStyle */'
+          assert s.startswith(old)
+          p.write_text(s.replace(old,'/* global window, document, structuredClone, getComputedStyle */',1))
+          PY
+          git add tools/e2e/cms-adversarial.mjs
+          test "$(git write-tree)" = 83c463fef66823d13e80944668e40a33632362d1
+          git -c user.name='CMS engineering review' -c user.email='cms-review@users.noreply.github.com' commit -m 'test: declare only globals used by browser evaluations'
+          git push origin HEAD:refs/heads/verify/cms-hardening-product-20260923
+          git rev-parse HEAD > /tmp/source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/source/tree.txt
+          git bundle create /tmp/source/source.bundle HEAD
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hardening-final-source
+          path: /tmp/source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        if: matrix.suite == 'core'
+        with:
+          deno-version: v2.x
+      - name: Prepare tools and identify exact source
+        run: |
+          mkdir -p /tmp/final
+          git rev-parse HEAD > /tmp/final/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/final/tree.txt
+          test "$(cat /tmp/final/tree.txt)" = 83c463fef66823d13e80944668e40a33632362d1
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/final/install.log 2>&1
+      - name: Static, unit, build and backend gates
+        if: matrix.suite == 'core'
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          set +e
+          for task in typecheck lint test build; do
+            npm run "$task" > "/tmp/final/$task.log" 2>&1
+            echo "$?" > "/tmp/final/$task.exit-code"
+          done
+          deno check --config supabase/functions/cms-studio/deno.json supabase/functions/cms-studio/index.ts > /tmp/final/backend.log 2>&1
+          echo "$?" > /tmp/final/backend.exit-code
+          node tools/release/cms-release.mjs check > /tmp/final/stamp.log 2>&1
+          echo "$?" > /tmp/final/stamp.exit-code
+      - name: Browser regression gates
+        if: matrix.suite != 'core'
+        env:
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_BROWSER: ${{ matrix.suite }}
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1
+          export AXE_PATH=/tmp/cms-a11y/node_modules/axe-core/axe.min.js
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/final/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
+          set +e
+          for suite in cms-engineering cms-adversarial cms-scenes cms-workspace cms-workspace-edge cms-workspace-views; do
+            mkdir -p "/tmp/final/$suite"
+            CMS_EVIDENCE_DIR="/tmp/final/$suite" timeout 12m node "tools/e2e/$suite.mjs" > "/tmp/final/$suite.log" 2>&1
+            echo "$?" > "/tmp/final/$suite.exit-code"
+          done
+      - name: Preserve and summarize evidence
+        if: always()
+        run: |
+          for f in /tmp/final/*.log; do test -f "$f" && furl compress "$f" --json > "$f.furl.json" || true; done
+          python3 - <<'PY'
+          import pathlib,json
+          p=pathlib.Path('/tmp/final');p.mkdir(exist_ok=True)
+          checks={f.stem:int(f.read_text().strip()) for f in p.glob('*.exit-code')}
+          (p/'checks.json').write_text(json.dumps(checks,indent=2));print(checks)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hardening-final-${{ matrix.suite }}
+          path: /tmp/final
+          retention-days: 14
+      - name: Require all outcomes
+        if: always()
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          python3 - <<'PY'
+          import pathlib,json,os
+          p=pathlib.Path('/tmp/final/checks.json')
+          checks=json.loads(p.read_text()) if p.exists() else {}
+          required={'typecheck','lint','test','build','backend','stamp'} if os.environ['SUITE']=='core' else {'cms-engineering','cms-adversarial','cms-scenes','cms-workspace','cms-workspace-edge','cms-workspace-views'}
+          assert required.issubset(checks),f'Missing: {required-set(checks)}'
+          assert all(checks[n]==0 for n in required),checks
+          PY
