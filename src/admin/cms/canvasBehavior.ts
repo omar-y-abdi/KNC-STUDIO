@@ -10,7 +10,7 @@ export function sceneVisibilityCss(scene: CmsScene, mode: CmsMode): string {
     ? scenes
         .map((name) => `[data-knc-native]>[data-knc-surface="${name}"]{display:none!important}`)
         .join('')
-    : `body{background:var(--knc-background,${SITE_THEME_DEFAULTS[mode].background})} [data-knc-native]>[data-knc-surface]:not([data-knc-surface="${scene}"]){display:none!important}`
+    : `${scene === 'booking-options' ? '[data-knc-native]{display:block!important;box-sizing:border-box;padding:18px 22px 26px}' : ''}body{background:var(--knc-background,${SITE_THEME_DEFAULTS[mode].background})} [data-knc-native]>[data-knc-surface]:not([data-knc-surface="${scene}"]){display:none!important}`
 }
 
 /** DOM-only preview state: no scroll geometry or hidden-scene styles enter the editor model. */

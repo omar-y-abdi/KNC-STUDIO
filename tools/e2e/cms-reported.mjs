@@ -1,3 +1,4 @@
+/* global getComputedStyle */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
@@ -105,13 +106,11 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       await page.getByRole('button', { name: 'Mobil', exact: true }).click()
       await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
       await select(page, 'body')
-      const colors = await frame
-        .locator('body')
-        .evaluate((node) => ({
-          background: getComputedStyle(node).backgroundColor,
-          color: getComputedStyle(node).color,
-          root: getComputedStyle(node.ownerDocument.documentElement).backgroundColor,
-        }))
+      const colors = await frame.locator('body').evaluate((node) => ({
+        background: getComputedStyle(node).backgroundColor,
+        color: getComputedStyle(node).color,
+        root: getComputedStyle(node.ownerDocument.documentElement).backgroundColor,
+      }))
       await shot('dark')
       assert.notEqual(
         colors.background,
@@ -265,6 +264,9 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
             height: node.getBoundingClientRect().height,
           }
         })
+      await page.waitForFunction(
+        () => globalThis.document.querySelector('.gjs-frame').clientWidth === 390,
+      )
       const expected = await appearance(frame.locator('[data-knc-surface="about"] h2').first())
       await page.getByRole('button', { name: 'Dator', exact: true }).click()
       await page.getByRole('button', { name: 'Jämför', exact: true }).click()

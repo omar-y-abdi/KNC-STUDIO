@@ -1,3 +1,4 @@
+import { createSitePage } from '../../../shared/site-page'
 import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
@@ -414,7 +415,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       },
     }
     const next = structuredClone(draft.document)
-    next.presentation.pages.push(created)
+    next.presentation.pages.push(createSitePage(next.presentation, created))
     commitDraft(next)
     setSelectedPage(id)
     setNewName('Ny sida')
@@ -1112,8 +1113,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             <div class="cms-domain-panel">
               <h2>En ny del av webbplatsen</h2>
               <p>
-                Sidan får samma logotyp, sidhuvud, sidfot, språk och färger som resten av
-                webbplatsen.
+                Sidan börjar med webbplatsens logotyp, sidhuvud, sidfot och färger. Du kan sedan
+                redigera hela sidan oberoende av originalsidorna.
               </p>
               <label>
                 Sidnamn

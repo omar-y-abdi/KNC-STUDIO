@@ -1,4 +1,5 @@
 import { themeDeclarations } from '../../../shared/site-theme'
+import { modeCss } from '../../../shared/cms-mode-css'
 import { repairDesktopCss } from '../../../shared/cms-device-css'
 import { generate, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
@@ -29,7 +30,12 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
 
 export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: string; css: string } {
   if (!variant.html.includes('data-knc-native="1"'))
-    return { html: variant.html, css: repairDesktopCss(variant.css[mode]) }
+    return {
+      html: variant.html,
+      css:
+        'body{background-color:inherit;color:inherit}' +
+        modeCss(repairDesktopCss(variant.css[mode]), mode),
+    }
   const doc = new DOMParser().parseFromString(variant.html, 'text/html')
   const rules: string[] = []
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
