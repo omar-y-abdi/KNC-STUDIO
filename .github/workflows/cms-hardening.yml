@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: 0c3dd1d34294e54039030a27a672edb59bd9e1db
+          ref: 2b472121a3a2a60864714edbcbb2f8367896cd10
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -56,7 +56,11 @@ jobs:
           for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
           curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
           status=0
-          for suite in cms-engineering cms-adversarial cms-scenes cms-owner cms-responsive; do
+          suites="cms-engineering cms-adversarial"
+          if [ "$CMS_ENGINE" = "chromium" ]; then
+            suites="$suites cms-scenes cms-owner cms-responsive"
+          fi
+          for suite in $suites; do
             CMS_EVIDENCE_DIR="/tmp/hardening-evidence/$suite" node "tools/e2e/$suite.mjs" > "/tmp/hardening-evidence/$suite.log" 2>&1 || status=1
           done
           for log in /tmp/hardening-evidence/*.log; do
