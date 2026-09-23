@@ -1,0 +1,65 @@
+diff --git a/src/admin/cms/Editor.tsx b/src/admin/cms/Editor.tsx
+index 350578ea..412b9e13 100644
+--- a/src/admin/cms/Editor.tsx
++++ b/src/admin/cms/Editor.tsx
+@@ -287,7 +287,11 @@ export function CmsEditor(props: Props): JSX.Element {
+         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${blockGlyphs[id]}" /></svg>`,
+       })
+ 
+-    editor.on('component:create', configureComponent)
++    editor.on('component:create', (component: Component) => {
++      // Imports configure the complete tree below, once parent identities exist.
++      // Avoid repeating that work for every component while the parser builds it.
++      if (!applying.current) configureComponent(component)
++    })
+     editor.on('component:selected', (component: Component) => setSelected(component))
+     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
+     editor.on('component:dblclick', (component: Component) => {
+ diff --git a/tools/e2e/cms-startup.mjs b/tools/e2e/cms-startup.mjs
+index 71d07024..ef643bde 100644
+--- a/tools/e2e/cms-startup.mjs
++++ b/tools/e2e/cms-startup.mjs
+@@ -153,7 +153,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+         }),
+       )
+       const start = Date.now()
+-      await page.goto(`${base}/admin/cms/`)
++      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+       await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+       await page
+         .frameLocator('.gjs-frame')
+@@ -188,7 +188,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+       const backend = await nativeBackend(context, doc)
+       await ownerSession(context)
+       const start = Date.now()
+-      await page.goto(`${base}/admin/cms/`)
++      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+       await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+       await page
+         .frameLocator('.gjs-frame')
+@@ -236,6 +236,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+         const backup = emptyDocument()
+         backup.settings.business_name = 'Unsaved owner business name'
+         await context.addInitScript((draft) => {
++          if (window !== window.top) return
+           window.sessionStorage.setItem('knc-cms-tab', 'startup-recovery')
+           window.localStorage.setItem(
+             'knc-cms-draft:startup-recovery',
+@@ -251,7 +252,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+             body: '<!doctype html><html>Source unavailable</html>',
+           }),
+         )
+-        await page.goto(`${base}/admin/cms/`)
++        await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+         await page.locator('.gjs-frame').first().waitFor()
+         const saved = await page.evaluate(() =>
+           JSON.parse(window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+@@ -276,7 +277,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+           body: '<!doctype html><html><body>Source unavailable</body></html>',
+         }),
+       )
+-      await page.goto(`${base}/admin/cms/`)
++      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+       await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).waitFor()
+       assert.equal(await page.locator('.cms-topbar').isVisible(), true)
+       await page.getByText('Teknisk felinformation', { exact: true }).click()
