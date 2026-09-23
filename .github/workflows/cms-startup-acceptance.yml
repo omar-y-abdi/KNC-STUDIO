@@ -15,78 +15,87 @@ jobs:
       fail-fast: false
       matrix:
         engine: [chromium, webkit]
+    env:
+      CMS_ENGINE: ${{ matrix.engine }}
+      VITE_SUPABASE_URL: https://admin-harness.invalid
+      VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+      CMS_STARTUP_BUILT: '1'
+      CMS_EVIDENCE_DIR: /tmp/startup/green
+      BASE_URL: http://127.0.0.1:4188
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
+          ref: bc08171bed9240e5c847bd48648ab16a866f88aa
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
           cache: npm
-      - name: Restore exact candidate
+      - name: Add observable regression contract
         run: |
-          cp .startup/acceptance.patch /tmp/acceptance.patch
-          python3 - <<'PY'
-          import hashlib
-          from pathlib import Path
-          for name, digest in [('final-fix','16811c17060e18e85e583d57b04b2e5b023c41781d8c08034fa7e24ff882676a'), ('last','c43fa2e34d75bd42ba88d5e2f05eb1fc3b41c5976897f9968d4c0cb799fa736c')]:
-              patch = Path(f'.startup/{name}.patch').read_text().replace('\n diff --git ', '\ndiff --git ')
-              assert hashlib.sha256(patch.encode()).hexdigest() == digest, name
-              Path(f'/tmp/{name}.patch').write_text(patch)
-          PY
-          git checkout --detach 51a37d05a927b4b58a02c92b6a3c902700c377ba
-          git apply --index /tmp/acceptance.patch
-          test "$(git write-tree)" = bbd60982e633e6be4cfe8a101f1d9d1f93d78ace
           mkdir -p /tmp/startup
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/e2e/cms-startup.mjs')
+          s = p.read_text()
+          needle = '        assert.equal(saved.document.presentation.pages.length, 6)\n'
+          assert s.count(needle) == 1
+          p.write_text(s.replace(needle, needle + "        const canvas = await page.locator('.cms-canvas-shell').boundingBox()\n        assert.ok(\n          canvas && canvas.height >= 240 && canvas.y + canvas.height <= page.viewportSize().height,\n          'Recovered drafts must leave a usable canvas inside the phone viewport',\n        )\n"))
+          PY
+          git add tools/e2e/cms-startup.mjs
+          test "$(git write-tree)" = d9cd9920fd13d5d2ee6169040cf2c33d3367336b
           bash tools/ci/setup-furl.sh
-      - name: Build and exercise complete route
-        env:
-          CMS_ENGINE: ${{ matrix.engine }}
-          VITE_SUPABASE_URL: https://admin-harness.invalid
-          VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
-          CMS_STARTUP_BUILT: '1'
-          CMS_EVIDENCE_DIR: /tmp/startup
-          BASE_URL: http://127.0.0.1:4188
+      - name: Verify regression before correction
         shell: python3 tools/ci/furl_ci.py {0}
         run: |
           npm ci
-          npx prettier --write tools/e2e/cms-startup.mjs
-          git add tools/e2e/cms-startup.mjs
-          test "$(git write-tree)" = 915566c7620b649eb40bc9290836e2f6dd861ae6
-          git apply --index /tmp/final-fix.patch
-          test "$(git write-tree)" = 2af855fedaf7fcc708eff96d5beef0f02f2d0678
-          git diff --cached --name-only -z | xargs -0 npx prettier --write
-          git add -u
-          test "$(git write-tree)" = 7bd7bbf5f9f5ff02f079dde29b267a49a2f84a18
-          git apply --index /tmp/last.patch
-          test "$(git write-tree)" = fd0cc6d5c0c71e4b0519625e6a32f33cd7ae075c
-          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: remove blocking CMS recapture and preserve recoverable owner drafts'
+          npm run build > /tmp/startup/red-build.log 2>&1
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/startup/red-server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          CMS_EVIDENCE_DIR=/tmp/startup/red node tools/e2e/cms-startup.mjs > /tmp/startup/red.log 2>&1 && exit 1
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          failures = [r for r in json.loads(Path('/tmp/startup/red/startup-results.json').read_text()) if not r['passed']]
+          assert len(failures) == 1 and failures[0]['scenario'] == 'legacy-backup-without-pages-keeps-authoritative-layouts', failures
+          assert 'Recovered drafts must leave a usable canvas' in failures[0]['error'], failures
+          PY
+      - name: Correct wrapping and verify the complete built route
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/admin/cms/Studio.tsx')
+          s = p.read_text()
+          before = '{conflict && (\n        <div class="cms-notice" role="alert" inert={drawerOpen}>\n          Publicering är blockerad tills konflikten är löst.'
+          after = '{conflict && (\n        <div class="cms-notice cms-conflict-notice" role="alert" inert={drawerOpen}>\n          <span>Publicering är blockerad tills konflikten är löst.</span>'
+          assert s.count(before) == 1
+          p.write_text(s.replace(before, after))
+          p = Path('src/admin/cms/studio.css')
+          s = p.read_text()
+          before = '.cms-notice-info {\n'
+          assert before in s
+          p.write_text(s.replace(before, '.cms-conflict-notice {\n  flex-wrap: wrap;\n}\n.cms-conflict-notice > span {\n  flex: 1 1 240px;\n}\n.cms-conflict-notice > button {\n  margin-left: 0;\n}\n' + before, 1))
+          PY
+          git add src/admin/cms/Studio.tsx src/admin/cms/studio.css
+          test "$(git write-tree)" = 568a2821e5008b47f442e9daa10dcdff55af228d
+          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: keep recovered-draft controls and canvas usable on phones'
           git rev-parse HEAD > /tmp/startup/commit.txt
           git rev-parse HEAD^{tree} > /tmp/startup/tree.txt
           git bundle create /tmp/startup/source.bundle HEAD
-          if test "$CMS_ENGINE" = chromium; then
-            export GIT_INDEX_FILE=/tmp/publish.index
-            git read-tree HEAD
-            git update-index --force-remove .github/workflows/cms-startup.yml
-            tree=$(git write-tree)
-            test "$tree" = 5f852cb31a2c0abd3523bd1dbef7a73abaa3b1a1
-            transport=$(git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit-tree "$tree" -p 51a37d05a927b4b58a02c92b6a3c902700c377ba -m 'fix: verified startup candidate awaiting workflow transport')
-            unset GIT_INDEX_FILE
-            echo "$transport" > /tmp/startup/transport-commit.txt
-            echo "$tree" > /tmp/startup/transport-tree.txt
-            git push origin "$transport":refs/heads/verify/cms-startup-product
-          fi
+          if test "$CMS_ENGINE" = chromium; then git push origin HEAD:refs/heads/verify/cms-conflict-layout-product; fi
           npm run typecheck
           npm run lint
           npm run format:check
           npm test > /tmp/startup/unit.log 2>&1
-          npm run build
-          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run build > /tmp/startup/build.log 2>&1
           npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/startup/server.log 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
-          curl -fsS "$BASE_URL" >/dev/null
           set +e
           node tools/e2e/cms-startup.mjs > /tmp/startup/acceptance.log 2>&1
           echo "$?" > /tmp/startup/acceptance.exit-code
@@ -94,7 +103,7 @@ jobs:
           echo "$?" > /tmp/startup/public-read.exit-code
           CMS_STARTUP_PRESENTATION=/tmp/startup/presentation.json CMS_EVIDENCE_DIR=/tmp/startup/published node tools/e2e/cms-startup.mjs > /tmp/startup/published.log 2>&1
           echo "$?" > /tmp/startup/published.exit-code
-      - name: Preserve evidence
+      - name: Preserve compact diagnostics
         if: always()
         run: |
           for f in /tmp/startup/*.log; do
@@ -107,7 +116,7 @@ jobs:
           name: cms-startup-acceptance-${{ matrix.engine }}-${{ github.run_number }}
           path: /tmp/startup
           retention-days: 7
-      - name: Enforce outcomes
+      - name: Enforce successful complete route
         if: always()
         run: |
           python3 - <<'PY'
