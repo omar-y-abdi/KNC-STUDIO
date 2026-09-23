@@ -257,12 +257,11 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     await check('Bulk trash preflights draft references before any write', async (page) => {
       await resources(page)
       await page.getByRole('checkbox', { name: 'Markera First image', exact: true }).check()
-      await page.getByRole('button', { name: 'Till papperskorg', exact: true }).click()
-      await page.waitForFunction(
-        () => window.cmsReview.errors.length || window.cmsReview.lifecycle.length,
+      assert.equal(
+        await page.getByRole('button', { name: 'Till papperskorg', exact: true }).isDisabled(),
+        true,
       )
       assert.deepEqual(await page.evaluate(() => window.cmsReview.lifecycle), [])
-      assert.match(await page.evaluate(() => window.cmsReview.errors.join(' ')), /utkast/i)
     })
     await check('Metadata response preserves newer unsaved typing', async (page) => {
       await resources(page)
