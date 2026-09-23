@@ -1,0 +1,87 @@
+diff --git a/tools/e2e/cms-startup.mjs b/tools/e2e/cms-startup.mjs
+index 400cf32..1a7ddfc 100644
+--- a/tools/e2e/cms-startup.mjs
++++ b/tools/e2e/cms-startup.mjs
+@@ -115,7 +115,15 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+         ...metrics,
+       })
+     } catch (error) {
+-      results.push({ engine: name, scenario, passed: false, error: error.stack, errors })
++      const state = await page.evaluate(() => ({
++        body: document.body.innerText.slice(0, 4000),
++        source: { ...document.documentElement.dataset },
++        frames: [...document.querySelectorAll('iframe')].map((frame) => ({
++          src: frame.src,
++          source: frame.contentDocument ? { ...frame.contentDocument.documentElement.dataset } : null,
++        })),
++      })).catch(() => null)
++      results.push({ engine: name, scenario, passed: false, error: error.stack, errors, state })
+     } finally {
+       await page.screenshot({ path: `${out}/${name}-${scenario}.png` }).catch(() => {
+         /* Preserve the assertion if the browser itself closed. */
+@@ -142,13 +150,14 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+       )
+       const start = Date.now()
+       await page.goto(`${base}/admin/cms/`)
+-      await page.locator('.gjs-frame').first().waitFor({ timeout: 2000 })
++      await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+       await page
+         .frameLocator('.gjs-frame')
+         .first()
+         .locator('[data-knc-surface="mobile-home"]')
+         .waitFor({ timeout: 1000 })
+       const readyMs = Date.now() - start
++      assert.ok(readyMs < 3000, `Stored page startup took ${readyMs}ms; budget is 3000ms`)
+       await page
+         .getByRole('alert')
+         .filter({ hasText: 'Dina befintliga sidor går fortfarande att redigera' })
+@@ -166,6 +175,39 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+       assert.deepEqual(backend.writes, [])
+       return { readyMs }
+     })
++    await check('source-upgrade-preserves-editable-page', async (page, context) => {
++      const doc = storedDocument()
++      if (process.env.CMS_STARTUP_PRESENTATION)
++        doc.presentation = JSON.parse(
++          await readFile(process.env.CMS_STARTUP_PRESENTATION, 'utf8'),
++        ).presentation
++      const backend = await nativeBackend(context, doc)
++      await ownerSession(context)
++      const start = Date.now()
++      await page.goto(`${base}/admin/cms/`)
++      await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
++      await page.frameLocator('.gjs-frame').first()
++        .locator('[data-knc-surface="mobile-home"]').waitFor()
++      const readyMs = Date.now() - start
++      // Edit before the optional capture finishes. Its response must merge with
++      // the current draft, not the old document that started the operation.
++      await page.locator('.cms-mobile-tools')
++        .getByRole('button', { name: 'Egenskaper', exact: true }).click()
++      await page.getByLabel('Namn', { exact: true }).fill('Owner edit during capture')
++      await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
++      await page.waitForFunction(() =>
++        ![...document.querySelectorAll('[role="status"]')].some(node =>
++          node.textContent.includes('Förbereder fler redigeringsvyer')),
++        null, { timeout: 30000 },
++      )
++      assert.equal(await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).count(), 0)
++      assert.equal(await page.locator('.cms-canvas-breadcrumb strong').innerText(), 'Owner edit during capture')
++      assert.equal(await page.getByRole('alert').count(), 0, 'the real source upgrade must finish without errors')
++      await page.frameLocator('.gjs-frame').first()
++        .locator('[data-knc-surface="mobile-home"]').waitFor()
++      assert.deepEqual(backend.writes, [])
++      return { readyMs, upgradedMs: Date.now() - start }
++    })
+     await check('page-import-failure-keeps-workspace', async (page, context) => {
+       const doc = storedDocument()
+       for (const variant of Object.values(doc.presentation.pages[0].content))
+@@ -200,6 +242,9 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+       )
+     })
+     await check('capture-without-animation-frames', async (page, context) => {
++      // The source protocol describes its actual iframe viewport, not a forced
++      // layout prop. Match the Desktop context just as readCorePageSource does.
++      await page.setViewportSize({ width: 1440, height: 900 })
+       const backend = await nativeBackend(context)
+       const reads = [],
+         challenges = []
