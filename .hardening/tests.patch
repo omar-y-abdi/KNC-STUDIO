@@ -1,0 +1,233 @@
+diff --git a/src/cms/instanceScope.ts b/src/cms/instanceScope.ts
+index 28bff243..8e24ac5b 100644
+--- a/src/cms/instanceScope.ts
++++ b/src/cms/instanceScope.ts
+@@ -35,7 +35,7 @@ const urlAttributes = new Set(['fill', 'stroke', 'filter', 'clip-path', 'clipPat
+  * Text, classes, external links, keys, handlers and refs are never rewritten.
+  */
+ export function createInstanceScope(surface: string, instance: string, template: Element | null) {
+-  const namespace = `${surface}-instance-${Array.from(instance, (char) => char.codePointAt(0)!.toString(16)).join('-')}`
++  const namespace = `${surface}-instance-${Array.from(instance, (char) => (char.codePointAt(0) ?? 0).toString(16)).join('-')}`
+   const ids = new Map<string, string>()
+   const register = (id: string): string => {
+     let scoped = ids.get(id)
+diff --git a/tests/unit/cmsInstanceScope.test.ts b/tests/unit/cmsInstanceScope.test.ts
+new file mode 100644
+index 00000000..ba6d4319
+--- /dev/null
++++ b/tests/unit/cmsInstanceScope.test.ts
+@@ -0,0 +1,76 @@
++import { createRef, Fragment, h, type VNode } from 'preact'
++import { describe, expect, it, vi } from 'vitest'
++import { createInstanceScope, nativeNodeId } from '../../src/cms/instanceScope'
++
++function fixture() {
++  const click = vi.fn()
++  const ref = createRef<HTMLButtonElement>()
++  const source = h('article', { id: 'owner.card' },
++    h('label', { for: 'owner.input' }, 'Literal knc-my-booking-card-0'),
++    h('input', { id: 'owner.input', 'aria-labelledby': 'owner.label outside' }),
++    h('p', { id: 'owner.label' }, 'Owner label'),
++    h('button', { id: 'owner.button', key: 'stable-key', ref, onClick: click }, 'Action'),
++    h('a', { href: '#owner.input' }, 'Local'),
++    h('a', { href: 'https://outside.example/#owner.input' }, 'External'),
++    h('svg', {}, h('defs', {}, h('linearGradient', { id: 'paint' })), h('rect', { fill: 'url(#paint)' })),
++  )
++  return { source, click, ref }
++}
++function nodes(root: VNode): VNode<Record<string, unknown>>[] {
++  return [root as VNode<Record<string, unknown>>, ...[root.props.children].flat(Infinity).filter(
++    (child): child is VNode => Boolean(child && typeof child === 'object' && 'type' in child),
++  ).flatMap(nodes)]
++}
++
++describe('render-time instance identity isolation', () => {
++  it('namespaces identities and references without changing content, events, refs or keys', () => {
++    const { source, click, ref } = fixture()
++    const scope = createInstanceScope('my-booking-card', 'booking/1', null)
++    const output = scope.tree(source) as VNode
++    const rendered = nodes(output)
++    const get = (tag: string) => rendered.find(node => node.type === tag)?.props
++    const inputId = get('input')?.['id']
++    expect(get('label')?.['for']).toBe(inputId)
++    expect(get('a')?.['href']).toBe(`#${inputId}`)
++    expect(rendered.filter(n => n.type === 'a')[1]?.props['href']).toBe('https://outside.example/#owner.input')
++    expect(get('input')?.['aria-labelledby']).toBe(`${get('p')?.['id']} outside`)
++    expect(get('label')?.['children']).toBe('Literal knc-my-booking-card-0')
++    const button = rendered.find(n => n.type === 'button')
++    expect(button?.key).toBe('stable-key')
++    expect(button?.ref).toBe(ref)
++    expect(button?.props['onClick']).toBe(click)
++    expect(get('rect')?.['fill']).toBe(`url(#${get('linearGradient')?.['id']})`)
++    expect(source.props['id']).toBe('owner.card')
++  })
++  it('rewrites only identifier-bearing CSS tokens, including escaped selectors', () => {
++    const scope = createInstanceScope('my-booking-card', '1', null)
++    const rendered = nodes(scope.tree(fixture().source) as VNode)
++    const input = rendered.find(n => n.type === 'input')?.props['id']
++    const css = scope.css('#owner\\.input,[for="owner.input"],[aria-controls~="owner.input"]{background:url(#paint);content:"knc-my-booking-card-0 #owner.input"} .owner{background:url(https://outside.example/x.svg#paint)}')
++    expect(css).toContain(`#${input}`)
++    expect(css).toContain(`[for="${input}"]`)
++    expect(css).toContain(`[aria-controls~="${input}"]`)
++    expect(css).toContain('content:"knc-my-booking-card-0 #owner.input"')
++    expect(css).toContain('https://outside.example/x.svg#paint')
++  })
++  it('keeps long and colliding-looking instance names distinct and IDs bounded', () => {
++    const source = fixture().source
++    const scoped = ['a/b', 'a_b', 'å', 'a', 'x'.repeat(150)].map(instance => {
++      const scope = createInstanceScope('my-booking-card', instance, null)
++      const first = nodes(scope.tree(source) as VNode).map(n => n.props['id']).filter(Boolean)
++      expect(nodes(scope.tree(source) as VNode).map(n => n.props['id']).filter(Boolean)).toEqual(first)
++      for (const id of first) expect(id).toMatch(/^[a-zA-Z][a-zA-Z0-9_.:-]{0,127}$/)
++      return first
++    }).flat()
++    expect(new Set(scoped).size).toBe(scoped.length)
++    expect(nativeNodeId('my-booking-card', '0')).toBe('knc-my-booking-card-0')
++  })
++  it('retains component VNodes instead of executing their render functions', () => {
++    const component = vi.fn(() => h('p', {}, 'Child'))
++    const child = h(component, { key: 'child' })
++    const root = h(Fragment, {}, h('section', { id: 'parent' }, child))
++    const output = createInstanceScope('card', '1', null).tree(root) as VNode
++    expect(nodes(output).find(n => n.type === component)).toBe(child)
++    expect(component).not.toHaveBeenCalled()
++  })
++})
+diff --git a/tools/e2e/cms-adversarial.mjs b/tools/e2e/cms-adversarial.mjs
+index d13bda22..f953fab7 100644
+--- a/tools/e2e/cms-adversarial.mjs
++++ b/tools/e2e/cms-adversarial.mjs
+@@ -1,3 +1,4 @@
++/* global window, document, DOMParser, location, structuredClone, getComputedStyle */
+ import assert from 'node:assert/strict'
+ import { mkdir, writeFile } from 'node:fs/promises'
+ import { chromium, webkit } from 'playwright'
+@@ -52,7 +53,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+       results.push({ engine: engineName, name, passed: true })
+     } catch (error) {
+       results.push({ engine: engineName, name, passed: false, error: error.stack })
+-      await page.screenshot({ path: `${out}/${engineName}-${name}-failure.png` }).catch(() => {})
++      await page.screenshot({ path: `${out}/${engineName}-${name}-failure.png` }).catch(() => { /* The failed browser may already be closed. */ })
+     } finally {
+       await context.close()
+     }
+@@ -369,7 +370,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+           design: defaultEmailDesign(),
+         })
+         render(
+-          h(EmailPanel, { document: state, lang: 'sv', assets: [], onChange: () => {} }),
++          h(EmailPanel, { document: state, lang: 'sv', assets: [], onChange: () => { /* Read-only range inspection. */ } }),
+           document.getElementById('root'),
+         )
+       })
+@@ -395,6 +396,24 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+         'editor ranges must agree with the authoritative validator',
+       )
+     })
++    await run('email-optional-text-clearing', async (page) => {
++      await page.goto(`${base}/tools/e2e/admin-harness.html`)
++      await page.evaluate(async () => {
++        const { h, render } = await import('/tools/e2e/admin-harness.tsx')
++        const { EmailPanel } = await import('/src/admin/cms/DomainPanels.tsx')
++        const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
++        let state = emptyDocument()
++        state.emails.push({ template: 'customer_confirmation', lang: 'sv', subject: 'Booking', preheader: 'Booking', title: 'Booking', intro: 'Welcome', section_title: null, note: 'Thanks', cta_label: 'Read', contact_lead: null, design: null })
++        const draw = () => render(h(EmailPanel, { document: state, lang: 'sv', assets: [], onChange: next => { state = next; draw() } }), document.getElementById('root'))
++        window.checkEmailDocument = () => validateDocument(state)
++        draw()
++      })
++      for (const field of ['Rubrik för bokningsuppgifter', 'Kontakttext']) {
++        await page.getByLabel(field, { exact: true }).fill('Temporary optional text')
++        await page.getByLabel(field, { exact: true }).fill('')
++        await page.evaluate(() => window.checkEmailDocument())
++      }
++    })
+     await run('page-path-validation', async (page, context) => {
+       await nativeBackend(context)
+       await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+@@ -402,7 +421,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
+         (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+       )
+       await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+-      await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
++      await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
+       const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
+       await dialog.getByLabel('Adress', { exact: true }).fill('/bad_name')
+       await dialog.getByRole('button', { name: 'Skapa sida', exact: true }).click()
+diff --git a/tools/e2e/cms-engineering.mjs b/tools/e2e/cms-engineering.mjs
+index cae478ce..912e4a82 100644
+--- a/tools/e2e/cms-engineering.mjs
++++ b/tools/e2e/cms-engineering.mjs
+@@ -1,3 +1,4 @@
++/* global window, document, DOMParser, location, structuredClone, getComputedStyle */
+ import assert from 'node:assert/strict'
+ import { mkdir, writeFile } from 'node:fs/promises'
+ import { chromium, webkit } from 'playwright'
+@@ -217,7 +218,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+       results.push({ engine: name, title, passed: false, error: error.stack ?? String(error) })
+       await page
+         .screenshot({ path: `${out}/${name}-${results.length}-failure.png` })
+-        .catch(() => {})
++        .catch(() => { /* The failed browser may already be closed. */ })
+     } finally {
+       await context.close()
+     }
+@@ -377,6 +378,46 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+         assert.equal(actual.styled, true)
+       },
+     )
++    await check('Nested component instances retain hooks, refs and local label targets', async page => {
++      await page.goto(`${base}/tools/e2e/admin-harness.html`)
++      await page.evaluate(async () => {
++        const { h, render } = await import('/tools/e2e/admin-harness.tsx')
++        const { createRef, useState } = await import('/tools/e2e/cms-resources-harness.tsx')
++        const { useNativeChild, NativeRegion, NativeSiteProvider } = await import('/src/cms/NativeSurface.tsx')
++        const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
++        const { emptyDocument } = await import('/shared/cms.ts')
++        function Child({ reference }) {
++          const [count, setCount] = useState(0)
++          const project = useNativeChild()
++          let deep = h('p', { class: 'nested-deep' }, 'Original nested text')
++          for (let i = 0; i < 35; i++) deep = h('div', {}, deep)
++          return project(h('section', {}, h('label', { htmlFor: 'local-input' }, 'Local input'), h('input', { id: 'local-input', ref: reference }), h('button', { class: 'local-action', onClick: () => setCount(n => n + 1) }, `Count ${count}`), deep))
++        }
++        const host = document.createElement('div')
++        document.body.replaceChildren(host)
++        const surface = 'my-booking-card'
++        const make = reference => h('article', {}, h(Child, { key: 'child', reference }))
++        render(h(NativeSiteProvider, { source: true }, h(NativeRegion, { surface, lang: 'sv', mode: 'light' }, make(createRef()))), host)
++        const source = new DOMParser().parseFromString(snapshotNative(host.querySelector('article'), surface), 'text/html')
++        source.querySelector('.nested-deep').textContent = 'Nested owner edit'
++        const html = `<main data-knc-native="1">${source.body.innerHTML}</main>`
++        const presentation = emptyDocument().presentation
++        presentation.pages = [{ id: '10000000-0000-4000-8000-000000000004', path: '/my-bookings', kind: 'page', name: {sv:'Bookings',en:'Bookings'},title:{sv:'',en:''},description:{sv:'',en:''},inMenu:false,content:{sv:{html,css:{light:'',dark:''}},en:{html,css:{light:'',dark:''}}}}]
++        const references = [createRef(), createRef()]
++        const draw = () => render(h(NativeSiteProvider, { presentation }, ['a/b', 'a_b'].map((instance, i) => h(NativeRegion, { key: instance, surface, instance, lang: 'sv', mode: 'light' }, make(references[i])))), host)
++        window.nestedScope = { draw, references }
++        draw()
++      })
++      await page.locator('.local-action').first().click()
++      await page.waitForFunction(() => document.querySelector('.local-action')?.textContent === 'Count 1')
++      await page.evaluate(() => window.nestedScope.draw())
++      const state = await page.evaluate(() => {
++        const cards = [...document.querySelectorAll('article')]
++        const ids = [...document.querySelectorAll('[id]')].map(node => node.id)
++        return { unique: ids.length === new Set(ids).size, text: cards.map(card => card.querySelector('.nested-deep')?.textContent), counts: cards.map(card => card.querySelector('button')?.textContent), refs: cards.every((card, i) => window.nestedScope.references[i].current === card.querySelector('input')), labels: cards.every(card => card.querySelector('label')?.htmlFor === card.querySelector('input')?.id) }
++      })
++      assert.deepEqual(state, { unique: true, text: ['Nested owner edit', 'Nested owner edit'], counts: ['Count 1', 'Count 0'], refs: true, labels: true })
++    })
+   } finally {
+     await browser.close()
+   }
+diff --git a/tools/e2e/cms-resources-harness.tsx b/tools/e2e/cms-resources-harness.tsx
+index bccf851e..bda77403 100644
+--- a/tools/e2e/cms-resources-harness.tsx
++++ b/tools/e2e/cms-resources-harness.tsx
+@@ -46,3 +46,7 @@ export function changeBusinessName(name: string): void {
+ export function snapshot(): typeof model {
+   return structuredClone(model)
+ }
++
++// Share the harness module graph with browser fault-injection scenarios.
++export { createRef } from 'preact'
++export { useState } from 'preact/hooks'
