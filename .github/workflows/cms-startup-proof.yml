@@ -1,0 +1,68 @@
+name: CMS startup proof
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.startup/**, .github/workflows/cms-startup-proof.yml]
+permissions:
+  contents: read
+jobs:
+  startup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare exact source and diagnostic-only error capture
+        run: |
+          mkdir -p /tmp/startup
+          cp .startup/probe.mjs /tmp/startup-probe.mjs
+          git checkout --detach e0b7337fa86ceebf2de5c3403f452d0f40c42dd1
+          git rev-parse HEAD > /tmp/startup/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/startup/source-tree.txt
+          cp /tmp/startup-probe.mjs tools/e2e/cms-startup-probe.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/ui/LazySurface.tsx')
+          text=p.read_text()
+          text=text.replace('static override getDerivedStateFromError(): LazyLoadBoundaryState {', "static override getDerivedStateFromError(error: unknown): LazyLoadBoundaryState {\n    (globalThis as unknown as Record<string, unknown>)['__cmsCrash'] = error instanceof Error ? { message: error.message, stack: error.stack } : String(error)")
+          p.write_text(text)
+          PY
+          bash tools/ci/setup-furl.sh
+      - name: Build and exercise actual protected route
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          VITE_SUPABASE_URL: https://admin-harness.invalid
+          VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run build
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/startup/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
+          node tools/e2e/cms-startup-probe.mjs > /tmp/startup/probe.log 2>&1
+      - name: Summarize evidence
+        if: always()
+        run: |
+          if command -v furl >/dev/null; then
+            for f in /tmp/startup/*.log; do furl compress "$f" --json > "$f.furl.json" || true; done
+          fi
+          test ! -f /tmp/startup/probe.log || tail -c 7000 /tmp/startup/probe.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/startup
+          retention-days: 7
