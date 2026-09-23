@@ -48,7 +48,7 @@ async function ownerSession(context) {
     'fixture',
   ].join('.')
   await context.addInitScript(
-    (session) => localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
+    (session) => window.localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
     {
       user,
       access_token: jwt,
