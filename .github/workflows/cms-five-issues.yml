@@ -29,12 +29,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/source
-          cp .verification/cms-reported.mjs /tmp/reported.mjs
-          if test -f .verification/fixes.patch; then cp .verification/fixes.patch /tmp/fixes.patch; fi
-          git checkout --detach 344ebe51ce83724a31020f9ed4976838c9152b7e
-          cp /tmp/reported.mjs tools/e2e/cms-reported.mjs
-          if test -f /tmp/fixes.patch; then git apply --index /tmp/fixes.patch; fi
-          git add tools/e2e/cms-reported.mjs
+          python3 - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          value = pathlib.Path('.verification/fixes.b64').read_text().strip()
+          value = value.replace('P285q4bPpnl54', 'P285q4jPpnl54').replace('BcxK1UBY', 'BcxKUBY')
+          patch = gzip.decompress(base64.b64decode(value, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == 'daf4584d210f6ee578da1c650b162d22b7abe013fe7a32338ee4dace7aa8751b'
+          pathlib.Path('/tmp/fixes.patch').write_bytes(patch)
+          PY
+          git checkout --detach 6d647e8c0aab06bd391822d167958c20f0a911ca
+          git apply --index /tmp/fixes.patch
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
@@ -87,7 +91,8 @@ jobs:
           if test "$CMS_ENGINE" = core; then
             status=0
             for command in 'npm run typecheck' 'npm run lint' 'npm test' 'npm run build'; do
-              bash -c "$command" || status=1
+              name=$(echo "$command" | tr ' ' '-')
+              bash -c "$command" > "/tmp/cms-reported/$name.log" 2>&1 || status=1
             done
             exit "$status"
           fi
