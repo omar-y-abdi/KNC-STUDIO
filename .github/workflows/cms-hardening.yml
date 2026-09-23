@@ -9,7 +9,57 @@ concurrency:
   group: cms-engineering-hardening-final
   cancel-in-progress: true
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build exact senior-review candidate
+        id: source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/hardening-source
+          python3 - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          encoded = pathlib.Path('.hardening/senior.patch.gz.b64').read_text().strip()
+          assert hashlib.sha256(encoded.encode()).hexdigest() == 'a28026246ec714124817ce5cfbc838340c9f9cb7da63bedc7b39c047b08dd42e'
+          pathlib.Path('/tmp/senior.patch').write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
+          assert hashlib.sha256(pathlib.Path('/tmp/senior.patch').read_bytes()).hexdigest() == '1c0fe7f6cb968ab91c43309e2b3afa987d9adc855035652e598e38b18a2f8644'
+          PY
+          git checkout --detach 2b472121a3a2a60864714edbcbb2f8367896cd10
+          git apply --check /tmp/senior.patch
+          git apply --index /tmp/senior.patch
+          npm ci --no-audit --no-fund > /tmp/hardening-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/hardening-source/format.log 2>&1
+          git add -A
+          node tools/release/cms-release.mjs stamp
+          git add shared/cms-release.ts
+          git diff --cached --check
+          git -c user.name='CMS engineering review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: make resource replacement and bulk deletion failure-safe'
+          git rev-parse HEAD > /tmp/hardening-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/hardening-source/source-tree.txt
+          git bundle create /tmp/hardening-source/source.bundle HEAD
+          git bundle verify /tmp/hardening-source/source.bundle
+          git push origin HEAD:refs/heads/verify/cms-hardening-final-product-20260923
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-hardening-final-source
+          path: /tmp/hardening-source
+          retention-days: 7
   verify:
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -19,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: 2b472121a3a2a60864714edbcbb2f8367896cd10
+          ref: ${{ needs.prepare.outputs.source }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
@@ -36,6 +86,7 @@ jobs:
         if: matrix.suite == 'core'
         shell: python3 tools/ci/furl_ci.py {0}
         run: |
+          node tools/release/cms-release.mjs check
           npm run typecheck
           npm run lint
           npm run format:check
@@ -71,6 +122,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: cms-hardening-recheck-${{ matrix.suite }}
+          name: cms-hardening-final-${{ matrix.suite }}
           path: /tmp/hardening-evidence
           retention-days: 7
