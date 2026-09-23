@@ -2,7 +2,7 @@ name: CMS built startup acceptance
 on:
   push:
     branches: [verify/cms-startup-20260923]
-    paths: [.github/workflows/cms-startup-acceptance.yml, .startup/acceptance.patch]
+    paths: [.github/workflows/cms-startup-acceptance.yml]
 permissions:
   contents: read
 jobs:
@@ -27,7 +27,7 @@ jobs:
           cp .startup/acceptance.patch /tmp/acceptance.patch
           git checkout --detach 51a37d05a927b4b58a02c92b6a3c902700c377ba
           git apply --index /tmp/acceptance.patch
-          test "$(git write-tree)" = 17cb39a4228bd97878d0acb7bde4121e97b8204f
+          test "$(git write-tree)" = bbd60982e633e6be4cfe8a101f1d9d1f93d78ace
           mkdir -p /tmp/startup
           bash tools/ci/setup-furl.sh
       - name: Build and exercise complete route
