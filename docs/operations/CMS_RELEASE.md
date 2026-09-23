@@ -137,6 +137,11 @@ or legacy templates.
 
 ## Verification boundaries
 
+`npm run test:e2e -- --customer` builds the local frontend, publishes through the real local
+Worker/Edge/database stack, and runs customer flows serially in Chromium, Firefox and WebKit.
+Its whole-suite watchdog is ten minutes; the ordinary public smoke retains three minutes.
+Individual action waits remain 15 seconds and browser shutdown remains bounded at 45 seconds.
+
 `cms-owner.mjs` covers desktop/mobile panels, SVG text/color, logo replacement, privacy appearance
 and callback, custom-page styles, legacy-preview repair, additions, duplication, undo/redo,
 selection, comparison and editing during publication in Chromium/WebKit. `cms-populated.mjs`
