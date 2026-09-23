@@ -1,0 +1,202 @@
+diff --git a/shared/cms.ts b/shared/cms.ts
+index ce9e2733..4401076a 100644
+--- a/shared/cms.ts
++++ b/shared/cms.ts
+@@ -512,6 +512,15 @@ export function emptyDocument(): CmsDocument {
+     presentation: emptyPresentation(),
+   }
+ }
++/** Shared editor and server bounds; neither side may silently drift. */
++export const EMAIL_DESIGN_LIMITS = {
++  width: [320, 800],
++  radius: [0, 40],
++  padding: [12, 60],
++  titleSize: [20, 48],
++  textSize: [12, 24],
++} as const
++
+ export function defaultEmailDesign(): EmailDesign {
+   return {
+     palettes: {
+@@ -583,11 +592,8 @@ export function validateEmailDesign(
+     !['light', 'dark'].includes(String(design['defaultMode']))
+   )
+     fail(path, 'Unsupported font or mode')
+-  integer(design['width'], path, 320, 800)
+-  integer(design['radius'], path, 0, 40)
+-  integer(design['padding'], path, 12, 60)
+-  integer(design['titleSize'], path, 20, 48)
+-  integer(design['textSize'], path, 12, 24)
++  for (const [key, [min, max]] of Object.entries(EMAIL_DESIGN_LIMITS))
++    integer(design[key], path, min, max)
+   const order = list(design['order'], path, EMAIL_PARTS.length)
+   if (
+     order.length !== EMAIL_PARTS.length ||
+diff --git a/src/admin/cms/DomainPanels.tsx b/src/admin/cms/DomainPanels.tsx
+index a306e198..c91e152d 100644
+--- a/src/admin/cms/DomainPanels.tsx
++++ b/src/admin/cms/DomainPanels.tsx
+@@ -3,6 +3,7 @@ import type { JSX } from 'preact'
+ import { useState } from 'preact/hooks'
+ import {
+   EMAIL_NAMES,
++  EMAIL_DESIGN_LIMITS,
+   type CmsAsset,
+   defaultEmailDesign,
+   type CmsDocument,
+@@ -56,11 +57,11 @@ const barberFields = [
+ ] as const
+ 
+ const emailDesignNumberFields = [
+-  ['width', 'Bredd', 320, 760],
+-  ['radius', 'Hörnradie', 0, 48],
+-  ['padding', 'Padding', 12, 64],
+-  ['titleSize', 'Rubrikstorlek', 18, 56],
+-  ['textSize', 'Textstorlek', 12, 24],
++  ['width', 'Bredd'],
++  ['radius', 'Hörnradie'],
++  ['padding', 'Padding'],
++  ['titleSize', 'Rubrikstorlek'],
++  ['textSize', 'Textstorlek'],
+ ] as const
+ 
+ const emailLabel: Record<(typeof EMAIL_NAMES)[number], string> = {
+@@ -203,8 +204,8 @@ export function EmailPanel({
+   const email =
+     document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ??
+     first
+-  const patch = (key: keyof CmsEmail, value: string): void =>
+-    onChange(replaceEmail(document, { ...email, [key]: value }))
++  const patch = (key: Exclude<keyof CmsEmail, 'template' | 'lang' | 'design'>, value: string): void =>
++    onChange(replaceEmail(document, { ...email, [key]: value === '' && (key === 'section_title' || key === 'contact_lead') ? null : value }))
+   const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
+     const next = structuredClone(email)
+     if (!next.design) return
+@@ -284,13 +285,13 @@ export function EmailPanel({
+             <summary>Utseende</summary>
+             <fieldset>
+               <legend>Design</legend>
+-              {emailDesignNumberFields.map(([key, label, min, max]) => (
++              {emailDesignNumberFields.map(([key, label]) => (
+                 <label>
+                   {label}
+                   <input
+                     type="number"
+-                    min={min}
+-                    max={max}
++                    min={EMAIL_DESIGN_LIMITS[key][0]}
++                    max={EMAIL_DESIGN_LIMITS[key][1]}
+                     value={email.design?.[key]}
+                     onInput={(e) =>
+                       updateDesign((design) => {
+diff --git a/src/admin/cms/Resources.tsx b/src/admin/cms/Resources.tsx
+index 89f91161..124f1fe3 100644
+--- a/src/admin/cms/Resources.tsx
++++ b/src/admin/cms/Resources.tsx
+@@ -229,6 +229,17 @@ export function CmsResources(props: Props): JSX.Element {
+       }
+     }, 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.')
+ 
++  const selectionProtected = useMemo(() => {
++    try {
++      return [...selectedIds].some((id) => {
++        const target = props.assets.find((item) => item.id === id)
++        return !target || resourceUsage(props.document, target, policy).length > 0
++      })
++    } catch {
++      return true
++    }
++  }, [selectedIds, props.assets, props.document])
++
+   const draftReferences = useMemo(() => {
+     try {
+       return { places: asset ? resourceUsage(props.document, asset, policy) : [], error: null }
+@@ -318,7 +329,7 @@ export function CmsResources(props: Props): JSX.Element {
+             </button>
+           )}
+           {state !== 'trash' && (
+-            <button type="button" disabled={busy} onClick={() => void bulk('trash')}>
++            <button type="button" disabled={busy || selectionProtected} onClick={() => void bulk('trash')}>
+               Till papperskorg
+             </button>
+           )}
+diff --git a/src/admin/cms/Studio.tsx b/src/admin/cms/Studio.tsx
+index 9eafebce..6dfc76fa 100644
+--- a/src/admin/cms/Studio.tsx
++++ b/src/admin/cms/Studio.tsx
+@@ -3,6 +3,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js'
+ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+ import {
+   mediaUrl,
++  isPagePath,
+   type CmsAsset,
+   type CmsDocument,
+   type CmsLang,
+@@ -340,12 +341,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+ 
+   const createPage = (): void => {
+     editor.current?.flush()
++    if (newName.trim().length > 80) return setError('Namnet får vara högst 80 tecken.')
+     const path = newPath.trim().replace(/\/+$/, '')
+     if (
+-      !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
+-      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
+-        path,
+-      ) ||
++      !isPagePath(path) ||
+       draft.document.presentation.pages.some((item) => item.path === path)
+     )
+       return setError('Ange en unik, giltig adress som /hemsida.')
+@@ -1057,6 +1056,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+                 Sidnamn
+                 <input
+                   autoFocus
++                  maxLength={80}
+                   value={newName}
+                   onInput={(event) => setNewName(event.currentTarget.value)}
+                 />
+@@ -1064,6 +1064,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+               <label>
+                 Adress
+                 <input
++                  maxLength={100}
+                   value={newPath}
+                   onInput={(event) => setNewPath(event.currentTarget.value)}
+                   placeholder="/exempel"
+diff --git a/tests/unit/cmsInstanceScope.test.ts b/tests/unit/cmsInstanceScope.test.ts
+index ba6d4319..9aa086a8 100644
+--- a/tests/unit/cmsInstanceScope.test.ts
++++ b/tests/unit/cmsInstanceScope.test.ts
+@@ -1,5 +1,6 @@
+ import { createRef, Fragment, h, type VNode } from 'preact'
+ import { describe, expect, it, vi } from 'vitest'
++import { ident } from 'css-tree'
+ import { createInstanceScope, nativeNodeId } from '../../src/cms/instanceScope'
+ 
+ function fixture() {
+@@ -47,7 +48,7 @@ describe('render-time instance identity isolation', () => {
+     const rendered = nodes(scope.tree(fixture().source) as VNode)
+     const input = rendered.find(n => n.type === 'input')?.props['id']
+     const css = scope.css('#owner\\.input,[for="owner.input"],[aria-controls~="owner.input"]{background:url(#paint);content:"knc-my-booking-card-0 #owner.input"} .owner{background:url(https://outside.example/x.svg#paint)}')
+-    expect(css).toContain(`#${input}`)
++    expect(css).toContain(`#${ident.encode(String(input))}`)
+     expect(css).toContain(`[for="${input}"]`)
+     expect(css).toContain(`[aria-controls~="${input}"]`)
+     expect(css).toContain('content:"knc-my-booking-card-0 #owner.input"')
+diff --git a/tools/e2e/cms-engineering.mjs b/tools/e2e/cms-engineering.mjs
+index 912e4a82..6c81e83c 100644
+--- a/tools/e2e/cms-engineering.mjs
++++ b/tools/e2e/cms-engineering.mjs
+@@ -259,7 +259,11 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
+     await check('Bulk trash preflights draft references before any write', async (page) => {
+       await resources(page)
+       await page.getByRole('checkbox', { name: 'Markera First image', exact: true }).check()
+-      await page.getByRole('button', { name: 'Till papperskorg', exact: true }).click()
++      const trash = page.getByRole('button', { name: 'Till papperskorg', exact: true })
++      assert.equal(await trash.isDisabled(), true)
++      // Defeating the disabled DOM control must not defeat the handler's preflight.
++      await trash.evaluate(button => { button.disabled = false })
++      await trash.click()
+       await page.waitForFunction(
+         () => window.cmsReview.errors.length || window.cmsReview.lifecycle.length,
+       )
