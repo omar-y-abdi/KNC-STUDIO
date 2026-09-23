@@ -1,4 +1,4 @@
-/* global window, document, DOMParser, location, structuredClone, getComputedStyle */
+/* global window, document, structuredClone, getComputedStyle */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
