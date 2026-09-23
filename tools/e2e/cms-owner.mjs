@@ -697,8 +697,8 @@ for (const [engine, name] of [
             'Added blocks belong to authored content, not shared chrome',
           )
           assert.ok(
-            !created.content.sv.html.includes('cms-site-header'),
-            'Shared chrome is derived, never saved as a stale copy inside page content',
+            created.content.sv.html.includes('cms-site-header'),
+            'An independent page owns its editable header instead of a locked homepage projection',
           )
           await context.route(`${base}/hemsida*`, (route) => {
             const mode =

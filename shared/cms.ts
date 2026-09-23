@@ -148,6 +148,8 @@ export interface CmsPage {
   description: Localized
   content: Record<CmsLang, PageVariant>
   inMenu: boolean
+  /** New authored pages own their complete layout, including a freely editable header/footer. */
+  layout?: 'independent'
 }
 export const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
 export type CmsRegion = (typeof REGION_NAMES)[number]
@@ -701,7 +703,11 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
   }
   for (const raw of pages) {
     const page = object(raw, 'page')
-    keys(page, ['id', 'kind', 'path', 'name', 'title', 'description', 'content', 'inMenu'], 'page')
+    keys(
+      page,
+      ['id', 'kind', 'path', 'name', 'title', 'description', 'content', 'inMenu', 'layout'],
+      'page',
+    )
     const id = text(page['id'], 'page.id', 36)
     if (!UUID.test(id)) fail('page.id', 'Invalid page identity')
     ids.push(id)
@@ -710,6 +716,13 @@ export function validatePresentation(value: unknown): asserts value is CmsPresen
       if (path !== `/${page['kind']}`) fail(path, 'Legal page path is fixed')
     } else if (page['kind'] !== 'page' || !isPagePath(path))
       fail(path, 'Reserved or invalid page path')
+    if (
+      page['layout'] !== undefined &&
+      (page['layout'] !== 'independent' ||
+        page['kind'] !== 'page' ||
+        ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(path))
+    )
+      fail('page.layout', 'Independent layouts are only allowed on authored pages')
     paths.push(path)
     localized(page['name'], 'page.name', 80)
     localized(page['title'], 'page.title', 120)

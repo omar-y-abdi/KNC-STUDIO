@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, type CmsPage } from '../../shared/cms'
-import {
-  renderSitePage,
-  sitePageBody,
-  sitePageCss,
-  normalizeSitePageContent,
-} from '../../shared/site-page'
+import { renderSitePage, createSitePage, normalizeSitePageContent } from '../../shared/site-page'
 import { renderCmsPage } from '../../src/worker'
 
 function fixture() {
@@ -35,6 +30,26 @@ function fixture() {
 }
 
 describe('new pages extend the published website', () => {
+  it('seeds an independent fully authored page with theme baselines outside device media rules', () => {
+    const { document, page, home } = fixture()
+    const created = createSitePage(document.presentation, page)
+    for (const lang of ['sv', 'en'] as const) {
+      expect(created.content[lang].html).toContain('id="cms-site-shell"')
+      expect(created.content[lang].html).not.toContain('style=')
+      expect(created.content[lang].html).not.toContain('data-knc-')
+      for (const mode of ['light', 'dark'] as const) {
+        const output = renderSitePage(document.presentation, created, lang, mode)
+        expect(output.html.match(/id="cms-site-shell"/g)).toHaveLength(1)
+        expect(output.css).toContain('[id="cms-site-shell"]{')
+      }
+    }
+    home.content.sv.html = home.content.sv.html.replace('Original logo', 'Unrelated edit')
+    expect(renderSitePage(document.presentation, created, 'sv', 'light').html).toContain(
+      'Original logo',
+    )
+    expect(createSitePage(document.presentation, created)).toEqual(created)
+  })
+
   it('preserves inline baseline styles for both themes when the editor serializes shared HTML', () => {
     const normalized = normalizeSitePageContent(
       {
@@ -76,20 +91,12 @@ describe('new pages extend the published website', () => {
     expect(renderSitePage(document.presentation, page, 'sv', 'dark').html).toContain('Updated logo')
     expect(page.content.sv.html).not.toContain('logo')
   })
-  it('saves only authored content and its styles, never a stale chrome copy', () => {
+  it('does not resurrect chrome after the owner deletes the full seeded layout', () => {
     const { document, page } = fixture()
-    const rendered = renderSitePage(document.presentation, page, 'sv', 'light')
-    expect(sitePageBody(rendered.html)).toBe(page.content.sv.html)
-    expect(
-      sitePageCss(
-        '#knc-header{color:red}#cms-site-menu{display:flex}#owner-content{color:blue}',
-        page.content.sv.html,
-      ),
-    ).toBe('#owner-content{color:blue}')
-    page.inMenu = false
-    const menu = renderSitePage(document.presentation, page, 'sv', 'light')
-      .html.split('<nav id="cms-site-menu"')[1]
-      ?.split('</nav>')[0]
-    expect(menu).not.toContain('href="/extra?')
+    const created = createSitePage(document.presentation, page)
+    created.content.sv.html = '<p>Just my content</p>'
+    const rendered = renderSitePage(document.presentation, created, 'sv', 'light')
+    expect(rendered.html).toBe('<p>Just my content</p>')
+    expect(rendered.html).not.toContain('cms-site-header')
   })
 })

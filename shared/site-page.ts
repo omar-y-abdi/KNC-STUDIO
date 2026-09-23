@@ -2,7 +2,6 @@ import { themeDeclarations, siteThemeCss } from './site-theme.ts'
 import { repairDesktopCss } from './cms-device-css.ts'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
-import { parse, generate, walk } from 'css-tree'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -83,6 +82,8 @@ export function renderSitePage(
   mode: CmsMode,
 ): { html: string; css: string } {
   const variant = normalizeSitePageContent(page.content[lang], `${page.id}-${lang}`)
+  if (page.layout === 'independent')
+    return { html: variant.html, css: repairDesktopCss(variant.css[mode]) }
   const home = presentation.pages.find((item) => item.path === '/')?.content[lang]
   if (!home || !isSitePage(page)) return { html: variant.html, css: variant.css[mode] }
   const tree = parseFragment(home.html)
@@ -158,35 +159,31 @@ export function renderSitePage(
   const menu = `<a href="${href('/', lang, mode)}">${lang === 'sv' ? 'Hem' : 'Home'}</a><a href="${href('/booking', lang, mode)}">${lang === 'sv' ? 'Boka tid' : 'Book'}</a><a href="${href('/about', lang, mode)}">${lang === 'sv' ? 'Om oss' : 'About'}</a>${sitePageLinks(presentation.pages, lang, mode)}`
   return {
     html: `<div id="cms-site-shell" style="${escape(rootStyle)}"><header id="cms-site-header">${headerHtml}</header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}">${menu}</nav><div id="cms-site-content">${variant.html}</div><footer id="cms-site-footer">${infoHtml}${footerHtml}</footer></div>`,
-    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}#cms-site-header a{text-decoration:none}#cms-site-header a:has(>svg){color:inherit}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
+    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}#cms-site-header a{color:inherit;text-decoration:none}#cms-site-header a:has(>svg){color:inherit}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
   }
 }
 
-/** Chrome belongs to the homepage. Save only content authored inside the new page. */
-export function sitePageBody(html: string): string {
-  const body = find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-content')
-  return body ? serialize(body) : html
-}
-
-export function sitePageCss(css: string, body: string): string {
-  const content = parseFragment(body)
-  const tree = parse(css)
-  walk(tree, {
-    visit: 'Rule',
-    enter(rule, item, list) {
-      let chromeRule = false
-      walk(rule.prelude, {
-        visit: 'IdSelector',
-        enter(selector) {
-          if (
-            /^(cms-site-|knc-|preview-)/.test(selector.name) &&
-            !find(content, (node) => attr(node, 'id') === selector.name)
-          )
-            chromeRule = true
-        },
-      })
-      if (chromeRule && item && list) list.remove(item)
-    },
-  })
-  return generate(tree)
+/** Materialize an independent page once. Its chrome becomes authored content, not
+ * a locked preview of another page. Normalize inline styles before GrapesJS can
+ * attach them to the currently selected device's media query. */
+export function createSitePage(presentation: CmsPresentation, page: CmsPage): CmsPage {
+  const next = structuredClone(page)
+  if (page.layout === 'independent') return next
+  for (const lang of ['sv', 'en'] as const) {
+    const render = (mode: CmsMode) => {
+      const rendered = renderSitePage(presentation, page, lang, mode)
+      return normalizeSitePageContent(
+        { html: rendered.html, css: { light: rendered.css, dark: rendered.css } },
+        `${page.id}-${lang}`,
+      )
+    }
+    const light = render('light')
+    const dark = render('dark')
+    next.content[lang] = {
+      html: light.html,
+      css: { light: light.css.light, dark: dark.css.dark },
+    }
+  }
+  next.layout = 'independent'
+  return next
 }
