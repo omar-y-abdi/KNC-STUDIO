@@ -1,0 +1,125 @@
+name: CMS engineering hardening
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/cms-hardening.yml, .hardening/**]
+permissions:
+  contents: read
+concurrency:
+  group: cms-engineering-hardening
+  cancel-in-progress: true
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Restore exact patch bytes and format candidate
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/hardening-source
+          python3 - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          encoded = pathlib.Path('.hardening/input.b64').read_text().strip()
+          encoded = encoded.replace('BWjFKAW', 'BWjF/KAW')
+          assert hashlib.sha256(encoded.encode()).hexdigest() == '922f925d3fab87a135fa614fce2ff9fa3a024072e5b8baba5caa17cf0336c441', 'Transport digest mismatch'
+          pathlib.Path('/tmp/hardening.patch').write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
+          PY
+          git checkout --detach 5956ccf94f0e8f602c9d60b8c3163067c828d16c
+          git apply --index /tmp/hardening.patch
+          test "$(git write-tree)" = b097e4811e3f91172b475be7386e5e87b93e5051
+          npm ci --no-audit --no-fund > /tmp/hardening-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/hardening-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS engineering review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: preserve concurrent owner edits and structurally scope repeated templates'
+          git rev-parse HEAD > /tmp/hardening-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/hardening-source/source-tree.txt
+          git bundle create /tmp/hardening-source/source.bundle HEAD
+          git push origin HEAD:refs/heads/verify/cms-hardening-product-20260923
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hardening-source-${{ github.run_number }}
+          path: /tmp/hardening-source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare remote tools
+        run: |
+          mkdir -p /tmp/hardening-evidence
+          git rev-parse HEAD > /tmp/hardening-evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/hardening-evidence/source-tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/hardening-evidence/install.log 2>&1
+      - name: Static and unit gates
+        if: matrix.suite == 'core'
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Browser gates
+        if: matrix.suite != 'core'
+        env:
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_EVIDENCE_DIR: /tmp/hardening-evidence
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps "$CMS_ENGINE"
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/hardening-evidence/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
+          status=0
+          for suite in cms-engineering cms-adversarial cms-scenes; do
+            mkdir -p "/tmp/hardening-evidence/$suite"
+            CMS_EVIDENCE_DIR="/tmp/hardening-evidence/$suite" node "tools/e2e/$suite.mjs" > "/tmp/hardening-evidence/$suite.log" 2>&1
+            code=$?
+            echo "$code" > "/tmp/hardening-evidence/$suite.exit-code"
+            test "$code" = 0 || status=1
+          done
+          exit "$status"
+      - name: Preserve raw and compressed evidence
+        if: always()
+        run: |
+          for log in /tmp/hardening-evidence/*.log; do
+            test -f "$log" || continue
+            furl compress "$log" --json > "$log.furl.json" || true
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hardening-${{ matrix.suite }}-${{ github.run_number }}
+          path: /tmp/hardening-evidence
+          retention-days: 7
