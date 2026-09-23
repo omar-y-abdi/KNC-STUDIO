@@ -54,3 +54,33 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
   first.content.sv.html = ''
   expect(hasCorePageLayouts(document)).toBe(false)
 })
+
+it('retains authoritative core layouts for legacy restore without copying unrelated pages', async () => {
+  const { retainCorePageLayouts } = await import('../../src/admin/cms/corePages')
+  const document = emptyDocument()
+  const page: CmsPage = {
+    id: CORE_PAGE_IDS[0],
+    path: '/',
+    kind: 'page',
+    inMenu: true,
+    name: { sv: 'Home', en: 'Home' },
+    title: { sv: '', en: '' },
+    description: { sv: '', en: '' },
+    content: {
+      sv: { html: '<main data-knc-native="1">Stored layout</main>', css: { light: '', dark: '' } },
+      en: { html: '<main data-knc-native="1">Stored layout</main>', css: { light: '', dark: '' } },
+    },
+  }
+  document.presentation.pages = [page, { ...page, id: 'custom-page', path: '/custom' }]
+  retainCorePageLayouts(document)
+  try {
+    const legacy = emptyDocument()
+    legacy.settings.business_name = 'Unsaved owner name'
+    const restored = ensureCorePages(legacy)
+    expect(restored.presentation.pages).toEqual([page])
+    expect(restored.settings.business_name).toBe('Unsaved owner name')
+    expect(legacy.presentation.pages).toEqual([])
+  } finally {
+    retainCorePageLayouts(emptyDocument())
+  }
+})

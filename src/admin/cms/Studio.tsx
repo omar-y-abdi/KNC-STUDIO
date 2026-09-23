@@ -18,6 +18,7 @@ import {
   prepareCorePageSource,
   isInventedSite,
   hasCorePageLayouts,
+  retainCorePageLayouts,
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
@@ -98,7 +99,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     try {
       const loaded = await cmsApi.state()
       const stored = hasCorePageLayouts(loaded.document)
-      if (!stored) await prepareCorePageSource(loaded.document)
+      if (stored) retainCorePageLayouts(loaded.document)
+      else await prepareCorePageSource(loaded.document)
       const document = stored ? loaded.document : ensureCorePages(loaded.document)
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
@@ -114,7 +116,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        const local = stored ? backup.document : ensureCorePages(backup.document)
+        const local = hasCorePageLayouts(backup.document)
+          ? backup.document
+          : ensureCorePages(backup.document)
         const sameHead =
           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
         const merged =

@@ -115,7 +115,19 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         ...metrics,
       })
     } catch (error) {
-      results.push({ engine: name, scenario, passed: false, error: error.stack, errors })
+      const state = await page
+        .evaluate(() => ({
+          body: document.body.innerText.slice(0, 4000),
+          source: { ...document.documentElement.dataset },
+          frames: [...document.querySelectorAll('iframe')].map((frame) => ({
+            src: frame.src,
+            source: frame.contentDocument
+              ? { ...frame.contentDocument.documentElement.dataset }
+              : null,
+          })),
+        }))
+        .catch(() => null)
+      results.push({ engine: name, scenario, passed: false, error: error.stack, errors, state })
     } finally {
       await page.screenshot({ path: `${out}/${name}-${scenario}.png` }).catch(() => {
         /* Preserve the assertion if the browser itself closed. */
@@ -141,14 +153,15 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         }),
       )
       const start = Date.now()
-      await page.goto(`${base}/admin/cms/`)
-      await page.locator('.gjs-frame').first().waitFor({ timeout: 2000 })
+      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+      await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
       await page
         .frameLocator('.gjs-frame')
         .first()
         .locator('[data-knc-surface="mobile-home"]')
         .waitFor({ timeout: 1000 })
       const readyMs = Date.now() - start
+      assert.ok(readyMs < 3000, `Stored page startup took ${readyMs}ms; budget is 3000ms`)
       await page
         .getByRole('alert')
         .filter({ hasText: 'Dina befintliga sidor går fortfarande att redigera' })
@@ -166,6 +179,89 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       assert.deepEqual(backend.writes, [])
       return { readyMs }
     })
+    await check('source-upgrade-preserves-editable-page', async (page, context) => {
+      const doc = storedDocument()
+      if (process.env.CMS_STARTUP_PRESENTATION)
+        doc.presentation = JSON.parse(
+          await readFile(process.env.CMS_STARTUP_PRESENTATION, 'utf8'),
+        ).presentation
+      const backend = await nativeBackend(context, doc)
+      await ownerSession(context)
+      const start = Date.now()
+      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+      await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+      await page
+        .frameLocator('.gjs-frame')
+        .first()
+        .locator('[data-knc-surface="mobile-home"]')
+        .waitFor()
+      const readyMs = Date.now() - start
+      const capture = page.locator('iframe[title="Läser den befintliga webbplatsen"]')
+      await capture.waitFor({ state: 'attached' })
+      // Edit before the optional capture finishes. Its response must merge with
+      // the current draft, not the old document that started the operation.
+      await page
+        .locator('.cms-mobile-tools')
+        .getByRole('button', { name: 'Egenskaper', exact: true })
+        .click()
+      await page.getByLabel('Namn', { exact: true }).fill('Owner edit during capture')
+      await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+      await capture.waitFor({ state: 'detached', timeout: 30000 })
+      assert.equal(
+        await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).count(),
+        0,
+      )
+      assert.equal(
+        await page.locator('.cms-canvas-breadcrumb strong').innerText(),
+        'Owner edit during capture',
+      )
+      assert.equal(
+        await page.getByRole('alert').count(),
+        0,
+        'the real source upgrade must finish without errors',
+      )
+      await page
+        .frameLocator('.gjs-frame')
+        .first()
+        .locator('[data-knc-surface="mobile-home"]')
+        .waitFor()
+      assert.deepEqual(backend.writes, [])
+      return { readyMs, upgradedMs: Date.now() - start }
+    })
+    await check(
+      'legacy-backup-without-pages-keeps-authoritative-layouts',
+      async (page, context) => {
+        const backend = await nativeBackend(context, storedDocument())
+        await ownerSession(context)
+        const backup = emptyDocument()
+        backup.settings.business_name = 'Unsaved owner business name'
+        await context.addInitScript((draft) => {
+          if (window !== window.top) return
+          window.sessionStorage.setItem('knc-cms-tab', 'startup-recovery')
+          window.localStorage.setItem(
+            'knc-cms-draft:startup-recovery',
+            JSON.stringify({
+              savedAt: '2026-09-23T00:00:00Z',
+              document: draft,
+            }),
+          )
+        }, backup)
+        await context.route('**/cms-public/source', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: '<!doctype html><html>Source unavailable</html>',
+          }),
+        )
+        await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+        await page.locator('.gjs-frame').first().waitFor()
+        const saved = await page.evaluate(() =>
+          JSON.parse(window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+        )
+        assert.equal(saved.document.settings.business_name, 'Unsaved owner business name')
+        assert.equal(saved.document.presentation.pages.length, 6)
+        assert.deepEqual(backend.writes, [])
+      },
+    )
     await check('page-import-failure-keeps-workspace', async (page, context) => {
       const doc = storedDocument()
       for (const variant of Object.values(doc.presentation.pages[0].content))
@@ -181,7 +277,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
           body: '<!doctype html><html><body>Source unavailable</body></html>',
         }),
       )
-      await page.goto(`${base}/admin/cms/`)
+      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
       await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).waitFor()
       assert.equal(await page.locator('.cms-topbar').isVisible(), true)
       await page.getByText('Teknisk felinformation', { exact: true }).click()
@@ -200,6 +296,9 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       )
     })
     await check('capture-without-animation-frames', async (page, context) => {
+      // The source protocol describes its actual iframe viewport, not a forced
+      // layout prop. Match the Desktop context just as readCorePageSource does.
+      await page.setViewportSize({ width: 1440, height: 900 })
       const backend = await nativeBackend(context)
       const reads = [],
         challenges = []
