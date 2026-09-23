@@ -24,6 +24,7 @@ import {
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
+import { CmsEditorBoundary } from './EditorBoundary'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
 import { compactWorkspace, useResponsivePanels, type CmsPanel } from './useResponsivePanels'
@@ -609,6 +610,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           </button>
         </div>
       )}
+      {sourceFailure && (
+        <div class="cms-notice" role="alert" inert={drawerOpen}>
+          <CmsIcon name="info" />
+          <span>
+            Fler redigeringsvyer kunde inte förberedas. Dina befintliga sidor går fortfarande att
+            redigera. {sourceFailure}
+          </span>
+          <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>
+            Försök igen
+          </button>
+        </div>
+      )}
       <div class="cms-workspace">
         <aside
           id="cms-library"
@@ -865,14 +878,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               </label>
               {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
               {sourceLoading && <span role="status">Förbereder fler redigeringsvyer…</span>}
-              {sourceFailure && (
-                <span role="alert">
-                  {sourceFailure}{' '}
-                  <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>
-                    Försök igen
-                  </button>
-                </span>
-              )}
             </div>
           )}
           <div
@@ -880,46 +885,48 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             inert={Boolean(workspaceView)}
             aria-hidden={workspaceView ? true : undefined}
           >
-            <CmsEditor
-              scene={scene}
-              onClosePanel={() => setMobilePanel(null)}
-              inspectorModal={compact && mobilePanel === 'inspector'}
-              pageSettings={pageSettings}
-              page={page}
-              lang={lang}
-              mode={mode}
-              device={device}
-              compare={compare}
-              zoom={zoom}
-              locked={locked}
-              preview={preview}
-              presentation={document.presentation}
-              onOpenPage={(path) => {
-                editor.current?.flush()
-                setSelectedPage(
-                  document.presentation.pages.find((item) => item.path === path)?.id ??
-                    CORE_PAGE_IDS[0],
-                )
-              }}
-              onNavigate={(path, nextLang, nextMode) => {
-                const next = document.presentation.pages.find((item) => item.path === path)
-                if (!next) return
-                editor.current?.flush()
-                setSelectedPage(next.id)
-                setLang(nextLang)
-                setMode(nextMode)
-              }}
-              assets={resources}
-              fontCss={fontCss}
-              tab={tab}
-              onTab={setTab}
-              onZoom={setZoom}
-              onChange={replacePage}
-              onReady={(value) => {
-                editor.current = value
-              }}
-              onError={setError}
-            />
+            <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
+              <CmsEditor
+                scene={scene}
+                onClosePanel={() => setMobilePanel(null)}
+                inspectorModal={compact && mobilePanel === 'inspector'}
+                pageSettings={pageSettings}
+                page={page}
+                lang={lang}
+                mode={mode}
+                device={device}
+                compare={compare}
+                zoom={zoom}
+                locked={locked}
+                preview={preview}
+                presentation={document.presentation}
+                onOpenPage={(path) => {
+                  editor.current?.flush()
+                  setSelectedPage(
+                    document.presentation.pages.find((item) => item.path === path)?.id ??
+                      CORE_PAGE_IDS[0],
+                  )
+                }}
+                onNavigate={(path, nextLang, nextMode) => {
+                  const next = document.presentation.pages.find((item) => item.path === path)
+                  if (!next) return
+                  editor.current?.flush()
+                  setSelectedPage(next.id)
+                  setLang(nextLang)
+                  setMode(nextMode)
+                }}
+                assets={resources}
+                fontCss={fontCss}
+                tab={tab}
+                onTab={setTab}
+                onZoom={setZoom}
+                onChange={replacePage}
+                onReady={(value) => {
+                  editor.current = value
+                }}
+                onError={setError}
+              />
+            </CmsEditorBoundary>
           </div>
           {workspaceView && (
             <CmsWorkspaceView kind={workspaceView} onClose={() => setDialog(null)}>

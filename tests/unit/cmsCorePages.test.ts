@@ -36,7 +36,7 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
   expect(hasCorePageLayouts(document)).toBe(false)
   const paths = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']
   document.presentation.pages = paths.map((path, index) => ({
-    id: CORE_PAGE_IDS[index]!,
+    id: CORE_PAGE_IDS[index] ?? CORE_PAGE_IDS[0],
     path,
     kind: 'page',
     inMenu: false,
@@ -49,6 +49,8 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
     },
   }))
   expect(hasCorePageLayouts(document)).toBe(true)
-  document.presentation.pages[0]!.content.sv.html = ''
+  const first = document.presentation.pages[0]
+  if (!first) throw new Error('Missing stored home page')
+  first.content.sv.html = ''
   expect(hasCorePageLayouts(document)).toBe(false)
 })
