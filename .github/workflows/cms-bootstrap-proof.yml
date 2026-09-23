@@ -1,0 +1,73 @@
+name: CMS cold bootstrap diagnosis
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/cms-bootstrap-proof.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 0a98d832e070cbf6a31cd44702ae0957251ebbac
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare runtime and bounded timing probe
+        run: |
+          mkdir -p /tmp/bootstrap
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/bootstrap/install.log 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/admin-state.mjs')
+          s=p.read_text()
+          old="    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })"
+          assert s.count(old)==1
+          new="""    const started = Date.now()
+              const engine = page.context().browser().browserType().name()
+              const shell = page.locator('.cms-canvas-shell')
+              let originalDeadlinePassed = false
+              try {
+                await shell.waitFor({ state: 'visible', timeout: 10000 })
+              } catch (error) {
+                if (error.name !== 'TimeoutError') throw error
+                originalDeadlinePassed = true
+                await page.screenshot({ path: `/tmp/bootstrap/${engine}-at-original-deadline.png` })
+                console.log(JSON.stringify({ engine, atOriginalDeadline: Date.now() - started, shellCount: await shell.count(), visible: await shell.isVisible(), errors: browserErrors }))
+                await shell.waitFor({ state: 'visible', timeout: 80000 })
+              }
+              console.log(JSON.stringify({ engine, bootstrapMs: Date.now() - started, originalDeadlinePassed, errors: browserErrors }))
+              await page.screenshot({ path: `/tmp/bootstrap/${engine}-ready.png` })"""
+          p.write_text(s.replace(old,new,1))
+          PY
+      - name: Exercise actual empty-site capture and all shell assertions
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps chromium webkit
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/bootstrap/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break; sleep 1; done
+          status=0
+          for attempt in 1 2; do
+            BASE_URL=http://127.0.0.1:4188 ADMIN_E2E_SCENARIO=cms-shell node tools/e2e/admin-state.mjs > "/tmp/bootstrap/shell-$attempt.log" 2>&1 || status=1
+          done
+          exit "$status"
+      - name: Preserve source and compressed logs
+        if: always()
+        run: |
+          git rev-parse HEAD > /tmp/bootstrap/product-commit.txt
+          git diff > /tmp/bootstrap/test-only-diagnostic.patch
+          for f in /tmp/bootstrap/*.log; do test -f "$f" && furl compress "$f" --json > "$f.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-bootstrap-diagnosis
+          path: /tmp/bootstrap
+          retention-days: 7
