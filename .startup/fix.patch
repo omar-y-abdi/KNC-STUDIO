@@ -1,0 +1,333 @@
+diff --git a/src/admin/cms/Editor.tsx b/src/admin/cms/Editor.tsx
+index 78f221b..350578e 100644
+--- a/src/admin/cms/Editor.tsx
++++ b/src/admin/cms/Editor.tsx
+@@ -191,6 +191,7 @@ export function CmsEditor(props: Props): JSX.Element {
+       width: '100%',
+       fromElement: false,
+       telemetry: false,
++      cssIcons: '', // The workspace supplies its own icons; no external icon-font stylesheet.
+       i18n: editorLocale,
+       noticeOnUnload: false,
+       storageManager: false,
+diff --git a/src/admin/cms/NativeSource.tsx b/src/admin/cms/NativeSource.tsx
+index 869d3b2..c48dbba 100644
+--- a/src/admin/cms/NativeSource.tsx
++++ b/src/admin/cms/NativeSource.tsx
+@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks'
+ import { App, type SitePreviewSnapshot } from '../../app/App'
+ import { NativeSiteProvider } from '../../cms/NativeSurface'
+ import { PreviewPorts } from '../../cms/PreviewPorts'
++import { sourceReadSnapshot } from './sourceReadCache'
+ import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+ import { mediaUrl, validatePresentation, type CmsPresentation } from '../../../shared/cms'
+ import { SUPABASE_URL } from '../../backend/config'
+@@ -35,9 +36,10 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
+     device: 'Desktop',
+     scene: 'home',
+   })
++  const snapshot = useMemo(() => sourceReadSnapshot(), [])
+   const state = useMemo(() => {
+     const status = { pending: 0, metadata: false, failed: false }
+-    const read = readOnlyHomepagePreviewPorts()
++    const read = interactive ? readOnlyHomepagePreviewPorts() : { ...snapshot.ports }
+     const ports = context.scene.startsWith('booking-') ? exampleBookingPorts(read) : read
+     for (const key of Object.keys(ports) as (keyof typeof ports)[]) {
+       const target = ports[key]
+@@ -62,7 +64,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
+       })
+     }
+     return { status, ports }
+-  }, [context.id])
++  }, [context.id, interactive, snapshot])
+   useEffect(() => {
+     const receive = (event: MessageEvent<unknown>): void => {
+       if (event.source !== window.parent || event.origin !== window.location.origin) return
+@@ -166,15 +168,14 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
+           document.getElementById('om-oss-heading')?.scrollIntoView({ block: 'start' })
+         return
+       }
+-      frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
++      frame = window.setTimeout(settle, 20)
+     }
+     // WebKit may suspend animation frames in a hidden or offscreen preview.
+     // Runtime readiness must not depend on the paint we are waiting to reveal.
+-    frame = interactive ? window.setTimeout(settle, 50) : requestAnimationFrame(settle)
++    frame = window.setTimeout(settle, 20)
+     return () => {
+       stopped = true
+-      if (interactive) window.clearTimeout(frame)
+-      else cancelAnimationFrame(frame)
++      window.clearTimeout(frame)
+     }
+   }, [context, state, interactive])
+   const ready = (snapshot: SitePreviewSnapshot): void => {
+@@ -271,6 +272,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
+               key={context.id}
+               preview={{
+                 interactive,
++                ...(!interactive ? { chromePort: snapshot.chrome } : {}),
+                 lang: context.lang,
+                 mode: context.mode,
+                 view: context.scene.startsWith('booking') ? 'booking' : 'home',
+diff --git a/src/admin/cms/Studio.tsx b/src/admin/cms/Studio.tsx
+index 73ea3ac..c76f042 100644
+--- a/src/admin/cms/Studio.tsx
++++ b/src/admin/cms/Studio.tsx
+@@ -13,7 +13,7 @@ import {
+   type CmsRevision,
+   type CmsState,
+ } from '../../../shared/cms'
+-import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS } from './corePages'
++import { ensureCorePages, prepareCorePageSource, isInventedSite, hasCorePageLayouts, needsCorePageSource, CORE_PAGE_IDS } from './corePages'
+ import { CmsDraft, mergeCmsDocuments } from './draft'
+ import { cmsApi } from './api'
+ import { CmsEditor, type EditorHandle } from './Editor'
+@@ -54,6 +54,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+   const [error, setError] = useState<string | null>(null)
+   const [notice, setNotice] = useState<string | null>(null)
+   const [busy, setBusy] = useState(false)
++  const [sourceLoading, setSourceLoading] = useState(false)
++  const [sourceFailure, setSourceFailure] = useState<string | null>(null)
++  const [sourceAttempt, setSourceAttempt] = useState(0)
+   const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
+     null,
+   )
+@@ -86,8 +89,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+     setNotice(null)
+     try {
+       const loaded = await cmsApi.state()
+-      await prepareCorePageSource(loaded.document)
+-      const document = ensureCorePages(loaded.document)
++      const stored = hasCorePageLayouts(loaded.document)
++      if (!stored) await prepareCorePageSource(loaded.document)
++      const document = stored ? loaded.document : ensureCorePages(loaded.document)
+       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
+       const backup = loadBackup()
+       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
+@@ -102,7 +106,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+         !isInventedSite(backup.document) &&
+         JSON.stringify(backup.document) !== JSON.stringify(document)
+       ) {
+-        const local = ensureCorePages(backup.document)
++        const local = stored ? backup.document : ensureCorePages(backup.document)
+         const sameHead =
+           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
+         const merged =
+@@ -141,6 +145,27 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+     void refresh()
+   }, [])
+ 
++  useEffect(() => {
++    if (!draft || !needsCorePageSource(draft.document)) return
++    let stopped = false
++    setSourceLoading(true)
++    setSourceFailure(null)
++    // The owner can edit the existing page while optional source scenes load.
++    // Never replace that work with the document which started this request.
++    void prepareCorePageSource(draft.document)
++      .then(() => {
++        if (stopped || currentDraft.current !== draft) return
++        editor.current?.flush()
++        draft.change(ensureCorePages(draft.document))
++        setVersion((value) => value + 1)
++      })
++      .catch((reason: unknown) => {
++        if (!stopped) setSourceFailure(reason instanceof Error ? reason.message : 'Nya redigeringsvyer kunde inte förberedas.')
++      })
++      .finally(() => { if (!stopped) setSourceLoading(false) })
++    return () => { stopped = true }
++  }, [draft, sourceAttempt])
++
+   useLayoutEffect(() => {
+     if (!draft) return
+     try {
+@@ -811,13 +836,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+                   }}
+                 >
+                   {pageScenes(page.path).map((item) => (
+-                    <option key={item.id} value={item.id}>
++                    <option key={item.id} value={item.id}
++                      disabled={item.id !== 'default' && !page.content[lang].html.includes(`data-knc-surface="${item.id}"`)}>
+                       {item.label}
+                     </option>
+                   ))}
+                 </select>
+               </label>
+               {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
++              {sourceLoading && <span role="status">Förbereder fler redigeringsvyer…</span>}
++              {sourceFailure && <span role="alert">{sourceFailure} <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>Försök igen</button></span>}
+             </div>
+           )}
+           <div
+diff --git a/src/admin/cms/corePages.ts b/src/admin/cms/corePages.ts
+index 9a32e18..df5c3ef 100644
+--- a/src/admin/cms/corePages.ts
++++ b/src/admin/cms/corePages.ts
+@@ -10,6 +10,18 @@ export const CORE_PAGE_IDS = [
+   '10000000-0000-4000-8000-000000000006',
+ ] as const
+ 
++/** Stored layouts are already editable. Missing optional scenes/motion metadata
++ * are an upgrade, not a prerequisite for opening the owner's document. */
++export function hasCorePageLayouts(document: CmsDocument): boolean {
++  return ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].every((path) => {
++    const page = document.presentation.pages.find((item) => item.path === path)
++    return page && ['sv', 'en'].every((lang) => {
++      const html = page.content[lang as 'sv' | 'en'].html
++      return html.trim() && (path === '/privacy' || path === '/terms' || html.includes('data-knc-native="1"'))
++    })
++  })
++}
++
+ let sourcePages: readonly CmsPage[] = []
+ let loading: Promise<void> | undefined
+ 
+diff --git a/src/admin/cms/sourceReadCache.ts b/src/admin/cms/sourceReadCache.ts
+new file mode 100644
+index 0000000..452755f
+--- /dev/null
++++ b/src/admin/cms/sourceReadCache.ts
+@@ -0,0 +1,36 @@
++import type { DesktopSitePreviewPorts } from '../../app/DesktopSite'
++import type { SiteChromePort } from '../../site/port'
++import { defaultSiteChromePort } from '../../site/adapters'
++import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
++
++/** A capture's language/theme/device passes read one consistent public snapshot.
++ * This cache is owned by the source frame, never shared with the live site. */
++export function memoizeSourceRead<A extends unknown[], T>(read: (...args: A) => Promise<T>): (...args: A) => Promise<T> {
++  const pending = new Map<string, Promise<T>>()
++  return (...args) => {
++    const key = JSON.stringify(args)
++    let result = pending.get(key)
++    if (!result) {
++      result = read(...args).catch((error: unknown) => { pending.delete(key); throw error })
++      pending.set(key, result)
++    }
++    return result
++  }
++}
++
++export function sourceReadSnapshot(
++  read: DesktopSitePreviewPorts = readOnlyHomepagePreviewPorts(),
++  chrome: SiteChromePort = defaultSiteChromePort,
++): { ports: DesktopSitePreviewPorts; chrome: SiteChromePort } {
++  return {
++    ports: {
++      ...read,
++      barbers: { listActive: memoizeSourceRead(() => read.barbers.listActive()) },
++      services: { listForBarber: memoizeSourceRead((id, date) => read.services.listForBarber(id, date)) },
++      gallery: { list: memoizeSourceRead((kind) => read.gallery.list(kind)) },
++      aboutContent: { overlay: memoizeSourceRead((lang) => read.aboutContent.overlay(lang)) },
++      reviews: { ...read.reviews, list: memoizeSourceRead(() => read.reviews.list()) },
++    },
++    chrome: { load: memoizeSourceRead((lang) => chrome.load(lang)) },
++  }
++}
+diff --git a/src/app/App.tsx b/src/app/App.tsx
+index 8e5821c..c957db5 100644
+--- a/src/app/App.tsx
++++ b/src/app/App.tsx
+@@ -97,6 +97,7 @@ export interface SitePreviewSnapshot {
+ }
+ 
+ export interface SitePreview {
++  readonly chromePort?: SiteChromePort
+   readonly interactive?: boolean
+   readonly mode: Mode
+   readonly lang: Lang
+@@ -259,7 +260,7 @@ export function App({
+   const lang = state.lang
+   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
+   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
+-  const { chrome, metadataReady } = useSiteChrome(lang, preview ? sourceChromePort : undefined)
++  const { chrome, metadataReady } = useSiteChrome(lang, preview ? (preview.chromePort ?? sourceChromePort) : undefined)
+   useEffect(() => {
+     if (metadataReady)
+       preview?.onReady({
+diff --git a/src/mybookings/MyBookingsDialog.tsx b/src/mybookings/MyBookingsDialog.tsx
+index 352a52a..d075a2c 100644
+--- a/src/mybookings/MyBookingsDialog.tsx
++++ b/src/mybookings/MyBookingsDialog.tsx
+@@ -601,12 +601,14 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
+                 {systemError}
+               </p>
+             ) : null}
+-            <Turnstile
+-              action="customer_access"
+-              lang={lang}
+-              onToken={setTurnstileToken}
+-              resetNonce={turnstileNonce}
+-            />
++            {challengeRequired && (
++              <Turnstile
++                action="customer_access"
++                lang={lang}
++                onToken={setTurnstileToken}
++                resetNonce={turnstileNonce}
++              />
++            )}
+             <button
+               onClick={lookupDisabled ? undefined : onLookupClick}
+               disabled={lookupDisabled}
+diff --git a/tests/unit/cmsCorePages.test.ts b/tests/unit/cmsCorePages.test.ts
+index 104641a..b34d265 100644
+--- a/tests/unit/cmsCorePages.test.ts
++++ b/tests/unit/cmsCorePages.test.ts
+@@ -29,3 +29,21 @@ it('imports only supplied source pages, preserves existing edits and does not du
+   first.content.sv.html = '<main>Owner edit</main>'
+   expect(ensureCorePages(result, [page])).toEqual(result)
+ })
++
++it('recognizes stored layouts without requiring newer optional scene markers', async () => {
++  const { hasCorePageLayouts } = await import('../../src/admin/cms/corePages')
++  const document = emptyDocument()
++  expect(hasCorePageLayouts(document)).toBe(false)
++  const paths = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']
++  document.presentation.pages = paths.map((path, index) => ({
++    id: CORE_PAGE_IDS[index]!, path, kind: 'page', inMenu: false,
++    name: { sv: path, en: path }, title: { sv: '', en: '' }, description: { sv: '', en: '' },
++    content: {
++      sv: { html: '<main data-knc-native="1">Owner copy</main>', css: { light: '', dark: '' } },
++      en: { html: '<main data-knc-native="1">Owner copy</main>', css: { light: '', dark: '' } },
++    },
++  }))
++  expect(hasCorePageLayouts(document)).toBe(true)
++  document.presentation.pages[0]!.content.sv.html = ''
++  expect(hasCorePageLayouts(document)).toBe(false)
++})
+diff --git a/tests/unit/cmsSourceReadCache.test.ts b/tests/unit/cmsSourceReadCache.test.ts
+new file mode 100644
+index 0000000..80e8e04
+--- /dev/null
++++ b/tests/unit/cmsSourceReadCache.test.ts
+@@ -0,0 +1,28 @@
++import { expect, it, vi } from 'vitest'
++import { memoizeSourceRead } from '../../src/admin/cms/sourceReadCache'
++
++it('coalesces pending and completed source reads but keeps languages separate', async () => {
++  let resolve: (value: string) => void = () => undefined
++  const read = vi.fn((lang: string) => new Promise<string>((done) => { resolve = done; void lang }))
++  const load = memoizeSourceRead(read)
++  const first = load('sv')
++  expect(load('sv')).toBe(first)
++  resolve('Owner copy')
++  await expect(first).resolves.toBe('Owner copy')
++  expect(load('sv')).toBe(first)
++  expect(read).toHaveBeenCalledTimes(1)
++  const english = load('en')
++  resolve('Owner English copy')
++  await expect(english).resolves.toBe('Owner English copy')
++  expect(read).toHaveBeenCalledTimes(2)
++})
++
++it('does not retain failed reads across retries or leak between capture sessions', async () => {
++  const read = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue('recovered')
++  const load = memoizeSourceRead(read)
++  await expect(load()).rejects.toThrow('offline')
++  await expect(load()).resolves.toBe('recovered')
++  const otherCapture = memoizeSourceRead(read)
++  await expect(otherCapture()).resolves.toBe('recovered')
++  expect(read).toHaveBeenCalledTimes(3)
++})
