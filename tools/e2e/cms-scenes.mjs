@@ -5,7 +5,8 @@ import { chromium, webkit } from 'playwright'
 import { nativeBackend } from './cms-native.mjs'
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 for (const [name, engine] of Object.entries({ chromium, webkit })) {
-  if (process.env.CMS_BROWSER && process.env.CMS_BROWSER !== name) continue
+  const selectedEngine = process.env.CMS_ENGINE ?? process.env.CMS_BROWSER
+  if (selectedEngine && selectedEngine !== name) continue
   const browser = await engine.launch()
   try {
     const context = await browser.newContext({

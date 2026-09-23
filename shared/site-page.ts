@@ -1,8 +1,8 @@
 import { themeDeclarations, siteThemeCss } from './site-theme.ts'
 import { repairDesktopCss } from './cms-device-css.ts'
+import { generate, parse, walk } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
-import { parse, generate, walk } from 'css-tree'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
@@ -31,6 +31,61 @@ const escape = (value: string): string =>
     .replaceAll('"', '&quot;')
 const href = (path: string, lang: CmsLang, mode: CmsMode): string =>
   `${path}?lang=${lang}&amp;mode=${mode}`
+const languageAction = 'cms-site-action-language'
+const themeAction = 'cms-site-action-theme'
+const hasClass = (node: Element, name: string): boolean =>
+  attr(node, 'class').split(/\s+/).includes(name)
+function addClass(node: Element, name: string): void {
+  if (hasClass(node, name)) return
+  const existing = attr(node, 'class').trim()
+  node.attrs = node.attrs.filter((item) => item.name !== 'class')
+  node.attrs.push({ name: 'class', value: existing ? `${existing} ${name}` : name })
+}
+
+function updateChromeActionLinks(html: string, path: string, lang: CmsLang, mode: CmsMode): string {
+  const tree = parseFragment(html)
+  const header = find(
+    tree,
+    (node) => node.tagName === 'header' && attr(node, 'id') === 'cms-site-header',
+  )
+  if (!header) return html
+  let changed = false
+  const update = (node: Node): void => {
+    if ('tagName' in node && node.tagName === 'a') {
+      const label = attr(node, 'aria-label')
+      const taggedLanguage = hasClass(node, languageAction)
+      const taggedTheme = hasClass(node, themeAction)
+      const languageToggle =
+        taggedLanguage ||
+        (!taggedTheme &&
+          (label === 'Byt språk till engelska' || label === 'Switch language to Swedish'))
+      const themeToggle =
+        !taggedLanguage &&
+        (taggedTheme || label === 'Växla ljust/mörkt' || label === 'Toggle light/dark')
+      if ((languageToggle || themeToggle) && attr(node, 'href')) {
+        let url: URL
+        try {
+          url = new URL(attr(node, 'href'), 'https://site.invalid')
+        } catch {
+          return
+        }
+        if (url.origin !== 'https://site.invalid' || url.pathname !== path) return
+        url.searchParams.set('lang', languageToggle ? (lang === 'sv' ? 'en' : 'sv') : lang)
+        url.searchParams.set('mode', themeToggle ? (mode === 'light' ? 'dark' : 'light') : mode)
+        node.attrs = node.attrs.map((item) =>
+          item.name === 'href'
+            ? { ...item, value: `${url.pathname}${url.search}${url.hash}` }
+            : item,
+        )
+        addClass(node, languageToggle ? languageAction : themeAction)
+        changed = true
+      }
+    }
+    for (const child of elements(node)) update(child)
+  }
+  update(header)
+  return changed ? serialize(tree) : html
+}
 
 export function sitePageLinks(pages: readonly CmsPage[], lang: CmsLang, mode: CmsMode): string {
   return pages
@@ -83,6 +138,11 @@ export function renderSitePage(
   mode: CmsMode,
 ): { html: string; css: string } {
   const variant = normalizeSitePageContent(page.content[lang], `${page.id}-${lang}`)
+  if (page.layout === 'independent')
+    return {
+      html: updateChromeActionLinks(variant.html, page.path, lang, mode),
+      css: repairDesktopCss(variant.css[mode]),
+    }
   const home = presentation.pages.find((item) => item.path === '/')?.content[lang]
   if (!home || !isSitePage(page)) return { html: variant.html, css: variant.css[mode] }
   const tree = parseFragment(home.html)
@@ -107,6 +167,48 @@ export function renderSitePage(
   }
   const chrome = (node: Element): string => {
     const clean = (current: Element): void => {
+      const children = elements(current)
+      const legacyLanguagePill =
+        current.tagName === 'div' &&
+        children.length === 2 &&
+        new Set(
+          children.map((child) =>
+            serialize(child)
+              .replace(/<[^>]*>/g, '')
+              .trim(),
+          ),
+        ).size === 2 &&
+        children.every((child) => {
+          const text = serialize(child)
+            .replace(/<[^>]*>/g, '')
+            .trim()
+          return (
+            child.tagName === 'button' &&
+            ['SV', 'EN'].includes(text) &&
+            attr(child, 'aria-pressed') !== ''
+          )
+        })
+      if (legacyLanguagePill) {
+        current.tagName = 'a'
+        current.nodeName = 'a'
+        current.attrs = current.attrs.filter(
+          (item) => !['type', 'aria-pressed'].includes(item.name),
+        )
+        current.attrs.push({
+          name: 'href',
+          value: `${page.path}?lang=${lang === 'sv' ? 'en' : 'sv'}&mode=${mode}`,
+        })
+        if (!attr(current, 'aria-label'))
+          current.attrs.push({
+            name: 'aria-label',
+            value: lang === 'sv' ? 'Byt språk till engelska' : 'Switch language to Swedish',
+          })
+        for (const child of children) {
+          child.tagName = 'span'
+          child.nodeName = 'span'
+          child.attrs = child.attrs.filter((item) => !['type', 'aria-pressed'].includes(item.name))
+        }
+      }
       const style = themeDeclarations(sourceStyle(current), mode)
       const baseline = attr(current, 'data-knc-baseline')
       const dark = attr(current, 'data-knc-dark-attrs')
@@ -126,27 +228,57 @@ export function renderSitePage(
           !['style', 'inert', 'draggable'].includes(item.name),
       )
       if (style) current.attrs.push({ name: 'style', value: style })
+      if (legacyLanguagePill) addClass(current, languageAction)
       for (const child of elements(current)) clean(child)
       if (current.tagName === 'button') {
         const text = serialize(current)
           .replace(/<[^>]*>/g, '')
           .trim()
         const label = attr(current, 'aria-label')
+        const hasPressedState = attr(current, 'aria-pressed') !== ''
+        const combinedLanguagePill =
+          children.length === 2 &&
+          children.every((child) => child.tagName === 'span') &&
+          new Set(
+            children.map((child) =>
+              serialize(child)
+                .replace(/<[^>]*>/g, '')
+                .trim(),
+            ),
+          ).size === 2 &&
+          children.every((child) =>
+            ['SV', 'EN'].includes(
+              serialize(child)
+                .replace(/<[^>]*>/g, '')
+                .trim(),
+            ),
+          )
+        const languageToggle =
+          combinedLanguagePill ||
+          /language|språk/i.test(label) ||
+          (['SV', 'EN'].includes(text) && hasPressedState)
+        const themeToggle = /ljust|dark|theme/i.test(label)
         current.tagName = 'a'
         current.nodeName = 'a'
         current.attrs = current.attrs.filter(
           (item) => !['type', 'aria-pressed'].includes(item.name),
         )
-        const targetLang = text === 'SV' ? 'sv' : text === 'EN' ? 'en' : lang
-        const targetMode = /ljust|dark|theme/i.test(label)
-          ? mode === 'light'
-            ? 'dark'
-            : 'light'
-          : mode
+        const targetLang = languageToggle
+          ? lang === 'sv'
+            ? 'en'
+            : 'sv'
+          : text === 'SV'
+            ? 'sv'
+            : text === 'EN'
+              ? 'en'
+              : lang
+        const targetMode = themeToggle ? (mode === 'light' ? 'dark' : 'light') : mode
         current.attrs.push({
           name: 'href',
           value: `${/integritet|privacy/i.test(`${label} ${text}`) ? '/privacy' : page.path}?lang=${targetLang}&mode=${targetMode}`,
         })
+        if (languageToggle) addClass(current, languageAction)
+        else if (themeToggle) addClass(current, themeAction)
       }
     }
     clean(node)
@@ -158,35 +290,54 @@ export function renderSitePage(
   const menu = `<a href="${href('/', lang, mode)}">${lang === 'sv' ? 'Hem' : 'Home'}</a><a href="${href('/booking', lang, mode)}">${lang === 'sv' ? 'Boka tid' : 'Book'}</a><a href="${href('/about', lang, mode)}">${lang === 'sv' ? 'Om oss' : 'About'}</a>${sitePageLinks(presentation.pages, lang, mode)}`
   return {
     html: `<div id="cms-site-shell" style="${escape(rootStyle)}"><header id="cms-site-header">${headerHtml}</header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}">${menu}</nav><div id="cms-site-content">${variant.html}</div><footer id="cms-site-footer">${infoHtml}${footerHtml}</footer></div>`,
-    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}#cms-site-header a{text-decoration:none}#cms-site-header a:has(>svg){color:inherit}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
+    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}:where(#cms-site-header) a{color:inherit;text-decoration:none}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
   }
 }
 
-/** Chrome belongs to the homepage. Save only content authored inside the new page. */
-export function sitePageBody(html: string): string {
-  const body = find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-content')
-  return body ? serialize(body) : html
-}
-
-export function sitePageCss(css: string, body: string): string {
-  const content = parseFragment(body)
+/** Derived chrome needs strong overrides while it still contains inline runtime
+ * styles. Once materialized, these are editable defaults below owner ID rules. */
+function editableChromeCss(css: string): string {
   const tree = parse(css)
   walk(tree, {
     visit: 'Rule',
-    enter(rule, item, list) {
-      let chromeRule = false
-      walk(rule.prelude, {
-        visit: 'IdSelector',
-        enter(selector) {
-          if (
-            /^(cms-site-|knc-|preview-)/.test(selector.name) &&
-            !find(content, (node) => attr(node, 'id') === selector.name)
-          )
-            chromeRule = true
-        },
+    enter(rule) {
+      const selector = generate(rule.prelude)
+      if (!selector.startsWith('#cms-site-')) return
+      const prelude = parse(selector.replace(/#(cms-site-[\w-]+)/g, '[id="$1"]'), {
+        context: 'selectorList',
       })
-      if (chromeRule && item && list) list.remove(item)
+      if (prelude.type !== 'SelectorList') throw new Error('Expected CSS selector list.')
+      rule.prelude = prelude
+      rule.block.children.forEach((declaration) => {
+        if (declaration.type === 'Declaration') declaration.important = false
+      })
     },
   })
   return generate(tree)
+}
+
+/** Materialize an independent page once. Its chrome becomes authored content, not
+ * a locked preview of another page. Normalize inline styles before GrapesJS can
+ * attach them to the currently selected device's media query. */
+export function createSitePage(presentation: CmsPresentation, page: CmsPage): CmsPage {
+  const next = structuredClone(page)
+  if (page.layout === 'independent') return next
+  for (const lang of ['sv', 'en'] as const) {
+    const render = (mode: CmsMode) => {
+      const rendered = renderSitePage(presentation, page, lang, mode)
+      rendered.css = editableChromeCss(rendered.css)
+      return normalizeSitePageContent(
+        { html: rendered.html, css: { light: rendered.css, dark: rendered.css } },
+        `${page.id}-${lang}`,
+      )
+    }
+    const light = render('light')
+    const dark = render('dark')
+    next.content[lang] = {
+      html: light.html,
+      css: { light: light.css.light, dark: dark.css.dark },
+    }
+  }
+  next.layout = 'independent'
+  return next
 }

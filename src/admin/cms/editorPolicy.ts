@@ -111,9 +111,7 @@ export function isProtected(component: Component): boolean {
     if (
       protectedIds.has(String(attrs['id'] ?? '')) ||
       attrs['data-knc-slot'] ||
-      (current === component &&
-        (attrs['data-knc-required'] === 'true' ||
-          ['cms-site-shell', 'cms-site-content'].includes(String(attrs['id'] ?? ''))))
+      (current === component && attrs['data-knc-required'] === 'true')
     )
       return true
     current = current.parent()
@@ -123,16 +121,6 @@ export function isProtected(component: Component): boolean {
 
 /** A rendered preview without a native identity cannot be projected back into runtime. */
 export function isReadOnlyPreview(component: Component): boolean {
-  let chrome: Component | undefined = component
-  while (chrome) {
-    if (
-      ['cms-site-header', 'cms-site-menu', 'cms-site-footer'].includes(
-        String(chrome.getAttributes()['id'] ?? ''),
-      )
-    )
-      return true
-    chrome = chrome.parent()
-  }
   const attrs = component.getAttributes()
   if (attrs['data-knc-source'] || attrs['data-knc-slot']) return false
   let parent = component.parent()
@@ -148,7 +136,6 @@ export function configureComponent(component: Component): void {
   const attrs = component.getAttributes()
   const protectedComponent = isProtected(component)
   const readOnly = isReadOnlyPreview(component)
-  const pageFrame = ['cms-site-shell', 'cms-site-content'].includes(String(attrs['id'] ?? ''))
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
     const attributes = child.getAttributes()
@@ -159,7 +146,7 @@ export function configureComponent(component: Component): void {
     )
   })
   component.set({
-    ...(readOnly || pageFrame ? { editable: false, stylable: false } : {}),
+    ...(readOnly ? { editable: false, stylable: false } : {}),
     // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
     ...(!readOnly && component.is('svg-in')
       ? { selectable: true, hoverable: true, layerable: true, highlightable: true }

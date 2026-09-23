@@ -339,8 +339,7 @@ export function App({
     }
   }, [chrome, initialStructuredData, lang, metadataReady])
 
-  const setSv = (): void => setState({ lang: 'sv' })
-  const setEn = (): void => setState({ lang: 'en' })
+  const toggleLanguage = (): void => setState((s) => ({ lang: s.lang === 'sv' ? 'en' : 'sv' }))
   const toggleMode = (): void => setState((s) => ({ mode: s.mode === 'dark' ? 'light' : 'dark' }))
   // Desktop: booking is the only fold. Closing it restores the scrollable homepage/About document.
   const toggleDeskBooking = (): void =>
@@ -473,14 +472,26 @@ export function App({
     </button>
   )
   const langToggle = (
-    <div style={langWrapStyle}>
-      <button onClick={setSv} aria-pressed={lang === 'sv'} style={svMiniStyle}>
+    <button
+      type="button"
+      onClick={toggleLanguage}
+      aria-label={lang === 'sv' ? 'Byt språk till engelska' : 'Switch language to Swedish'}
+      title={lang === 'sv' ? 'Byt språk till engelska' : 'Switch language to Swedish'}
+      style={{
+        ...langWrapStyle,
+        border: 'none',
+        color: 'inherit',
+        font: 'inherit',
+        cursor: 'pointer',
+      }}
+    >
+      <span aria-hidden="true" style={svMiniStyle}>
         SV
-      </button>
-      <button onClick={setEn} aria-pressed={lang === 'en'} style={enMiniStyle}>
+      </span>
+      <span aria-hidden="true" style={enMiniStyle}>
         EN
-      </button>
-    </div>
+      </span>
+    </button>
   )
 
   const myBookingsDialog = state.myBookingsOpen ? (

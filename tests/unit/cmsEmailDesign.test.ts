@@ -1,3 +1,4 @@
+import { buildEmailMessage } from '../../shared/email-render'
 import { describe, expect, it } from 'vitest'
 import {
   defaultEmailDesign,
@@ -24,6 +25,54 @@ function emailFixture() {
 }
 
 describe('CMS email design', () => {
+  it('activation preserves the delivered layout, with the same renderer after the first edit', () => {
+    const input = {
+      to: 'owner@example.com',
+      lang: 'sv' as const,
+      copy: {
+        subject: 'Booking',
+        preheader: 'Welcome',
+        title: 'Booked',
+        intro: 'Hello',
+        sectionTitle: 'Details',
+        note: 'Thanks',
+        ctaLabel: 'Open',
+        contactLead: 'Call',
+      },
+      ctaHref: 'https://example.com/booking',
+      rows: [
+        { label: 'Date', value: 'Monday' },
+        { label: 'Time', value: '12:00' },
+      ],
+      business: {
+        name: 'Blade & Blend Studio',
+        email: 'owner@example.com',
+        phoneHref: 'tel:+4631123456',
+        phoneDisplay: '031-123456',
+        address: 'Test street',
+        mapsHref: 'https://example.com/map',
+        cancellationPolicyHours: 24,
+      },
+    }
+    const before = buildEmailMessage(input).html
+    const design = defaultEmailDesign()
+    expect(buildEmailMessage({ ...input, copy: { ...input.copy, design } }).html).toBe(before)
+    // These are the old delivered template's identifying layout values, not self-parity alone.
+    for (const token of [
+      'BLADE &amp; BLEND',
+      'background:#303033',
+      'border-radius:18px',
+      'font-weight:650',
+      'padding:40px 34px 34px',
+      'border-bottom:1px solid #424245',
+      'font-size:32px;font-weight:750;letter-spacing:-.04em;line-height:1.12',
+    ])
+      expect(before).toContain(token)
+    design.width = 700
+    const after = buildEmailMessage({ ...input, copy: { ...input.copy, design } }).html
+    expect(after.replace('max-width:700px', 'max-width:600px')).toBe(before)
+  })
+
   it('renders the persisted design with expanded preview variables', () => {
     const email = emailFixture()
     const html = renderDesignedEmail(

@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from 'pg'
 import { customerCmsFixture } from './cms-customer.mjs'
+import { installEmptyCmsPresentation, verifyPublicFirstPaint } from './public-first-paint.mjs'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
@@ -399,6 +400,7 @@ async function verifyPublicPage(browser, viewport) {
   phase(`public ${viewport.width}x${viewport.height}: create context`)
   const errors = []
   const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: true })
+  await installEmptyCmsPresentation(context)
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
@@ -430,17 +432,37 @@ async function verifyPublicPage(browser, viewport) {
   assert(brokenImages.length === 0, `broken images: ${brokenImages.join(', ')}`)
 
   phase(`public ${viewport.width}x${viewport.height}: language toggle`)
-  await page
-    .getByRole('button', { name: 'EN', exact: true })
+  const switchToEnglish = page
+    .getByRole('button', {
+      name: 'Byt språk till engelska',
+      exact: true,
+    })
     .first()
-    .click({ timeout: WAIT_TIMEOUT })
-  assert(
-    (await page
-      .getByRole('button', { name: 'EN', exact: true })
-      .first()
-      .getAttribute('aria-pressed')) === 'true',
-    'language toggle did not activate English',
-  )
+  const languagePill = await switchToEnglish.boundingBox()
+  assert(languagePill, 'public language pill is missing')
+  await switchToEnglish.click({
+    position: { x: Math.max(4, Math.floor(languagePill.width * 0.2)), y: languagePill.height / 2 },
+    timeout: WAIT_TIMEOUT,
+  })
+  const switchToSwedish = page
+    .getByRole('button', {
+      name: 'Switch language to Swedish',
+      exact: true,
+    })
+    .first()
+  await switchToSwedish.waitFor({ timeout: WAIT_TIMEOUT })
+  await switchToSwedish.click({
+    position: { x: Math.max(4, Math.floor(languagePill.width * 0.8)), y: languagePill.height / 2 },
+    timeout: WAIT_TIMEOUT,
+  })
+  await switchToEnglish.waitFor({ timeout: WAIT_TIMEOUT })
+  await switchToEnglish.click({
+    position: { x: Math.max(4, Math.floor(languagePill.width / 2)), y: languagePill.height / 2 },
+    timeout: WAIT_TIMEOUT,
+  })
+  await page.getByRole('button', { name: 'My appointments', exact: true }).first().waitFor({
+    timeout: WAIT_TIMEOUT,
+  })
 
   phase(`public ${viewport.width}x${viewport.height}: my bookings dialog`)
   const myBookingsButton = page
@@ -456,6 +478,68 @@ async function verifyPublicPage(browser, viewport) {
   const about = page.locator('#om-oss')
   assert((await about.count()) === 1, 'About section is not mounted on the homepage')
   await about.scrollIntoViewIfNeeded({ timeout: WAIT_TIMEOUT })
+  if (viewport.width <= 768) {
+    const barberCarousel = page.getByRole('region', { name: 'The barbers', exact: true })
+    await barberCarousel.waitFor({ timeout: WAIT_TIMEOUT })
+    const layout = await barberCarousel.evaluate((node) => ({
+      overflowX: globalThis.getComputedStyle(node).overflowX,
+      touchAction: globalThis.getComputedStyle(node).touchAction,
+      hasTransform: Boolean(node.querySelector(':scope > [style*="transform"]')),
+    }))
+    assert(
+      layout.overflowX === 'auto',
+      'reduced-motion users keep native horizontal card scrolling',
+    )
+    // CSSOM may canonicalize horizontal pan plus pinch zoom to manipulation/auto.
+    const supportsHorizontalTouch =
+      ['manipulation', 'auto'].includes(layout.touchAction) ||
+      layout.touchAction.split(/\s+/).includes('pan-x')
+    assert(
+      supportsHorizontalTouch,
+      `reduced-motion carousel preserves horizontal touch scrolling: ${JSON.stringify(layout)}`,
+    )
+    assert(!layout.hasTransform, 'reduced-motion carousel does not initialize Embla transforms')
+    const cards = barberCarousel.locator('[role="button"][aria-expanded]')
+    const cardCount = await cards.count()
+    if (cardCount > 0) {
+      const first = cards.first()
+      await first.click({ timeout: WAIT_TIMEOUT })
+      assert(
+        (await first.getAttribute('aria-expanded')) === 'true',
+        'barber card expands from its photo/name',
+      )
+      const link = first.locator('a').first()
+      if ((await link.count()) > 0) {
+        await link.evaluate((node) =>
+          node.addEventListener('click', (event) => event.preventDefault(), { once: true }),
+        )
+        await link.click({ timeout: WAIT_TIMEOUT })
+        assert(
+          (await first.getAttribute('aria-expanded')) === 'true',
+          'profile link does not toggle its card',
+        )
+      }
+      if (cardCount > 1) {
+        const second = cards.nth(1)
+        await second.click({ timeout: WAIT_TIMEOUT })
+        assert(
+          (await first.getAttribute('aria-expanded')) === 'false',
+          'only one barber card stays expanded',
+        )
+        assert(
+          (await second.getAttribute('aria-expanded')) === 'true',
+          'selecting another barber keeps the carousel paused',
+        )
+        await second.click({ timeout: WAIT_TIMEOUT })
+      } else {
+        await first.click({ timeout: WAIT_TIMEOUT })
+      }
+      assert(
+        (await cards.nth(cardCount > 1 ? 1 : 0).getAttribute('aria-expanded')) === 'false',
+        'expanded barber card closes after the interaction',
+      )
+    }
+  }
   await waitForGalleryToSettle(page)
   const marqueeTransforms = await page
     .getByTestId('marquee-track')
@@ -662,6 +746,7 @@ async function verifyNormalMotionGalleryKeyboard(browser) {
     reducedMotion: 'no-preference',
     hasTouch: true,
   })
+  await installEmptyCmsPresentation(context)
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   const page = await context.newPage()
@@ -1043,7 +1128,7 @@ async function verifyCustomerBrowser() {
       ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
       ready(origin, preview, 'preview'),
     ])
-    cms = await customerCmsFixture({ db, stack, origin, work })
+    cms = await customerCmsFixture({ db, stack, origin, workerOrigin, work })
 
     for (const engine of [chromium, firefox, webkit]) {
       phase(`customer ${engine.name()}: seed isolated fixtures`)
@@ -1124,6 +1209,8 @@ async function verifyCustomerBrowser() {
           phase('customer: publish actual desktop/mobile CMS through the owner UI')
           await cms.publish(browser)
         }
+        phase(`customer ${engine.name()}: verify public CMS first paint`)
+        await verifyPublicFirstPaint(browser, workerOrigin, work)
         for (const width of [1280, 390]) {
           phase(`customer ${engine.name()} ${width}: permanent link and browser cookie`)
           const context = await browser.newContext({

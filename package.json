@@ -34,7 +34,9 @@
     "grapesjs": "0.23.6",
     "parse5": "8.0.1",
     "css-tree": "3.2.1",
-    "fontkit": "2.0.4"
+    "fontkit": "2.0.4",
+    "embla-carousel": "8.6.0",
+    "embla-carousel-auto-scroll": "8.6.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260910.1",

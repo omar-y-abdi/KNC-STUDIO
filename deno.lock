@@ -20,6 +20,8 @@
         "npm:@types/pg@^8.20.0",
         "npm:@vitest/coverage-v8@^4.1.11",
         "npm:css-tree@3.2.1",
+        "npm:embla-carousel-auto-scroll@8.6.0",
+        "npm:embla-carousel@8.6.0",
         "npm:eslint-plugin-no-unsanitized@^4.1.5",
         "npm:eslint-plugin-security@^3.0.1",
         "npm:eslint@^9.39.4",

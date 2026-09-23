@@ -1,3 +1,4 @@
+import { modeCss } from '../shared/cms-mode-css'
 import { repairDesktopCss } from '../shared/cms-device-css'
 import { siteThemeCss, themeDeclarations } from '../shared/site-theme'
 import { WorkerEntrypoint } from 'cloudflare:workers'
@@ -12,7 +13,7 @@ import {
 } from '../shared/cms'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
-import { privatePageTitle } from './site/routeMetadata'
+import { NATIVE_PUBLIC_PATHS, privatePageTitle } from './site/routeMetadata'
 import {
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
@@ -45,8 +46,6 @@ interface WorkerContext {
 const CANONICAL_HOST = 'bladeblendstudio.se'
 const WWW_HOST = `www.${CANONICAL_HOST}`
 const SITE_URL = `https://${CANONICAL_HOST}`
-const NATIVE_PATHS = ['/', '/about', '/booking', '/my-bookings']
-
 const PUBLIC_FILE_ALIASES: Readonly<Record<string, string>> = {
   '/privacy': '/privacy.html',
   '/terms': '/terms.html',
@@ -356,8 +355,8 @@ export function renderCmsPage(
   rendered = rendered.replace(
     '</head>',
     `<style id="cms-fonts">${fontCss}</style>` +
-      `<style id="cms-page-light" media="${mode === 'light' ? 'all' : 'not all'}">${repairDesktopCss(variant.css.light)}</style>` +
-      `<style id="cms-page-dark" media="${mode === 'dark' ? 'all' : 'not all'}">${repairDesktopCss(variant.css.dark)}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
+      `<style id="cms-page-light" media="${mode === 'light' ? 'all' : 'not all'}">${modeCss(repairDesktopCss(variant.css.light), 'light')}</style>` +
+      `<style id="cms-page-dark" media="${mode === 'dark' ? 'all' : 'not all'}">${modeCss(repairDesktopCss(variant.css.dark), 'dark')}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
   )
   let markup = variant.html
   if (markup.includes('data-knc-native="1"')) {
@@ -442,16 +441,17 @@ export function renderHomepageMetadata(html: string, discovery: BusinessDiscover
   rendered = replaceMetaContent(rendered, 'business-twitter-title', seo.title)
   rendered = replaceMetaContent(rendered, 'business-twitter-description', seo.description)
   rendered = replaceJsonScript(rendered, 'business-json-ld', structured)
-  // Readable first response, including when scripts fail or are disabled. Preact replaces this
-  // mount content on startup; business facts come from the same source as the visible shell.
+  // Keep a readable fallback for genuinely disabled scripting. With scripting enabled, the
+  // browser suppresses this subtree while the app bundle loads, so stale fallback content cannot
+  // flash before the published presentation is ready.
   return replaceElementContent(
     rendered,
     'root',
-    `<main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
+    `<noscript><main><h1>${escapeElementText(business.name)}</h1><p>${escapeElementText(seo.description)}</p>` +
       `<p>${escapeElementText(formatBusinessAddress(business))}</p>` +
       `<p><a href="mailto:${escapeAttribute(business.email)}">${escapeElementText(business.email)}</a></p>` +
       '<p>Aktivera JavaScript för att välja behandling och boka tid online.</p>' +
-      '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main>',
+      '<nav aria-label="Information"><a href="/privacy">Integritet och cookies</a> · <a href="/terms">Bokningsvillkor</a></nav></main></noscript>',
   )
 }
 
@@ -684,7 +684,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
 
   if (pathname === '/index.html') return redirectTo(url, '/')
 
-  if (NATIVE_PATHS.includes(pathname) && ['GET', 'HEAD'].includes(request.method)) {
+  if (NATIVE_PUBLIC_PATHS.includes(pathname) && ['GET', 'HEAD'].includes(request.method)) {
     // Native pages already render their CMS document in App. Parsing and embedding the entire
     // editor tree here duplicated that work and exhausted the production 10ms CPU budget.
     const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
@@ -862,7 +862,7 @@ export class PublicContent extends WorkerEntrypoint<Env> {
 function isPublicContentRequest(request: Request, url: URL): boolean {
   return (
     request.method === 'GET' &&
-    (NATIVE_PATHS.includes(url.pathname) || url.pathname === '/llms.txt')
+    (NATIVE_PUBLIC_PATHS.includes(url.pathname) || url.pathname === '/llms.txt')
   )
 }
 
@@ -881,9 +881,9 @@ export default {
     if (url.hostname === CANONICAL_HOST && isPublicContentRequest(request, url)) {
       try {
         const response = await context.exports.PublicContent.fetch(request)
-        if (response.status < 500 || !NATIVE_PATHS.includes(url.pathname)) return response
+        if (response.status < 500 || !NATIVE_PUBLIC_PATHS.includes(url.pathname)) return response
       } catch (error) {
-        if (!NATIVE_PATHS.includes(url.pathname)) throw error
+        if (!NATIVE_PUBLIC_PATHS.includes(url.pathname)) throw error
       }
       // Metadata must never take the interactive site down. A failed/CPU-limited renderer runs
       // in a separate entrypoint; this tiny fallback still loads the same app and published CMS.
