@@ -1,0 +1,173 @@
+diff --git a/.github/workflows/cms-startup.yml b/.github/workflows/cms-startup.yml
+new file mode 100644
+index 00000000..d5ca1f6b
+--- /dev/null
++++ b/.github/workflows/cms-startup.yml
+@@ -0,0 +1,65 @@
++name: CMS production startup
++on:
++  pull_request:
++  push:
++    branches: [main]
++permissions:
++  contents: read
++concurrency:
++  group: cms-startup-${{ github.ref }}
++  cancel-in-progress: true
++jobs:
++  startup:
++    name: Production startup (${{ matrix.engine }})
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    strategy:
++      fail-fast: false
++      matrix:
++        engine: [chromium, webkit]
++    env:
++      VITE_SUPABASE_URL: https://admin-harness.invalid
++      VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
++      CMS_ENGINE: ${{ matrix.engine }}
++      CMS_STARTUP_BUILT: '1'
++      CMS_EVIDENCE_DIR: /tmp/cms-startup
++      BASE_URL: http://127.0.0.1:4188
++    steps:
++      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
++        with:
++          persist-credentials: false
++      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
++        with:
++          node-version: 22
++          cache: npm
++      - name: Prepare build tools
++        run: |
++          mkdir -p "$CMS_EVIDENCE_DIR"
++          git rev-parse HEAD > "$CMS_EVIDENCE_DIR/commit.txt"
++          git rev-parse HEAD^{tree} > "$CMS_EVIDENCE_DIR/tree.txt"
++          bash tools/ci/setup-furl.sh
++      - name: Build and exercise production routes under CSP
++        shell: python3 tools/ci/furl_ci.py {0}
++        run: |
++          npm ci
++          npm run build
++          npx playwright install --with-deps "$CMS_ENGINE"
++          npm run preview -- --host 127.0.0.1 --port 4188 > "$CMS_EVIDENCE_DIR/server.log" 2>&1 &
++          server=$!
++          trap 'kill "$server" 2>/dev/null || true' EXIT
++          for attempt in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
++          curl -fsS "$BASE_URL" >/dev/null
++          node tools/e2e/cms-startup.mjs
++      - name: Compress server diagnostics
++        if: always()
++        run: |
++          for log in "$CMS_EVIDENCE_DIR"/*.log; do
++            test -f "$log" || continue
++            furl compress "$log" --json > "$log.furl.json" || true
++          done
++      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
++        if: always()
++        with:
++          name: cms-production-startup-${{ matrix.engine }}-${{ github.run_number }}
++          path: /tmp/cms-startup
++          retention-days: 7
+ diff --git a/src/admin/cms/Studio.tsx b/src/admin/cms/Studio.tsx
+index 39e45ee8..89df1ddb 100644
+--- a/src/admin/cms/Studio.tsx
++++ b/src/admin/cms/Studio.tsx
+@@ -18,6 +18,7 @@ import {
+   prepareCorePageSource,
+   isInventedSite,
+   hasCorePageLayouts,
++  retainCorePageLayouts,
+   needsCorePageSource,
+   CORE_PAGE_IDS,
+ } from './corePages'
+@@ -98,7 +99,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+     try {
+       const loaded = await cmsApi.state()
+       const stored = hasCorePageLayouts(loaded.document)
+-      if (!stored) await prepareCorePageSource(loaded.document)
++      if (stored) retainCorePageLayouts(loaded.document)
++      else await prepareCorePageSource(loaded.document)
+       const document = stored ? loaded.document : ensureCorePages(loaded.document)
+       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
+       const backup = loadBackup()
+@@ -114,7 +116,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
+         !isInventedSite(backup.document) &&
+         JSON.stringify(backup.document) !== JSON.stringify(document)
+       ) {
+-        const local = stored ? backup.document : ensureCorePages(backup.document)
++        const local = hasCorePageLayouts(backup.document)
++          ? backup.document
++          : ensureCorePages(backup.document)
+         const sameHead =
+           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
+         const merged =
+ diff --git a/src/admin/cms/corePages.ts b/src/admin/cms/corePages.ts
+index d0c266ec..56af191f 100644
+--- a/src/admin/cms/corePages.ts
++++ b/src/admin/cms/corePages.ts
+@@ -32,7 +32,7 @@ let sourcePages: readonly CmsPage[] = []
+ let loading: Promise<void> | undefined
+ 
+ /** A published complete document already contains the source layout. Capture only missing/legacy
+- * templates instead of replaying 24 live scenes on every visit to Studio. */
++ * templates instead of replaying every live scene on each visit to Studio. */
+ export function needsCorePageSource(document: CmsDocument): boolean {
+   for (const path of ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']) {
+     const page = document.presentation.pages.find((item) => item.path === path)
+@@ -59,11 +59,17 @@ export function needsCorePageSource(document: CmsDocument): boolean {
+   return false
+ }
+ 
++/** Keep authoritative layouts available for old backups/imports even when optional
++ * source capture is deferred or unavailable. Never seed unrelated authored pages. */
++export function retainCorePageLayouts(existing: CmsDocument): void {
++  sourcePages = existing.presentation.pages.filter((page) =>
++    CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
++  )
++}
++
+ export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
+   if (existing && !needsCorePageSource(existing)) {
+-    sourcePages = existing.presentation.pages.filter((page) =>
+-      CORE_PAGE_IDS.includes(page.id as (typeof CORE_PAGE_IDS)[number]),
+-    )
++    retainCorePageLayouts(existing)
+     return Promise.resolve()
+   }
+   loading ??= import('./nativePages')
+ diff --git a/tests/unit/cmsCorePages.test.ts b/tests/unit/cmsCorePages.test.ts
+index 73d6b140..7cadb48b 100644
+--- a/tests/unit/cmsCorePages.test.ts
++++ b/tests/unit/cmsCorePages.test.ts
+@@ -54,3 +54,30 @@ it('recognizes stored layouts without requiring newer optional scene markers', a
+   first.content.sv.html = ''
+   expect(hasCorePageLayouts(document)).toBe(false)
+ })
++
++
++it('retains authoritative core layouts for legacy restore without copying unrelated pages', async () => {
++  const { retainCorePageLayouts } = await import('../../src/admin/cms/corePages')
++  const document = emptyDocument()
++  const page: CmsPage = {
++    id: CORE_PAGE_IDS[0], path: '/', kind: 'page', inMenu: true,
++    name: { sv: 'Home', en: 'Home' }, title: { sv: '', en: '' },
++    description: { sv: '', en: '' },
++    content: {
++      sv: { html: '<main data-knc-native="1">Stored layout</main>', css: { light: '', dark: '' } },
++      en: { html: '<main data-knc-native="1">Stored layout</main>', css: { light: '', dark: '' } },
++    },
++  }
++  document.presentation.pages = [page, { ...page, id: 'custom-page', path: '/custom' }]
++  retainCorePageLayouts(document)
++  try {
++    const legacy = emptyDocument()
++    legacy.settings.business_name = 'Unsaved owner name'
++    const restored = ensureCorePages(legacy)
++    expect(restored.presentation.pages).toEqual([page])
++    expect(restored.settings.business_name).toBe('Unsaved owner name')
++    expect(legacy.presentation.pages).toEqual([])
++  } finally {
++    retainCorePageLayouts(emptyDocument())
++  }
++})
