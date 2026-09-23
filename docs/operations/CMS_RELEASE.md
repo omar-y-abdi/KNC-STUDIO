@@ -79,6 +79,13 @@ If the separate metadata entrypoint throws or returns a server error, the outer 
 app shell directly; the browser still loads the current published CMS. This also protects native
 routes from transient renderer CPU exhaustion while retaining error visibility in Worker logs.
 
+Native routes keep the app root visually gated until `/api/cms/presentation` has been fetched and
+validated. While it loads, the application shows its loading state instead of briefly exposing the
+default native hero; a failed fetch exposes retry behavior. With JavaScript disabled, the Worker
+serves a readable `<noscript>` business summary and booking-activation message. The public
+first-paint gate covers delayed load, reload and the no-JavaScript response; it does not establish
+production deployment state.
+
 Home's derived About preview is reconstructed from the current About draft, not persisted into
 Home on each edit. Exports strip the derived subtree/CSS and duplicate rules. Existing publication
 content is left intact until the owner edits it; no automatic rollback or republishing is required.
@@ -97,9 +104,20 @@ not fix stale validators, panel stacking or discarded styles.
 These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mjs` and `app.mjs`:
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
 Booking/auth components remain native to Blade & Blend. `shared/site-page.ts` follows O-Y-A's
-layout wrapper: custom pages render the current home header/logo, contact strip and About footer
-in the editor, locked preview and public Worker. Only authored page content is stored on the new
-page. Menu links are derived from published page metadata.
+layout wrapper for legacy custom pages: when a page has no independent layout, the editor, locked
+preview and public Worker derive its header/logo, contact strip and About footer from the site's
+current pages. On first edit, that chrome is materialized into a page-owned layout in both
+languages and themes. New independent pages persist the complete authored HTML and CSS, including
+header, menu, content and footer; public rendering returns that saved layout instead of
+recomposing it from Home and About. Older records without the layout flag remain supported and
+continue using the derived renderer until materialized.
+
+The independent layout flag is part of the validated CMS document. Update `shared/cms-release.ts`
+with the shared validator and deploy the matching `cms-studio` Function before deploying a
+frontend that publishes this field. Do not treat the frontend release stamp or fixture publication
+as proof that the production Function has been updated. Derived menu links use metadata from the
+current presentation: the editor uses its draft, while the public Worker uses the published
+presentation. A materialized page owns its menu markup and styles.
 
 The editor's screenshot-driven visual contract lives in `src/admin/cms/DESIGN.md` and
 `UX-CONTRACT.md`. Chrome stays light when editing a dark website. Page settings appear in the
@@ -133,9 +151,13 @@ pixel parity are not implied by these checks.
 ## Conditional booking and customer views
 
 The Booking and My Bookings pages have a “Visa i editorn” selector. Booking exposes the barber
-view, date/service/time options, customer details and confirmation. My Bookings exposes link
-lookup and the populated booking list. These are independent native regions on their existing
-CMS pages, using the actual public components; no extra routes or database tables are needed.
+view, date/service/time options, customer details and confirmation. Each booking scene keeps the
+surrounding native booking page visible; the selected options panel replaces the runtime preview
+inside the existing booking flow, while details and confirmation appear over that flow. The
+selection is editor-only: export restores the canonical native shell and stores each stage once.
+My Bookings exposes link lookup and the populated booking list. These are native regions on their
+existing CMS pages, using the actual public components; no extra routes or database tables are
+needed.
 The isolated source/locked-preview context supplies example contacts, availability and customer
 bookings. Public catalog reads remain real, with explicit example entries only for an empty
 catalog. Every preview write remains denied. Public visitors never receive the example context.
@@ -146,11 +168,19 @@ card IDs are namespaced per actual booking, while all rows consume the same auth
 Unchanged text and input values follow live runtime data; calendar cells keep their runtime tag
 when a different month changes empty cells into date buttons. Input placeholders are editable.
 
+The `/about` template now carries mobile barber-marquee metadata and styles alongside its desktop
+baseline. When an older saved draft lacks the fold marker or mobile styles, the source upgrade maps
+the new metadata to stable native source identities and preserves the existing editable nodes and
+owner text. Capture renders a static roster and does not initialize Embla, so generated transforms
+and loop clones are not stored in CMS HTML. Runtime mobile pages initialize the carousel; users who
+prefer reduced motion retain manual horizontal scrolling.
+
 Mobile editing uses the same collapse geometry as MobileSite. Its temporary canvas stylesheet
 animates the sticky panel, small logo, controls, hero fade and spacer. That stylesheet is outside
 the GrapesJS model, so scrolling cannot become a published layout change. Comparison screenshots
-remain static. Deploy the matching `cms-studio` stamp before the frontend because the native
-metadata validator now recognizes motion hooks and placeholder baselines.
+remain static. The shared SV/EN control is one accessible button that switches the entire site
+language from either visual label. Deploy the matching `cms-studio` stamp before the frontend
+because the native metadata validator now recognizes motion hooks and placeholder baselines.
 
 ## Rollback
 

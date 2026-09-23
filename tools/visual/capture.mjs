@@ -4,6 +4,7 @@
 //   OUT  = output dir
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
+import { installEmptyCmsPresentation } from '../e2e/public-first-paint.mjs'
 
 const BASE = process.env.BASE ?? 'http://localhost:8011'
 const OUT = process.env.OUT ?? '/tmp/shots'
@@ -27,12 +28,20 @@ try {
           deviceScaleFactor: 2,
           reducedMotion: 'reduce',
         })
+        await installEmptyCmsPresentation(ctx)
         const page = await ctx.newPage()
         await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 })
-        await page.waitForSelector('#root > :first-child', { timeout: 15000 })
+        const switchToEnglish = page.getByRole('button', {
+          name: 'Byt språk till engelska',
+          exact: true,
+        })
+        await switchToEnglish.waitFor({ state: 'visible', timeout: 15000 })
         await page.evaluate(() => globalThis.document.fonts.ready)
         if (lang === 'en') {
-          await page.getByRole('button', { name: 'EN', exact: true }).first().click()
+          await switchToEnglish.click()
+          await page
+            .getByRole('button', { name: 'Switch language to Swedish', exact: true })
+            .waitFor({ state: 'visible', timeout: 15000 })
           await page.waitForTimeout(500)
         }
         await page.waitForTimeout(700) // let fonts + entry transitions settle

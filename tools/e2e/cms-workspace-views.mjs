@@ -493,14 +493,80 @@ for (const [engine, engineName, widths] of [
           await page.getByLabel('Visa i editorn', { exact: true }).waitFor()
           for (const scene of ['booking-options', 'booking-details', 'booking-confirmation']) {
             await page.getByLabel('Visa i editorn', { exact: true }).selectOption(scene)
-            await frame.locator(`[data-knc-surface="${scene}"]`).waitFor()
+            const surface = compact ? 'mobile-booking' : 'desktop-booking'
+            const shell = frame.locator(`[data-knc-surface="${surface}"]`)
+            const flow = shell.locator('[data-knc-fold="booking-flow"]')
+            const stage = flow.locator(`[data-knc-surface="${scene}"]`)
+            const contentLabel = {
+              'booking-options': 'Välj en dag',
+              'booking-details': 'Dina uppgifter',
+              'booking-confirmation': 'Tack — din tid är bokad!',
+            }[scene]
+            await shell.waitFor({ state: 'visible' })
+            await flow.waitFor({ state: 'visible' })
+            await stage.waitFor({ state: 'visible' })
+            await stage.getByText(contentLabel, { exact: true }).waitFor({ state: 'visible' })
+            if (scene !== 'booking-options')
+              await flow
+                .locator('[data-knc-surface="booking-options"]')
+                .waitFor({ state: 'visible' })
             await frame.locator('#cms-canvas-behavior').waitFor({ state: 'attached' })
-            await page.waitForFunction((selected) => {
-              const doc = globalThis.document.querySelector('.gjs-frame')?.contentDocument
-              return doc
-                ?.querySelector('#cms-canvas-behavior')
-                ?.textContent.includes(`:not([data-knc-surface="${selected}"])`)
+            const composition = await shell.evaluate((root, selected) => {
+              const rect = (node) => {
+                if (!node) return null
+                const bounds = node.getBoundingClientRect()
+                return {
+                  left: bounds.left,
+                  right: bounds.right,
+                  top: bounds.top,
+                  bottom: bounds.bottom,
+                  width: bounds.width,
+                  height: bounds.height,
+                }
+              }
+              const flow = root.querySelector('[data-knc-fold="booking-flow"]')
+              const stage = flow?.querySelector(`[data-knc-surface="${selected}"]`)
+              const headerControl = root.querySelector(
+                'button[aria-label*="språk"],button[aria-label*="language"]',
+              )
+              const pageContent = root.querySelector('main,[data-knc-fold="panel"]')
+              const rootRect = root.getBoundingClientRect()
+              const stageRect = stage?.getBoundingClientRect()
+              const options =
+                selected === 'booking-options'
+                  ? stage
+                  : flow?.querySelector('[data-knc-surface="booking-options"]')
+              return {
+                headerControl: Boolean(headerControl?.getClientRects().length),
+                pageContent: Boolean(pageContent?.getClientRects().length),
+                flow: Boolean(flow?.getClientRects().length),
+                stage: Boolean(stage?.getClientRects().length),
+                selectedStageCount: root.ownerDocument.querySelectorAll(
+                  `[data-knc-surface="${selected}"]`,
+                ).length,
+                stageInsidePage:
+                  Boolean(stageRect) &&
+                  stageRect.left >= rootRect.left - 1 &&
+                  stageRect.right <= rootRect.right + 1,
+                optionsRemainVisible: Boolean(options?.getClientRects().length),
+                horizontalOverflow: root.scrollWidth > root.clientWidth + 1,
+                root: rect(root),
+                flowBounds: rect(flow),
+                stageBounds: rect(stage),
+              }
             }, scene)
+            check(
+              composition.headerControl &&
+                composition.pageContent &&
+                composition.flow &&
+                composition.stage &&
+                composition.selectedStageCount === 1 &&
+                composition.stageInsidePage &&
+                composition.optionsRemainVisible &&
+                !composition.horizontalOverflow,
+              `${prefix}/${scene}: selected content remains in the full booking page shell`,
+              composition,
+            )
             await capture(`27-${scene}`)
           }
         })

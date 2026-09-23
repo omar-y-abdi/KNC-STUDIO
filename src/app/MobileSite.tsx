@@ -462,6 +462,7 @@ export function MobileSite(props: MobileSiteProps): JSX.Element {
           </LazySurface>
         ) : (
           <AboutSection
+            mobile
             mode={props.mode}
             lang={props.lang}
             fontScale={props.aboutScale}

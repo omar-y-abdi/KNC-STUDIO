@@ -2,7 +2,8 @@ import { chromium, firefox, webkit } from 'playwright'
 
 const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4188').replace(/\/$/, '')
 const scenario = process.env.ADMIN_E2E_SCENARIO ?? 'all'
-if (!['all', 'cms-shell'].includes(scenario)) throw new Error('Unsupported admin E2E scenario')
+if (!['all', 'cms-shell', 'privacy'].includes(scenario))
+  throw new Error('Unsupported admin E2E scenario')
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
@@ -2318,7 +2319,8 @@ async function verifyPrivacy(
       about: aboutStrings(lang),
     }
   }, lang)
-  if (lang === 'en') await page.getByRole('button', { name: 'EN', exact: true }).click()
+  if (lang === 'en')
+    await page.getByRole('button', { name: 'Byt språk till engelska', exact: true }).click()
   const notice = page.getByRole('region', { name: strings.privacy.title, exact: true })
   await notice.waitFor({ state: 'attached' })
   const choice = () =>
@@ -2666,6 +2668,13 @@ const chromiumScenarios =
         verifyCustomerEmail,
         ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
       ]
+if (scenario === 'privacy') {
+  chromiumScenarios.splice(
+    0,
+    chromiumScenarios.length,
+    ...privacyCases.map((options) => (page) => verifyPrivacy(page, options)),
+  )
+}
 let passed = 0
 try {
   for (const verify of chromiumScenarios) {
@@ -2680,7 +2689,9 @@ try {
     }
   }
   console.log(
-    `Browser regressions passed (${passed} scenarios): history, draft publish, admin lifecycle/ordering, hydration, customer identity, delayed catalog and responsive privacy controls.`,
+    scenario === 'privacy'
+      ? `Responsive privacy passed (${passed} scenarios): chromium.`
+      : `Browser regressions passed (${passed} scenarios): history, draft publish, admin lifecycle/ordering, hydration, customer identity, delayed catalog and responsive privacy controls.`,
   )
 } finally {
   await browser.close()
@@ -2700,17 +2711,21 @@ for (const engine of secondaryEngines) {
           await page.close()
         }
       }
-    const cmsPage = await browser.newPage()
-    cmsPage.setDefaultTimeout(10_000)
-    try {
-      await verifyCmsStudioShell(cmsPage)
-    } finally {
-      await cmsPage.close()
+    if (scenario !== 'privacy') {
+      const cmsPage = await browser.newPage()
+      cmsPage.setDefaultTimeout(10_000)
+      try {
+        await verifyCmsStudioShell(cmsPage)
+      } finally {
+        await cmsPage.close()
+      }
     }
     console.log(
       scenario === 'cms-shell'
         ? `CMS mobile shell passed: ${engine.name()}.`
-        : `Responsive privacy passed (${privacyCases.length} scenarios) plus CMS mobile shell: ${engine.name()}.`,
+        : scenario === 'privacy'
+          ? `Responsive privacy passed (${privacyCases.length} scenarios): ${engine.name()}.`
+          : `Responsive privacy passed (${privacyCases.length} scenarios) plus CMS mobile shell: ${engine.name()}.`,
     )
   } finally {
     await browser.close()

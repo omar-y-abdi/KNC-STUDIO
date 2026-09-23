@@ -1,7 +1,7 @@
 import { themeDeclarations } from '../../../shared/site-theme'
 import { modeCss } from '../../../shared/cms-mode-css'
 import { repairDesktopCss } from '../../../shared/cms-device-css'
-import { generate, parse, walk } from 'css-tree'
+import { generate, ident, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 
@@ -28,6 +28,50 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   return value as Record<string, string>
 }
 
+function nativeStyle(element: Element, mode: CmsMode): CSSStyleDeclaration {
+  const style = document.createElement('span').style
+  style.cssText = themeDeclarations(
+    element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? '',
+    mode,
+  )
+  return style
+}
+
+function normalizeNativeCss(
+  css: string,
+  originals: ReadonlyMap<string, CSSStyleDeclaration>,
+  removeUnchanged: boolean,
+): string {
+  const stylesheet = parse(css)
+  const normalizeValue = (value: string): string => generate(parse(value, { context: 'value' }))
+  walk(stylesheet, {
+    visit: 'Rule',
+    enter(rule) {
+      // Source mobile rules carry a structural :where() marker; only bare IDs are owner rules.
+      if (rule.prelude.type !== 'SelectorList' || rule.prelude.children.size !== 1) return
+      const selector = rule.prelude.children.first
+      if (selector?.type !== 'Selector' || selector.children.size !== 1) return
+      const id = selector.children.first
+      const original = id?.type === 'IdSelector' ? originals.get(ident.decode(id.name)) : undefined
+      if (!original) return
+      rule.block.children.forEach((declaration, item) => {
+        if (declaration.type !== 'Declaration') return
+        const name = declaration.property
+        const normalized = document.createElement('span').style
+        normalized.setProperty(name, generate(declaration.value))
+        const unchanged =
+          !this.atrule &&
+          normalizeValue(normalized.getPropertyValue(name)) ===
+            normalizeValue(original.getPropertyValue(name))
+        if (unchanged) {
+          if (removeUnchanged) rule.block.children.remove(item)
+        } else declaration.important = true
+      })
+    },
+  })
+  return generate(stylesheet)
+}
+
 export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: string; css: string } {
   if (!variant.html.includes('data-knc-native="1"'))
     return {
@@ -38,6 +82,7 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
     }
   const doc = new DOMParser().parseFromString(variant.html, 'text/html')
   const rules: string[] = []
+  const originalStyles = new Map<string, CSSStyleDeclaration>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
@@ -48,13 +93,17 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
     }
     const style =
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
+    if (element.id) originalStyles.set(element.id, nativeStyle(element, mode))
     if (style && element.id)
       rules.push(`#${CSS.escape(element.id)}{${themeDeclarations(style, mode)}}`)
     element.removeAttribute('style')
   }
   return {
     html: doc.body.innerHTML,
-    css: rules.join('\n') + '\n' + repairDesktopCss(variant.css[mode]),
+    css:
+      rules.join('\n') +
+      '\n' +
+      normalizeNativeCss(repairDesktopCss(variant.css[mode]), originalStyles, false),
   }
 }
 
@@ -68,12 +117,7 @@ export function exportNativeCanvas(
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const originalStyles = new Map<string, CSSStyleDeclaration>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
-    const style = document.createElement('span').style
-    style.cssText = themeDeclarations(
-      element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? '',
-      mode,
-    )
-    if (element.id) originalStyles.set(element.id, style)
+    if (element.id) originalStyles.set(element.id, nativeStyle(element, mode))
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
     for (const name of attributes) {
@@ -83,33 +127,7 @@ export function exportNativeCanvas(
     }
     element.removeAttribute('style')
   }
-  const stylesheet = parse(css)
-  walk(stylesheet, {
-    visit: 'Rule',
-    enter(rule) {
-      const selector = generate(rule.prelude)
-      const match = /^#([a-zA-Z][a-zA-Z0-9_-]*)$/.exec(selector)
-      const original = match?.[1] ? originalStyles.get(match[1]) : undefined
-      if (!original) return
-      rule.block.children.forEach((declaration, item) => {
-        if (declaration.type !== 'Declaration') return
-        const name = declaration.property
-        const value = generate(declaration.value)
-        const normalized = document.createElement('span').style
-        normalized.setProperty(name, value)
-        const normalizeValue = (value: string): string =>
-          generate(parse(value, { context: 'value' }))
-        if (
-          !this.atrule &&
-          normalizeValue(normalized.getPropertyValue(name)) ===
-            normalizeValue(original.getPropertyValue(name))
-        )
-          rule.block.children.remove(item)
-        else declaration.important = true
-      })
-    },
-  })
-  return { html: doc.body.innerHTML, css: generate(stylesheet) }
+  return { html: doc.body.innerHTML, css: normalizeNativeCss(css, originalStyles, true) }
 }
 
 /** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands). */

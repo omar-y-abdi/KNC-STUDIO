@@ -803,7 +803,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     aria-label={value === 'Desktop' ? 'Dator' : 'Mobil'}
                     title={value === 'Desktop' ? 'Dator · 1440 px' : 'Mobil · 390 px'}
                     aria-pressed={device === value && !compare}
-                    onClick={() => setDevice(value)}
+                    onClick={() => {
+                      editor.current?.flush()
+                      setDevice(value)
+                    }}
                   >
                     <CmsIcon name={value === 'Desktop' ? 'desktop' : 'mobile'} />
                     <span>{value === 'Desktop' ? 'Dator' : 'Mobil'}</span>

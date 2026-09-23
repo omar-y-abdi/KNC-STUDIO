@@ -156,6 +156,7 @@ jobs:
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-scenes.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-public-regression.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-populated.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-barber-marquee.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-conflict.mjs || status=1
           exit "$status"
       - name: Preserve CMS browser evidence
@@ -165,6 +166,7 @@ jobs:
           name: cms-browser-${{ github.run_attempt }}
           path: |
             /tmp/cms-native-*.png
+            /tmp/cms-native-*-barber.json
             /tmp/blade-cms-shell.log
           retention-days: 7
 
@@ -253,7 +255,10 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: customer-browser-${{ github.run_attempt }}
-          path: /tmp/knc-customer-e2e-*/*.png
+          path: |
+            /tmp/knc-customer-e2e-*/*.png
+            /tmp/knc-customer-e2e-*/public-first-paint-*.json
+            /tmp/knc-customer-e2e-*/cms-studio-request-metrics.json
           retention-days: 7
       - name: Stop local Supabase
         if: always()

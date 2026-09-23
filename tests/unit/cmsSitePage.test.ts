@@ -30,6 +30,27 @@ function fixture() {
 }
 
 describe('new pages extend the published website', () => {
+  const languageHref = (html: string): URL => {
+    const value = html.match(/href="(\/extra\?lang=[^"]+)"/)?.[1]
+    if (!value) throw new Error('Independent page language link is missing')
+    return new URL(value.replaceAll('&amp;', '&'), 'https://example.test')
+  }
+  const themeHref = (html: string): URL => {
+    const value = html.match(
+      /<a\b(?=[^>]*aria-label="(?:Växla ljust\/mörkt|Toggle light\/dark)")[^>]*href="([^"]+)"/,
+    )?.[1]
+    if (!value) throw new Error('Independent page theme link is missing')
+    return new URL(value.replaceAll('&amp;', '&'), 'https://example.test')
+  }
+  const actionHref = (html: string, action: 'language' | 'theme'): URL => {
+    const marker = action === 'language' ? 'cms-site-action-language' : 'cms-site-action-theme'
+    const tag = (html.match(/<a\b[^>]*>/g) ?? []).find((anchor) =>
+      (anchor.match(/\bclass="([^"]+)"/)?.[1] ?? '').split(/\s+/).includes(marker),
+    )
+    const value = tag?.match(/\bhref="([^"]+)"/)?.[1]
+    if (!value) throw new Error(`Independent page ${action} action is missing`)
+    return new URL(value.replaceAll('&amp;', '&'), 'https://example.test')
+  }
   it('seeds an independent fully authored page with theme baselines outside device media rules', () => {
     const { document, page, home } = fixture()
     const created = createSitePage(document.presentation, page)
@@ -64,6 +85,100 @@ describe('new pages extend the published website', () => {
     expect(normalized.css.dark).toContain('padding:64px 32px')
     expect(normalized.css.dark).toContain('h1{color:white}')
     expect(normalizeSitePageContent(normalized, 'test-sv')).toEqual(normalized)
+  })
+  it('makes the shared language pill switch to the opposite language on independent pages', () => {
+    const { document, home, page } = fixture()
+    home.content.sv.html = home.content.sv.html.replace(
+      '<button>EN</button>',
+      '<button aria-label="Byt språk till engelska" aria-pressed="false"><span>SV</span><span>EN</span></button><button aria-label="Växla ljust/mörkt">Theme</button>',
+    )
+    home.content.en.html = home.content.en.html.replace(
+      '<button>EN</button>',
+      '<button aria-label="Switch language to Swedish" aria-pressed="true"><span>SV</span><span>EN</span></button><button aria-label="Toggle light/dark">Theme</button>',
+    )
+    const created = createSitePage(document.presentation, page)
+    const svOutput = renderSitePage(document.presentation, created, 'sv', 'light').html
+    const enOutput = renderSitePage(document.presentation, created, 'en', 'dark').html
+    expect(languageHref(svOutput).searchParams.get('lang')).toBe('en')
+    expect(languageHref(svOutput).searchParams.get('mode')).toBe('light')
+    expect(themeHref(svOutput).searchParams.get('mode')).toBe('dark')
+    expect(languageHref(enOutput).searchParams.get('lang')).toBe('sv')
+    expect(languageHref(enOutput).searchParams.get('mode')).toBe('dark')
+    expect(themeHref(enOutput).searchParams.get('mode')).toBe('light')
+  })
+  it('retargets generated controls by their stable class while preserving native IDs and owner labels', () => {
+    const { document, home, page } = fixture()
+    for (const lang of ['sv', 'en'] as const)
+      home.content[lang].html = home.content[lang].html.replace(
+        '<button>EN</button>',
+        `<button id="native-lang" class="owner-pill" aria-label="${lang === 'sv' ? 'Byt språk till engelska' : 'Switch language to Swedish'}"><span>SV</span><span>EN</span></button><button id="native-theme" class="owner-theme" aria-label="${lang === 'sv' ? 'Växla ljust/mörkt' : 'Toggle light/dark'}">Theme</button>`,
+      )
+    const created = createSitePage(document.presentation, page)
+    for (const lang of ['sv', 'en'] as const) {
+      created.content[lang].html = created.content[lang].html
+        .replace(
+          /aria-label="(?:Byt språk till engelska|Switch language to Swedish)"/,
+          'aria-label="Owner language label"',
+        )
+        .replace(
+          /aria-label="(?:Växla ljust\/mörkt|Toggle light\/dark)"/,
+          'aria-label="Owner theme label"',
+        )
+        .replace(
+          '</header>',
+          '<a id="owner-external" aria-label="Byt språk till engelska" href="https://example.org/extra?lang=sv">External</a><a id="owner-local" href="/extra?lang=sv&amp;mode=light">Owner link</a></header>',
+        )
+      for (const mode of ['light', 'dark'] as const) {
+        const output = renderSitePage(document.presentation, created, lang, mode).html
+        const language = actionHref(output, 'language')
+        const theme = actionHref(output, 'theme')
+        expect(language.searchParams.get('lang')).toBe(lang === 'sv' ? 'en' : 'sv')
+        expect(language.searchParams.get('mode')).toBe(mode)
+        expect(theme.searchParams.get('lang')).toBe(lang)
+        expect(theme.searchParams.get('mode')).toBe(mode === 'light' ? 'dark' : 'light')
+        expect(output).toContain('id="native-lang"')
+        expect(output).toContain('id="native-theme"')
+        expect(output).toContain('owner-pill cms-site-action-language')
+        expect(output).toContain('owner-theme cms-site-action-theme')
+        expect(output).toContain('aria-label="Owner language label"')
+        expect(output).toContain('aria-label="Owner theme label"')
+        expect(output).toContain('href="https://example.org/extra?lang=sv"')
+        expect(output).toContain('id="owner-local" href="/extra?lang=sv&amp;mode=light"')
+      }
+    }
+  })
+  it('recognizes the combined SV/EN pill before materialization even with an owner label', () => {
+    const { document, home, page } = fixture()
+    for (const lang of ['sv', 'en'] as const)
+      home.content[lang].html = home.content[lang].html.replace(
+        '<button>EN</button>',
+        '<button id="native-lang" aria-label="Välj alternativ"><span>SV</span><span>EN</span></button>',
+      )
+    const created = createSitePage(document.presentation, page)
+    for (const lang of ['sv', 'en'] as const) {
+      const output = renderSitePage(document.presentation, created, lang, 'light').html
+      expect(actionHref(output, 'language').searchParams.get('lang')).toBe(
+        lang === 'sv' ? 'en' : 'sv',
+      )
+      expect(output).toContain('id="native-lang"')
+      expect(output).toContain('aria-label="Välj alternativ"')
+    }
+  })
+  it('converts a legacy two-button language pill into one opposite-language link', () => {
+    const { document, home, page } = fixture()
+    for (const lang of ['sv', 'en'] as const)
+      home.content[lang].html = home.content[lang].html.replace(
+        '<button>EN</button>',
+        '<div id="legacy-lang-pill"><button aria-pressed="true">SV</button><button aria-pressed="false">EN</button></div>',
+      )
+    const created = createSitePage(document.presentation, page)
+    const svOutput = renderSitePage(document.presentation, created, 'sv', 'light').html
+    const enOutput = renderSitePage(document.presentation, created, 'en', 'dark').html
+    expect(languageHref(svOutput).searchParams.get('lang')).toBe('en')
+    expect(languageHref(enOutput).searchParams.get('lang')).toBe('sv')
+    expect(languageHref(enOutput).searchParams.get('mode')).toBe('dark')
+    expect(svOutput).not.toContain('<a id="legacy-lang-pill"><a')
+    expect(enOutput).not.toContain('<a id="legacy-lang-pill"><a')
   })
   it('uses current branding, menu, theme and footer in the actual Worker response', () => {
     const { document, home, page } = fixture()

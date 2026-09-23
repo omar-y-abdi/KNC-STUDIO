@@ -5,6 +5,7 @@ import { repairDesktopCss } from '../../shared/cms-device-css'
 import { createInstanceScope, nativeNodeId, type InstanceScope } from './instanceScope'
 import { createContext, Fragment, h, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, JSX, VNode } from 'preact'
+import { useLocation } from 'wouter-preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
 import {
   validatePresentation,
@@ -13,6 +14,7 @@ import {
   type CmsPresentation,
   type CmsPage,
 } from '../../shared/cms'
+import { isNativePublicPath } from '../site/routeMetadata'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
@@ -21,6 +23,10 @@ const NativeContext = createContext<{
 
 export function useCmsPresentation(): CmsPresentation | null {
   return useContext(NativeContext)?.presentation ?? null
+}
+
+export function useNativeSource(): boolean {
+  return useContext(NativeContext)?.source ?? false
 }
 
 export function useCmsPageLinks(): readonly CmsPage[] {
@@ -41,6 +47,60 @@ interface NativeRenderContext {
 }
 const RenderContext = createContext<NativeRenderContext | null>(null)
 const SlotContext = createContext<(NativeRenderContext & { identity: string }) | null>(null)
+
+type PublishedState = 'idle' | 'loading' | 'ready' | 'error'
+
+function readInlinePresentation(): CmsPresentation | null {
+  if (typeof document === 'undefined') return null
+  try {
+    const value: unknown = JSON.parse(
+      document.getElementById('cms-native-state')?.textContent ?? 'null',
+    )
+    if (value === null) return null
+    validatePresentation(value)
+    return value
+  } catch {
+    return null
+  }
+}
+
+function PublicPresentationGate({
+  error,
+  onRetry,
+}: {
+  error: boolean
+  onRetry: () => void
+}): JSX.Element {
+  return (
+    <main
+      role={error ? 'alert' : 'status'}
+      aria-live="polite"
+      aria-busy={!error}
+      style={{
+        minHeight: '100vh',
+        boxSizing: 'border-box',
+        display: 'grid',
+        placeItems: 'center',
+        padding: '24px',
+        background: 'transparent',
+        color: 'CanvasText',
+        fontFamily: 'system-ui, sans-serif',
+        textAlign: 'center',
+      }}
+    >
+      {error ? (
+        <div>
+          <p>Webbplatsen kunde inte laddas just nu.</p>
+          <button type="button" onClick={onRetry}>
+            Försök igen
+          </button>
+        </div>
+      ) : (
+        <p>Laddar webbplatsen…</p>
+      )}
+    </main>
+  )
+}
 
 function NativeSlot({
   identity,
@@ -88,22 +148,20 @@ export function NativeSiteProvider({
   presentation?: CmsPresentation | null
   source?: boolean
 }): JSX.Element {
-  const [published, setPublished] = useState<CmsPresentation | null>(() => {
-    if (typeof document === 'undefined' || source || presentation !== undefined) return null
-    try {
-      const value: unknown = JSON.parse(
-        document.getElementById('cms-native-state')?.textContent ?? 'null',
-      )
-      if (value === null) return null
-      validatePresentation(value)
-      return value
-    } catch {
-      return null
-    }
-  })
+  const [pathname] = useLocation()
+  const publicNativeRoute = !source && presentation === undefined && isNativePublicPath(pathname)
+  const [published, setPublished] = useState<CmsPresentation | null>(() =>
+    source || presentation !== undefined ? null : readInlinePresentation(),
+  )
+  const [publishedState, setPublishedState] = useState<PublishedState>(() =>
+    published === null ? 'idle' : 'ready',
+  )
+  const [retryCount, setRetryCount] = useState(0)
   useEffect(() => {
-    if (source || presentation !== undefined || published !== null) return
+    if (source || presentation !== undefined || !publicNativeRoute || published !== null) return
     const controller = new AbortController()
+    let active = true
+    setPublishedState('loading')
     void fetch('/api/cms/presentation', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error('CMS presentation unavailable')
@@ -111,13 +169,18 @@ export function NativeSiteProvider({
         if (!value || typeof value !== 'object' || !('presentation' in value))
           throw new Error('Invalid CMS presentation')
         validatePresentation(value.presentation)
+        if (!active) return
         setPublished(value.presentation)
+        setPublishedState('ready')
       })
       .catch(() => {
-        // An unavailable CMS never replaces the existing site with a placeholder.
+        if (active) setPublishedState('error')
       })
-    return () => controller.abort()
-  }, [presentation, source])
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [presentation, source, publicNativeRoute, published, retryCount])
   const current = presentation === undefined ? published : presentation
   const fonts = Object.entries(current?.fonts ?? {})
     .map(
@@ -125,6 +188,17 @@ export function NativeSiteProvider({
         `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
     )
     .join('\n')
+  if (publicNativeRoute && publishedState !== 'ready') {
+    return (
+      <PublicPresentationGate
+        error={publishedState === 'error'}
+        onRetry={() => {
+          setPublishedState('idle')
+          setRetryCount((count) => count + 1)
+        }}
+      />
+    )
+  }
   return (
     <NativeContext.Provider
       value={{ presentation: presentation === undefined ? published : presentation, source }}

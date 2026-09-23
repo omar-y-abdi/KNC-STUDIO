@@ -15,6 +15,7 @@ import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
+import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
 import { connectEditorAccessibility } from './editorAccessibility'
@@ -144,7 +145,17 @@ function editorContextKey(props: Props): string {
             ),
         )
       : ''
-  return `${props.page.id}:${props.lang}:${props.mode}:${sharedChromeKey}`
+  const bookingContext =
+    props.page.path === '/booking' && props.scene !== 'default'
+      ? `:${props.scene}:${props.device}`
+      : ''
+  return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}:${sharedChromeKey}`
+}
+
+function pageFragment(html: string, wrapperId: string): string {
+  if (!wrapperId || !/<body(?:\s|>)/i.test(html)) return html
+  const document = new DOMParser().parseFromString(html, 'text/html')
+  return document.body.id === wrapperId ? document.body.innerHTML : html
 }
 
 export function CmsEditor(props: Props): JSX.Element {
@@ -177,9 +188,24 @@ export function CmsEditor(props: Props): JSX.Element {
               props.lang,
               props.mode,
             )
-          : composedCanvas(props.page, props.presentation, props.lang, props.mode)
+          : composedCanvas(
+              props.page,
+              props.presentation,
+              props.lang,
+              props.mode,
+              props.scene,
+              props.device === 'Desktop' ? 'Mobile' : 'Desktop',
+            )
         : null,
-    [props.compare, variant.html, variant.css[props.mode], props.mode, props.presentation],
+    [
+      props.compare,
+      variant.html,
+      variant.css[props.mode],
+      props.mode,
+      props.presentation,
+      props.scene,
+      props.device,
+    ],
   )
 
   useLayoutEffect(() => {
@@ -351,35 +377,46 @@ export function CmsEditor(props: Props): JSX.Element {
         : structuredClone(current.page)
       applying.current = true
       try {
-        syncResponsiveText(editor, current.page.content[current.lang].html, html)
+        const textHtml =
+          current.page.path === '/booking' && current.scene !== 'default'
+            ? stripComposedCanvas(html, css, current.scene).html
+            : html
+        syncResponsiveText(editor, current.page.content[current.lang].html, textHtml)
       } finally {
         applying.current = false
       }
       html = editor.getHtml({ cleanId: false })
       const baseVariant = next.content[current.lang]
+      const wrapperId = editor.getWrapper()?.getId() ?? ''
+      const composedScene = current.page.path === '/booking' ? current.scene : 'default'
       const nativeExport = exportNativeCanvas(html, css, current.mode)
-      const exported = stripComposedCanvas(nativeExport.html, nativeExport.css)
+      const exported = stripComposedCanvas(nativeExport.html, nativeExport.css, composedScene)
+      const otherMode = current.mode === 'light' ? 'dark' : 'light'
+      const otherCss = stripComposedCanvas(
+        html,
+        syncLayout(
+          bindCmsRootStyles(baseVariant.css[current.mode], wrapperId),
+          exported.css,
+          bindCmsRootStyles(baseVariant.css[otherMode], wrapperId),
+        ),
+        composedScene,
+      ).css
+      const persisted = {
+        html: pageFragment(exported.html, wrapperId),
+        css: canonicalizeCmsRootStyles(exported.css, wrapperId),
+      }
       next.content[current.lang] = {
-        html: exported.html,
+        html: persisted.html,
         css: {
           ...baseVariant.css,
-          [current.mode]: exported.css,
-          [current.mode === 'light' ? 'dark' : 'light']: syncLayout(
-            baseVariant.css[current.mode],
-            exported.css,
-            baseVariant.css[current.mode === 'light' ? 'dark' : 'light'],
-          ),
+          [current.mode]: persisted.css,
+          [otherMode]: canonicalizeCmsRootStyles(otherCss, wrapperId),
         },
       }
-      const otherMode = current.mode === 'light' ? 'dark' : 'light'
-      next.content[current.lang].css[otherMode] = stripComposedCanvas(
-        html,
-        next.content[current.lang].css[otherMode],
-      ).css
       rendered.current = {
         pageId: current.page.id,
         key: editorContextKey(current),
-        ...exported,
+        ...persisted,
       }
       current.onChange(next)
       checkpoint.current = { html, css }
@@ -442,13 +479,22 @@ export function CmsEditor(props: Props): JSX.Element {
           props.lang,
           props.mode,
         )
-      : composedCanvas(props.page, props.presentation, props.lang, props.mode)
+      : composedCanvas(
+          props.page,
+          props.presentation,
+          props.lang,
+          props.mode,
+          props.scene,
+          props.device,
+        )
     editor.select()
     setSelected(null)
     // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
     editor.setComponents('')
     // Importing HTML extracts inline styles. Load CSS first so it cannot erase them.
-    editor.setStyle(parseCanvasCss(content.css, editor))
+    editor.setStyle(
+      parseCanvasCss(bindCmsRootStyles(content.css, editor.getWrapper()?.getId() ?? ''), editor),
+    )
     editor.setComponents(content.html)
     const configure = (component: Component): void => {
       configureComponent(component)

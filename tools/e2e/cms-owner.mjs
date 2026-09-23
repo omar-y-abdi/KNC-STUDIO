@@ -645,10 +645,22 @@ for (const [engine, name] of [
             await modal.waitFor({ state: 'detached' })
           }
         } else if (scenario === 'custom-page-styles') {
-          const languageColor = await frame
-            .locator('[data-knc-surface="desktop-home"]')
-            .getByRole('button', { name: 'SV', exact: true })
-            .evaluate((node) => globalThis.getComputedStyle(node).color)
+          const languageLabelColor = (control) =>
+            control
+              .getByText('SV', { exact: true })
+              .evaluate((node) => globalThis.getComputedStyle(node).color)
+          const languageColor = await languageLabelColor(
+            frame
+              .locator('[data-knc-surface="desktop-home"]')
+              .getByRole('button', { name: 'Byt språk till engelska', exact: true }),
+          )
+          await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+          const darkLanguageColor = await languageLabelColor(
+            frame
+              .locator('[data-knc-surface="desktop-home"]')
+              .getByRole('button', { name: 'Byt språk till engelska', exact: true }),
+          )
+          await page.getByRole('button', { name: 'Ljus', exact: true }).click()
           const library = page.locator('#cms-library')
           await library.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
           await page
@@ -658,10 +670,11 @@ for (const [engine, name] of [
           const main = frame.locator('main')
           await frame.locator('#cms-site-header svg[role="img"]').waitFor()
           assert.equal(
-            await frame
-              .locator('#cms-site-header')
-              .getByRole('link', { name: 'SV', exact: true })
-              .evaluate((node) => globalThis.getComputedStyle(node).color),
+            await languageLabelColor(
+              frame
+                .locator('#cms-site-header')
+                .getByRole('link', { name: 'Byt språk till engelska', exact: true }),
+            ),
             languageColor,
             'Converting header controls to links must retain their original contrast',
           )
@@ -709,15 +722,59 @@ for (const [engine, name] of [
             )
             const rendered = renderSitePage(backend.document.presentation, page, 'sv', mode)
             return route.fulfill({
-              contentType: 'text/html',
-              body: `<!doctype html><html><head><style>${rendered.css}</style></head><body>${rendered.html}</body></html>`,
+              contentType: 'text/html; charset=utf-8',
+              body: `<!doctype html><html><head><meta charset="utf-8"><style>${rendered.css}</style></head><body>${rendered.html}</body></html>`,
             })
           })
           const publicPage = await context.newPage()
-          await publicPage.goto(`${base}/hemsida?mode=dark`)
+          await publicPage.goto(`${base}/hemsida?mode=light`)
+          assert.equal(
+            await publicPage.evaluate(() => globalThis.document.characterSet.toLowerCase()),
+            'utf-8',
+            'The mock public response must match the Worker UTF-8 document envelope',
+          )
           await publicPage.locator('#cms-site-header svg').waitFor()
           await publicPage.getByRole('heading', { name: 'Ny sida', exact: true }).waitFor()
+          const publicLanguageLink = async () => {
+            const header = publicPage.locator('#cms-site-header')
+            const link = header.getByRole('link', {
+              name: 'Byt språk till engelska',
+              exact: true,
+            })
+            const diagnostics = await header.evaluate((node) =>
+              [...node.querySelectorAll('a,button')].map((control) => ({
+                tag: control.tagName.toLowerCase(),
+                role:
+                  control.getAttribute('role') ??
+                  (control.tagName === 'A'
+                    ? 'link'
+                    : control.tagName === 'BUTTON'
+                      ? 'button'
+                      : null),
+                href: control.getAttribute('href'),
+                ariaLabel: control.getAttribute('aria-label'),
+                text: control.textContent?.trim(),
+              })),
+            )
+            assert.equal(
+              await link.count(),
+              1,
+              `Published language link is missing or mislabeled: ${JSON.stringify(diagnostics)}`,
+            )
+            return link
+          }
+          assert.equal(
+            await languageLabelColor(await publicLanguageLink()),
+            languageColor,
+            'Published authored pages retain the source header control contrast',
+          )
           await publicPage.getByText('New page extension content', { exact: true }).waitFor()
+          await publicPage.goto(`${base}/hemsida?mode=dark`)
+          assert.equal(
+            await languageLabelColor(await publicLanguageLink()),
+            darkLanguageColor,
+            'Published authored pages retain source header contrast in dark mode',
+          )
           await publicPage.reload()
           assert.equal(
             await publicPage.locator('#cms-site-header svg[role="img"]').count(),

@@ -591,7 +591,7 @@ export function BookingFlow(props: BookingFlowProps): JSX.Element {
   const notTimesReady = !S.service
 
   return present(
-    <div style={s.rootStyle}>
+    <div style={s.rootStyle} data-knc-fold="booking-flow">
       <div style="padding: 18px 22px 26px 22px">
         <div data-testid="booking-step-barber" data-booking-step="barber">
           <div style="display:flex;align-items:center;gap:9px;margin-bottom:13px;">

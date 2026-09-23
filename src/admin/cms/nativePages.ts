@@ -12,6 +12,51 @@ interface Capture {
 }
 type PageSources = Record<CmsLang, Record<CmsMode, Capture[]>>
 
+/** Keep one About tree and capture only the mobile presentation of its existing barber nodes. */
+function mobileBarberCss(desktopHtml: string, mobileHtml: string): string {
+  const desktop = new DOMParser().parseFromString(desktopHtml, 'text/html')
+  const mobile = new DOMParser().parseFromString(mobileHtml, 'text/html')
+  const grid = mobile.querySelector('[data-knc-fold="barber-marquee"]')
+  if (!grid) throw new Error('Mobilens barberarkort saknas i källan.')
+  const desktopStyles = new Map(
+    [...desktop.querySelectorAll('[data-knc-source]')].map((node) => [
+      node.getAttribute('data-knc-source'),
+      node.getAttribute('data-knc-light') ?? '',
+    ]),
+  )
+  const rules: string[] = []
+  for (const node of [grid, ...grid.querySelectorAll('[data-knc-source]')]) {
+    const sourceId = node.getAttribute('data-knc-source')
+    if (!sourceId || !node.id) continue
+    const original = document.createElement('span').style
+    original.cssText = desktopStyles.get(sourceId) ?? ''
+    const mobileStyle = document.createElement('span').style
+    mobileStyle.cssText = node.getAttribute('data-knc-light') ?? ''
+    const properties = new Set(
+      [...Array(original.length).keys()]
+        .map((index) => original.item(index))
+        .concat([...Array(mobileStyle.length).keys()].map((index) => mobileStyle.item(index))),
+    )
+    const changes = [...properties].flatMap((property) => {
+      const value = mobileStyle.getPropertyValue(property)
+      const priority = mobileStyle.getPropertyPriority(property)
+      if (
+        value === original.getPropertyValue(property) &&
+        priority === original.getPropertyPriority(property)
+      )
+        return []
+      return [`${property}:${value || 'unset'}${priority ? ' !important' : ''}`]
+    })
+    if (!changes.length) continue
+    const id = `#${CSS.escape(node.id)}`
+    const marker = ':where([data-knc-fold="barber-marquee"])'
+    const selector = node === grid ? `${id}${marker}` : `${marker} ${id}`
+    rules.push(`${selector}{${changes.join(';')}}`)
+  }
+  if (!rules.length) throw new Error('Mobilens barberarkort saknar egna presentationsstilar.')
+  return `@media(max-width:768px){${rules.join('')}}`
+}
+
 export function snapshotNative(root: Element, prefix: string): string {
   const copy = root.cloneNode(true) as Element
   for (const node of copy.querySelectorAll('script,style,iframe,object,embed,noscript'))
@@ -28,7 +73,11 @@ export function snapshotNative(root: Element, prefix: string): string {
       (node.hasAttribute('data-knc-slot') && node.parentElement?.closest('[data-knc-source]'))
     if (opaque && (separateAbout.has(node) || !adapted)) {
       for (const attr of [...node.attributes])
-        if (attr.name.startsWith('data-knc-')) node.removeAttribute(attr.name)
+        if (
+          attr.name.startsWith('data-knc-') &&
+          !(attr.name === 'data-knc-fold' && attr.value === 'booking-flow')
+        )
+          node.removeAttribute(attr.name)
       const id = `preview-${prefix}-${index}`
       if (node.id) ids.set(node.id, id)
       node.id = id
@@ -130,7 +179,7 @@ async function waitFor(
   const deadline = performance.now() + 20000
   while (performance.now() < deadline) {
     const doc = frame.contentDocument
-    if (doc && predicate(doc)) return doc
+    if (doc?.documentElement && predicate(doc)) return doc
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error('Den befintliga webbplatsen kunde inte läsas. Inga mallsidor skapades.')
@@ -155,6 +204,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
       },
     ]),
   )
+  const mobileAbout = new Map<string, string>()
   try {
     await waitFor(frame, (doc) => doc.documentElement.dataset['kncSourceListening'] === '1')
     for (const lang of ['sv', 'en'] as const)
@@ -202,6 +252,11 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
             if (scene === 'home') {
               add('/', `${device.toLowerCase()}-home`)
               if (device === 'Desktop') add('/about', 'about')
+              else {
+                const about = doc.querySelector('[data-knc-surface="about"]')
+                if (!about) throw new Error('Mobilens Om oss-yta saknas')
+                mobileAbout.set(`${lang}:${mode}`, snapshotNative(about, 'about'))
+              }
             } else if (scene === 'booking') add('/booking', `${device.toLowerCase()}-booking`)
             else if (scene.startsWith('booking-')) add('/booking', scene)
             else if (device === 'Desktop') add('/my-bookings', scene)
@@ -231,8 +286,23 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
           ),
           css: {
             light:
-              responsive + [...new Set(variants[lang].light.map((item) => item.css))].join('\n'),
-            dark: responsive + [...new Set(variants[lang].dark.map((item) => item.css))].join('\n'),
+              responsive +
+              [...new Set(variants[lang].light.map((item) => item.css))].join('\n') +
+              (path === '/about'
+                ? mobileBarberCss(
+                    variants[lang].light[0]?.html ?? '',
+                    mobileAbout.get(`${lang}:light`) ?? '',
+                  )
+                : ''),
+            dark:
+              responsive +
+              [...new Set(variants[lang].dark.map((item) => item.css))].join('\n') +
+              (path === '/about'
+                ? mobileBarberCss(
+                    variants[lang].dark[0]?.html ?? '',
+                    mobileAbout.get(`${lang}:dark`) ?? '',
+                  )
+                : ''),
           },
         },
       ]),

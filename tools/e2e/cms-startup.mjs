@@ -121,7 +121,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
           source: { ...document.documentElement.dataset },
           frames: [...document.querySelectorAll('iframe')].map((frame) => ({
             src: frame.src,
-            source: frame.contentDocument
+            source: frame.contentDocument?.documentElement
               ? { ...frame.contentDocument.documentElement.dataset }
               : null,
           })),

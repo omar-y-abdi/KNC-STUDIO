@@ -1,5 +1,5 @@
 import { SitePageLinks } from '../cms/SitePageLinks'
-import { useNativeSurface } from '../cms/NativeSurface'
+import { useNativeSource, useNativeSurface } from '../cms/NativeSurface'
 import { useContext } from 'preact/hooks'
 import { PreviewPorts } from '../cms/PreviewPorts'
 // "Om oss" / About section — a shared scroll-target placed after the hero/booking content on both
@@ -22,6 +22,7 @@ import { scalePx, type SizePreset } from '../site/siteChrome'
 import { useRoster } from '../booking/useRoster'
 import type { BarbersPort } from '../booking/barbersPort'
 import { PlaceholderPhoto } from './PlaceholderPhoto'
+import { useBarberMarquee } from './useBarberMarquee'
 import { GalleryMarquee } from './GalleryMarquee'
 import { StarDisplay, StarRating } from './StarRating'
 import type { Rating, Review, ReviewDraft, ReviewError } from './reviews/domain'
@@ -59,6 +60,8 @@ export interface AboutSectionProps {
   readonly challengeEnabled?: boolean
   /** Layout-specific compact panel height to keep the target visible after a hero-link scroll. */
   readonly scrollMarginTop?: string
+  /** Enable the mobile-only interactive barber carousel. */
+  readonly mobile?: boolean
   /** Contact scope from the server-verified customer session; never an authorization secret. */
   readonly customerPhone?: string
 }
@@ -76,6 +79,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
     }
 
   const lang = props.lang
+  const nativeSource = useNativeSource()
   const base: AboutStrings = aboutStrings(lang)
   const dark = props.mode === 'dark'
   const c = palette(dark)
@@ -83,6 +87,7 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   const red = systemRed(dark)
   const port: ReviewsPort = props.port ?? defaultReviewsPort
   const sectionRef = useRef<HTMLElement>(null)
+  const barberTrackRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (previewPorts || window.location.pathname !== '/about') return
     const frame = window.requestAnimationFrame(() =>
@@ -145,6 +150,18 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
   // The stylist cards' roster (constant under the mock, immediate; DB rows under a backend). The
   // per-barber role/bio ride along on each entry's `copy` (null under the mock → i18n fallback).
   const { roster } = useRoster(props.barbersPort, dataActive)
+  const {
+    selected: selectedBarber,
+    toggle: toggleBarber,
+    reducedMotion,
+    animate,
+  } = useBarberMarquee({
+    enabled: Boolean(props.mobile),
+    source: nativeSource,
+    rosterIds: roster.map(({ barber }) => barber.id),
+    rootRef: sectionRef,
+    trackRef: barberTrackRef,
+  })
 
   // Distinguish loading, unpublished galleries and read failures; only real photos are interactive.
   const salonPhotos = useGallery('salon', props.galleryPort, dataActive)
@@ -414,16 +431,98 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
 
         {/* Stylists — driven by the database roster (N barbers, not a frontend constant). */}
         <h3 style={blockTitleStyle}>{tx.stylistsTitle}</h3>
-        <div style={stylistGridStyle}>
+        <div
+          ref={barberTrackRef}
+          data-knc-fold="barber-marquee"
+          role={props.mobile ? 'region' : undefined}
+          aria-label={props.mobile ? tx.stylistsTitle : undefined}
+          aria-roledescription={props.mobile ? 'carousel' : undefined}
+          style={
+            props.mobile
+              ? {
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 0,
+                  width: '100vw',
+                  marginLeft: 'calc(50% - 50vw)',
+                  padding: '4px 0 10px',
+                  boxSizing: 'border-box',
+                  overflowX: animate ? 'visible' : 'auto',
+                  overflowY: animate ? 'visible' : 'hidden',
+                  touchAction: animate ? 'pan-y pinch-zoom' : 'pan-x pan-y pinch-zoom',
+                  scrollbarWidth: 'none',
+                  scrollSnapType: animate ? undefined : 'x proximity',
+                }
+              : stylistGridStyle
+          }
+        >
           {roster.map((entry) => {
             const b = entry.barber
             const copy = stylistCopyFor(entry, lang)
+            const active = props.mobile && selectedBarber === b.id
+            const infoTransition = reducedMotion
+              ? 'none'
+              : 'grid-template-rows .36s ease, opacity .24s ease'
             return (
-              <div key={b.id} style={stylistCardStyle}>
+              <div
+                key={b.id}
+                role={props.mobile ? 'button' : undefined}
+                tabIndex={props.mobile ? 0 : undefined}
+                aria-expanded={props.mobile ? active : undefined}
+                onClick={
+                  props.mobile
+                    ? (event) => {
+                        if (event.defaultPrevented) return
+                        if (event.detail > 0 && active) event.currentTarget.blur()
+                        if (!active && !animate)
+                          event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'center' })
+                        toggleBarber(b.id, event.currentTarget)
+                      }
+                    : undefined
+                }
+                onKeyDown={
+                  props.mobile
+                    ? (event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        if (!active && !animate)
+                          event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'center' })
+                        toggleBarber(b.id, event.currentTarget)
+                      }
+                    : undefined
+                }
+                style={
+                  props.mobile
+                    ? {
+                        ...stylistCardStyle,
+                        display: 'grid',
+                        gridTemplateRows: copy
+                          ? `auto auto ${active ? '1fr' : '0fr'}`
+                          : 'auto auto',
+                        flex: '0 0 calc(100vw - 24px)',
+                        width: 'calc(100vw - 24px)',
+                        margin: roster.length > 1 ? '0 24px' : '0 12px',
+                        boxSizing: 'border-box',
+                        minWidth: 0,
+                        scale: active ? '1.025' : '1',
+                        borderColor: active ? c.text : c.line,
+                        boxShadow: active
+                          ? '0 5px 20px rgba(0,0,0,.12)'
+                          : stylistCardStyle.boxShadow,
+                        cursor: 'pointer',
+                        scrollSnapAlign: 'center',
+                        transition: reducedMotion
+                          ? 'none'
+                          : 'scale .3s ease, grid-template-rows .36s ease, border-color .3s ease, box-shadow .3s ease',
+                      }
+                    : stylistCardStyle
+                }
+              >
                 {entry.photoUrl !== null ? (
                   <img
                     src={entry.photoUrl}
-                    alt={b.name}
+                    alt={props.mobile ? '' : b.name}
                     loading="lazy"
                     style={{
                       width: '100%',
@@ -437,17 +536,45 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                 ) : (
                   <PlaceholderPhoto c={c} dark={dark} />
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div
+                  style={
+                    props.mobile
+                      ? {
+                          display: 'grid',
+                          gridTemplateRows: copy
+                            ? `auto ${active ? '1fr' : '0fr'} ${active ? '1fr' : '0fr'}`
+                            : `auto ${active ? '1fr' : '0fr'}`,
+                          gap: active ? '3px' : 0,
+                          transition: infoTransition,
+                        }
+                      : { display: 'flex', flexDirection: 'column', gap: '3px' }
+                  }
+                >
                   <span style={{ fontWeight: 600, fontSize: '16px' }}>{b.name}</span>
-                  <span style={{ fontSize: '12.5px', opacity: 0.5 }}>@{b.ig}</span>
+                  <span
+                    aria-hidden={props.mobile ? !active : undefined}
+                    style={{
+                      fontSize: '12.5px',
+                      opacity: props.mobile ? (active ? 0.5 : 0) : 0.5,
+                      minHeight: 0,
+                      overflow: props.mobile ? 'hidden' : undefined,
+                      transition: reducedMotion ? 'none' : 'opacity .24s ease',
+                    }}
+                  >
+                    @{b.ig}
+                  </span>
                   {copy ? (
                     <span
+                      aria-hidden={props.mobile ? !active : undefined}
                       style={{
                         fontSize: '11px',
                         fontWeight: 600,
                         letterSpacing: '.4px',
-                        opacity: 0.5,
-                        marginTop: '2px',
+                        opacity: props.mobile ? (active ? 0.5 : 0) : 0.5,
+                        marginTop: active || !props.mobile ? '2px' : 0,
+                        minHeight: 0,
+                        overflow: props.mobile ? 'hidden' : undefined,
+                        transition: reducedMotion ? 'none' : 'opacity .24s ease',
                       }}
                     >
                       {copy.role}
@@ -455,7 +582,18 @@ export function AboutSection(props: AboutSectionProps): JSX.Element {
                   ) : null}
                 </div>
                 {copy ? (
-                  <p style={{ fontSize: '13.5px', lineHeight: 1.5, opacity: 0.62, margin: 0 }}>
+                  <p
+                    aria-hidden={props.mobile ? !active : undefined}
+                    style={{
+                      fontSize: '13.5px',
+                      lineHeight: 1.5,
+                      opacity: props.mobile ? (active ? 0.62 : 0) : 0.62,
+                      margin: 0,
+                      minHeight: 0,
+                      overflow: props.mobile ? 'hidden' : undefined,
+                      transition: reducedMotion ? 'none' : 'opacity .24s ease',
+                    }}
+                  >
                     {copy.bio}
                   </p>
                 ) : null}
