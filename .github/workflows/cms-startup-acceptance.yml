@@ -1,0 +1,89 @@
+name: CMS built startup acceptance
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-startup-acceptance.yml, .startup/acceptance.patch]
+permissions:
+  contents: read
+jobs:
+  built:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Restore exact candidate
+        run: |
+          cp .startup/acceptance.patch /tmp/acceptance.patch
+          git checkout --detach 51a37d05a927b4b58a02c92b6a3c902700c377ba
+          git apply --index /tmp/acceptance.patch
+          test "$(git write-tree)" = 17cb39a4228bd97878d0acb7bde4121e97b8204f
+          mkdir -p /tmp/startup
+          bash tools/ci/setup-furl.sh
+      - name: Build and exercise complete route
+        env:
+          CMS_ENGINE: ${{ matrix.engine }}
+          VITE_SUPABASE_URL: https://admin-harness.invalid
+          VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+          CMS_STARTUP_BUILT: '1'
+          CMS_EVIDENCE_DIR: /tmp/startup
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx prettier --write tools/e2e/cms-startup.mjs
+          git add tools/e2e/cms-startup.mjs
+          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'test: gate complete CMS startup and preservation through source upgrades'
+          git rev-parse HEAD > /tmp/startup/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/startup/tree.txt
+          git bundle create /tmp/startup/source.bundle HEAD
+          npm run typecheck
+          npm run lint
+          npm test > /tmp/startup/unit.log 2>&1
+          npm run build
+          npx playwright install --with-deps "$CMS_ENGINE"
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/startup/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL" >/dev/null
+          set +e
+          node tools/e2e/cms-startup.mjs > /tmp/startup/acceptance.log 2>&1
+          echo "$?" > /tmp/startup/acceptance.exit-code
+          curl -fsS --max-time 20 https://bladeblendstudio.se/api/cms/presentation > /tmp/startup/presentation.json
+          echo "$?" > /tmp/startup/public-read.exit-code
+          CMS_STARTUP_PRESENTATION=/tmp/startup/presentation.json CMS_EVIDENCE_DIR=/tmp/startup/published node tools/e2e/cms-startup.mjs > /tmp/startup/published.log 2>&1
+          echo "$?" > /tmp/startup/published.exit-code
+      - name: Preserve evidence
+        if: always()
+        run: |
+          for f in /tmp/startup/*.log; do
+            test -f "$f" || continue
+            furl compress "$f" --json > "$f.furl.json" || true
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-acceptance-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/startup
+          retention-days: 7
+      - name: Enforce outcomes
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/startup')
+          checks = {name: (root/f'{name}.exit-code').read_text().strip() for name in ['acceptance','public-read','published']}
+          print(checks)
+          assert all(code == '0' for code in checks.values()), checks
+          PY
