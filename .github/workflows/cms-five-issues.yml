@@ -29,6 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/source
+          cp .verification/followup.patch /tmp/followup.patch
           python3 - <<'PY'
           import base64, gzip, hashlib, pathlib
           value = pathlib.Path('.verification/fixes.b64').read_text().strip()
@@ -39,6 +40,8 @@ jobs:
           PY
           git checkout --detach 6d647e8c0aab06bd391822d167958c20f0a911ca
           git apply --index /tmp/fixes.patch
+          git apply --index /tmp/followup.patch
+          git restore --source=HEAD --staged --worktree .github/workflows/cms-workspace.yml
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
