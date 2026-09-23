@@ -8,7 +8,7 @@ describe('explicit CMS theme', () => {
     const resolved = modeCss(css, 'dark')
     expect(resolved).not.toContain('prefers-color-scheme')
     expect(resolved).toContain(':root{color:white;background:black}')
-    expect(resolved).toContain('@media(max-width:768px)')
+    expect(resolved).toMatch(/@media\s*\(max-width:768px\)/)
   })
   it('does not import dark palette rules into the light variant', () => {
     expect(modeCss(css, 'light')).not.toContain('background:black')

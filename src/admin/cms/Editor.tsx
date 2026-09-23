@@ -345,8 +345,10 @@ export function CmsEditor(props: Props): JSX.Element {
       const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
       if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
-      const next = structuredClone(current.page)
-      if (isSitePage(next)) next.layout = 'independent'
+      // Ownership is page-wide: materialize both languages before editing either.
+      const next = isSitePage(current.page)
+        ? createSitePage(current.presentation, current.page)
+        : structuredClone(current.page)
       applying.current = true
       try {
         syncResponsiveText(editor, current.page.content[current.lang].html, html)
@@ -354,9 +356,7 @@ export function CmsEditor(props: Props): JSX.Element {
         applying.current = false
       }
       html = editor.getHtml({ cleanId: false })
-      const baseVariant = isSitePage(current.page)
-        ? createSitePage(current.presentation, current.page).content[current.lang]
-        : current.page.content[current.lang]
+      const baseVariant = next.content[current.lang]
       const nativeExport = exportNativeCanvas(html, css, current.mode)
       const exported = stripComposedCanvas(nativeExport.html, nativeExport.css)
       next.content[current.lang] = {

@@ -1,5 +1,6 @@
 import { themeDeclarations, siteThemeCss } from './site-theme.ts'
 import { repairDesktopCss } from './cms-device-css.ts'
+import { generate, parse, walk } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
 
@@ -163,6 +164,26 @@ export function renderSitePage(
   }
 }
 
+/** Derived chrome needs strong overrides while it still contains inline runtime
+ * styles. Once materialized, these are editable defaults below owner ID rules. */
+function editableChromeCss(css: string): string {
+  const tree = parse(css)
+  walk(tree, {
+    visit: 'Rule',
+    enter(rule) {
+      const selector = generate(rule.prelude)
+      if (!selector.startsWith('#cms-site-')) return
+      rule.prelude = parse(selector.replace(/#(cms-site-[\w-]+)/g, '[id="$1"]'), {
+        context: 'selectorList',
+      })
+      rule.block.children.forEach((declaration) => {
+        if (declaration.type === 'Declaration') declaration.important = false
+      })
+    },
+  })
+  return generate(tree)
+}
+
 /** Materialize an independent page once. Its chrome becomes authored content, not
  * a locked preview of another page. Normalize inline styles before GrapesJS can
  * attach them to the currently selected device's media query. */
@@ -172,6 +193,7 @@ export function createSitePage(presentation: CmsPresentation, page: CmsPage): Cm
   for (const lang of ['sv', 'en'] as const) {
     const render = (mode: CmsMode) => {
       const rendered = renderSitePage(presentation, page, lang, mode)
+      rendered.css = editableChromeCss(rendered.css)
       return normalizeSitePageContent(
         { html: rendered.html, css: { light: rendered.css, dark: rendered.css } },
         `${page.id}-${lang}`,

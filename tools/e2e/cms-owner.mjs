@@ -35,6 +35,7 @@ for (const [engine, name] of [
   [chromium, 'chromium'],
   [webkit, 'webkit'],
 ]) {
+  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
   const browser = await engine.launch()
   try {
     for (const scenario of scenarios) {
