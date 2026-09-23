@@ -1,0 +1,155 @@
+name: PR71 final hardening verification
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/pr71-wrapup.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Consolidate only reviewed changes on the current PR head
+        id: source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse origin/codex/cms-flow-scenes)" = 0a98d832e070cbf6a31cd44702ae0957251ebbac
+          git checkout --detach 0a98d832e070cbf6a31cd44702ae0957251ebbac
+          git config user.name 'CMS engineering review'
+          git config user.email 'cms-review@users.noreply.github.com'
+          git cherry-pick --no-commit 32d9e30024391bf2de1e2889f04b691277e2756f
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('tools/e2e/admin-state.mjs')
+          text = path.read_text()
+          before = "    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })"
+          assert text.count(before) == 1
+          after = "    // Cold bootstrap captures every native scene before the shell mounts. Keep\n    // its readiness budget separate from the 10-second interaction deadline.\n    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible', timeout: 90000 })"
+          path.write_text(text.replace(before, after))
+          path = Path('.github/workflows/cms-workspace.yml')
+          text = path.read_text()
+          before = 'for suite in cms-workspace cms-workspace-edge cms-workspace-views; do'
+          assert text.count(before) == 1
+          text = text.replace(before, 'for suite in cms-workspace cms-workspace-edge cms-workspace-views cms-adversarial cms-engineering; do')
+          before = "required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'tracked-source-diff'}"
+          assert text.count(before) == 1
+          path.write_text(text.replace(before, "required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-adversarial', 'cms-engineering', 'tracked-source-diff'}"))
+          PY
+          mkdir -p /tmp/pr71-source
+          npm ci --no-audit --no-fund > /tmp/pr71-source/install.log 2>&1
+          npx prettier --write shared/cms-release.ts shared/cms-resources.ts src/admin/cms/Resources.tsx tests/unit/cmsResourceReplacement.test.ts tools/e2e/cms-engineering.mjs tools/e2e/admin-state.mjs .github/workflows/cms-workspace.yml > /tmp/pr71-source/format.log 2>&1
+          node tools/release/cms-release.mjs check
+          git add shared/cms-release.ts shared/cms-resources.ts src/admin/cms/Resources.tsx tests/unit/cmsResourceReplacement.test.ts tools/e2e/cms-engineering.mjs tools/e2e/admin-state.mjs .github/workflows/cms-workspace.yml
+          git diff --cached --check
+          git diff --cached > /tmp/pr71-source/final.patch
+          git commit -m 'fix: complete resource preflight and retain adversarial CMS gates'
+          git rev-parse HEAD > /tmp/pr71-source/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/pr71-source/source-tree.txt
+          git bundle create /tmp/pr71-source/source.bundle HEAD
+          git push origin HEAD:refs/heads/verify/pr71-wrapup-product-20260923
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pr71-wrapup-source
+          path: /tmp/pr71-source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, boundaries, native]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare tools and pin evidence to the actual source
+        run: |
+          mkdir -p /tmp/pr71-evidence
+          git rev-parse HEAD > /tmp/pr71-evidence/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/pr71-evidence/source-tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/pr71-evidence/install.log 2>&1
+      - name: Execute complete checks and preserve individual exit codes
+        env:
+          SUITE: ${{ matrix.suite }}
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          check() {
+            name="$1"; shift
+            code=0
+            "$@" > "/tmp/pr71-evidence/$name.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/pr71-evidence/$name.exit-code"
+          }
+          if [ "$SUITE" = core ]; then
+            check typecheck npm run typecheck
+            check lint npm run lint
+            check format npm run format:check
+            check unit npm test
+            check build npm run build
+            check stamp node tools/release/cms-release.mjs check
+          else
+            npx playwright install --with-deps chromium webkit
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/pr71-evidence/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
+            if [ "$SUITE" = boundaries ]; then
+              names='cms-adversarial cms-engineering'
+            else
+              names='cms-native cms-scenes cms-owner cms-responsive'
+              check shell env ADMIN_E2E_SCENARIO=cms-shell npm run test:e2e:admin
+            fi
+            for name in $names; do
+              mkdir -p "/tmp/pr71-evidence/$name"
+              check "$name" env CMS_EVIDENCE_DIR="/tmp/pr71-evidence/$name" node "tools/e2e/$name.mjs"
+            done
+          fi
+          check unchanged git diff --exit-code
+      - name: Preserve Furl summaries and fail on missing or unsuccessful checks
+        if: always()
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          for f in /tmp/pr71-evidence/*.log; do
+            test -f "$f" || continue
+            furl compress "$f" --json > "$f.furl.json" || true
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('/tmp/pr71-evidence')
+          checks = {p.stem: int(p.read_text().strip()) for p in root.glob('*.exit-code')}
+          required = {'core': ['typecheck','lint','format','unit','build','stamp'], 'boundaries': ['cms-adversarial','cms-engineering'], 'native': ['shell','cms-native','cms-scenes','cms-owner','cms-responsive']}[os.environ['SUITE']] + ['unchanged']
+          (root/'checks.json').write_text(json.dumps(checks, indent=2))
+          print(json.dumps(checks, indent=2))
+          assert all(checks.get(name) == 0 for name in required), checks
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pr71-wrapup-${{ matrix.suite }}
+          path: /tmp/pr71-evidence
+          retention-days: 7
