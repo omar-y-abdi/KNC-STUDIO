@@ -1,0 +1,70 @@
+name: CMS Safari startup
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-startup-safari.yml]
+permissions:
+  contents: read
+jobs:
+  safari:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up production route and error recorder
+        run: |
+          mkdir -p /tmp/startup
+          cp .startup/probe.mjs /tmp/probe.mjs
+          git checkout --detach e0b7337fa86ceebf2de5c3403f452d0f40c42dd1
+          cp /tmp/probe.mjs tools/e2e/cms-startup-probe.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/ui/LazySurface.tsx')
+          p.write_text(p.read_text().replace('static override getDerivedStateFromError(): LazyLoadBoundaryState {', "static override getDerivedStateFromError(error: unknown): LazyLoadBoundaryState {\n    (globalThis as unknown as Record<string, unknown>)['__cmsCrash'] = error instanceof Error ? { message: error.message, stack: error.stack } : String(error)"))
+          p=Path('tools/e2e/cms-startup-probe.mjs')
+          t=p.read_text().replace("  const page = await context.newPage()", '''  const policies = Object.fromEntries(await Promise.all(['/admin/cms/', '/cms-public/source'].map(async path => [path, (await fetch('https://bladeblendstudio.se'+path)).headers.get('content-security-policy') ?? ''])))
+            await writeFile(`${out}/deployed-policies.json`,JSON.stringify(policies,null,2))
+            await context.route(base+'/**', async route => {
+              const path = new URL(route.request().url()).pathname
+              if(!policies[path] || route.request().resourceType()!=='document') return route.fallback()
+              const response=await route.fetch()
+              const policy=policies[path].replace(/;?\\s*upgrade-insecure-requests/g,'').replace("connect-src 'self'", "connect-src 'self' https://admin-harness.invalid").replace("img-src 'self'", "img-src 'self' https://admin-harness.invalid")
+              await route.fulfill({response,headers:{...response.headers(),'content-security-policy':policy}})
+            })
+          const page = await context.newPage()''')
+          p.write_text(t)
+          PY
+          bash tools/ci/setup-furl.sh
+      - name: Diagnose Safari
+        env:
+          CMS_ENGINE: webkit
+          VITE_SUPABASE_URL: https://admin-harness.invalid
+          VITE_SUPABASE_ANON_KEY: e2e-public-anon-key
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          npm run build
+          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/startup/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
+          env -u VITE_SUPABASE_URL -u VITE_SUPABASE_ANON_KEY node tools/e2e/cms-startup-probe.mjs > /tmp/startup/probe.log 2>&1
+      - name: Summarize
+        if: always()
+        run: |
+          for f in /tmp/startup/*.log; do furl compress "$f" --json > "$f.furl.json" || true; done
+          test ! -f /tmp/startup/probe.log || tail -c 4000 /tmp/startup/probe.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-safari-policy
+          path: /tmp/startup
+          retention-days: 7
