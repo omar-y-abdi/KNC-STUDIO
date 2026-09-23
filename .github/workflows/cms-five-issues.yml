@@ -1,0 +1,110 @@
+name: CMS five reported issues
+on:
+  push:
+    branches: [verify/cms-five-issues-20260923]
+    paths: [.github/workflows/cms-five-issues.yml, .verification/**]
+permissions:
+  contents: read
+concurrency:
+  group: cms-five-reported
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - id: source
+        name: Assemble exact candidate without modifying the PR branch
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/source
+          cp .verification/cms-reported.mjs /tmp/reported.mjs
+          if test -f .verification/fixes.patch; then cp .verification/fixes.patch /tmp/fixes.patch; fi
+          git checkout --detach 344ebe51ce83724a31020f9ed4976838c9152b7e
+          cp /tmp/reported.mjs tools/e2e/cms-reported.mjs
+          if test -f /tmp/fixes.patch; then git apply --index /tmp/fixes.patch; fi
+          git add tools/e2e/cms-reported.mjs
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
+          node tools/release/cms-release.mjs stamp
+          git add -u
+          git diff --cached --check
+          git -c user.name='CMS reported fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'fix: numbered CMS authoring and preview regressions'
+          git rev-parse HEAD > /tmp/source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/source/tree.txt
+          git bundle create /tmp/source/source.bundle HEAD
+          git push origin HEAD:refs/heads/verify/cms-five-product-${{ github.run_number }}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-five-source-${{ github.run_number }}
+          path: /tmp/source
+          retention-days: 7
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare tools
+        run: |
+          mkdir -p /tmp/cms-reported
+          git rev-parse HEAD > /tmp/cms-reported/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-reported/tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/cms-reported/install.log 2>&1
+      - name: Run isolated acceptance and static checks
+        shell: python3 tools/ci/furl_ci.py {0}
+        env:
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_EVIDENCE_DIR: /tmp/cms-reported
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          if test "$CMS_ENGINE" = core; then
+            status=0
+            for command in 'npm run typecheck' 'npm run lint' 'npm test' 'npm run build'; do
+              bash -c "$command" || status=1
+            done
+            exit "$status"
+          fi
+          npx playwright install --with-deps "$CMS_ENGINE"
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-reported/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+          node tools/e2e/cms-reported.mjs > /tmp/cms-reported/reported.log 2>&1
+      - name: Compress diagnostics
+        if: always()
+        run: |
+          for log in /tmp/cms-reported/*.log; do test -f "$log" && furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-five-${{ matrix.suite }}-${{ github.run_number }}
+          path: /tmp/cms-reported
+          retention-days: 7
