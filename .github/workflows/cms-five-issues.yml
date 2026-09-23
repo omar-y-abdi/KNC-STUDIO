@@ -2,7 +2,7 @@ name: CMS five reported issues
 on:
   push:
     branches: [verify/cms-five-issues-20260923]
-    paths: [.github/workflows/cms-five-issues.yml, .verification/**]
+    paths: [.github/workflows/cms-five-issues.yml, .verification/extended.patch, .verification/correction.patch]
 permissions:
   contents: read
 concurrency:
@@ -25,30 +25,22 @@ jobs:
           node-version: 22
           cache: npm
       - id: source
-        name: Assemble exact candidate without modifying the PR branch
+        name: Build an exact candidate on the existing product history
         run: |
           set -euo pipefail
           mkdir -p /tmp/source
-          cp .verification/followup.patch /tmp/followup.patch
-          python3 - <<'PY'
-          import base64, gzip, hashlib, pathlib
-          value = pathlib.Path('.verification/fixes.b64').read_text().strip()
-          value = value.replace('P285q4bPpnl54', 'P285q4jPpnl54').replace('BcxK1UBY', 'BcxKUBY')
-          patch = gzip.decompress(base64.b64decode(value, validate=True))
-          assert hashlib.sha256(patch).hexdigest() == 'daf4584d210f6ee578da1c650b162d22b7abe013fe7a32338ee4dace7aa8751b'
-          pathlib.Path('/tmp/fixes.patch').write_bytes(patch)
-          PY
-          git checkout --detach 6d647e8c0aab06bd391822d167958c20f0a911ca
-          git apply --index /tmp/fixes.patch
-          git apply --index /tmp/followup.patch
-          git restore --source=HEAD --staged --worktree .github/workflows/cms-workspace.yml
+          cp .verification/extended.patch /tmp/extended.patch
+          if test -f .verification/correction.patch; then cp .verification/correction.patch /tmp/correction.patch; fi
+          git checkout --detach c70f59b2de213431d0e890e4596a1d98da23be21
+          git apply --index /tmp/extended.patch
+          if test -f /tmp/correction.patch; then git apply --index /tmp/correction.patch; fi
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
           node tools/release/cms-release.mjs stamp
           git add -u
           git diff --cached --check
-          git -c user.name='CMS reported fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'fix: numbered CMS authoring and preview regressions'
+          git -c user.name='CMS reported fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'fix: verify authored page controls and preserve bilingual layouts'
           git rev-parse HEAD > /tmp/source/commit.txt
           git rev-parse HEAD^{tree} > /tmp/source/tree.txt
           git bundle create /tmp/source/source.bundle HEAD
@@ -63,7 +55,7 @@ jobs:
   verify:
     needs: source
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +76,7 @@ jobs:
           git rev-parse HEAD^{tree} > /tmp/cms-reported/tree.txt
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/cms-reported/install.log 2>&1
-      - name: Run isolated acceptance and static checks
+      - name: Execute checks with individual results
         shell: python3 tools/ci/furl_ci.py {0}
         env:
           CMS_ENGINE: ${{ matrix.suite }}
@@ -95,7 +87,10 @@ jobs:
             status=0
             for command in 'npm run typecheck' 'npm run lint' 'npm test' 'npm run build'; do
               name=$(echo "$command" | tr ' ' '-')
-              bash -c "$command" > "/tmp/cms-reported/$name.log" 2>&1 || status=1
+              code=0
+              bash -c "$command" > "/tmp/cms-reported/$name.log" 2>&1 || code=$?
+              echo "$code" > "/tmp/cms-reported/$name.exit-code"
+              test "$code" = 0 || status=1
             done
             exit "$status"
           fi
@@ -105,7 +100,15 @@ jobs:
           trap 'kill "$server" 2>/dev/null || true' EXIT
           for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
           curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
-          node tools/e2e/cms-reported.mjs > /tmp/cms-reported/reported.log 2>&1
+          status=0
+          for suite in cms-reported cms-owner cms-scenes; do
+            code=0
+            mkdir -p "/tmp/cms-reported/$suite"
+            CMS_EVIDENCE_DIR="/tmp/cms-reported/$suite" node "tools/e2e/$suite.mjs" > "/tmp/cms-reported/$suite.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/cms-reported/$suite.exit-code"
+            test "$code" = 0 || status=1
+          done
+          exit "$status"
       - name: Compress diagnostics
         if: always()
         run: |
