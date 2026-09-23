@@ -446,6 +446,11 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+# Include the owner-only CMS in GitHub integration deployments.
+[functions.cms-studio]
+enabled = true
+verify_jwt = true
+
 # calendar-oauth-start: called BY an authenticated barber FROM the admin panel to get the Google
 # consent URL. Holds a valid Supabase JWT -> verify_jwt = true. Also validates the JWT internally
 # (auth.getUser) and requires a linked barber (profiles.role = 'barber') before doing any work.

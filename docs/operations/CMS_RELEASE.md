@@ -1,7 +1,10 @@
 # CMS release and recovery
 
 The CMS spans two deployments: the Cloudflare Worker/frontend and the Supabase `cms-studio`
-Edge Function. A merged PR or successful Cloudflare build does not deploy Supabase Functions.
+Edge Function. Supabase's GitHub integration deploys functions declared in `supabase/config.toml`,
+including `cms-studio`. Cloudflare builds run separately, so a merge does not guarantee the backend
+finishes first. If the frontend release check fails, verify or deploy the matching backend below,
+then retry the Cloudflare build for that commit. Keep the compatibility check enabled.
 
 ## Release order
 
