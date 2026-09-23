@@ -81,6 +81,25 @@ describe('CMS resource wire boundaries', () => {
     expect(document.emails[0]?.design?.logo).toEqual(expected)
     expect(() => validateDocument(document)).not.toThrow()
   })
+  it('rejects an invalid replacement without partially mutating the document', () => {
+    const document = emptyDocument()
+    document.presentation.fonts = {
+      [oldAsset.id]: {
+        ref: { bucket: oldAsset.bucket, path: 'fonts/old.woff2' },
+        name: 'Owner font',
+      },
+    }
+    const before = structuredClone(document)
+    expect(() =>
+      replaceDocumentResource(
+        document,
+        { bucket: 'cms-library', path: 'fonts/old.woff2' },
+        { bucket: 'gallery', path: 'fonts/new.woff2' },
+        policy,
+      ),
+    ).toThrow(/samma kategori/i)
+    expect(document).toEqual(before)
+  })
   it('keeps uploaded font references within the same strict media contract', () => {
     const document = emptyDocument()
     const previous = { ...oldAsset, path: 'fonts/old.woff2', mime: 'font/woff2' }

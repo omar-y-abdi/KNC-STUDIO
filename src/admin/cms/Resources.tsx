@@ -226,8 +226,17 @@ export function CmsResources(props: Props): JSX.Element {
   const bulk = (action: 'archive' | 'restore' | 'trash'): Promise<void> =>
     perform(async () => {
       const targets = [...selectedIds].map(currentAsset)
-      // Preflight the entire selection before the first destructive write.
-      if (action === 'trash') targets.forEach(protectDraft)
+      // Preflight the entire selection before the first destructive write. The backend
+      // remains authoritative at transition time, but known published references must
+      // not turn an ordinary bulk action into a deterministic partial operation.
+      if (action === 'trash') {
+        targets.forEach(protectDraft)
+        const usage = await Promise.all(targets.map((target) => cmsApi.assetUsage(target.id)))
+        if (usage.some((item) => item.currentReferences > 0))
+          throw new Error(
+            'Minst en vald resurs används av den publicerade webbplatsen. Ersätt referensen först.',
+          )
+      }
       const completed = new Set<string>()
       try {
         for (const target of targets) {

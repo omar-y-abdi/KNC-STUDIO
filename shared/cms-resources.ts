@@ -57,12 +57,21 @@ export function replaceDocumentResource(
   const oldKey = mediaKey(previous)
   if (previous.path.endsWith('.woff2') !== next.path.endsWith('.woff2'))
     throw new Error('Ersätt ett typsnitt med ett typsnitt och en bild med en bild.')
-  for (const font of Object.values(document.presentation.fonts ?? {}))
-    if (mediaKey(font.ref) === oldKey) font.ref = { bucket: next.bucket, path: next.path }
   if (previous.bucket !== next.bucket)
     throw new Error(
       'Ersätt med en fil från samma kategori, så att befintliga databaskopplingar bevaras.',
     )
+  const profileOwners = Object.entries(document.photos)
+    .filter(([, path]) => `barber-photos/${path}` === oldKey)
+    .map(([id]) => id)
+  for (const id of profileOwners)
+    if (!next.path.startsWith(`${id}/`))
+      throw new Error('Profilbilden måste tillhöra samma barberare.')
+  const replacesHomepageLogo = `gallery/${document.settings['homepage_logo_path']}` === oldKey
+  if (replacesHomepageLogo && !next.path.startsWith('logo/'))
+    throw new Error('Logotypen måste laddas upp som logotyp.')
+  for (const font of Object.values(document.presentation.fonts ?? {}))
+    if (mediaKey(font.ref) === oldKey) font.ref = { bucket: next.bucket, path: next.path }
   const replace = (raw: string): string => {
     try {
       const ref = resourceReference(raw, policy)
@@ -93,16 +102,8 @@ export function replaceDocumentResource(
   }
   for (const image of document.gallery)
     if (`gallery/${image.storage_path}` === oldKey) image.storage_path = next.path
-  for (const [id, path] of Object.entries(document.photos))
-    if (`barber-photos/${path}` === oldKey) {
-      if (!next.path.startsWith(`${id}/`))
-        throw new Error('Profilbilden måste tillhöra samma barberare.')
-      document.photos[id] = next.path
-    }
-  if (`gallery/${document.settings['homepage_logo_path']}` === oldKey) {
-    if (!next.path.startsWith('logo/')) throw new Error('Logotypen måste laddas upp som logotyp.')
-    document.settings['homepage_logo_path'] = next.path
-  }
+  for (const id of profileOwners) document.photos[id] = next.path
+  if (replacesHomepageLogo) document.settings['homepage_logo_path'] = next.path
   for (const image of Object.values(document.presentation.images))
     if (mediaKey(image.ref) === oldKey) image.ref = { bucket: next.bucket, path: next.path }
   for (const email of document.emails)
