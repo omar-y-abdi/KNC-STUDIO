@@ -46,3 +46,7 @@ export function changeBusinessName(name: string): void {
 export function snapshot(): typeof model {
   return structuredClone(model)
 }
+
+// Share the harness module graph with browser fault-injection scenarios.
+export { createRef } from 'preact'
+export { useState } from 'preact/hooks'

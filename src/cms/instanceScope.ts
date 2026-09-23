@@ -35,7 +35,7 @@ const urlAttributes = new Set(['fill', 'stroke', 'filter', 'clip-path', 'clipPat
  * Text, classes, external links, keys, handlers and refs are never rewritten.
  */
 export function createInstanceScope(surface: string, instance: string, template: Element | null) {
-  const namespace = `${surface}-instance-${Array.from(instance, (char) => char.codePointAt(0)!.toString(16)).join('-')}`
+  const namespace = `${surface}-instance-${Array.from(instance, (char) => (char.codePointAt(0) ?? 0).toString(16)).join('-')}`
   const ids = new Map<string, string>()
   const register = (id: string): string => {
     let scoped = ids.get(id)

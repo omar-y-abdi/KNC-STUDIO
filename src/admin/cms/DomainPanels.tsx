@@ -2,6 +2,7 @@ import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import {
+  EMAIL_DESIGN_LIMITS,
   EMAIL_NAMES,
   type CmsAsset,
   defaultEmailDesign,
@@ -56,12 +57,22 @@ const barberFields = [
 ] as const
 
 const emailDesignNumberFields = [
-  ['width', 'Bredd', 320, 760],
-  ['radius', 'Hörnradie', 0, 48],
-  ['padding', 'Padding', 12, 64],
-  ['titleSize', 'Rubrikstorlek', 18, 56],
-  ['textSize', 'Textstorlek', 12, 24],
+  ['width', 'Bredd', EMAIL_DESIGN_LIMITS.width],
+  ['radius', 'Hörnradie', EMAIL_DESIGN_LIMITS.radius],
+  ['padding', 'Padding', EMAIL_DESIGN_LIMITS.padding],
+  ['titleSize', 'Rubrikstorlek', EMAIL_DESIGN_LIMITS.titleSize],
+  ['textSize', 'Textstorlek', EMAIL_DESIGN_LIMITS.textSize],
 ] as const
+
+type EmailTextKey =
+  | 'subject'
+  | 'preheader'
+  | 'title'
+  | 'intro'
+  | 'section_title'
+  | 'note'
+  | 'contact_lead'
+  | 'cta_label'
 
 const emailLabel: Record<(typeof EMAIL_NAMES)[number], string> = {
   customer_confirmation: 'Kundbekräftelse',
@@ -203,8 +214,12 @@ export function EmailPanel({
   const email =
     document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ??
     first
-  const patch = (key: keyof CmsEmail, value: string): void =>
-    onChange(replaceEmail(document, { ...email, [key]: value }))
+  const patch = (key: EmailTextKey, value: string): void => {
+    const next = structuredClone(email)
+    if (key === 'section_title' || key === 'contact_lead') next[key] = value === '' ? null : value
+    else next[key] = value
+    onChange(replaceEmail(document, next))
+  }
   const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
     const next = structuredClone(email)
     if (!next.design) return
@@ -284,13 +299,13 @@ export function EmailPanel({
             <summary>Utseende</summary>
             <fieldset>
               <legend>Design</legend>
-              {emailDesignNumberFields.map(([key, label, min, max]) => (
+              {emailDesignNumberFields.map(([key, label, limits]) => (
                 <label>
                   {label}
                   <input
                     type="number"
-                    min={min}
-                    max={max}
+                    min={limits.min}
+                    max={limits.max}
                     value={email.design?.[key]}
                     onInput={(e) =>
                       updateDesign((design) => {

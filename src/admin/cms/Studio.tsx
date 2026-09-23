@@ -2,6 +2,7 @@ import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
+  isPagePath,
   mediaUrl,
   type CmsAsset,
   type CmsDocument,
@@ -341,13 +342,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const createPage = (): void => {
     editor.current?.flush()
     const path = newPath.trim().replace(/\/+$/, '')
-    if (
-      !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
-      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
-        path,
-      ) ||
-      draft.document.presentation.pages.some((item) => item.path === path)
-    )
+    if (!isPagePath(path) || draft.document.presentation.pages.some((item) => item.path === path))
       return setError('Ange en unik, giltig adress som /hemsida.')
     const id = crypto.randomUUID()
     const heading = window.document.createElement('span')

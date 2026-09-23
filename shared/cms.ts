@@ -108,6 +108,14 @@ export interface EmailPalette {
   button: string
   buttonText: string
 }
+export const EMAIL_DESIGN_LIMITS = {
+  width: { min: 320, max: 800 },
+  radius: { min: 0, max: 40 },
+  padding: { min: 12, max: 60 },
+  titleSize: { min: 20, max: 48 },
+  textSize: { min: 12, max: 24 },
+} as const
+
 export interface EmailDesign {
   palettes: Record<CmsMode, EmailPalette>
   font: 'system' | 'serif' | 'sans'
@@ -583,11 +591,21 @@ export function validateEmailDesign(
     !['light', 'dark'].includes(String(design['defaultMode']))
   )
     fail(path, 'Unsupported font or mode')
-  integer(design['width'], path, 320, 800)
-  integer(design['radius'], path, 0, 40)
-  integer(design['padding'], path, 12, 60)
-  integer(design['titleSize'], path, 20, 48)
-  integer(design['textSize'], path, 12, 24)
+  integer(design['width'], path, EMAIL_DESIGN_LIMITS.width.min, EMAIL_DESIGN_LIMITS.width.max)
+  integer(design['radius'], path, EMAIL_DESIGN_LIMITS.radius.min, EMAIL_DESIGN_LIMITS.radius.max)
+  integer(design['padding'], path, EMAIL_DESIGN_LIMITS.padding.min, EMAIL_DESIGN_LIMITS.padding.max)
+  integer(
+    design['titleSize'],
+    path,
+    EMAIL_DESIGN_LIMITS.titleSize.min,
+    EMAIL_DESIGN_LIMITS.titleSize.max,
+  )
+  integer(
+    design['textSize'],
+    path,
+    EMAIL_DESIGN_LIMITS.textSize.min,
+    EMAIL_DESIGN_LIMITS.textSize.max,
+  )
   const order = list(design['order'], path, EMAIL_PARTS.length)
   if (
     order.length !== EMAIL_PARTS.length ||

@@ -93,6 +93,19 @@ export function CmsResources(props: Props): JSX.Element {
       ),
     [props.assets, query, state],
   )
+  const selectedDraftBlocked = useMemo(
+    () =>
+      [...selectedIds].some((id) => {
+        const selected = props.assets.find((item) => item.id === id)
+        if (!selected) return true
+        try {
+          return resourceUsage(props.document, selected, policy).length > 0
+        } catch {
+          return true
+        }
+      }),
+    [props.assets, props.document, selectedIds],
+  )
 
   useLayoutEffect(() => {
     if (selectedId && compactWorkspace()) {
@@ -318,7 +331,11 @@ export function CmsResources(props: Props): JSX.Element {
             </button>
           )}
           {state !== 'trash' && (
-            <button type="button" disabled={busy} onClick={() => void bulk('trash')}>
+            <button
+              type="button"
+              disabled={busy || selectedDraftBlocked}
+              onClick={() => void bulk('trash')}
+            >
               Till papperskorg
             </button>
           )}
