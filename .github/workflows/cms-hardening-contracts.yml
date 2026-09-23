@@ -1,0 +1,66 @@
+name: CMS remaining boundary contracts
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/cms-hardening-contracts.yml]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Establish exact test sources
+        run: |
+          cp .hardening/tests.patch /tmp/tests.patch
+          git checkout --detach a22aea83ff81cf4a758314263e7d2b7fabcdb60b
+          git apply --index /tmp/tests.patch
+          test "$(git write-tree)" = 3ac12181333d3ca3fa9dc91720d6b442691882bd
+          mkdir -p /tmp/contracts
+          git write-tree > /tmp/contracts/source-tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/contracts/install.log 2>&1
+      - name: Exercise unit and browser contracts
+        env:
+          CMS_ENGINE: chromium
+          CMS_EVIDENCE_DIR: /tmp/contracts
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps chromium
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/contracts/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4188/tools/e2e/admin-harness.html >/dev/null && break; sleep 1; done
+          set +e
+          npm test > /tmp/contracts/unit.log 2>&1
+          echo "$?" > /tmp/contracts/unit.exit-code
+          node tools/e2e/cms-engineering.mjs > /tmp/contracts/engineering.log 2>&1
+          echo "$?" > /tmp/contracts/engineering.exit-code
+          node tools/e2e/cms-adversarial.mjs > /tmp/contracts/adversarial.log 2>&1
+          echo "$?" > /tmp/contracts/adversarial.exit-code
+      - name: Preserve summaries
+        if: always()
+        run: |
+          for f in /tmp/contracts/*.log; do test -f "$f" && furl compress "$f" --json > "$f.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hardening-boundaries-red
+          path: /tmp/contracts
+          retention-days: 7
+      - name: Enforce results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('/tmp/contracts')
+          assert all((root/f'{name}.exit-code').read_text().strip()=='0' for name in ['unit','engineering','adversarial'])
+          PY
