@@ -1,0 +1,64 @@
+name: PR71 deployed backend proof
+on:
+  push:
+    branches: [verify/cms-hardening-20260923]
+    paths: [.github/workflows/pr71-backend-proof.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 26e3e8189fc294d7a6847933eaf60e97efd91e4a
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+      - name: Check deployed source identity and fail-closed access
+        run: |
+          mkdir -p /tmp/pr71-backend
+          git rev-parse HEAD > /tmp/pr71-backend/source-commit.txt
+          git rev-parse HEAD^{tree} > /tmp/pr71-backend/source-tree.txt
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict'
+          import { writeFile, readFile } from 'node:fs/promises'
+          import { releaseDigest, verifyBackend } from './tools/release/cms-release.mjs'
+          const origin = 'https://bladeblendstudio.se'
+          const base = 'https://soktgawvexeumqvtyhda.supabase.co'
+          const url = `${base}/functions/v1/cms-studio`
+          const expected = releaseDigest()
+          assert.equal(expected, 'd1c87fd56bcb9073b4b7df04038a86095b2b41aeceb0decd8c3599086e006c7a')
+          assert.ok((await readFile('shared/cms-release.ts', 'utf8')).includes(expected))
+          await verifyBackend(base, expected)
+          const result = { commit: '26e3e8189fc294d7a6847933eaf60e97efd91e4a', release: expected, checks: [] }
+          const checks = [
+            ['allowed-origin-preflight', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' } }, 204],
+            ['forbidden-origin-preflight', { method: 'OPTIONS', headers: { Origin: 'https://untrusted.example', 'Access-Control-Request-Method': 'POST' } }, 403],
+            ['missing-authorization', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'state' }) }, 401],
+            ['invalid-authorization', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Authorization: 'Bearer invalid-test-token' }, body: JSON.stringify({ operation: 'state' }) }, 401],
+          ]
+          for (const [name, init, status] of checks) {
+            const response = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) })
+            const entry = { name, status: response.status, release: response.headers.get('x-cms-release'), allowedOrigin: response.headers.get('access-control-allow-origin') }
+            result.checks.push(entry)
+            await writeFile('/tmp/pr71-backend/checks.json', JSON.stringify(result, null, 2))
+            assert.equal(response.status, status, name)
+            if (name === 'allowed-origin-preflight') {
+              assert.equal(entry.release, expected)
+              assert.equal(entry.allowedOrigin, origin)
+            }
+            if (name === 'forbidden-origin-preflight') assert.equal(entry.allowedOrigin, null)
+            console.log(`PASS ${name}: ${status}`)
+          }
+          await writeFile('/tmp/pr71-backend/checks.json', JSON.stringify({ ...result, passed: true }, null, 2))
+          console.log(`PASS deployed release ${expected}`)
+          JS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pr71-deployed-backend
+          path: /tmp/pr71-backend
+          retention-days: 14
