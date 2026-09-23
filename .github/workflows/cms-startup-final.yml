@@ -17,24 +17,23 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version: 22
-          cache: npm
-      - name: Prepare reviewed candidate
+      - name: Prepare exact reviewed source
         id: source
         run: |
+          set -euo pipefail
+          git checkout --detach 83dfd0990a5e16475cf2eb6ee49fabd1ae5066af
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/e2e/cms-startup.mjs')
+          s = p.read_text()
+          before = '(session) => localStorage.setItem('
+          assert s.count(before) == 1
+          p.write_text(s.replace(before, '(session) => window.localStorage.setItem('))
+          PY
+          git add tools/e2e/cms-startup.mjs
+          test "$(git write-tree)" = d5553d387c6023e7cc121e7060dc9fd257e7fd2b
+          git -c user.name='CMS startup fix' -c user.email='cms-fix@users.noreply.github.com' commit -m 'test: resolve storage through browser scope in startup regression'
           mkdir -p /tmp/source
-          cp .startup/finish.patch /tmp/finish.patch
-          git checkout --detach 7ba996b5bedabfcbe789af899b2abb78d53cb3c4
-          git apply --index --exclude=.github/workflows/cms-workspace.yml /tmp/finish.patch
-          printf '\n// Startup failures are part of this workspace gate, not an optional diagnostic.\nawait import("./cms-startup.mjs")\n' >> tools/e2e/cms-workspace.mjs
-          git add tools/e2e/cms-workspace.mjs
-          test "$(git write-tree)" = 4415496f51913cddf363a845a6eda3b192dcf510
-          npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
-          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
-          git add -u
-          git -c user.name='CMS startup fix' -c user.email='cms-fix@users.noreply.github.com' commit -m 'fix: keep page failures local and gate CMS startup regressions'
           git rev-parse HEAD > /tmp/source/commit.txt
           git rev-parse HEAD^{tree} > /tmp/source/tree.txt
           git bundle create /tmp/source/source.bundle HEAD
@@ -43,13 +42,13 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: cms-startup-final-source
+          name: cms-startup-source-${{ github.run_number }}
           path: /tmp/source
           retention-days: 7
   built:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
@@ -64,7 +63,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: bash tools/ci/setup-furl.sh
-      - name: Production build and startup acceptance
+      - name: Build and verify production startup
         env:
           CMS_ENGINE: ${{ matrix.engine }}
           VITE_SUPABASE_URL: https://admin-harness.invalid
@@ -87,30 +86,43 @@ jobs:
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL" >/dev/null
+          set +e
           node tools/e2e/cms-startup.mjs > /tmp/cms-startup/acceptance.log 2>&1
-      - name: Read-only published-content startup measurement
-        if: success()
-        env:
-          CMS_ENGINE: ${{ matrix.engine }}
-          CMS_STARTUP_BUILT: '1'
-          CMS_STARTUP_PRESENTATION: /tmp/presentation.json
-          CMS_EVIDENCE_DIR: /tmp/cms-startup/published
-          BASE_URL: http://127.0.0.1:4188
-        shell: python3 tools/ci/furl_ci.py {0}
-        run: |
-          curl -fsS https://bladeblendstudio.se/api/cms/presentation > /tmp/presentation.json
-          npm run preview -- --host 127.0.0.1 --port 4188 > /tmp/cms-startup/published-server.log 2>&1 &
-          pid=$!
-          trap 'kill "$pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
-          node tools/e2e/cms-startup.mjs > /tmp/cms-startup/published.log 2>&1
-      - name: Compress logs
+          echo "$?" > /tmp/cms-startup/acceptance.exit-code
+          curl -fsS --max-time 20 https://bladeblendstudio.se/api/cms/presentation > /tmp/cms-startup/presentation.json
+          echo "$?" > /tmp/cms-startup/public-read.exit-code
+          CMS_STARTUP_PRESENTATION=/tmp/cms-startup/presentation.json CMS_EVIDENCE_DIR=/tmp/cms-startup/published node tools/e2e/cms-startup.mjs > /tmp/cms-startup/published.log 2>&1
+          echo "$?" > /tmp/cms-startup/published.exit-code
+      - name: Compress logs and summarize outcomes
         if: always()
         run: |
-          for f in /tmp/cms-startup/*.log; do furl compress "$f" --json > "$f.furl.json" || true; done
+          for f in /tmp/cms-startup/*.log; do
+            test -f "$f" || continue
+            furl compress "$f" --json > "$f.furl.json" || true
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('/tmp/cms-startup')
+          root.mkdir(exist_ok=True)
+          checks = {p.stem: int(p.read_text()) for p in root.glob('*.exit-code')}
+          (root/'checks.json').write_text(json.dumps(checks, indent=2))
+          print(json.dumps(checks))
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: cms-startup-final-${{ matrix.engine }}
+          name: cms-startup-${{ matrix.engine }}-${{ github.run_number }}
           path: /tmp/cms-startup
           retention-days: 7
+      - name: Enforce required outcomes
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          checks = json.loads(Path('/tmp/cms-startup/checks.json').read_text())
+          assert {'acceptance','public-read','published'}.issubset(checks), checks
+          assert all(code == 0 for code in checks.values()), checks
+          PY
