@@ -27,8 +27,10 @@ jobs:
           mkdir -p /tmp/source
           cp .startup/finish.patch /tmp/finish.patch
           git checkout --detach 7ba996b5bedabfcbe789af899b2abb78d53cb3c4
-          git apply --index /tmp/finish.patch
-          test "$(git write-tree)" = 544c279a8a7312f3419494b0a061eee727afabf8
+          git apply --index --exclude=.github/workflows/cms-workspace.yml /tmp/finish.patch
+          printf '\n// Startup failures are part of this workspace gate, not an optional diagnostic.\nawait import("./cms-startup.mjs")\n' >> tools/e2e/cms-workspace.mjs
+          git add tools/e2e/cms-workspace.mjs
+          test "$(git write-tree)" = 4415496f51913cddf363a845a6eda3b192dcf510
           npm ci --no-audit --no-fund > /tmp/source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/source/format.log 2>&1
           git add -u
