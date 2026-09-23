@@ -25,11 +25,16 @@ jobs:
         id: source
         run: |
           set -euo pipefail
+          mkdir -p /tmp/pr71-source
           test "$(git rev-parse origin/codex/cms-flow-scenes)" = 0a98d832e070cbf6a31cd44702ae0957251ebbac
           git checkout --detach 0a98d832e070cbf6a31cd44702ae0957251ebbac
           git config user.name 'CMS engineering review'
           git config user.email 'cms-review@users.noreply.github.com'
-          git cherry-pick --no-commit 32d9e30024391bf2de1e2889f04b691277e2756f
+          if ! git cherry-pick --no-commit 32d9e30024391bf2de1e2889f04b691277e2756f; then
+            test "$(git diff --name-only --diff-filter=U)" = shared/cms-release.ts
+            node tools/release/cms-release.mjs stamp
+            git add shared/cms-release.ts
+          fi
           python3 - <<'PY'
           from pathlib import Path
           path = Path('tools/e2e/admin-state.mjs')
@@ -47,9 +52,9 @@ jobs:
           assert text.count(before) == 1
           path.write_text(text.replace(before, "required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-adversarial', 'cms-engineering', 'tracked-source-diff'}"))
           PY
-          mkdir -p /tmp/pr71-source
           npm ci --no-audit --no-fund > /tmp/pr71-source/install.log 2>&1
           npx prettier --write shared/cms-release.ts shared/cms-resources.ts src/admin/cms/Resources.tsx tests/unit/cmsResourceReplacement.test.ts tools/e2e/cms-engineering.mjs tools/e2e/admin-state.mjs .github/workflows/cms-workspace.yml > /tmp/pr71-source/format.log 2>&1
+          node tools/release/cms-release.mjs stamp
           node tools/release/cms-release.mjs check
           git add shared/cms-release.ts shared/cms-resources.ts src/admin/cms/Resources.tsx tests/unit/cmsResourceReplacement.test.ts tools/e2e/cms-engineering.mjs tools/e2e/admin-state.mjs .github/workflows/cms-workspace.yml
           git diff --cached --check
