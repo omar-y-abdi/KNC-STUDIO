@@ -259,6 +259,11 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         )
         assert.equal(saved.document.settings.business_name, 'Unsaved owner business name')
         assert.equal(saved.document.presentation.pages.length, 6)
+        const canvas = await page.locator('.cms-canvas-shell').boundingBox()
+        assert.ok(
+          canvas && canvas.height >= 240 && canvas.y + canvas.height <= page.viewportSize().height,
+          'Recovered drafts must leave a usable canvas inside the phone viewport',
+        )
         assert.deepEqual(backend.writes, [])
       },
     )

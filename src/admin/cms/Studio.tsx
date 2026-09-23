@@ -604,8 +604,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         </div>
       )}
       {conflict && (
-        <div class="cms-notice" role="alert" inert={drawerOpen}>
-          Publicering är blockerad tills konflikten är löst.
+        <div class="cms-notice cms-conflict-notice" role="alert" inert={drawerOpen}>
+          <span>Publicering är blockerad tills konflikten är löst.</span>
           <button type="button" onClick={() => resolveConflict('local')}>
             Behåll mina konfliktändringar
           </button>
