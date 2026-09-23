@@ -92,7 +92,9 @@ async function mountCmsStudio(page) {
     harness.mountCmsStudioHarness()
   })
   try {
-    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible' })
+    // Cold bootstrap captures every native scene before the shell mounts. Keep
+    // its readiness budget separate from the 10-second interaction deadline.
+    await page.locator('.cms-canvas-shell').waitFor({ state: 'visible', timeout: 90000 })
   } catch (error) {
     const notice = await page.locator('.cms-notice').allTextContents()
     const body = await page
