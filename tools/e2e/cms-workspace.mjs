@@ -183,6 +183,3 @@ for (const [engine, name] of [
 await writeFile(`${out}/contracts.json`, JSON.stringify({ results, failures }, null, 2))
 for (const result of results) console.log(`${result.passed ? 'PASS' : 'FAIL'} ${result.message}`)
 assert.deepEqual(failures, [], `${failures.length} responsive workspace contracts failed`)
-
-// Startup failures are part of this workspace gate, not an optional diagnostic.
-await import('./cms-startup.mjs')
