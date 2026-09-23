@@ -1,0 +1,49 @@
+name: CMS deployed reload
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-live-reload.yml]
+permissions:
+  contents: read
+jobs:
+  reload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - run: bash tools/ci/setup-furl.sh
+      - name: Reopen the stored draft in the same tab
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          cp .startup/live.mjs tools/e2e/live-startup.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/live-startup.mjs')
+          t=p.read_text()
+          t=t.replace('} finally {await browser.close()}', '''for(let visit=1;visit<=2;visit++) {
+            const started=Date.now();await page.reload();let failure=null
+            try{await page.waitForFunction(()=>!!document.querySelector('.gjs-frame')||!!globalThis.__cmsCrash||document.body.innerText.includes('Studion kunde inte öppnas'),null,{timeout:60000})}catch(e){failure=e.message}
+            await page.waitForTimeout(1500)
+            const state=await page.evaluate(()=>({body:document.body.innerText,crash:globalThis.__cmsCrash,backup:Object.keys(localStorage).filter(k=>k.startsWith('knc-cms-draft')).map(k=>({key:k,bytes:localStorage.getItem(k).length}))}))
+            await writeFile(out+'/reload-'+visit+'.json',JSON.stringify({elapsed:Date.now()-started,failure,state,errors},null,2))
+            await page.screenshot({path:out+'/reload-'+visit+'.png'})
+            console.log(JSON.stringify({visit,elapsed:Date.now()-started,failure,state}))
+          }
+          } finally {await browser.close()}''')
+          p.write_text(t)
+          PY
+          node tools/e2e/live-startup.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-live-reload
+          path: /tmp/live-cms
+          retention-days: 7
