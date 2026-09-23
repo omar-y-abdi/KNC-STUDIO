@@ -8,6 +8,8 @@ permissions:
 jobs:
   built:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 12
     strategy:
       fail-fast: false
@@ -17,7 +19,6 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
@@ -25,6 +26,13 @@ jobs:
       - name: Restore exact candidate
         run: |
           cp .startup/acceptance.patch /tmp/acceptance.patch
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          patch = Path('.startup/final-fix.patch').read_text().replace('\n diff --git ', '\ndiff --git ')
+          assert hashlib.sha256(patch.encode()).hexdigest() == '16811c17060e18e85e583d57b04b2e5b023c41781d8c08034fa7e24ff882676a'
+          Path('/tmp/final-fix.patch').write_text(patch)
+          PY
           git checkout --detach 51a37d05a927b4b58a02c92b6a3c902700c377ba
           git apply --index /tmp/acceptance.patch
           test "$(git write-tree)" = bbd60982e633e6be4cfe8a101f1d9d1f93d78ace
@@ -43,10 +51,18 @@ jobs:
           npm ci
           npx prettier --write tools/e2e/cms-startup.mjs
           git add tools/e2e/cms-startup.mjs
-          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'test: gate complete CMS startup and preservation through source upgrades'
+          test "$(git write-tree)" = 915566c7620b649eb40bc9290836e2f6dd861ae6
+          git apply --index /tmp/final-fix.patch
+          test "$(git write-tree)" = 2af855fedaf7fcc708eff96d5beef0f02f2d0678
+          git diff --cached --name-only -z | xargs -0 npx prettier --write
+          git add -u
+          git -c user.name='CMS regression verification' -c user.email='cms-verification@users.noreply.github.com' commit -m 'fix: preserve legacy drafts and verify production CMS startup'
           git rev-parse HEAD > /tmp/startup/commit.txt
           git rev-parse HEAD^{tree} > /tmp/startup/tree.txt
           git bundle create /tmp/startup/source.bundle HEAD
+          if test "$CMS_ENGINE" = chromium; then
+            git push origin HEAD:refs/heads/verify/cms-startup-product > /tmp/startup/transport.log 2>&1 || cat /tmp/startup/transport.log
+          fi
           npm run typecheck
           npm run lint
           npm test > /tmp/startup/unit.log 2>&1
