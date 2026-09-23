@@ -229,6 +229,17 @@ export function CmsResources(props: Props): JSX.Element {
       }
     }, 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.')
 
+  const selectionProtected = useMemo(() => {
+    try {
+      return [...selectedIds].some((id) => {
+        const target = props.assets.find((item) => item.id === id)
+        return !target || resourceUsage(props.document, target, policy).length > 0
+      })
+    } catch {
+      return true
+    }
+  }, [selectedIds, props.assets, props.document])
+
   const draftReferences = useMemo(() => {
     try {
       return { places: asset ? resourceUsage(props.document, asset, policy) : [], error: null }
@@ -318,7 +329,11 @@ export function CmsResources(props: Props): JSX.Element {
             </button>
           )}
           {state !== 'trash' && (
-            <button type="button" disabled={busy} onClick={() => void bulk('trash')}>
+            <button
+              type="button"
+              disabled={busy || selectionProtected}
+              onClick={() => void bulk('trash')}
+            >
               Till papperskorg
             </button>
           )}

@@ -3,6 +3,7 @@ import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import {
   EMAIL_NAMES,
+  EMAIL_DESIGN_LIMITS,
   type CmsAsset,
   defaultEmailDesign,
   type CmsDocument,
@@ -56,11 +57,11 @@ const barberFields = [
 ] as const
 
 const emailDesignNumberFields = [
-  ['width', 'Bredd', 320, 760],
-  ['radius', 'Hörnradie', 0, 48],
-  ['padding', 'Padding', 12, 64],
-  ['titleSize', 'Rubrikstorlek', 18, 56],
-  ['textSize', 'Textstorlek', 12, 24],
+  ['width', 'Bredd'],
+  ['radius', 'Hörnradie'],
+  ['padding', 'Padding'],
+  ['titleSize', 'Rubrikstorlek'],
+  ['textSize', 'Textstorlek'],
 ] as const
 
 const emailLabel: Record<(typeof EMAIL_NAMES)[number], string> = {
@@ -203,8 +204,16 @@ export function EmailPanel({
   const email =
     document.emails.find((item) => item.template === selectedTemplate && item.lang === lang) ??
     first
-  const patch = (key: keyof CmsEmail, value: string): void =>
-    onChange(replaceEmail(document, { ...email, [key]: value }))
+  const patch = (
+    key: Exclude<keyof CmsEmail, 'template' | 'lang' | 'design'>,
+    value: string,
+  ): void =>
+    onChange(
+      replaceEmail(document, {
+        ...email,
+        [key]: value === '' && (key === 'section_title' || key === 'contact_lead') ? null : value,
+      }),
+    )
   const updateDesign = (mutate: (design: NonNullable<CmsEmail['design']>) => void): void => {
     const next = structuredClone(email)
     if (!next.design) return
@@ -284,13 +293,13 @@ export function EmailPanel({
             <summary>Utseende</summary>
             <fieldset>
               <legend>Design</legend>
-              {emailDesignNumberFields.map(([key, label, min, max]) => (
+              {emailDesignNumberFields.map(([key, label]) => (
                 <label>
                   {label}
                   <input
                     type="number"
-                    min={min}
-                    max={max}
+                    min={EMAIL_DESIGN_LIMITS[key][0]}
+                    max={EMAIL_DESIGN_LIMITS[key][1]}
                     value={email.design?.[key]}
                     onInput={(e) =>
                       updateDesign((design) => {

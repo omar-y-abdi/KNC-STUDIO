@@ -1,3 +1,4 @@
+/* global window, document, DOMParser, location, structuredClone, getComputedStyle */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
@@ -215,9 +216,9 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       results.push({ engine: name, title, passed: true })
     } catch (error) {
       results.push({ engine: name, title, passed: false, error: error.stack ?? String(error) })
-      await page
-        .screenshot({ path: `${out}/${name}-${results.length}-failure.png` })
-        .catch(() => {})
+      await page.screenshot({ path: `${out}/${name}-${results.length}-failure.png` }).catch(() => {
+        /* The failed browser may already be closed. */
+      })
     } finally {
       await context.close()
     }
@@ -225,13 +226,11 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
   try {
     await check('Replacement preserves edits made while upload is pending', async (page) => {
       await resources(page)
-      await page
-        .locator('.cms-resource-detail input[type=file]')
-        .setInputFiles({
-          name: 'replacement.webp',
-          mimeType: 'image/webp',
-          buffer: Buffer.from('fixture'),
-        })
+      await page.locator('.cms-resource-detail input[type=file]').setInputFiles({
+        name: 'replacement.webp',
+        mimeType: 'image/webp',
+        buffer: Buffer.from('fixture'),
+      })
       await page.waitForFunction(() => window.cmsReview.pending)
       await page.evaluate(() => {
         const model = window.cmsReview
@@ -258,7 +257,13 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
     await check('Bulk trash preflights draft references before any write', async (page) => {
       await resources(page)
       await page.getByRole('checkbox', { name: 'Markera First image', exact: true }).check()
-      await page.getByRole('button', { name: 'Till papperskorg', exact: true }).click()
+      const trash = page.getByRole('button', { name: 'Till papperskorg', exact: true })
+      assert.equal(await trash.isDisabled(), true)
+      // Defeating the disabled DOM control must not defeat the handler's preflight.
+      await trash.evaluate((button) => {
+        button.disabled = false
+      })
+      await trash.click()
       await page.waitForFunction(
         () => window.cmsReview.errors.length || window.cmsReview.lifecycle.length,
       )
@@ -375,6 +380,119 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         assert.equal(actual.uniqueIds, true)
         assert.equal(actual.localLinks, true)
         assert.equal(actual.styled, true)
+      },
+    )
+    await check(
+      'Nested component instances retain hooks, refs and local label targets',
+      async (page) => {
+        await page.goto(`${base}/tools/e2e/admin-harness.html`)
+        await page.evaluate(async () => {
+          const { h, render } = await import('/tools/e2e/admin-harness.tsx')
+          const { createRef, useState } = await import('/tools/e2e/cms-resources-harness.tsx')
+          const { useNativeChild, NativeRegion, NativeSiteProvider } =
+            await import('/src/cms/NativeSurface.tsx')
+          const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
+          const { emptyDocument } = await import('/shared/cms.ts')
+          function Child({ reference }) {
+            const [count, setCount] = useState(0)
+            const project = useNativeChild()
+            let deep = h('p', { class: 'nested-deep' }, 'Original nested text')
+            for (let i = 0; i < 35; i++) deep = h('div', {}, deep)
+            return project(
+              h(
+                'section',
+                {},
+                h('label', { htmlFor: 'local-input' }, 'Local input'),
+                h('input', { id: 'local-input', ref: reference }),
+                h(
+                  'button',
+                  { class: 'local-action', onClick: () => setCount((n) => n + 1) },
+                  `Count ${count}`,
+                ),
+                deep,
+              ),
+            )
+          }
+          const host = document.createElement('div')
+          document.body.replaceChildren(host)
+          const surface = 'my-booking-card'
+          const make = (reference) => h('article', {}, h(Child, { key: 'child', reference }))
+          render(
+            h(
+              NativeSiteProvider,
+              { source: true },
+              h(NativeRegion, { surface, lang: 'sv', mode: 'light' }, make(createRef())),
+            ),
+            host,
+          )
+          const source = new DOMParser().parseFromString(
+            snapshotNative(host.querySelector('article'), surface),
+            'text/html',
+          )
+          source.querySelector('.nested-deep').textContent = 'Nested owner edit'
+          const html = `<main data-knc-native="1">${source.body.innerHTML}</main>`
+          const presentation = emptyDocument().presentation
+          presentation.pages = [
+            {
+              id: '10000000-0000-4000-8000-000000000004',
+              path: '/my-bookings',
+              kind: 'page',
+              name: { sv: 'Bookings', en: 'Bookings' },
+              title: { sv: '', en: '' },
+              description: { sv: '', en: '' },
+              inMenu: false,
+              content: {
+                sv: { html, css: { light: '', dark: '' } },
+                en: { html, css: { light: '', dark: '' } },
+              },
+            },
+          ]
+          const references = [createRef(), createRef()]
+          const draw = () =>
+            render(
+              h(
+                NativeSiteProvider,
+                { presentation },
+                ['a/b', 'a_b'].map((instance, i) =>
+                  h(
+                    NativeRegion,
+                    { key: instance, surface, instance, lang: 'sv', mode: 'light' },
+                    make(references[i]),
+                  ),
+                ),
+              ),
+              host,
+            )
+          window.nestedScope = { draw, references }
+          draw()
+        })
+        await page.locator('.local-action').first().click()
+        await page.waitForFunction(
+          () => document.querySelector('.local-action')?.textContent === 'Count 1',
+        )
+        await page.evaluate(() => window.nestedScope.draw())
+        const state = await page.evaluate(() => {
+          const cards = [...document.querySelectorAll('article')]
+          const ids = [...document.querySelectorAll('[id]')].map((node) => node.id)
+          return {
+            unique: ids.length === new Set(ids).size,
+            text: cards.map((card) => card.querySelector('.nested-deep')?.textContent),
+            counts: cards.map((card) => card.querySelector('button')?.textContent),
+            refs: cards.every(
+              (card, i) => window.nestedScope.references[i].current === card.querySelector('input'),
+            ),
+            labels: cards.every(
+              (card) => card.querySelector('label')?.htmlFor === card.querySelector('input')?.id,
+            ),
+          }
+        })
+        assert.deepEqual(state, {
+          unique: true,
+          text: ['Nested owner edit', 'Nested owner edit'],
+          counts: ['Count 1', 'Count 0'],
+          refs: true,
+          labels: true,
+        })
       },
     )
   } finally {

@@ -512,6 +512,15 @@ export function emptyDocument(): CmsDocument {
     presentation: emptyPresentation(),
   }
 }
+/** Shared editor and server bounds; neither side may silently drift. */
+export const EMAIL_DESIGN_LIMITS = {
+  width: [320, 800],
+  radius: [0, 40],
+  padding: [12, 60],
+  titleSize: [20, 48],
+  textSize: [12, 24],
+} as const
+
 export function defaultEmailDesign(): EmailDesign {
   return {
     palettes: {
@@ -583,11 +592,8 @@ export function validateEmailDesign(
     !['light', 'dark'].includes(String(design['defaultMode']))
   )
     fail(path, 'Unsupported font or mode')
-  integer(design['width'], path, 320, 800)
-  integer(design['radius'], path, 0, 40)
-  integer(design['padding'], path, 12, 60)
-  integer(design['titleSize'], path, 20, 48)
-  integer(design['textSize'], path, 12, 24)
+  for (const [key, [min, max]] of Object.entries(EMAIL_DESIGN_LIMITS))
+    integer(design[key], path, min, max)
   const order = list(design['order'], path, EMAIL_PARTS.length)
   if (
     order.length !== EMAIL_PARTS.length ||

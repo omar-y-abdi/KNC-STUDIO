@@ -3,6 +3,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
+  isPagePath,
   type CmsAsset,
   type CmsDocument,
   type CmsLang,
@@ -340,14 +341,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
   const createPage = (): void => {
     editor.current?.flush()
+    if (newName.trim().length > 80) return setError('Namnet får vara högst 80 tecken.')
     const path = newPath.trim().replace(/\/+$/, '')
-    if (
-      !/^\/[a-z0-9][a-z0-9/_-]*$/i.test(path) ||
-      /^\/(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i.test(
-        path,
-      ) ||
-      draft.document.presentation.pages.some((item) => item.path === path)
-    )
+    if (!isPagePath(path) || draft.document.presentation.pages.some((item) => item.path === path))
       return setError('Ange en unik, giltig adress som /hemsida.')
     const id = crypto.randomUUID()
     const heading = window.document.createElement('span')
@@ -1057,6 +1053,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 Sidnamn
                 <input
                   autoFocus
+                  maxLength={80}
                   value={newName}
                   onInput={(event) => setNewName(event.currentTarget.value)}
                 />
@@ -1064,6 +1061,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               <label>
                 Adress
                 <input
+                  maxLength={100}
                   value={newPath}
                   onInput={(event) => setNewPath(event.currentTarget.value)}
                   placeholder="/exempel"

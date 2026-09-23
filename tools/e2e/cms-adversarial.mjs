@@ -1,3 +1,4 @@
+/* global window, document, DOMParser, location, structuredClone, getComputedStyle */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
@@ -52,7 +53,9 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       results.push({ engine: engineName, name, passed: true })
     } catch (error) {
       results.push({ engine: engineName, name, passed: false, error: error.stack })
-      await page.screenshot({ path: `${out}/${engineName}-${name}-failure.png` }).catch(() => {})
+      await page.screenshot({ path: `${out}/${engineName}-${name}-failure.png` }).catch(() => {
+        /* The failed browser may already be closed. */
+      })
     } finally {
       await context.close()
     }
@@ -369,7 +372,14 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
           design: defaultEmailDesign(),
         })
         render(
-          h(EmailPanel, { document: state, lang: 'sv', assets: [], onChange: () => {} }),
+          h(EmailPanel, {
+            document: state,
+            lang: 'sv',
+            assets: [],
+            onChange: () => {
+              /* Read-only range inspection. */
+            },
+          }),
           document.getElementById('root'),
         )
       })
@@ -395,6 +405,48 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
         'editor ranges must agree with the authoritative validator',
       )
     })
+    await run('email-optional-text-clearing', async (page) => {
+      await page.goto(`${base}/tools/e2e/admin-harness.html`)
+      await page.evaluate(async () => {
+        const { h, render } = await import('/tools/e2e/admin-harness.tsx')
+        const { EmailPanel } = await import('/src/admin/cms/DomainPanels.tsx')
+        const { emptyDocument, validateDocument } = await import('/shared/cms.ts')
+        let state = emptyDocument()
+        state.emails.push({
+          template: 'customer_confirmation',
+          lang: 'sv',
+          subject: 'Booking',
+          preheader: 'Booking',
+          title: 'Booking',
+          intro: 'Welcome',
+          section_title: null,
+          note: 'Thanks',
+          cta_label: 'Read',
+          contact_lead: null,
+          design: null,
+        })
+        const draw = () =>
+          render(
+            h(EmailPanel, {
+              document: state,
+              lang: 'sv',
+              assets: [],
+              onChange: (next) => {
+                state = next
+                draw()
+              },
+            }),
+            document.getElementById('root'),
+          )
+        window.checkEmailDocument = () => validateDocument(state)
+        draw()
+      })
+      for (const field of ['Rubrik för bokningsuppgifter', 'Kontakttext']) {
+        await page.getByLabel(field, { exact: true }).fill('Temporary optional text')
+        await page.getByLabel(field, { exact: true }).fill('')
+        await page.evaluate(() => window.checkEmailDocument())
+      }
+    })
     await run('page-path-validation', async (page, context) => {
       await nativeBackend(context)
       await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
@@ -402,7 +454,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
         (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
       )
       await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
-      await page.getByRole('button', { name: 'Ny sida', exact: true }).click()
+      await page.getByRole('button', { name: 'Skapa ny sida', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Ny sida', exact: true })
       await dialog.getByLabel('Adress', { exact: true }).fill('/bad_name')
       await dialog.getByRole('button', { name: 'Skapa sida', exact: true }).click()
