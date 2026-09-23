@@ -191,6 +191,7 @@ export function CmsEditor(props: Props): JSX.Element {
       width: '100%',
       fromElement: false,
       telemetry: false,
+      cssIcons: '', // The workspace supplies its own icons; no external icon-font stylesheet.
       i18n: editorLocale,
       noticeOnUnload: false,
       storageManager: false,

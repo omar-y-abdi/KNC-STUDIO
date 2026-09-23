@@ -13,7 +13,14 @@ import {
   type CmsRevision,
   type CmsState,
 } from '../../../shared/cms'
-import { ensureCorePages, prepareCorePageSource, isInventedSite, CORE_PAGE_IDS } from './corePages'
+import {
+  ensureCorePages,
+  prepareCorePageSource,
+  isInventedSite,
+  hasCorePageLayouts,
+  needsCorePageSource,
+  CORE_PAGE_IDS,
+} from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
@@ -54,6 +61,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [sourceLoading, setSourceLoading] = useState(false)
+  const [sourceFailure, setSourceFailure] = useState<string | null>(null)
+  const [sourceAttempt, setSourceAttempt] = useState(0)
   const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
     null,
   )
@@ -86,8 +96,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setNotice(null)
     try {
       const loaded = await cmsApi.state()
-      await prepareCorePageSource(loaded.document)
-      const document = ensureCorePages(loaded.document)
+      const stored = hasCorePageLayouts(loaded.document)
+      if (!stored) await prepareCorePageSource(loaded.document)
+      const document = stored ? loaded.document : ensureCorePages(loaded.document)
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
@@ -102,7 +113,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        const local = ensureCorePages(backup.document)
+        const local = stored ? backup.document : ensureCorePages(backup.document)
         const sameHead =
           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
         const merged =
@@ -140,6 +151,34 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    if (!draft || !needsCorePageSource(draft.document)) return
+    let stopped = false
+    setSourceLoading(true)
+    setSourceFailure(null)
+    // The owner can edit the existing page while optional source scenes load.
+    // Never replace that work with the document which started this request.
+    void prepareCorePageSource(draft.document)
+      .then(() => {
+        if (stopped || currentDraft.current !== draft) return
+        editor.current?.flush()
+        draft.change(ensureCorePages(draft.document))
+        setVersion((value) => value + 1)
+      })
+      .catch((reason: unknown) => {
+        if (!stopped)
+          setSourceFailure(
+            reason instanceof Error ? reason.message : 'Nya redigeringsvyer kunde inte förberedas.',
+          )
+      })
+      .finally(() => {
+        if (!stopped) setSourceLoading(false)
+      })
+    return () => {
+      stopped = true
+    }
+  }, [draft, sourceAttempt])
 
   useLayoutEffect(() => {
     if (!draft) return
@@ -811,13 +850,29 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   }}
                 >
                   {pageScenes(page.path).map((item) => (
-                    <option key={item.id} value={item.id}>
+                    <option
+                      key={item.id}
+                      value={item.id}
+                      disabled={
+                        item.id !== 'default' &&
+                        !page.content[lang].html.includes(`data-knc-surface="${item.id}"`)
+                      }
+                    >
                       {item.label}
                     </option>
                   ))}
                 </select>
               </label>
               {scene !== 'default' && <span>Exempeldata · inga bokningar eller mejl skickas</span>}
+              {sourceLoading && <span role="status">Förbereder fler redigeringsvyer…</span>}
+              {sourceFailure && (
+                <span role="alert">
+                  {sourceFailure}{' '}
+                  <button type="button" onClick={() => setSourceAttempt((value) => value + 1)}>
+                    Försök igen
+                  </button>
+                </span>
+              )}
             </div>
           )}
           <div

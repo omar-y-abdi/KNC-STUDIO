@@ -29,3 +29,26 @@ it('imports only supplied source pages, preserves existing edits and does not du
   first.content.sv.html = '<main>Owner edit</main>'
   expect(ensureCorePages(result, [page])).toEqual(result)
 })
+
+it('recognizes stored layouts without requiring newer optional scene markers', async () => {
+  const { hasCorePageLayouts } = await import('../../src/admin/cms/corePages')
+  const document = emptyDocument()
+  expect(hasCorePageLayouts(document)).toBe(false)
+  const paths = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms']
+  document.presentation.pages = paths.map((path, index) => ({
+    id: CORE_PAGE_IDS[index]!,
+    path,
+    kind: 'page',
+    inMenu: false,
+    name: { sv: path, en: path },
+    title: { sv: '', en: '' },
+    description: { sv: '', en: '' },
+    content: {
+      sv: { html: '<main data-knc-native="1">Owner copy</main>', css: { light: '', dark: '' } },
+      en: { html: '<main data-knc-native="1">Owner copy</main>', css: { light: '', dark: '' } },
+    },
+  }))
+  expect(hasCorePageLayouts(document)).toBe(true)
+  document.presentation.pages[0]!.content.sv.html = ''
+  expect(hasCorePageLayouts(document)).toBe(false)
+})

@@ -97,6 +97,7 @@ export interface SitePreviewSnapshot {
 }
 
 export interface SitePreview {
+  readonly chromePort?: SiteChromePort
   readonly interactive?: boolean
   readonly mode: Mode
   readonly lang: Lang
@@ -259,7 +260,10 @@ export function App({
   const lang = state.lang
   // Owner-editable public copy (homepage overlay + booking-popups) and size presets. Under the mock
   // this is the neutral default, so the i18n copy and 1.0× scales render unchanged.
-  const { chrome, metadataReady } = useSiteChrome(lang, preview ? sourceChromePort : undefined)
+  const { chrome, metadataReady } = useSiteChrome(
+    lang,
+    preview ? (preview.chromePort ?? sourceChromePort) : undefined,
+  )
   useEffect(() => {
     if (metadataReady)
       preview?.onReady({

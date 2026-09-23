@@ -601,12 +601,14 @@ function MyBookingsSession(props: MyBookingsDialogProps): JSX.Element {
                 {systemError}
               </p>
             ) : null}
-            <Turnstile
-              action="customer_access"
-              lang={lang}
-              onToken={setTurnstileToken}
-              resetNonce={turnstileNonce}
-            />
+            {challengeRequired && (
+              <Turnstile
+                action="customer_access"
+                lang={lang}
+                onToken={setTurnstileToken}
+                resetNonce={turnstileNonce}
+              />
+            )}
             <button
               onClick={lookupDisabled ? undefined : onLookupClick}
               disabled={lookupDisabled}
