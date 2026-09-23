@@ -2,6 +2,7 @@ import { mediaUrl } from '../../shared/cms'
 import { SUPABASE_URL } from '../backend/config'
 import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
 import { repairDesktopCss } from '../../shared/cms-device-css'
+import { createInstanceScope, nativeNodeId, type InstanceScope } from './instanceScope'
 import { createContext, Fragment, h, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, JSX, VNode } from 'preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
@@ -36,6 +37,7 @@ export function useCmsPageLinks(): readonly CmsPage[] {
 interface NativeRenderContext {
   template: Element | null
   mode: CmsMode
+  scope?: InstanceScope | null
 }
 const RenderContext = createContext<NativeRenderContext | null>(null)
 const SlotContext = createContext<(NativeRenderContext & { identity: string }) | null>(null)
@@ -66,9 +68,12 @@ export function useNativeChild(): (source: JSX.Element) => JSX.Element {
         ? source
         : h('div', { style: 'display:contents' }, source)
     const native = nativeTree(root, context.identity, context.mode)
+    const projected = context.template
+      ? projectNativeTree(native, context.template, context.mode)
+      : native.tree
     return (
       <RenderContext.Provider value={context}>
-        {context.template ? projectNativeTree(native, context.template, context.mode) : native.tree}
+        {context.scope ? context.scope.tree(projected) : projected}
       </RenderContext.Provider>
     )
   }
@@ -160,16 +165,6 @@ function childKey(value: ComponentChild, index: number): string {
     .join('x')}`
 }
 
-function nodeIdentity(surface: string, path: string): string {
-  const identity = `knc-${surface}-${path}`
-  if (identity.length <= 120) return identity
-  // Nested component paths and entity UUIDs still need to fit the public element-ID contract.
-  let hash = 14695981039346656037n
-  for (const char of identity)
-    hash = BigInt.asUintN(64, (hash ^ BigInt(char.charCodeAt(0))) * 1099511628211n)
-  return `knc-node-${hash.toString(16)}`
-}
-
 /** Keep actual handlers, refs and component instances; HTML supplies presentation only. */
 export function nativeTree(
   source: ComponentChild,
@@ -187,7 +182,7 @@ export function nativeTree(
   const visit = (value: ComponentChild, path: string, parent?: string): ComponentChild => {
     if (!isValidElement(value)) return value
     const props = value.props as Record<string, unknown>
-    const identity = nodeIdentity(surface, path)
+    const identity = nativeNodeId(surface, path)
     if (value.type === Fragment)
       return h(
         Fragment,
@@ -446,32 +441,30 @@ export function useNativeSurface(
         : '/'
   const page = context?.presentation?.pages.find((candidate) => candidate.path === path)
   const html = context?.source ? '' : (page?.content[lang].html ?? '')
-  const runtimeSurface = instance
-    ? `${surface}-${instance.replace(/[^a-zA-Z0-9_-]/g, '_')}`
-    : surface
-  const instantiate = (value: string): string =>
-    value.replaceAll(`knc-${surface}-`, `knc-${runtimeSurface}-`)
   const template = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
     return new DOMParser()
-      .parseFromString(instantiate(html), 'text/html')
+      .parseFromString(html, 'text/html')
       .querySelector(`[data-knc-surface="${surface}"]`)
-  }, [html, surface, runtimeSurface])
+  }, [html, surface])
+  const scope = useMemo(
+    () => (instance === undefined ? null : createInstanceScope(surface, instance, template)),
+    [surface, instance, template],
+  )
   if (
     !context ||
     (!context.source && !template && !Object.keys(context.presentation?.themes[mode] ?? {}).length)
   )
     return h(Fragment, null, source)
-  const native = nativeTree(source, runtimeSurface, mode)
+  const native = nativeTree(source, surface, mode)
+  const projected = template ? projectNativeTree(native, template, mode) : native.tree
+  const output = scope ? scope.tree(projected) : projected
+  const css = repairDesktopCss(page?.content[lang].css[mode] ?? '')
   return (
     <>
       {context.presentation && <style>{siteThemeCss(context.presentation, mode)}</style>}
-      {template && (
-        <style>{instantiate(repairDesktopCss(page?.content[lang].css[mode] ?? ''))}</style>
-      )}
-      <RenderContext.Provider value={{ template, mode }}>
-        {template ? projectNativeTree(native, template, mode) : native.tree}
-      </RenderContext.Provider>
+      {template && <style>{scope ? scope.css(css) : css}</style>}
+      <RenderContext.Provider value={{ template, mode, scope }}>{output}</RenderContext.Provider>
     </>
   )
 }

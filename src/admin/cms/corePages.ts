@@ -132,7 +132,8 @@ export function ensureCorePages(
           existing.content[lang].html = current.body.innerHTML
           if (added)
             for (const mode of ['light', 'dark'] as const)
-              existing.content[lang].css[mode] += '\n' + page.content[lang].css[mode]
+              existing.content[lang].css[mode] =
+                page.content[lang].css[mode] + '\n' + existing.content[lang].css[mode]
         }
     }
   }

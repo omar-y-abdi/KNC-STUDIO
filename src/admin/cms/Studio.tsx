@@ -34,6 +34,8 @@ const protectedIds = new Set<string>(CORE_PAGE_IDS)
 
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [draft, setDraft] = useState<CmsDraft | null>(null)
+  const currentDraft = useRef(draft)
+  currentDraft.current = draft
   const [selectedPage, setSelectedPage] = useState<string>(CORE_PAGE_IDS[0])
   const [lang, setLang] = useState<CmsLang>('sv')
   const [mode, setMode] = useState<CmsMode>('light')
@@ -156,9 +158,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
 
-  const commitDraft = (next: CmsDocument, group = ''): void => {
-    if (!draft) return
-    draft.change(next, group)
+  const commitDraft = (
+    update: CmsDocument | ((current: CmsDocument) => CmsDocument),
+    group = '',
+  ): void => {
+    const active = currentDraft.current
+    if (!active) return
+    const next = typeof update === 'function' ? update(active.document) : update
+    active.change(next, group)
     setVersion((value) => value + 1)
   }
   const replacePage = (page: CmsPage): void => {

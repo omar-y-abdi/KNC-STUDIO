@@ -55,7 +55,7 @@ interface Props {
   assets: CmsAsset[]
   document: CmsDocument
   onAssets: (assets: CmsAsset[] | ((current: CmsAsset[]) => CmsAsset[])) => void
-  onDocument: (document: CmsDocument) => void
+  onDocument: (update: CmsDocument | ((current: CmsDocument) => CmsDocument)) => void
   onError: (message: string) => void
 }
 
@@ -64,15 +64,26 @@ export function CmsResources(props: Props): JSX.Element {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [usage, setUsage] = useState<AssetUsage | null>(null)
+  const [usageResult, setUsageResult] = useState<{
+    id: string
+    version: number
+    value: AssetUsage
+  } | null>(null)
   const [purpose, setPurpose] = useState<Purpose>('library')
   const [barberId, setBarberId] = useState(props.document.barbers[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const latest = useRef(props)
+  latest.current = props
   const detail = useRef<HTMLHeadingElement>(null)
   const selectedButton = useRef<HTMLButtonElement | null>(null)
   const upload = useRef<HTMLInputElement>(null)
   const replace = useRef<HTMLInputElement>(null)
   const asset = props.assets.find((item) => item.id === selectedId) ?? null
+  const usage =
+    asset && usageResult?.id === asset.id && usageResult.version === asset.version
+      ? usageResult.value
+      : null
   const visible = useMemo(
     () =>
       props.assets.filter(
@@ -91,12 +102,12 @@ export function CmsResources(props: Props): JSX.Element {
   }, [selectedId])
 
   useEffect(() => {
-    setUsage(null)
+    setUsageResult(null)
     if (!asset) return
     let active = true
     void cmsApi
       .assetUsage(asset.id)
-      .then((value) => active && setUsage(value))
+      .then((value) => active && setUsageResult({ id: asset.id, version: asset.version, value }))
       .catch(
         (reason) =>
           active &&
@@ -109,84 +120,114 @@ export function CmsResources(props: Props): JSX.Element {
     }
   }, [asset?.id, asset?.version])
 
-  const updateAsset = (next: CmsAsset): void =>
-    props.onAssets((current) => current.map((item) => (item.id === next.id ? next : item)))
-
-  const transition = async (
-    target: CmsAsset,
-    action: 'archive' | 'restore' | 'trash' | 'delete',
-  ): Promise<void> => {
+  // State updates from async work must use the current owner draft, not the render
+  // that started the request. The lock is synchronous; disabled buttons alone race.
+  const perform = async (work: () => Promise<void>, fallback: string): Promise<void> => {
+    if (pending.current) return
+    pending.current = true
     setBusy(true)
     try {
-      const result = await cmsApi.assetLifecycle(target, action)
-      if (action === 'delete') {
-        props.onAssets((current) => current.filter((item) => item.id !== target.id))
-        if (selectedId === target.id) setSelectedId(null)
-      } else if (result.asset) updateAsset(result.asset)
-      setUsage(result.usage ?? null)
+      await work()
     } catch (reason) {
-      props.onError(reason instanceof Error ? reason.message : 'Resursåtgärden misslyckades.')
+      latest.current.onError(reason instanceof Error ? reason.message : fallback)
     } finally {
+      pending.current = false
       setBusy(false)
     }
   }
 
-  const uploadFile = async (file: File, replacement?: CmsAsset): Promise<void> => {
-    setBusy(true)
-    try {
+  const updateAsset = (id: string, patch: Partial<Pick<CmsAsset, 'name' | 'alt'>>): void =>
+    latest.current.onAssets((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    )
+
+  const acknowledgeAsset = (saved: CmsAsset, submitted?: CmsAsset): void =>
+    latest.current.onAssets((current) =>
+      current.map((item) => {
+        if (item.id !== saved.id || item.version > saved.version) return item
+        return {
+          ...saved,
+          // Lifecycle responses did not submit metadata. Metadata responses only
+          // acknowledge fields which have not been edited again in the meantime.
+          name: submitted && item.name === submitted.name ? saved.name : item.name,
+          alt: submitted && item.alt === submitted.alt ? saved.alt : item.alt,
+        }
+      }),
+    )
+
+  const currentAsset = (id: string): CmsAsset => {
+    const current = latest.current.assets.find((item) => item.id === id)
+    if (!current) throw new Error('Resursen finns inte längre i biblioteket.')
+    return current
+  }
+
+  const protectDraft = (target: CmsAsset): void => {
+    // Parsing failures deliberately propagate: an unchecked draft is not unused.
+    if (resourceUsage(latest.current.document, target, policy).length > 0)
+      throw new Error('Resursen används i utkastet. Ersätt eller ta bort referenserna först.')
+  }
+
+  const transition = (
+    target: CmsAsset,
+    action: 'archive' | 'restore' | 'trash' | 'delete',
+  ): Promise<void> =>
+    perform(async () => {
+      const submitted = currentAsset(target.id)
+      if (action === 'trash' || action === 'delete') protectDraft(submitted)
+      const result = await cmsApi.assetLifecycle(submitted, action)
+      if (action === 'delete') {
+        latest.current.onAssets((current) => current.filter((item) => item.id !== submitted.id))
+        setSelectedId((current) => (current === submitted.id ? null : current))
+        setSelectedIds((current) => new Set([...current].filter((id) => id !== submitted.id)))
+      } else if (result.asset) acknowledgeAsset(result.asset)
+      // Usage is fetched by asset ID/version. Never apply A's result to B's panel.
+    }, 'Resursåtgärden misslyckades.')
+
+  const uploadFile = (file: File, replacement?: CmsAsset): Promise<void> =>
+    perform(async () => {
       const target = replacement
         ? purposeOf(replacement)
         : { purpose, ...(purpose === 'profile' ? { barberId } : {}) }
       const nextAsset = await cmsApi.uploadAsset(file, target.purpose, target.barberId)
-      props.onAssets((current) => [nextAsset, ...current])
-      setSelectedId(nextAsset.id)
+      latest.current.onAssets((current) => [
+        nextAsset,
+        ...current.filter((item) => item.id !== nextAsset.id),
+      ])
       if (replacement) {
-        const nextDocument = structuredClone(props.document)
-        replaceDocumentResource(nextDocument, replacement, nextAsset, policy)
-        props.onDocument(nextDocument)
+        latest.current.onDocument((current) => {
+          const next = structuredClone(current)
+          replaceDocumentResource(next, replacement, nextAsset, policy)
+          return next
+        })
       }
-    } catch (reason) {
-      props.onError(reason instanceof Error ? reason.message : 'Filen kunde inte laddas upp.')
-    } finally {
-      setBusy(false)
-    }
-  }
+      setSelectedId((current) => (current === selectedId ? nextAsset.id : current))
+    }, 'Filen kunde inte laddas upp.')
 
-  const saveMetadata = async (): Promise<void> => {
-    if (!asset) return
-    setBusy(true)
-    try {
-      const next = await cmsApi.asset(asset)
-      updateAsset(next)
-    } catch (reason) {
-      props.onError(reason instanceof Error ? reason.message : 'Metadata kunde inte sparas.')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const saveMetadata = (): Promise<void> =>
+    perform(async () => {
+      if (!asset) return
+      const submitted = currentAsset(asset.id)
+      acknowledgeAsset(await cmsApi.asset(submitted), submitted)
+    }, 'Metadata kunde inte sparas.')
 
-  const bulk = async (action: 'archive' | 'restore' | 'trash'): Promise<void> => {
-    setBusy(true)
-    const remaining = new Set(selectedIds)
-    try {
-      for (const id of selectedIds) {
-        const target = props.assets.find((item) => item.id === id)
-        if (!target) continue
-        const result = await cmsApi.assetLifecycle(target, action)
-        if (result.asset) updateAsset(result.asset)
-        remaining.delete(id)
+  const bulk = (action: 'archive' | 'restore' | 'trash'): Promise<void> =>
+    perform(async () => {
+      const targets = [...selectedIds].map(currentAsset)
+      // Preflight the entire selection before the first destructive write.
+      if (action === 'trash') targets.forEach(protectDraft)
+      const completed = new Set<string>()
+      try {
+        for (const target of targets) {
+          const submitted = currentAsset(target.id)
+          if (action === 'trash') protectDraft(submitted)
+          const result = await cmsApi.assetLifecycle(submitted, action)
+          if (result.asset) acknowledgeAsset(result.asset)
+          completed.add(submitted.id)
+        }
+      } finally {
+        setSelectedIds((current) => new Set([...current].filter((id) => !completed.has(id))))
       }
-    } catch (reason) {
-      props.onError(
-        reason instanceof Error
-          ? reason.message
-          : 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.',
-      )
-    } finally {
-      setSelectedIds(remaining)
-      setBusy(false)
-    }
-  }
+    }, 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.')
 
   const draftReferences = useMemo(() => {
     try {
@@ -212,7 +253,7 @@ export function CmsResources(props: Props): JSX.Element {
                 setState(value)
                 setSelectedId(null)
                 setSelectedIds(new Set())
-                setUsage(null)
+                setUsageResult(null)
               }}
             >
               {value === 'active' ? 'Aktiva' : value === 'archived' ? 'Arkiverade' : 'Papperskorg'}
@@ -281,7 +322,7 @@ export function CmsResources(props: Props): JSX.Element {
               Till papperskorg
             </button>
           )}
-          <button type="button" onClick={() => setSelectedIds(new Set())}>
+          <button type="button" disabled={busy} onClick={() => setSelectedIds(new Set())}>
             Rensa val
           </button>
         </div>
@@ -376,14 +417,14 @@ export function CmsResources(props: Props): JSX.Element {
               Namn
               <input
                 value={asset.name}
-                onInput={(event) => updateAsset({ ...asset, name: event.currentTarget.value })}
+                onInput={(event) => updateAsset(asset.id, { name: event.currentTarget.value })}
               />
             </label>
             <label>
               Alternativtext
               <CmsTextarea
                 value={asset.alt}
-                onInput={(event) => updateAsset({ ...asset, alt: event.currentTarget.value })}
+                onInput={(event) => updateAsset(asset.id, { alt: event.currentTarget.value })}
               />
             </label>
             <p>
@@ -452,7 +493,11 @@ export function CmsResources(props: Props): JSX.Element {
                 </button>
                 <button
                   type="button"
-                  disabled={busy || !draftReferences.places || (usage?.currentReferences ?? 1) > 0}
+                  disabled={
+                    busy ||
+                    (draftReferences.places?.length ?? 1) > 0 ||
+                    (usage?.currentReferences ?? 1) > 0
+                  }
                   onClick={() => void transition(asset, 'trash')}
                 >
                   Flytta till papperskorg
@@ -472,7 +517,7 @@ export function CmsResources(props: Props): JSX.Element {
                   type="button"
                   disabled={
                     busy ||
-                    !draftReferences.places ||
+                    (draftReferences.places?.length ?? 1) > 0 ||
                     (usage?.currentReferences ?? 1) > 0 ||
                     (usage?.historyReferences ?? 1) > 0
                   }
