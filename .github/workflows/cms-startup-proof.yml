@@ -5,6 +5,9 @@ on:
     paths: [.startup/**, .github/workflows/cms-startup-proof.yml]
 permissions:
   contents: read
+concurrency:
+  group: cms-startup-proof
+  cancel-in-progress: true
 jobs:
   startup:
     runs-on: ubuntu-24.04
@@ -33,8 +36,21 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p=Path('src/ui/LazySurface.tsx')
-          text=p.read_text()
-          text=text.replace('static override getDerivedStateFromError(): LazyLoadBoundaryState {', "static override getDerivedStateFromError(error: unknown): LazyLoadBoundaryState {\n    (globalThis as unknown as Record<string, unknown>)['__cmsCrash'] = error instanceof Error ? { message: error.message, stack: error.stack } : String(error)")
+          text=p.read_text().replace('static override getDerivedStateFromError(): LazyLoadBoundaryState {', "static override getDerivedStateFromError(error: unknown): LazyLoadBoundaryState {\n    (globalThis as unknown as Record<string, unknown>)['__cmsCrash'] = error instanceof Error ? { message: error.message, stack: error.stack } : String(error)")
+          p.write_text(text)
+          p=Path('tools/e2e/cms-startup-probe.mjs')
+          text=p.read_text().replace("['live-public-reads']", "['live-with-csp', 'live-without-csp']")
+          text=text.replace('  const page = await context.newPage()', '''  if(scenario === 'live-with-csp') {
+            const policies = Object.fromEntries(await Promise.all(['/admin/cms/', '/cms-public/source'].map(async path => [path, (await fetch('https://bladeblendstudio.se'+path)).headers.get('content-security-policy') ?? ''])))
+            await writeFile(`${out}/deployed-policies.json`,JSON.stringify(policies,null,2))
+            await context.route(base+'/**', async route => {
+              const path = new URL(route.request().url()).pathname
+              if(!policies[path] || route.request().resourceType()!=='document') return route.fallback()
+              const response = await route.fetch()
+              await route.fulfill({response, headers:{...response.headers(),'content-security-policy':policies[path].replace("connect-src 'self'", "connect-src 'self' https://admin-harness.invalid")}})
+            })
+          }
+          const page = await context.newPage()''')
           p.write_text(text)
           PY
           bash tools/ci/setup-furl.sh
@@ -52,7 +68,7 @@ jobs:
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
-          node tools/e2e/cms-startup-probe.mjs > /tmp/startup/probe.log 2>&1
+          env -u VITE_SUPABASE_URL -u VITE_SUPABASE_ANON_KEY node tools/e2e/cms-startup-probe.mjs > /tmp/startup/probe.log 2>&1
       - name: Summarize evidence
         if: always()
         run: |
