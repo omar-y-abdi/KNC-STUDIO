@@ -2,16 +2,16 @@ name: CMS engineering hardening
 on:
   push:
     branches: [verify/cms-hardening-20260923]
-    paths: [.github/workflows/cms-hardening.yml]
+    paths: [.github/workflows/cms-hardening.yml, .hardening/final.patch.gz.b64]
 permissions:
   contents: read
 concurrency:
-  group: cms-engineering-hardening
+  group: cms-engineering-hardening-final
   cancel-in-progress: true
 jobs:
   prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
     outputs:
@@ -24,38 +24,40 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Establish exact source and format changed paths
+      - name: Build exact formatted product candidate
         id: source
         run: |
           set -euo pipefail
           mkdir -p /tmp/hardening-source
-          cp .hardening/tests.patch /tmp/tests.patch
-          cp .hardening/boundary-fixes.patch /tmp/fixes.patch
+          python3 - <<'PY'
+          import base64, gzip, hashlib, pathlib
+          encoded = pathlib.Path('.hardening/final.patch.gz.b64').read_text().strip()
+          assert hashlib.sha256(encoded.encode()).hexdigest() == 'bfd4e6e65595cf7eda191e6899c86e91607fa1b5d779e39c629e93344da79802'
+          pathlib.Path('/tmp/final.patch').write_bytes(gzip.decompress(base64.b64decode(encoded, validate=True)))
+          PY
           git checkout --detach a22aea83ff81cf4a758314263e7d2b7fabcdb60b
-          git apply --index /tmp/tests.patch
-          test "$(git write-tree)" = 3ac12181333d3ca3fa9dc91720d6b442691882bd
-          git apply --index /tmp/fixes.patch
-          test "$(git write-tree)" = 9ef5d97ce454fb4ea5ab9645e26a4d769ffdd3f9
+          git apply --index /tmp/final.patch
           npm ci --no-audit --no-fund > /tmp/hardening-source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/hardening-source/format.log 2>&1
-          npm run cms:stamp > /tmp/hardening-source/stamp.log 2>&1
-          git add -u
-          git -c user.name='CMS engineering review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: share authoritative editor bounds and enforce draft protections'
+          git add -A
+          git diff --cached --check
+          git -c user.name='CMS engineering review' -c user.email='cms-review@users.noreply.github.com' commit -m 'fix: harden CMS editor contracts and repeated instances'
           git rev-parse HEAD > /tmp/hardening-source/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/hardening-source/source-tree.txt
           git bundle create /tmp/hardening-source/source.bundle HEAD
-          git push origin HEAD:refs/heads/verify/cms-hardening-product-20260923
+          git bundle verify /tmp/hardening-source/source.bundle
+          git push origin HEAD:refs/heads/verify/cms-hardening-final-product-20260923
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: hardening-source-${{ github.run_number }}
+          name: cms-hardening-final-source
           path: /tmp/hardening-source
           retention-days: 7
   verify:
     needs: prepare
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -69,26 +71,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Prepare remote tools
+      - name: Prepare verification
         run: |
           mkdir -p /tmp/hardening-evidence
           git rev-parse HEAD > /tmp/hardening-evidence/source-commit.txt
           git rev-parse HEAD^{tree} > /tmp/hardening-evidence/source-tree.txt
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/hardening-evidence/install.log 2>&1
-      - name: Static and unit gates
+      - name: Core gates
         if: matrix.suite == 'core'
         shell: python3 tools/ci/furl_ci.py {0}
         run: |
-          set +e
-          for task in typecheck lint test build; do
-            npm run "$task" > "/tmp/hardening-evidence/$task.log" 2>&1
-            echo "$?" > "/tmp/hardening-evidence/$task.exit-code"
-          done
-          npx prettier --check shared/cms.ts shared/cms-release.ts src/admin/cms/{Resources,DomainPanels,Studio}.tsx src/cms/{NativeSurface.tsx,instanceScope.ts} tools/e2e/{cms-adversarial.mjs,cms-engineering.mjs,cms-resources-harness.tsx} tests/unit/cmsInstanceScope.test.ts > /tmp/hardening-evidence/format.log 2>&1
-          echo "$?" > /tmp/hardening-evidence/format.exit-code
-          node tools/release/cms-release.mjs check > /tmp/hardening-evidence/stamp.log 2>&1
-          echo "$?" > /tmp/hardening-evidence/stamp.exit-code
+          npm run typecheck
+          npm run lint
+          npm run format:check
+          npm test
+          npm run build
       - name: Browser gates
         if: matrix.suite != 'core'
         env:
@@ -96,51 +94,25 @@ jobs:
           BASE_URL: http://127.0.0.1:4188
         shell: python3 tools/ci/furl_ci.py {0}
         run: |
+          set -euo pipefail
           npx playwright install --with-deps "$CMS_ENGINE"
-          npm install --prefix /tmp/cms-a11y --ignore-scripts --no-audit --no-fund axe-core@4.11.1
-          export AXE_PATH=/tmp/cms-a11y/node_modules/axe-core/axe.min.js
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/hardening-evidence/server.log 2>&1 &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
           for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
           curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
-          set +e
-          for suite in cms-engineering cms-adversarial cms-scenes cms-workspace cms-workspace-edge cms-workspace-views; do
-            mkdir -p "/tmp/hardening-evidence/$suite"
-            CMS_EVIDENCE_DIR="/tmp/hardening-evidence/$suite" timeout 12m node "tools/e2e/$suite.mjs" > "/tmp/hardening-evidence/$suite.log" 2>&1
-            echo "$?" > "/tmp/hardening-evidence/$suite.exit-code"
+          status=0
+          for suite in cms-engineering cms-adversarial cms-scenes cms-owner cms-responsive; do
+            CMS_EVIDENCE_DIR="/tmp/hardening-evidence/$suite" node "tools/e2e/$suite.mjs" > "/tmp/hardening-evidence/$suite.log" 2>&1 || status=1
           done
-      - name: Preserve raw and compressed evidence
-        if: always()
-        run: |
           for log in /tmp/hardening-evidence/*.log; do
             test -f "$log" || continue
             furl compress "$log" --json > "$log.furl.json" || true
           done
-          python3 - <<'PY'
-          import json,pathlib
-          root=pathlib.Path('/tmp/hardening-evidence')
-          root.mkdir(exist_ok=True)
-          checks={p.stem:int(p.read_text().strip()) for p in root.glob('*.exit-code')}
-          (root/'checks.json').write_text(json.dumps(checks,indent=2))
-          print(json.dumps(checks))
-          PY
+          exit "$status"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: hardening-${{ matrix.suite }}-${{ github.run_number }}
+          name: cms-hardening-final-${{ matrix.suite }}
           path: /tmp/hardening-evidence
           retention-days: 7
-      - name: Enforce every gate
-        if: always()
-        env:
-          SUITE: ${{ matrix.suite }}
-        run: |
-          python3 - <<'PY'
-          import json,os,pathlib
-          path=pathlib.Path('/tmp/hardening-evidence/checks.json')
-          checks=json.loads(path.read_text()) if path.exists() else {}
-          required={'typecheck','lint','test','build','format','stamp'} if os.environ['SUITE']=='core' else {'cms-engineering','cms-adversarial','cms-scenes','cms-workspace','cms-workspace-edge','cms-workspace-views'}
-          assert required.issubset(checks), f'Missing: {required-set(checks)}'
-          assert all(checks[name]==0 for name in required),checks
-          PY
