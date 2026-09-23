@@ -1,0 +1,115 @@
+name: CMS startup fix verification
+on:
+  push:
+    branches: [verify/cms-startup-20260923]
+    paths: [.github/workflows/cms-startup-fix.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare exact candidate
+        id: source
+        run: |
+          mkdir -p /tmp/cms-source
+          cp .startup/fix.patch /tmp/fix.patch
+          cp .startup/regressions.mjs /tmp/cms-source/regressions.mjs
+          cp .startup/probe.mjs /tmp/cms-source/probe.mjs
+          git checkout --detach e0b7337fa86ceebf2de5c3403f452d0f40c42dd1
+          git apply --index /tmp/fix.patch
+          test "$(git write-tree)" = e38fc6e06f90be2623f5b22a66e3efdec7277bb2
+          npm ci --no-audit --no-fund > /tmp/cms-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-source/format.log 2>&1
+          git add -u
+          git -c user.name='CMS startup fix' -c user.email='cms-fix@users.noreply.github.com' commit -m 'fix: open stored CMS layouts without blocking on source capture'
+          git rev-parse HEAD > /tmp/cms-source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-source/tree.txt
+          git bundle create /tmp/cms-source/source.bundle HEAD
+          git push origin HEAD:refs/heads/fix/cms-startup-20260923
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-fix-source
+          path: /tmp/cms-source
+          retention-days: 7
+  verify:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-startup-fix-source
+          path: /tmp/cms-source
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare tools
+        run: |
+          mkdir -p /tmp/cms-evidence
+          git rev-parse HEAD > /tmp/cms-evidence/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-evidence/tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/cms-evidence/install.log 2>&1
+      - name: Static verification
+        if: matrix.suite == 'core'
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          status=0
+          for command in typecheck lint 'test' build; do
+            npm run "$command" > "/tmp/cms-evidence/$command.log" 2>&1 || status=1
+          done
+          exit "$status"
+      - name: Browser verification
+        if: matrix.suite != 'core'
+        env:
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_EVIDENCE_DIR: /tmp/cms-evidence
+          BASE_URL: http://127.0.0.1:4188
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps chromium webkit
+          cp /tmp/cms-source/regressions.mjs tools/e2e/cms-startup-regression.mjs
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/cms-evidence/server.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL" >/dev/null && break; sleep 1; done
+          status=0
+          for suite in cms-startup-regression cms-native cms-scenes cms-owner cms-populated cms-adversarial; do
+            node "tools/e2e/$suite.mjs" > "/tmp/cms-evidence/$suite.log" 2>&1 || status=1
+          done
+          cp -r /tmp/startup-regressions /tmp/cms-evidence/ || true
+          exit "$status"
+      - name: Preserve compact evidence
+        if: always()
+        run: |
+          for f in /tmp/cms-evidence/*.log; do furl compress "$f" --json > "$f.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-startup-fix-${{ matrix.suite }}
+          path: /tmp/cms-evidence
+          retention-days: 7
