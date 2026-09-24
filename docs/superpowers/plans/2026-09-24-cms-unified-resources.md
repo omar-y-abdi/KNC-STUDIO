@@ -125,3 +125,9 @@ This is **not yet whole-site acceptance**: existing canvas/locked-preview resour
 `cms-draft-resources.mjs` now passes in Chromium and WebKit (`R3-final-chromium.log`, `R3-final-webkit.log`): real resource UI assignment updates the canvas, undo/redo restores data and layout together, and the locked read-only runtime displays the unpublished portrait. The fixture intercepts the backend; it performs no production writes. `R3-unit-final.log` passes 5 targeted preview/native-tree tests; `R3-types-final.log` and `R3-lint-final.log` pass. The accompanying implementation commit is resolvable with `git log --oneline -- src/admin/cms/captureResourceLayouts.ts`.
 
 Next focused test: `cms-contextual-resources.mjs`, initially requiring a real double-click on a photo-less barber placeholder to open the correct person's resource library. This is a distinct user-facing entry point, not covered by the preceding resource assignment test.
+
+### Production migration history aligned
+
+The production index deployment succeeded as `20260924223012`. The SQL file is renamed to that exact version and the already-applied local history is repaired (old local version reverted in bookkeeping, new version marked applied). Both CLI repair commands completed successfully; no DDL was reapplied and no document was removed (`R1-local-history-repair.log`). Source DDL remains the implementation from `ced0b41`.
+
+R3 coherent draft/rendering transaction commit: **`e4b7a17`**. Contextual double-click work is separate and still uncommitted. The initial legacy listener used an event (`component:dblclick`) that the installed GrapesJS does not emit; native iframe delegation is being checked using actual double clicks before committing it.
