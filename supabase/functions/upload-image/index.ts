@@ -1,13 +1,8 @@
 import { retainCmsObject } from '../_shared/cmsRetention.ts'
 import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import {
-  Gravity,
-  ImageMagick,
-  MagickFormat,
-  MagickGeometry,
-  initializeImageMagick,
-} from 'npm:@imagemagick/magick-wasm@0.0.42'
+import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
+import { ImageValidationError, processImage } from './processImage.ts'
 import {
   executeExternalAction,
   ExternalActionError,
@@ -16,22 +11,7 @@ import {
 } from '../_shared/externalActions.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
-const MAX_OUTPUT_BYTES = 512000
-const MAX_PIXELS = 25_000_000
-const GALLERY_LONG_SIDE = 1600
-const PROFILE_SIZE = 800
-const INITIAL_WEBP_QUALITY = 82
-const MIN_WEBP_QUALITY = 55
-const WEBP_QUALITY_STEP = 3
 const BARBER_ID = /^[a-z0-9-]{1,32}$/
-const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
-
-type ProcessedImage = {
-  readonly bytes: Uint8Array
-  readonly width: number
-  readonly height: number
-}
-
 let imageMagickReady: Promise<void> | null = null
 
 function ensureImageMagickReady(): Promise<void> {
@@ -87,15 +67,6 @@ type DeleteRequest =
 
 const LOGO_PATH =
   /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
-
-class ImageValidationError extends Error {
-  readonly code: 'unsupported_image' | 'image_too_large' | 'output_too_large'
-
-  constructor(code: 'unsupported_image' | 'image_too_large' | 'output_too_large') {
-    super(code)
-    this.code = code
-  }
-}
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -220,112 +191,6 @@ function parseDelete(value: unknown): DeleteRequest | null {
   }
 
   return null
-}
-
-function imageDimensions(image: { readonly width: number; readonly height: number }): {
-  readonly width: number
-  readonly height: number
-} {
-  const width = image.width
-  const height = image.height
-
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
-    throw new ImageValidationError('unsupported_image')
-  }
-
-  if (width * height > MAX_PIXELS) {
-    throw new ImageValidationError('image_too_large')
-  }
-
-  return { width, height }
-}
-
-function encodeWebp(image: {
-  quality: number
-  write(format: MagickFormat, callback: (data: Uint8Array) => void): void
-}): Uint8Array {
-  for (
-    let quality = INITIAL_WEBP_QUALITY;
-    quality >= MIN_WEBP_QUALITY;
-    quality -= WEBP_QUALITY_STEP
-  ) {
-    image.quality = quality
-
-    const encoded: { value?: Uint8Array } = {}
-
-    image.write(MagickFormat.WebP, (data) => {
-      encoded.value = new Uint8Array(data)
-    })
-
-    if (encoded.value !== undefined && encoded.value.byteLength <= MAX_OUTPUT_BYTES) {
-      return encoded.value
-    }
-  }
-
-  throw new ImageValidationError('output_too_large')
-}
-
-function processImage(input: Uint8Array, kind: UploadRequest['kind']): ProcessedImage {
-  let output: ProcessedImage | null = null
-
-  ImageMagick.read(input, (image) => {
-    const optionalOperations = image as unknown as {
-      autoOrient?: () => void
-      strip?: () => void
-    }
-
-    optionalOperations.autoOrient?.()
-
-    if (!SUPPORTED_FORMATS.has(String(image.format).toUpperCase())) {
-      throw new ImageValidationError('unsupported_image')
-    }
-
-    const { width, height } = imageDimensions(image)
-
-    if (kind === 'gallery' || kind === 'site_logo') {
-      const longSide = Math.max(width, height)
-
-      if (longSide > GALLERY_LONG_SIDE) {
-        const scale = GALLERY_LONG_SIDE / longSide
-
-        image.resize(
-          new MagickGeometry(
-            Math.max(1, Math.round(width * scale)),
-            Math.max(1, Math.round(height * scale)),
-          ),
-        )
-      }
-    } else {
-      const scale = Math.max(PROFILE_SIZE / width, PROFILE_SIZE / height)
-
-      image.resize(
-        new MagickGeometry(
-          Math.max(PROFILE_SIZE, Math.round(width * scale)),
-          Math.max(PROFILE_SIZE, Math.round(height * scale)),
-        ),
-      )
-
-      image.crop(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE), Gravity.Center)
-    }
-
-    optionalOperations.strip?.()
-
-    const processedWidth = image.width
-    const processedHeight = image.height
-    const bytes = encodeWebp(image)
-
-    output = {
-      bytes,
-      width: processedWidth,
-      height: processedHeight,
-    }
-  })
-
-  if (output === null) {
-    throw new ImageValidationError('unsupported_image')
-  }
-
-  return output
 }
 
 function isGalleryRow(value: unknown): value is {

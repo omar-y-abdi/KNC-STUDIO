@@ -1,5 +1,6 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { inspectWoff2 } from '../_shared/cmsFont.ts'
+import { ImageValidationError } from './processImage.ts'
 
 export class CmsMediaUnavailable extends Error {}
 type DecodedImage = { bytes: Uint8Array; width: number; height: number }
@@ -75,6 +76,14 @@ export async function handleCmsUpload(
           'image_processor_unavailable',
           503,
           'Bildbehandlingen är tillfälligt otillgänglig. Ingen placering har ändrats.',
+        )
+      if (error instanceof ImageValidationError && error.code !== 'unsupported_image')
+        return failure(
+          error.code,
+          422,
+          error.code === 'image_too_large'
+            ? 'Bilden har för hög upplösning. Välj en bild med högst 25 megapixlar.'
+            : 'Bilden blir för stor efter komprimering. Välj en mindre eller enklare bild.',
         )
       return failure(
         font ? 'invalid_font' : 'invalid_image',

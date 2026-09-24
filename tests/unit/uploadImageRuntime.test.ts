@@ -1,12 +1,7 @@
 import { readFileSync } from 'node:fs'
-import {
-  Gravity,
-  ImageMagick,
-  MagickFormat,
-  MagickGeometry,
-  initializeImageMagick,
-} from '@imagemagick/magick-wasm'
+import { ImageMagick, MagickFormat, initializeImageMagick } from '@imagemagick/magick-wasm'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { processImage } from '../../supabase/functions/upload-image/processImage'
 
 const JPEG_FIXTURE = Uint8Array.from(
   Buffer.from(
@@ -43,28 +38,27 @@ describe('upload-image JPEG runtime', () => {
     expect(decodedSize).toEqual([120, 80])
   })
 
-  it('keeps the barber-profile resize/crop output decodable', () => {
-    const encoded: { value?: Uint8Array } = {}
+  it('keeps the actual barber-profile processor output decodable', () => {
+    const result = processImage(JPEG_FIXTURE, 'barber_photo')
+    expect([result.width, result.height]).toEqual([800, 800])
+    ImageMagick.read(result.bytes, (image) => {
+      expect([image.width, image.height]).toEqual([800, 800])
+    })
+  })
 
-    ImageMagick.read(JPEG_FIXTURE, (image) => {
-      const scale = Math.max(800 / image.width, 800 / image.height)
-      image.resize(
-        new MagickGeometry(
-          Math.max(800, Math.round(image.width * scale)),
-          Math.max(800, Math.round(image.height * scale)),
-        ),
-      )
-      image.crop(new MagickGeometry(800, 800), Gravity.Center)
-      image.write(MagickFormat.WebP, (data) => {
-        encoded.value = new Uint8Array(data)
+  it('preserves transparent pixels through logo processing', () => {
+    const input = Uint8Array.from(
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpFj4JKzaQAAAxwBIh+aiOkAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    )
+    const result = processImage(input, 'site_logo')
+    expect([result.width, result.height]).toEqual([2, 1])
+    ImageMagick.read(result.bytes, (image) => {
+      image.write(MagickFormat.Rgba, (data) => {
+        expect([data[3], data[7]]).toEqual([0, 128])
       })
     })
-
-    if (encoded.value === undefined) throw new Error('ImageMagick did not encode profile WebP')
-    let decodedSize: readonly [number, number] | undefined
-    ImageMagick.read(encoded.value, (image) => {
-      decodedSize = [image.width, image.height]
-    })
-    expect(decodedSize).toEqual([800, 800])
   })
 })

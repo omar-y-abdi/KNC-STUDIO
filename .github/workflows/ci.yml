@@ -85,6 +85,15 @@ jobs:
           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
           ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
       - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Enforce image processing CPU budget
+        run: node tools/e2e/upload-budget.mjs
+      - name: Preserve image processing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upload-budget-${{ github.run_attempt }}
+          path: /tmp/upload-budget
+          retention-days: 7
       - name: Browser smoke
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/blade-preview.log 2>&1 &
