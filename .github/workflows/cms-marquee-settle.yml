@@ -36,13 +36,13 @@ jobs:
                 const transform = globalThis.getComputedStyle(node).transform
                 return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
               }
-              const started = performance.now()
+              const started = globalThis.performance.now()
               let previous = x()
               let slowSince = null
-              while (performance.now() - started < 5000) {
+              while (globalThis.performance.now() - started < 5000) {
                 await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
                 const current = x()
-                const now = performance.now()
+                const now = globalThis.performance.now()
                 if (Math.abs(current - previous) <= 2) slowSince ??= now
                 else slowSince = null
                 previous = current
