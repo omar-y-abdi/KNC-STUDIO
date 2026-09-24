@@ -1,0 +1,163 @@
+diff --git a/tests/unit/uploadImageBudget.test.ts b/tests/unit/uploadImageBudget.test.ts
+index 0c0674f..b83400a 100644
+--- a/tests/unit/uploadImageBudget.test.ts
++++ b/tests/unit/uploadImageBudget.test.ts
+@@ -4,17 +4,19 @@ import { ImageValidationError, processImage } from '../../supabase/functions/upl
+ const state = vi.hoisted(() => ({ image: null as unknown, calls: [] as string[] }))
+ vi.mock('@imagemagick/magick-wasm', () => ({
+   Gravity: { Center: 'Center' },
+-  MagickFormat: { WebP: 'WEBP' },
++  MagickFormat: { WebP: 'WEBP', Jpeg: 'JPEG' },
++  MagickColors: { Transparent: 'transparent' },
++  MagickReadSettings: class { setDefine = vi.fn() },
+   MagickGeometry: class {
+     constructor(public width: number, public height: number) {}
+   },
+-  ImageMagick: { read: (_: Uint8Array, run: (image: unknown) => void) => run(state.image) },
++  ImageMagick: { read: (...args: unknown[]) => (args.at(-1) as (image: unknown) => void)(state.image) },
+ }))
+ 
+ function image(width = 3000, height = 3000, outputSize = 512001) {
+   return {
+     width, height, format: 'JPEG', quality: 0,
+-    autoOrient: vi.fn(), strip: vi.fn(),
++    autoOrient: vi.fn(), strip: vi.fn(), ping: vi.fn(), read: vi.fn(),
+     settings: { setDefine: vi.fn() },
+     resize(size: { width: number; height: number }) {
+       state.calls.push(`resize:${size.width}x${size.height}`)
+@@ -64,4 +66,20 @@ describe('bounded server-side image processing', () => {
+       expect(state.calls).toEqual([])
+     }
+   })
++  it('checks original image dimensions before decoding the pixel buffer', () => {
++    const source = image(6000, 6000); state.image = source
++    expect(() => processImage(new Uint8Array([1]), 'gallery')).toThrow(ImageValidationError)
++    expect(source.ping).toHaveBeenCalledOnce()
++    expect(source.read).not.toHaveBeenCalled()
++    expect(source.autoOrient).not.toHaveBeenCalled()
++  })
++
++  it('gives the JPEG decoder a size based on the required crop resolution', () => {
++    const source = image(4000, 2000, 100); state.image = source
++    processImage(new Uint8Array([1]), 'barber_photo')
++    expect(source.read).toHaveBeenCalledOnce()
++    const settings = source.read.mock.calls[0]?.[1] as { setDefine: ReturnType<typeof vi.fn> }
++    expect(settings.setDefine).toHaveBeenCalledWith('JPEG', 'size', '1600x800')
++  })
++
+ })
+diff --git a/tests/unit/cmsUploadErrors.test.ts b/tests/unit/cmsUploadErrors.test.ts
+new file mode 100644
+index 0000000..8df1380
+--- /dev/null
++++ b/tests/unit/cmsUploadErrors.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it, vi } from 'vitest'
++import { handleCmsUpload } from '../../supabase/functions/upload-image/cmsUpload'
++import { ImageValidationError } from '../../supabase/functions/upload-image/processImage'
++
++const request = (): FormData => {
++  const form = new globalThis.FormData()
++  form.set('kind', 'cms_asset')
++  form.set('purpose', 'library')
++  form.set('file', new globalThis.File(['image bytes'], 'photo.jpg', { type: 'image/jpeg' }))
++  return form
++}
++const json = (body: unknown, status: number): Response =>
++  new globalThis.Response(JSON.stringify(body), { status })
++
++function backend(forbidden = false) {
++  const storage = vi.fn(() => { throw new Error('Rejected uploads must never reach storage') })
++  const service = {
++    rpc: vi.fn(async () => ({ error: forbidden ? { code: '42501' } : null })),
++    storage: { from: storage },
++  }
++  return { storage, service: service as unknown as Parameters<typeof handleCmsUpload>[2] }
++}
++
++describe('CMS upload boundary errors', () => {
++  it.each(['output_too_large', 'image_too_large'] as const)(
++    'retains the %s diagnosis instead of reporting valid image data as undecodable',
++    async (code) => {
++      const { service, storage } = backend()
++      const decode = vi.fn(async () => { throw new ImageValidationError(code) })
++      const response = await handleCmsUpload(request(), 'owner', service, decode, json)
++      expect(response.status).toBe(422)
++      expect(await response.json()).toMatchObject({ ok: false, error: code })
++      expect(storage).not.toHaveBeenCalled()
++    },
++  )
++
++  it('rejects unauthorized requests before decoding or storage', async () => {
++    const { service, storage } = backend(true)
++    const decode = vi.fn()
++    const response = await handleCmsUpload(request(), 'barber', service, decode, json)
++    expect(response.status).toBe(403)
++    expect(decode).not.toHaveBeenCalled()
++    expect(storage).not.toHaveBeenCalled()
++  })
++})
+diff --git a/tests/unit/uploadImageRuntime.test.ts b/tests/unit/uploadImageRuntime.test.ts
+index 1120f28..b7666f6 100644
+--- a/tests/unit/uploadImageRuntime.test.ts
++++ b/tests/unit/uploadImageRuntime.test.ts
+@@ -1,12 +1,11 @@
+ import { readFileSync } from 'node:fs'
+ import {
+-  Gravity,
+   ImageMagick,
+   MagickFormat,
+-  MagickGeometry,
+   initializeImageMagick,
+ } from '@imagemagick/magick-wasm'
+ import { beforeAll, describe, expect, it } from 'vitest'
++import { processImage } from '../../supabase/functions/upload-image/processImage'
+ 
+ const JPEG_FIXTURE = Uint8Array.from(
+   Buffer.from(
+@@ -43,28 +42,25 @@ describe('upload-image JPEG runtime', () => {
+     expect(decodedSize).toEqual([120, 80])
+   })
+ 
+-  it('keeps the barber-profile resize/crop output decodable', () => {
+-    const encoded: { value?: Uint8Array } = {}
+-
+-    ImageMagick.read(JPEG_FIXTURE, (image) => {
+-      const scale = Math.max(800 / image.width, 800 / image.height)
+-      image.resize(
+-        new MagickGeometry(
+-          Math.max(800, Math.round(image.width * scale)),
+-          Math.max(800, Math.round(image.height * scale)),
+-        ),
+-      )
+-      image.crop(new MagickGeometry(800, 800), Gravity.Center)
+-      image.write(MagickFormat.WebP, (data) => {
+-        encoded.value = new Uint8Array(data)
+-      })
++  it('keeps the actual barber-profile processor output decodable', () => {
++    const result = processImage(JPEG_FIXTURE, 'barber_photo')
++    expect([result.width, result.height]).toEqual([800, 800])
++    ImageMagick.read(result.bytes, (image) => {
++      expect([image.width, image.height]).toEqual([800, 800])
+     })
++  })
+ 
+-    if (encoded.value === undefined) throw new Error('ImageMagick did not encode profile WebP')
+-    let decodedSize: readonly [number, number] | undefined
+-    ImageMagick.read(encoded.value, (image) => {
+-      decodedSize = [image.width, image.height]
++  it('preserves transparent pixels through logo processing', () => {
++    const input = Uint8Array.from(Buffer.from(
++      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAEUlEQVR4nGPkEpFj4JKzaQAAAxwBIh+aiOkAAAAASUVORK5CYII=',
++      'base64',
++    ))
++    const result = processImage(input, 'site_logo')
++    expect([result.width, result.height]).toEqual([2, 1])
++    ImageMagick.read(result.bytes, (image) => {
++      image.write(MagickFormat.Rgba, (data) => {
++        expect([data[3], data[7]]).toEqual([0, 128])
++      })
+     })
+-    expect(decodedSize).toEqual([800, 800])
+   })
+ })
