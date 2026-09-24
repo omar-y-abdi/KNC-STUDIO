@@ -14,46 +14,50 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: d3b82dcedd4db353faed5a525db5125658f4b83b
+          ref: bb2783bb63322c2ea69fc048df5a5298bac3b605
           fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 22
           cache: npm
-      - name: Replace the unverified fling delay with measured settling
+      - name: Correct the observed empty-space pointer target
         run: |
           mkdir -p /tmp/card-source
           python3 - <<'PY'
           from pathlib import Path
           p=Path('tools/e2e/cms-barber-marquee.mjs')
           s=p.read_text()
-          old="  await page.waitForTimeout(300)\n  return { hit, before, after: await transformX(track) }"
-          new='''  // dragFree keeps moving after pointerup. A fixed delay can identify A as
-            // nearest, then click after inertia has carried it offscreen. Wait for
-            // that fast motion to finish; the intended slow autoplay may continue.
-            const settling = await track.evaluate(async (node) => {
-              const x = () => {
-                const transform = globalThis.getComputedStyle(node).transform
-                return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
-              }
-              const started = globalThis.performance.now()
-              let previous = x()
-              let slowSince = null
-              while (globalThis.performance.now() - started < 5000) {
-                await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
-                const current = x()
-                const now = globalThis.performance.now()
-                if (Math.abs(current - previous) <= 2) slowSince ??= now
-                else slowSince = null
-                previous = current
-                if (slowSince !== null && now - slowSince >= 200)
-                  return { elapsedMs: now - started, x: current }
-              }
-              throw new Error('Barber drag did not return to slow or paused motion')
+          start=s.index('  const box = await track.boundingBox()',s.index('async function dragLeft'))
+          end=s.index('  const before = await transformX(track)',start)
+          s=s[:start]+'''  const viewport = page.viewportSize()
+            assert.ok(viewport, 'Barber track has no visible viewport')
+            // A looping track has gaps. Fixed screen coordinates repeatedly hit
+            // empty space in WebKit, so those recorded "drags" never reached Embla.
+            const { x, y, hit } = await track.evaluate((node) => {
+              const candidates = [...node.querySelectorAll(':scope > [role="button"]')]
+                .map((card) => {
+                  const rect = card.getBoundingClientRect()
+                  const left = Math.max(0, rect.left)
+                  const right = Math.min(globalThis.innerWidth, rect.right)
+                  const top = Math.max(20, rect.top)
+                  const bottom = Math.min(globalThis.innerHeight - 20, rect.bottom)
+                  return { card, left, right, top, bottom, width: right - left }
+                })
+                .filter(({ width, top, bottom }) => width > 60 && bottom - top > 40)
+                .sort((a, b) => b.width - a.width)
+              const target = candidates[0]
+              if (!target) throw new Error('No visible barber card can receive a drag')
+              const x = target.right - 20
+              const y = target.top + Math.min(80, (target.bottom - target.top) / 2)
+              if (!target.card.contains(globalThis.document.elementFromPoint(x, y)))
+                throw new Error('Visible barber drag target is covered')
+              return { x, y, hit: target.card.textContent?.trim().slice(0, 30) ?? '' }
             })
-            return { hit, before, after: await transformX(track), settling }'''
+          '''+s[end:]
+          old="await page.mouse.move(viewport.width * (0.82 - distance), y, { steps: 8 })"
           assert s.count(old)==1
-          p.write_text(s.replace(old,new))
+          s=s.replace(old,"await page.mouse.move(Math.max(10, x - viewport.width * distance), y, { steps: 8 })")
+          p.write_text(s)
           PY
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/card-source/install.log 2>&1
@@ -62,7 +66,7 @@ jobs:
           git add tools/e2e/cms-barber-marquee.mjs
           git diff --cached --check
           git diff --cached > /tmp/card-source/test.patch
-          git -c user.name='CMS runtime fixes' -c user.email='cms-runtime@users.noreply.github.com' commit -m 'test: wait for carousel fling to settle before clicking owner-reordered cards'
+          git -c user.name='CMS runtime fixes' -c user.email='cms-runtime@users.noreply.github.com' commit -m 'test: hit-test visible cards before carousel drag gestures'
           git rev-parse HEAD > /tmp/card-source/commit.txt
           git rev-parse HEAD^{tree} > /tmp/card-source/tree.txt
           git bundle create /tmp/card-source/source.bundle HEAD
