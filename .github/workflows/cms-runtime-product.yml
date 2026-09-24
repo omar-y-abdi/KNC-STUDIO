@@ -1,0 +1,85 @@
+name: CMS runtime fix verification
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-runtime-product.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.5
+      - name: Apply the exact tested corrections
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-runtime-final
+          cp .runtime/processor-red.patch /tmp/red.patch
+          cp .verification/upload-green.patch /tmp/green.patch
+          cp .verification/next-red.patch /tmp/contracts.patch
+          cp .verification/final-green.patch /tmp/final.patch
+          echo '114108a802d531c374a169cf79872da2dadcbc36e04f611c28164f80ff324016  /tmp/final.patch' | sha256sum -c -
+          git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
+          for patch in /tmp/red.patch /tmp/green.patch /tmp/contracts.patch /tmp/final.patch; do git apply --index "$patch"; done
+          test "$(git write-tree)" = 6d043507bf1a17c46c56e6fb679d5c91ddae669a
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/cms-runtime-final/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/cms-runtime-final/format.log 2>&1
+          git add -u
+          git write-tree > /tmp/cms-runtime-final/tree.txt
+      - name: Verify unchanged protection and resource budgets
+        shell: python3 tools/ci/furl_ci.py {0}
+        env:
+          CMS_EVIDENCE_DIR: /tmp/cms-runtime-final
+        run: |
+          npx playwright install --with-deps chromium
+          status=0
+          run_check() {
+            name="$1"; shift
+            code=0
+            "$@" > "/tmp/cms-runtime-final/$name.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/cms-runtime-final/$name.exit-code"
+            test "$code" = 0 || status=1
+          }
+          run_check unit npm test
+          run_check typecheck npm run typecheck
+          run_check lint npm run lint
+          run_check formatting npm run format:check
+          run_check build npm run build
+          run_check release node tools/release/cms-release.mjs check
+          run_check edge deno check --frozen --node-modules-dir=manual supabase/functions/upload-image/index.ts
+          run_check budget node tools/e2e/upload-budget.mjs
+          exit "$status"
+      - name: Checkpoint the verified implementation
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --cached --check
+          git diff --quiet
+          git diff --cached > /tmp/cms-runtime-final/implementation.patch
+          git -c user.name='CMS runtime fixes' -c user.email='cms-runtime@users.noreply.github.com' commit -m 'fix: bound image upload CPU work and preserve size rejection diagnostics'
+          git rev-parse HEAD > /tmp/cms-runtime-final/commit.txt
+          git bundle create /tmp/cms-runtime-final/source.bundle HEAD
+          git push origin HEAD:refs/heads/fix/cms-runtime-20260924
+      - name: Preserve complete diagnostics
+        if: always()
+        run: |
+          for log in /tmp/cms-runtime-final/*.log; do test -f "$log" && furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-runtime-final-${{ github.run_number }}
+          path: /tmp/cms-runtime-final
+          retention-days: 7
