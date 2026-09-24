@@ -1,0 +1,46 @@
+name: JPEG decoder budget probe
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/jpeg-budget-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare diagnostic variant
+        run: |
+          mkdir -p /tmp/jpeg-budget
+          cp .runtime/processor-red.patch /tmp/red.patch
+          cp .verification/upload-green.patch /tmp/green.patch
+          cp .verification/jpeg-budget.mjs /tmp/jpeg-budget.mjs
+          git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
+          git apply --index /tmp/red.patch
+          git apply --index /tmp/green.patch
+          test "$(git write-tree)" = 9a55f9f2415ec023678e8c739bc0da9f7f4c8bdf
+          cp /tmp/jpeg-budget.mjs tools/e2e/jpeg-budget.mjs
+          bash tools/ci/setup-furl.sh
+      - name: Measure decoder-native downsampling
+        env:
+          CMS_EVIDENCE_DIR: /tmp/jpeg-budget
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          node tools/e2e/jpeg-budget.mjs > /tmp/jpeg-budget/probe.log 2>&1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: jpeg-decoder-probe
+          path: /tmp/jpeg-budget
+          retention-days: 7
