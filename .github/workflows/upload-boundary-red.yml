@@ -1,0 +1,46 @@
+name: Upload boundary contracts
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/upload-boundary-red.yml]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Reproduce before changing either boundary
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/upload-boundaries
+          cp .runtime/processor-red.patch /tmp/red.patch
+          cp .verification/upload-green.patch /tmp/green.patch
+          cp .verification/next-red.patch /tmp/contracts.patch
+          echo '9578567b06027483aad9f41b966cfd215fead382e69f1a1a1485e16deb4ea13b  /tmp/contracts.patch' | sha256sum -c -
+          git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
+          git apply --index /tmp/red.patch
+          git apply --index /tmp/green.patch
+          git apply --index /tmp/contracts.patch
+          git write-tree > /tmp/upload-boundaries/tree.txt
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/upload-boundaries/install.log 2>&1
+          code=0
+          npm test -- tests/unit/cmsUploadErrors.test.ts tests/unit/uploadImageBudget.test.ts tests/unit/uploadImageRuntime.test.ts > /tmp/upload-boundaries/unit.log 2>&1 || code=$?
+          echo "$code" > /tmp/upload-boundaries/unit.exit-code
+          furl compress /tmp/upload-boundaries/unit.log --json > /tmp/upload-boundaries/unit.log.furl.json
+          exit "$code"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: upload-boundary-red
+          path: /tmp/upload-boundaries
+          retention-days: 7
