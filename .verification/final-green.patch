@@ -1,0 +1,145 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index ed1fda0..af0bf8e 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -85,6 +85,15 @@ jobs:
+           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
+           ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
+       - run: npx playwright install --with-deps chromium firefox webkit
++      - name: Enforce image processing CPU budget
++        run: node tools/e2e/upload-budget.mjs
++      - name: Preserve image processing evidence
++        if: always()
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
++        with:
++          name: upload-budget-${{ github.run_attempt }}
++          path: /tmp/upload-budget
++          retention-days: 7
+       - name: Browser smoke
+         run: |
+           npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/blade-preview.log 2>&1 &
+diff --git a/supabase/functions/upload-image/README.md b/supabase/functions/upload-image/README.md
+index 6f660c7..f95cc07 100644
+--- a/supabase/functions/upload-image/README.md
++++ b/supabase/functions/upload-image/README.md
+@@ -23,3 +23,23 @@ configured static file and must use the CLI/Docker bundle path.
+ bytes inside the write callback before returning them to asynchronous Storage code. Retaining the
+ callback buffer by reference can produce intermittent corrupted WebP uploads, with JPEG inputs being
+ especially likely to expose the issue.
++
++## CPU and pixel budget
++
++The processor lives in `processImage.ts` so tests execute the same codec path as the function.
++Original dimensions and format are inspected before pixel decoding. JPEG decoding uses a target-size
++hint; profile images retain enough source resolution for the central square, then crop before resize.
++This avoids allocating an oversized intermediate panorama for narrow inputs. Auto-orientation,
++metadata removal, the 25-megapixel input limit and 512,000-byte output limit remain enforced.
++
++WebP uses method 0 and at most two encoding attempts (quality 82, then 55). An image which still
++exceeds the output limit is rejected normally instead of consuming ten full encoding passes and
++being terminated by the Edge CPU watchdog. The lower-effort encoder trades compression efficiency
++for bounded CPU work; it is not a promise that every accepted input size can fit the output cap.
++CMS uploads distinguish decoded/output-size rejection from corrupted or unsupported image data.
++
++`node tools/e2e/upload-budget.mjs` profiles the real WASM processor on deterministic camera-sized
++JPEGs and a difficult high-entropy image, checks decodable output, and preserves JSON measurements.
++It runs in the existing frontend CI job. The 1,800 ms regression budget is measured on the CI runner,
++not a substitute for checking the deployed Edge CPU logs. The fixtures are generated test data,
++not uploaded owner photographs.
+diff --git a/supabase/functions/upload-image/cmsUpload.ts b/supabase/functions/upload-image/cmsUpload.ts
+index 8d44ec9..bf85fe1 100644
+--- a/supabase/functions/upload-image/cmsUpload.ts
++++ b/supabase/functions/upload-image/cmsUpload.ts
+@@ -1,5 +1,6 @@
+ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+ import { inspectWoff2 } from '../_shared/cmsFont.ts'
++import { ImageValidationError } from './processImage.ts'
+ 
+ export class CmsMediaUnavailable extends Error {}
+ type DecodedImage = { bytes: Uint8Array; width: number; height: number }
+@@ -76,6 +77,14 @@ export async function handleCmsUpload(
+           503,
+           'Bildbehandlingen är tillfälligt otillgänglig. Ingen placering har ändrats.',
+         )
++      if (error instanceof ImageValidationError && error.code !== 'unsupported_image')
++        return failure(
++          error.code,
++          422,
++          error.code === 'image_too_large'
++            ? 'Bilden har för hög upplösning. Välj en bild med högst 25 megapixlar.'
++            : 'Bilden blir för stor efter komprimering. Välj en mindre eller enklare bild.',
++        )
+       return failure(
+         font ? 'invalid_font' : 'invalid_image',
+         422,
+diff --git a/supabase/functions/upload-image/processImage.ts b/supabase/functions/upload-image/processImage.ts
+index 84ef21a..73e18eb 100644
+--- a/supabase/functions/upload-image/processImage.ts
++++ b/supabase/functions/upload-image/processImage.ts
+@@ -1,4 +1,4 @@
+-import { Gravity, ImageMagick, MagickFormat, MagickGeometry } from '@imagemagick/magick-wasm'
++import { Gravity, ImageMagick, MagickColors, MagickFormat, MagickGeometry, MagickReadSettings } from '@imagemagick/magick-wasm'
+ 
+ const MAX_OUTPUT_BYTES = 512000
+ const MAX_PIXELS = 25_000_000
+@@ -69,18 +69,27 @@ function encodeWebp(image: {
+ export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo' | 'site_logo'): ProcessedImage {
+   let output: ProcessedImage | null = null
+ 
+-  ImageMagick.read(input, (image) => {
+-    const optionalOperations = image as unknown as {
+-      autoOrient?: () => void
+-      strip?: () => void
+-    }
+-
+-    optionalOperations.autoOrient?.()
+-
++  ImageMagick.read(MagickColors.Transparent, 1, 1, (image) => {
++    // Inspect the original header before allocating pixels, including images
++    // which a decoder size hint would otherwise bring below the input limit.
++    image.ping(input)
++    const original = imageDimensions(image)
+     if (!SUPPORTED_FORMATS.has(String(image.format).toUpperCase())) {
+       throw new ImageValidationError('unsupported_image')
+     }
+ 
++    const settings = new MagickReadSettings()
++    if (image.format === MagickFormat.Jpeg) {
++      // Let libjpeg discard unneeded DCT samples instead of decoding a full
++      // camera image and only then shrinking it. Preserve enough resolution
++      // for the central square when producing a barber portrait.
++      const scale = Math.min(1, kind === 'barber_photo'
++        ? PROFILE_SIZE / Math.min(original.width, original.height)
++        : GALLERY_LONG_SIDE / Math.max(original.width, original.height))
++      settings.setDefine(MagickFormat.Jpeg, 'size', `${Math.ceil(original.width * scale)}x${Math.ceil(original.height * scale)}`)
++    }
++    image.read(input, settings)
++    image.autoOrient()
+     const { width, height } = imageDimensions(image)
+ 
+     if (kind === 'gallery' || kind === 'site_logo') {
+@@ -104,7 +113,7 @@ export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo'
+       image.resize(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE))
+     }
+ 
+-    optionalOperations.strip?.()
++    image.strip()
+ 
+     const processedWidth = image.width
+     const processedHeight = image.height
+@@ -123,4 +132,3 @@ export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo'
+ 
+   return output
+ }
+-
+diff --git a/tools/e2e/upload-budget.mjs b/tools/e2e/upload-budget.mjs
+index 37045ab..f35ce5c 100644
+--- a/tools/e2e/upload-budget.mjs
++++ b/tools/e2e/upload-budget.mjs
+@@ -1,5 +1,6 @@
+ /* global document */
+ import assert from 'node:assert/strict'
++import { performance } from 'node:perf_hooks'
+ import { readFile, mkdir, writeFile } from 'node:fs/promises'
+ import { chromium } from 'playwright'
+ import { ImageMagick, initializeImageMagick } from '@imagemagick/magick-wasm'
