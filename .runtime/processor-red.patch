@@ -1,0 +1,476 @@
+diff --git a/supabase/functions/upload-image/deno.json b/supabase/functions/upload-image/deno.json
+index eff229e..73d0841 100644
+--- a/supabase/functions/upload-image/deno.json
++++ b/supabase/functions/upload-image/deno.json
+@@ -1,5 +1,6 @@
+ {
+   "imports": {
++    "@imagemagick/magick-wasm": "npm:@imagemagick/magick-wasm@0.0.42",
+     "fontkit": "npm:fontkit@2.0.4"
+   }
+ }
+diff --git a/supabase/functions/upload-image/index.ts b/supabase/functions/upload-image/index.ts
+index 3bf76fc..65ffac1 100644
+--- a/supabase/functions/upload-image/index.ts
++++ b/supabase/functions/upload-image/index.ts
+@@ -1,13 +1,8 @@
+ import { retainCmsObject } from '../_shared/cmsRetention.ts'
+ import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
+ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+-import {
+-  Gravity,
+-  ImageMagick,
+-  MagickFormat,
+-  MagickGeometry,
+-  initializeImageMagick,
+-} from 'npm:@imagemagick/magick-wasm@0.0.42'
++import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
++import { ImageValidationError, processImage } from './processImage.ts'
+ import {
+   executeExternalAction,
+   ExternalActionError,
+@@ -16,22 +11,7 @@ import {
+ } from '../_shared/externalActions.ts'
+ 
+ const MAX_INPUT_BYTES = 5 * 1024 * 1024
+-const MAX_OUTPUT_BYTES = 512000
+-const MAX_PIXELS = 25_000_000
+-const GALLERY_LONG_SIDE = 1600
+-const PROFILE_SIZE = 800
+-const INITIAL_WEBP_QUALITY = 82
+-const MIN_WEBP_QUALITY = 55
+-const WEBP_QUALITY_STEP = 3
+ const BARBER_ID = /^[a-z0-9-]{1,32}$/
+-const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
+-
+-type ProcessedImage = {
+-  readonly bytes: Uint8Array
+-  readonly width: number
+-  readonly height: number
+-}
+-
+ let imageMagickReady: Promise<void> | null = null
+ 
+ function ensureImageMagickReady(): Promise<void> {
+@@ -88,15 +68,6 @@ type DeleteRequest =
+ const LOGO_PATH =
+   /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
+ 
+-class ImageValidationError extends Error {
+-  readonly code: 'unsupported_image' | 'image_too_large' | 'output_too_large'
+-
+-  constructor(code: 'unsupported_image' | 'image_too_large' | 'output_too_large') {
+-    super(code)
+-    this.code = code
+-  }
+-}
+-
+ function json(body: unknown, status: number): Response {
+   return new Response(JSON.stringify(body), {
+     status,
+@@ -222,112 +193,6 @@ function parseDelete(value: unknown): DeleteRequest | null {
+   return null
+ }
+ 
+-function imageDimensions(image: { readonly width: number; readonly height: number }): {
+-  readonly width: number
+-  readonly height: number
+-} {
+-  const width = image.width
+-  const height = image.height
+-
+-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+-    throw new ImageValidationError('unsupported_image')
+-  }
+-
+-  if (width * height > MAX_PIXELS) {
+-    throw new ImageValidationError('image_too_large')
+-  }
+-
+-  return { width, height }
+-}
+-
+-function encodeWebp(image: {
+-  quality: number
+-  write(format: MagickFormat, callback: (data: Uint8Array) => void): void
+-}): Uint8Array {
+-  for (
+-    let quality = INITIAL_WEBP_QUALITY;
+-    quality >= MIN_WEBP_QUALITY;
+-    quality -= WEBP_QUALITY_STEP
+-  ) {
+-    image.quality = quality
+-
+-    const encoded: { value?: Uint8Array } = {}
+-
+-    image.write(MagickFormat.WebP, (data) => {
+-      encoded.value = new Uint8Array(data)
+-    })
+-
+-    if (encoded.value !== undefined && encoded.value.byteLength <= MAX_OUTPUT_BYTES) {
+-      return encoded.value
+-    }
+-  }
+-
+-  throw new ImageValidationError('output_too_large')
+-}
+-
+-function processImage(input: Uint8Array, kind: UploadRequest['kind']): ProcessedImage {
+-  let output: ProcessedImage | null = null
+-
+-  ImageMagick.read(input, (image) => {
+-    const optionalOperations = image as unknown as {
+-      autoOrient?: () => void
+-      strip?: () => void
+-    }
+-
+-    optionalOperations.autoOrient?.()
+-
+-    if (!SUPPORTED_FORMATS.has(String(image.format).toUpperCase())) {
+-      throw new ImageValidationError('unsupported_image')
+-    }
+-
+-    const { width, height } = imageDimensions(image)
+-
+-    if (kind === 'gallery' || kind === 'site_logo') {
+-      const longSide = Math.max(width, height)
+-
+-      if (longSide > GALLERY_LONG_SIDE) {
+-        const scale = GALLERY_LONG_SIDE / longSide
+-
+-        image.resize(
+-          new MagickGeometry(
+-            Math.max(1, Math.round(width * scale)),
+-            Math.max(1, Math.round(height * scale)),
+-          ),
+-        )
+-      }
+-    } else {
+-      const scale = Math.max(PROFILE_SIZE / width, PROFILE_SIZE / height)
+-
+-      image.resize(
+-        new MagickGeometry(
+-          Math.max(PROFILE_SIZE, Math.round(width * scale)),
+-          Math.max(PROFILE_SIZE, Math.round(height * scale)),
+-        ),
+-      )
+-
+-      image.crop(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE), Gravity.Center)
+-    }
+-
+-    optionalOperations.strip?.()
+-
+-    const processedWidth = image.width
+-    const processedHeight = image.height
+-    const bytes = encodeWebp(image)
+-
+-    output = {
+-      bytes,
+-      width: processedWidth,
+-      height: processedHeight,
+-    }
+-  })
+-
+-  if (output === null) {
+-    throw new ImageValidationError('unsupported_image')
+-  }
+-
+-  return output
+-}
+-
+ function isGalleryRow(value: unknown): value is {
+   readonly id: string
+   readonly kind: 'salon' | 'cuts'
+diff --git a/supabase/functions/upload-image/processImage.ts b/supabase/functions/upload-image/processImage.ts
+new file mode 100644
+index 0000000..31f8894
+--- /dev/null
++++ b/supabase/functions/upload-image/processImage.ts
+@@ -0,0 +1,132 @@
++import { Gravity, ImageMagick, MagickFormat, MagickGeometry } from '@imagemagick/magick-wasm'
++
++const MAX_OUTPUT_BYTES = 512000
++const MAX_PIXELS = 25_000_000
++const GALLERY_LONG_SIDE = 1600
++const PROFILE_SIZE = 800
++const INITIAL_WEBP_QUALITY = 82
++const MIN_WEBP_QUALITY = 55
++const WEBP_QUALITY_STEP = 3
++const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
++
++type ProcessedImage = {
++  readonly bytes: Uint8Array
++  readonly width: number
++  readonly height: number
++}
++
++export class ImageValidationError extends Error {
++  readonly code: 'unsupported_image' | 'image_too_large' | 'output_too_large'
++
++  constructor(code: 'unsupported_image' | 'image_too_large' | 'output_too_large') {
++    super(code)
++    this.code = code
++  }
++}
++
++function imageDimensions(image: { readonly width: number; readonly height: number }): {
++  readonly width: number
++  readonly height: number
++} {
++  const width = image.width
++  const height = image.height
++
++  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
++    throw new ImageValidationError('unsupported_image')
++  }
++
++  if (width * height > MAX_PIXELS) {
++    throw new ImageValidationError('image_too_large')
++  }
++
++  return { width, height }
++}
++
++function encodeWebp(image: {
++  quality: number
++  write(format: MagickFormat, callback: (data: Uint8Array) => void): void
++}): Uint8Array {
++  for (
++    let quality = INITIAL_WEBP_QUALITY;
++    quality >= MIN_WEBP_QUALITY;
++    quality -= WEBP_QUALITY_STEP
++  ) {
++    image.quality = quality
++
++    const encoded: { value?: Uint8Array } = {}
++
++    image.write(MagickFormat.WebP, (data) => {
++      encoded.value = new Uint8Array(data)
++    })
++
++    if (encoded.value !== undefined && encoded.value.byteLength <= MAX_OUTPUT_BYTES) {
++      return encoded.value
++    }
++  }
++
++  throw new ImageValidationError('output_too_large')
++}
++
++export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo' | 'site_logo'): ProcessedImage {
++  let output: ProcessedImage | null = null
++
++  ImageMagick.read(input, (image) => {
++    const optionalOperations = image as unknown as {
++      autoOrient?: () => void
++      strip?: () => void
++    }
++
++    optionalOperations.autoOrient?.()
++
++    if (!SUPPORTED_FORMATS.has(String(image.format).toUpperCase())) {
++      throw new ImageValidationError('unsupported_image')
++    }
++
++    const { width, height } = imageDimensions(image)
++
++    if (kind === 'gallery' || kind === 'site_logo') {
++      const longSide = Math.max(width, height)
++
++      if (longSide > GALLERY_LONG_SIDE) {
++        const scale = GALLERY_LONG_SIDE / longSide
++
++        image.resize(
++          new MagickGeometry(
++            Math.max(1, Math.round(width * scale)),
++            Math.max(1, Math.round(height * scale)),
++          ),
++        )
++      }
++    } else {
++      const scale = Math.max(PROFILE_SIZE / width, PROFILE_SIZE / height)
++
++      image.resize(
++        new MagickGeometry(
++          Math.max(PROFILE_SIZE, Math.round(width * scale)),
++          Math.max(PROFILE_SIZE, Math.round(height * scale)),
++        ),
++      )
++
++      image.crop(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE), Gravity.Center)
++    }
++
++    optionalOperations.strip?.()
++
++    const processedWidth = image.width
++    const processedHeight = image.height
++    const bytes = encodeWebp(image)
++
++    output = {
++      bytes,
++      width: processedWidth,
++      height: processedHeight,
++    }
++  })
++
++  if (output === null) {
++    throw new ImageValidationError('unsupported_image')
++  }
++
++  return output
++}
++
+diff --git a/tests/unit/uploadImageBudget.test.ts b/tests/unit/uploadImageBudget.test.ts
+new file mode 100644
+index 0000000..0c0674f
+--- /dev/null
++++ b/tests/unit/uploadImageBudget.test.ts
+@@ -0,0 +1,67 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest'
++import { ImageValidationError, processImage } from '../../supabase/functions/upload-image/processImage'
++
++const state = vi.hoisted(() => ({ image: null as unknown, calls: [] as string[] }))
++vi.mock('@imagemagick/magick-wasm', () => ({
++  Gravity: { Center: 'Center' },
++  MagickFormat: { WebP: 'WEBP' },
++  MagickGeometry: class {
++    constructor(public width: number, public height: number) {}
++  },
++  ImageMagick: { read: (_: Uint8Array, run: (image: unknown) => void) => run(state.image) },
++}))
++
++function image(width = 3000, height = 3000, outputSize = 512001) {
++  return {
++    width, height, format: 'JPEG', quality: 0,
++    autoOrient: vi.fn(), strip: vi.fn(),
++    settings: { setDefine: vi.fn() },
++    resize(size: { width: number; height: number }) {
++      state.calls.push(`resize:${size.width}x${size.height}`)
++      this.width = size.width; this.height = size.height
++    },
++    crop(size: { width: number; height: number }) {
++      state.calls.push(`crop:${size.width}x${size.height}`)
++      this.width = size.width; this.height = size.height
++    },
++    write: vi.fn((_: unknown, receive: (bytes: Uint8Array) => void) => {
++      const temporary = new Uint8Array(outputSize).fill(7)
++      receive(temporary)
++      // The codec owns the buffer and is free to overwrite it after the callback.
++      temporary.fill(0)
++    }),
++  }
++}
++
++beforeEach(() => { state.calls = []; vi.clearAllMocks() })
++
++describe('bounded server-side image processing', () => {
++  it('stops expensive encoding after at most two attempts while retaining the output size cap', () => {
++    const source = image(); state.image = source
++    expect(() => processImage(new Uint8Array([1]), 'gallery')).toThrow(ImageValidationError)
++    expect(source.write.mock.calls.length).toBeLessThanOrEqual(2)
++  })
++
++  it('crops narrow portraits before enlarging them instead of allocating a huge intermediate image', () => {
++    const source = image(3000, 20, 100); state.image = source
++    const result = processImage(new Uint8Array([1]), 'barber_photo')
++    expect(state.calls).toEqual(['crop:20x20', 'resize:800x800'])
++    expect([result.width, result.height]).toEqual([800, 800])
++  })
++
++  it('copies output before the codec reuses its callback memory', () => {
++    state.image = image(120, 80, 100)
++    const result = processImage(new Uint8Array([1]), 'gallery')
++    expect(result.bytes).toEqual(new Uint8Array(100).fill(7))
++    expect([result.width, result.height]).toEqual([120, 80])
++  })
++
++  it('rejects unsupported or excessive decoded images before resizing or encoding', () => {
++    for (const source of [image(6000, 6000), { ...image(), format: 'SVG' }]) {
++      state.image = source
++      expect(() => processImage(new Uint8Array([1]), 'gallery')).toThrow(ImageValidationError)
++      expect(source.write).not.toHaveBeenCalled()
++      expect(state.calls).toEqual([])
++    }
++  })
++})
+diff --git a/tests/unit/uploadImageDependency.test.ts b/tests/unit/uploadImageDependency.test.ts
+index e738e81..3301687 100644
+--- a/tests/unit/uploadImageDependency.test.ts
++++ b/tests/unit/uploadImageDependency.test.ts
+@@ -14,7 +14,7 @@ describe('upload image runtime dependency', () => {
+     expect(edgeSource).toContain('npm:@imagemagick/magick-wasm@0.0.42')
+   })
+   it('copies ImageMagick output before the WASM callback buffer is released', () => {
+-    const edgeSource = readFileSync('supabase/functions/upload-image/index.ts', 'utf8')
++    const edgeSource = readFileSync('supabase/functions/upload-image/processImage.ts', 'utf8')
+ 
+     expect(edgeSource).toContain('encoded.value = new Uint8Array(data)')
+     expect(edgeSource).not.toContain('encoded.value = data')
+diff --git a/tools/e2e/upload-budget.mjs b/tools/e2e/upload-budget.mjs
+new file mode 100644
+index 0000000..37045ab
+--- /dev/null
++++ b/tools/e2e/upload-budget.mjs
+@@ -0,0 +1,63 @@
++/* global document */
++import assert from 'node:assert/strict'
++import { readFile, mkdir, writeFile } from 'node:fs/promises'
++import { chromium } from 'playwright'
++import { ImageMagick, initializeImageMagick } from '@imagemagick/magick-wasm'
++import { processImage } from '../../supabase/functions/upload-image/processImage.ts'
++
++const out = process.env.CMS_EVIDENCE_DIR ?? '/tmp/upload-budget'
++await mkdir(out, { recursive: true })
++const browser = await chromium.launch()
++let samples
++try {
++  const page = await browser.newPage()
++  samples = await page.evaluate(() => {
++    const result = {}
++    for (const [name, width, height] of [['camera', 4032, 3024], ['noise', 3000, 3000]]) {
++      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
++      const context = canvas.getContext('2d'); const pixels = context.createImageData(width, height)
++      let seed = 7
++      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
++        const i = (y * width + x) * 4
++        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
++        pixels.data[i] = name === 'noise' ? seed & 255 : (x / 20 + y / 30 + (seed >>> 24) / 5) % 256
++        pixels.data[i + 1] = name === 'noise' ? (seed >>> 8) & 255 : (y / 16 + (seed >>> 24) / 5) % 256
++        pixels.data[i + 2] = name === 'noise' ? (seed >>> 16) & 255 : (x / 16 + (seed >>> 24) / 5) % 256
++        pixels.data[i + 3] = 255
++      }
++      context.putImageData(pixels, 0, 0)
++      result[name] = canvas.toDataURL('image/jpeg', name === 'noise' ? 0.5 : 0.82).split(',')[1]
++    }
++    return result
++  })
++} finally { await browser.close() }
++await initializeImageMagick(new Uint8Array(await readFile('supabase/functions/upload-image/magick.wasm')))
++const results = []
++for (const [name, encoded] of Object.entries(samples)) {
++  const input = Buffer.from(encoded, 'base64')
++  assert.ok(input.length <= 5 * 1024 * 1024, 'fixture exercises a supported input size')
++  const cpu = process.cpuUsage(); const started = performance.now()
++  const result = { name, inputBytes: input.length }
++  try {
++    const image = processImage(input, 'gallery')
++    result.bytes = image.bytes.length
++    result.width = image.width; result.height = image.height
++    assert.ok(image.bytes.length <= 512000)
++    ImageMagick.read(image.bytes, decoded => {
++      assert.equal(decoded.width, image.width)
++      assert.equal(decoded.height, image.height)
++    })
++    await writeFile(`${out}/${name}.webp`, image.bytes)
++  } catch (error) {
++    result.error = error.message
++    if (error.code !== 'output_too_large') throw error
++  }
++  const used = process.cpuUsage(cpu)
++  result.cpuMs = (used.user + used.system) / 1000
++  result.wallMs = performance.now() - started
++  results.push(result)
++}
++await writeFile(`${out}/image-budget.json`, JSON.stringify(results, null, 2))
++console.log(JSON.stringify(results, null, 2))
++assert.ok(!results.find(result => result.name === 'camera').error, 'ordinary camera photo must upload')
++assert.ok(results.every(result => result.cpuMs < 1800), 'processing must leave headroom below the Edge CPU limit, including rejected images')
