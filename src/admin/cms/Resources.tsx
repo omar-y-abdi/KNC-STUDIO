@@ -69,6 +69,8 @@ export function CmsResources(props: Props): JSX.Element {
     version: number
     value: AssetUsage
   } | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [usageAttempt, setUsageAttempt] = useState(0)
   const [purpose, setPurpose] = useState<Purpose>('library')
   const [barberId, setBarberId] = useState(props.document.barbers[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
@@ -103,6 +105,7 @@ export function CmsResources(props: Props): JSX.Element {
 
   useEffect(() => {
     setUsageResult(null)
+    setUsageError(null)
     if (!asset) return
     let active = true
     void cmsApi
@@ -111,14 +114,14 @@ export function CmsResources(props: Props): JSX.Element {
       .catch(
         (reason) =>
           active &&
-          props.onError(
+          setUsageError(
             reason instanceof Error ? reason.message : 'Referenserna kunde inte läsas.',
           ),
       )
     return () => {
       active = false
     }
-  }, [asset?.id, asset?.version])
+  }, [asset?.id, asset?.version, usageAttempt])
 
   // State updates from async work must use the current owner draft, not the render
   // that started the request. The lock is synchronous; disabled buttons alone race.
@@ -463,6 +466,14 @@ export function CmsResources(props: Props): JSX.Element {
               · Publicerat: {usage?.currentReferences ?? '…'} · Historik:{' '}
               {usage?.historyReferences ?? '…'}
             </p>
+            {usageError && (
+              <div class="cms-inline-error" role="alert">
+                <p>Filen finns kvar. Användningen kunde inte läsas. {usageError}</p>
+                <button type="button" onClick={() => setUsageAttempt((value) => value + 1)}>
+                  Försök läsa användning igen
+                </button>
+              </div>
+            )}
             {draftReferences.error && (
               <p class="cms-inline-error" role="alert">
                 Utkastets referenser kunde inte kontrolleras. Rätta sidans innehåll innan filer tas
