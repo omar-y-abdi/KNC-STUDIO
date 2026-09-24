@@ -1,0 +1,137 @@
+name: CMS post-drag card verification
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-marquee-settle.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: d3b82dcedd4db353faed5a525db5125658f4b83b
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Replace the unverified fling delay with measured settling
+        run: |
+          mkdir -p /tmp/card-source
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/cms-barber-marquee.mjs')
+          s=p.read_text()
+          old="  await page.waitForTimeout(300)\n  return { hit, before, after: await transformX(track) }"
+          new='''  // dragFree keeps moving after pointerup. A fixed delay can identify A as
+            // nearest, then click after inertia has carried it offscreen. Wait for
+            // that fast motion to finish; the intended slow autoplay may continue.
+            const settling = await track.evaluate(async (node) => {
+              const x = () => {
+                const transform = globalThis.getComputedStyle(node).transform
+                return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
+              }
+              const started = performance.now()
+              let previous = x()
+              let slowSince = null
+              while (performance.now() - started < 5000) {
+                await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
+                const current = x()
+                const now = performance.now()
+                if (Math.abs(current - previous) <= 2) slowSince ??= now
+                else slowSince = null
+                previous = current
+                if (slowSince !== null && now - slowSince >= 200)
+                  return { elapsedMs: now - started, x: current }
+              }
+              throw new Error('Barber drag did not return to slow or paused motion')
+            })
+            return { hit, before, after: await transformX(track), settling }'''
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          PY
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/card-source/install.log 2>&1
+          npx prettier --write tools/e2e/cms-barber-marquee.mjs > /tmp/card-source/format.log 2>&1
+          npx eslint tools/e2e/cms-barber-marquee.mjs
+          git add tools/e2e/cms-barber-marquee.mjs
+          git diff --cached --check
+          git diff --cached > /tmp/card-source/test.patch
+          git -c user.name='CMS runtime fixes' -c user.email='cms-runtime@users.noreply.github.com' commit -m 'test: wait for carousel fling to settle before clicking owner-reordered cards'
+          git rev-parse HEAD > /tmp/card-source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/card-source/tree.txt
+          git bundle create /tmp/card-source/source.bundle HEAD
+          code=0
+          git push origin HEAD:refs/heads/verify/cms-card-settle-20260924 > /tmp/card-source/push.log 2>&1 || code=$?
+          echo "$code" > /tmp/card-source/push.exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-card-source-${{ github.run_number }}
+          path: /tmp/card-source
+          retention-days: 7
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    env:
+      CMS_ENGINE: ${{ matrix.engine }}
+      BASE_URL: http://127.0.0.1:4188
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-card-source-${{ github.run_number }}
+          path: /tmp/card-source
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Load the exact source and prepare tools
+        run: |
+          git fetch /tmp/card-source/source.bundle HEAD
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/card-source/commit.txt)"
+          mkdir -p /tmp/card-results
+          cp /tmp/card-source/commit.txt /tmp/card-source/tree.txt /tmp/card-results/
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/card-results/install.log 2>&1
+      - name: Repeat the unchanged owner interaction assertions
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npx playwright install --with-deps "$CMS_ENGINE"
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/card-results/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
+          status=0
+          for repeat in 1 2 3; do
+            mkdir -p "/tmp/card-results/$repeat"
+            code=0
+            CMS_EVIDENCE_DIR="/tmp/card-results/$repeat" node tools/e2e/cms-barber-marquee.mjs > "/tmp/card-results/$repeat/test.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/card-results/$repeat/exit-code.txt"
+            test "$code" = 0 || status=1
+          done
+          exit "$status"
+      - name: Compress diagnostics
+        if: always()
+        run: |
+          find /tmp/card-results -name '*.log' -exec sh -c 'furl compress "$1" --json > "$1.furl.json" || true' _ '{}' \;
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-card-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/card-results
+          retention-days: 7
