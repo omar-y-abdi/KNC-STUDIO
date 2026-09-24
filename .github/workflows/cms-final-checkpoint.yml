@@ -1,0 +1,56 @@
+name: CMS final source checkpoint
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-final-checkpoint.yml]
+permissions:
+  contents: read
+jobs:
+  checkpoint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 13cb50c10a2f61465a33befb115b545a47e02014
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Preserve the successful diagnostic's readiness assertion
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-checkpoint
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/e2e/smoke.mjs')
+          source = p.read_text()
+          old = "            await fields.nth(0).fill('Typed name survives')\n            await page.getByRole('button', { name: 'Stäng', exact: true }).click()\n            const second = await context.newPage()"
+          new = "            await fields.nth(0).fill('Typed name survives')\n            await page.getByRole('button', { name: 'Stäng', exact: true }).click()\n            // Finish closing before the second tab backgrounds this page and changes its cookie.\n            await page\n              .getByRole('dialog', { name: 'Dina uppgifter', exact: true })\n              .waitFor({ state: 'hidden' })\n            const second = await context.newPage()"
+          assert source.count(old) == 1
+          p.write_text(source.replace(old, new))
+          PY
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/cms-checkpoint/install.log 2>&1
+          npx prettier --write tools/e2e/smoke.mjs > /tmp/cms-checkpoint/format.log 2>&1
+          npx eslint tools/e2e/smoke.mjs > /tmp/cms-checkpoint/lint.log 2>&1
+          git diff --check
+          git diff > /tmp/cms-checkpoint/changes.patch
+          git add tools/e2e/smoke.mjs
+          git -c user.name='CMS runtime fixes' -c user.email='cms-runtime@users.noreply.github.com' commit -m 'test: await details dismissal before cross-tab customer switching'
+          git rev-parse HEAD > /tmp/cms-checkpoint/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-checkpoint/tree.txt
+          git bundle create /tmp/cms-checkpoint/source.bundle HEAD
+          code=0
+          git push origin HEAD:refs/heads/verify/cms-final-checkpoint-20260924 > /tmp/cms-checkpoint/push.log 2>&1 || code=$?
+          echo "$code" > /tmp/cms-checkpoint/push.exit-code
+          cat /tmp/cms-checkpoint/commit.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-final-checkpoint-${{ github.run_number }}
+          path: /tmp/cms-checkpoint
+          retention-days: 7
