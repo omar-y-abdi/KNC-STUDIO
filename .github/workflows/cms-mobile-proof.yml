@@ -28,10 +28,11 @@ jobs:
           cache: npm
       - name: Pin untouched product and install browser
         run: |
-          cp .runtime/cms-mobile.mjs /tmp/cms-mobile.mjs
+          sed 's/data-knc-surface="mobile-about"/data-knc-surface="about"/' .runtime/cms-mobile.mjs > /tmp/cms-mobile.mjs
           git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
           cp /tmp/cms-mobile.mjs tools/e2e/cms-mobile.mjs
           mkdir -p "$CMS_EVIDENCE_DIR"
+          cp /tmp/cms-mobile.mjs "$CMS_EVIDENCE_DIR/cms-mobile.mjs"
           git rev-parse HEAD > "$CMS_EVIDENCE_DIR/source-commit.txt"
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > "$CMS_EVIDENCE_DIR/install.log" 2>&1
