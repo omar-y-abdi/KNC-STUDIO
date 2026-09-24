@@ -1,0 +1,54 @@
+diff --git a/supabase/functions/upload-image/processImage.ts b/supabase/functions/upload-image/processImage.ts
+index 31f8894..84ef21a 100644
+--- a/supabase/functions/upload-image/processImage.ts
++++ b/supabase/functions/upload-image/processImage.ts
+@@ -6,7 +6,6 @@ const GALLERY_LONG_SIDE = 1600
+ const PROFILE_SIZE = 800
+ const INITIAL_WEBP_QUALITY = 82
+ const MIN_WEBP_QUALITY = 55
+-const WEBP_QUALITY_STEP = 3
+ const SUPPORTED_FORMATS = new Set(['JPEG', 'PNG', 'WEBP', 'AVIF', 'HEIC', 'HEIF'])
+ 
+ type ProcessedImage = {
+@@ -43,14 +42,14 @@ function imageDimensions(image: { readonly width: number; readonly height: numbe
+ }
+ 
+ function encodeWebp(image: {
++  settings: { setDefine(format: MagickFormat, name: string, value: string): void }
+   quality: number
+   write(format: MagickFormat, callback: (data: Uint8Array) => void): void
+ }): Uint8Array {
+-  for (
+-    let quality = INITIAL_WEBP_QUALITY;
+-    quality >= MIN_WEBP_QUALITY;
+-    quality -= WEBP_QUALITY_STEP
+-  ) {
++  // Edge has a CPU budget, not just a request timeout. Bound both the codec's
++  // effort and our retry count; a size rejection must still return normally.
++  image.settings.setDefine(MagickFormat.WebP, 'method', '0')
++  for (const quality of [INITIAL_WEBP_QUALITY, MIN_WEBP_QUALITY]) {
+     image.quality = quality
+ 
+     const encoded: { value?: Uint8Array } = {}
+@@ -98,16 +97,11 @@ export function processImage(input: Uint8Array, kind: 'gallery' | 'barber_photo'
+         )
+       }
+     } else {
+-      const scale = Math.max(PROFILE_SIZE / width, PROFILE_SIZE / height)
+-
+-      image.resize(
+-        new MagickGeometry(
+-          Math.max(PROFILE_SIZE, Math.round(width * scale)),
+-          Math.max(PROFILE_SIZE, Math.round(height * scale)),
+-        ),
+-      )
+-
+-      image.crop(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE), Gravity.Center)
++      // Crop before enlarging. A very wide or narrow input must never allocate
++      // a full-sized intermediate panorama merely to discard most of it.
++      const side = Math.min(width, height)
++      image.crop(new MagickGeometry(side, side), Gravity.Center)
++      image.resize(new MagickGeometry(PROFILE_SIZE, PROFILE_SIZE))
+     }
+ 
+     optionalOperations.strip?.()
