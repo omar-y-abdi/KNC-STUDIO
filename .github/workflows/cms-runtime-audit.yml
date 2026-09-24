@@ -1,0 +1,33 @@
+name: CMS runtime boundary audit
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-runtime-audit.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export exact application source and read-only response headers
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cms-runtime
+          git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
+          git rev-parse HEAD > /tmp/cms-runtime/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/cms-runtime/tree.txt
+          git bundle create /tmp/cms-runtime/source.bundle HEAD
+          curl --max-time 30 -fsS -D /tmp/cms-runtime/site.headers https://bladeblendstudio.se/ -o /tmp/cms-runtime/site.html
+          curl --max-time 30 -fsS -D /tmp/cms-runtime/admin.headers https://bladeblendstudio.se/admin/cms/ -o /tmp/cms-runtime/admin.html
+          curl --max-time 30 -sS -X OPTIONS -H 'Origin: https://bladeblendstudio.se' -H 'Access-Control-Request-Method: POST' -D /tmp/cms-runtime/cms-preflight.headers https://soktgawvexeumqvtyhda.supabase.co/functions/v1/cms-studio -o /tmp/cms-runtime/cms-preflight.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-runtime-baseline
+          path: /tmp/cms-runtime
+          retention-days: 7
