@@ -14,7 +14,7 @@ describe('upload image runtime dependency', () => {
     expect(edgeSource).toContain('npm:@imagemagick/magick-wasm@0.0.42')
   })
   it('copies ImageMagick output before the WASM callback buffer is released', () => {
-    const edgeSource = readFileSync('supabase/functions/upload-image/index.ts', 'utf8')
+    const edgeSource = readFileSync('supabase/functions/upload-image/processImage.ts', 'utf8')
 
     expect(edgeSource).toContain('encoded.value = new Uint8Array(data)')
     expect(edgeSource).not.toContain('encoded.value = data')

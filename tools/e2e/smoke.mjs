@@ -1297,6 +1297,10 @@ async function verifyCustomerBrowser() {
             )
             await fields.nth(0).fill('Typed name survives')
             await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+            // Finish closing before the second tab backgrounds this page and changes its cookie.
+            await page
+              .getByRole('dialog', { name: 'Dina uppgifter', exact: true })
+              .waitFor({ state: 'hidden' })
             const second = await context.newPage()
             second.setDefaultTimeout(WAIT_TIMEOUT)
             await second.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })

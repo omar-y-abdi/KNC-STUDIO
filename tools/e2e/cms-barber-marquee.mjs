@@ -77,27 +77,59 @@ async function centeredBarber(page) {
 
 async function dragLeft(page, track, distance = 0.7) {
   await track.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest' }))
-  const box = await track.boundingBox()
   const viewport = page.viewportSize()
-  assert.ok(box && viewport, 'Barber track has no visible viewport')
-  const y = Math.max(20, Math.min(viewport.height - 20, box.y + Math.min(110, box.height / 2)))
-  const x = viewport.width * 0.82
-  const hit = await page.evaluate(
-    ({ x, y }) =>
-      globalThis.document
-        .elementFromPoint(x, y)
-        ?.closest('[role="button"]')
-        ?.textContent?.trim()
-        .slice(0, 30) ?? '',
-    { x, y },
-  )
+  assert.ok(viewport, 'Barber track has no visible viewport')
+  // A looping track has gaps. Fixed screen coordinates repeatedly hit
+  // empty space in WebKit, so those recorded "drags" never reached Embla.
+  const { x, y, hit } = await track.evaluate((node) => {
+    const candidates = [...node.querySelectorAll(':scope > [role="button"]')]
+      .map((card) => {
+        const rect = card.getBoundingClientRect()
+        const left = Math.max(0, rect.left)
+        const right = Math.min(globalThis.innerWidth, rect.right)
+        const top = Math.max(20, rect.top)
+        const bottom = Math.min(globalThis.innerHeight - 20, rect.bottom)
+        return { card, left, right, top, bottom, width: right - left }
+      })
+      .filter(({ width, top, bottom }) => width > 60 && bottom - top > 40)
+      .sort((a, b) => b.width - a.width)
+    const target = candidates[0]
+    if (!target) throw new Error('No visible barber card can receive a drag')
+    const x = target.right - 20
+    const y = target.top + Math.min(80, (target.bottom - target.top) / 2)
+    if (!target.card.contains(globalThis.document.elementFromPoint(x, y)))
+      throw new Error('Visible barber drag target is covered')
+    return { x, y, hit: target.card.textContent?.trim().slice(0, 30) ?? '' }
+  })
   const before = await transformX(track)
   await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(viewport.width * (0.82 - distance), y, { steps: 8 })
+  await page.mouse.move(Math.max(10, x - viewport.width * distance), y, { steps: 8 })
   await page.mouse.up()
-  await page.waitForTimeout(300)
-  return { hit, before, after: await transformX(track) }
+  // dragFree keeps moving after pointerup. A fixed delay can identify A as
+  // nearest, then click after inertia has carried it offscreen. Wait for
+  // that fast motion to finish; the intended slow autoplay may continue.
+  const settling = await track.evaluate(async (node) => {
+    const x = () => {
+      const transform = globalThis.getComputedStyle(node).transform
+      return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
+    }
+    const started = globalThis.performance.now()
+    let previous = x()
+    let slowSince = null
+    while (globalThis.performance.now() - started < 5000) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
+      const current = x()
+      const now = globalThis.performance.now()
+      if (Math.abs(current - previous) <= 2) slowSince ??= now
+      else slowSince = null
+      previous = current
+      if (slowSince !== null && now - slowSince >= 200)
+        return { elapsedMs: now - started, x: current }
+    }
+    throw new Error('Barber drag did not return to slow or paused motion')
+  })
+  return { hit, before, after: await transformX(track), settling }
 }
 
 async function clickVisibleCard(page, card) {

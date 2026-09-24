@@ -1015,7 +1015,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             }}
           >
             <CmsIcon name="sliders" />
-            <span>Egenskaper</span>
+            <span>Design</span>
           </button>
         </nav>
         <button

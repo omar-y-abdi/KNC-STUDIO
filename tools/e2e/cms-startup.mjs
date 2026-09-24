@@ -168,7 +168,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         .waitFor()
       await page
         .locator('.cms-mobile-tools')
-        .getByRole('button', { name: 'Egenskaper', exact: true })
+        .getByRole('button', { name: 'Design', exact: true })
         .click()
       await page.getByLabel('Namn', { exact: true }).fill('Owner edit after source failure')
       await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
@@ -202,7 +202,7 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       // the current draft, not the old document that started the operation.
       await page
         .locator('.cms-mobile-tools')
-        .getByRole('button', { name: 'Egenskaper', exact: true })
+        .getByRole('button', { name: 'Design', exact: true })
         .click()
       await page.getByLabel('Namn', { exact: true }).fill('Owner edit during capture')
       await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()

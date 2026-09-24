@@ -50,6 +50,9 @@ Native select/listbox ownership is explicit: browser select is canonical for sma
 ## Compact workspace and readiness
 
 - Editor chrome becomes compact at 900px, independently of the public site’s 768px breakpoint. The operator can still select either canvas device.
+- The editing device stays 390 × 844 (Mobile) or 1440 × 900 (Desktop). Fit and zoom change scale, never device dimensions or saved content. Mobile device frames have rounded presentation corners without clipping external selection handles.
+- Compact chrome reserves most of the viewport for the canvas. All seven editing commands remain reachable in a single-row dock; the compact Design button opens Egenskaper.
+- Compact panels use the visual viewport, including the keyboard-reduced height, rather than the clipped canvas. Pinch zoom remains browser-controlled. Resize/scroll listeners and CSS overrides are removed on desktop transition or unmount.
 - Only one compact drawer is active. It has dialog semantics, a close control, focus containment and an inert background. Escape returns focus to the actual opener or its visible compact equivalent.
 - Inspector tabs support arrow keys and Home/End. Collapsible style sectors and block tiles support Enter/Space. Generated field labels belong to editor chrome and never mutate published content.
 - Preview readiness must come from the current same-origin frame and match the current request. Stale replies cannot acknowledge a newer draft or replace its status. Loading, timeout and retry preserve the draft and remain reachable.

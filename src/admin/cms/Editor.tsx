@@ -20,7 +20,6 @@ import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
 import { connectEditorAccessibility } from './editorAccessibility'
 import { editorLocale } from './editorLocale'
-import { compactWorkspace } from './useResponsivePanels'
 import { LivePreview } from './LivePreview'
 import type { CmsScene } from '../../cms/Scene'
 import { canvasBehavior, sceneVisibilityCss } from './canvasBehavior'
@@ -112,18 +111,8 @@ function label(component: Component | null): string {
 }
 
 function fitEditor(editor: Editor): number {
-  const mobile = editor.Devices.get('Mobile')
-  const bounds = editor.getContainer()?.getBoundingClientRect()
-  if (mobile && bounds && bounds.width > 40 && bounds.height > 40) {
-    // On a phone, fit the editing aperture to the available screen instead of
-    // shrinking an entire 844px page. This is viewport state, never saved content.
-    const scale = Math.min(1, (bounds.width - 40) / 390)
-    const height =
-      compactWorkspace() && editor.getDevice() === 'Mobile'
-        ? Math.max(260, Math.min(844, Math.floor((bounds.height - 40) / scale)))
-        : 844
-    if (mobile.get('height') !== `${height}px`) mobile.set('height', `${height}px`)
-  }
+  // Device dimensions describe the page, not the space around the editor.
+  // Fit changes only scale; changing height also changes vh units and breakpoints.
   editor.Canvas.fitViewport({
     gap: 16,
     ignoreHeight: false,
@@ -655,6 +644,7 @@ export function CmsEditor(props: Props): JSX.Element {
     <>
       <div
         class="cms-editor-canvas"
+        data-device={props.device}
         inert={props.inspectorModal}
         ref={host}
         style={{ visibility: props.locked ? 'hidden' : 'visible' }}

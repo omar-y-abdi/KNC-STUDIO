@@ -120,7 +120,7 @@ async function verifyCmsStudioShell(page) {
   const commandDockIsInert = (page) => page.locator('.cms-bottom').evaluate((node) => node.inert)
   const tools = page.getByRole('navigation', { name: 'Mobilverktyg' })
   const pages = tools.getByRole('button', { name: 'Sidor', exact: true })
-  const properties = tools.getByRole('button', { name: 'Egenskaper', exact: true })
+  const properties = tools.getByRole('button', { name: 'Design', exact: true })
   const library = page.locator('#cms-library')
   const inspector = page.locator('#cms-inspector')
   await tools.waitFor({ state: 'visible' })

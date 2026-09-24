@@ -51,7 +51,7 @@ jobs:
           for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
           curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
           set +e
-          for suite in cms-workspace cms-workspace-edge cms-workspace-views cms-reported cms-engineering cms-adversarial; do
+          for suite in cms-mobile cms-workspace cms-workspace-edge cms-workspace-views cms-reported cms-engineering cms-adversarial; do
             timeout 15m node "tools/e2e/$suite.mjs" > "/tmp/cms-workspace/$suite.log" 2>&1
             echo "$?" > "/tmp/cms-workspace/$suite.exit-code"
           done
@@ -89,7 +89,7 @@ jobs:
           import json, os, pathlib
           path = pathlib.Path('/tmp/cms-workspace/check-summary.json')
           checks = json.loads(path.read_text()) if path.exists() else {}
-          required = {'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-reported', 'cms-engineering', 'cms-adversarial', 'tracked-source-diff'}
+          required = {'cms-mobile', 'cms-workspace', 'cms-workspace-edge', 'cms-workspace-views', 'cms-reported', 'cms-engineering', 'cms-adversarial', 'tracked-source-diff'}
           assert required.issubset(checks), f'Missing checks: {required-set(checks)}'
           assert all(value == 0 for value in checks.values()), checks
           reported = json.loads((path.parent / 'reported-results.json').read_text())

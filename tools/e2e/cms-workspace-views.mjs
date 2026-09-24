@@ -268,7 +268,7 @@ for (const [engine, engineName, widths] of [
           if (compact)
             await page
               .locator('.cms-mobile-tools')
-              .getByRole('button', { name: 'Egenskaper', exact: true })
+              .getByRole('button', { name: 'Design', exact: true })
               .click()
           await page.locator('.gjs-sm-property__width input').first().waitFor()
           check(
