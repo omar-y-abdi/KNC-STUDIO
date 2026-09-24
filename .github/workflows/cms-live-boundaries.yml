@@ -20,17 +20,19 @@ jobs:
           python3 - <<'PY'
           import json, pathlib, re, urllib.request, urllib.error
           root=pathlib.Path('/tmp/cms-live')
-          source=pathlib.Path('shared/cms-release.ts').read_text()
-          expected=re.search(r'[a-f0-9]{64}', source).group(0)
+          expected=re.search(r'[a-f0-9]{64}',pathlib.Path('shared/cms-release.ts').read_text()).group(0)
           endpoint='https://soktgawvexeumqvtyhda.supabase.co/functions/v1/cms-studio'
           checks=[]
+          def record(value):
+            checks.append(value)
+            (root/'boundary-results.json').write_text(json.dumps(checks,indent=2))
+            print(json.dumps(value))
           for label,method,origin,wanted in [
             ('approved-origin-release','OPTIONS','https://bladeblendstudio.se',204),
             ('unapproved-origin','OPTIONS','https://unapproved.invalid',403),
             ('unauthorized-state','POST','https://bladeblendstudio.se',401),
           ]:
-            headers={'Origin':origin,'Content-Type':'application/json'}
-            request=urllib.request.Request(endpoint,method=method,headers=headers,data=b'{"action":"state"}' if method=='POST' else None)
+            request=urllib.request.Request(endpoint,method=method,headers={'Origin':origin,'Content-Type':'application/json'},data=b'{"action":"state"}' if method=='POST' else None)
             try:
               response=urllib.request.urlopen(request,timeout=15)
             except urllib.error.HTTPError as error:
@@ -39,15 +41,21 @@ jobs:
               status=response.status
               stamp=response.headers.get('x-cms-release')
               response.read()
-            checks.append({'name':label,'status':status,'expectedStatus':wanted,'passed':status==wanted and (label!='approved-origin-release' or stamp==expected),**({'release':stamp,'expectedRelease':expected} if label=='approved-origin-release' else {})})
-          with urllib.request.urlopen('https://bladeblendstudio.se/api/cms/presentation',timeout=15) as response:
+            record({'name':label,'status':status,'expectedStatus':wanted,'passed':status==wanted and (label!='approved-origin-release' or stamp==expected),**({'release':stamp,'expectedRelease':expected} if label=='approved-origin-release' else {})})
+          try:
+            response=urllib.request.urlopen('https://bladeblendstudio.se/api/cms/presentation',timeout=15)
+          except urllib.error.HTTPError as error:
+            response=error
+          with response:
             raw=response.read(4*1024*1024+1)
-            public=json.loads(raw)
-            presentation=public.get('presentation',{})
-            public_status={'name':'public-presentation','status':response.status,'revision':public.get('revision'),'bytes':len(raw),'pages':len(presentation.get('pages',[])),'passed':response.status==200 and bool(presentation.get('pages'))}
-            checks.append(public_status)
-          (root/'boundary-results.json').write_text(json.dumps(checks,indent=2))
-          print(json.dumps(checks,indent=2))
+            result={'name':'public-presentation','status':response.status,'bytes':len(raw),'passed':False,'contentType':response.headers.get('Content-Type'),'cfMitigated':response.headers.get('cf-mitigated')}
+            if response.status==200:
+              public=json.loads(raw)
+              presentation=public.get('presentation',{})
+              result.update({'revision':public.get('revision'),'pages':len(presentation.get('pages',[])),'passed':bool(presentation.get('pages'))})
+            else:
+              result['diagnostic']='Read denied; no credential substitution or access-control bypass attempted.'
+            record(result)
           assert all(check['passed'] for check in checks), 'A live read-only boundary differed from the repository contract'
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
