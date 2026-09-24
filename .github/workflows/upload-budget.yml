@@ -1,0 +1,58 @@
+name: Upload resource budget
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/upload-budget.yml, .runtime/**]
+permissions:
+  contents: read
+jobs:
+  budget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare exact reproduction
+        run: |
+          mkdir -p /tmp/upload-budget
+          cp .runtime/processor-red.patch /tmp/processor.patch
+          echo 'cd71575887de384a977b2cf869049bb454118039eba74322c0373c97586509db  /tmp/processor.patch' | sha256sum -c -
+          git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
+          git apply --index /tmp/processor.patch
+          test "$(git write-tree)" = eba63ace3421e251dbfaa5fb2cbcf3847abebe5d
+          git write-tree > /tmp/upload-budget/tree.txt
+          bash tools/ci/setup-furl.sh
+      - name: Reproduce work and allocation bounds
+        shell: python3 tools/ci/furl_ci.py {0}
+        env:
+          CMS_EVIDENCE_DIR: /tmp/upload-budget
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          code=0
+          npm test -- tests/unit/uploadImageBudget.test.ts tests/unit/uploadImageRuntime.test.ts tests/unit/uploadImageDependency.test.ts > /tmp/upload-budget/unit.log 2>&1 || code=$?
+          echo "$code" > /tmp/upload-budget/unit.exit-code
+          code=0
+          node tools/e2e/upload-budget.mjs > /tmp/upload-budget/budget.log 2>&1 || code=$?
+          echo "$code" > /tmp/upload-budget/budget.exit-code
+      - name: Preserve diagnostics
+        if: always()
+        run: |
+          for log in /tmp/upload-budget/*.log; do test -f "$log" && furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: upload-budget-${{ github.run_number }}
+          path: /tmp/upload-budget
+          retention-days: 7
+      - name: Enforce both contracts
+        if: always()
+        run: |
+          test "$(cat /tmp/upload-budget/unit.exit-code)" = 0
+          test "$(cat /tmp/upload-budget/budget.exit-code)" = 0
