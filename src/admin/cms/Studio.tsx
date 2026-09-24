@@ -1,3 +1,4 @@
+import { captureResourceLayouts, resourceLayoutsChanged } from './captureResourceLayouts'
 import { createSitePage } from '../../../shared/site-page'
 import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
@@ -5,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
   isPagePath,
+  validateDocument,
   type CmsAsset,
   type CmsDocument,
   type CmsLang,
@@ -63,7 +65,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [mobilePanel, setMobilePanel] = useState<CmsPanel>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [requestBusy, setBusy] = useState(false)
+  const [resourceBusy, setResourceBusy] = useState(false)
+  const resourceCapture = useRef<AbortController | null>(null)
+  const busy = requestBusy || resourceBusy
+  useEffect(() => () => resourceCapture.current?.abort(), [])
   const [sourceLoading, setSourceLoading] = useState(false)
   const [sourceFailure, setSourceFailure] = useState<string | null>(null)
   const [sourceAttempt, setSourceAttempt] = useState(0)
@@ -213,6 +219,44 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const next = typeof update === 'function' ? update(active.document) : update
     active.change(next, group)
     setVersion((value) => value + 1)
+  }
+  const commitResourceDraft = async (
+    update: CmsDocument | ((current: CmsDocument) => CmsDocument),
+  ): Promise<void> => {
+    editor.current?.flush()
+    const active = currentDraft.current
+    if (!active) throw new Error('Studions utkast finns inte längre.')
+    const base = structuredClone(active.document)
+    const next = typeof update === 'function' ? update(base) : update
+    if (!resourceLayoutsChanged(base, next)) {
+      commitDraft(next, 'resources')
+      return
+    }
+    if (resourceCapture.current) throw new Error('En resursplacering uppdateras redan.')
+    const controller = new AbortController()
+    resourceCapture.current = controller
+    setResourceBusy(true)
+    try {
+      const pages = await captureResourceLayouts(next, controller.signal)
+      controller.signal.throwIfAborted()
+      if (currentDraft.current !== active)
+        throw new Error('Utkastet ändrades. Välj placeringen igen.')
+      next.presentation.pages = next.presentation.pages.map(
+        (page) => pages.find((item) => item.id === page.id) ?? page,
+      )
+      editor.current?.flush()
+      const merged = mergeCmsDocuments(base, next, active.document)
+      if (merged.conflicts.length)
+        throw new Error(
+          'Sidan ändrades under resursplaceringen. Dina ändringar finns kvar; välj placeringen igen.',
+        )
+      // Resource data and its editable layout form one undoable draft transaction.
+      validateDocument(merged.document)
+      commitDraft(merged.document, 'resources')
+    } finally {
+      resourceCapture.current = null
+      setResourceBusy(false)
+    }
   }
   const replacePages = (pages: CmsPage[]): void => {
     commitDraft((current) => {
@@ -912,6 +956,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 locked={locked}
                 preview={preview}
                 presentation={document.presentation}
+                draft={document}
                 onOpenPage={(path) => {
                   editor.current?.flush()
                   setSelectedPage(
@@ -981,7 +1026,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   assets={resources}
                   document={draft.document}
                   onAssets={setResources}
-                  onDocument={(next) => commitDraft(next)}
+                  onDocument={commitResourceDraft}
                   onError={setError}
                 />
               )}

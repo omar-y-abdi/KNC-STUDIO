@@ -4,7 +4,14 @@ import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
-import type { CmsAsset, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
+import type {
+  CmsAsset,
+  CmsDocument,
+  CmsLang,
+  CmsMode,
+  CmsPage,
+  CmsPresentation,
+} from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
@@ -45,6 +52,7 @@ interface Props {
   locked: boolean
   preview: CmsPresentation | null
   presentation: CmsPresentation
+  draft?: CmsDocument
   onOpenPage: (path: string) => void
   onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
   assets: CmsAsset[]
@@ -696,6 +704,7 @@ export function CmsEditor(props: Props): JSX.Element {
           scene={props.scene}
           page={props.page}
           presentation={props.preview}
+          {...(props.draft ? { draft: props.draft } : {})}
           lang={props.lang}
           mode={props.mode}
           device={props.device}

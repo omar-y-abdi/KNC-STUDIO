@@ -66,7 +66,9 @@ interface Props {
   assets: CmsAsset[]
   document: CmsDocument
   onAssets: (assets: CmsAsset[] | ((current: CmsAsset[]) => CmsAsset[])) => void
-  onDocument: (update: CmsDocument | ((current: CmsDocument) => CmsDocument)) => void
+  onDocument: (
+    update: CmsDocument | ((current: CmsDocument) => CmsDocument),
+  ) => void | Promise<void>
   onError: (message: string) => void
 }
 
@@ -221,7 +223,9 @@ export function CmsResources(props: Props): JSX.Element {
       assigned,
       ...current.filter((item) => item.id !== assigned.id),
     ])
-    latest.current.onDocument((current) => assignResource(current, assigned, destination, enabled))
+    await latest.current.onDocument((current) =>
+      assignResource(current, assigned, destination, enabled),
+    )
     setAssignmentNote(
       enabled
         ? 'Tilldelad i utkastet. Publicera för att visa ändringen.'
@@ -244,13 +248,13 @@ export function CmsResources(props: Props): JSX.Element {
       ...current.filter((item) => item.id !== nextAsset.id),
     ])
     if (replacement)
-      latest.current.onDocument((current) => {
+      await latest.current.onDocument((current) => {
         const next = structuredClone(current)
         replaceDocumentResource(next, replacement, nextAsset, policy)
         return next
       })
     else
-      latest.current.onDocument((current) =>
+      await latest.current.onDocument((current) =>
         assignResource(
           current,
           nextAsset,

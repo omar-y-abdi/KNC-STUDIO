@@ -19,6 +19,7 @@ import { isNativePublicPath } from '../site/routeMetadata'
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
   source: boolean
+  projectSource: boolean
 } | null>(null)
 
 export function useCmsPresentation(): CmsPresentation | null {
@@ -143,10 +144,12 @@ export function NativeSiteProvider({
   children,
   presentation,
   source = false,
+  projectSource = false,
 }: {
   children: ComponentChildren
   presentation?: CmsPresentation | null
   source?: boolean
+  projectSource?: boolean
 }): JSX.Element {
   const [pathname] = useLocation()
   const publicNativeRoute = !source && presentation === undefined && isNativePublicPath(pathname)
@@ -201,7 +204,11 @@ export function NativeSiteProvider({
   }
   return (
     <NativeContext.Provider
-      value={{ presentation: presentation === undefined ? published : presentation, source }}
+      value={{
+        presentation: presentation === undefined ? published : presentation,
+        source,
+        projectSource,
+      }}
     >
       {fonts && <style>{fonts}</style>}
       {children}
@@ -389,7 +396,8 @@ export function projectNativeTree(
     if (node.nodeType !== 1) return null
     const element = node as Element
     const slot = element.getAttribute('data-knc-slot')
-    if (slot) return source.slots.get(slot) ?? null
+    // Optional resource branches can change between a component slot and a native image.
+    if (slot) return source.slots.get(slot) ?? source.nodes.get(slot) ?? null
     const identity = element.getAttribute('data-knc-source')
     const original = identity ? source.nodes.get(identity) : undefined
     const logoImage =
@@ -397,7 +405,7 @@ export function projectNativeTree(
       original.props['role'] === 'img' &&
       !original.props['data-knc-required'] &&
       element.tagName.toLowerCase() === 'img'
-    if (identity && !original) return null
+    if (identity && !original) return source.slots.get(identity) ?? null
     // A calendar cell can change between an empty span and a live date button. Preserve that
     // runtime transition; the captured month's tag must never remove a later month's dates.
     if (original && original.type !== element.tagName.toLowerCase() && !logoImage) return original
@@ -514,7 +522,7 @@ export function useNativeSurface(
         ? '/about'
         : '/'
   const page = context?.presentation?.pages.find((candidate) => candidate.path === path)
-  const html = context?.source ? '' : (page?.content[lang].html ?? '')
+  const html = context?.source && !context.projectSource ? '' : (page?.content[lang].html ?? '')
   const template = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
     return new DOMParser()
