@@ -134,7 +134,10 @@ export function isReadOnlyPreview(component: Component): boolean {
 export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
-  const protectedComponent = isProtected(component)
+  const compositionBoundary =
+    Boolean(attrs['data-editor-about-slot']) ||
+    Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
+  const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {

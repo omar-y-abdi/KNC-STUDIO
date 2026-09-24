@@ -214,13 +214,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     active.change(next, group)
     setVersion((value) => value + 1)
   }
-  const replacePage = (page: CmsPage): void => {
-    if (!draft) return
-    const next = structuredClone(draft.document)
-    const index = next.presentation.pages.findIndex((item) => item.id === page.id)
-    if (index >= 0) next.presentation.pages[index] = page
-    commitDraft(next, `page:${page.id}:${lang}:${mode}`)
+  const replacePages = (pages: CmsPage[]): void => {
+    commitDraft((current) => {
+      const next = structuredClone(current)
+      next.presentation.pages = next.presentation.pages.map(
+        (page) => pages.find((update) => update.id === page.id) ?? page,
+      )
+      return next
+    }, `page:${selectedPage}:${lang}:${mode}`)
   }
+  const replacePage = (page: CmsPage): void => replacePages([page])
   const publish = async (): Promise<void> => {
     if (!draft || conflict || busy) return
     editor.current?.flush()
@@ -674,6 +677,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           />
           <nav class="cms-page-list" aria-label="Sidor">
             {document.presentation.pages
+              .filter((item) => item.path !== '/about')
               .filter((item) =>
                 `${item.name[lang]} ${item.path}`
                   .toLocaleLowerCase()
@@ -911,12 +915,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 onOpenPage={(path) => {
                   editor.current?.flush()
                   setSelectedPage(
-                    document.presentation.pages.find((item) => item.path === path)?.id ??
-                      CORE_PAGE_IDS[0],
+                    document.presentation.pages.find(
+                      (item) => item.path === (path === '/about' ? '/' : path),
+                    )?.id ?? CORE_PAGE_IDS[0],
                   )
                 }}
                 onNavigate={(path, nextLang, nextMode) => {
-                  const next = document.presentation.pages.find((item) => item.path === path)
+                  const next = document.presentation.pages.find(
+                    (item) => item.path === (path === '/about' ? '/' : path),
+                  )
                   if (!next) return
                   editor.current?.flush()
                   setSelectedPage(next.id)
@@ -928,7 +935,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 tab={tab}
                 onTab={setTab}
                 onZoom={setZoom}
-                onChange={replacePage}
+                onChange={replacePages}
                 onReady={(value) => {
                   editor.current = value
                 }}

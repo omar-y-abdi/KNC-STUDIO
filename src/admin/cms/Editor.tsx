@@ -8,7 +8,7 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
-import { composedCanvas, stripComposedCanvas } from './composedCanvas'
+import { composedCanvas, stripComposedCanvas, extractComposedAbout } from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
@@ -50,7 +50,7 @@ interface Props {
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
   onTab: (tab: 'design' | 'layers' | 'blocks') => void
-  onChange: (page: CmsPage) => void
+  onChange: (pages: CmsPage[]) => void
   onReady: (handle: EditorHandle | null) => void
   onZoom: (zoom: number) => void
   onError: (message: string) => void
@@ -134,11 +134,12 @@ function editorContextKey(props: Props): string {
             ),
         )
       : ''
+  const homeDevice = props.page.path === '/' ? `:${props.device}` : ''
   const bookingContext =
     props.page.path === '/booking' && props.scene !== 'default'
       ? `:${props.scene}:${props.device}`
       : ''
-  return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}:${sharedChromeKey}`
+  return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}${homeDevice}:${sharedChromeKey}`
 }
 
 function pageFragment(html: string, wrapperId: string): string {
@@ -379,6 +380,17 @@ export function CmsEditor(props: Props): JSX.Element {
       const wrapperId = editor.getWrapper()?.getId() ?? ''
       const composedScene = current.page.path === '/booking' ? current.scene : 'default'
       const nativeExport = exportNativeCanvas(html, css, current.mode)
+      const aboutOwner =
+        current.page.path === '/'
+          ? current.presentation.pages.find((page) => page.path === '/about')
+          : undefined
+      const aboutExport = aboutOwner
+        ? extractComposedAbout(
+            nativeExport.html,
+            nativeExport.css,
+            aboutOwner.content[current.lang].html,
+          )
+        : null
       const exported = stripComposedCanvas(nativeExport.html, nativeExport.css, composedScene)
       const otherMode = current.mode === 'light' ? 'dark' : 'light'
       const otherCss = stripComposedCanvas(
@@ -402,12 +414,36 @@ export function CmsEditor(props: Props): JSX.Element {
           [otherMode]: canonicalizeCmsRootStyles(otherCss, wrapperId),
         },
       }
+      const pages = [next]
+      if (aboutOwner && aboutExport) {
+        const about = structuredClone(aboutOwner)
+        const before = about.content[current.lang]
+        about.content[current.lang] = {
+          html: aboutExport.html,
+          css: {
+            ...before.css,
+            [current.mode]: aboutExport.css,
+            [otherMode]: syncLayout(
+              before.css[current.mode],
+              aboutExport.css,
+              before.css[otherMode],
+            ),
+          },
+        }
+        pages.push(about)
+      }
+      const updatedPresentation = {
+        ...current.presentation,
+        pages: current.presentation.pages.map(
+          (page) => pages.find((update) => update.id === page.id) ?? page,
+        ),
+      }
       rendered.current = {
         pageId: current.page.id,
-        key: editorContextKey(current),
+        key: editorContextKey({ ...current, presentation: updatedPresentation }),
         ...persisted,
       }
-      current.onChange(next)
+      current.onChange(pages)
       checkpoint.current = { html, css }
       editor.clearDirtyCount()
     }
