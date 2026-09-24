@@ -100,3 +100,11 @@ Preserve these existing local edits; this documentation commit does not stage th
 - `tests/unit/cmsResourceAssignment.test.ts`
 - `tools/e2e/cms-new-page-mobile.mjs`
 - `tools/e2e/cms-resource-workflow.mjs`
+
+## Resume — R2 checkpoint committed
+
+**`360baca`** saves category filtering, upload destination/person selection, draft gallery/profile/logo/font assignments, reversible activation, and scoped server-side reuse. Current network-boundary tests pass in Chromium and WebKit (`R2-final-chromium.log`, `R2-final-webkit.log`); scoped lint and typecheck pass, and assignment/copy/release unit tests pass. The reproduction now intercepts real Functions requests and blocks unexpected external destinations. The earlier upload-request failure is not reproducible in this current test; do not attribute its disappearance to a production codec change. Local synthetic Storage responses remove irrelevant `.invalid` image DNS noise.
+
+This is **not yet whole-site acceptance**: existing canvas/locked-preview resource refresh, contextual picking and built-in component controls are R3/R4 work, not proven by the standalone resource test. `asset_copy` needs Edge/runtime validation and deployment before the new frontend can use it. The release dependency list now includes its new module. No production mutation has occurred.
+
+**E3 red recorded** in `E3-red.log`: freshly created phone header has `white-space: normal` on the telephone link. Its responsive header implementation and saved-page browser check are now being completed; no delegated agent is running.
