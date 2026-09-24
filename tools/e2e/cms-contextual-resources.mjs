@@ -5,7 +5,7 @@ import { nativeBackend } from './cms-native.mjs'
 import { emptyDocument } from '../../shared/cms.ts'
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
 assert.equal(new URL(base).hostname, '127.0.0.1')
-const out = process.env.CMS_EVIDENCE_DIR ?? '/tmp/cms-draft-resources'
+const out = process.env.CMS_EVIDENCE_DIR ?? '/tmp/cms-contextual-resources'
 await mkdir(out, { recursive: true })
 const engine = process.env.CMS_ENGINE === 'webkit' ? 'webkit' : 'chromium'
 const browser = await { chromium, webkit }[engine].launch()
@@ -78,53 +78,39 @@ try {
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
   const frame = page.frameLocator('.gjs-frame').first()
-  await frame
-    .locator('[data-knc-fold="barber-marquee"][data-knc-source]')
-    .waitFor({ timeout: 90000 })
-  await page
-    .locator('.cms-library-tabs')
-    .getByRole('button', { name: 'Resurser', exact: true })
-    .click()
+  const portrait = frame
+    .locator('[data-knc-fold="barber-marquee"][data-knc-source] > div')
+    .first()
+    .locator('svg')
+    .first()
+  await portrait.waitFor({ timeout: 90000 })
+  await portrait.dblclick()
+  await page.locator('.cms-workspace-resources').waitFor({ timeout: 5000 })
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Kategori', exact: true }).inputValue(),
+    'profile',
+  )
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Barberare för profilbild', exact: true })
+      .inputValue(),
+    'a',
+  )
   await page.locator('.cms-resource-card button').filter({ hasText: 'New portrait A' }).click()
   await page.getByRole('button', { name: 'Använd i utkastet', exact: true }).click()
   await frame
     .locator('img[src$="/barber-photos/a/new.webp"]')
     .first()
     .waitFor({ state: 'attached', timeout: 15000 })
-  await page.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
-  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
-  await frame.locator('img[src$="/barber-photos/a/new.webp"]').waitFor({ state: 'detached' })
-  await page.getByRole('button', { name: 'Gör om', exact: true }).click()
-  await frame
-    .locator('img[src$="/barber-photos/a/new.webp"]')
-    .first()
-    .waitFor({ state: 'attached' })
-  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
-  await page
-    .frameLocator('.cms-live-preview iframe')
-    .locator('img[src$="/barber-photos/a/new.webp"]')
-    .first()
-    .waitFor({ state: 'attached', timeout: 15000 })
-  await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
-  assert.equal(backend.writes.length, 0, 'Previewing resource assignment never publishes')
-  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
-  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
-  assert.equal(backend.document.photos.a, 'a/new.webp')
-  await page.reload()
-  await page.evaluate(async () =>
-    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
-  )
-  await frame
-    .locator('img[src$="/barber-photos/a/new.webp"]')
-    .first()
-    .waitFor({ state: 'attached', timeout: 15000 })
-
+  assert.equal(backend.writes.length, 0)
   assert.deepEqual(errors, [])
-  await page.screenshot({ path: `${out}/${engine}-portrait-assigned.png` })
-  console.log('PASS draft resources: canvas, undo/redo, isolated preview, publication and reload')
+  await page.screenshot({ path: `${out}/${engine}-contextual-portrait.png` })
+  console.log(
+    'PASS contextual resource picker: double-click placeholder, scoped person library, draft assignment',
+  )
 } catch (error) {
   await writeFile(
-    `${out}/${engine}-errors.json`,
+    `${out}/${engine}-error.json`,
     JSON.stringify(
       { errors, alerts: await page.locator('[role=alert]').allTextContents() },
       null,

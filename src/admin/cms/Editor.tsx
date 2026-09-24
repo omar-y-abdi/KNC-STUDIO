@@ -1,3 +1,5 @@
+import { connectResourcePicker, openResourcePicker } from './resourceTargets'
+import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { connectHierarchicalResize } from './hierarchicalResize'
 import { CmsTextarea } from './Textarea'
 import type { ComponentChildren, JSX } from 'preact'
@@ -53,6 +55,7 @@ interface Props {
   preview: CmsPresentation | null
   presentation: CmsPresentation
   draft?: CmsDocument
+  onOpenResources?: (destination: ResourceDestination) => void
   onOpenPage: (path: string) => void
   onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
   assets: CmsAsset[]
@@ -301,7 +304,15 @@ export function CmsEditor(props: Props): JSX.Element {
       ? connectEditorAccessibility(host.current, inspector)
       : undefined
     editor.on('asset:custom', ({ open }: { open: boolean }) => {
-      if (open) setImageTarget(editor.getSelected() ?? null)
+      const component = editor.getSelected()
+      if (open && component && !latest.current.locked)
+        openResourcePicker(
+          editor,
+          component,
+          latest.current.draft,
+          latest.current.onOpenResources,
+          setImageTarget,
+        )
     })
     for (const [id, blockLabel, content] of blocks)
       editor.BlockManager.add(id, {
@@ -322,13 +333,11 @@ export function CmsEditor(props: Props): JSX.Element {
     })
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
-    editor.on('component:dblclick', (component: Component) => {
-      if (isProtected(component) || isReadOnlyPreview(component)) return
-      const type = String(component.get('type') ?? '')
-      const tag = String(component.get('tagName') ?? '').toLowerCase()
-      if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
-        component.set('editable', true)
-    })
+    const releaseResourcePicker = connectResourcePicker(
+      editor,
+      () => latest.current,
+      setImageTarget,
+    )
     const keydown = (event: KeyboardEvent): void => {
       if (latest.current.locked || host.current?.closest('[inert]')) return
       if (document.querySelector('dialog:modal')) return
@@ -487,6 +496,7 @@ export function CmsEditor(props: Props): JSX.Element {
       props.onReady(null)
       resize.disconnect()
       releaseAccessibility?.()
+      releaseResourcePicker()
       releaseResize()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
@@ -624,10 +634,9 @@ export function CmsEditor(props: Props): JSX.Element {
     if (
       !editor ||
       !component ||
-      !['img', 'svg'].includes(String(component.get('tagName') ?? '').toLowerCase())
+      !openResourcePicker(editor, component, props.draft, props.onOpenResources, setImageTarget)
     )
-      return props.onError('Välj en bild först.')
-    setImageTarget(component)
+      props.onError('Välj en redigerbar bild först.')
   }
   const closePicker = (): void => {
     setImageTarget(null)

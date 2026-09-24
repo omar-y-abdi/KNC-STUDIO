@@ -63,6 +63,8 @@ function resourceLabel(asset: CmsAsset): string {
 }
 
 interface Props {
+  initialDestination?: ResourceDestination
+  onAssigned?: () => void
   assets: CmsAsset[]
   document: CmsDocument
   onAssets: (assets: CmsAsset[] | ((current: CmsAsset[]) => CmsAsset[])) => void
@@ -84,12 +86,16 @@ export function CmsResources(props: Props): JSX.Element {
   } | null>(null)
   const [usageError, setUsageError] = useState<string | null>(null)
   const [usageAttempt, setUsageAttempt] = useState(0)
-  const [purpose, setPurpose] = useState<Purpose>('library')
+  const [purpose, setPurpose] = useState<Purpose>(props.initialDestination?.purpose ?? 'library')
   const [uploadDestination, setUploadDestination] = useState<ResourceDestination | null>(null)
   const [uploadError, setUploadError] = useState('')
   const [assignment, setAssignment] = useState<ResourceDestination>({ purpose: 'salon' })
   const [assignmentNote, setAssignmentNote] = useState('')
-  const [barberId, setBarberId] = useState(props.document.barbers[0]?.id ?? '')
+  const [barberId, setBarberId] = useState(
+    props.initialDestination?.purpose === 'profile'
+      ? props.initialDestination.barberId
+      : (props.document.barbers[0]?.id ?? ''),
+  )
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
   const latest = useRef(props)
@@ -143,7 +149,10 @@ export function CmsResources(props: Props): JSX.Element {
   useEffect(() => {
     if (!asset) return
     const destination = resourceDestination(asset)
-    setAssignment(destination.purpose === 'library' ? { purpose: 'salon' } : destination)
+    setAssignment(
+      props.initialDestination ??
+        (destination.purpose === 'library' ? { purpose: 'salon' } : destination),
+    )
     setAssignmentNote('')
   }, [asset?.id])
 
@@ -231,6 +240,7 @@ export function CmsResources(props: Props): JSX.Element {
         ? 'Tilldelad i utkastet. Publicera för att visa ändringen.'
         : 'Dold i utkastet. Filen finns kvar i biblioteket.',
     )
+    if (enabled) latest.current.onAssigned?.()
   }
   const storeFile = async (
     file: File,

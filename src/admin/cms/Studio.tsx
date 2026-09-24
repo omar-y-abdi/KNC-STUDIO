@@ -1,3 +1,4 @@
+import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { captureResourceLayouts, resourceLayoutsChanged } from './captureResourceLayouts'
 import { createSitePage } from '../../../shared/site-page'
 import type { JSX } from 'preact'
@@ -82,6 +83,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   >(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
+  const [resourceDestination, setResourceDestination] = useState<ResourceDestination | null>(null)
   const [newName, setNewName] = useState('Ny sida')
   const [pageQuery, setPageQuery] = useState('')
   const [newPath, setNewPath] = useState('/hemsida')
@@ -704,6 +706,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               aria-pressed={workspaceView === 'resources'}
               onClick={() => {
                 editor.current?.flush()
+                setResourceDestination(null)
                 setDialog('resources')
                 setMobilePanel(null)
               }}
@@ -957,6 +960,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 preview={preview}
                 presentation={document.presentation}
                 draft={document}
+                onOpenResources={(destination) => {
+                  editor.current?.flush()
+                  setResourceDestination(destination)
+                  setMobilePanel(null)
+                  setDialog('resources')
+                }}
                 onOpenPage={(path) => {
                   editor.current?.flush()
                   setSelectedPage(
@@ -1023,6 +1032,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                 />
               ) : (
                 <CmsResources
+                  {...(resourceDestination ? { initialDestination: resourceDestination } : {})}
+                  onAssigned={() => {
+                    if (
+                      resourceDestination?.purpose === 'profile' ||
+                      resourceDestination?.purpose === 'logo'
+                    )
+                      setDialog(null)
+                  }}
                   assets={resources}
                   document={draft.document}
                   onAssets={setResources}
