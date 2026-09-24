@@ -25,7 +25,7 @@ for (const [name, engine] of selectedEngines) {
         const request = route.request()
         const url = new URL(request.url())
         if (request.method() !== 'OPTIONS' && ['/rest/v1/rpc/public_business_discovery', '/rest/v1/rpc/public_booking_catalog'].includes(url.pathname))
-          return route.fulfill({ headers: { 'Access-Control-Allow-Origin': new URL(base).origin }, json: { settings: {}, barbers: seed.barbers.map(barber => ({ ...barber, active: true })), services: [], schedules: [] } })
+          return route.fulfill({ headers: { 'Access-Control-Allow-Origin': new URL(base).origin }, json: { settings: {}, barbers: seed.barbers.map(barber => ({ ...barber, active: true, photo_path: null })), services: [], schedules: [] } })
         return route.fallback()
       })
       const page = await context.newPage()
