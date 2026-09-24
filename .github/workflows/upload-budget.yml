@@ -2,7 +2,7 @@ name: Upload resource budget
 on:
   push:
     branches: [verify/cms-runtime-20260924]
-    paths: [.github/workflows/upload-budget.yml, .runtime/**]
+    paths: [.github/workflows/upload-budget.yml, .verification/upload-green.patch]
 permissions:
   contents: read
 jobs:
@@ -18,17 +18,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Prepare exact reproduction
+      - name: Prepare exact candidate
         run: |
           mkdir -p /tmp/upload-budget
           cp .runtime/processor-red.patch /tmp/processor.patch
+          cp .verification/upload-green.patch /tmp/green.patch
           echo 'cd71575887de384a977b2cf869049bb454118039eba74322c0373c97586509db  /tmp/processor.patch' | sha256sum -c -
+          echo 'd7ee0d6aba8ad0f4494203e91a22f4deec9d5d1974d6524271208d4941852bf4  /tmp/green.patch' | sha256sum -c -
           git checkout --detach 6201b97313f28982418c114a6ad78bc0afdc35c4
           git apply --index /tmp/processor.patch
-          test "$(git write-tree)" = eba63ace3421e251dbfaa5fb2cbcf3847abebe5d
+          git apply --index /tmp/green.patch
+          test "$(git write-tree)" = 9a55f9f2415ec023678e8c739bc0da9f7f4c8bdf
           git write-tree > /tmp/upload-budget/tree.txt
           bash tools/ci/setup-furl.sh
-      - name: Reproduce work and allocation bounds
+      - name: Verify work and allocation bounds
         shell: python3 tools/ci/furl_ci.py {0}
         env:
           CMS_EVIDENCE_DIR: /tmp/upload-budget
@@ -41,6 +44,17 @@ jobs:
           code=0
           node tools/e2e/upload-budget.mjs > /tmp/upload-budget/budget.log 2>&1 || code=$?
           echo "$code" > /tmp/upload-budget/budget.exit-code
+          code=0
+          npm run typecheck > /tmp/upload-budget/typecheck.log 2>&1 || code=$?
+          echo "$code" > /tmp/upload-budget/typecheck.exit-code
+      - name: Check whether the existing CLI deployment credential is configured
+        env:
+          DEPLOY_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json,pathlib
+          pathlib.Path('/tmp/upload-budget/deployment-access.json').write_text(json.dumps({'supabase_cli_token_configured': bool(os.environ.get('DEPLOY_TOKEN'))}))
+          PY
       - name: Preserve diagnostics
         if: always()
         run: |
@@ -51,8 +65,9 @@ jobs:
           name: upload-budget-${{ github.run_number }}
           path: /tmp/upload-budget
           retention-days: 7
-      - name: Enforce both contracts
+      - name: Enforce every contract
         if: always()
         run: |
           test "$(cat /tmp/upload-budget/unit.exit-code)" = 0
           test "$(cat /tmp/upload-budget/budget.exit-code)" = 0
+          test "$(cat /tmp/upload-budget/typecheck.exit-code)" = 0
