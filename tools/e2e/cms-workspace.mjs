@@ -146,7 +146,7 @@ for (const [engine, name] of [
           await page.keyboard.press('Escape')
           await page
             .locator('.cms-mobile-tools')
-            .getByRole('button', { name: 'Egenskaper', exact: true })
+            .getByRole('button', { name: 'Design', exact: true })
             .click()
         }
         const design = page.getByRole('tab', { name: 'Design', exact: true })

@@ -141,7 +141,18 @@ for (const [name, engine] of selectedEngines) {
         )
         await shot('about-fit')
         for (const control of ['Zooma in', 'Zooma ut']) {
+          const previousWidth = (await geometry()).frame.width
           await page.getByRole('button', { name: control, exact: true }).click()
+          await page.waitForFunction(
+            ({ previousWidth, increase }) => {
+              const width = globalThis.document
+                .querySelector('.gjs-frame')
+                .getBoundingClientRect().width
+              return increase ? width > previousWidth + 1 : width < previousWidth - 1
+            },
+            { previousWidth, increase: control === 'Zooma in' },
+            { timeout: 3000 },
+          )
           state = await geometry()
           check(
             state.native.width === 390 && state.native.height === 844,
@@ -152,7 +163,7 @@ for (const [name, engine] of selectedEngines) {
         await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
         const opener = page
           .locator('.cms-mobile-tools')
-          .getByRole('button', { name: 'Egenskaper', exact: true })
+          .getByRole('button', { name: 'Design', exact: true })
         await opener.click()
         const panel = page.locator('#cms-inspector')
         const panelState = () =>
@@ -200,6 +211,27 @@ for (const [name, engine] of selectedEngines) {
         await page.getByRole('searchbox', { name: 'Sök sidor', exact: true }).fill('Om')
         await shot('pages')
         await page.keyboard.press('Escape')
+        // Exercise the same selected-card inspector seen in the owner's screenshots.
+        await frame.getByText('Exempel A', { exact: true }).first().click()
+        await opener.click()
+        const sector = panel.getByRole('button', { name: 'Position & transform', exact: true })
+        if ((await sector.getAttribute('aria-expanded')) !== 'true') await sector.click()
+        await sector.scrollIntoViewIfNeeded()
+        const fields = await panel.locator('.gjs-sm-property__position').evaluate((node) => {
+          const panel = node.closest('#cms-inspector').getBoundingClientRect()
+          const field = node.getBoundingClientRect()
+          return {
+            width: field.width,
+            inside: field.left >= panel.left && field.right <= panel.right,
+          }
+        })
+        check(
+          fields.inside && fields.width > 240,
+          `${prefix}: selected-card position controls have usable width`,
+          fields,
+        )
+        await shot('position-controls')
+        await page.keyboard.press('Escape')
         if (width === 390) {
           await opener.click()
           await page.evaluate(() => {
@@ -207,7 +239,7 @@ for (const [name, engine] of selectedEngines) {
               configurable: true,
               value: 360,
             })
-            globalThis.visualViewport.dispatchEvent(new Event('resize'))
+            globalThis.visualViewport.dispatchEvent(new globalThis.Event('resize'))
           })
           await page
             .waitForFunction(
@@ -227,7 +259,7 @@ for (const [name, engine] of selectedEngines) {
           await shot('keyboard-geometry')
           await page.evaluate(() => {
             delete globalThis.visualViewport.height
-            globalThis.visualViewport.dispatchEvent(new Event('resize'))
+            globalThis.visualViewport.dispatchEvent(new globalThis.Event('resize'))
           })
           await page.keyboard.press('Escape')
           await page.setViewportSize({ width: 844, height: 390 })

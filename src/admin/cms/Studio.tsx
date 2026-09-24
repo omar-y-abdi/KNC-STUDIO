@@ -1008,7 +1008,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             type="button"
             aria-expanded={mobilePanel === 'inspector'}
             aria-controls="cms-inspector"
-            aria-label="Egenskaper"
             disabled={Boolean(workspaceView) || locked}
             onClick={(event) => {
               panelOpener.current = event.currentTarget

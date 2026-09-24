@@ -330,7 +330,7 @@ for (const [engine, name] of [
       await page.setViewportSize({ width: 844, height: 390 })
       await page
         .locator('.cms-mobile-tools')
-        .getByRole('button', { name: 'Egenskaper', exact: true })
+        .getByRole('button', { name: 'Design', exact: true })
         .click()
       const panel = page.locator('#cms-inspector')
       await panel.getByRole('tab', { name: 'Lägg till', exact: true }).click()
