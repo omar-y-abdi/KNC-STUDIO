@@ -2,7 +2,7 @@ import { generate, parse, walk, type CssNode } from 'css-tree'
 
 // Appearance is theme-specific; geometry is shared by light/dark and scoped by device.
 const geometryProperties = new Set(
-  'display position top right bottom left z-index translate transform rotate scale width height gap row-gap column-gap order box-sizing float clear text-align font-size line-height letter-spacing white-space object-fit object-position'.split(
+  'display position top right bottom left z-index translate transform rotate scale zoom width height gap row-gap column-gap order box-sizing float clear text-align font-size line-height letter-spacing white-space object-fit object-position'.split(
     ' ',
   ),
 )

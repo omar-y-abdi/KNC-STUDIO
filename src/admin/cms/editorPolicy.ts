@@ -1,3 +1,4 @@
+import { barberScalePeers } from './hierarchicalResize'
 import type { Component } from 'grapesjs'
 
 const controls = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
@@ -164,7 +165,10 @@ export function configureComponent(component: Component): void {
         (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag)))),
     resizable:
       !readOnly &&
-      (!protectedComponent || tag === 'svg' || tag === 'img') &&
+      (!protectedComponent ||
+        tag === 'svg' ||
+        tag === 'img' ||
+        barberScalePeers(component).length > 0) &&
       !controls.has(tag) &&
       !svgLeaf.has(tag),
   })

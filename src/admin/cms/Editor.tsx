@@ -1,3 +1,4 @@
+import { connectHierarchicalResize } from './hierarchicalResize'
 import { CmsTextarea } from './Textarea'
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -281,6 +282,10 @@ export function CmsEditor(props: Props): JSX.Element {
       assetManager: { assets: [], upload: false, custom: true },
     })
     instance.current = editor
+    const releaseResize = connectHierarchicalResize(
+      editor,
+      () => applying.current || latest.current.locked,
+    )
     const inspector = host.current
       .closest('.cms-editor-wrap')
       ?.querySelector<HTMLElement>('#cms-inspector')
@@ -474,6 +479,7 @@ export function CmsEditor(props: Props): JSX.Element {
       props.onReady(null)
       resize.disconnect()
       releaseAccessibility?.()
+      releaseResize()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
