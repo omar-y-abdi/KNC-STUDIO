@@ -2,7 +2,7 @@ name: CMS mobile correction verification
 on:
   push:
     branches: [verify/cms-runtime-20260924]
-    paths: [.github/workflows/cms-mobile-product.yml, .runtime/mobile-product.py]
+    paths: [.github/workflows/cms-mobile-product.yml, .runtime/mobile-polish.py]
 permissions:
   contents: read
 concurrency:
@@ -26,19 +26,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/mobile-source
-          cp .runtime/mobile-product.py /tmp/mobile-product.py
-          cp .runtime/cms-mobile.mjs /tmp/cms-mobile.mjs
-          git checkout --detach d6082df857c25a4050fcb7192118522d9cb4ec78
-          python3 /tmp/mobile-product.py
-          git add .github/workflows/cms-workspace.yml src/admin/cms tools/e2e/cms-mobile.mjs
-          test "$(git write-tree)" = 02657547b057e48dbe4ff8ad7ba7e085a83c9e2c
+          cp .runtime/mobile-polish.py /tmp/mobile-polish.py
+          git checkout --detach 47f141da952cd9af97437149461019fb3e767297
+          python3 /tmp/mobile-polish.py
+          git add src/admin/cms tools/e2e
+          test "$(git write-tree)" = 5e53ebda4de1c9e5d2ac136b42dd73bd65ca1599
           bash tools/ci/setup-furl.sh
           npm ci --no-audit --no-fund > /tmp/mobile-source/install.log 2>&1
           git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/mobile-source/format.log 2>&1
           git add -u
           git diff --cached --check
           git diff --cached > /tmp/mobile-source/mobile.patch
-          git -c user.name='CMS mobile fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'fix: preserve phone canvas proportions and reclaim the mobile workspace'
+          git -c user.name='CMS mobile fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'test: verify selected mobile controls, zoom and accessible command names'
           git rev-parse HEAD > /tmp/mobile-source/commit.txt
           git rev-parse HEAD^{tree} > /tmp/mobile-source/tree.txt
           git bundle create /tmp/mobile-source/source.bundle HEAD
@@ -118,7 +117,7 @@ jobs:
           run_check unchanged git diff --exit-code
           exit "$status"
       - name: Record deployment capability without exposing credentials
-        if: matrix.suite == 'core'
+        if: always() && matrix.suite == 'core'
         env:
           DEPLOY_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
