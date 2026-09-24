@@ -1,0 +1,76 @@
+name: CMS reordered card diagnosis
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-marquee-diagnosis.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: d3b82dcedd4db353faed5a525db5125658f4b83b
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare read-only instrumentation
+        run: |
+          mkdir -p /tmp/card-diagnosis
+          bash tools/ci/setup-furl.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/cms-barber-marquee.mjs')
+          s=p.read_text()
+          needle="  assert.ok(right - left > 20 && bottom - top > 20, 'Selected barber is offscreen')"
+          addition='''  const diagnostics = await card.evaluate(node => {
+              const bounds = node => {
+                const r = node.getBoundingClientRect(), s = globalThis.getComputedStyle(node)
+                return { tag: node.tagName, id: node.id, x:r.x, y:r.y, w:r.width, h:r.height, scrollLeft:node.scrollLeft, scrollTop:node.scrollTop, transform:s.transform, opacity:s.opacity, overflow:s.overflow, width:s.width, offsetLeft:node.offsetLeft }
+              }
+              const ancestors = []; for (let p = node; p; p=p.parentElement) ancestors.push(bounds(p))
+              const track = node.closest('[aria-roledescription="carousel"]')
+              return { ancestors, cards: [...track.children].map(bounds), viewport: {width:globalThis.innerWidth,height:globalThis.innerHeight,scrollX:globalThis.scrollX,scrollY:globalThis.scrollY} }
+            })
+            console.log('CARD_GEOMETRY', JSON.stringify(diagnostics))
+            if (right - left <= 20 || bottom - top <= 20) await writeFile(`${out}/failed-geometry.json`, JSON.stringify(diagnostics,null,2))
+          '''
+          assert needle in s
+          s=s.replace(needle,addition+needle)
+          p.write_text(s)
+          PY
+      - name: Reproduce without changing product behavior
+        shell: python3 tools/ci/furl_ci.py {0}
+        env:
+          CMS_ENGINE: webkit
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps webkit
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/card-diagnosis/server.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+          status=0
+          for i in 1 2; do
+            mkdir -p "/tmp/card-diagnosis/$i"
+            code=0
+            CMS_EVIDENCE_DIR="/tmp/card-diagnosis/$i" node tools/e2e/cms-barber-marquee.mjs > "/tmp/card-diagnosis/$i/test.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/card-diagnosis/$i/exit-code.txt"
+            test "$code" = 0 || status=1
+          done
+          exit "$status"
+      - name: Compress diagnostics
+        if: always()
+        run: |
+          find /tmp/card-diagnosis -name '*.log' -exec sh -c 'furl compress "$1" --json > "$1.furl.json" || true' _ '{}' \;
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-card-diagnosis-${{ github.run_number }}
+          path: /tmp/card-diagnosis
+          retention-days: 7
