@@ -1,0 +1,135 @@
+name: CMS mobile correction verification
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-mobile-product.yml, .runtime/mobile-product.py]
+permissions:
+  contents: read
+concurrency:
+  group: cms-mobile-correction
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare the exact reviewed candidate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mobile-source
+          cp .runtime/mobile-product.py /tmp/mobile-product.py
+          cp .runtime/cms-mobile.mjs /tmp/cms-mobile.mjs
+          git checkout --detach d6082df857c25a4050fcb7192118522d9cb4ec78
+          python3 /tmp/mobile-product.py
+          git add .github/workflows/cms-workspace.yml src/admin/cms tools/e2e/cms-mobile.mjs
+          test "$(git write-tree)" = 02657547b057e48dbe4ff8ad7ba7e085a83c9e2c
+          bash tools/ci/setup-furl.sh
+          npm ci --no-audit --no-fund > /tmp/mobile-source/install.log 2>&1
+          git diff --cached --name-only -z | xargs -0 npx prettier --write > /tmp/mobile-source/format.log 2>&1
+          git add -u
+          git diff --cached --check
+          git diff --cached > /tmp/mobile-source/mobile.patch
+          git -c user.name='CMS mobile fixes' -c user.email='cms-fixes@users.noreply.github.com' commit -m 'fix: preserve phone canvas proportions and reclaim the mobile workspace'
+          git rev-parse HEAD > /tmp/mobile-source/commit.txt
+          git rev-parse HEAD^{tree} > /tmp/mobile-source/tree.txt
+          git bundle create /tmp/mobile-source/source.bundle HEAD
+          code=0
+          git push origin HEAD:refs/heads/verify/cms-mobile-product-20260924 > /tmp/mobile-source/push.log 2>&1 || code=$?
+          echo "$code" > /tmp/mobile-source/push.exit-code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-mobile-source-${{ github.run_number }}
+          path: /tmp/mobile-source
+          retention-days: 7
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, chromium, webkit]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cms-mobile-source-${{ github.run_number }}
+          path: /tmp/mobile-source
+      - name: Load source from the recorded bundle
+        run: |
+          git fetch /tmp/mobile-source/source.bundle HEAD
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/mobile-source/commit.txt)"
+          mkdir -p /tmp/mobile-result
+          cp /tmp/mobile-source/commit.txt /tmp/mobile-source/tree.txt /tmp/mobile-result/
+          bash tools/ci/setup-furl.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify core or browser behavior
+        shell: python3 tools/ci/furl_ci.py {0}
+        env:
+          SUITE: ${{ matrix.suite }}
+          CMS_ENGINE: ${{ matrix.suite }}
+          CMS_EVIDENCE_DIR: /tmp/mobile-result
+          BASE_URL: http://127.0.0.1:4188
+        run: |
+          npm ci --no-audit --no-fund
+          status=0
+          run_check() {
+            name="$1"; shift
+            code=0
+            "$@" > "/tmp/mobile-result/$name.log" 2>&1 || code=$?
+            echo "$code" > "/tmp/mobile-result/$name.exit-code"
+            test "$code" = 0 || status=1
+          }
+          if test "$SUITE" = core; then
+            run_check typecheck npm run typecheck
+            run_check lint npm run lint
+            run_check formatting npm run format:check
+            run_check unit npm test
+            run_check build npm run build
+            run_check release node tools/release/cms-release.mjs check
+          else
+            npx playwright install --with-deps "$CMS_ENGINE"
+            VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > /tmp/mobile-result/server.log 2>&1 &
+            server=$!
+            trap 'kill "$server" 2>/dev/null || true' EXIT
+            for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null && break; sleep 1; done
+            curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" >/dev/null
+            for script in cms-mobile cms-workspace cms-workspace-edge cms-reported; do
+              mkdir -p "/tmp/mobile-result/$script"
+              CMS_EVIDENCE_DIR="/tmp/mobile-result/$script" run_check "$script" node "tools/e2e/$script.mjs"
+            done
+          fi
+          run_check unchanged git diff --exit-code
+          exit "$status"
+      - name: Record deployment capability without exposing credentials
+        if: matrix.suite == 'core'
+        env:
+          DEPLOY_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if test -n "$DEPLOY_TOKEN"; then echo available; else echo absent; fi > /tmp/mobile-result/cli-deployment-capability.txt
+      - name: Compress diagnostics
+        if: always()
+        run: |
+          for log in /tmp/mobile-result/*.log; do test -f "$log" && furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-mobile-${{ matrix.suite }}-${{ github.run_number }}
+          path: /tmp/mobile-result
+          retention-days: 7
