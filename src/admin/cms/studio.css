@@ -2315,3 +2315,25 @@
     min-height: 62px;
   }
 }
+
+/* Resource assignments are distinct from metadata and lifecycle actions. */
+.cms-resource-use {
+  display: grid;
+  gap: 10px;
+  padding-block: 16px;
+  border-block: 1px solid var(--line);
+}
+.cms-resource-use h3,
+.cms-resource-use p {
+  margin: 0;
+}
+.cms-resource-toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cms-file-choice {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
