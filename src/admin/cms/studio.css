@@ -1689,24 +1689,31 @@
   }
 }
 @media (max-width: 900px) {
+  .knc-cms-studio {
+    --radius: 10px;
+    top: var(--cms-viewport-top, 0px);
+    bottom: auto;
+    height: var(--cms-viewport-height, 100dvh);
+  }
   .cms-topbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: 'brand publish' 'status variants';
-    gap: 8px 12px;
-    min-height: 108px;
-    padding: 12px 16px;
+    gap: 4px 8px;
+    min-height: 88px;
+    padding: 6px 12px;
   }
   .knc-cms-studio .cms-brand {
     grid-area: brand;
     padding: 0;
     width: auto;
-    min-height: 42px;
+    min-height: 40px;
   }
   .cms-topbar .cms-publish {
     grid-area: publish;
-    min-height: 44px;
-    padding-inline: 14px;
+    justify-self: end;
+    min-height: 40px;
+    padding: 7px 12px;
   }
   .cms-topbar .cms-status {
     grid-area: status;
@@ -1724,8 +1731,8 @@
     padding: 2px;
   }
   .cms-variants .cms-segment button {
-    min-height: 32px;
-    padding: 5px 7px;
+    min-height: 28px;
+    padding: 4px 7px;
     font-size: 11px;
   }
   .cms-topbar-spacer,
@@ -1751,11 +1758,7 @@
   }
   .cms-library {
     display: none;
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: min(330px, calc(100vw - 32px));
-    z-index: 30;
-    box-shadow: 12px 0 36px #19241033;
+    left: 8px;
   }
   .cms-library-heading {
     min-height: 62px;
@@ -1780,18 +1783,29 @@
     width: 44px;
     margin-left: auto;
   }
+  .cms-editor-canvas[data-device='Mobile'] .gjs-frame,
+  .cms-editor-canvas[data-device='Mobile'] .gjs-frame-wrapper {
+    border-radius: 18px;
+  }
   .cms-editor-wrap {
     grid-template-columns: minmax(0, 1fr);
   }
   .cms-inspector {
     display: none;
-    position: absolute;
-    inset: 0 0 0 auto;
-    width: min(350px, calc(100vw - 24px));
-    height: 100%;
+    right: 8px;
     margin-top: 0;
+  }
+  .cms-library,
+  .cms-inspector {
+    position: fixed;
+    top: calc(var(--cms-viewport-top, 0px) + 8px);
+    bottom: auto;
+    height: calc(var(--cms-viewport-height, 100dvh) - 16px);
+    width: min(440px, calc(100vw - 16px));
     z-index: 30;
-    box-shadow: -12px 0 36px #19241033;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 16px 48px #19241040;
   }
   .cms-inspector-heading {
     display: flex;
@@ -1815,9 +1829,9 @@
   .cms-canvas-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    min-height: 80px;
-    gap: 4px 8px;
-    padding: 6px 12px;
+    min-height: 68px;
+    gap: 2px 8px;
+    padding: 4px 10px;
     margin-right: 0;
   }
   .cms-canvas-breadcrumb {
@@ -1825,7 +1839,7 @@
     grid-column: 1/-1;
     gap: 8px;
     font-size: 11px;
-    min-height: 22px;
+    min-height: 18px;
   }
   .cms-canvas-breadcrumb strong {
     max-width: 58%;
@@ -1884,7 +1898,7 @@
     font-size: 10px;
   }
   .cms-backdrop {
-    position: absolute;
+    position: fixed;
     inset: 0;
     z-index: 20;
     border: 0 !important;
@@ -1899,28 +1913,27 @@
     position: static;
     transform: none;
     width: 100%;
-    min-height: 66px;
-    padding: 5px 6px max(5px, env(safe-area-inset-bottom));
+    min-height: 62px;
+    padding: 5px 4px max(5px, env(safe-area-inset-bottom));
     margin: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0;
     flex: 0 0 auto;
-    border-radius: 0;
-    box-shadow: none;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -3px 14px #1924100a;
     border: 0;
   }
   .cms-mobile-tools {
     display: grid;
-    grid-column: 1 / -1;
+    grid-column: span 2;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    border-bottom: 1px solid #56604d;
-    padding-bottom: 4px;
+    border-right: 1px solid #56604d;
   }
   .cms-bottom .cms-mobile-tools button {
-    flex-direction: row;
-    min-height: 40px;
-    font-size: 12px;
+    flex-direction: column;
+    min-height: 48px;
+    font-size: 10px;
   }
   .cms-bottom button {
     display: flex;
@@ -1928,7 +1941,7 @@
     gap: 5px;
     min-width: 0;
     min-height: 48px;
-    padding: 6px 2px;
+    padding: 5px 1px;
     font-size: 10px;
     line-height: 1.2;
     letter-spacing: -0.01em;
@@ -2182,7 +2195,7 @@
 @media (max-width: 359px) {
   .cms-topbar {
     padding-inline: 12px;
-    gap: 8px;
+    gap: 4px 8px;
   }
   .cms-brand-mark {
     font-size: 17px;
@@ -2217,17 +2230,6 @@
   }
 }
 @media (max-height: 550px) and (max-width: 900px) {
-  /* Short viewports need the whole height for the active modal drawer. */
-  .cms-library,
-  .cms-inspector {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    height: auto;
-  }
-  .cms-backdrop {
-    position: fixed;
-  }
   .cms-topbar {
     min-height: 88px;
     padding-block: 6px;
@@ -2260,22 +2262,6 @@
   .cms-workspace-content {
     overflow: visible;
     flex: 0 0 auto;
-  }
-}
-@media (max-height: 550px) and (min-width: 600px) and (max-width: 900px) {
-  .knc-cms-studio .cms-bottom {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-  .cms-mobile-tools {
-    grid-column: span 2;
-    border-bottom: 0;
-    border-right: 1px solid #56604d;
-    padding-bottom: 0;
-  }
-  .cms-bottom .cms-mobile-tools button {
-    flex-direction: column;
-    font-size: 10px;
-    min-height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

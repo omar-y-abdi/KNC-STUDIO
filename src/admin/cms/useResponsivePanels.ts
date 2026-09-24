@@ -28,6 +28,27 @@ export function useResponsivePanels(
     return () => media.removeEventListener('change', resize)
   }, [])
   useLayoutEffect(() => {
+    const element = root.current
+    const viewport = window.visualViewport
+    if (!ready || !compact || !element || !viewport) return
+    const resize = (): void => {
+      // The keyboard changes the visual viewport, not CSS viewport height on iOS.
+      // Leave pinch zoom to the browser instead of resizing the app while zooming.
+      if (viewport.scale !== 1) return
+      element.style.setProperty('--cms-viewport-height', `${viewport.height}px`)
+      element.style.setProperty('--cms-viewport-top', `${viewport.offsetTop}px`)
+    }
+    resize()
+    viewport.addEventListener('resize', resize)
+    viewport.addEventListener('scroll', resize)
+    return () => {
+      viewport.removeEventListener('resize', resize)
+      viewport.removeEventListener('scroll', resize)
+      element.style.removeProperty('--cms-viewport-height')
+      element.style.removeProperty('--cms-viewport-top')
+    }
+  }, [ready, compact, root])
+  useLayoutEffect(() => {
     if (!ready || !active || !root.current || !compact) return
     const panel = root.current.querySelector<HTMLElement>(`#cms-${active}`)
     if (!panel) return
