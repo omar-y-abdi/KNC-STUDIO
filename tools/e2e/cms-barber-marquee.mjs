@@ -96,8 +96,30 @@ async function dragLeft(page, track, distance = 0.7) {
   await page.mouse.down()
   await page.mouse.move(viewport.width * (0.82 - distance), y, { steps: 8 })
   await page.mouse.up()
-  await page.waitForTimeout(300)
-  return { hit, before, after: await transformX(track) }
+  // dragFree keeps moving after pointerup. A fixed delay can identify A as
+  // nearest, then click after inertia has carried it offscreen. Wait for
+  // that fast motion to finish; the intended slow autoplay may continue.
+  const settling = await track.evaluate(async (node) => {
+    const x = () => {
+      const transform = globalThis.getComputedStyle(node).transform
+      return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
+    }
+    const started = globalThis.performance.now()
+    let previous = x()
+    let slowSince = null
+    while (globalThis.performance.now() - started < 5000) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
+      const current = x()
+      const now = globalThis.performance.now()
+      if (Math.abs(current - previous) <= 2) slowSince ??= now
+      else slowSince = null
+      previous = current
+      if (slowSince !== null && now - slowSince >= 200)
+        return { elapsedMs: now - started, x: current }
+    }
+    throw new Error('Barber drag did not return to slow or paused motion')
+  })
+  return { hit, before, after: await transformX(track), settling }
 }
 
 async function clickVisibleCard(page, card) {
