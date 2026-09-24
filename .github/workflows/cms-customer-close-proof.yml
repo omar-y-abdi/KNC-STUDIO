@@ -1,0 +1,91 @@
+name: CMS customer dialog boundary proof
+on:
+  push:
+    branches: [verify/cms-runtime-20260924]
+    paths: [.github/workflows/cms-customer-close-proof.yml]
+permissions:
+  contents: read
+jobs:
+  customer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 13cb50c10a2f61465a33befb115b545a47e02014
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Add diagnostic boundary assertions without changing product code
+        run: |
+          mkdir -p /tmp/customer-proof
+          git rev-parse HEAD > /tmp/customer-proof/source.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/e2e/smoke.mjs')
+          s=p.read_text()
+          old="""            await fields.nth(0).fill('Typed name survives')
+                      await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+                      const second = await context.newPage()"""
+          old='\n'.join(line[10:] if i else line for i,line in enumerate(old.splitlines()))
+          # Match literal source rather than editing by an assumed line number.
+          old="            await fields.nth(0).fill('Typed name survives')\n            await page.getByRole('button', { name: 'Stäng', exact: true }).click()\n            const second = await context.newPage()"
+          new="""            await fields.nth(0).fill('Typed name survives')
+                      await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+                      await page.getByRole('dialog', { name: 'Dina uppgifter', exact: true }).waitFor({ state: 'hidden' })
+                      console.log('DIAGNOSTIC details dialog removed before opening customer B tab', engine.name())
+                      const second = await context.newPage()"""
+          new='\n'.join(line[10:] if i else line for i,line in enumerate(new.splitlines()))
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old="            await page.bringToFront()\n            await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()"
+          new="""            await page.bringToFront()
+                      console.log('DIAGNOSTIC original tab before opening history', engine.name(), await page.evaluate(() => ({
+                        dialogs: [...globalThis.document.querySelectorAll('[role="dialog"]')].map(node => ({id: node.id, label: node.getAttribute('aria-labelledby'), visible: !!node.getClientRects().length})),
+                        focused: globalThis.document.activeElement?.outerHTML.slice(0, 180),
+                      })))
+                      await page.getByRole('button', { name: 'Mina bokningar', exact: true }).click()"""
+          new='\n'.join(line[10:] if i else line for i,line in enumerate(new.splitlines()))
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new))
+          PY
+          git diff > /tmp/customer-proof/diagnostic.patch
+          bash tools/ci/setup-furl.sh
+      - name: Start isolated local stack
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          npm ci
+          cat > supabase/functions/.env <<'EOF'
+          TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+          IP_SALT=ci-booking-ip-salt-not-for-production
+          PUBLIC_ACTION_HASH_SALT=ci-public-action-hash-salt-not-for-production
+          CUSTOMER_GATEWAY_SECRET=ci-customer-gateway-secret-not-for-production
+          PUBLIC_SITE_ORIGINS=http://127.0.0.1:4173,https://127.0.0.1:4197
+          CMS_ALLOWED_ORIGINS=https://127.0.0.1:4197
+          PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+          EOF
+          npx supabase start
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Trace real customer switch through owner publication and Edge
+        shell: python3 tools/ci/furl_ci.py {0}
+        run: |
+          code=0
+          npm run test:e2e -- --customer > /tmp/customer-proof/customer.log 2>&1 || code=$?
+          echo "$code" > /tmp/customer-proof/customer.exit-code
+          exit "$code"
+      - name: Stop local stack and retain diagnostics
+        if: always()
+        run: |
+          npx supabase stop --no-backup > /tmp/customer-proof/cleanup.log 2>&1 || true
+          for log in /tmp/customer-proof/*.log; do furl compress "$log" --json > "$log.furl.json" || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-customer-close-proof-${{ github.run_number }}
+          path: |
+            /tmp/customer-proof
+            /tmp/knc-customer-e2e-*/*.png
+            /tmp/knc-customer-e2e-*/cms-studio-request-metrics.json
+          retention-days: 7
