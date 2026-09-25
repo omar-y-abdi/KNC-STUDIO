@@ -135,6 +135,23 @@ export function composedCanvas(
   return { html: doc.body.innerHTML, css: rules.join('\n') }
 }
 
+function deduplicateRules(sheet: CssNode): void {
+  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
+  walk(sheet, {
+    leave(node: CssNode) {
+      if (node.type !== 'StyleSheet' && node.type !== 'Block') return
+      const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
+      node.children.forEach((child, item) => {
+        if (child.type !== 'Rule' && child.type !== 'Atrule') return
+        const key = generate(child)
+        const earlier = seen.get(key)
+        if (earlier) node.children.remove(earlier.item)
+        seen.set(key, { item })
+      })
+    },
+  })
+}
+
 /** Derived About previews never belong to the Home document. Persist only their slot marker;
  * the next render fills it from About again. Prune stale preview selectors and duplicate CSS. */
 export function stripComposedCanvas(
@@ -166,30 +183,23 @@ export function stripComposedCanvas(
   walk(sheet, {
     visit: 'Rule',
     enter(rule, item, list) {
-      let derived = false
-      walk(rule.prelude, {
-        visit: 'IdSelector',
-        enter(id) {
-          if (discarded.has(id.name) || id.name.startsWith('preview-shared-')) derived = true
-        },
+      if (rule.prelude.type !== 'SelectorList') return
+      rule.prelude.children.forEach((selector, selectorItem) => {
+        let derived = false
+        walk(selector, {
+          visit: 'IdSelector',
+          enter(id) {
+            if (discarded.has(ident.decode(id.name)) || id.name.startsWith('preview-shared-'))
+              derived = true
+          },
+        })
+        if (derived && rule.prelude.type === 'SelectorList')
+          rule.prelude.children.remove(selectorItem)
       })
-      if (derived && item && list) list.remove(item)
+      if (!rule.prelude.children.size && item && list) list.remove(item)
     },
   })
-  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
-  walk(sheet, {
-    leave(node: CssNode) {
-      if (node.type !== 'StyleSheet' && node.type !== 'Block') return
-      const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
-      node.children.forEach((child, item) => {
-        if (child.type !== 'Rule' && child.type !== 'Atrule') return
-        const key = generate(child)
-        const earlier = seen.get(key)
-        if (earlier) node.children.remove(earlier.item)
-        seen.set(key, { item })
-      })
-    },
-  })
+  deduplicateRules(sheet)
   return { html: doc.body.innerHTML, css: generate(sheet) }
 }
 
@@ -233,6 +243,7 @@ export function extractComposedAbout(
       if (!rule.prelude.children.size && item && list) list.remove(item)
     },
   })
+  deduplicateRules(tree)
   previous.replaceWith(about.cloneNode(true))
   return { html: saved.body.innerHTML, css: generate(tree) }
 }
