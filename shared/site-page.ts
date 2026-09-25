@@ -287,7 +287,8 @@ export function renderSitePage(
   // Seed a single authored header with semantic layout hooks, not a second mobile tree.
   addClass(header, 'cms-site-chrome')
   if (brand) addClass(brand, 'cms-site-brand')
-  for (const child of elements(header)) if (child !== brand && child.tagName === 'div') addClass(child, 'cms-site-controls')
+  for (const child of elements(header))
+    if (child !== brand && child.tagName === 'div') addClass(child, 'cms-site-controls')
   const phone = find(header, (node) => attr(node, 'href').startsWith('tel:'))
   const directions = find(header, (node) => /^https?:/.test(attr(node, 'href')))
   if (phone) addClass(phone, 'cms-site-phone')
