@@ -1,4 +1,8 @@
-import { connectResourcePicker, openResourcePicker } from './resourceTargets'
+import {
+  canReplaceResourceGraphic,
+  connectResourcePicker,
+  openResourcePicker,
+} from './resourceTargets'
 import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { connectHierarchicalResize } from './hierarchicalResize'
 import { CmsTextarea } from './Textarea'
@@ -649,10 +653,20 @@ export function CmsEditor(props: Props): JSX.Element {
     const alt = asset.alt || String(attrs['alt'] ?? attrs['aria-label'] ?? '')
     if (String(imageTarget.get('tagName')).toLowerCase() === 'svg') {
       // Replace presentation only. The enclosing native component retains its identity and logic.
-      if (attrs['role'] !== 'img' || attrs['data-knc-required']) return
+      if (!canReplaceResourceGraphic(imageTarget)) return
       const retained = Object.fromEntries(
         Object.entries(attrs).filter(
-          ([name]) => ['id', 'class', 'title'].includes(name) || name.startsWith('data-knc-'),
+          ([name]) =>
+            [
+              'id',
+              'class',
+              'title',
+              'aria-label',
+              'aria-hidden',
+              'role',
+              'width',
+              'height',
+            ].includes(name) || name.startsWith('data-knc-'),
         ),
       )
       const [image] = imageTarget.replaceWith({
@@ -953,8 +967,7 @@ export function CmsEditor(props: Props): JSX.Element {
                       }
                     />
                   </label>
-                  {(tag === 'img' ||
-                    (attributes['role'] === 'img' && !attributes['data-knc-required'])) && (
+                  {canReplaceResourceGraphic(selected) && (
                     <button
                       type="button"
                       onClick={(event) => {

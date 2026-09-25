@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   siteResources,
   editSiteResource,
@@ -9,7 +9,6 @@ import type { CmsAsset, CmsDocument, CmsLang } from '../../../shared/cms'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { resourceReference } from '../../../shared/cms-markup'
 import { SUPABASE_URL } from '../../backend/config'
-import { BusinessPanel } from './DomainPanels'
 import { CmsIcon } from './Icon'
 
 interface Props {
@@ -51,7 +50,7 @@ export function SiteResources(props: Props): JSX.Element {
   latest.current = props
   const entries = useMemo(() => siteResources(props.document, lang), [props.document, lang])
   const current = entries.find((entry) => entry.key === selected)
-  useEffect(() => {
+  useLayoutEffect(() => {
     setDescription(current?.description ?? '')
     setTexts(current?.texts ?? [])
     setReplacement('')
@@ -154,11 +153,12 @@ export function SiteResources(props: Props): JSX.Element {
                   <input
                     value={value}
                     maxLength={400}
-                    onInput={(e) =>
+                    onInput={(event) => {
+                      const nextValue = event.currentTarget.value
                       setTexts((values) =>
-                        values.map((v, j) => (j === i ? e.currentTarget.value : v)),
+                        values.map((value, index) => (index === i ? nextValue : value)),
                       )
-                    }
+                    }}
                   />
                 </label>
               ))}
@@ -224,7 +224,11 @@ export function SiteResources(props: Props): JSX.Element {
       <details class="cms-site-resource-section">
         <summary>Kontakt & karta</summary>
         <p>Telefon, adress och kartlänk delar webbplatsens företagsuppgifter.</p>
-        <BusinessPanel document={props.document} onChange={(next) => void apply(() => next)} />
+        <ContactResources
+          document={props.document}
+          onDocument={props.onDocument}
+          onError={props.onError}
+        />
       </details>
       <details class="cms-site-resource-section">
         <summary>Inbyggda filer</summary>
@@ -241,5 +245,92 @@ export function SiteResources(props: Props): JSX.Element {
         </ul>
       </details>
     </section>
+  )
+}
+
+const contactFields = [
+  ['business_phone_display', 'Telefon', 'tel'],
+  ['business_phone_tel', 'Telefonlänk', 'tel'],
+  ['business_email', 'E-post', 'email'],
+  ['business_street', 'Adress', 'text'],
+  ['business_postal_code', 'Postnummer', 'text'],
+  ['business_city', 'Stad', 'text'],
+  ['business_maps_href', 'Kartlänk', 'url'],
+] as const
+const contactValues = (document: CmsDocument): Record<string, string> =>
+  Object.fromEntries(contactFields.map(([key]) => [key, document.settings[key] ?? '']))
+
+/** Stage the form once; typing must not recapture the entire page on every key. */
+function ContactResources(props: Pick<Props, 'document' | 'onDocument' | 'onError'>): JSX.Element {
+  const baseline = useRef(contactValues(props.document))
+  const [values, setValues] = useState(baseline.current)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const pending = useRef(false)
+  useLayoutEffect(() => {
+    const next = contactValues(props.document),
+      before = baseline.current
+    setValues((current) =>
+      Object.fromEntries(
+        contactFields.map(([key]) => [
+          key,
+          current[key] === before[key] ? (next[key] ?? '') : (current[key] ?? ''),
+        ]),
+      ),
+    )
+    baseline.current = next
+  }, [props.document.settings])
+  const save = async (): Promise<void> => {
+    if (pending.current) return
+    const changes = contactFields
+      .filter(([key]) => values[key] !== baseline.current[key])
+      .map(([key]) => [key, values[key] ?? ''] as const)
+    pending.current = true
+    setBusy(true)
+    setSaved(false)
+    try {
+      await props.onDocument((current) => ({
+        ...current,
+        settings: { ...current.settings, ...Object.fromEntries(changes) },
+      }))
+      setSaved(true)
+    } catch (error) {
+      props.onError(
+        error instanceof Error ? error.message : 'Kontaktuppgifterna kunde inte sparas.',
+      )
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save()
+      }}
+    >
+      <fieldset class="cms-domain-grid" disabled={busy}>
+        <legend>Gemensamma kontaktuppgifter</legend>
+        {contactFields.map(([key, label, type]) => (
+          <label key={key}>
+            {label}
+            <input
+              type={type}
+              value={values[key] ?? ''}
+              onInput={(event) => {
+                const value = event.currentTarget.value
+                setValues((current) => ({ ...current, [key]: value }))
+                setSaved(false)
+              }}
+            />
+          </label>
+        ))}
+      </fieldset>
+      <button class="cms-primary" type="submit" disabled={busy}>
+        Spara kontaktuppgifter
+      </button>
+      {saved && <p role="status">Kontaktuppgifterna är sparade i utkastet.</p>}
+    </form>
   )
 }

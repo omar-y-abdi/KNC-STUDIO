@@ -162,3 +162,15 @@ The owner requested a fresh check of the previously blocked code edits. Ordinary
 These two adjustments remain in the existing untracked R4 modules; they are not a completed R4 implementation or a browser acceptance claim. `tools/e2e/cms-site-resources.mjs` also remains untracked. No feature integration, full test sweep, push, deploy or production-data mutation was performed for this access check.
 
 Next: finish R4 integration and its recorded failing browser scenario, then targeted mutation/projection tests and the accumulated acceptance work listed above. Normal code editing is available for the continuation.
+
+## Completion resumed — PR #78 remains the active implementation
+
+The owner clarified that commit/push was not permission to stop. Continue to completion on this branch and PR; the checkpoint-only handoff is historical, not a change of scope.
+
+**R4 integration:** the real resource workspace now exposes `Webbplatsens resurser`, editable source graphics/labels and an explicit contact form. Inventory targets retain native identity across different locale IDs. Mutations reject missing/ambiguous locale counterparts and graphics containing required nodes or runtime slots. Decorative SVG-to-image projection preserves dimensions and parent actions. The contact form stages edits and applies only changed keys to the latest draft, preserving concurrent changes.
+
+Fresh evidence under `cms-unified-evidence/pr78-completion/`: `r4-unit-red.log` records 6 failing / 2 passing boundary tests; `r4-unit-green.log` records all 8 passing. `cms-site-resources-{chromium,webkit}.log` and `cms-graphic-projection-{chromium,webkit}.log` pass. The projection test first failed on a decorative SVG, then passed with the same parent-action/protected-descendant assertions. Scoped lint and full typecheck pass (`r4-lint.log`, `r4-types.log`). The resource fixture now uses the actual scrollable WorkspaceView rather than an incomplete fixed-height host; no forced clicks were added.
+
+**New E1 finding (separate fix):** final-head CI rejected About CSS exceeding 100,000 characters. A minimal eight-roundtrip reproduction measured About CSS growing from 255 to 38,565 characters by duplicating shared rules, and a mixed Home/About selector lost the Home declaration. The same test after deduplication and per-selector ownership pruning yields 105 to 315 characters (only actual edits accumulate), preserves the Home declaration, and passes both engines. This is a root correction, not an increased limit. Its implementation is being committed separately from R4.
+
+Remaining completion gates: contextual background/gallery/logo coverage, contact-driven canvas refresh, real Edge/Storage asset-copy validation and deployment, updated unified-navigation tests, accumulated CI and final review. The old sporadic damaged-draft incident remains the explicitly deferred item; do not silently claim its cause.

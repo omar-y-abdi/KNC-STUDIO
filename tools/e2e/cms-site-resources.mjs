@@ -139,6 +139,18 @@ try {
       /\/cms-library\/images\/new.webp/,
     )
   assert.equal(result.error, '')
+  await page.getByText('Kontakt & karta', { exact: true }).click()
+  await page.getByRole('textbox', { name: 'Telefon', exact: true }).fill('079-111 22 33')
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/cms-resources-harness.tsx')).changeBusinessName(
+      'Concurrent business edit',
+    ),
+  )
+  await page.getByRole('button', { name: 'Spara kontaktuppgifter', exact: true }).click()
+  const updated = await snapshot()
+  assert.equal(updated.document.settings.business_phone_display, '079-111 22 33')
+  assert.equal(updated.document.settings.business_name, 'Concurrent business edit')
+
   await page.screenshot({ path: `${out}/${engine}-site-components.png` })
   await page.setViewportSize({ width: 390, height: 740 })
   await page.screenshot({ path: `${out}/${engine}-site-components-mobile.png` })

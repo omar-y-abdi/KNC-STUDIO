@@ -1,3 +1,4 @@
+import { SiteResources } from './SiteResources'
 import {
   assignResource,
   resourceAssigned,
@@ -75,6 +76,7 @@ interface Props {
 }
 
 export function CmsResources(props: Props): JSX.Element {
+  const [showComponents, setShowComponents] = useState(false)
   const [state, setState] = useState<State>('active')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -354,8 +356,44 @@ export function CmsResources(props: Props): JSX.Element {
       }
     }
   }, [props.document, asset?.bucket, asset?.path])
+  const navigation = (
+    <nav class="cms-resource-navigation cms-segment" aria-label="Resurstyp">
+      <button
+        type="button"
+        aria-pressed={!showComponents}
+        disabled={busy}
+        onClick={() => setShowComponents(false)}
+      >
+        Filbibliotek
+      </button>
+      <button
+        type="button"
+        aria-pressed={showComponents}
+        disabled={busy}
+        onClick={() => {
+          setSelectedId(null)
+          setShowComponents(true)
+        }}
+      >
+        Webbplatsens resurser
+      </button>
+    </nav>
+  )
+  if (showComponents)
+    return (
+      <div>
+        {navigation}
+        <SiteResources
+          document={props.document}
+          assets={props.assets}
+          onDocument={props.onDocument}
+          onError={props.onError}
+        />
+      </div>
+    )
   return (
     <div class="cms-resource-surface" aria-busy={busy}>
+      {navigation}
       <header class="cms-resource-toolbar">
         <div class="cms-segment">
           {(['active', 'archived', 'trash'] as const).map((value) => (

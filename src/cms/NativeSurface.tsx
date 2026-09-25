@@ -357,6 +357,16 @@ function safeAttribute(name: string, value: string): boolean {
   )
 }
 
+/** Replacing a decorative graphic must not discard a nested action or live slot. */
+function containsRuntimeAction(value: ComponentChild): boolean {
+  if (!isValidElement(value)) return false
+  const props = value.props as Record<string, unknown>
+  return (
+    Boolean(value.ref || props['data-knc-required'] || props['data-knc-slot']) ||
+    childrenOf(props['children'] as ComponentChildren).some(containsRuntimeAction)
+  )
+}
+
 export function projectNativeTree(
   source: ReturnType<typeof nativeTree>,
   template: Element,
@@ -400,15 +410,15 @@ export function projectNativeTree(
     if (slot) return source.slots.get(slot) ?? source.nodes.get(slot) ?? null
     const identity = element.getAttribute('data-knc-source')
     const original = identity ? source.nodes.get(identity) : undefined
-    const logoImage =
+    const graphicImage =
       original?.type === 'svg' &&
-      original.props['role'] === 'img' &&
-      !original.props['data-knc-required'] &&
+      !containsRuntimeAction(original) &&
       element.tagName.toLowerCase() === 'img'
     if (identity && !original) return source.slots.get(identity) ?? null
     // A calendar cell can change between an empty span and a live date button. Preserve that
     // runtime transition; the captured month's tag must never remove a later month's dates.
-    if (original && original.type !== element.tagName.toLowerCase() && !logoImage) return original
+    if (original && original.type !== element.tagName.toLowerCase() && !graphicImage)
+      return original
     if (!original && !authoredTags.has(element.tagName.toLowerCase())) return null
     const props: Record<string, unknown> = original ? { ...original.props } : {}
     const before = baseline(element)
@@ -431,7 +441,7 @@ export function projectNativeTree(
     }
     delete props['children']
     delete props['dangerouslySetInnerHTML']
-    if (logoImage) {
+    if (graphicImage) {
       delete props['viewBox']
       delete props['fill']
       return h('img', props)

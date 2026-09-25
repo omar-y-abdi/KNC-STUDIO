@@ -14,6 +14,16 @@ export function resourceGraphic(component: Component): Component | undefined {
   return undefined
 }
 
+export function canReplaceResourceGraphic(component: Component): boolean {
+  const protectedNode = (node: Component): boolean =>
+    Boolean(node.getAttributes()['data-knc-required'] || node.getAttributes()['data-knc-slot'])
+  return (
+    ['img', 'svg'].includes(String(component.get('tagName')).toLowerCase()) &&
+    !protectedNode(component) &&
+    !component.findFirstType(protectedNode)
+  )
+}
+
 /** Resolve native repeated records by the same stable key algorithm as nativeTree.
  * Names, positions and image filenames must never decide which person is edited. */
 export function contextualDestination(
@@ -67,7 +77,7 @@ export function openResourcePicker(
   if (destination && destinationPicker) {
     editor.AssetManager.close()
     destinationPicker(destination)
-  } else if (!graphic.getAttributes()['data-knc-required']) {
+  } else if (canReplaceResourceGraphic(graphic)) {
     editor.AssetManager.close()
     graphicPicker(graphic)
   } else return false

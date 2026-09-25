@@ -6,6 +6,7 @@ type Element = DefaultTreeAdapterMap['element']
 export interface SiteResourceTarget {
   pageId: string
   id: string
+  source?: string
 }
 export interface SiteResource extends SiteResourceTarget {
   key: string
@@ -32,6 +33,29 @@ const setAttr = (node: Element, name: string, value: string): void => {
 const textLeaves = (node: Element): Element[] =>
   all(node).filter((n) => n.tagName === 'text' && n.childNodes.every((c) => c.nodeName === '#text'))
 
+function replaceable(node: Element): boolean {
+  return (
+    ['img', 'svg'].includes(node.tagName) &&
+    !all(node).some(
+      (child) =>
+        attr(child, 'data-knc-required') === 'true' || Boolean(attr(child, 'data-knc-slot')),
+    )
+  )
+}
+function originalLabel(node: Element): string {
+  try {
+    const baseline: unknown = JSON.parse(attr(node, 'data-knc-baseline') || '{}')
+    return baseline &&
+      typeof baseline === 'object' &&
+      'aria-label' in baseline &&
+      typeof baseline['aria-label'] === 'string'
+      ? baseline['aria-label']
+      : ''
+  } catch {
+    return ''
+  }
+}
+
 /** Inventory actual editable components, not just uploaded Storage objects.
  * Opaque previews of another page are excluded; their canonical page owns editing. */
 export function siteResources(document: CmsDocument, lang: CmsLang): SiteResource[] {
@@ -42,12 +66,13 @@ export function siteResources(document: CmsDocument, lang: CmsLang): SiteResourc
       const id = attr(node, 'id')
       if (!id || (native && !attr(node, 'data-knc-source'))) return []
       const graphic = node.tagName === 'img' || node.tagName === 'svg'
-      const description = attr(node, 'aria-label')
+      const description = attr(node, node.tagName === 'img' ? 'alt' : 'aria-label')
       const href = attr(node, 'href')
       const control =
         (node.tagName === 'button' &&
-          description &&
-          /språk|language|theme|ljust|dark|telefon|phone/i.test(description)) ||
+          /språk|language|theme|ljust|dark|telefon|phone/i.test(
+            `${description} ${originalLabel(node)}`,
+          )) ||
         (node.tagName === 'a' && (/^tel:/.test(href) || /maps\.|\/maps(?:\/|\?)/.test(href)))
       if (!graphic && !control) return []
       const label =
@@ -60,6 +85,7 @@ export function siteResources(document: CmsDocument, lang: CmsLang): SiteResourc
         {
           pageId: page.id,
           id,
+          ...(attr(node, 'data-knc-source') ? { source: attr(node, 'data-knc-source') } : {}),
           key: JSON.stringify([page.id, id]),
           pageName:
             page.path === '/about'
@@ -71,7 +97,7 @@ export function siteResources(document: CmsDocument, lang: CmsLang): SiteResourc
           src: node.tagName === 'img' ? attr(node, 'src') : '',
           svg: node.tagName === 'svg' ? serializeOuter(node) : '',
           texts: node.tagName === 'svg' ? textLeaves(node).map(text) : [],
-          replaceable: graphic && attr(node, 'data-knc-required') !== 'true',
+          replaceable: replaceable(node),
         },
       ]
     })
@@ -87,16 +113,18 @@ function mutate(
   const next = structuredClone(document)
   const page = next.presentation.pages.find((page) => page.id === target.pageId)
   if (!page) throw new Error('Sidan finns inte längre i utkastet.')
-  let found = false
   for (const lang of langs) {
     const tree = parseFragment(page.content[lang].html)
-    const node = all(tree).find((node) => attr(node, 'id') === target.id)
-    if (!node) continue
-    found = true
-    apply(node)
+    const matches = all(tree).filter((node) =>
+      target.source
+        ? attr(node, 'data-knc-source') === target.source
+        : attr(node, 'id') === target.id,
+    )
+    if (matches.length !== 1 || !matches[0])
+      throw new Error(`Komponenten kunde inte identifieras entydigt för ${lang}. Välj den igen.`)
+    apply(matches[0])
     page.content[lang].html = serialize(tree)
   }
-  if (!found) throw new Error('Komponenten har ändrats. Välj den igen.')
   return next
 }
 
@@ -110,7 +138,7 @@ export function editSiteResource(
   if (description.length > 160 || texts.some((value) => value.length > 400))
     throw new Error('Beskrivning eller logotyptext är för lång.')
   return mutate(document, target, [lang], (node) => {
-    setAttr(node, 'aria-label', description)
+    setAttr(node, node.tagName === 'img' ? 'alt' : 'aria-label', description)
     const leaves = textLeaves(node)
     if (leaves.length !== texts.length)
       throw new Error('Logotypens struktur har ändrats. Välj den igen.')
@@ -132,8 +160,7 @@ export function replaceSiteResource(
     throw new Error('Välj en aktiv behandlad bild från biblioteket.')
   const src = mediaUrl(asset, storageOrigin)
   return mutate(document, target, ['sv', 'en'], (node) => {
-    if (!['img', 'svg'].includes(node.tagName) || attr(node, 'data-knc-required') === 'true')
-      throw new Error('Komponentens funktion får inte ersättas med en bild.')
+    if (!replaceable(node)) throw new Error('Komponentens funktion får inte ersättas med en bild.')
     node.attrs = node.attrs.filter(
       (a) =>
         [
