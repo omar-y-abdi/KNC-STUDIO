@@ -57,3 +57,13 @@ it('previews resource assignments from the draft while retaining live roster eli
     DEFAULT_CHROME.business.cancellationPolicyHours,
   )
 })
+
+import { resourceLayoutsChanged } from '../../src/admin/cms/captureResourceLayouts'
+it('refreshes the editable resource canvas for contact changes but not unrelated settings', () => {
+  const before = emptyDocument()
+  const after = structuredClone(before)
+  after.settings.business_phone_display = '079-111 22 33'
+  expect(resourceLayoutsChanged(before, after)).toBe(true)
+  after.settings = { seo_description_sv: 'Only metadata' }
+  expect(resourceLayoutsChanged(before, after)).toBe(false)
+})

@@ -169,7 +169,13 @@ function replaceBarberBaseline(css: string, baseline: string): string {
 
 export function resourceLayoutsChanged(before: CmsDocument, after: CmsDocument): boolean {
   return (
-    JSON.stringify([before.gallery, before.photos, before.settings['homepage_logo_path']]) !==
-    JSON.stringify([after.gallery, after.photos, after.settings['homepage_logo_path']])
+    JSON.stringify([before.gallery, before.photos, visualSettings(before)]) !==
+    JSON.stringify([after.gallery, after.photos, visualSettings(after)])
   )
+}
+
+function visualSettings(document: CmsDocument): [string, string][] {
+  return Object.entries(document.settings)
+    .filter(([key]) => key === 'homepage_logo_path' || key.startsWith('business_'))
+    .sort(([a], [b]) => a.localeCompare(b))
 }
