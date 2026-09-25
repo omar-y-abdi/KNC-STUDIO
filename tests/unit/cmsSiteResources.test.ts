@@ -64,6 +64,10 @@ describe('website resource mutation boundary', () => {
         '/cms-library/images/replacement.webp',
       )
     expect(next.presentation.pages[0]?.content.en.html).toContain('id="english-mark"')
+    for (const lang of ['sv', 'en'] as const)
+      expect(next.presentation.pages[0]?.content[lang].html).toContain(
+        'data-knc-source="native-mark"',
+      )
   })
   it.each(['data-knc-required="true"', 'data-knc-slot="child"'])(
     'does not erase functional descendants (%s)',
