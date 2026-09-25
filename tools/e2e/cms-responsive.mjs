@@ -4,7 +4,8 @@ import { chromium, webkit } from 'playwright'
 import { nativeBackend } from './cms-native.mjs'
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
 for (const [name, engine] of Object.entries({ chromium, webkit })) {
-  if (process.env.CMS_BROWSER && process.env.CMS_BROWSER !== name) continue
+  const selectedEngine = process.env.CMS_ENGINE ?? process.env.CMS_BROWSER
+  if (selectedEngine && selectedEngine !== name) continue
   const browser = await engine.launch()
   try {
     const context = await browser.newContext({
@@ -30,8 +31,21 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       )
     }
     await mount()
-    await page.getByRole('button', { name: 'Om oss', exact: true }).click()
-    const reviews = frame.getByRole('heading', { name: 'Omdömen', exact: true })
+    await page
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Startsida', exact: true })
+      .click()
+    const reviews = frame
+      .locator('[data-knc-surface="about"]')
+      .getByRole('heading', { name: 'Omdömen', exact: true })
+    assert.equal(
+      await page
+        .locator('#cms-library')
+        .getByRole('button', { name: 'Om oss', exact: true })
+        .count(),
+      0,
+      'About is edited on Home, not a duplicate editor page',
+    )
     await reviews.click()
     const id = await reviews.getAttribute('id')
     await page
@@ -86,7 +100,10 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
       'Mobile editing must scroll to Reviews without locking',
     )
     await mount()
-    await page.getByRole('button', { name: 'Om oss', exact: true }).click()
+    await page
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Startsida', exact: true })
+      .click()
     assert.equal(await frame.locator(`#${id}`).textContent(), 'Gemensamma omdömen')
     assert.equal(
       await frame.locator(`#${id}`).evaluate((n) => globalThis.getComputedStyle(n).translate),

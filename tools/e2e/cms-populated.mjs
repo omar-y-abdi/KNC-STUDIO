@@ -45,6 +45,7 @@ for (const [engine, name] of [
   [chromium, 'chromium'],
   [webkit, 'webkit'],
 ]) {
+  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
   const browser = await engine.launch()
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
@@ -103,9 +104,13 @@ for (const [engine, name] of [
     await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
     await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
     const library = page.locator('#cms-library')
-    await library.getByRole('button', { name: 'Om oss', exact: true }).click()
+    await library.getByRole('button', { name: 'Startsida', exact: true }).click()
     await frame.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
     await frame.getByText('Fixture barber A', { exact: true }).first().waitFor()
+    await frame
+      .getByAltText('Fixture salon photo 1', { exact: true })
+      .first()
+      .scrollIntoViewIfNeeded()
     await page.screenshot({ path: `/tmp/cms-native-${name}-populated-about.png` })
     await library.getByRole('button', { name: 'Startsida', exact: true }).click()
     await page.getByRole('button', { name: 'Lås vy', exact: true }).click()

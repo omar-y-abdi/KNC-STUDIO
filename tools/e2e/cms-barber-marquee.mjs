@@ -282,7 +282,7 @@ async function run(engine, name) {
     captureContext = undefined
 
     // Reopen a legacy, owner-edited template in the actual studio. The upgrade must give both
-    // the About page and its Home composition the mobile layout without replacing card identity
+    // canonical About content and its Home composition the mobile layout without replacing card identity
     // or overriding normal owner declarations. Publish an inspector edit, then reload the studio.
     upgradeContext = await browser.newContext({
       viewport: { width: 1440, height: 900 },
@@ -300,8 +300,11 @@ async function run(engine, name) {
       )
       await upgradePage.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     }
-    const editorCard = upgradeFrame.locator(`[id="${owned.ownerCardId}"]`)
-    const editorGrid = upgradeFrame.locator(`[id="${owned.gridId}"]`)
+    const editableAbout = upgradeFrame.locator(
+      '[data-knc-surface="mobile-home"] [data-knc-surface="about"]',
+    )
+    const editorCard = editableAbout.locator(`[id="${owned.ownerCardId}"]`)
+    const editorGrid = editableAbout.locator(`[id="${owned.gridId}"]`)
     const assertMobileEditor = async (scope) => {
       const grid = scope.locator('[data-knc-fold="barber-marquee"]')
       await grid.waitFor({ state: 'visible' })
@@ -375,17 +378,25 @@ async function run(engine, name) {
       assert.equal(styles.profileOpacity, '0', 'CMS Mobile preview shows the collapsed bio')
     }
     await mountUpgrade()
-    await upgradePage.getByRole('button', { name: 'Om oss', exact: true }).click()
+    await upgradePage.getByRole('button', { name: 'Startsida', exact: true }).click()
     await upgradePage.getByRole('button', { name: 'Mobil', exact: true }).click()
     await editorCard.waitFor({ state: 'visible' })
     assert.equal(await editorGrid.count(), 1, 'Owner grid identity changed during import')
+    assert.equal(
+      await upgradePage
+        .locator('#cms-library')
+        .getByRole('button', { name: 'Om oss', exact: true })
+        .count(),
+      0,
+      'The canonical About editor is part of Home',
+    )
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
     await editorGrid.scrollIntoViewIfNeeded()
     await upgradePage.screenshot({ path: `${out}/cms-native-${name}-barber-editor.png` })
     await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="mobile-home"]'))
-    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Om oss' }).click()
-    await upgradeFrame.getByText('Owner-styled A', { exact: true }).first().click()
+    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
+    await editableAbout.getByText('Owner-styled A', { exact: true }).click()
     await upgradePage
       .locator('#cms-inspector')
       .getByLabel('Text', { exact: true })
@@ -396,10 +407,10 @@ async function run(engine, name) {
     )
     assert.ok(upgradedBackend.writes.includes('publish'), 'Legacy mobile edit was not published')
     await mountUpgrade()
-    await upgradePage.getByRole('button', { name: 'Om oss', exact: true }).click()
+    await upgradePage.getByRole('button', { name: 'Startsida', exact: true }).click()
     await upgradePage.getByRole('button', { name: 'Mobil', exact: true }).click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
-    await upgradeFrame.getByText('Owner published A', { exact: true }).first().waitFor()
+    await editableAbout.getByText('Owner published A', { exact: true }).waitFor()
     const publishedPage = await upgradeContext.newPage()
     await publishedPage.setViewportSize({ width: 390, height: 844 })
     await publishedPage.goto(`${base}/about`)
