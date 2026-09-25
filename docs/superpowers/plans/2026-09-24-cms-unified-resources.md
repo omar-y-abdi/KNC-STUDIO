@@ -174,3 +174,16 @@ Fresh evidence under `cms-unified-evidence/pr78-completion/`: `r4-unit-red.log` 
 **New E1 finding (separate fix):** final-head CI rejected About CSS exceeding 100,000 characters. A minimal eight-roundtrip reproduction measured About CSS growing from 255 to 38,565 characters by duplicating shared rules, and a mixed Home/About selector lost the Home declaration. The same test after deduplication and per-selector ownership pruning yields 105 to 315 characters (only actual edits accumulate), preserves the Home declaration, and passes both engines. This is a root correction, not an increased limit. Its implementation is being committed separately from R4.
 
 Remaining completion gates: contextual background/gallery/logo coverage, contact-driven canvas refresh, real Edge/Storage asset-copy validation and deployment, updated unified-navigation tests, accumulated CI and final review. The old sporadic damaged-draft incident remains the explicitly deferred item; do not silently claim its cause.
+
+## Resume — scoped resource targets and extended Home acceptance
+
+Implementation **`51af072`** centralizes native resource destination resolution so the canvas and Website Resources inventory use the same identity-based rules. Profile portraits/placeholders resolve to their barber, native logo SVGs resolve to `logo`, and existing gallery URLs resolve to their salon/cuts destination. Website Resources sends domain-owned graphics back to the filtered reusable library instead of creating an independent image override. The iframe double-click listener also handles photo-less profile placeholders.
+
+Fresh focused evidence:
+
+- `pr78-resource-target-final`: typecheck, scoped ESLint, 10 targeted unit tests, Website Resources and contextual resource flows pass in Chromium/WebKit.
+- `cms-site-resources` preserves a phone control's semantic label while replacing its visual image; the earlier test expectation that asset alt text should overwrite “Telefon” was rejected as an accessibility regression.
+- `cms-contextual-resources` now exercises both a photo-less barber placeholder and the real native logo via actual double-clicks in Chromium/WebKit.
+- Unified Home now checks undo/redo and Swedish/English isolation. A WebKit run once missed initial selection under load; adding an explicit selected-component condition (without a second click or timeout increase) was followed by three consecutive WebKit passes.
+
+Remaining before final sign-off: accumulated `cms-mobile`/`cms-reported`/workspace gates, production migration/deployment for the reviewed `asset_copy` backend, final visual/diff review, push and CI.
