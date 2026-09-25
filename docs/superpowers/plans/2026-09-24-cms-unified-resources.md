@@ -1,5 +1,7 @@
 # CMS unified editing and resource assignments — implementation plan
 
+> **Current checkpoint:** [Committed PR handoff](../../handoffs/cms-unified-resources-checkpoint.md). R4 is preserved as WIP; older checkpoint states below are chronological, not current acceptance.
+
 > Fresh agent: read this file before changing code. Execute one task at a time using systematic-debugging, test-driven-development and verification-before-completion. Do not infer completion from a green unrelated test. Record exact implementation commits in the ledger below.
 
 ## Documentation home (owner instruction)
