@@ -147,3 +147,16 @@ This section supersedes the older checkpoint/table states above. Do not reimplem
 **Next action:** when code writes can be authorized, finish the two local R4 type errors, integrate SiteResources into the resource navigation, complete the existing red browser scenario, and add scoped mutation/projection tests. In particular, generic decorative SVG replacement must be checked against `NativeSurface.tsx` (currently only SVGs with role=img project as replacement images); do not claim every SVG path works from the passing barber-placeholder test. Preserve functional parents and never replace a required graphic's own callbacks.
 
 Then finish gallery/logo/person picker coverage, E1 language/style/undo acceptance, linked-resize and mobile-header regression checks, real local Edge/database asset-copy checks, release stamping/deployment, new remote branch/PR and accumulated CI review. No new remote push, Edge deployment, SQL mutation or content publication happened during this continuation. The production R1 migration was already applied in the earlier recorded step.
+
+## Write-access recheck — 2026-09-25
+
+The owner requested a fresh check of the previously blocked code edits. Ordinary, direct writes to the original `.ts` and `.tsx` files succeeded through Remote Desktop Commander. No extension changes, safety-setting changes or alternate write route were used. This confirms these specific edits are no longer blocked; it does not establish why the previous requests were rejected.
+
+- Before editing, `npm run typecheck` exited **2**, reproducing the two recorded R4 type errors.
+- `shared/cms-site-resources.ts`: import parse5's public `html` export and assign `html.NS.HTML` rather than a plain namespace string. The installed enum declares the same HTML namespace value.
+- `src/admin/cms/SiteResources.tsx`: use the existing `sliders` icon instead of nonexistent `settings`.
+- Read-back assertions confirmed both changes on disk. After the changes, `npm run typecheck` exited **0** with no diagnostics.
+
+These two adjustments remain in the existing untracked R4 modules; they are not a completed R4 implementation or a browser acceptance claim. `tools/e2e/cms-site-resources.mjs` also remains untracked. No feature integration, full test sweep, push, deploy or production-data mutation was performed for this access check.
+
+Next: finish R4 integration and its recorded failing browser scenario, then targeted mutation/projection tests and the accumulated acceptance work listed above. Normal code editing is available for the continuation.
