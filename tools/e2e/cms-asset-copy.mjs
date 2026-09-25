@@ -17,7 +17,8 @@ const db = new pg.Client({ connectionString: env.DB_URL })
 await db.connect()
 let userId, token
 const created = new Map()
-const origin = 'http://127.0.0.1:4173'
+const origin = process.env.CMS_TEST_ORIGIN ?? 'http://127.0.0.1:4173'
+assert.ok(['127.0.0.1', 'localhost'].includes(new URL(origin).hostname), 'Local origin required')
 const call = async (body, authorized = true) =>
   fetch(`${env.API_URL}/functions/v1/cms-studio`, {
     method: 'POST',
