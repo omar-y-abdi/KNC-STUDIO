@@ -187,3 +187,23 @@ Fresh focused evidence:
 - Unified Home now checks undo/redo and Swedish/English isolation. A WebKit run once missed initial selection under load; adding an explicit selected-component condition (without a second click or timeout increase) was followed by three consecutive WebKit passes.
 
 Remaining before final sign-off: accumulated `cms-mobile`/`cms-reported`/workspace gates, production migration/deployment for the reviewed `asset_copy` backend, final visual/diff review, push and CI.
+
+## Final local acceptance checkpoint — 2026-09-25
+
+The implementation is no longer a handoff/WIP checkpoint. The remaining R4 and backend boundaries were completed on the same branch before pushing a new PR head.
+
+- `b9c05dd`: integrates Website Resources into the real resource workspace with safe source-owned graphic/control editing.
+- `bb6a5f3`: fixes exponential Home/About CSS amplification and preserves mixed selectors instead of increasing validation limits.
+- `b1d1b97`: refreshes editable contact/resource layouts from the staged draft rather than a stale snapshot.
+- `5d0f97c`: hardens and verifies scoped `asset_copy` reuse on the real local Edge/Storage/database boundary; release stamp updated.
+- `51af072`: shares identity-based resource destination resolution across canvas double-click and Website Resources; profile placeholders and logos route to scoped libraries.
+- `c585641`: aligns the profile lookup migration test with Supabase-managed service-role grants while retaining the required ID lookup contract.
+- `4c9579d`: aligns mobile/native/owner/reported acceptance tests with unified Home and scoped resource flows, and adds native-identity preservation coverage at the document boundary.
+
+Fresh local evidence: full `npm test` exit 0; `npm run build` exit 0; full typecheck exit 0; scoped lint/format/diff checks exit 0. `cms-mobile`, `cms-native`, `cms-reported`, Website Resources, contextual resources, graphic projection, composition roundtrip, draft resources, hierarchical resizing, new-page mobile and unified Home pass in Chromium/WebKit. The owner logo-replacement and resource-lifecycle scenarios also pass in both engines.
+
+Backend state was checked independently: production migration versions `20260924223012` and `20260925011000` are present, and `node tools/release/cms-release.mjs verify` confirms deployed `cms-studio` version 11 exposes release `00c4d49b27d53f1a20d425230cb2116d398b0daa1a2339db8c329ef3c4bc2563`, matching this checkout. No new backend deployment is required unless later source changes alter the release digest.
+
+The earlier intermittent white-page/damaged-draft incident remains the one explicitly deferred item because existing logs did not identify its root cause. Do not claim that unrelated fixes diagnose it.
+
+Next action: push the accumulated commits to `fix/cms-unified-resources-20260924`, inspect PR #78 CI on the exact new head, fix only reproduced failures, then perform a final whole-diff review before removing draft status.
