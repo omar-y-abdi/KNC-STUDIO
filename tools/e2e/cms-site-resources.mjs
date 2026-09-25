@@ -143,7 +143,11 @@ try {
       result.document.presentation.pages[0].content[lang].html,
       /\/cms-library\/images\/new.webp/,
     )
-    assert.match(result.document.presentation.pages[0].content[lang].html, /alt="New icon"/)
+    assert.match(
+      result.document.presentation.pages[0].content[lang].html,
+      /alt="Telefon"/,
+      'visual replacement preserves the existing icon meaning',
+    )
   }
   assert.equal(result.error, '')
   await page.getByText('Kontakt & karta', { exact: true }).click()

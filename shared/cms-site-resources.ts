@@ -174,6 +174,16 @@ export function replaceSiteResource(
   const src = mediaUrl(asset, storageOrigin)
   return mutate(document, target, ['sv', 'en'], (node) => {
     if (!replaceable(node)) throw new Error('Komponentens funktion får inte ersättas med en bild.')
+    // A resource swap changes presentation, not meaning. Preserve an explicit
+    // empty alt for decorative images and existing labels for functional graphics.
+    const originalAlt = node.attrs.find((attribute) => attribute.name === 'alt')?.value
+    const originalLabel = node.attrs.find((attribute) => attribute.name === 'aria-label')?.value
+    const alternative =
+      originalAlt !== undefined
+        ? originalAlt
+        : originalLabel !== undefined
+          ? originalLabel
+          : asset.alt
     node.attrs = node.attrs.filter(
       (a) =>
         [
@@ -193,6 +203,6 @@ export function replaceSiteResource(
     node.namespaceURI = html.NS.HTML
     node.childNodes = []
     setAttr(node, 'src', src)
-    setAttr(node, 'alt', asset.alt || attr(node, 'aria-label'))
+    setAttr(node, 'alt', alternative)
   })
 }

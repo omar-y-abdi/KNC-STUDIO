@@ -99,6 +99,15 @@ describe('website resource mutation boundary', () => {
     )
     expect(siteResources(document, 'sv').map((item) => item.id)).toContain('language')
   })
+  it('preserves an existing image meaning when swapping only its visual resource', () => {
+    const document = fixture(
+      '<img id="mark" data-knc-source="native-mark" src="/icons/phone.svg" alt="Telefon">',
+    )
+    const next = replaceSiteResource(document, target, asset, origin)
+    for (const lang of ['sv', 'en'] as const)
+      expect(next.presentation.pages[0]?.content[lang].html).toContain('alt="Telefon"')
+  })
+
   it('does not promise a two-language replacement when the counterpart is absent', () => {
     const document = fixture()
     const content = document.presentation.pages[0]?.content
