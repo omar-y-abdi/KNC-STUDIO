@@ -207,3 +207,11 @@ Backend state was checked independently: production migration versions `20260924
 The earlier intermittent white-page/damaged-draft incident remains the one explicitly deferred item because existing logs did not identify its root cause. Do not claim that unrelated fixes diagnose it.
 
 Next action: push the accumulated commits to `fix/cms-unified-resources-20260924`, inspect PR #78 CI on the exact new head, fix only reproduced failures, then perform a final whole-diff review before removing draft status.
+
+### Hostile-review correction — visual swaps preserve meaning
+
+Final whole-diff review found that generic Website Resources image replacement overwrote an existing semantic `alt` (for example `Telefon`) with unrelated library metadata. The regression was reproduced first in `cmsSiteResources.test.ts`: expected `alt="Telefon"`, received `alt="New mark"`.
+
+Commit **`eef3cee`** fixes the replacement boundary: an explicit existing `alt` wins (including empty decorative alt), otherwise an existing `aria-label` is retained, and library alt is only a fallback for graphics with no prior meaning. The focused unit went RED→GREEN (9 pass/1 fail → 10 pass), Website Resources passes in Chromium/WebKit, owner logo replacement still passes in Chromium/WebKit, and fresh full `npm test` plus `npm run build` both exit 0. Typecheck, scoped lint/format and diff checks also pass.
+
+This is a semantic/accessibility correction, not a test relaxation. The browser assertion now explicitly requires the phone icon to remain `alt="Telefon"` after its visual file is swapped.
