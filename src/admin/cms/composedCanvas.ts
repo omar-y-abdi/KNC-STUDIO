@@ -50,7 +50,7 @@ function stripBookingScene(doc: Document, scene: (typeof bookingStages)[number])
   return doc.body.innerHTML
 }
 
-/** Home embeds About at runtime. Its editor must derive that preview from the same draft page. */
+/** Home edits one canonical About tree. The inactive device gets a derived preview only. */
 export function composedCanvas(
   page: CmsPage,
   presentation: CmsPresentation,
@@ -84,6 +84,15 @@ export function composedCanvas(
     // About is the named section at a runtime slot boundary, on both Home surfaces.
     if (!slot.querySelector(':scope > section[aria-labelledby]')) continue
     const copy = source.cloneNode(true) as Element
+    if (slot.closest(`[data-knc-surface="${device.toLowerCase()}-home"]`)) {
+      // An editor-only boundary allows descendants to retain their canonical identities.
+      // Export restores the runtime slot and writes this subtree back to the About owner.
+      slot.setAttribute('data-editor-about-slot', slot.getAttribute('data-knc-slot') ?? '')
+      slot.removeAttribute('data-knc-slot')
+      slot.replaceChildren(copy)
+      rules.push(shared.css)
+      continue
+    }
     const ids = new Map<string, string>()
     for (const node of [copy, ...copy.querySelectorAll('*')]) {
       if (node.id) {
@@ -126,6 +135,23 @@ export function composedCanvas(
   return { html: doc.body.innerHTML, css: rules.join('\n') }
 }
 
+function deduplicateRules(sheet: CssNode): void {
+  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
+  walk(sheet, {
+    leave(node: CssNode) {
+      if (node.type !== 'StyleSheet' && node.type !== 'Block') return
+      const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
+      node.children.forEach((child, item) => {
+        if (child.type !== 'Rule' && child.type !== 'Atrule') return
+        const key = generate(child)
+        const earlier = seen.get(key)
+        if (earlier) node.children.remove(earlier.item)
+        seen.set(key, { item })
+      })
+    },
+  })
+}
+
 /** Derived About previews never belong to the Home document. Persist only their slot marker;
  * the next render fills it from About again. Prune stale preview selectors and duplicate CSS. */
 export function stripComposedCanvas(
@@ -138,6 +164,10 @@ export function stripComposedCanvas(
   if (!doc.querySelector('[data-knc-surface="desktop-home"],[data-knc-surface="mobile-home"]'))
     return { html, css }
   const discarded = new Set<string>()
+  for (const slot of doc.querySelectorAll('[data-editor-about-slot]')) {
+    slot.setAttribute('data-knc-slot', slot.getAttribute('data-editor-about-slot') ?? '')
+    slot.removeAttribute('data-editor-about-slot')
+  }
   for (const slot of doc.querySelectorAll('[data-knc-slot]')) {
     const section = slot.querySelector(':scope > section[aria-labelledby]')
     if (!section) continue
@@ -153,29 +183,67 @@ export function stripComposedCanvas(
   walk(sheet, {
     visit: 'Rule',
     enter(rule, item, list) {
-      let derived = false
-      walk(rule.prelude, {
-        visit: 'IdSelector',
-        enter(id) {
-          if (discarded.has(id.name) || id.name.startsWith('preview-shared-')) derived = true
-        },
+      if (rule.prelude.type !== 'SelectorList') return
+      rule.prelude.children.forEach((selector, selectorItem) => {
+        let derived = false
+        walk(selector, {
+          visit: 'IdSelector',
+          enter(id) {
+            if (discarded.has(ident.decode(id.name)) || id.name.startsWith('preview-shared-'))
+              derived = true
+          },
+        })
+        if (derived && rule.prelude.type === 'SelectorList')
+          rule.prelude.children.remove(selectorItem)
       })
-      if (derived && item && list) list.remove(item)
+      if (!rule.prelude.children.size && item && list) list.remove(item)
     },
   })
-  // GrapesJS merges repeated media/keyframe blocks, so deduplicate their children too.
-  walk(sheet, {
-    leave(node: CssNode) {
-      if (node.type !== 'StyleSheet' && node.type !== 'Block') return
-      const seen = new Map<string, { item: Parameters<typeof node.children.remove>[0] }>()
-      node.children.forEach((child, item) => {
-        if (child.type !== 'Rule' && child.type !== 'Atrule') return
-        const key = generate(child)
-        const earlier = seen.get(key)
-        if (earlier) node.children.remove(earlier.item)
-        seen.set(key, { item })
-      })
-    },
-  })
+  deduplicateRules(sheet)
   return { html: doc.body.innerHTML, css: generate(sheet) }
+}
+
+/** Extract the canonical About owner before Home removes its derived slot contents.
+ * Non-ID source rules are shared site CSS. Other pages' ID rules must not leak into About.
+ */
+export function extractComposedAbout(
+  html: string,
+  css: string,
+  original: string,
+): { html: string; css: string } | null {
+  const canvas = new DOMParser().parseFromString(html, 'text/html')
+  const boundary = canvas.querySelector('[data-editor-about-slot]')
+  if (!boundary) return null
+  const about = boundary.querySelector(':scope > [data-knc-surface="about"]')
+  if (!about) throw new Error('Om oss-sektionen saknas. Ändringarna har inte skrivits över.')
+  const saved = new DOMParser().parseFromString(original, 'text/html')
+  const previous = saved.querySelector('[data-knc-surface="about"]')
+  if (!previous) throw new Error('Om oss-sektionens original kunde inte läsas.')
+  const aboutIds = new Set([about, ...about.querySelectorAll('[id]')].map((node) => node.id))
+  const otherIds = new Set(
+    [...canvas.querySelectorAll('[id]')].map((node) => node.id).filter((id) => !aboutIds.has(id)),
+  )
+  const tree = parse(css)
+  walk(tree, {
+    visit: 'Rule',
+    enter(rule, item, list) {
+      if (rule.prelude.type !== 'SelectorList') return
+      rule.prelude.children.forEach((selector, selectorItem) => {
+        let foreign = false
+        walk(selector, {
+          visit: 'IdSelector',
+          enter(id) {
+            if (otherIds.has(ident.decode(id.name)) || id.name.startsWith('preview-shared-'))
+              foreign = true
+          },
+        })
+        if (foreign && rule.prelude.type === 'SelectorList')
+          rule.prelude.children.remove(selectorItem)
+      })
+      if (!rule.prelude.children.size && item && list) list.remove(item)
+    },
+  })
+  deduplicateRules(tree)
+  previous.replaceWith(about.cloneNode(true))
+  return { html: saved.body.innerHTML, css: generate(tree) }
 }

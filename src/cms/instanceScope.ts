@@ -1,16 +1,8 @@
+import { nativeNodeId } from '../../shared/cms-native-id'
+export { nativeNodeId } from '../../shared/cms-native-id'
 import { cloneElement, Fragment, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, VNode } from 'preact'
 import { generate, ident, parse, walk } from 'css-tree'
-
-/** Stable, bounded IDs shared by source capture and live rendering. */
-export function nativeNodeId(surface: string, path: string): string {
-  const identity = `knc-${surface}-${path}`
-  if (identity.length <= 120) return identity
-  let hash = 14695981039346656037n
-  for (const char of identity)
-    hash = BigInt.asUintN(64, (hash ^ BigInt(char.charCodeAt(0))) * 1099511628211n)
-  return `knc-node-${hash.toString(16)}`
-}
 
 const identityAttributes = new Set(['id', 'data-knc-source', 'data-knc-slot', 'data-knc-surface'])
 const tokenReferences = new Set([

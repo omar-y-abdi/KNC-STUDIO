@@ -82,12 +82,20 @@ for (const [name, engine] of selectedEngines) {
           .locator('.cms-mobile-tools')
           .getByRole('button', { name: 'Sidor', exact: true })
           .click()
+        assert.equal(
+          await page
+            .locator('.cms-page-list')
+            .getByRole('button', { name: 'Om oss', exact: true })
+            .count(),
+          0,
+          'About is edited inline on Home instead of a duplicate mobile destination',
+        )
         await page
-          .locator('.cms-page-list')
-          .getByRole('button', { name: 'Om oss', exact: true })
+          .locator('#cms-library')
+          .getByRole('button', { name: 'Stäng panel', exact: true })
           .click()
         await page.getByRole('button', { name: 'Mörk', exact: true }).click()
-        await frame.locator('[data-knc-surface="about"]').waitFor()
+        await frame.locator('[data-knc-surface="mobile-home"] [data-knc-surface="about"]').waitFor()
         await page.getByRole('button', { name: 'Anpassa vyn', exact: true }).click()
         const geometry = () =>
           page.evaluate(() => {
@@ -212,7 +220,12 @@ for (const [name, engine] of selectedEngines) {
         await shot('pages')
         await page.keyboard.press('Escape')
         // Exercise the same selected-card inspector seen in the owner's screenshots.
-        await frame.getByText('Exempel A', { exact: true }).first().click()
+        // Home contains both device trees; target the active mobile composition explicitly.
+        await frame
+          .locator('[data-knc-surface="mobile-home"] [data-knc-surface="about"]')
+          .getByText('Exempel A', { exact: true })
+          .first()
+          .click()
         await opener.click()
         const sector = panel.getByRole('button', { name: 'Position & transform', exact: true })
         if ((await sector.getAttribute('aria-expanded')) !== 'true') await sector.click()

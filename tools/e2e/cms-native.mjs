@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { chromium, webkit } from 'playwright'
-import { emptyDocument, validateCompleteDocument } from '../../shared/cms.ts'
+import {
+  documentMediaPlacements,
+  emptyDocument,
+  validateCompleteDocument,
+} from '../../shared/cms.ts'
 import { validateDocumentMarkupPlacements } from '../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../shared/cms-built-assets.ts'
 
@@ -48,6 +52,15 @@ export async function nativeBackend(context, initialDocument = emptyDocument(), 
           })),
         )
       if (body.operation === 'revision') return reply({ document: revisions.get(body.revision) })
+      if (body.operation === 'asset_usage') {
+        const asset = assets.find((item) => item.id === body.id)
+        const currentReferences = asset
+          ? documentMediaPlacements(document).filter(
+              ({ ref }) => ref.bucket === asset.bucket && ref.path === asset.path,
+            ).length
+          : 0
+        return reply({ currentReferences, historyReferences: 0 })
+      }
       if (['validate', 'publish'].includes(body.operation)) {
         const candidate = globalThis.structuredClone(body.document)
         try {
@@ -81,7 +94,7 @@ export async function nativeBackend(context, initialDocument = emptyDocument(), 
       throw new Error(`Unexpected CMS request: ${body.operation}`)
     }
     if (path === '/rest/v1/rpc/public_business_discovery')
-      return reply({ settings: {}, barbers: [], services: [], schedules: [] })
+      return reply({ settings: document.settings, barbers: [], services: [], schedules: [] })
     if (path === '/rest/v1/rpc/public_booking_catalog') return reply({ barbers: [], services: [] })
     if (path === '/rest/v1/site_content') {
       const lang = new URL(request.url()).searchParams.get('lang')?.slice(3) ?? 'sv'

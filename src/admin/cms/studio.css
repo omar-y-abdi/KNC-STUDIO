@@ -2315,3 +2315,76 @@
     min-height: 62px;
   }
 }
+
+/* Resource assignments are distinct from metadata and lifecycle actions. */
+.cms-resource-use {
+  display: grid;
+  gap: 10px;
+  padding-block: 16px;
+  border-block: 1px solid var(--line);
+}
+.cms-resource-use h3,
+.cms-resource-use p {
+  margin: 0;
+}
+.cms-resource-toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cms-file-choice {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Uploaded files and source-owned components share one resource workspace. */
+.cms-resource-navigation {
+  margin-bottom: 20px;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.cms-resource-navigation button {
+  min-height: 40px;
+}
+.cms-site-resources .cms-site-resource-symbol {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  aspect-ratio: 4/3;
+  padding: 20px;
+  background: var(--bg);
+}
+.cms-site-resource-symbol .cms-icon {
+  width: 36px;
+  height: 36px;
+}
+.cms-site-resource-section {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--panel);
+}
+.cms-site-resource-section summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 28px;
+}
+.cms-site-resource-section fieldset {
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+}
+.cms-site-resource-section label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.cms-site-resource-section input {
+  width: 100%;
+  min-width: 0;
+}
+.cms-site-resource-section li {
+  overflow-wrap: anywhere;
+}

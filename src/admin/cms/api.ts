@@ -1,3 +1,4 @@
+import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import type {
   CmsAsset,
@@ -62,6 +63,11 @@ export const cmsApi = {
       alt: asset.alt,
       archived: asset.archived,
     }),
+  copyAsset: (
+    asset: Pick<CmsAsset, 'id' | 'version'>,
+    destination: ResourceDestination,
+  ): Promise<CmsAsset> =>
+    invoke({ operation: 'asset_copy', id: asset.id, version: asset.version, ...destination }),
   assetUsage: (id: string): Promise<AssetUsage> => invoke({ operation: 'asset_usage', id }),
   assetLifecycle: (
     asset: Pick<CmsAsset, 'id' | 'version'>,

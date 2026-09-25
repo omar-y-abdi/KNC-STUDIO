@@ -1,3 +1,4 @@
+import { CmsWorkspaceView } from '../../src/admin/cms/WorkspaceView'
 // Fault-injection host for the real resource component. All network I/O is intercepted by Playwright.
 import { render } from 'preact'
 import type { CmsAsset, CmsDocument } from '../../shared/cms'
@@ -24,13 +25,15 @@ function draw(): void {
   if (!root) throw new Error('Resource harness root is missing')
   render(
     <div class="knc-cms-studio">
-      <CmsResources
-        assets={model.assets}
-        document={model.document}
-        onAssets={setAssets}
-        onDocument={setDocument}
-        onError={onError}
-      />
+      <CmsWorkspaceView kind="resources" onClose={() => undefined}>
+        <CmsResources
+          assets={model.assets}
+          document={model.document}
+          onAssets={setAssets}
+          onDocument={setDocument}
+          onError={onError}
+        />
+      </CmsWorkspaceView>
       <output data-review-error>{model.error}</output>
     </div>,
     root,

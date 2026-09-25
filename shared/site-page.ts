@@ -284,13 +284,22 @@ export function renderSitePage(
     clean(node)
     return serializeOuter(node)
   }
+  // Seed a single authored header with semantic layout hooks, not a second mobile tree.
+  addClass(header, 'cms-site-chrome')
+  if (brand) addClass(brand, 'cms-site-brand')
+  for (const child of elements(header))
+    if (child !== brand && child.tagName === 'div') addClass(child, 'cms-site-controls')
+  const phone = find(header, (node) => attr(node, 'href').startsWith('tel:'))
+  const directions = find(header, (node) => /^https?:/.test(attr(node, 'href')))
+  if (phone) addClass(phone, 'cms-site-phone')
+  if (directions) addClass(directions, 'cms-site-directions')
   const headerHtml = chrome(header)
   const infoHtml = chrome(info)
   const footerHtml = footer ? chrome(footer) : ''
   const menu = `<a href="${href('/', lang, mode)}">${lang === 'sv' ? 'Hem' : 'Home'}</a><a href="${href('/booking', lang, mode)}">${lang === 'sv' ? 'Boka tid' : 'Book'}</a><a href="${href('/about', lang, mode)}">${lang === 'sv' ? 'Om oss' : 'About'}</a>${sitePageLinks(presentation.pages, lang, mode)}`
   return {
     html: `<div id="cms-site-shell" style="${escape(rootStyle)}"><header id="cms-site-header">${headerHtml}</header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}">${menu}</nav><div id="cms-site-content">${variant.html}</div><footer id="cms-site-footer">${infoHtml}${footerHtml}</footer></div>`,
-    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}:where(#cms-site-header) a{color:inherit;text-decoration:none}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}}`,
+    css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}:where(#cms-site-header) a{color:inherit;text-decoration:none}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}#cms-site-header .cms-site-chrome{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px 12px}#cms-site-header .cms-site-controls{display:contents}#cms-site-header .cms-site-brand{grid-column:1/3;grid-row:1;justify-self:start;min-width:0;margin:0}#cms-site-header .cms-site-brand svg{display:block;width:210px;max-width:100%;height:auto;max-height:36px}#cms-site-header .cms-site-directions{grid-column:3;grid-row:1;font-size:11px;white-space:nowrap;padding:6px 8px;gap:4px}#cms-site-header .cms-site-phone{grid-column:1;grid-row:2;min-width:0;font-size:12px;white-space:nowrap;gap:4px}#cms-site-header .cms-site-action-language{grid-column:2;grid-row:2}#cms-site-header .cms-site-action-theme{grid-column:3;grid-row:2}#cms-site-header .cms-site-phone img,#cms-site-header .cms-site-directions img{width:14px;height:14px;flex:none}}`,
   }
 }
 

@@ -1,14 +1,28 @@
+import {
+  canReplaceResourceGraphic,
+  connectResourcePicker,
+  openResourcePicker,
+} from './resourceTargets'
+import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
+import { connectHierarchicalResize } from './hierarchicalResize'
 import { CmsTextarea } from './Textarea'
 import type { ComponentChildren, JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import grapesjs, { type Component, type Editor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
-import type { CmsAsset, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
+import type {
+  CmsAsset,
+  CmsDocument,
+  CmsLang,
+  CmsMode,
+  CmsPage,
+  CmsPresentation,
+} from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
-import { composedCanvas, stripComposedCanvas } from './composedCanvas'
+import { composedCanvas, stripComposedCanvas, extractComposedAbout } from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
@@ -44,13 +58,15 @@ interface Props {
   locked: boolean
   preview: CmsPresentation | null
   presentation: CmsPresentation
+  draft?: CmsDocument
+  onOpenResources?: (destination: ResourceDestination) => void
   onOpenPage: (path: string) => void
   onNavigate: (path: string, lang: CmsLang, mode: CmsMode) => void
   assets: CmsAsset[]
   fontCss: string
   tab: 'design' | 'layers' | 'blocks'
   onTab: (tab: 'design' | 'layers' | 'blocks') => void
-  onChange: (page: CmsPage) => void
+  onChange: (pages: CmsPage[]) => void
   onReady: (handle: EditorHandle | null) => void
   onZoom: (zoom: number) => void
   onError: (message: string) => void
@@ -134,11 +150,12 @@ function editorContextKey(props: Props): string {
             ),
         )
       : ''
+  const homeDevice = props.page.path === '/' ? `:${props.device}` : ''
   const bookingContext =
     props.page.path === '/booking' && props.scene !== 'default'
       ? `:${props.scene}:${props.device}`
       : ''
-  return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}:${sharedChromeKey}`
+  return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}${homeDevice}:${sharedChromeKey}`
 }
 
 function pageFragment(html: string, wrapperId: string): string {
@@ -280,6 +297,10 @@ export function CmsEditor(props: Props): JSX.Element {
       assetManager: { assets: [], upload: false, custom: true },
     })
     instance.current = editor
+    const releaseResize = connectHierarchicalResize(
+      editor,
+      () => applying.current || latest.current.locked,
+    )
     const inspector = host.current
       .closest('.cms-editor-wrap')
       ?.querySelector<HTMLElement>('#cms-inspector')
@@ -287,7 +308,15 @@ export function CmsEditor(props: Props): JSX.Element {
       ? connectEditorAccessibility(host.current, inspector)
       : undefined
     editor.on('asset:custom', ({ open }: { open: boolean }) => {
-      if (open) setImageTarget(editor.getSelected() ?? null)
+      const component = editor.getSelected()
+      if (open && component && !latest.current.locked)
+        openResourcePicker(
+          editor,
+          component,
+          latest.current.draft,
+          latest.current.onOpenResources,
+          setImageTarget,
+        )
     })
     for (const [id, blockLabel, content] of blocks)
       editor.BlockManager.add(id, {
@@ -308,13 +337,11 @@ export function CmsEditor(props: Props): JSX.Element {
     })
     editor.on('component:selected', (component: Component) => setSelected(component))
     editor.on('component:deselected', () => setSelected(editor.getSelected() ?? null))
-    editor.on('component:dblclick', (component: Component) => {
-      if (isProtected(component) || isReadOnlyPreview(component)) return
-      const type = String(component.get('type') ?? '')
-      const tag = String(component.get('tagName') ?? '').toLowerCase()
-      if (type === 'text' || type === 'link' || ['p', 'h1', 'h2', 'h3', 'span', 'a'].includes(tag))
-        component.set('editable', true)
-    })
+    const releaseResourcePicker = connectResourcePicker(
+      editor,
+      () => latest.current,
+      setImageTarget,
+    )
     const keydown = (event: KeyboardEvent): void => {
       if (latest.current.locked || host.current?.closest('[inert]')) return
       if (document.querySelector('dialog:modal')) return
@@ -379,6 +406,17 @@ export function CmsEditor(props: Props): JSX.Element {
       const wrapperId = editor.getWrapper()?.getId() ?? ''
       const composedScene = current.page.path === '/booking' ? current.scene : 'default'
       const nativeExport = exportNativeCanvas(html, css, current.mode)
+      const aboutOwner =
+        current.page.path === '/'
+          ? current.presentation.pages.find((page) => page.path === '/about')
+          : undefined
+      const aboutExport = aboutOwner
+        ? extractComposedAbout(
+            nativeExport.html,
+            nativeExport.css,
+            aboutOwner.content[current.lang].html,
+          )
+        : null
       const exported = stripComposedCanvas(nativeExport.html, nativeExport.css, composedScene)
       const otherMode = current.mode === 'light' ? 'dark' : 'light'
       const otherCss = stripComposedCanvas(
@@ -402,12 +440,36 @@ export function CmsEditor(props: Props): JSX.Element {
           [otherMode]: canonicalizeCmsRootStyles(otherCss, wrapperId),
         },
       }
+      const pages = [next]
+      if (aboutOwner && aboutExport) {
+        const about = structuredClone(aboutOwner)
+        const before = about.content[current.lang]
+        about.content[current.lang] = {
+          html: aboutExport.html,
+          css: {
+            ...before.css,
+            [current.mode]: aboutExport.css,
+            [otherMode]: syncLayout(
+              before.css[current.mode],
+              aboutExport.css,
+              before.css[otherMode],
+            ),
+          },
+        }
+        pages.push(about)
+      }
+      const updatedPresentation = {
+        ...current.presentation,
+        pages: current.presentation.pages.map(
+          (page) => pages.find((update) => update.id === page.id) ?? page,
+        ),
+      }
       rendered.current = {
         pageId: current.page.id,
-        key: editorContextKey(current),
+        key: editorContextKey({ ...current, presentation: updatedPresentation }),
         ...persisted,
       }
-      current.onChange(next)
+      current.onChange(pages)
       checkpoint.current = { html, css }
       editor.clearDirtyCount()
     }
@@ -438,6 +500,8 @@ export function CmsEditor(props: Props): JSX.Element {
       props.onReady(null)
       resize.disconnect()
       releaseAccessibility?.()
+      releaseResourcePicker()
+      releaseResize()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -574,10 +638,9 @@ export function CmsEditor(props: Props): JSX.Element {
     if (
       !editor ||
       !component ||
-      !['img', 'svg'].includes(String(component.get('tagName') ?? '').toLowerCase())
+      !openResourcePicker(editor, component, props.draft, props.onOpenResources, setImageTarget)
     )
-      return props.onError('Välj en bild först.')
-    setImageTarget(component)
+      props.onError('Välj en redigerbar bild först.')
   }
   const closePicker = (): void => {
     setImageTarget(null)
@@ -590,10 +653,20 @@ export function CmsEditor(props: Props): JSX.Element {
     const alt = asset.alt || String(attrs['alt'] ?? attrs['aria-label'] ?? '')
     if (String(imageTarget.get('tagName')).toLowerCase() === 'svg') {
       // Replace presentation only. The enclosing native component retains its identity and logic.
-      if (attrs['role'] !== 'img' || attrs['data-knc-required']) return
+      if (!canReplaceResourceGraphic(imageTarget)) return
       const retained = Object.fromEntries(
         Object.entries(attrs).filter(
-          ([name]) => ['id', 'class', 'title'].includes(name) || name.startsWith('data-knc-'),
+          ([name]) =>
+            [
+              'id',
+              'class',
+              'title',
+              'aria-label',
+              'aria-hidden',
+              'role',
+              'width',
+              'height',
+            ].includes(name) || name.startsWith('data-knc-'),
         ),
       )
       const [image] = imageTarget.replaceWith({
@@ -654,6 +727,7 @@ export function CmsEditor(props: Props): JSX.Element {
           scene={props.scene}
           page={props.page}
           presentation={props.preview}
+          {...(props.draft ? { draft: props.draft } : {})}
           lang={props.lang}
           mode={props.mode}
           device={props.device}
@@ -893,8 +967,7 @@ export function CmsEditor(props: Props): JSX.Element {
                       }
                     />
                   </label>
-                  {(tag === 'img' ||
-                    (attributes['role'] === 'img' && !attributes['data-knc-required'])) && (
+                  {canReplaceResourceGraphic(selected) && (
                     <button
                       type="button"
                       onClick={(event) => {

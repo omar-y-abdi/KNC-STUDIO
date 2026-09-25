@@ -7,6 +7,7 @@ const stampFile = new URL('shared/cms-release.ts', root)
 // Complete local dependency set of cms-studio. External imports are pinned in these files.
 export const releaseFiles = [
   'supabase/functions/cms-studio/index.ts',
+  'supabase/functions/cms-studio/copyAsset.ts',
   'supabase/functions/cms-studio/deno.json',
   'shared/cms.ts',
   'shared/cms-markup.ts',

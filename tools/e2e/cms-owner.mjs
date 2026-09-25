@@ -404,22 +404,40 @@ for (const [engine, name] of [
             .locator('[data-knc-surface="desktop-home"] svg[role="img"]')
             .filter({ hasText: 'STUDIO' })
             .first()
-          const id = await logo.getAttribute('id')
           await logo.click({ position: { x: 3, y: 3 } })
           await inspector
             .getByRole('button', { name: 'Byt logotyp från biblioteket', exact: true })
             .click()
-          const picker = page.getByRole('dialog', { name: 'Välj bild', exact: true })
-          assert.equal(await picker.evaluate((node) => node.matches(':modal')), true)
-          await picker.getByRole('button', { name: 'Vald logotyp Ny logotyp', exact: true }).click()
-          await picker.waitFor({ state: 'detached' })
+          const resources = page.getByRole('region', { name: 'Bilder & typsnitt', exact: true })
+          await resources.waitFor()
+          assert.equal(
+            await resources.getByRole('combobox', { name: 'Kategori', exact: true }).inputValue(),
+            'logo',
+            'Logo replacement opens the scoped reusable logo library',
+          )
+          await resources
+            .locator('.cms-resource-card button')
+            .filter({ hasText: 'Ny logotyp' })
+            .click()
+          await resources.getByRole('button', { name: 'Använd i utkastet', exact: true }).click()
+          const draftLogo = frame
+            .locator('[data-knc-surface="desktop-home"]')
+            .locator('img[src$="/gallery/logo/22222222-2222-4222-8222-222222222222.webp"]')
+            .first()
+          await draftLogo.waitFor()
+          assert.equal(await draftLogo.getAttribute('alt'), 'Blade & Blend Studio')
           await publish()
           const live = await context.newPage()
           await live.goto(base)
-          await live.getByAltText('Vald logotyp', { exact: true }).waitFor()
+          const liveLogo = live
+            .locator('[data-knc-surface="desktop-home"]')
+            .locator('img[src$="/gallery/logo/22222222-2222-4222-8222-222222222222.webp"]')
+            .first()
+          await liveLogo.waitFor()
+          assert.equal(await liveLogo.getAttribute('alt'), 'Blade & Blend Studio')
           await live.reload()
-          await live.getByAltText('Vald logotyp', { exact: true }).waitFor()
-          assert.equal(await live.locator(`[id="${id}"]`).evaluate((node) => node.localName), 'img')
+          await liveLogo.waitFor()
+          assert.equal(await liveLogo.getAttribute('alt'), 'Blade & Blend Studio')
         } else if (scenario === 'legacy-preview-repair') {
           const result = await page.evaluate(async () => {
             const { emptyDocument } = await import('/shared/cms.ts')
@@ -580,7 +598,9 @@ for (const [engine, name] of [
               const surface = page.getByRole('region', { name: title, exact: true })
               await surface.waitFor()
               if (title === 'Bilder & typsnitt') {
-                await surface.getByLabel('Användning vid uppladdning').press('ArrowDown')
+                await surface
+                  .getByRole('combobox', { name: 'Kategori', exact: true })
+                  .press('ArrowDown')
                 assert.equal(
                   await frame
                     .getByText('KNC source sv', { exact: true })
@@ -852,7 +872,7 @@ for (const [engine, name] of [
         } else if (scenario === 'selection') {
           const id = await selectCopy()
           const library = page.locator('#cms-library')
-          await library.getByRole('button', { name: 'Om oss', exact: true }).click()
+          await library.getByRole('button', { name: 'Bokning', exact: true }).click()
           await library.getByRole('button', { name: 'Startsida', exact: true }).click()
           await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
           await page.waitForFunction(

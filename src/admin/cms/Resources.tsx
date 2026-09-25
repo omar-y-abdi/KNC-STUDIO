@@ -1,3 +1,14 @@
+import { SiteResources } from './SiteResources'
+import {
+  assignResource,
+  resourceAssigned,
+  resourceDestination,
+  matchesDestination,
+  type ResourceDestination,
+  type ResourcePurpose,
+} from '../../../shared/cms-resource-assignment'
+import { ResourceUploadDialog } from './ResourceUploadDialog'
+import { ResourceDestinationFields, destinationFor } from './ResourceDestination'
 import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -11,7 +22,7 @@ import { CmsIcon } from './Icon'
 import { compactWorkspace } from './useResponsivePanels'
 
 type State = 'active' | 'archived' | 'trash'
-type Purpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
+type Purpose = ResourcePurpose
 
 const storageOrigin = SUPABASE_URL ?? 'https://unconfigured.invalid'
 const policy = {
@@ -43,6 +54,7 @@ function resourceLabel(asset: CmsAsset): string {
   if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}\.[a-z0-9]+$/i.test(filename)) return filename
   const names = {
     library: 'Bild',
+    fonts: 'Typsnitt',
     salon: 'Salongsbild',
     cuts: 'Klippbild',
     logo: 'Logotyp',
@@ -52,14 +64,20 @@ function resourceLabel(asset: CmsAsset): string {
 }
 
 interface Props {
+  initialDestination?: ResourceDestination
+  onAssigned?: () => void
   assets: CmsAsset[]
   document: CmsDocument
   onAssets: (assets: CmsAsset[] | ((current: CmsAsset[]) => CmsAsset[])) => void
-  onDocument: (update: CmsDocument | ((current: CmsDocument) => CmsDocument)) => void
+  onDocument: (
+    update: CmsDocument | ((current: CmsDocument) => CmsDocument),
+  ) => void | Promise<void>
   onError: (message: string) => void
 }
 
 export function CmsResources(props: Props): JSX.Element {
+  const [showComponents, setShowComponents] = useState(false)
+  const [contextDestination, setContextDestination] = useState(props.initialDestination)
   const [state, setState] = useState<State>('active')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -69,15 +87,24 @@ export function CmsResources(props: Props): JSX.Element {
     version: number
     value: AssetUsage
   } | null>(null)
-  const [purpose, setPurpose] = useState<Purpose>('library')
-  const [barberId, setBarberId] = useState(props.document.barbers[0]?.id ?? '')
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [usageAttempt, setUsageAttempt] = useState(0)
+  const [purpose, setPurpose] = useState<Purpose>(props.initialDestination?.purpose ?? 'library')
+  const [uploadDestination, setUploadDestination] = useState<ResourceDestination | null>(null)
+  const [uploadError, setUploadError] = useState('')
+  const [assignment, setAssignment] = useState<ResourceDestination>({ purpose: 'salon' })
+  const [assignmentNote, setAssignmentNote] = useState('')
+  const [barberId, setBarberId] = useState(
+    props.initialDestination?.purpose === 'profile'
+      ? props.initialDestination.barberId
+      : (props.document.barbers[0]?.id ?? ''),
+  )
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
   const latest = useRef(props)
   latest.current = props
   const detail = useRef<HTMLHeadingElement>(null)
   const selectedButton = useRef<HTMLButtonElement | null>(null)
-  const upload = useRef<HTMLInputElement>(null)
   const replace = useRef<HTMLInputElement>(null)
   const asset = props.assets.find((item) => item.id === selectedId) ?? null
   const usage =
@@ -89,9 +116,10 @@ export function CmsResources(props: Props): JSX.Element {
       props.assets.filter(
         (item) =>
           stateOf(item) === state &&
+          matchesDestination(item, destinationFor(purpose, barberId)) &&
           `${item.name} ${item.alt} ${item.mime}`.toLowerCase().includes(query.toLowerCase()),
       ),
-    [props.assets, query, state],
+    [props.assets, query, state, purpose, barberId],
   )
 
   useLayoutEffect(() => {
@@ -103,6 +131,7 @@ export function CmsResources(props: Props): JSX.Element {
 
   useEffect(() => {
     setUsageResult(null)
+    setUsageError(null)
     if (!asset) return
     let active = true
     void cmsApi
@@ -111,14 +140,24 @@ export function CmsResources(props: Props): JSX.Element {
       .catch(
         (reason) =>
           active &&
-          props.onError(
+          setUsageError(
             reason instanceof Error ? reason.message : 'Referenserna kunde inte läsas.',
           ),
       )
     return () => {
       active = false
     }
-  }, [asset?.id, asset?.version])
+  }, [asset?.id, asset?.version, usageAttempt])
+
+  useEffect(() => {
+    if (!asset) return
+    const destination = resourceDestination(asset)
+    setAssignment(
+      contextDestination ??
+        (destination.purpose === 'library' ? { purpose: 'salon' } : destination),
+    )
+    setAssignmentNote('')
+  }, [asset?.id, contextDestination])
 
   // State updates from async work must use the current owner draft, not the render
   // that started the request. The lock is synchronous; disabled buttons alone race.
@@ -183,24 +222,82 @@ export function CmsResources(props: Props): JSX.Element {
       // Usage is fetched by asset ID/version. Never apply A's result to B's panel.
     }, 'Resursåtgärden misslyckades.')
 
+  const useAsset = async (
+    source: CmsAsset,
+    destination: ResourceDestination,
+    enabled = true,
+  ): Promise<void> => {
+    const assigned =
+      enabled && !matchesDestination(source, destination)
+        ? await cmsApi.copyAsset(source, destination)
+        : source
+    latest.current.onAssets((current) => [
+      assigned,
+      ...current.filter((item) => item.id !== assigned.id),
+    ])
+    await latest.current.onDocument((current) =>
+      assignResource(current, assigned, destination, enabled),
+    )
+    setAssignmentNote(
+      enabled
+        ? 'Tilldelad i utkastet. Publicera för att visa ändringen.'
+        : 'Dold i utkastet. Filen finns kvar i biblioteket.',
+    )
+    if (enabled) latest.current.onAssigned?.()
+  }
+  const storeFile = async (
+    file: File,
+    destination: ResourceDestination,
+    replacement?: CmsAsset,
+  ): Promise<void> => {
+    const target = replacement ? purposeOf(replacement) : destination
+    const nextAsset = await cmsApi.uploadAsset(
+      file,
+      target.purpose === 'fonts' ? 'library' : target.purpose,
+      'barberId' in target ? target.barberId : undefined,
+    )
+    latest.current.onAssets((current) => [
+      nextAsset,
+      ...current.filter((item) => item.id !== nextAsset.id),
+    ])
+    if (replacement)
+      await latest.current.onDocument((current) => {
+        const next = structuredClone(current)
+        replaceDocumentResource(next, replacement, nextAsset, policy)
+        return next
+      })
+    else
+      await latest.current.onDocument((current) =>
+        assignResource(
+          current,
+          nextAsset,
+          nextAsset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
+        ),
+      )
+    setSelectedId((current) => (current === selectedId ? nextAsset.id : current))
+  }
   const uploadFile = (file: File, replacement?: CmsAsset): Promise<void> =>
+    perform(
+      () => storeFile(file, destinationFor(purpose, barberId), replacement),
+      'Filen kunde inte laddas upp.',
+    )
+  const uploadFiles = (files: File[], destination: ResourceDestination): Promise<void> =>
     perform(async () => {
-      const target = replacement
-        ? purposeOf(replacement)
-        : { purpose, ...(purpose === 'profile' ? { barberId } : {}) }
-      const nextAsset = await cmsApi.uploadAsset(file, target.purpose, target.barberId)
-      latest.current.onAssets((current) => [
-        nextAsset,
-        ...current.filter((item) => item.id !== nextAsset.id),
-      ])
-      if (replacement) {
-        latest.current.onDocument((current) => {
-          const next = structuredClone(current)
-          replaceDocumentResource(next, replacement, nextAsset, policy)
-          return next
-        })
+      setUploadError('')
+      try {
+        for (const file of files) await storeFile(file, destination)
+      } catch (reason) {
+        setUploadError(
+          reason instanceof Error
+            ? reason.message
+            : 'Uppladdningen avbröts. Filer som redan sparats finns kvar.',
+        )
+        throw reason
       }
-      setSelectedId((current) => (current === selectedId ? nextAsset.id : current))
+      setPurpose(destination.purpose)
+      if (destination.purpose === 'profile') setBarberId(destination.barberId)
+      setState('active')
+      setUploadDestination(null)
     }, 'Filen kunde inte laddas upp.')
 
   const saveMetadata = (): Promise<void> =>
@@ -260,8 +357,52 @@ export function CmsResources(props: Props): JSX.Element {
       }
     }
   }, [props.document, asset?.bucket, asset?.path])
+  const navigation = (
+    <nav class="cms-resource-navigation cms-segment" aria-label="Resurstyp">
+      <button
+        type="button"
+        aria-pressed={!showComponents}
+        disabled={busy}
+        onClick={() => setShowComponents(false)}
+      >
+        Filbibliotek
+      </button>
+      <button
+        type="button"
+        aria-pressed={showComponents}
+        disabled={busy}
+        onClick={() => {
+          setSelectedId(null)
+          setShowComponents(true)
+        }}
+      >
+        Webbplatsens resurser
+      </button>
+    </nav>
+  )
+  if (showComponents)
+    return (
+      <div>
+        {navigation}
+        <SiteResources
+          onDestination={(destination) => {
+            setContextDestination(destination)
+            setPurpose(destination.purpose)
+            if (destination.purpose === 'profile') setBarberId(destination.barberId)
+            setSelectedId(null)
+            setState('active')
+            setShowComponents(false)
+          }}
+          document={props.document}
+          assets={props.assets}
+          onDocument={props.onDocument}
+          onError={props.onError}
+        />
+      </div>
+    )
   return (
     <div class="cms-resource-surface" aria-busy={busy}>
+      {navigation}
       <header class="cms-resource-toolbar">
         <div class="cms-segment">
           {(['active', 'archived', 'trash'] as const).map((value) => (
@@ -287,42 +428,27 @@ export function CmsResources(props: Props): JSX.Element {
           value={query}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
-        <select
-          aria-label="Användning vid uppladdning"
-          value={purpose}
-          onChange={(event) => setPurpose(event.currentTarget.value as Purpose)}
-        >
-          <option value="library">Bibliotek / WOFF2</option>
-          <option value="salon">Salongsgalleri</option>
-          <option value="cuts">Klippgalleri</option>
-          <option value="logo">Logotyp</option>
-          <option value="profile">Profilbild</option>
-        </select>
-        {purpose === 'profile' && (
-          <select
-            aria-label="Barberare för profilbild"
-            value={barberId}
-            onChange={(event) => setBarberId(event.currentTarget.value)}
-          >
-            {props.document.barbers.map((barber) => (
-              <option value={barber.id}>{barber.name}</option>
-            ))}
-          </select>
-        )}
-        <button type="button" disabled={busy} onClick={() => upload.current?.click()}>
-          <CmsIcon name="plus" /> Ladda upp
-        </button>
-        <input
-          ref={upload}
-          type="file"
-          accept="image/*,.woff2,font/woff2"
-          hidden
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0]
-            if (file) void uploadFile(file)
-            event.currentTarget.value = ''
+        <ResourceDestinationFields
+          label="Kategori"
+          value={destinationFor(purpose, barberId)}
+          barbers={props.document.barbers}
+          onChange={(destination) => {
+            setPurpose(destination.purpose)
+            if (destination.purpose === 'profile') setBarberId(destination.barberId)
+            setSelectedId(null)
+            setSelectedIds(new Set())
           }}
         />
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setUploadError('')
+            setUploadDestination(destinationFor(purpose, barberId))
+          }}
+        >
+          <CmsIcon name="plus" /> Ladda upp
+        </button>
       </header>
       {selectedIds.size > 0 && (
         <div class="cms-resource-bulk">
@@ -463,6 +589,14 @@ export function CmsResources(props: Props): JSX.Element {
               · Publicerat: {usage?.currentReferences ?? '…'} · Historik:{' '}
               {usage?.historyReferences ?? '…'}
             </p>
+            {usageError && (
+              <div class="cms-inline-error" role="alert">
+                <p>Filen finns kvar. Användningen kunde inte läsas. {usageError}</p>
+                <button type="button" onClick={() => setUsageAttempt((value) => value + 1)}>
+                  Försök läsa användning igen
+                </button>
+              </div>
+            )}
             {draftReferences.error && (
               <p class="cms-inline-error" role="alert">
                 Utkastets referenser kunde inte kontrolleras. Rätta sidans innehåll innan filer tas
@@ -475,6 +609,51 @@ export function CmsResources(props: Props): JSX.Element {
                   <li>{place}</li>
                 ))}
               </ul>
+            )}
+            {!asset.archived && !asset.trashed_at && (
+              <section class="cms-resource-use" aria-label="Använd resurs">
+                <h3>Använd på webbplatsen</h3>
+                <ResourceDestinationFields
+                  label="Använd på"
+                  value={assignment}
+                  onChange={setAssignment}
+                  barbers={props.document.barbers}
+                  files={asset.mime === 'font/woff2' ? 'font' : 'image'}
+                />
+                <button
+                  type="button"
+                  class="cms-primary"
+                  disabled={
+                    busy ||
+                    assignment.purpose === 'library' ||
+                    (assignment.purpose === 'profile' && !assignment.barberId)
+                  }
+                  onClick={() =>
+                    void perform(
+                      () => useAsset(currentAsset(asset.id), assignment),
+                      'Resursen kunde inte tilldelas.',
+                    )
+                  }
+                >
+                  Använd i utkastet
+                </button>
+                {resourceAssigned(props.document, asset, assignment) &&
+                  assignment.purpose !== 'fonts' && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(
+                          () => useAsset(currentAsset(asset.id), assignment, false),
+                          'Tilldelningen kunde inte tas bort.',
+                        )
+                      }
+                    >
+                      Dölj från sidan
+                    </button>
+                  )}
+                {assignmentNote && <p role="status">{assignmentNote}</p>}
+              </section>
             )}
             <button
               type="button"
@@ -566,6 +745,19 @@ export function CmsResources(props: Props): JSX.Element {
           </aside>
         )}
       </div>
+      {uploadDestination && (
+        <ResourceUploadDialog
+          destination={uploadDestination}
+          barbers={props.document.barbers}
+          busy={busy}
+          error={uploadError}
+          onChange={setUploadDestination}
+          onClose={() => setUploadDestination(null)}
+          onUpload={(files, destination) => {
+            void uploadFiles(files, destination)
+          }}
+        />
+      )}
     </div>
   )
 }
