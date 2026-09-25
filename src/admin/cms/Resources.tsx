@@ -77,6 +77,7 @@ interface Props {
 
 export function CmsResources(props: Props): JSX.Element {
   const [showComponents, setShowComponents] = useState(false)
+  const [contextDestination, setContextDestination] = useState(props.initialDestination)
   const [state, setState] = useState<State>('active')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -152,11 +153,11 @@ export function CmsResources(props: Props): JSX.Element {
     if (!asset) return
     const destination = resourceDestination(asset)
     setAssignment(
-      props.initialDestination ??
+      contextDestination ??
         (destination.purpose === 'library' ? { purpose: 'salon' } : destination),
     )
     setAssignmentNote('')
-  }, [asset?.id])
+  }, [asset?.id, contextDestination])
 
   // State updates from async work must use the current owner draft, not the render
   // that started the request. The lock is synchronous; disabled buttons alone race.
@@ -384,6 +385,14 @@ export function CmsResources(props: Props): JSX.Element {
       <div>
         {navigation}
         <SiteResources
+          onDestination={(destination) => {
+            setContextDestination(destination)
+            setPurpose(destination.purpose)
+            if (destination.purpose === 'profile') setBarberId(destination.barberId)
+            setSelectedId(null)
+            setState('active')
+            setShowComponents(false)
+          }}
           document={props.document}
           assets={props.assets}
           onDocument={props.onDocument}

@@ -29,11 +29,36 @@ try {
     'No duplicate editor destination',
   )
   const heading = about.locator('h2').first()
+  const originalHeading = (await heading.textContent()) ?? ''
   await heading.click()
+  await page.waitForFunction(
+    async (expected) => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const selected = cmsGrapes.editors.at(-1)?.getSelected()?.getEl()
+      return selected?.textContent?.trim() === expected
+    },
+    originalHeading.trim(),
+    { timeout: 5000 },
+  )
   await page
     .locator('#cms-inspector')
     .getByRole('textbox', { name: 'Text', exact: true })
     .fill('Sammanhängande redigering')
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await about.locator('h2').first().getByText(originalHeading, { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+  await about.getByText('Sammanhängande redigering', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  assert.equal(
+    await frame
+      .locator('[data-knc-surface="desktop-home"] [data-knc-surface="about"]')
+      .getByText('Sammanhängande redigering', { exact: true })
+      .count(),
+    0,
+    'Swedish About edits must not overwrite the English variant',
+  )
+  await page.getByRole('button', { name: 'SV', exact: true }).click()
+  await about.getByText('Sammanhängande redigering', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Mobil', exact: true }).click()
   await frame
     .locator('[data-knc-surface="mobile-home"] [data-knc-surface="about"]')

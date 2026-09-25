@@ -2,7 +2,7 @@ import { isReadOnlyPreview } from './editorPolicy'
 import type { Component, Editor } from 'grapesjs'
 import type { CmsDocument } from '../../../shared/cms'
 import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
-import { nativeNodeId } from '../../cms/instanceScope'
+import { resourceTarget } from '../../../shared/cms-resource-target'
 
 /** A click on an SVG path/text selects the complete replaceable graphic. */
 export function resourceGraphic(component: Component): Component | undefined {
@@ -30,38 +30,10 @@ export function contextualDestination(
   graphic: Component,
   document: CmsDocument,
 ): ResourceDestination | undefined {
-  let child = graphic
-  let parent = graphic.parent()
-  while (parent) {
-    if (parent.getAttributes()['data-knc-fold'] === 'barber-marquee') {
-      const source = String(parent.getAttributes()['data-knc-source'] ?? '')
-      if (!source.startsWith('knc-about-')) return undefined
-      const identity = child.getAttributes()['data-knc-source']
-      const person = document.barbers.find(({ id }) => {
-        const key = [...id].map((char) => char.charCodeAt(0).toString(16)).join('x')
-        return identity === nativeNodeId('about', `${source.slice('knc-about-'.length)}-k${key}`)
-      })
-      if (person) return { purpose: 'profile', barberId: person.id }
-      return undefined
-    }
-    child = parent
-    parent = parent.parent()
-  }
-  const attrs = graphic.getAttributes()
-  const viewBox = String(attrs['viewBox'] ?? attrs['viewbox'] ?? '')
-  if (['0 0 460 258', '0 0 460 330'].includes(viewBox) && attrs['data-knc-source'])
-    return { purpose: 'logo' }
-  try {
-    const path = new URL(String(attrs['src'] ?? ''), 'https://site.invalid').pathname
-    const gallery = path.match(/\/storage\/v1\/object\/public\/gallery\/(salon|cuts|logo)\//)
-    if (gallery) return { purpose: gallery[1] as 'salon' | 'cuts' | 'logo' }
-    const profile = path.match(/\/storage\/v1\/object\/public\/barber-photos\/([a-z0-9-]+)\//)
-    if (profile && document.barbers.some((person) => person.id === profile[1]))
-      return { purpose: 'profile', barberId: profile[1] ?? '' }
-  } catch {
-    // An invalid authored URL is not a resource assignment target.
-  }
-  return undefined
+  const chain: Record<string, unknown>[] = []
+  for (let current: Component | undefined = graphic; current; current = current.parent())
+    chain.push(current.getAttributes())
+  return resourceTarget(chain, document.barbers)
 }
 
 export function openResourcePicker(
@@ -98,7 +70,11 @@ export function connectResourcePicker(
   let document: Document | undefined
   const click = (event: MouseEvent): void => {
     const current = options()
-    const element = (event.target as Element | null)?.closest?.('img,svg')
+    const target = event.target as Element | null
+    const placeholder = target?.closest?.(
+      '[data-knc-slot] > [aria-hidden="true"][data-knc-surface]',
+    )
+    const element = target?.closest?.('img,svg') ?? placeholder?.querySelector('svg')
     if (current.locked || !element?.id) return
     const component = editor.Components.getById(element.id)
     if (!component) return

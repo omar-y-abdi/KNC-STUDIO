@@ -68,7 +68,8 @@ export async function captureResourceLayouts(
     const end = performance.now() + 20000
     while (performance.now() < end) {
       signal.throwIfAborted()
-      if (frame.contentDocument && test(frame.contentDocument)) return frame.contentDocument
+      const doc = frame.contentDocument
+      if (doc?.documentElement && test(doc)) return doc
       await new Promise((resolve) => setTimeout(resolve, 25))
     }
     throw new Error('Resurserna finns i utkastet men sidans förhandsvisning kunde inte uppdateras.')

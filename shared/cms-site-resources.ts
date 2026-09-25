@@ -1,3 +1,5 @@
+import { resourceTarget } from './cms-resource-target'
+import type { ResourceDestination } from './cms-resource-assignment'
 import { html, parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import { mediaUrl, type CmsAsset, type CmsDocument, type CmsLang } from './cms'
 
@@ -18,6 +20,7 @@ export interface SiteResource extends SiteResourceTarget {
   svg: string
   texts: string[]
   replaceable: boolean
+  destination?: ResourceDestination
 }
 const attr = (node: Element, name: string): string =>
   node.attrs.find((a) => a.name === name)?.value ?? ''
@@ -81,8 +84,18 @@ export function siteResources(document: CmsDocument, lang: CmsLang): SiteResourc
         attr(node, 'title') ||
         (control ? text(node).trim() : '') ||
         (node.tagName === 'svg' ? 'SVG-grafik' : 'Bild')
+      const chain: Record<string, string>[] = []
+      for (
+        let ancestor: Node | null = node;
+        ancestor;
+        ancestor = 'parentNode' in ancestor ? ancestor.parentNode : null
+      )
+        if ('tagName' in ancestor)
+          chain.push(Object.fromEntries(ancestor.attrs.map((a) => [a.name, a.value])))
+      const destination = graphic ? resourceTarget(chain, document.barbers) : undefined
       return [
         {
+          ...(destination ? { destination } : {}),
           pageId: page.id,
           id,
           ...(attr(node, 'data-knc-source') ? { source: attr(node, 'data-knc-source') } : {}),

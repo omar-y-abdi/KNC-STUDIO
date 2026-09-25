@@ -1,3 +1,4 @@
+import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import type { JSX } from 'preact'
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
@@ -12,6 +13,7 @@ import { SUPABASE_URL } from '../../backend/config'
 import { CmsIcon } from './Icon'
 
 interface Props {
+  onDestination: (destination: ResourceDestination) => void
   document: CmsDocument
   assets: CmsAsset[]
   onDocument: (
@@ -171,7 +173,23 @@ export function SiteResources(props: Props): JSX.Element {
               >
                 Spara komponent
               </button>
-              {current.replaceable ? (
+              {current.destination ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      if (current.destination) props.onDestination(current.destination)
+                    }}
+                  >
+                    Hantera kopplade bilder
+                  </button>
+                  <p>
+                    Välj, återanvänd eller dölj bilder i denna komponent utan att skapa fristående
+                    bildreferenser.
+                  </p>
+                </>
+              ) : current.replaceable ? (
                 <>
                   <label>
                     Ersätt med bild

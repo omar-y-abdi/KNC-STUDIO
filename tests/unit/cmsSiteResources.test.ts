@@ -104,3 +104,18 @@ describe('website resource mutation boundary', () => {
     expect(document.presentation.pages[0]?.content.sv.html).toContain('<svg')
   })
 })
+
+it('links native profile and gallery graphics to domain resources, not independent image overrides', () => {
+  const document = fixture(
+    '<div data-knc-source="knc-about-0-i3" data-knc-fold="barber-marquee"><div data-knc-source="knc-about-0-i3-k61"><img id="portrait" data-knc-source="knc-about-0-i3-k61-i0" src="https://fixture.supabase.co/storage/v1/object/public/barber-photos/a/photo.webp"></div></div><img id="cut" data-knc-source="cut" src="https://fixture.supabase.co/storage/v1/object/public/gallery/cuts/one.webp">',
+  )
+  document.barbers = [
+    { id: 'a', name: 'A', ig: '', role_sv: '', role_en: '', bio_sv: '', bio_en: '', sort_order: 0 },
+  ]
+  const items = siteResources(document, 'sv')
+  expect(items.find((item) => item.id === 'portrait')?.destination).toEqual({
+    purpose: 'profile',
+    barberId: 'a',
+  })
+  expect(items.find((item) => item.id === 'cut')?.destination).toEqual({ purpose: 'cuts' })
+})

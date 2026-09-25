@@ -84,6 +84,15 @@ try {
     .locator('svg')
     .first()
   await portrait.waitFor({ timeout: 90000 })
+  await portrait.locator('..').dblclick({ position: { x: 10, y: 10 } })
+  await page.locator('.cms-workspace-resources').waitFor({ timeout: 5000 })
+  assert.equal(
+    await page
+      .getByRole('combobox', { name: 'Barberare för profilbild', exact: true })
+      .inputValue(),
+    'a',
+  )
+  await page.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
   await portrait.dblclick()
   await page.locator('.cms-workspace-resources').waitFor({ timeout: 5000 })
   assert.equal(
@@ -97,16 +106,47 @@ try {
     'a',
   )
   await page.locator('.cms-resource-card button').filter({ hasText: 'New portrait A' }).click()
+  // Browsers can expose a Document before its documentElement exists during iframe navigation.
+  await page.evaluate(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      globalThis.HTMLIFrameElement.prototype,
+      'contentDocument',
+    )
+    if (!descriptor?.get) throw new Error('Missing native iframe document getter')
+    let reads = 0
+    Object.defineProperty(globalThis.HTMLIFrameElement.prototype, 'contentDocument', {
+      configurable: true,
+      get() {
+        const value = descriptor.get.call(this)
+        if (this.title === 'Uppdaterar resurser i utkastet' && value && reads++ < 2)
+          return new Proxy(value, {
+            get(target, property) {
+              return property === 'documentElement' ? null : Reflect.get(target, property, target)
+            },
+          })
+        return value
+      },
+    })
+  })
   await page.getByRole('button', { name: 'Använd i utkastet', exact: true }).click()
   await frame
     .locator('img[src$="/barber-photos/a/new.webp"]')
     .first()
     .waitFor({ state: 'attached', timeout: 15000 })
   assert.equal(backend.writes.length, 0)
+  const logo = frame.locator('svg[viewBox="0 0 460 330"],svg[viewBox="0 0 460 258"]').first()
+  await logo.waitFor({ state: 'visible', timeout: 15000 })
+  await logo.dblclick()
+  await page.locator('.cms-workspace-resources').waitFor({ timeout: 5000 })
+  assert.equal(
+    await page.getByRole('combobox', { name: 'Kategori', exact: true }).inputValue(),
+    'logo',
+    'double-clicking the real native logo opens the logo resource destination',
+  )
   assert.deepEqual(errors, [])
-  await page.screenshot({ path: `${out}/${engine}-contextual-portrait.png` })
+  await page.screenshot({ path: `${out}/${engine}-contextual-logo.png` })
   console.log(
-    'PASS contextual resource picker: double-click placeholder, scoped person library, draft assignment',
+    'PASS contextual resources: placeholder portrait and native logo route to scoped libraries',
   )
 } catch (error) {
   await writeFile(

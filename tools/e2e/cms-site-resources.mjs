@@ -132,12 +132,19 @@ try {
     .getByRole('combobox', { name: 'Ersätt med bild', exact: true })
     .selectOption('22222222-2222-4222-8222-222222222222')
   await page.getByRole('button', { name: 'Ersätt komponentbild', exact: true }).click()
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Beskrivning', exact: true }).inputValue(),
+    'Telefon',
+    'replacing a phone icon preserves the functional control label',
+  )
   const result = await snapshot()
-  for (const lang of ['sv', 'en'])
+  for (const lang of ['sv', 'en']) {
     assert.match(
       result.document.presentation.pages[0].content[lang].html,
       /\/cms-library\/images\/new.webp/,
     )
+    assert.match(result.document.presentation.pages[0].content[lang].html, /alt="New icon"/)
+  }
   assert.equal(result.error, '')
   await page.getByText('Kontakt & karta', { exact: true }).click()
   await page.getByRole('textbox', { name: 'Telefon', exact: true }).fill('079-111 22 33')
