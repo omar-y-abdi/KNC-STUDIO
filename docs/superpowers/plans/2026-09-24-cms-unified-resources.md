@@ -1,6 +1,6 @@
 # CMS unified editing and resource assignments — implementation plan
 
-> **Current checkpoint:** [Committed PR handoff](../../handoffs/cms-unified-resources-checkpoint.md). R4 is preserved as WIP; older checkpoint states below are chronological, not current acceptance.
+> **Current checkpoint:** [Current PR #78 continuation](../../handoffs/cms-unified-resources-checkpoint.md). R1–R4 and E1–E3 are implemented; final CI alignment/coverage is in progress. Older ledger entries are historical, not instructions to reimplement completed work.
 
 > Fresh agent: read this file before changing code. Execute one task at a time using systematic-debugging, test-driven-development and verification-before-completion. Do not infer completion from a green unrelated test. Record exact implementation commits in the ledger below.
 
@@ -31,17 +31,18 @@ Work directly in `/Users/k/dev/barber/project` on the owner's Mac. Make Home/Abo
 
 Use small commits with focused failing-then-passing tests. Full sweeps only after substantial production changes. Keep evidence outside tracked source. Do not expose credentials, publish owner CMS content, send test mail, delete backups, or mutate bookings. Mobile and desktop geometry remain independent; light/dark geometry stays consistent. Images/person names are not globally linked merely because their styles are. Asset activation/deactivation is not permanent deletion. Archived/trashed files must never become newly assigned.
 
-## Task ledger (pending until evidence and commit are recorded)
+## Current task ledger — implementation committed; final CI gate pending
 
-| ID  | Deliverable                                                                   | State                                              | Implementation commit / verification                  |
-| --- | ----------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------- |
-| R1  | Indexed history reference lookup; no false upload failure                     | Local fixes verified; production migration pending | `ced0b41` (SQL), `2d9f300` (UI retry); commands below |
-| E1  | Continuous editable Home/About with lossless save/reload                      | Focused browser pass; extended acceptance pending  | `c250005`; Chromium/WebKit `cms-unified-home.mjs`     |
-| E2  | Proportional nested resize and linked barber geometry                         | Pending                                            | Pending                                               |
-| R2  | Real resource categories, upload destination dialog, draft assignments/reuse  | Uncommitted work; browser and lint failures remain | No implementation commit yet; see current checkpoint  |
-| R3  | Contextual double-click picker for gallery/profile/logo/SVG; no stacked modal | Pending                                            | Pending                                               |
-| R4  | Existing built-in resources and component controls visible in Resources       | Pending                                            | Pending                                               |
-| E3  | New authored page mobile header layout                                        | Investigated                                       | Pending                                               |
+| ID          | Implemented boundary                                                 | Commit references                          | Current acceptance                                                          |
+| ----------- | -------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| R1          | Indexed historical usage and local retry                             | `ced0b41`, `2d9f300`, `c6b7073`            | Local SQL/UI verified; production migrations already present                |
+| E1          | Canonical About editable on Home, bounded CSS                        | `c250005`, `bb6a5f3`                       | Both-engine language/style/undo and roundtrip verification                  |
+| E2          | Proportional and linked barber geometry                              | `be97299`                                  | Focused both-engine and unit verification                                   |
+| R2          | Categories, upload destinations and reusable assignment              | `360baca`, `5d0f97c`                       | Real local Edge/Storage and browser verification; backend v11 matched       |
+| R3          | Draft rendering and contextual resource picking                      | `e4b7a17`, `c1cb288`, `b1d1b97`, `51af072` | Both-engine assignment, undo/preview/publish/reload, logo/profile selection |
+| R4          | Website graphics and functional-control inventory                    | `b9c05dd`, `51af072`, `eef3cee`            | Integrated; semantic/protected-graphic and contact tests verified           |
+| E3          | Authored-page mobile header                                          | `f048191`, `924b47e`                       | Both-engine mobile and persistence verification                             |
+| Final gates | Legacy tests aligned with unified Home; permanent new-suite coverage | `1cc2dc7`, `2082b19`                       | Exact-head full CI pending, not a completed delivery claim                  |
 
 ## Task execution details
 
@@ -215,3 +216,31 @@ Final whole-diff review found that generic Website Resources image replacement o
 Commit **`eef3cee`** fixes the replacement boundary: an explicit existing `alt` wins (including empty decorative alt), otherwise an existing `aria-label` is retained, and library alt is only a fallback for graphics with no prior meaning. The focused unit went RED→GREEN (9 pass/1 fail → 10 pass), Website Resources passes in Chromium/WebKit, owner logo replacement still passes in Chromium/WebKit, and fresh full `npm test` plus `npm run build` both exit 0. Typecheck, scoped lint/format and diff checks also pass.
 
 This is a semantic/accessibility correction, not a test relaxation. The browser assertion now explicitly requires the phone icon to remain `alt="Telefon"` after its visual file is swapped.
+
+## Final CI resume — trust committed history, not the obsolete WIP handoff
+
+The clean local and remote head was `4277d85`. Three CMS-shell tests still navigated
+to the removed About editor tab; run `36181560039` and a fresh local responsive
+reproduction confirmed the same first failure. **`1cc2dc7`** updates those tests to
+the unified Home/canonical About boundary without removing their original assertions.
+The mobile marquee selection is scoped to the active canonical tree rather than the
+inactive `preview-shared-*` duplicate. Responsive/populated pass in both engines;
+marquee passes Chromium and isolated WebKit. The prior concurrent WebKit click stall
+is preserved in evidence, not labeled a diagnosed product or infrastructure defect.
+
+The current continuation also adds a separate two-engine gate for all ten new
+unified-resource suites and runs `cms-asset-copy.mjs` in the existing isolated
+CI database/Edge/Storage job. A missing or failed suite must fail the gate.
+
+Fresh local asset-copy first returned 503 at `state`: the local Edge runtime was
+stopped (exit 137), while PostgreSQL/Kong were healthy. Starting only the local
+function server resolved the dependency. The unchanged complete asset-copy test
+then passed; no production mutation or database reset. Production release verification
+and migration-history reads independently confirmed v11 and both existing migrations.
+
+The handoff and current ledger now supersede the stale "R4 not integrated" wording.
+Next: commit the gate changes, push normally, require all exact-head checks, and review
+actual screenshots/diff before marking PR #78 ready. Raw evidence is in
+`/Users/k/dev/barber/cms-unified-evidence/pr78-final-review/`.
+
+Permanent verification gate commit: **`2082b19`**. The real local Edge/Storage test also passes with the exact CI origin `https://127.0.0.1:4197` (`edge-storage-ci-origin.log`, exit 0).
