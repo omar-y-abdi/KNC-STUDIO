@@ -3,10 +3,10 @@ import { CmsValidationError, validMediaRef, type CmsAsset } from '../../../share
 
 const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,trashed_at,version'
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
-const invalid = (message: string): never => {
+function invalid(message: string): never {
   throw new CmsValidationError('asset', message)
 }
-const conflict = (): never => {
+function conflict(): never {
   throw Object.assign(new Error('Resursen har ändrats. Läs in biblioteket igen.'), {
     code: '40001',
   })
@@ -63,21 +63,37 @@ export async function copyCmsAsset(
   if (source.bucket === bucket && source.path.startsWith(`${prefix}/`)) return source
   // One immutable scoped copy per source/destination. Reusing it does not create another file.
   const path = `${prefix}/${source.id}.webp`
-  const existing = await service
-    .from('cms_assets')
-    .select(COLUMNS)
-    .eq('bucket', bucket)
-    .eq('path', path)
-    .maybeSingle()
-  if (existing.error) throw existing.error
-  if (existing.data) {
-    if (existing.data.archived || existing.data.trashed_at) conflict()
-    return existing.data as CmsAsset
+  const readDestination = async (): Promise<CmsAsset | null> => {
+    const existing = await service
+      .from('cms_assets')
+      .select(`${COLUMNS},deleting_at`)
+      .eq('bucket', bucket)
+      .eq('path', path)
+      .maybeSingle()
+    if (existing.error) throw existing.error
+    if (!existing.data) return null
+    const { deleting_at: reservation, ...asset } = existing.data
+    if (reservation || asset.archived || asset.trashed_at) conflict()
+    return asset as CmsAsset
+  }
+  const existing = await readDestination()
+  if (existing) {
+    await readSource()
+    return existing
   }
   const copied = await service.storage
     .from(source.bucket)
     .copy(source.path, path, { destinationBucket: bucket })
-  if (copied.error) throw copied.error
+  if (copied.error) {
+    // A competing request may have completed the same immutable scoped copy.
+    // Recover only an actual conflict, never an authorization or transport failure.
+    if (String(copied.error.statusCode) === '409') {
+      await readSource()
+      const concurrent = await readDestination()
+      if (concurrent) return concurrent
+    }
+    throw copied.error
+  }
   // Concurrent source lifecycle changes prevent draft assignment. A successfully
   // created immutable copy remains registered; never delete a possibly referenced file.
   await readSource()

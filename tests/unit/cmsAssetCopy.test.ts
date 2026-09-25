@@ -34,8 +34,16 @@ function fixture(source = asset) {
     from: (table: string) => {
       const filters: Record<string, unknown> = {}
       let patch: Record<string, unknown> | undefined
+      let columns = '*'
+      const project = (row: Record<string, unknown> | undefined | null) =>
+        row && columns !== '*'
+          ? Object.fromEntries(columns.split(',').map((key) => [key, row[key]]))
+          : (row ?? null)
       const query = {
-        select: () => query,
+        select: (value: string) => {
+          columns = value
+          return query
+        },
         update: (value: Record<string, unknown>) => {
           patch = value
           return query
@@ -48,14 +56,15 @@ function fixture(source = asset) {
           data:
             table === 'barbers'
               ? null
-              : (rows.find((row) => Object.entries(filters).every(([k, v]) => row[k] === v)) ??
-                null),
+              : project(
+                  rows.find((row) => Object.entries(filters).every(([k, v]) => row[k] === v)),
+                ),
           error: null,
         }),
         single: async () => {
           const row = rows.find((row) => Object.entries(filters).every(([k, v]) => row[k] === v))
           if (row && patch) Object.assign(row, patch)
-          return { data: row ?? null, error: null }
+          return { data: project(row), error: null }
         },
       }
       return query
@@ -97,4 +106,46 @@ describe('owner resource copy', () => {
     ).rejects.toThrow()
     expect(copy).not.toHaveBeenCalled()
   })
+})
+
+it('refuses an existing destination reserved for deletion', async () => {
+  const { service, copy, rows } = fixture()
+  rows.push({
+    ...asset,
+    id: '33333333-3333-4333-8333-333333333333',
+    bucket: 'gallery',
+    path: `cuts/${asset.id}.webp`,
+    deleting_at: '2026-09-25T00:00:00Z',
+  })
+  await expect(copyCmsAsset(request, service)).rejects.toThrow()
+  expect(copy).not.toHaveBeenCalled()
+})
+it('uses a concurrently completed immutable copy instead of failing a duplicate request', async () => {
+  const { service, copy, rows } = fixture()
+  copy.mockImplementationOnce(async (_path, target, options) => {
+    rows.push({
+      ...asset,
+      id: '33333333-3333-4333-8333-333333333333',
+      bucket: options.destinationBucket,
+      path: target,
+      version: 0,
+    })
+    return {
+      data: null,
+      error: { statusCode: '409', message: 'The resource already exists' },
+    } as unknown as Awaited<ReturnType<typeof copy>>
+  })
+  const result = await copyCmsAsset(request, service)
+  expect(result.path).toBe(`cuts/${asset.id}.webp`)
+  expect(copy).toHaveBeenCalledTimes(1)
+})
+it('rejects a source archived while its bytes were being copied', async () => {
+  const { service, copy, rows } = fixture()
+  copy.mockImplementationOnce(async (_path, target) => {
+    const source = rows[0]
+    if (!source) throw new Error('Missing fixture source')
+    source.archived = true
+    return { data: { path: target }, error: null }
+  })
+  await expect(copyCmsAsset(request, service)).rejects.toThrow()
 })
