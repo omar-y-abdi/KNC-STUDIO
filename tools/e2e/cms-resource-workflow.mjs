@@ -196,6 +196,7 @@ try {
   )
   assert.equal((await snapshot()).assets.filter((row) => row.path === 'salon/copy.webp').length, 1)
   await page.screenshot({ path: `${out}/${engine}-resources.png` })
+  assert.equal((await snapshot()).error, '')
   // A later upload failure must not discard or retry the files already stored.
   const beforePartial = await updates()
   failUploadAt = uploaded + 2
@@ -210,9 +211,9 @@ try {
 
   await page.setViewportSize({ width: 390, height: 740 })
   await page.screenshot({ path: `${out}/${engine}-resource-mobile.png` })
-  assert.equal((await snapshot()).error, '')
+  assert.equal((await snapshot()).error, 'Fixture upload failed')
   console.log(
-    'PASS resource workflow: filters, upload destination, assignment, cross-scope reuse, hide/reactivate',
+    'PASS resource workflow: filters, upload destination, assignment, upload batching/partial failure, cross-scope reuse, hide/reactivate',
   )
 } catch (error) {
   console.error(await page.locator('[role=alert], [data-review-error]').allTextContents())

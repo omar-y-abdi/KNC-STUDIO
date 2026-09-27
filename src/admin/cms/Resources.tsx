@@ -259,7 +259,10 @@ export function CmsResources(props: Props): JSX.Element {
     destination: ResourceDestination,
     replacement?: CmsAsset,
   ): Promise<void> => {
-    const nextAsset = await storeAsset(file, replacement ? purposeOf(replacement) : destination)
+    const nextAsset = await storeAsset(
+      file,
+      replacement ? resourceDestination(replacement) : destination,
+    )
     if (replacement)
       await latest.current.onDocument((current) => {
         const next = structuredClone(current)
