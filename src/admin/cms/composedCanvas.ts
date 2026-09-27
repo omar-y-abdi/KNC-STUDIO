@@ -1,4 +1,4 @@
-import type { Editor } from 'grapesjs'
+import type { Component, Editor } from 'grapesjs'
 import { generate, ident, parse, walk, type CssNode } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import type { CmsScene } from '../../cms/Scene'
@@ -147,7 +147,8 @@ export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
       slot
         .components()
         .some(
-          (child) => child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
+          (child: Component) =>
+            child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
         ),
     )
   const owner = from?.components().at(0)

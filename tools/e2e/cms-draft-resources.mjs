@@ -87,11 +87,15 @@ try {
     .click()
   await page.locator('.cms-resource-card button').filter({ hasText: 'New portrait A' }).click()
   await page.getByRole('button', { name: 'Använd i utkastet', exact: true }).click()
+  await page
+    .getByText('Tilldelad i utkastet. Publicera för att visa ändringen.', { exact: true })
+    .waitFor()
+  // The canvas is paused under Resources; validate its refreshed image when revealed.
+  await page.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
   await frame
     .locator('img[src$="/barber-photos/a/new.webp"]')
     .first()
     .waitFor({ state: 'attached', timeout: 15000 })
-  await page.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
   await page.getByRole('button', { name: 'Ångra', exact: true }).click()
   await frame.locator('img[src$="/barber-photos/a/new.webp"]').waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Gör om', exact: true }).click()
