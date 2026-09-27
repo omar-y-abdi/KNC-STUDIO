@@ -51,6 +51,18 @@ try {
     })
     results.push({ action: name, elapsedMs: Date.now() - start, ...result })
   }
+  // Opening Layers is still the native UI; closing it removes its view listeners.
+  for (let visit = 0; visit < 2; visit++) {
+    await page.locator('#cms-tab-layers').click()
+    await page.locator('#cms-layers .gjs-layer').first().waitFor()
+    const visible = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      return cmsGrapes.editors.at(-1).Layers.getAll()?.el.isConnected
+    })
+    assert.equal(visible, true, 'Layer view must be mounted on every visit')
+    await page.locator('#cms-tab-design').click()
+    assert.equal(await page.locator('#cms-layers .gjs-layer').count(), 0)
+  }
   const normalization = await page.evaluate(async () => {
     const { exportNativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
     const ids = Array.from({ length: 100 }, (_, index) => `latency-${index}`)
@@ -63,9 +75,9 @@ try {
     const css =
       ids.map((id) => `#${id}{${original}}`).join('') +
       '#latency-99{width:20px}#latency-98{width:invalid-size}'
-    const createElement = document.createElement
+    const createElement = globalThis.document.createElement
     let scratchElements = 0
-    document.createElement = function (tag, ...args) {
+    globalThis.document.createElement = function (tag, ...args) {
       if (tag === 'span') scratchElements++
       return createElement.call(this, tag, ...args)
     }
@@ -73,7 +85,7 @@ try {
       const output = exportNativeCanvas(html, css, 'light')
       return { scratchElements, css: output.css, textCount: output.html.match(/>Text</g)?.length }
     } finally {
-      document.createElement = createElement
+      globalThis.document.createElement = createElement
     }
   })
   results.push({ action: 'native-normalization', ...normalization })
@@ -81,8 +93,8 @@ try {
   for (const result of results.filter((item) => item.nodes)) {
     assert.ok(result.svgLayers > 0, 'Native SVG content remains available in Layers')
     assert.ok(
-      result.maxRenders <= 2,
-      `${result.action}: one import rendered a layer ${result.maxRenders} times`,
+      result.maxRenders === 0,
+      `${result.action}: hidden Layers panel rendered a layer ${result.maxRenders} times`,
     )
   }
   assert.equal(normalization.textCount, 100)
