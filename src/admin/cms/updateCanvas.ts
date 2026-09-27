@@ -1,3 +1,4 @@
+import { configureComponent } from './editorPolicy'
 import type { Component, ComponentDefinitionDefined, CssRuleJSON, Editor } from 'grapesjs'
 
 type Definition = ComponentDefinitionDefined
@@ -23,12 +24,21 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
       const attributes = model.getAttributes({ noClass: true, noStyle: true })
       return (
         (definition['type'] ?? '') === model.get('type') &&
+        (model.is('textnode') ||
+          attributes['data-knc-native'] === '1' ||
+          attributes['id'] === definition['attributes']?.['id']) &&
         (definition['type'] === 'textnode' ||
           (definition['tagName'] ?? 'div').toLowerCase() ===
             String(model.get('tagName')).toLowerCase()) &&
-        ['data-knc-source', 'data-knc-slot', 'data-editor-about-slot'].every(
-          (key) => attributes[key] === definition['attributes']?.[key],
-        )
+        [
+          'data-knc-source',
+          'data-knc-slot',
+          'data-editor-about-slot',
+          'data-knc-surface',
+          'data-knc-required',
+          'data-knc-native',
+          'data-knc-fold',
+        ].every((key) => attributes[key] === definition['attributes']?.[key])
       )
     }
     if (
@@ -51,7 +61,12 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
         )
       )
         return false
-      changes.push(() => parent.components(definitions))
+      changes.push(() => {
+        parent.components(definitions)
+        parent
+          .components()
+          .forEach((child: Component) => configureComponent(child, { silent: true }))
+      })
       return true
     }
     for (const [index, model] of models.entries()) {
@@ -60,7 +75,10 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
       if (!plan(model, children(definition.components))) return false
       const attributes = { ...definition['attributes'] }
       if (!attributes['id']) attributes['id'] = model.getId()
-      if (!equalAttributes(model.getAttributes({ noClass: true, noStyle: true }), attributes))
+      if (
+        !model.is('textnode') &&
+        !equalAttributes(model.getAttributes({ noClass: true, noStyle: true }), attributes)
+      )
         changes.push(() => model.setAttributes(attributes))
       const classes = (definition['classes'] ?? []).map((item: string | { name: string }) =>
         typeof item === 'string' ? item : item.name,

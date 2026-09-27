@@ -599,7 +599,7 @@ export function CmsEditor(props: Props): JSX.Element {
       configureComponent(component, { silent: true })
       component.components().forEach(configure)
     }
-    editor.getWrapper()?.components().forEach(configure)
+    if (!reused) editor.getWrapper()?.components().forEach(configure)
     // Reuse the existing layer view once, with the complete policy already applied.
     if (props.tab === 'layers') editor.Layers.getAll()?.render()
     editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
@@ -694,7 +694,7 @@ export function CmsEditor(props: Props): JSX.Element {
   useLayoutEffect(() => {
     const editor = instance.current
     return editor && props.active ? canvasBehavior(editor, props.scene, props.mode) : undefined
-  }, [props.active, contextKey, props.scene])
+  }, [props.active, props.mode, props.scene])
 
   useLayoutEffect(() => {
     instance.current?.select()

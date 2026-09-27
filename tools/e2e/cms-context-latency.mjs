@@ -95,6 +95,11 @@ try {
       const reused = updateNativeCanvas(isolated, next, css)
       const content = isolated.getHtml({ cleanId: false })
       const sameModel = copy === isolated.Components.getById('copy')
+      const policyChange = updateNativeCanvas(
+        isolated,
+        next.replace('data-knc-source="copy"', 'data-knc-source="copy" data-knc-required="true"'),
+        css,
+      )
       const beforeUnsupported = content
       const structural = updateNativeCanvas(
         isolated,
@@ -103,6 +108,7 @@ try {
       )
       return {
         reused,
+        policyChange,
         sameModel,
         structural,
         unchangedOnFallback: isolated.getHtml({ cleanId: false }) === beforeUnsupported,
@@ -118,6 +124,7 @@ try {
   })
   assert.equal(patchContract.reused, true)
   assert.equal(patchContract.sameModel, true)
+  assert.equal(patchContract.policyChange, false)
   assert.equal(patchContract.structural, false)
   assert.equal(patchContract.unchangedOnFallback, true)
   assert.equal(patchContract.text, true)
