@@ -150,7 +150,39 @@ try {
     'Mobile scaling never changes desktop geometry',
   )
   assert.equal(backend.writes.length, 0, 'Geometry inspection does not publish')
-  console.log('PASS hierarchical resize: group, children, linked peers, undo and device isolation')
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
+  )
+  const assertRetainedScale = async (stage) => {
+    const actual = await measure()
+    assert.ok(
+      Math.abs(actual.cards[0].photo.height - linked.cards[0].photo.height) < 2,
+      `${stage}: the rendered portrait retains its authored scale`,
+    )
+    assert.deepEqual(
+      actual.cards.map((card) => card.text),
+      linked.cards.map((card) => card.text),
+    )
+  }
+  await assertRetainedScale('Device roundtrip')
+  await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+  await assertRetainedScale('Dark theme')
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+  await page.reload()
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  await frame.locator(groupSelector).waitFor({ timeout: 15000 })
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
+  )
+  await assertRetainedScale('Published reload')
+  console.log(
+    'PASS hierarchical resize: nested geometry, peers, undo, devices, themes and published reload',
+  )
 } finally {
   await context.close()
   await browser.close()
