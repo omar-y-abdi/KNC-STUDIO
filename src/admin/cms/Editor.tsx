@@ -564,10 +564,13 @@ export function CmsEditor(props: Props): JSX.Element {
           (previous.scene !== props.scene || previous.device !== props.device) &&
           moveBookingScene(editor, props.scene, props.device)))
     ) {
+      editor.select()
+      setSelected(null)
       rendered.current = { ...previous, device: props.device, scene: props.scene, key: contextKey }
       checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
       applying.current = false
       editor.clearDirtyCount()
+      if (previousState) restoreViewState(editor, previousState)
       return
     }
     const content = isSitePage(props.page)
