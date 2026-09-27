@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
 import { chromium, firefox, webkit } from 'playwright'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4190'
 assert.equal(new URL(base).hostname, '127.0.0.1')
+const evidence = '/tmp/turnstile-layout'
+await mkdir(evidence, { recursive: true })
 for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
   const browser = await engine.launch()
   try {
@@ -11,6 +14,8 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
         viewport: { width, height: 844 },
         reducedMotion: 'reduce',
       })
+      await context.tracing.start({ screenshots: true, snapshots: true })
+      let passed = false
       const page = await context.newPage()
       page.setDefaultTimeout(10000)
       try {
@@ -56,10 +61,14 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
           await page.getByRole('dialog').locator('input').first().inputValue(),
           'Typed name survives',
         )
+        passed = true
         console.log(
           `PASS ${name}/${width}: delayed verifier preserves the close click and booking draft`,
         )
       } finally {
+        await context.tracing.stop(
+          passed ? undefined : { path: `${evidence}/${name}-${width}.zip` },
+        )
         await context.close()
       }
     }

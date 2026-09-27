@@ -87,7 +87,7 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox webkit
       - name: Delayed verification keeps booking controls stable
         run: |
-          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA npm run dev -- --host 127.0.0.1 --port 4190 --strictPort > /tmp/blade-widget-layout.log 2>&1 &
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4190 --strictPort > /tmp/blade-widget-layout.log 2>&1 &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
@@ -131,6 +131,8 @@ jobs:
           path: |
             /tmp/visual-candidate/*.png
             /tmp/visual-diff/*.png
+            /tmp/turnstile-layout/
+            /tmp/blade-widget-layout.log
           retention-days: 7
 
   cms-shell:
