@@ -160,6 +160,16 @@ try {
   await measure('hidden-canvas:SV', () => button('SV').click())
   await button('Tillbaka till sidan').click()
   await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
+  await button('Lås vy').click()
+  await page.locator('.cms-live-preview[aria-busy="false"]').waitFor()
+  await measure('hidden-canvas:locked-EN', () => button('EN').click())
+  await measure('hidden-canvas:locked-SV', () => button('SV').click())
+  await button('Lås upp').click()
+  await button('Historik').click()
+  const restored = await measure('history:restore', () =>
+    button('Återställ till utkast').first().click(),
+  )
+  assert.ok(restored.parses < 24, 'Complete history snapshots do not require legacy repairs')
   await button('Bokning').click()
   for (const scene of ['booking-options', 'booking-details', 'booking-confirmation', 'default']) {
     const cost = await measure(`scene:${scene}`, () =>

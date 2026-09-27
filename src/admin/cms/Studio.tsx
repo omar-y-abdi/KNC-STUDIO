@@ -946,7 +946,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           >
             <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
               <CmsEditor
-                active={!workspaceView}
+                active={!workspaceView && !locked}
                 scene={scene}
                 onClosePanel={() => setMobilePanel(null)}
                 inspectorModal={compact && mobilePanel === 'inspector'}
@@ -1027,7 +1027,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   device={device}
                   onError={setError}
                   onRestore={(old) => {
-                    commitDraft(ensureCorePages(old))
+                    commitDraft(needsCorePageSource(old) ? ensureCorePages(old) : old)
                     setDialog(null)
                   }}
                 />
