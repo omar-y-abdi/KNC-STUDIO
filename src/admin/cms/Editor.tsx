@@ -1,3 +1,4 @@
+import { updateNativeCanvas } from './updateCanvas'
 import {
   canReplaceResourceGraphic,
   connectResourcePicker,
@@ -579,13 +580,20 @@ export function CmsEditor(props: Props): JSX.Element {
         )
     editor.select()
     setSelected(null)
-    // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
-    editor.setComponents('')
-    // Importing HTML extracts inline styles. Load CSS first so it cannot erase them.
-    editor.setStyle(
-      parseCanvasCss(bindCmsRootStyles(content.css, editor.getWrapper()?.getId() ?? ''), editor),
+    const rules = parseCanvasCss(
+      bindCmsRootStyles(content.css, editor.getWrapper()?.getId() ?? ''),
+      editor,
     )
-    editor.setComponents(content.html)
+    const reused =
+      previous?.pageId === props.page.id &&
+      previous.device === props.device &&
+      updateNativeCanvas(editor, content.html, rules)
+    if (!reused) {
+      // Structural imports still remove old IDs before installing their replacement rules.
+      editor.setComponents('')
+      editor.setStyle(rules)
+      editor.setComponents(content.html)
+    }
     const configure = (component: Component): void => {
       // SVG layerability changes otherwise rerender the same parent subtree per node.
       configureComponent(component, { silent: true })

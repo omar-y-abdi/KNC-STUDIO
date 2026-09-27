@@ -102,6 +102,8 @@ try {
     )
   }
   assert.equal(results.find((row) => row.label === 'unchanged-view').exports, 0)
+  for (const row of results.filter((row) => ['Mörk', 'Ljus', 'revert'].includes(row.label)))
+    assert.equal(row.creates, 0, `${row.label}: reuse unchanged native structure`)
   for (const row of results.filter((row) => ['Mobil', 'Dator'].includes(row.label)))
     assert.equal(row.creates, 0, `${row.label}: Home already has both device trees`)
   assert.ok(
