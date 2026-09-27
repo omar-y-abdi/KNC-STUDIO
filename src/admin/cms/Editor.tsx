@@ -650,7 +650,7 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!imageTarget || isReadOnlyPreview(imageTarget)) return
     const src = mediaUrl(asset, SUPABASE_URL ?? '')
     const attrs = imageTarget.getAttributes()
-    const alt = asset.alt || String(attrs['alt'] ?? attrs['aria-label'] ?? '')
+    const alt = String(attrs['alt'] ?? attrs['aria-label'] ?? asset.alt)
     if (String(imageTarget.get('tagName')).toLowerCase() === 'svg') {
       // Replace presentation only. The enclosing native component retains its identity and logic.
       if (!canReplaceResourceGraphic(imageTarget)) return
