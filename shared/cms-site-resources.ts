@@ -64,10 +64,9 @@ function originalLabel(node: Element): string {
 export function siteResources(document: CmsDocument, lang: CmsLang): SiteResource[] {
   return document.presentation.pages.flatMap((page) => {
     const tree = parseFragment(page.content[lang].html)
-    const native = page.content[lang].html.includes('data-knc-native="1"')
     return all(tree).flatMap((node) => {
       const id = attr(node, 'id')
-      if (!id || (native && !attr(node, 'data-knc-source'))) return []
+      if (!id) return []
       const graphic = node.tagName === 'img' || node.tagName === 'svg'
       const description = attr(node, node.tagName === 'img' ? 'alt' : 'aria-label')
       const href = attr(node, 'href')
@@ -92,6 +91,13 @@ export function siteResources(document: CmsDocument, lang: CmsLang): SiteResourc
       )
         if ('tagName' in ancestor)
           chain.push(Object.fromEntries(ancestor.attrs.map((a) => [a.name, a.value])))
+      // Authored graphics beside native components are editable. Only anonymous
+      // descendants of a live slot are derived previews owned by another component.
+      if (
+        !attr(node, 'data-knc-source') &&
+        chain.slice(1).some((ancestor) => ancestor['data-knc-slot'])
+      )
+        return []
       const destination = graphic ? resourceTarget(chain, document.barbers) : undefined
       return [
         {
