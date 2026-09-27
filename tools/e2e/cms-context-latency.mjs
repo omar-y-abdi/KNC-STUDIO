@@ -16,7 +16,7 @@ page.setDefaultTimeout(15000)
 const button = (name) => page.getByRole('button', { name, exact: true })
 const measure = async (label, action) => {
   await page.evaluate(() => {
-    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0 }
+    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0, parses: 0 }
   })
   const start = Date.now()
   await action()
@@ -49,7 +49,12 @@ try {
   await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
-    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0 }
+    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0, parses: 0 }
+    const parse = globalThis.DOMParser.prototype.parseFromString
+    globalThis.DOMParser.prototype.parseFromString = function (...args) {
+      globalThis.cmsCost.parses++
+      return parse.apply(this, args)
+    }
     editor.on('project:get', () => globalThis.cmsCost.snapshots++)
     editor.on('component:create', () => globalThis.cmsCost.creates++)
     const generator = editor.CodeManager.getGenerator('css')
@@ -97,6 +102,10 @@ try {
     )
   }
   assert.equal(results.find((row) => row.label === 'unchanged-view').exports, 0)
+  assert.ok(
+    results.find((row) => row.label === 'revert').parses < 24,
+    'Complete reset must not reparse both copies of every core page',
+  )
   for (const result of results.filter((row) => row.label.startsWith('hidden-canvas:')))
     assert.equal(result.creates, 0, `${result.label}: a hidden canvas must not rebuild`)
   assert.equal(backend.writes.filter((operation) => operation === 'publish').length, 1)
