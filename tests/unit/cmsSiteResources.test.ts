@@ -132,3 +132,17 @@ it('links native profile and gallery graphics to domain resources, not independe
   })
   expect(items.find((item) => item.id === 'cut')?.destination).toEqual({ purpose: 'cuts' })
 })
+
+it('includes authored graphics added alongside native components in the website inventory', () => {
+  const document = fixture('<img id="owner-image" src="/og-image.png" alt="Owner image">')
+  expect(siteResources(document, 'sv')).toEqual([
+    expect.objectContaining({ id: 'owner-image', label: 'Owner image', replaceable: true }),
+  ])
+})
+
+it('excludes derived graphics inside runtime slots while keeping authored graphics', () => {
+  const document = fixture(
+    '<div id="runtime" data-knc-slot="runtime-content"><img id="preview-image" src="/og-image.png"></div><img id="owner-image" src="/og-image.png" alt="Owner image">',
+  )
+  expect(siteResources(document, 'sv').map((item) => item.id)).toEqual(['owner-image'])
+})

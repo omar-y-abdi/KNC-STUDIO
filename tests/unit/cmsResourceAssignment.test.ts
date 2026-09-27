@@ -1,3 +1,4 @@
+import { resourceTarget } from '../../shared/cms-resource-target'
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, type CmsAsset } from '../../shared/cms'
 import {
@@ -83,4 +84,23 @@ describe('resource assignment changes the draft, not the inventory', () => {
     expect(next.presentation.themes).toEqual({ light: {}, dark: {} })
     expect(() => assignResource(emptyDocument(), font, { purpose: 'logo' })).toThrow()
   })
+})
+
+describe('contextual resource ownership', () => {
+  it.each(['gallery/cuts/one.webp', 'gallery/logo/one.webp', 'barber-photos/a/one.webp'])(
+    'does not turn an authored image into a domain assignment merely because it uses %s',
+    (path) => {
+      expect(
+        resourceTarget(
+          [
+            {
+              id: 'authored-image',
+              src: `https://fixture.supabase.co/storage/v1/object/public/${path}`,
+            },
+          ],
+          [{ id: 'a' }],
+        ),
+      ).toBeUndefined()
+    },
+  )
 })
