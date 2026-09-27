@@ -145,6 +145,46 @@ try {
   )
   assert.deepEqual(errors, [])
   await page.screenshot({ path: `${out}/${engine}-contextual-logo.png` })
+  await page.getByRole('button', { name: 'Tillbaka till sidan', exact: true }).click()
+  for (const [id, alt] of [
+    ['owner-phone', 'Telefon'],
+    ['owner-decoration', ''],
+  ]) {
+    await page.evaluate(
+      async ({ id, alt }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const surface = editor.getWrapper().find('[data-knc-surface="desktop-home"]')[0]
+        if (!surface) throw new Error('Missing editable Home surface')
+        surface.append(
+          {
+            type: 'image',
+            attributes: { id, src: '/icons/phone.svg', alt },
+            style: { display: 'block', width: '48px', height: '48px' },
+          },
+          { at: 0 },
+        )
+      },
+      { id, alt },
+    )
+    const image = frame.locator(`#${id}`)
+    await image.dblclick()
+    const picker = page.getByRole('dialog', { name: 'Välj bild', exact: true })
+    await picker.getByRole('button').filter({ hasText: 'New portrait A' }).click()
+    await picker.waitFor({ state: 'hidden' })
+    assert.equal(
+      await image.getAttribute('alt'),
+      alt,
+      'A visual swap preserves explicit alt, including decoration',
+    )
+    assert.match(await image.getAttribute('src'), /\/barber-photos\/a\/new.webp$/)
+    // A reused portrait file remains an ordinary placement, not a barber assignment.
+    await image.dblclick()
+    await picker.waitFor()
+    await picker.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  }
+  assert.equal(backend.writes.length, 0, 'Contextual graphic swaps remain draft-only')
+  assert.deepEqual(errors, [])
   console.log(
     'PASS contextual resources: placeholder portrait and native logo route to scoped libraries',
   )
