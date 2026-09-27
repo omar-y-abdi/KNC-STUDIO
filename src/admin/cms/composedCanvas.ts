@@ -1,3 +1,4 @@
+import { configureComponent } from './editorPolicy'
 import type { Component, Editor } from 'grapesjs'
 import { generate, ident, parse, walk, type CssNode } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
@@ -182,6 +183,37 @@ export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
     to.removeAttributes('data-knc-slot')
     preview.move(from)
     owner.move(to)
+  })
+  return true
+}
+
+/** Scene changes relocate the stored stages, not the rest of the booking page. */
+export function moveBookingScene(editor: Editor, scene: CmsScene, device: CanvasDevice): boolean {
+  if (scene !== 'default' && !isBookingStage(scene)) return false
+  const wrapper = editor.getWrapper()
+  const native = wrapper?.find('[data-knc-native="1"]')[0]
+  const shell = native?.find(`[data-knc-surface="${device.toLowerCase()}-booking"]`)[0]
+  const flow = shell?.find('[data-knc-fold="booking-flow"]')[0]
+  const content = flow?.components().at(0)
+  const stages = bookingStages.map((stage) => native?.find(`[data-knc-surface="${stage}"]`)[0])
+  if (!native || !flow || !content || stages.some((stage) => !stage)) return false
+  editor.UndoManager.skip(() => {
+    for (const [index, stage] of stages.entries()) {
+      if (!stage || stage.parent() === native) continue
+      const next = stages.slice(index + 1).find((candidate) => candidate?.parent() === native)
+      stage.move(native, next ? { at: native.components().indexOf(next) } : {})
+    }
+    if (scene !== 'default') {
+      stages[0]?.move(content)
+      if (scene !== 'booking-options') stages[bookingStages.indexOf(scene)]?.move(flow)
+    }
+    const configure = (component: Component): void => {
+      configureComponent(component, { silent: true })
+      component.components().forEach(configure)
+    }
+    for (const stage of stages) if (stage) configure(stage)
+    configureComponent(content, { silent: true })
+    configureComponent(flow, { silent: true })
   })
   return true
 }

@@ -160,6 +160,15 @@ try {
   await measure('hidden-canvas:SV', () => button('SV').click())
   await button('Tillbaka till sidan').click()
   await frame.getByText('KNC source sv', { exact: true }).first().waitFor()
+  await button('Bokning').click()
+  for (const scene of ['booking-options', 'booking-details', 'booking-confirmation', 'default']) {
+    const cost = await measure(`scene:${scene}`, () =>
+      page.getByLabel('Visa i editorn', { exact: true }).selectOption(scene),
+    )
+    assert.equal(cost.creates, 0, 'Scene changes must reuse the stored stage models')
+    for (const stage of ['booking-options', 'booking-details', 'booking-confirmation'])
+      assert.equal(await frame.locator(`[data-knc-surface="${stage}"]`).count(), 1)
+  }
   await writeFile(`${out}/context-cost.json`, JSON.stringify(results, null, 2))
   for (const result of results) {
     assert.equal(

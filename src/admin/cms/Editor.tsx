@@ -28,6 +28,7 @@ import {
   stripComposedCanvas,
   extractComposedAbout,
   moveHomeAbout,
+  moveBookingScene,
 } from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
@@ -187,6 +188,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const rendered = useRef<{
     pageId: string
     device: Props['device']
+    scene: CmsScene
     key: string
     html: string
     css: string
@@ -487,6 +489,7 @@ export function CmsEditor(props: Props): JSX.Element {
       rendered.current = {
         pageId: current.page.id,
         device: current.device,
+        scene: current.scene,
         key: editorContextKey({ ...current, presentation: updatedPresentation }),
         ...persisted,
       }
@@ -549,15 +552,19 @@ export function CmsEditor(props: Props): JSX.Element {
     timer.current = null
     applying.current = true
     if (
-      props.page.path === '/' &&
       previous &&
-      previous.device !== props.device &&
-      previous.key === editorContextKey({ ...props, device: previous.device }) &&
+      previous.key ===
+        editorContextKey({ ...props, device: previous.device, scene: previous.scene }) &&
       previous.html === variant.html &&
       previous.css === variant.css[props.mode] &&
-      moveHomeAbout(editor, props.device)
+      ((props.page.path === '/' &&
+        previous.device !== props.device &&
+        moveHomeAbout(editor, props.device)) ||
+        (props.page.path === '/booking' &&
+          (previous.scene !== props.scene || previous.device !== props.device) &&
+          moveBookingScene(editor, props.scene, props.device)))
     ) {
-      rendered.current = { ...previous, device: props.device, key: contextKey }
+      rendered.current = { ...previous, device: props.device, scene: props.scene, key: contextKey }
       checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
       applying.current = false
       editor.clearDirtyCount()
@@ -606,6 +613,7 @@ export function CmsEditor(props: Props): JSX.Element {
     rendered.current = {
       pageId: props.page.id,
       device: props.device,
+      scene: props.scene,
       key: contextKey,
       html: variant.html,
       css: variant.css[props.mode],
