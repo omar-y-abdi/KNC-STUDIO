@@ -1,5 +1,56 @@
 # CMS unified resources — current continuation checkpoint
 
+## Adversarial review — 2026-09-27
+
+This review supersedes the older statement below that only tests/documentation remained.
+Starting head: `0aa6fb3`, clean and synchronized with PR #78. The 64-file PR diff,
+canonical plan, E2/E3 briefs and implementation boundaries were inspected. Only
+files already changed by this PR were edited. The owner's current instruction is
+to test in PR CI and push incrementally; no local test suite was run.
+
+Confirmed corrections:
+
+- **Contextual ownership:** authored images were routed to gallery/logo/profile
+  assignment purely by their storage URL. Extra graphics inside a native barber
+  card were also mistaken for its portrait. `26a5e17` and `707e495` require native
+  graphic identity before domain resolution. Native placeholders still resolve
+  by stable person identity, not roster position. Tests: `237276b`, `50f96f1`.
+- **Resource inventory:** the native-page filter hid owner-added graphics without
+  `data-knc-source`. `38dcf4a` includes those placements while excluding anonymous
+  runtime-slot descendants. Tests: `237276b`.
+- **Accessible image meaning:** the real canvas picker overwrote explicit alt
+  text (including intentionally empty decorative alt) with the file's metadata.
+  `d0126ae` preserves placement semantics, matching the existing inventory path.
+  Browser regression: `9cbce63`; fixture placement correction: `dd4e828`.
+
+CI evidence, not a blanket final-head acceptance claim:
+
+- `237276b`, main run `36331257979`: five new assertions failed, 855 passed.
+- `9cbce63` initially stopped because the test image was under the fixed header.
+  No product change was based on that timeout. At `dd4e828`, run `36332002070`,
+  the real picker reproduced `Telefon` becoming `Portrait A`.
+- `a53400b`, unified run `36332224244`: all ten suites passed in Chromium and
+  WebKit. This includes the corrected picker regression and the added E2 checks
+  for device/theme roundtrips and validated fixture publication/reload.
+- `50f96f1`, main run `36332427483`: the nested authored-card regression failed;
+  861 tests passed, including native-placeholder person targeting. `707e495`
+  addresses this final ownership branch; its descendant head needs fresh CI.
+
+Read-only Supabase verification: both PR migrations exist, `cms_revision_media`
+RLS and its revision trigger are enabled, anonymous/authenticated roles cannot
+read that index or execute the internal usage RPC, and service-role barber-ID
+lookup is granted. `cms-studio` remains ACTIVE v11 with JWT verification enabled.
+No database mutation, Edge deployment, owner publication, email, booking change,
+backup deletion or merge was performed. The deferred damaged-draft incident was
+not changed. Raw CI logs/artifacts: `../cms-unified-evidence/pr78-adversarial-20260927/`
+relative to the checkout, outside tracked source. All browser publication above
+uses the intercepted local fixture, not production.
+
+**Next action:** inspect the latest PR head's main CI, unified-resource,
+workspace and startup checks. Treat canceled older runs as incomplete, not
+passing. The final PR review comment should record exact-head outcomes without
+restarting CI merely to update this historical evidence section.
+
 ## Resume here, not at the historical WIP notes
 
 Repository: `omar-y-abdi/KNC-STUDIO`. PR **#78**, branch
