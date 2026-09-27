@@ -30,6 +30,8 @@ export function resourceTarget(
     ['0 0 460 258', '0 0 460 330'].includes(String(graphic['viewBox'] ?? graphic['viewbox'] ?? ''))
   )
     return { purpose: 'logo' }
+  // Reusing a stored file does not give an authored placement a domain owner.
+  if (!graphic['data-knc-source']) return undefined
   try {
     const path = new URL(String(graphic['src'] ?? ''), 'https://site.invalid').pathname
     const gallery = path.match(/\/storage\/v1\/object\/public\/gallery\/(salon|cuts|logo)\//)
