@@ -27,6 +27,8 @@ await page.route('**/*', async (route) => {
 page.on('requestfailed', (request) =>
   console.error('Request failure:', new URL(request.url()).pathname, request.failure()?.errorText),
 )
+let uploaded = 0
+let failUploadAt = 0
 await page.route('https://admin-harness.invalid/functions/v1/**', async (route) => {
   const request = route.request()
   const headers = {
@@ -51,7 +53,24 @@ await page.route('https://admin-harness.invalid/functions/v1/**', async (route) 
   }
   if (request.url().endsWith('/upload-image')) {
     assert.match(body, /name="purpose"\r\n\r\ncuts/)
-    return route.fulfill({ headers, json: { ok: true, asset } })
+    uploaded++
+    if (uploaded === failUploadAt)
+      return route.fulfill({ status: 503, headers, json: { message: 'Fixture upload failed' } })
+    return route.fulfill({
+      headers,
+      json: {
+        ok: true,
+        asset:
+          uploaded === 1
+            ? asset
+            : {
+                ...asset,
+                id: `33333333-3333-4333-8333-${String(uploaded).padStart(12, '0')}`,
+                name: `Upload ${uploaded}.webp`,
+                path: `cuts/uploaded-${uploaded}.webp`,
+              },
+      },
+    })
   }
   const operation = JSON.parse(body)
   if (operation.operation === 'asset_usage')
@@ -124,6 +143,35 @@ try {
   })
   await dialog.waitFor({ state: 'hidden' })
   assert.equal((await snapshot()).document.gallery[0]?.storage_path, 'cuts/uploaded.webp')
+  const updates = () =>
+    page.evaluate(async () =>
+      (await import('/tools/e2e/cms-resources-harness.tsx')).resourceDocumentUpdates(),
+    )
+  const startUploads = async (count) => {
+    await page.getByRole('button', { name: 'Ladda upp', exact: true }).click()
+    await dialog.getByRole('combobox', { name: 'Placera i', exact: true }).selectOption('cuts')
+    await dialog.locator('input[type=file]').setInputFiles(
+      Array.from({ length: count }, (_, i) => ({
+        name: `Batch ${i}.webp`,
+        mimeType: 'image/webp',
+        buffer: Buffer.from('intercepted fixture'),
+      })),
+    )
+  }
+  const beforeBatch = await updates()
+  await startUploads(2)
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(
+    (await updates()) - beforeBatch,
+    1,
+    'One upload batch must trigger one draft/preview transaction',
+  )
+  assert.ok(
+    (await snapshot()).document.gallery.some((row) => row.storage_path === 'cuts/uploaded-2.webp'),
+  )
+  assert.ok(
+    (await snapshot()).document.gallery.some((row) => row.storage_path === 'cuts/uploaded-3.webp'),
+  )
   await category.selectOption('library')
   await page.locator('.cms-resource-card button').filter({ hasText: 'Bank' }).click()
   await page.getByRole('combobox', { name: 'Använd på', exact: true }).selectOption('salon')
@@ -148,6 +196,18 @@ try {
   )
   assert.equal((await snapshot()).assets.filter((row) => row.path === 'salon/copy.webp').length, 1)
   await page.screenshot({ path: `${out}/${engine}-resources.png` })
+  // A later upload failure must not discard or retry the files already stored.
+  const beforePartial = await updates()
+  failUploadAt = uploaded + 2
+  await startUploads(3)
+  await dialog.getByRole('alert').waitFor()
+  assert.equal(uploaded, failUploadAt)
+  assert.equal((await updates()) - beforePartial, 1)
+  assert.ok(
+    (await snapshot()).document.gallery.some((row) => row.storage_path === 'cuts/uploaded-4.webp'),
+  )
+  assert.ok((await snapshot()).assets.some((row) => row.path === 'cuts/uploaded-4.webp'))
+
   await page.setViewportSize({ width: 390, height: 740 })
   await page.screenshot({ path: `${out}/${engine}-resource-mobile.png` })
   assert.equal((await snapshot()).error, '')
