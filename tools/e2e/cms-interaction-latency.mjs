@@ -60,7 +60,9 @@ try {
         (id) => `<span id="${id}" data-knc-baseline="{}" data-knc-light="${original}">Text</span>`,
       )
       .join('')}</div>`
-    const css = ids.map((id) => `#${id}{${original}}`).join('') + '#latency-99{width:20px}'
+    const css =
+      ids.map((id) => `#${id}{${original}}`).join('') +
+      '#latency-99{width:20px}#latency-98{width:invalid-size}'
     const createElement = document.createElement
     let scratchElements = 0
     document.createElement = function (tag, ...args) {
@@ -87,7 +89,7 @@ try {
   assert.equal(
     normalization.css,
     Array.from({ length: 100 }, (_, i) => `#latency-${i}{}`).join('') +
-      '#latency-99{width:20px!important}',
+      '#latency-99{width:20px!important}#latency-98{}',
   )
   assert.ok(
     normalization.scratchElements <= 3,
