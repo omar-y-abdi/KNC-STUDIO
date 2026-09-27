@@ -160,7 +160,7 @@ try {
           {
             type: 'image',
             attributes: { id, src: '/icons/phone.svg', alt },
-            style: { display: 'block', width: '48px', height: '48px' },
+            style: { display: 'block', width: '48px', height: '48px', margin: '80px 32px 24px' },
           },
           { at: 0 },
         )
