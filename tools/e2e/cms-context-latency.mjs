@@ -16,7 +16,14 @@ page.setDefaultTimeout(15000)
 const button = (name) => page.getByRole('button', { name, exact: true })
 const measure = async (label, action) => {
   await page.evaluate(() => {
-    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0, parses: 0 }
+    globalThis.cmsCost = {
+      snapshots: 0,
+      styleReads: 0,
+      creates: 0,
+      exports: 0,
+      parses: 0,
+      cssParses: 0,
+    }
   })
   const start = Date.now()
   await action()
@@ -54,11 +61,23 @@ try {
   await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
-    globalThis.cmsCost = { snapshots: 0, styleReads: 0, creates: 0, exports: 0, parses: 0 }
+    globalThis.cmsCost = {
+      snapshots: 0,
+      styleReads: 0,
+      creates: 0,
+      exports: 0,
+      parses: 0,
+      cssParses: 0,
+    }
     const parse = globalThis.DOMParser.prototype.parseFromString
     globalThis.DOMParser.prototype.parseFromString = function (...args) {
       globalThis.cmsCost.parses++
       return parse.apply(this, args)
+    }
+    const parseCss = editor.Parser.parseCss
+    editor.Parser.parseCss = function (...args) {
+      globalThis.cmsCost.cssParses++
+      return parseCss.apply(this, args)
     }
     editor.on('project:get', () => globalThis.cmsCost.snapshots++)
     editor.on('component:create', () => globalThis.cmsCost.creates++)
@@ -144,6 +163,10 @@ try {
   await measure('unchanged-view', () => button('SV').click())
   for (const name of ['EN', 'SV', 'Mörk', 'Ljus', 'Mobil', 'Dator'])
     await measure(name, () => button(name).click())
+  for (const name of ['EN', 'SV', 'Mörk', 'Ljus']) {
+    const cost = await measure(`repeated:${name}`, () => button(name).click())
+    assert.equal(cost.cssParses, 0, 'Unchanged contexts must not compile their stylesheet again')
+  }
   await frame.getByText('KNC source sv', { exact: true }).first().click()
   await page
     .locator('#cms-inspector')

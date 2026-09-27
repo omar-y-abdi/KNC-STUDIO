@@ -193,6 +193,16 @@ export function CmsEditor(props: Props): JSX.Element {
     html: string
     css: string
   } | null>(null)
+  const compiled = useRef<
+    {
+      key: string
+      sourceHtml: string
+      sourceCss: string
+      wrapperId: string
+      content: { html: string; css: string }
+      rules: ReturnType<typeof parseCanvasCss>
+    }[]
+  >([])
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
   const contextKey = editorContextKey(props)
   const variant = props.page.content[props.lang]
@@ -573,27 +583,53 @@ export function CmsEditor(props: Props): JSX.Element {
       if (previousState) restoreViewState(editor, previousState)
       return
     }
-    const content = isSitePage(props.page)
-      ? renderSitePage(
-          props.presentation,
-          createSitePage(props.presentation, props.page),
-          props.lang,
-          props.mode,
+    const wrapperId = editor.getWrapper()?.getId() ?? ''
+    const sitePage = isSitePage(props.page)
+    let compilation = sitePage
+      ? undefined
+      : compiled.current.find(
+          (item) =>
+            item.key === contextKey &&
+            item.sourceHtml === variant.html &&
+            item.sourceCss === variant.css[props.mode] &&
+            item.wrapperId === wrapperId,
         )
-      : composedCanvas(
-          props.page,
-          props.presentation,
-          props.lang,
-          props.mode,
-          props.scene,
-          props.device,
-        )
+    if (!compilation) {
+      const content = sitePage
+        ? renderSitePage(
+            props.presentation,
+            createSitePage(props.presentation, props.page),
+            props.lang,
+            props.mode,
+          )
+        : composedCanvas(
+            props.page,
+            props.presentation,
+            props.lang,
+            props.mode,
+            props.scene,
+            props.device,
+          )
+      compilation = {
+        key: contextKey,
+        sourceHtml: variant.html,
+        sourceCss: variant.css[props.mode],
+        wrapperId,
+        content,
+        rules: parseCanvasCss(bindCmsRootStyles(content.css, wrapperId), editor),
+      }
+      // Four recent native contexts cover language/theme roundtrips without retaining
+      // whole draft histories. The exact source strings also invalidate undo and edits.
+      if (!sitePage) {
+        compiled.current.unshift(compilation)
+        compiled.current.length = Math.min(4, compiled.current.length)
+      }
+    }
+    const { content } = compilation
+    // GrapesJS owns its imported definitions; never hand it the cached originals.
+    const rules = structuredClone(compilation.rules)
     editor.select()
     setSelected(null)
-    const rules = parseCanvasCss(
-      bindCmsRootStyles(content.css, editor.getWrapper()?.getId() ?? ''),
-      editor,
-    )
     const reused =
       previous?.pageId === props.page.id &&
       previous.device === props.device &&
