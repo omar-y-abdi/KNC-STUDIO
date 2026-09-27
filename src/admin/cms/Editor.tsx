@@ -166,6 +166,7 @@ function pageFragment(html: string, wrapperId: string): string {
 
 export function CmsEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
+  const layersHost = useRef<HTMLDivElement>(null)
   const instance = useRef<Editor | null>(null)
   const latest = useRef(props)
   latest.current = props
@@ -243,7 +244,8 @@ export function CmsEditor(props: Props): JSX.Element {
         'html{scroll-behavior:auto!important}body{margin:0!important}svg,svg *{pointer-events:auto!important}',
       mediaCondition: 'min-width',
       selectorManager: { componentFirst: true },
-      layerManager: { appendTo: '#cms-layers' },
+      // The hidden Layers tab must not build and update an entire second DOM tree.
+      layerManager: { appendTo: '' },
       traitManager: { appendTo: '#cms-traits' },
       styleManager: {
         appendTo: '#cms-styles',
@@ -556,7 +558,7 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     editor.getWrapper()?.components().forEach(configure)
     // Reuse the existing layer view once, with the complete policy already applied.
-    editor.Layers.getAll()?.render()
+    if (props.tab === 'layers') editor.Layers.getAll()?.render()
     editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
     rendered.current = {
       pageId: props.page.id,
@@ -572,6 +574,26 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.clearDirtyCount()
     if (previousState) restoreViewState(editor, previousState)
   })
+
+  useLayoutEffect(() => {
+    const editor = instance.current
+    const container = layersHost.current
+    if (!editor || !container || props.tab !== 'layers') return
+    let mounted = false
+    const mount = (): void => {
+      if (mounted || !editor.Layers.getRoot()) return
+      mounted = true
+      container.replaceChildren(editor.Layers.render())
+    }
+    editor.on('load', mount)
+    mount()
+    return () => {
+      // Editor destruction already disposes module views and listeners.
+      if (instance.current !== editor) return
+      editor.off('load', mount)
+      if (mounted) editor.Layers.destroy()
+    }
+  }, [props.tab])
 
   useLayoutEffect(() => {
     const host = compareHost.current
@@ -1088,6 +1110,7 @@ export function CmsEditor(props: Props): JSX.Element {
         </div>
         <div
           id="cms-layers"
+          ref={layersHost}
           tabIndex={0}
           role="tabpanel"
           aria-labelledby="cms-tab-layers"
