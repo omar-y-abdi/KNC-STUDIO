@@ -1,3 +1,4 @@
+import { copyCmsAsset } from './copyAsset.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   CmsValidationError,
@@ -149,6 +150,7 @@ Deno.serve(async (request) => {
       const result = await invoke('internal_cms_revision', { p_revision: readInteger('revision') })
       return result ? json(result) : json({ error: 'not_found', requestId }, 404)
     }
+    if (body.operation === 'asset_copy') return json(await copyCmsAsset(body, service))
     if (body.operation === 'asset_usage') {
       only('id')
       if (typeof body.id !== 'string' || !UUID.test(body.id))

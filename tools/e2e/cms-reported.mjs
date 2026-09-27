@@ -782,7 +782,7 @@ for (const [engineName, engine] of Object.entries({ chromium, webkit })) {
       },
     )
     await check('5-comparison-font-parity', async ({ page, frame, shot }) => {
-      await page.getByRole('button', { name: 'Om oss', exact: true }).click()
+      await frame.locator('[data-knc-surface="desktop-home"] [data-knc-surface="about"]').waitFor()
       await page.getByRole('button', { name: 'Mörk', exact: true }).click()
       await page.getByRole('button', { name: 'Mobil', exact: true }).click()
       const appearance = (locator) =>

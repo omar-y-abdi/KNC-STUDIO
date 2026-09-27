@@ -1,7 +1,7 @@
 import { siteThemeCss } from '../../../shared/site-theme'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
+import type { CmsDocument, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
 import { isSitePage, renderSitePage } from '../../../shared/site-page'
 import type { CmsScene } from '../../cms/Scene'
@@ -10,6 +10,7 @@ import type { CmsScene } from '../../cms/Scene'
 export function LivePreview({
   page,
   presentation,
+  draft,
   lang,
   mode,
   device,
@@ -20,6 +21,7 @@ export function LivePreview({
   scene?: CmsScene
   page: CmsPage
   presentation: CmsPresentation
+  draft?: CmsDocument
   lang: CmsLang
   mode: CmsMode
   device: 'Desktop' | 'Mobile'
@@ -104,6 +106,7 @@ export function LivePreview({
           device,
           path: page.path,
           presentation,
+          ...(draft ? { draft } : {}),
           scene:
             scene !== 'default'
               ? scene
@@ -116,7 +119,7 @@ export function LivePreview({
         location.origin,
       )
     return () => clearTimeout(deadline.current)
-  }, [connected, native, page.path, presentation, lang, mode, device, scene, attempt])
+  }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
   const content = native
     ? null
     : isSitePage(page)

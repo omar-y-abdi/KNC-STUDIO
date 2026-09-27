@@ -1,3 +1,4 @@
+import { draftReadSnapshot } from './draftReadSnapshot'
 import type { JSX } from 'preact'
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { App, type SitePreviewSnapshot } from '../../app/App'
@@ -5,7 +6,13 @@ import { NativeSiteProvider } from '../../cms/NativeSurface'
 import { PreviewPorts } from '../../cms/PreviewPorts'
 import { sourceReadSnapshot } from './sourceReadCache'
 import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
-import { mediaUrl, validatePresentation, type CmsPresentation } from '../../../shared/cms'
+import {
+  mediaUrl,
+  validateDocument,
+  validatePresentation,
+  type CmsDocument,
+  type CmsPresentation,
+} from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { CmsSceneContext } from '../../cms/Scene'
 import { exampleBookingPorts, exampleCustomerPort, exampleBookingId } from './exampleScenes'
@@ -25,6 +32,8 @@ interface SourceContext {
     | 'my-bookings-list'
   path?: string
   presentation?: CmsPresentation
+  draft?: CmsDocument
+  capture?: boolean
 }
 
 /** Renders public components with read-only ports, never private editor or customer state. */
@@ -39,7 +48,14 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
   const snapshot = useMemo(() => sourceReadSnapshot(), [])
   const state = useMemo(() => {
     const status = { pending: 0, metadata: false, failed: false }
-    const read = interactive ? readOnlyHomepagePreviewPorts() : { ...snapshot.ports }
+    const current = context.draft
+      ? draftReadSnapshot(context.draft, snapshot, SUPABASE_URL ?? '')
+      : snapshot
+    const read = context.draft
+      ? current.ports
+      : interactive
+        ? readOnlyHomepagePreviewPorts()
+        : { ...snapshot.ports }
     const ports = context.scene.startsWith('booking-') ? exampleBookingPorts(read) : read
     for (const key of Object.keys(ports) as (keyof typeof ports)[]) {
       const target = ports[key]
@@ -63,7 +79,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         }),
       })
     }
-    return { status, ports }
+    return { status, ports, chrome: current.chrome }
   }, [context.id, interactive, snapshot])
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>): void => {
@@ -92,6 +108,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       if (interactive) {
         try {
           validatePresentation(value['presentation'])
+          if (value['draft'] !== undefined) validateDocument(value['draft'])
         } catch {
           return
         }
@@ -107,7 +124,12 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
         device: value['device'] as SourceContext['device'],
         scene: value['scene'] as SourceContext['scene'],
         ...(interactive
-          ? { path: String(value['path']), presentation: value['presentation'] as CmsPresentation }
+          ? {
+              path: String(value['path']),
+              presentation: value['presentation'] as CmsPresentation,
+              ...(value['draft'] ? { draft: value['draft'] as CmsDocument } : {}),
+              ...(value['capture'] === true ? { capture: true } : {}),
+            }
           : {}),
       })
     }
@@ -126,7 +148,7 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       if (stopped) return
       if (state.status.failed || performance.now() > deadline) {
         document.documentElement.dataset['kncSourceFailure'] = JSON.stringify({
-          context,
+          context: { id: context.id, scene: context.scene, path: context.path },
           ...state.status,
           surfaces: [...document.querySelectorAll('[data-knc-surface]')].map((node) =>
             node.getAttribute('data-knc-surface'),
@@ -256,7 +278,11 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
       }
     >
       {interactive && <style>{fonts}</style>}
-      <NativeSiteProvider source={!interactive} presentation={context.presentation ?? null}>
+      <NativeSiteProvider
+        source={!interactive || Boolean(context.capture)}
+        projectSource={Boolean(context.capture)}
+        presentation={context.presentation ?? null}
+      >
         <CmsSceneContext.Provider
           value={{
             ...(context.scene.startsWith('booking-')
@@ -271,8 +297,8 @@ export function NativeSource({ interactive = false }: { interactive?: boolean })
             <App
               key={context.id}
               preview={{
-                interactive,
-                ...(!interactive ? { chromePort: snapshot.chrome } : {}),
+                interactive: interactive && !context.capture,
+                ...(!interactive || context.draft ? { chromePort: state.chrome } : {}),
                 lang: context.lang,
                 mode: context.mode,
                 view: context.scene.startsWith('booking') ? 'booking' : 'home',

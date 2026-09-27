@@ -255,6 +255,10 @@ jobs:
         run: npx supabase test db --local
       - name: Adapter integration tests
         run: npm run test:integration
+      - name: CMS resource reuse through real Edge and Storage
+        env:
+          CMS_TEST_ORIGIN: https://127.0.0.1:4197
+        run: node tools/e2e/cms-asset-copy.mjs
       - name: Install customer browser engines
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Customer browser through local Worker and Edge

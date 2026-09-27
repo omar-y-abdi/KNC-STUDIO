@@ -1,0 +1,83 @@
+name: CMS unified resources
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: cms-unified-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CMS_UNIFIED_SUITES: cms-resource-usage cms-resource-workflow cms-site-resources cms-contextual-resources cms-graphic-projection cms-composition-roundtrip cms-draft-resources cms-hierarchical-resize cms-new-page-mobile cms-unified-home
+jobs:
+  unified:
+    name: Unified editor (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit]
+    env:
+      CMS_ENGINE: ${{ matrix.engine }}
+      BASE_URL: http://127.0.0.1:4188
+      CMS_EVIDENCE_DIR: /tmp/cms-unified
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          cache: npm
+      - name: Prepare isolated browser verification
+        run: |
+          mkdir -p "$CMS_EVIDENCE_DIR"
+          git rev-parse HEAD > "$CMS_EVIDENCE_DIR/source-commit.txt"
+          git rev-parse HEAD^{tree} > "$CMS_EVIDENCE_DIR/source-tree.txt"
+          npm ci
+          npx playwright install --with-deps "$CMS_ENGINE"
+          bash tools/ci/setup-furl.sh
+      - name: Exercise the committed unified-resource contracts
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key npm run dev -- --host 127.0.0.1 --port 4188 > "$CMS_EVIDENCE_DIR/server.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null && break; sleep 1; done
+          curl -fsS "$BASE_URL/tools/e2e/admin-harness.html" > /dev/null
+          set +e
+          root="$CMS_EVIDENCE_DIR"
+          for suite in $CMS_UNIFIED_SUITES; do
+            mkdir -p "$root/$suite"
+            CMS_EVIDENCE_DIR="$root/$suite" timeout 180s node "tools/e2e/$suite.mjs" > "$root/$suite.log" 2>&1
+            echo "$?" > "$root/$suite.exit-code"
+          done
+          git diff --exit-code > "$root/tracked-source-diff.log" 2>&1
+          echo "$?" > "$root/tracked-source-diff.exit-code"
+      - name: Preserve concise diagnostics
+        if: always()
+        run: |
+          if command -v furl >/dev/null; then
+            for log in "$CMS_EVIDENCE_DIR"/*.log; do
+              test -f "$log" || continue
+              furl compress "$log" --json > "$log.furl.json" || true
+            done
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: cms-unified-${{ matrix.engine }}-${{ github.run_number }}
+          path: /tmp/cms-unified
+          retention-days: 14
+      - name: Enforce all expected outcomes
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import os, pathlib
+          root = pathlib.Path(os.environ['CMS_EVIDENCE_DIR'])
+          suites = os.environ['CMS_UNIFIED_SUITES'].split() + ['tracked-source-diff']
+          codes = {suite: (root / f'{suite}.exit-code').read_text().strip() if (root / f'{suite}.exit-code').exists() else 'MISSING' for suite in suites}
+          print(codes)
+          assert all(code == '0' for code in codes.values()), codes
+          PYTHON

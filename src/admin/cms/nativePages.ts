@@ -13,7 +13,7 @@ interface Capture {
 type PageSources = Record<CmsLang, Record<CmsMode, Capture[]>>
 
 /** Keep one About tree and capture only the mobile presentation of its existing barber nodes. */
-function mobileBarberCss(desktopHtml: string, mobileHtml: string): string {
+export function mobileBarberCss(desktopHtml: string, mobileHtml: string): string {
   const desktop = new DOMParser().parseFromString(desktopHtml, 'text/html')
   const mobile = new DOMParser().parseFromString(mobileHtml, 'text/html')
   const grid = mobile.querySelector('[data-knc-fold="barber-marquee"]')

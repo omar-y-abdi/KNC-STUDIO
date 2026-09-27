@@ -1,3 +1,4 @@
+import { barberScalePeers } from './hierarchicalResize'
 import type { Component } from 'grapesjs'
 
 const controls = new Set(['input', 'select', 'textarea', 'option', 'form', 'label', 'fieldset'])
@@ -134,7 +135,10 @@ export function isReadOnlyPreview(component: Component): boolean {
 export function configureComponent(component: Component): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
-  const protectedComponent = isProtected(component)
+  const compositionBoundary =
+    Boolean(attrs['data-editor-about-slot']) ||
+    Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
+  const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
@@ -161,7 +165,10 @@ export function configureComponent(component: Component): void {
         (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag)))),
     resizable:
       !readOnly &&
-      (!protectedComponent || tag === 'svg' || tag === 'img') &&
+      (!protectedComponent ||
+        tag === 'svg' ||
+        tag === 'img' ||
+        barberScalePeers(component).length > 0) &&
       !controls.has(tag) &&
       !svgLeaf.has(tag),
   })
