@@ -550,10 +550,13 @@ export function CmsEditor(props: Props): JSX.Element {
     )
     editor.setComponents(content.html)
     const configure = (component: Component): void => {
-      configureComponent(component)
+      // SVG layerability changes otherwise rerender the same parent subtree per node.
+      configureComponent(component, { silent: true })
       component.components().forEach(configure)
     }
     editor.getWrapper()?.components().forEach(configure)
+    // Reuse the existing layer view once, with the complete policy already applied.
+    editor.Layers.getAll()?.render()
     editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
     rendered.current = {
       pageId: props.page.id,
