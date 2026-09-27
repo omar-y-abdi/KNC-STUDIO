@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { chromium, firefox, webkit } from 'playwright'
 
-const base = process.env.BASE_URL ?? 'http://127.0.0.1:4190'
+const base = process.env.BASE_URL ?? 'http://127.0.0.1:4206'
 assert.equal(new URL(base).hostname, '127.0.0.1')
 const evidence = '/tmp/turnstile-layout'
 await mkdir(evidence, { recursive: true })
