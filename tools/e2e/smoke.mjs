@@ -1296,11 +1296,24 @@ async function verifyCustomerBrowser() {
               'successful real session hydration did not populate customer A',
             )
             await fields.nth(0).fill('Typed name survives')
-            await page.getByRole('button', { name: 'Stäng', exact: true }).click()
-            // Finish closing before the second tab backgrounds this page and changes its cookie.
-            await page
-              .getByRole('dialog', { name: 'Dina uppgifter', exact: true })
-              .waitFor({ state: 'hidden' })
+            // Keep the real click and closure assertion; retain its layout/network boundary
+            // if an engine reports a completed click without dismissing the dialog.
+            await context.tracing.start({ screenshots: true, snapshots: true })
+            let closed = false
+            try {
+              await page.getByRole('button', { name: 'Stäng', exact: true }).click()
+              // Finish closing before the second tab backgrounds this page and changes its cookie.
+              await page
+                .getByRole('dialog', { name: 'Dina uppgifter', exact: true })
+                .waitFor({ state: 'hidden' })
+              closed = true
+            } finally {
+              await context.tracing.stop(
+                closed
+                  ? undefined
+                  : { path: join(work, `${engine.name()}-details-close-trace.zip`) },
+              )
+            }
             const second = await context.newPage()
             second.setDefaultTimeout(WAIT_TIMEOUT)
             await second.goto(`${origin}/${b.token}`, { waitUntil: 'domcontentloaded' })
