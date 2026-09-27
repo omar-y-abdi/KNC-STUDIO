@@ -946,6 +946,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           >
             <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
               <CmsEditor
+                active={!workspaceView}
                 scene={scene}
                 onClosePanel={() => setMobilePanel(null)}
                 inspectorModal={compact && mobilePanel === 'inspector'}

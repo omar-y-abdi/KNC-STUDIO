@@ -45,6 +45,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  active: boolean
   onClosePanel: () => void
   inspectorModal: boolean
   scene: CmsScene
@@ -187,7 +188,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const compareHeight = props.device === 'Desktop' ? 844 : 900
   const comparison = useMemo(
     () =>
-      props.compare
+      props.active && props.compare
         ? isSitePage(props.page)
           ? renderSitePage(
               props.presentation,
@@ -205,6 +206,7 @@ export function CmsEditor(props: Props): JSX.Element {
             )
         : null,
     [
+      props.active,
       props.compare,
       variant.html,
       variant.css[props.mode],
@@ -384,9 +386,10 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('canvas:scroll', remember)
 
     const flush = (): void => {
+      const pending = timer.current !== null
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = null
-      if (applying.current || !checkpoint.current) return
+      if (!pending || applying.current || !checkpoint.current) return
       // GrapesJS updates its dirty counter asynchronously; a context switch cannot wait for it.
       let html = editor.getHtml({ cleanId: false })
       const css = readCanvasCss(editor)
@@ -483,7 +486,9 @@ export function CmsEditor(props: Props): JSX.Element {
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = window.setTimeout(flush, 180)
     }
-    editor.on('update', schedule)
+    // Synchronous notification catches immediate edit-then-switch, without delayed
+    // import updates scheduling another export after applying has finished.
+    editor.on('updateBefore', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
     const fit = (): void => {
       if (editor.Canvas.getBody()) latest.current.onZoom(fitEditor(editor))
@@ -517,7 +522,7 @@ export function CmsEditor(props: Props): JSX.Element {
   // Compare against the last rendered document on every render, not only changed dependencies.
   useLayoutEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     const previous = rendered.current
     if (
       previous?.key === contextKey &&
@@ -581,7 +586,7 @@ export function CmsEditor(props: Props): JSX.Element {
   useLayoutEffect(() => {
     const editor = instance.current
     const container = layersHost.current
-    if (!editor || !container || props.tab !== 'layers') return
+    if (!editor || !container || !props.active || props.tab !== 'layers') return
     let mounted = false
     const mount = (): void => {
       if (mounted || !editor.Layers.getRoot()) return
@@ -596,7 +601,7 @@ export function CmsEditor(props: Props): JSX.Element {
       editor.off('load', mount)
       if (mounted) editor.Layers.destroy()
     }
-  }, [props.tab])
+  }, [props.tab, props.active])
 
   useLayoutEffect(() => {
     const host = compareHost.current
@@ -613,7 +618,7 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     const frame = editor.Canvas.getDocument()
     if (!frame) return
     let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
@@ -623,7 +628,7 @@ export function CmsEditor(props: Props): JSX.Element {
       frame.head.appendChild(style)
     }
     style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
-  }, [props.fontCss, props.presentation.themes, props.mode])
+  }, [props.active, props.fontCss, props.presentation.themes, props.mode])
 
   useEffect(() => {
     const editor = instance.current
@@ -638,11 +643,11 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
     editor.setDevice(props.device)
     latest.current.onZoom(fitEditor(editor))
-  }, [props.device])
+  }, [props.active, props.device])
 
   useEffect(() => {
     const editor = instance.current
@@ -652,8 +657,8 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useLayoutEffect(() => {
     const editor = instance.current
-    return editor ? canvasBehavior(editor, props.scene, props.mode) : undefined
-  }, [contextKey, props.scene])
+    return editor && props.active ? canvasBehavior(editor, props.scene, props.mode) : undefined
+  }, [props.active, contextKey, props.scene])
 
   useLayoutEffect(() => {
     instance.current?.select()
