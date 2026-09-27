@@ -5,6 +5,19 @@ import { generate, ident, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 
+/** The CMS keeps every composer rule and uses avoidInlineStyle. Resolving each
+ * component's style only to collect unused selector IDs makes full export quadratic. */
+export function readCanvasCss(editor: Editor): string {
+  return (
+    (editor.getConfig().protectedCss ?? '') +
+    editor.CodeManager.getCode(null, 'css', {
+      ...editor.getConfig().optsCss,
+      cssc: editor.Css,
+      keepUnusedStyles: true,
+    })
+  )
+}
+
 const attributes = [
   'class',
   'title',

@@ -27,6 +27,13 @@ const measure = async (label, action) => {
     elapsedMs: Date.now() - start,
     ...(await page.evaluate(() => globalThis.cmsCost)),
   }
+  const cssMatches = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+    const editor = cmsGrapes.editors.at(-1)
+    return readCanvasCss(editor) === editor.getCss({ keepUnusedStyles: true })
+  })
+  assert.equal(cssMatches, true, `${label}: complete exported CSS must remain byte-identical`)
   results.push(result)
   return result
 }

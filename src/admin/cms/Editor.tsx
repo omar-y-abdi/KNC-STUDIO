@@ -28,7 +28,7 @@ import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, parseCanvasCss, readCanvasCss } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -298,6 +298,9 @@ export function CmsEditor(props: Props): JSX.Element {
       },
       assetManager: { assets: [], upload: false, custom: true },
     })
+    // storageManager:false disables its target, not its autosave serialization in 0.23.6.
+    // The CMS draft/backup owns persistence; never build a second project on every update.
+    editor.Storage.setAutosave(false)
     instance.current = editor
     const releaseResize = connectHierarchicalResize(
       editor,
@@ -386,7 +389,7 @@ export function CmsEditor(props: Props): JSX.Element {
       if (applying.current || !checkpoint.current) return
       // GrapesJS updates its dirty counter asynchronously; a context switch cannot wait for it.
       let html = editor.getHtml({ cleanId: false })
-      const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
+      const css = readCanvasCss(editor)
       if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
       // Ownership is page-wide: materialize both languages before editing either.
@@ -568,7 +571,7 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     checkpoint.current = {
       html: editor.getHtml({ cleanId: false }),
-      css: editor.getCss({ keepUnusedStyles: true }) ?? '',
+      css: readCanvasCss(editor),
     }
     applying.current = false
     editor.clearDirtyCount()
