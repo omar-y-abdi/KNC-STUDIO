@@ -87,6 +87,30 @@ describe('resource assignment changes the draft, not the inventory', () => {
 })
 
 describe('contextual resource ownership', () => {
+  it('does not turn an authored graphic inside a barber card into its portrait', () => {
+    expect(
+      resourceTarget(
+        [
+          { id: 'owner-card-icon', src: '/icons/phone.svg' },
+          { 'data-knc-source': 'knc-about-0-i0-i6-k61' },
+          { 'data-knc-source': 'knc-about-0-i0-i6', 'data-knc-fold': 'barber-marquee' },
+        ],
+        [{ id: 'a' }],
+      ),
+    ).toBeUndefined()
+  })
+  it('retains stable person targeting for a native placeholder rather than using roster order', () => {
+    expect(
+      resourceTarget(
+        [
+          { 'data-knc-source': 'knc-about-placeholder-svg' },
+          { 'data-knc-source': 'knc-about-0-i0-i6-k61' },
+          { 'data-knc-source': 'knc-about-0-i0-i6', 'data-knc-fold': 'barber-marquee' },
+        ],
+        [{ id: 'b' }, { id: 'a' }],
+      ),
+    ).toEqual({ purpose: 'profile', barberId: 'a' })
+  })
   it.each(['gallery/cuts/one.webp', 'gallery/logo/one.webp', 'barber-photos/a/one.webp'])(
     'does not turn an authored image into a domain assignment merely because it uses %s',
     (path) => {
