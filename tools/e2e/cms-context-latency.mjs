@@ -82,7 +82,7 @@ try {
     isolated.Storage.setAutosave(false)
     try {
       const original =
-        '<div data-knc-native="1"><p id="copy" data-knc-source="copy" title="old" class="old">Original</p></div>'
+        '<div data-knc-native="1"><p id="copy" data-knc-source="copy" title="old" class="old">Original</p><small>Stable unlabelled text</small></div>'
       isolated.setComponents(original)
       const copy = isolated.Components.getById('copy')
       const next = original
@@ -93,6 +93,8 @@ try {
         '#copy{color:blue}.unused{width:12px}@media(max-width:600px){#copy{font-size:18px}}',
       )
       const reused = updateNativeCanvas(isolated, next, css)
+      const roundtrip =
+        updateNativeCanvas(isolated, original, css) && updateNativeCanvas(isolated, next, css)
       const content = isolated.getHtml({ cleanId: false })
       const sameModel = copy === isolated.Components.getById('copy')
       const policyChange = updateNativeCanvas(
@@ -108,6 +110,7 @@ try {
       )
       return {
         reused,
+        roundtrip,
         policyChange,
         sameModel,
         structural,
@@ -123,6 +126,7 @@ try {
     }
   })
   assert.equal(patchContract.reused, true)
+  assert.equal(patchContract.roundtrip, true)
   assert.equal(patchContract.sameModel, true)
   assert.equal(patchContract.policyChange, false)
   assert.equal(patchContract.structural, false)
@@ -131,7 +135,7 @@ try {
   assert.equal(patchContract.removedTitle, true)
   assert.deepEqual(patchContract.classes, ['new'])
   assert.match(patchContract.css, /unused/)
-  assert.match(patchContract.css, /max-width:600px/)
+  assert.match(patchContract.css, /max-width:\s*600px/)
   await measure('unchanged-view', () => button('SV').click())
   for (const name of ['EN', 'SV', 'Mörk', 'Ljus', 'Mobil', 'Dator'])
     await measure(name, () => button(name).click())

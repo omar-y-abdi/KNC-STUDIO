@@ -26,7 +26,7 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
         (definition['type'] ?? '') === model.get('type') &&
         (model.is('textnode') ||
           attributes['data-knc-native'] === '1' ||
-          attributes['id'] === definition['attributes']?.['id']) &&
+          model.get('attributes')?.['id'] === definition['attributes']?.['id']) &&
         (definition['type'] === 'textnode' ||
           (definition['tagName'] ?? 'div').toLowerCase() ===
             String(model.get('tagName')).toLowerCase()) &&
@@ -74,11 +74,7 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
       if (!definition) return false
       if (!plan(model, children(definition.components))) return false
       const attributes = { ...definition['attributes'] }
-      if (!attributes['id']) attributes['id'] = model.getId()
-      if (
-        !model.is('textnode') &&
-        !equalAttributes(model.getAttributes({ noClass: true, noStyle: true }), attributes)
-      )
+      if (!model.is('textnode') && !equalAttributes(model.get('attributes') ?? {}, attributes))
         changes.push(() => model.setAttributes(attributes))
       const classes = (definition['classes'] ?? []).map((item: string | { name: string }) =>
         typeof item === 'string' ? item : item.name,
