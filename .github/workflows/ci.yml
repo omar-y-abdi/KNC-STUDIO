@@ -160,7 +160,7 @@ jobs:
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
           status=0
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-projection.mjs || status=1
-          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 DEBUG=pw:browser node tools/e2e/cms-owner.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-responsive.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-scenes.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-public-regression.mjs || status=1
@@ -177,6 +177,7 @@ jobs:
             /tmp/cms-native-*.png
             /tmp/cms-native-*-barber.json
             /tmp/blade-cms-shell.log
+            /tmp/cms-owner/
           retention-days: 7
 
   edge-functions:
