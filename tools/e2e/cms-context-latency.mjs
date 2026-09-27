@@ -44,6 +44,11 @@ try {
   )
   const frame = page.frameLocator('.gjs-frame').first()
   await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
+  assert.equal(
+    await frame.locator('#cms-canvas-behavior').count(),
+    1,
+    'Preview behavior must survive GrapesJS initial frame/head rendering',
+  )
   await button('Publicera').click()
   await page.getByText('Publicerad · rev 2', { exact: true }).waitFor()
   await page.evaluate(async () => {

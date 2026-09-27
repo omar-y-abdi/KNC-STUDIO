@@ -61,10 +61,11 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
       style.remove()
     }
   }
-  editor.on('canvas:frame:load', attach)
+  // The frame load event precedes GrapesJS replacing <head>; attach after its body is ready.
+  editor.on('canvas:frame:load:body', attach)
   attach()
   return () => {
-    editor.off('canvas:frame:load', attach)
+    editor.off('canvas:frame:load:body', attach)
     dispose()
   }
 }
