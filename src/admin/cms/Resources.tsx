@@ -245,21 +245,24 @@ export function CmsResources(props: Props): JSX.Element {
     )
     if (enabled) latest.current.onAssigned?.()
   }
+  const storeAsset = async (file: File, target: ResourceDestination): Promise<CmsAsset> => {
+    const asset = await cmsApi.uploadAsset(
+      file,
+      target.purpose === 'fonts' ? 'library' : target.purpose,
+      'barberId' in target ? target.barberId : undefined,
+    )
+    latest.current.onAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)])
+    return asset
+  }
   const storeFile = async (
     file: File,
     destination: ResourceDestination,
     replacement?: CmsAsset,
   ): Promise<void> => {
-    const target = replacement ? purposeOf(replacement) : destination
-    const nextAsset = await cmsApi.uploadAsset(
+    const nextAsset = await storeAsset(
       file,
-      target.purpose === 'fonts' ? 'library' : target.purpose,
-      'barberId' in target ? target.barberId : undefined,
+      replacement ? resourceDestination(replacement) : destination,
     )
-    latest.current.onAssets((current) => [
-      nextAsset,
-      ...current.filter((item) => item.id !== nextAsset.id),
-    ])
     if (replacement)
       await latest.current.onDocument((current) => {
         const next = structuredClone(current)
@@ -285,7 +288,28 @@ export function CmsResources(props: Props): JSX.Element {
     perform(async () => {
       setUploadError('')
       try {
-        for (const file of files) await storeFile(file, destination)
+        const stored: CmsAsset[] = []
+        try {
+          for (const file of files) stored.push(await storeAsset(file, destination))
+        } finally {
+          // Each document transaction recaptures all responsive/theme variants.
+          // Refresh once per selection, including files saved before a later upload fails.
+          if (stored.length) {
+            await latest.current.onDocument((current) =>
+              stored.reduce(
+                (document, asset) =>
+                  assignResource(
+                    document,
+                    asset,
+                    asset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
+                  ),
+                current,
+              ),
+            )
+            const first = stored[0]
+            if (first) setSelectedId((current) => (current === selectedId ? first.id : current))
+          }
+        }
       } catch (reason) {
         setUploadError(
           reason instanceof Error

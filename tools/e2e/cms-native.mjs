@@ -131,8 +131,14 @@ async function run(engine, name) {
     if (message.type() === 'error') console.error('BROWSER', message.text())
   })
   const appearance = (locator) =>
-    locator.evaluate((node) => {
+    locator.evaluate(async (node) => {
       const style = globalThis.getComputedStyle(node)
+      // font-display:swap may expose fallback metrics even when the text is visible.
+      // Compare the site's actual font with the canvas, not two different load phases.
+      await node.ownerDocument.fonts.load(
+        `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
+      )
+      await node.ownerDocument.fonts.ready
       return {
         ...Object.fromEntries(
           [

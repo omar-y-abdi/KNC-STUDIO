@@ -85,6 +85,16 @@ jobs:
           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
           ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
       - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Delayed verification keeps booking controls stable
+        run: |
+          VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4206 --strictPort > /tmp/blade-widget-layout.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4206/tools/e2e/admin-harness.html >/dev/null && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:4206 node tools/e2e/turnstile-layout.mjs
       - name: Enforce image processing CPU budget
         run: node tools/e2e/upload-budget.mjs
       - name: Preserve image processing evidence
@@ -121,6 +131,8 @@ jobs:
           path: |
             /tmp/visual-candidate/*.png
             /tmp/visual-diff/*.png
+            /tmp/turnstile-layout/
+            /tmp/blade-widget-layout.log
           retention-days: 7
 
   cms-shell:
@@ -160,7 +172,7 @@ jobs:
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-native.mjs
           status=0
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-projection.mjs || status=1
-          BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-owner.mjs || status=1
+          BASE_URL=http://127.0.0.1:4188 DEBUG=pw:browser node tools/e2e/cms-owner.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-responsive.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-scenes.mjs || status=1
           BASE_URL=http://127.0.0.1:4188 node tools/e2e/cms-public-regression.mjs || status=1
@@ -177,6 +189,7 @@ jobs:
             /tmp/cms-native-*.png
             /tmp/cms-native-*-barber.json
             /tmp/blade-cms-shell.log
+            /tmp/cms-owner/
           retention-days: 7
 
   edge-functions:
@@ -272,6 +285,7 @@ jobs:
             /tmp/knc-customer-e2e-*/*.png
             /tmp/knc-customer-e2e-*/public-first-paint-*.json
             /tmp/knc-customer-e2e-*/cms-studio-request-metrics.json
+            /tmp/knc-customer-e2e-*/*-details-close-trace.zip
           retention-days: 7
       - name: Stop local Supabase
         if: always()

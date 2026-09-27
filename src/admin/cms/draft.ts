@@ -11,6 +11,8 @@ export class CmsDraft {
   private submitted: CmsDocument | null = null
   private lastGroup = ''
   private lastChange = 0
+  private dirtyComparison: { document: CmsDocument; base: CmsDocument; dirty: boolean } | null =
+    null
 
   constructor(document: CmsDocument, revision: number, fingerprint: string) {
     this.document = structuredClone(document)
@@ -20,7 +22,19 @@ export class CmsDraft {
   }
 
   get dirty(): boolean {
-    return JSON.stringify(this.document) !== JSON.stringify(this.base)
+    // Draft transactions replace snapshots; selection, zoom and panel renders do not.
+    // Include base identity because refresh/conflict resolution may replace it directly.
+    if (
+      this.dirtyComparison?.document !== this.document ||
+      this.dirtyComparison.base !== this.base
+    ) {
+      this.dirtyComparison = {
+        document: this.document,
+        base: this.base,
+        dirty: JSON.stringify(this.document) !== JSON.stringify(this.base),
+      }
+    }
+    return this.dirtyComparison.dirty
   }
 
   change(next: CmsDocument, group = ''): void {

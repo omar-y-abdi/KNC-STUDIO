@@ -28,13 +28,26 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
   return value as Record<string, string>
 }
 
-function nativeStyle(element: Element, mode: CmsMode): CSSStyleDeclaration {
+interface NativeStyle {
+  css: string
+  style: CSSStyleDeclaration
+}
+
+function nativeStyle(
+  element: Element,
+  mode: CmsMode,
+  cache: Map<string, NativeStyle>,
+): NativeStyle {
+  const source =
+    element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
+  const cached = cache.get(source)
+  if (cached) return cached
+  const css = themeDeclarations(source, mode)
   const style = document.createElement('span').style
-  style.cssText = themeDeclarations(
-    element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? '',
-    mode,
-  )
-  return style
+  style.cssText = css
+  const value = { css, style }
+  cache.set(source, value)
+  return value
 }
 
 function normalizeNativeCss(
@@ -43,7 +56,15 @@ function normalizeNativeCss(
   removeUnchanged: boolean,
 ): string {
   const stylesheet = parse(css)
-  const normalizeValue = (value: string): string => generate(parse(value, { context: 'value' }))
+  const normalized = document.createElement('span').style
+  const values = new Map<string, string>()
+  const normalizeValue = (value: string): string => {
+    const cached = values.get(value)
+    if (cached !== undefined) return cached
+    const result = generate(parse(value, { context: 'value' }))
+    values.set(value, result)
+    return result
+  }
   walk(stylesheet, {
     visit: 'Rule',
     enter(rule) {
@@ -57,7 +78,8 @@ function normalizeNativeCss(
       rule.block.children.forEach((declaration, item) => {
         if (declaration.type !== 'Declaration') return
         const name = declaration.property
-        const normalized = document.createElement('span').style
+        // Invalid declarations must not retain a previous value in the scratch style.
+        normalized.cssText = ''
         normalized.setProperty(name, generate(declaration.value))
         const unchanged =
           !this.atrule &&
@@ -83,6 +105,8 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
   const doc = new DOMParser().parseFromString(variant.html, 'text/html')
   const rules: string[] = []
   const originalStyles = new Map<string, CSSStyleDeclaration>()
+  // Scoped to this conversion: no retained owner documents or stale cross-theme values.
+  const styles = new Map<string, NativeStyle>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
@@ -93,9 +117,9 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
     }
     const style =
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
-    if (element.id) originalStyles.set(element.id, nativeStyle(element, mode))
-    if (style && element.id)
-      rules.push(`#${CSS.escape(element.id)}{${themeDeclarations(style, mode)}}`)
+    const native = nativeStyle(element, mode, styles)
+    if (element.id) originalStyles.set(element.id, native.style)
+    if (style && element.id) rules.push(`#${CSS.escape(element.id)}{${native.css}}`)
     element.removeAttribute('style')
   }
   return {
@@ -116,8 +140,11 @@ export function exportNativeCanvas(
   if (!html.includes('data-knc-native="1"')) return { html, css }
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const originalStyles = new Map<string, CSSStyleDeclaration>()
+  // Scoped to this conversion: no retained owner documents or stale cross-theme values.
+  const styles = new Map<string, NativeStyle>()
   for (const element of doc.querySelectorAll('[data-knc-baseline]')) {
-    if (element.id) originalStyles.set(element.id, nativeStyle(element, mode))
+    const native = nativeStyle(element, mode, styles)
+    if (element.id) originalStyles.set(element.id, native.style)
     const light = readBaseline(element, 'light')
     const current = mode === 'dark' ? readBaseline(element, 'dark') : light
     for (const name of attributes) {

@@ -132,7 +132,7 @@ export function isReadOnlyPreview(component: Component): boolean {
   return false
 }
 
-export function configureComponent(component: Component): void {
+export function configureComponent(component: Component, options: { silent?: boolean } = {}): void {
   const tag = String(component.get('tagName') ?? '').toLowerCase()
   const attrs = component.getAttributes()
   const compositionBoundary =
@@ -149,29 +149,32 @@ export function configureComponent(component: Component): void {
       protectedIds.has(String(attributes['id'] ?? '')),
     )
   })
-  component.set({
-    ...(readOnly ? { editable: false, stylable: false } : {}),
-    // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
-    ...(!readOnly && component.is('svg-in')
-      ? { selectable: true, hoverable: true, layerable: true, highlightable: true }
-      : {}),
-    removable: !readOnly && !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
-    copyable: !readOnly && !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
-    draggable: !readOnly && !protectedComponent && !attrs['data-knc-native'],
-    droppable:
-      attrs['id'] === 'cms-site-content' ||
-      (!readOnly &&
-        !attrs['data-knc-native'] &&
-        (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag)))),
-    resizable:
-      !readOnly &&
-      (!protectedComponent ||
-        tag === 'svg' ||
-        tag === 'img' ||
-        barberScalePeers(component).length > 0) &&
-      !controls.has(tag) &&
-      !svgLeaf.has(tag),
-  })
+  component.set(
+    {
+      ...(readOnly ? { editable: false, stylable: false } : {}),
+      // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
+      ...(!readOnly && component.is('svg-in')
+        ? { selectable: true, hoverable: true, layerable: true, highlightable: true }
+        : {}),
+      removable: !readOnly && !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
+      copyable: !readOnly && !protectedComponent && !retainedChildren && !attrs['data-knc-native'],
+      draggable: !readOnly && !protectedComponent && !attrs['data-knc-native'],
+      droppable:
+        attrs['id'] === 'cms-site-content' ||
+        (!readOnly &&
+          !attrs['data-knc-native'] &&
+          (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag)))),
+      resizable:
+        !readOnly &&
+        (!protectedComponent ||
+          tag === 'svg' ||
+          tag === 'img' ||
+          barberScalePeers(component).length > 0) &&
+        !controls.has(tag) &&
+        !svgLeaf.has(tag),
+    },
+    options,
+  )
   if (readOnly) component.setTraits([])
   // The image inspector already owns the accessible alt-text field. Keep one
   // editor for that attribute instead of exposing a second, unsynchronized trait.

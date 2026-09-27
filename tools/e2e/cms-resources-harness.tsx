@@ -5,6 +5,9 @@ import type { CmsAsset, CmsDocument } from '../../shared/cms'
 import { CmsResources } from '../../src/admin/cms/Resources'
 import '../../src/admin/cms/studio.css'
 
+let documentUpdates = 0
+export const resourceDocumentUpdates = (): number => documentUpdates
+
 type Update<T> = T | ((current: T) => T)
 let model: { assets: CmsAsset[]; document: CmsDocument; error: string }
 
@@ -13,6 +16,7 @@ const setAssets = (next: Update<CmsAsset[]>): void => {
   draw()
 }
 const setDocument = (next: Update<CmsDocument>): void => {
+  documentUpdates++
   model.document = typeof next === 'function' ? next(model.document) : next
   draw()
 }
@@ -40,6 +44,7 @@ function draw(): void {
   )
 }
 export function mountResources(assets: CmsAsset[], document: CmsDocument): void {
+  documentUpdates = 0
   model = { assets, document, error: '' }
   draw()
 }

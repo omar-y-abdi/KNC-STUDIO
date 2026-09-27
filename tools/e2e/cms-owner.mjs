@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright'
 import { nativeBackend } from './cms-native.mjs'
 import { emptyDocument, EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
@@ -6,6 +7,8 @@ import { renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+const evidence = process.env.CMS_EVIDENCE_DIR ?? '/tmp/cms-owner'
+await mkdir(evidence, { recursive: true })
 const failures = []
 const scenarios = [
   'duplicate',
@@ -45,6 +48,30 @@ for (const [engine, name] of [
         reducedMotion: 'reduce',
       })
       context.setDefaultTimeout(10000)
+      const navigation = []
+      const traceReload = scenario === 'logos'
+      let passed = false
+      if (traceReload) {
+        await context.tracing.start({ screenshots: true, snapshots: true })
+        context.on('page', (tab) => {
+          tab.on('crash', () => navigation.push({ event: 'crash', url: tab.url() }))
+          tab.on('pageerror', (error) =>
+            navigation.push({ event: 'pageerror', url: tab.url(), error: error.message }),
+          )
+          tab.on('requestfailed', (request) => {
+            if (request.isNavigationRequest())
+              navigation.push({
+                event: 'navigation-failed',
+                url: request.url(),
+                error: request.failure(),
+              })
+          })
+          tab.on('framenavigated', (frame) => {
+            if (frame === tab.mainFrame())
+              navigation.push({ event: 'navigation', url: frame.url() })
+          })
+        })
+      }
       let sourceCaptures = 0
       context.on('request', (request) => {
         const url = new URL(request.url())
@@ -512,6 +539,7 @@ for (const [engine, name] of [
           }
           const live = await context.newPage()
           for (const { id, replacement, device, title } of edits) {
+            navigation.push({ event: 'logo-variant', id, replacement, device, title })
             await live.setViewportSize({ width: device === 'Dator' ? 1440 : 390, height: 900 })
             await live.goto(`${base}${title === 'Bokning' ? '/booking' : '/'}`)
             await live.locator(`[id="${id}"]`).filter({ hasText: replacement }).waitFor()
@@ -987,6 +1015,7 @@ for (const [engine, name] of [
           await live.getByText(text, { exact: true }).waitFor()
         }
         await page.screenshot({ path: `/tmp/cms-native-${name}-owner-${scenario}.png` })
+        passed = true
         console.log(`PASS owner ${name}: ${scenario}`)
       } catch (error) {
         failures.push(`${name}/${scenario}: ${error.message}`)
@@ -994,6 +1023,15 @@ for (const [engine, name] of [
         console.error('OWNER_EDITOR', (await page.locator('body').innerText()).slice(0, 3000))
         await page.screenshot({ path: `/tmp/cms-native-${name}-owner-${scenario}-failure.png` })
       } finally {
+        if (traceReload) {
+          if (!passed) {
+            await writeFile(
+              `${evidence}/${name}-logos-navigation.json`,
+              JSON.stringify(navigation, null, 2),
+            )
+            await context.tracing.stop({ path: `${evidence}/${name}-logos-trace.zip` })
+          } else await context.tracing.stop()
+        }
         await context.close()
       }
     }

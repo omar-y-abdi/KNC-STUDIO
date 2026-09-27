@@ -137,7 +137,8 @@ export function Turnstile(props: TurnstileProps): JSX.Element | null {
   if (SITE_KEY === undefined) return null
   return (
     <div style={{ marginTop: '4px' }}>
-      <div ref={containerRef} />
+      {/* The default normal widget is 65px tall; late loading must not move dialog controls. */}
+      <div ref={containerRef} style={{ minHeight: '65px' }} />
       {failed && props.onError === undefined ? (
         <div role="alert" style={{ fontSize: '12px', lineHeight: 1.5, margin: '8px 0' }}>
           <span>

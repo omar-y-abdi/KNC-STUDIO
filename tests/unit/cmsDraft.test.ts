@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { emptyDocument } from '../../shared/cms'
 import { CmsDraft } from '../../src/admin/cms/draft'
 
@@ -38,5 +38,32 @@ describe('CMS draft', () => {
     expect(draft.document.settings.business_name).toBe('Newer')
     expect(draft.dirty).toBe(true)
     expect(draft.revision).toBe(2)
+  })
+})
+
+describe('CMS draft interaction cost', () => {
+  it('does not serialize unchanged snapshots again when the workspace rerenders', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, 'head')
+    const next = structuredClone(draft.document)
+    next.settings.business_name = 'Edited'
+    draft.change(next)
+    const stringify = vi.spyOn(JSON, 'stringify')
+    try {
+      for (let render = 0; render < 20; render++) expect(draft.dirty).toBe(true)
+      const reads = stringify.mock.calls.filter(
+        ([value]) => value === draft.document || value === draft.base,
+      )
+      expect(reads.length).toBeLessThanOrEqual(2)
+      draft.undo()
+      expect(draft.dirty).toBe(false)
+      draft.redo()
+      expect(draft.dirty).toBe(true)
+      draft.base = structuredClone(draft.document)
+      expect(draft.dirty).toBe(false)
+      draft.base = emptyDocument()
+      expect(draft.dirty).toBe(true)
+    } finally {
+      stringify.mockRestore()
+    }
   })
 })
