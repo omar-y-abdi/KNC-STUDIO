@@ -18,29 +18,30 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
   const inline: (() => void)[] = []
   const plan = (parent: Component, definitions: Definition[]): boolean => {
     const models: Component[] = parent.components().models
-    const sameIdentity = (model: Component, definition: Definition): boolean => {
+    const sameIdentity = (model: Component, definition: Definition | undefined): boolean => {
+      if (!definition) return false
       const attributes = model.getAttributes({ noClass: true, noStyle: true })
       return (
-        (definition.type ?? '') === model.get('type') &&
-        (definition.type === 'textnode' ||
-          (definition.tagName ?? 'div').toLowerCase() ===
+        (definition['type'] ?? '') === model.get('type') &&
+        (definition['type'] === 'textnode' ||
+          (definition['tagName'] ?? 'div').toLowerCase() ===
             String(model.get('tagName')).toLowerCase()) &&
         ['data-knc-source', 'data-knc-slot', 'data-editor-about-slot'].every(
-          (key) => attributes[key] === definition.attributes?.[key],
+          (key) => attributes[key] === definition['attributes']?.[key],
         )
       )
     }
     if (
       models.length !== definitions.length ||
-      models.some((model, i) => !sameIdentity(model, definitions[i]!))
+      models.some((model, i) => !sameIdentity(model, definitions[i]))
     ) {
       // Plain copy can gain/lose text nodes or line breaks between languages.
       // No identified/styled element may be discarded by this fast path.
       const plain = (definition: Definition): boolean =>
-        (definition.type === 'textnode' || definition.tagName === 'br') &&
-        !Object.keys(definition.attributes ?? {}).length &&
-        !Object.keys(definition.style ?? {}).length &&
-        !definition.classes?.length
+        (definition['type'] === 'textnode' || definition['tagName'] === 'br') &&
+        !Object.keys(definition['attributes'] ?? {}).length &&
+        !Object.keys(definition['style'] ?? {}).length &&
+        !definition['classes']?.length
       if (
         !definitions.every(plain) ||
         !models.every(
@@ -54,26 +55,27 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
       return true
     }
     for (const [index, model] of models.entries()) {
-      const definition = definitions[index]!
+      const definition = definitions[index]
+      if (!definition) return false
       if (!plan(model, children(definition.components))) return false
-      const attributes = { ...definition.attributes }
+      const attributes = { ...definition['attributes'] }
       if (!attributes['id']) attributes['id'] = model.getId()
       if (!equalAttributes(model.getAttributes({ noClass: true, noStyle: true }), attributes))
         changes.push(() => model.setAttributes(attributes))
-      const classes = (definition.classes ?? []).map((item: string | { name: string }) =>
+      const classes = (definition['classes'] ?? []).map((item: string | { name: string }) =>
         typeof item === 'string' ? item : item.name,
       )
       if (model.getClasses().join(' ') !== classes.join(' '))
         changes.push(() => model.setClass(classes))
-      const content = definition.content ?? ''
+      const content = definition['content'] ?? ''
       if (model.get('content') !== content)
         changes.push(() => {
           model.set('content', content)
           // GrapesJS text-node views do not handle content changes like element views.
           if (model.is('textnode')) model.getView()?.render()
         })
-      if (definition.style && Object.keys(definition.style).length)
-        inline.push(() => model.setStyle(definition.style))
+      if (definition['style'] && Object.keys(definition['style']).length)
+        inline.push(() => model.setStyle(definition['style']))
     }
     return true
   }

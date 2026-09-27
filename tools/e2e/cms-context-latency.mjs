@@ -69,6 +69,62 @@ try {
       return html.apply(this, args)
     }
   })
+  const patchContract = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { updateNativeCanvas } = await import('/src/admin/cms/updateCanvas.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const isolated = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      avoidInlineStyle: true,
+    })
+    isolated.Storage.setAutosave(false)
+    try {
+      const original =
+        '<div data-knc-native="1"><p id="copy" data-knc-source="copy" title="old" class="old">Original</p></div>'
+      isolated.setComponents(original)
+      const copy = isolated.Components.getById('copy')
+      const next = original
+        .replace(' title="old"', '')
+        .replace('class="old"', 'class="new"')
+        .replace('Original', 'Changed &amp; literal')
+      const css = isolated.Parser.parseCss(
+        '#copy{color:blue}.unused{width:12px}@media(max-width:600px){#copy{font-size:18px}}',
+      )
+      const reused = updateNativeCanvas(isolated, next, css)
+      const content = isolated.getHtml({ cleanId: false })
+      const sameModel = copy === isolated.Components.getById('copy')
+      const beforeUnsupported = content
+      const structural = updateNativeCanvas(
+        isolated,
+        next.replace('<p ', '<section ').replace('</p>', '</section>'),
+        css,
+      )
+      return {
+        reused,
+        sameModel,
+        structural,
+        unchangedOnFallback: isolated.getHtml({ cleanId: false }) === beforeUnsupported,
+        text: content.includes('Changed &amp; literal'),
+        removedTitle: !content.includes('title="old"'),
+        classes: copy.getClasses(),
+        css: isolated.getCss({ keepUnusedStyles: true }),
+      }
+    } finally {
+      isolated.destroy()
+      host.remove()
+    }
+  })
+  assert.equal(patchContract.reused, true)
+  assert.equal(patchContract.sameModel, true)
+  assert.equal(patchContract.structural, false)
+  assert.equal(patchContract.unchangedOnFallback, true)
+  assert.equal(patchContract.text, true)
+  assert.equal(patchContract.removedTitle, true)
+  assert.deepEqual(patchContract.classes, ['new'])
+  assert.match(patchContract.css, /unused/)
+  assert.match(patchContract.css, /max-width:600px/)
   await measure('unchanged-view', () => button('SV').click())
   for (const name of ['EN', 'SV', 'Mörk', 'Ljus', 'Mobil', 'Dator'])
     await measure(name, () => button(name).click())
