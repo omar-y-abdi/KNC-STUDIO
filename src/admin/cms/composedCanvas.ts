@@ -133,7 +133,18 @@ export function composedCanvas(
     })
     rules.push(generate(sheet))
   }
-  return { html: doc.body.innerHTML, css: rules.join('\n') }
+  const combined = parse(rules.join('\n'))
+  // Home and both About copies share source rules. Import each identical rule once.
+  // Layer declarations establish order on first occurrence, so retain them verbatim.
+  let layered = false
+  walk(combined, {
+    visit: 'Atrule',
+    enter(node) {
+      if (ident.decode(node.name).toLowerCase() === 'layer') layered = true
+    },
+  })
+  if (!layered) deduplicateRules(combined)
+  return { html: doc.body.innerHTML, css: layered ? rules.join('\n') : generate(combined) }
 }
 
 /** Only ownership moves on a Home device switch; both responsive trees already exist. */
