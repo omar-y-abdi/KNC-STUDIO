@@ -22,7 +22,12 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
-import { composedCanvas, stripComposedCanvas, extractComposedAbout } from './composedCanvas'
+import {
+  composedCanvas,
+  stripComposedCanvas,
+  extractComposedAbout,
+  moveHomeAbout,
+} from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
@@ -178,7 +183,13 @@ export function CmsEditor(props: Props): JSX.Element {
   const [advancedProperty, setAdvancedProperty] = useState('')
   const [advancedValue, setAdvancedValue] = useState('')
   const viewStates = useRef(new Map<string, CmsViewState>())
-  const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
+  const rendered = useRef<{
+    pageId: string
+    device: Props['device']
+    key: string
+    html: string
+    css: string
+  } | null>(null)
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
   const contextKey = editorContextKey(props)
   const variant = props.page.content[props.lang]
@@ -474,6 +485,7 @@ export function CmsEditor(props: Props): JSX.Element {
       }
       rendered.current = {
         pageId: current.page.id,
+        device: current.device,
         key: editorContextKey({ ...current, presentation: updatedPresentation }),
         ...persisted,
       }
@@ -535,6 +547,21 @@ export function CmsEditor(props: Props): JSX.Element {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
     applying.current = true
+    if (
+      props.page.path === '/' &&
+      previous &&
+      previous.device !== props.device &&
+      previous.key === editorContextKey({ ...props, device: previous.device }) &&
+      previous.html === variant.html &&
+      previous.css === variant.css[props.mode] &&
+      moveHomeAbout(editor, props.device)
+    ) {
+      rendered.current = { ...previous, device: props.device, key: contextKey }
+      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      applying.current = false
+      editor.clearDirtyCount()
+      return
+    }
     const content = isSitePage(props.page)
       ? renderSitePage(
           props.presentation,
@@ -570,6 +597,7 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
     rendered.current = {
       pageId: props.page.id,
+      device: props.device,
       key: contextKey,
       html: variant.html,
       css: variant.css[props.mode],

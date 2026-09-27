@@ -1,3 +1,4 @@
+import type { Editor } from 'grapesjs'
 import { generate, ident, parse, walk, type CssNode } from 'css-tree'
 import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import type { CmsScene } from '../../cms/Scene'
@@ -133,6 +134,44 @@ export function composedCanvas(
     rules.push(generate(sheet))
   }
   return { html: doc.body.innerHTML, css: rules.join('\n') }
+}
+
+/** Only ownership moves on a Home device switch; both responsive trees already exist. */
+export function moveHomeAbout(editor: Editor, device: CanvasDevice): boolean {
+  const wrapper = editor.getWrapper()
+  const from = wrapper?.find('[data-editor-about-slot]')[0]
+  const surface = wrapper?.find(`[data-knc-surface="${device.toLowerCase()}-home"]`)[0]
+  const to = surface
+    ?.find('[data-knc-slot]')
+    .find((slot) =>
+      slot
+        .components()
+        .some(
+          (child) => child.get('tagName') === 'section' && child.getAttributes()['aria-labelledby'],
+        ),
+    )
+  const owner = from?.components().at(0)
+  const preview = to?.components().at(0)
+  if (
+    !from ||
+    !to ||
+    !owner ||
+    !preview ||
+    from.components().length !== 1 ||
+    to.components().length !== 1
+  )
+    return false
+  if (owner.getAttributes()['data-knc-surface'] !== 'about') return false
+  editor.UndoManager.skip(() => {
+    const identity = from.getAttributes()['data-editor-about-slot']
+    from.removeAttributes('data-editor-about-slot')
+    from.addAttributes({ 'data-knc-slot': identity })
+    to.addAttributes({ 'data-editor-about-slot': to.getAttributes()['data-knc-slot'] })
+    to.removeAttributes('data-knc-slot')
+    preview.move(from)
+    owner.move(to)
+  })
+  return true
 }
 
 function deduplicateRules(sheet: CssNode): void {

@@ -102,6 +102,8 @@ try {
     )
   }
   assert.equal(results.find((row) => row.label === 'unchanged-view').exports, 0)
+  for (const row of results.filter((row) => ['Mobil', 'Dator'].includes(row.label)))
+    assert.equal(row.creates, 0, `${row.label}: Home already has both device trees`)
   assert.ok(
     results.find((row) => row.label === 'revert').parses < 24,
     'Complete reset must not reparse both copies of every core page',
