@@ -93,6 +93,16 @@ try {
       return globalThis.deviceSizes
     })
     assert.ok(sizes.length > 0, `${name}: the actual iframe viewport changed`)
+    const selectionReady = await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      return editor.Commands.isActive(editor.getConfig().defaultCommand)
+    })
+    assert.equal(
+      selectionReady,
+      true,
+      `${name}: selection must resume as soon as final geometry is ready`,
+    )
     assert.deepEqual(
       [...new Set(sizes.map((size) => size.join('x')))],
       [`${width}x${height}`],

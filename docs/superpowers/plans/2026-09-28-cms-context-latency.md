@@ -112,3 +112,11 @@ viewport on resize, in both directions. Afterward the same probe produced one
 resize at 390x844. The original publication/click scenario remains unchanged and
 now also runs early in both engines' unified workflow, in addition to the full
 shell suite. Final exact-head CI is still required after this correction.
+
+Removing that transition also exposed the library's matching 350 ms selection
+pause. A separate regression found the default selection command inactive after
+final geometry was already available. Resume it from the existing resize/fit
+observer only for an actual pending device change after its exact viewport has
+arrived. The command-state regression now passes; the original three-round WebKit
+publication and natural pointer-click scenario also passes without forced clicks
+or added wait time.

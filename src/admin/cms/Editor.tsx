@@ -179,6 +179,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const layersHost = useRef<HTMLDivElement>(null)
   const instance = useRef<Editor | null>(null)
+  const changingDevice = useRef(false)
   const latest = useRef(props)
   latest.current = props
   const applying = useRef(false)
@@ -520,7 +521,23 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('updateBefore', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
     const fit = (): void => {
-      if (editor.Canvas.getBody()) latest.current.onZoom(fitEditor(editor))
+      if (!editor.Canvas.getBody()) return
+      latest.current.onZoom(fitEditor(editor))
+      const device = editor.Devices.getSelected()
+      const frame = editor.Canvas.getWindow()
+      if (
+        changingDevice.current &&
+        latest.current.active &&
+        !latest.current.locked &&
+        device &&
+        frame.innerWidth === parseFloat(device.get('width')) &&
+        frame.innerHeight === parseFloat(device.get('height'))
+      ) {
+        changingDevice.current = false
+        // GrapesJS pauses selection for its former 350ms animation. Our viewport
+        // is already final; resume its normal command now instead of dropping clicks.
+        editor.getModel().runDefault({ preserveSelected: 1 })
+      }
     }
     const resize = new ResizeObserver(fit)
     editor.on('load', () => {
@@ -733,6 +750,7 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor || !props.active) return
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
+    changingDevice.current = editor.getDevice() !== props.device
     editor.setDevice(props.device)
     latest.current.onZoom(fitEditor(editor))
   }, [props.active, props.device])
