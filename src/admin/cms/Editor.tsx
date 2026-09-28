@@ -530,8 +530,8 @@ export function CmsEditor(props: Props): JSX.Element {
         latest.current.active &&
         !latest.current.locked &&
         device &&
-        frame.innerWidth === parseFloat(device.get('width')) &&
-        frame.innerHeight === parseFloat(device.get('height'))
+        frame.innerWidth === parseFloat(device.get('width') ?? '') &&
+        frame.innerHeight === parseFloat(device.get('height') ?? '')
       ) {
         changingDevice.current = false
         // GrapesJS pauses selection for its former 350ms animation. Our viewport
