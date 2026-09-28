@@ -1,3 +1,4 @@
+import { useResourceUsage } from './useResourceUsage'
 import { SiteResources } from './SiteResources'
 import {
   assignResource,
@@ -13,7 +14,7 @@ import { CmsTextarea } from './Textarea'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CmsAsset, CmsDocument } from '../../../shared/cms'
-import { mediaUrl } from '../../../shared/cms'
+import { mediaKey, mediaUrl } from '../../../shared/cms'
 import { replaceDocumentResource, resourceUsage } from '../../../shared/cms-resources'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets'
 import { SUPABASE_URL } from '../../backend/config'
@@ -101,6 +102,7 @@ export function CmsResources(props: Props): JSX.Element {
   )
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
+  const references = useResourceUsage(props.document, policy)
   const latest = useRef(props)
   latest.current = props
   const detail = useRef<HTMLHeadingElement>(null)
@@ -202,7 +204,11 @@ export function CmsResources(props: Props): JSX.Element {
 
   const protectDraft = (target: CmsAsset): void => {
     // Parsing failures deliberately propagate: an unchecked draft is not unused.
-    if (resourceUsage(latest.current.document, target, policy).length > 0)
+    const places =
+      references?.document === latest.current.document && references.index
+        ? (references.index.get(mediaKey(target)) ?? [])
+        : resourceUsage(latest.current.document, target, policy)
+    if (places.length > 0)
       throw new Error('Resursen används i utkastet. Ersätt eller ta bort referenserna först.')
   }
 
@@ -359,28 +365,16 @@ export function CmsResources(props: Props): JSX.Element {
       }
     }, 'Resursåtgärden misslyckades. Kvarvarande filer är fortfarande markerade.')
 
-  const selectionProtected = useMemo(() => {
-    try {
-      return [...selectedIds].some((id) => {
-        const target = props.assets.find((item) => item.id === id)
-        return !target || resourceUsage(props.document, target, policy).length > 0
-      })
-    } catch {
-      return true
-    }
-  }, [selectedIds, props.assets, props.document])
-
-  const draftReferences = useMemo(() => {
-    try {
-      return { places: asset ? resourceUsage(props.document, asset, policy) : [], error: null }
-    } catch (reason) {
-      // A malformed local draft must not crash the library or look unreferenced.
-      return {
-        places: null,
-        error: reason instanceof Error ? reason.message : 'Referenserna kunde inte läsas.',
-      }
-    }
-  }, [props.document, asset?.bucket, asset?.path])
+  const selectionProtected = [...selectedIds].some((id) => {
+    const target = props.assets.find((item) => item.id === id)
+    return (
+      !target || !references?.index || (references.index.get(mediaKey(target))?.length ?? 0) > 0
+    )
+  })
+  const draftReferences = {
+    places: references?.index && asset ? (references.index.get(mediaKey(asset)) ?? []) : null,
+    error: references?.error ?? null,
+  }
   const navigation = (
     <nav class="cms-resource-navigation cms-segment" aria-label="Resurstyp">
       <button
