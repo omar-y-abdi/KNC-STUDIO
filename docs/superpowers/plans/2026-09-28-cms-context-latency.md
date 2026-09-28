@@ -120,3 +120,11 @@ observer only for an actual pending device change after its exact viewport has
 arrived. The command-state regression now passes; the original three-round WebKit
 publication and natural pointer-click scenario also passes without forced clicks
 or added wait time.
+
+The same selection pause also applies to the initial frame, not only a later
+device switch. Chromium's first Home click reproduced a missing text inspector
+and the new first-visible-viewport command assertion failed. Treat the initial
+frame as a pending device layout as well and retain that state until the observer
+completes it. Both engine regressions and the original Home edit/save/reload
+scenario then passed. The real-stack owner setup had failed at the same initial
+text selection on the preceding commit; its final CI rerun must verify this path.

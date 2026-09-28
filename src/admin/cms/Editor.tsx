@@ -179,7 +179,8 @@ export function CmsEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const layersHost = useRef<HTMLDivElement>(null)
   const instance = useRef<Editor | null>(null)
-  const changingDevice = useRef(false)
+  // The initial frame is a pending device layout too, before its first resize.
+  const changingDevice = useRef(true)
   const latest = useRef(props)
   latest.current = props
   const applying = useRef(false)
@@ -750,7 +751,7 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor || !props.active) return
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
-    changingDevice.current = editor.getDevice() !== props.device
+    changingDevice.current ||= editor.getDevice() !== props.device
     editor.setDevice(props.device)
     latest.current.onZoom(fitEditor(editor))
   }, [props.active, props.device])

@@ -52,6 +52,16 @@ try {
   )
   const frame = page.frameLocator('.gjs-frame').first()
   await frame.locator('[data-knc-surface="desktop-home"]').waitFor({ timeout: 90000 })
+  const initiallySelectable = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return editor.Commands.isActive(editor.getConfig().defaultCommand)
+  })
+  assert.equal(
+    initiallySelectable,
+    true,
+    'The first visible device viewport must already accept selections',
+  )
   assert.equal(
     await frame.locator('#cms-canvas-behavior').count(),
     1,
