@@ -637,7 +637,8 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!reused) {
       // Structural imports still remove old IDs before installing their replacement rules.
       editor.setComponents('')
-      editor.setStyle(rules)
+      // Definitions are already parsed. Reset once instead of inserting each rule into the live frame.
+      editor.Css.getAll().reset(rules)
       editor.setComponents(content.html)
     }
     const configure = (component: Component): void => {

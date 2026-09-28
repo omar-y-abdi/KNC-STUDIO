@@ -23,6 +23,7 @@ const measure = async (label, action) => {
       exports: 0,
       parses: 0,
       cssParses: 0,
+      ruleAdds: 0,
     }
   })
   const start = Date.now()
@@ -68,6 +69,7 @@ try {
       exports: 0,
       parses: 0,
       cssParses: 0,
+      ruleAdds: 0,
     }
     const parse = globalThis.DOMParser.prototype.parseFromString
     globalThis.DOMParser.prototype.parseFromString = function (...args) {
@@ -81,6 +83,7 @@ try {
     }
     editor.on('project:get', () => globalThis.cmsCost.snapshots++)
     editor.on('component:create', () => globalThis.cmsCost.creates++)
+    editor.Css.getAll().on('add', () => globalThis.cmsCost.ruleAdds++)
     const generator = editor.CodeManager.getGenerator('css')
     const build = generator.buildFromModel
     generator.buildFromModel = function (...args) {
@@ -206,6 +209,21 @@ try {
     assert.equal(cost.creates, 0, 'Scene changes must reuse the stored stage models')
     for (const stage of ['booking-options', 'booking-details', 'booking-confirmation'])
       assert.equal(await frame.locator(`[data-knc-surface="${stage}"]`).count(), 1)
+  }
+  await button('Skapa ny sida').click()
+  const create = page.getByRole('dialog', { name: 'Ny sida', exact: true })
+  await create.getByLabel('Sidnamn', { exact: true }).fill('Context test')
+  await create.getByLabel('Adress', { exact: true }).fill('/context-test')
+  await create.getByRole('button', { name: 'Skapa sida', exact: true }).click()
+  await frame.getByRole('heading', { name: 'Context test', exact: true }).waitFor()
+  for (const name of ['Mörk', 'Ljus', 'EN', 'SV']) {
+    const cost = await measure(`authored:${name}`, () => button(name).click())
+    assert.equal(
+      cost.ruleAdds,
+      0,
+      'Compiled styles must load as one collection, not per-rule live DOM insertions',
+    )
+    await frame.getByRole('heading', { name: 'Context test', exact: true }).waitFor()
   }
   await writeFile(`${out}/context-cost.json`, JSON.stringify(results, null, 2))
   for (const result of results) {
