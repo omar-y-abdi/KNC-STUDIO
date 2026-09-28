@@ -146,6 +146,9 @@ function fitEditor(editor: Editor): number {
 }
 
 function editorContextKey(props: Props): string {
+  // Materialized pages own their chrome. Other pages' names/content cannot alter it.
+  if (isSitePage(props.page) && props.page.layout === 'independent')
+    return `${props.page.id}:${props.lang}:${props.mode}:independent:${props.page.path}`
   const sharedChromeKey =
     isSitePage(props.page) || props.page.path === '/'
       ? JSON.stringify(
@@ -585,7 +588,8 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     const wrapperId = editor.getWrapper()?.getId() ?? ''
     const sitePage = isSitePage(props.page)
-    let compilation = sitePage
+    const cacheable = !sitePage || props.page.layout === 'independent'
+    let compilation = !cacheable
       ? undefined
       : compiled.current.find(
           (item) =>
@@ -618,9 +622,9 @@ export function CmsEditor(props: Props): JSX.Element {
         content,
         rules: parseCanvasCss(bindCmsRootStyles(content.css, wrapperId), editor),
       }
-      // Four recent native contexts cover language/theme roundtrips without retaining
+      // Four recent contexts cover language/theme roundtrips without retaining
       // whole draft histories. The exact source strings also invalidate undo and edits.
-      if (!sitePage) {
+      if (cacheable) {
         compiled.current.unshift(compilation)
         compiled.current.length = Math.min(4, compiled.current.length)
       }

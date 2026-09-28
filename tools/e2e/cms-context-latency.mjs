@@ -225,6 +225,23 @@ try {
     )
     await frame.getByRole('heading', { name: 'Context test', exact: true }).waitFor()
   }
+  for (const name of ['Mörk', 'Ljus', 'EN', 'SV']) {
+    const cost = await measure(`authored-repeat:${name}`, () => button(name).click())
+    assert.equal(
+      cost.cssParses,
+      0,
+      'Independent page contexts must reuse unchanged compiled styles',
+    )
+  }
+  const metadata = await measure('authored:metadata', () =>
+    page.locator('.cms-page-meta').getByLabel('Namn', { exact: true }).fill('New navigation label'),
+  )
+  assert.equal(metadata.creates, 0)
+  assert.equal(
+    metadata.cssParses,
+    0,
+    'Independent page metadata does not change its authored canvas',
+  )
   await writeFile(`${out}/context-cost.json`, JSON.stringify(results, null, 2))
   for (const result of results) {
     assert.equal(
