@@ -74,6 +74,13 @@ export function updateNativeCanvas(editor: Editor, html: string, rules: CssRuleJ
       if (!definition) return false
       if (!plan(model, children(definition.components))) return false
       const attributes = { ...definition['attributes'] }
+      if (model.is('image')) {
+        // Image export reads the model source, not only attributes.src.
+        // A missing source needs the normal import's default-image handling.
+        if (typeof attributes['src'] !== 'string') return false
+        if (model.get('src') !== attributes['src'])
+          changes.push(() => model.set('src', attributes['src']))
+      }
       if (!model.is('textnode') && !equalAttributes(model.get('attributes') ?? {}, attributes))
         changes.push(() => model.setAttributes(attributes))
       const classes = (definition['classes'] ?? []).map((item: string | { name: string }) =>

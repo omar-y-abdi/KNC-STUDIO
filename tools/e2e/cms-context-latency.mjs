@@ -106,13 +106,14 @@ try {
     isolated.Storage.setAutosave(false)
     try {
       const original =
-        '<div data-knc-native="1"><p id="copy" data-knc-source="copy" title="old" class="old">Original</p><small>Stable unlabelled text</small></div>'
+        '<div data-knc-native="1"><p id="copy" data-knc-source="copy" title="old" class="old">Original</p><small>Stable unlabelled text</small><img id="photo" data-knc-source="photo" src="/old.png"></div>'
       isolated.setComponents(original)
       const copy = isolated.Components.getById('copy')
       const next = original
         .replace(' title="old"', '')
         .replace('class="old"', 'class="new"')
         .replace('Original', 'Changed &amp; literal')
+        .replace('/old.png', '/new.png')
       const css = isolated.Parser.parseCss(
         '#copy{color:blue}.unused{width:12px}@media(max-width:600px){#copy{font-size:18px}}',
       )
@@ -139,6 +140,8 @@ try {
         sameModel,
         structural,
         unchangedOnFallback: isolated.getHtml({ cleanId: false }) === beforeUnsupported,
+        image: isolated.Components.getById('photo').get('src'),
+        exportedImage: content.includes('src="/new.png"'),
         text: content.includes('Changed &amp; literal'),
         removedTitle: !content.includes('title="old"'),
         classes: copy.getClasses(),
@@ -155,6 +158,8 @@ try {
   assert.equal(patchContract.policyChange, false)
   assert.equal(patchContract.structural, false)
   assert.equal(patchContract.unchangedOnFallback, true)
+  assert.equal(patchContract.image, '/new.png')
+  assert.equal(patchContract.exportedImage, true)
   assert.equal(patchContract.text, true)
   assert.equal(patchContract.removedTitle, true)
   assert.deepEqual(patchContract.classes, ['new'])
