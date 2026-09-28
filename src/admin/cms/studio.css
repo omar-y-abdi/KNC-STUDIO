@@ -1530,6 +1530,12 @@
 .knc-cms-studio .gjs-four-color-h:hover {
   color: var(--ink);
 }
+/* A device change must expose its final viewport immediately, not animate
+ * breakpoint/fold geometry while the owner tries to select its content. */
+.knc-cms-studio .gjs-frame,
+.knc-cms-studio .gjs-frame-wrapper--anim {
+  transition: none;
+}
 .knc-cms-studio .gjs-frame-wrapper {
   box-shadow: 0 10px 28px #26351b20;
   outline: 1px solid #cbd4c1;

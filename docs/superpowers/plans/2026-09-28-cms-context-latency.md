@@ -94,3 +94,21 @@ placements, malformed unrelated CSS and reuse across selected files. Both engine
 passed those targeted checks. The production-startup scenario additionally proves
 the bundled worker completes under the real production CSP without content writes.
 Full unit, browser, database and integration suites remain hosted CI gates.
+
+## Normal-motion device follow-up
+
+Exact-head CI at `db24300` passed startup, unified, workspace, frontend and database
+checks but the complete shell suite exposed a WebKit mobile-copy click that kept
+moving/intercepted after switching from desktop. No force-click or retry was added.
+A normal-motion viewport probe exposed GrapesJS's 350 ms frame width/height
+transition: one switch produced 18 resize events through widths 1407, 1242, ...
+426, 395 before reaching 390. The ordinary reproduction measured intermediate
+426/429/448 px viewports when the mobile content first became visible.
+
+Disable only the editor frame and animated wrapper dimension transitions; the
+live site's animations and all other controls are untouched. The new regression
+failed on 19 intermediate viewport sizes and requires exactly the chosen device's
+viewport on resize, in both directions. Afterward the same probe produced one
+resize at 390x844. The original publication/click scenario remains unchanged and
+now also runs early in both engines' unified workflow, in addition to the full
+shell suite. Final exact-head CI is still required after this correction.

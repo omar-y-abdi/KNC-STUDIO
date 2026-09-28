@@ -59,6 +59,46 @@ try {
   )
   await button('Publicera').click()
   await page.getByText('Publicerad · rev 2', { exact: true }).waitFor()
+  // Normal-motion device changes must not keep moving the page's click targets.
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  for (const [name, width, height] of [
+    ['Mobil', 390, 844],
+    ['Dator', 1440, 900],
+  ]) {
+    await page.evaluate(() => {
+      const win = globalThis.document.querySelector('.gjs-frame').contentWindow
+      globalThis.deviceSizes = []
+      globalThis.recordDeviceSize = () =>
+        globalThis.deviceSizes.push([win.innerWidth, win.innerHeight])
+      win.addEventListener('resize', globalThis.recordDeviceSize)
+    })
+    await button(name).click()
+    await page.waitForFunction(
+      ([width, height]) => {
+        const win = globalThis.document.querySelector('.gjs-frame').contentWindow
+        return win.innerWidth === width && win.innerHeight === height
+      },
+      [width, height],
+    )
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+        ),
+    )
+    const sizes = await page.evaluate(() => {
+      globalThis.document
+        .querySelector('.gjs-frame')
+        .contentWindow.removeEventListener('resize', globalThis.recordDeviceSize)
+      return globalThis.deviceSizes
+    })
+    assert.ok(sizes.length > 0, `${name}: the actual iframe viewport changed`)
+    assert.deepEqual(
+      [...new Set(sizes.map((size) => size.join('x')))],
+      [`${width}x${height}`],
+      `${name}: device change must not animate through transient page layouts`,
+    )
+  }
   await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
