@@ -145,8 +145,13 @@ try {
   await page.waitForFunction(
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 1440,
   )
+  const desktopAgain = await measure()
+  await writeFile(
+    `${out}/${engine}-desktop-roundtrip.json`,
+    JSON.stringify({ desktop, desktopAgain }, null, 2),
+  )
   assert.ok(
-    Math.abs((await measure()).cards[0].photo.height - desktop.cards[0].photo.height) < 2,
+    Math.abs(desktopAgain.cards[0].photo.height - desktop.cards[0].photo.height) < 2,
     'Mobile scaling never changes desktop geometry',
   )
   assert.equal(backend.writes.length, 0, 'Geometry inspection does not publish')

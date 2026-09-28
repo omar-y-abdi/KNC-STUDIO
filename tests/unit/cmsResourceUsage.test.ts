@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, mediaUrl, type CmsPage, type MediaRef } from '../../shared/cms'
-import { resourceUsage } from '../../shared/cms-resources'
+import { resourceUsage, resourceUsageIndex } from '../../shared/cms-resources'
 import { validateDocumentMarkupPlacements } from '../../shared/cms-markup'
 
 const policy = { siteOrigin: 'https://salon.example', storageOrigin: 'https://fixture.supabase.co' }
@@ -68,5 +68,35 @@ describe('resource references in the real native site', () => {
     const css = fixture()
     css.page.content.sv.css.dark = `body{background:url("https://outside.invalid/image.png")}`
     expect(() => resourceUsage(css.document, image, policy)).toThrow()
+  })
+})
+
+describe('one validated resource index per draft', () => {
+  it('preserves exact placements for HTML, CSS, native metadata and distinct resources', () => {
+    const { document, page } = fixture()
+    const second = { bucket: 'cms-library' as const, path: 'images/second.webp' }
+    page.content.sv.css.dark = `#photo{background:url("${mediaUrl(second, policy.storageOrigin)}")}`
+    document.settings.homepage_logo_path = 'logo/brand.webp'
+    document.photos.barber = 'barber/profile.webp'
+    const index = resourceUsageIndex(document, policy)
+    expect(index.get(`cms-library/${image.path}`)).toEqual([
+      '/ · sv/light',
+      '/ · sv/dark',
+      '/ · en/light',
+      '/ · en/dark',
+    ])
+    expect(index.get('cms-library/images/second.webp')).toEqual(['/ · sv/dark'])
+    expect(index.get('gallery/logo/brand.webp')).toEqual(['Sidans logotyp'])
+    expect(index.get('barber-photos/barber/profile.webp')).toEqual(['Profil: barber'])
+    expect(index.has('cms-library/images/missing.webp')).toBe(false)
+    page.content.sv.css.dark = 'p{color:red}'
+    expect(resourceUsageIndex(document, policy).has('cms-library/images/second.webp')).toBe(false)
+    expect(index.get('cms-library/images/second.webp')).toEqual(['/ · sv/dark'])
+  })
+
+  it('does not return a partial index when an unselected resource lives in invalid markup', () => {
+    const { document, page } = fixture()
+    page.content.en.css.dark = 'p{background:url(https://outside.invalid/unsafe.webp)}'
+    expect(() => resourceUsageIndex(document, policy)).toThrow()
   })
 })

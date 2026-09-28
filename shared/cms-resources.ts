@@ -4,25 +4,30 @@ import { parse, walk, generate } from 'css-tree'
 import { mediaKey, mediaUrl, type CmsDocument, type MediaRef } from './cms.ts'
 import { resourceReference, validateMarkup, type MarkupPolicy } from './cms-markup.ts'
 
-export function resourceUsage(
+/** Validate the draft once, then look up any number of assets without reparsing it. */
+export function resourceUsageIndex(
   document: CmsDocument,
-  reference: MediaRef,
   policy: MarkupPolicy,
-): string[] {
-  const key = mediaKey(reference),
-    places: string[] = []
+): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  const add = (key: string, place: string): void => {
+    const places = index.get(key) ?? []
+    if (!places.includes(place)) places.push(place)
+    index.set(key, places)
+  }
   for (const image of document.gallery)
-    if (`gallery/${image.storage_path}` === key) places.push(`Galleri: ${image.kind}`)
+    add(`gallery/${image.storage_path}`, `Galleri: ${image.kind}`)
   for (const [id, path] of Object.entries(document.photos))
-    if (`barber-photos/${path}` === key) places.push(`Profil: ${id}`)
-  if (`gallery/${document.settings['homepage_logo_path']}` === key) places.push('Sidans logotyp')
+    add(`barber-photos/${path}`, `Profil: ${id}`)
+  const logo = document.settings['homepage_logo_path']
+  if (logo) add(`gallery/${logo}`, 'Sidans logotyp')
   for (const [id, image] of Object.entries(document.presentation.images))
-    if (mediaKey(image.ref) === key) places.push(`Sidelement: ${id}`)
+    add(mediaKey(image.ref), `Sidelement: ${id}`)
   for (const font of Object.values(document.presentation.fonts ?? {}))
-    if (mediaKey(font.ref) === key) places.push(`Typsnitt: ${font.name}`)
+    add(mediaKey(font.ref), `Typsnitt: ${font.name}`)
   for (const email of document.emails)
-    if (email.design?.logo && mediaKey(email.design.logo) === key)
-      places.push(`Mejl: ${email.template}/${email.lang}`)
+    if (email.design?.logo)
+      add(mediaKey(email.design.logo), `Mejl: ${email.template}/${email.lang}`)
   const variants = [
     ...document.presentation.pages.map((page) => ({
       label: page.path,
@@ -33,20 +38,35 @@ export function resourceUsage(
       content ? [{ label: name, content, nativeAllowed: false }] : [],
     ),
   ]
+  const styles = new Map<string, MediaRef[]>()
   for (const entry of variants)
-    for (const lang of ['sv', 'en'] as const)
+    for (const lang of ['sv', 'en'] as const) {
+      const value = entry.content[lang]
+      // HTML (including native metadata and inline CSS) is identical in both modes.
+      // Keep the publication validator and its page/region bounds, without running it twice.
+      const htmlRefs = validateMarkup(value.html, '', policy, {
+        native: entry.nativeAllowed && value.html.includes('data-knc-native="1"'),
+      }).refs
       for (const mode of ['light', 'dark'] as const) {
-        const value = entry.content[lang]
-        if (
-          // Native captures use the same bounded contract as publication, not the
-          // smaller authored-page allowance. Shared regions never inherit it.
-          validateMarkup(value.html, value.css[mode], policy, {
-            native: entry.nativeAllowed && value.html.includes('data-knc-native="1"'),
-          }).refs.some((ref) => mediaKey(ref) === key)
-        )
-          places.push(`${entry.label} · ${lang}/${mode}`)
+        const css = value.css[mode]
+        let cssRefs = styles.get(css)
+        if (!cssRefs) {
+          cssRefs = validateMarkup('', css, policy).refs
+          styles.set(css, cssRefs)
+        }
+        for (const ref of [...htmlRefs, ...cssRefs])
+          add(mediaKey(ref), `${entry.label} · ${lang}/${mode}`)
       }
-  return [...new Set(places)]
+    }
+  return index
+}
+
+export function resourceUsage(
+  document: CmsDocument,
+  reference: MediaRef,
+  policy: MarkupPolicy,
+): string[] {
+  return resourceUsageIndex(document, policy).get(mediaKey(reference)) ?? []
 }
 export function replaceDocumentResource(
   document: CmsDocument,

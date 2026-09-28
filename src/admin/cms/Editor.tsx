@@ -1,3 +1,4 @@
+import { updateNativeCanvas } from './updateCanvas'
 import {
   canReplaceResourceGraphic,
   connectResourcePicker,
@@ -22,13 +23,19 @@ import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
 import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
-import { composedCanvas, stripComposedCanvas, extractComposedAbout } from './composedCanvas'
+import {
+  composedCanvas,
+  stripComposedCanvas,
+  extractComposedAbout,
+  moveHomeAbout,
+  moveBookingScene,
+} from './composedCanvas'
 import { syncResponsiveText } from './responsiveText'
 import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, parseCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, parseCanvasCss, readCanvasCss } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -45,6 +52,7 @@ export interface EditorHandle {
 }
 
 interface Props {
+  active: boolean
   onClosePanel: () => void
   inspectorModal: boolean
   scene: CmsScene
@@ -138,6 +146,9 @@ function fitEditor(editor: Editor): number {
 }
 
 function editorContextKey(props: Props): string {
+  // Materialized pages own their chrome. Other pages' names/content cannot alter it.
+  if (isSitePage(props.page) && props.page.layout === 'independent')
+    return `${props.page.id}:${props.lang}:${props.mode}:independent:${props.page.path}`
   const sharedChromeKey =
     isSitePage(props.page) || props.page.path === '/'
       ? JSON.stringify(
@@ -168,6 +179,8 @@ export function CmsEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const layersHost = useRef<HTMLDivElement>(null)
   const instance = useRef<Editor | null>(null)
+  // The initial frame is a pending device layout too, before its first resize.
+  const changingDevice = useRef(true)
   const latest = useRef(props)
   latest.current = props
   const applying = useRef(false)
@@ -177,7 +190,24 @@ export function CmsEditor(props: Props): JSX.Element {
   const [advancedProperty, setAdvancedProperty] = useState('')
   const [advancedValue, setAdvancedValue] = useState('')
   const viewStates = useRef(new Map<string, CmsViewState>())
-  const rendered = useRef<{ pageId: string; key: string; html: string; css: string } | null>(null)
+  const rendered = useRef<{
+    pageId: string
+    device: Props['device']
+    scene: CmsScene
+    key: string
+    html: string
+    css: string
+  } | null>(null)
+  const compiled = useRef<
+    {
+      key: string
+      sourceHtml: string
+      sourceCss: string
+      wrapperId: string
+      content: { html: string; css: string }
+      rules: ReturnType<typeof parseCanvasCss>
+    }[]
+  >([])
   const checkpoint = useRef<{ html: string; css: string } | null>(null)
   const contextKey = editorContextKey(props)
   const variant = props.page.content[props.lang]
@@ -187,7 +217,7 @@ export function CmsEditor(props: Props): JSX.Element {
   const compareHeight = props.device === 'Desktop' ? 844 : 900
   const comparison = useMemo(
     () =>
-      props.compare
+      props.active && props.compare
         ? isSitePage(props.page)
           ? renderSitePage(
               props.presentation,
@@ -205,6 +235,7 @@ export function CmsEditor(props: Props): JSX.Element {
             )
         : null,
     [
+      props.active,
       props.compare,
       variant.html,
       variant.css[props.mode],
@@ -298,6 +329,9 @@ export function CmsEditor(props: Props): JSX.Element {
       },
       assetManager: { assets: [], upload: false, custom: true },
     })
+    // storageManager:false disables its target, not its autosave serialization in 0.23.6.
+    // The CMS draft/backup owns persistence; never build a second project on every update.
+    editor.Storage.setAutosave(false)
     instance.current = editor
     const releaseResize = connectHierarchicalResize(
       editor,
@@ -381,12 +415,13 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('canvas:scroll', remember)
 
     const flush = (): void => {
+      const pending = timer.current !== null
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = null
-      if (applying.current || !checkpoint.current) return
+      if (!pending || applying.current || !checkpoint.current) return
       // GrapesJS updates its dirty counter asynchronously; a context switch cannot wait for it.
       let html = editor.getHtml({ cleanId: false })
-      const css = editor.getCss({ keepUnusedStyles: true }) ?? ''
+      const css = readCanvasCss(editor)
       if (html === checkpoint.current.html && css === checkpoint.current.css) return
       const current = latest.current
       // Ownership is page-wide: materialize both languages before editing either.
@@ -468,6 +503,8 @@ export function CmsEditor(props: Props): JSX.Element {
       }
       rendered.current = {
         pageId: current.page.id,
+        device: current.device,
+        scene: current.scene,
         key: editorContextKey({ ...current, presentation: updatedPresentation }),
         ...persisted,
       }
@@ -480,10 +517,28 @@ export function CmsEditor(props: Props): JSX.Element {
       if (timer.current !== null) window.clearTimeout(timer.current)
       timer.current = window.setTimeout(flush, 180)
     }
-    editor.on('update', schedule)
+    // Synchronous notification catches immediate edit-then-switch, without delayed
+    // import updates scheduling another export after applying has finished.
+    editor.on('updateBefore', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
     const fit = (): void => {
-      if (editor.Canvas.getBody()) latest.current.onZoom(fitEditor(editor))
+      if (!editor.Canvas.getBody()) return
+      latest.current.onZoom(fitEditor(editor))
+      const device = editor.Devices.getSelected()
+      const frame = editor.Canvas.getWindow()
+      if (
+        changingDevice.current &&
+        latest.current.active &&
+        !latest.current.locked &&
+        device &&
+        frame.innerWidth === parseFloat(device.get('width') ?? '') &&
+        frame.innerHeight === parseFloat(device.get('height') ?? '')
+      ) {
+        changingDevice.current = false
+        // GrapesJS pauses selection for its former 350ms animation. Our viewport
+        // is already final; resume its normal command now instead of dropping clicks.
+        editor.getModel().runDefault({ preserveSelected: 1 })
+      }
     }
     const resize = new ResizeObserver(fit)
     editor.on('load', () => {
@@ -514,7 +569,7 @@ export function CmsEditor(props: Props): JSX.Element {
   // Compare against the last rendered document on every render, not only changed dependencies.
   useLayoutEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     const previous = rendered.current
     if (
       previous?.key === contextKey &&
@@ -527,48 +582,107 @@ export function CmsEditor(props: Props): JSX.Element {
     if (timer.current !== null) window.clearTimeout(timer.current)
     timer.current = null
     applying.current = true
-    const content = isSitePage(props.page)
-      ? renderSitePage(
-          props.presentation,
-          createSitePage(props.presentation, props.page),
-          props.lang,
-          props.mode,
+    if (
+      previous &&
+      previous.key ===
+        editorContextKey({ ...props, device: previous.device, scene: previous.scene }) &&
+      previous.html === variant.html &&
+      previous.css === variant.css[props.mode] &&
+      ((props.page.path === '/' &&
+        previous.device !== props.device &&
+        moveHomeAbout(editor, props.device)) ||
+        (props.page.path === '/booking' &&
+          (previous.scene !== props.scene || previous.device !== props.device) &&
+          moveBookingScene(editor, props.scene, props.device)))
+    ) {
+      editor.select()
+      setSelected(null)
+      rendered.current = { ...previous, device: props.device, scene: props.scene, key: contextKey }
+      checkpoint.current = { html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) }
+      applying.current = false
+      editor.clearDirtyCount()
+      if (previousState) restoreViewState(editor, previousState)
+      return
+    }
+    const wrapperId = editor.getWrapper()?.getId() ?? ''
+    const sitePage = isSitePage(props.page)
+    const cacheable = !sitePage || props.page.layout === 'independent'
+    let compilation = !cacheable
+      ? undefined
+      : compiled.current.find(
+          (item) =>
+            item.key === contextKey &&
+            item.sourceHtml === variant.html &&
+            item.sourceCss === variant.css[props.mode] &&
+            item.wrapperId === wrapperId,
         )
-      : composedCanvas(
-          props.page,
-          props.presentation,
-          props.lang,
-          props.mode,
-          props.scene,
-          props.device,
-        )
+    if (!compilation) {
+      const content = sitePage
+        ? renderSitePage(
+            props.presentation,
+            createSitePage(props.presentation, props.page),
+            props.lang,
+            props.mode,
+          )
+        : composedCanvas(
+            props.page,
+            props.presentation,
+            props.lang,
+            props.mode,
+            props.scene,
+            props.device,
+          )
+      compilation = {
+        key: contextKey,
+        sourceHtml: variant.html,
+        sourceCss: variant.css[props.mode],
+        wrapperId,
+        content,
+        rules: parseCanvasCss(bindCmsRootStyles(content.css, wrapperId), editor),
+      }
+      // Four recent contexts cover language/theme roundtrips without retaining
+      // whole draft histories. The exact source strings also invalidate undo and edits.
+      if (cacheable) {
+        compiled.current.unshift(compilation)
+        compiled.current.length = Math.min(4, compiled.current.length)
+      }
+    }
+    const { content } = compilation
+    // GrapesJS owns its imported definitions; never hand it the cached originals.
+    const rules = structuredClone(compilation.rules)
     editor.select()
     setSelected(null)
-    // Removing the previous tree can remove its ID rules; do that before loading the next CSS.
-    editor.setComponents('')
-    // Importing HTML extracts inline styles. Load CSS first so it cannot erase them.
-    editor.setStyle(
-      parseCanvasCss(bindCmsRootStyles(content.css, editor.getWrapper()?.getId() ?? ''), editor),
-    )
-    editor.setComponents(content.html)
+    const reused =
+      previous?.pageId === props.page.id &&
+      previous.device === props.device &&
+      updateNativeCanvas(editor, content.html, rules)
+    if (!reused) {
+      // Structural imports still remove old IDs before installing their replacement rules.
+      editor.setComponents('')
+      // Definitions are already parsed. Reset once instead of inserting each rule into the live frame.
+      editor.Css.getAll().reset(rules)
+      editor.setComponents(content.html)
+    }
     const configure = (component: Component): void => {
       // SVG layerability changes otherwise rerender the same parent subtree per node.
       configureComponent(component, { silent: true })
       component.components().forEach(configure)
     }
-    editor.getWrapper()?.components().forEach(configure)
+    if (!reused) editor.getWrapper()?.components().forEach(configure)
     // Reuse the existing layer view once, with the complete policy already applied.
     if (props.tab === 'layers') editor.Layers.getAll()?.render()
     editor.getWrapper()?.set('droppable', !variant.html.includes('data-knc-native="1"'))
     rendered.current = {
       pageId: props.page.id,
+      device: props.device,
+      scene: props.scene,
       key: contextKey,
       html: variant.html,
       css: variant.css[props.mode],
     }
     checkpoint.current = {
       html: editor.getHtml({ cleanId: false }),
-      css: editor.getCss({ keepUnusedStyles: true }) ?? '',
+      css: readCanvasCss(editor),
     }
     applying.current = false
     editor.clearDirtyCount()
@@ -578,7 +692,7 @@ export function CmsEditor(props: Props): JSX.Element {
   useLayoutEffect(() => {
     const editor = instance.current
     const container = layersHost.current
-    if (!editor || !container || props.tab !== 'layers') return
+    if (!editor || !container || !props.active || props.tab !== 'layers') return
     let mounted = false
     const mount = (): void => {
       if (mounted || !editor.Layers.getRoot()) return
@@ -593,7 +707,7 @@ export function CmsEditor(props: Props): JSX.Element {
       editor.off('load', mount)
       if (mounted) editor.Layers.destroy()
     }
-  }, [props.tab])
+  }, [props.tab, props.active])
 
   useLayoutEffect(() => {
     const host = compareHost.current
@@ -610,7 +724,7 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     const frame = editor.Canvas.getDocument()
     if (!frame) return
     let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
@@ -620,7 +734,7 @@ export function CmsEditor(props: Props): JSX.Element {
       frame.head.appendChild(style)
     }
     style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
-  }, [props.fontCss, props.presentation.themes, props.mode])
+  }, [props.active, props.fontCss, props.presentation.themes, props.mode])
 
   useEffect(() => {
     const editor = instance.current
@@ -635,11 +749,12 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useEffect(() => {
     const editor = instance.current
-    if (!editor) return
+    if (!editor || !props.active) return
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
+    changingDevice.current ||= editor.getDevice() !== props.device
     editor.setDevice(props.device)
     latest.current.onZoom(fitEditor(editor))
-  }, [props.device])
+  }, [props.active, props.device])
 
   useEffect(() => {
     const editor = instance.current
@@ -649,8 +764,8 @@ export function CmsEditor(props: Props): JSX.Element {
 
   useLayoutEffect(() => {
     const editor = instance.current
-    return editor ? canvasBehavior(editor, props.scene, props.mode) : undefined
-  }, [contextKey, props.scene])
+    return editor && props.active ? canvasBehavior(editor, props.scene, props.mode) : undefined
+  }, [props.active, props.mode, props.scene])
 
   useLayoutEffect(() => {
     instance.current?.select()

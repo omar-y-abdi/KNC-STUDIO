@@ -300,6 +300,61 @@ for (const [name, engine] of Object.entries({ chromium, webkit })) {
         0,
       )
     })
+    await check('resource-worker-under-production-policy', async (page, context) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const doc = storedDocument()
+      // Legal pages use authored markup, not the native-only metadata allowance.
+      for (const entry of doc.presentation.pages.filter((item) =>
+        ['/privacy', '/terms'].includes(item.path),
+      ))
+        for (const variant of Object.values(entry.content))
+          variant.html = '<main><h1>Legal page</h1></main>'
+      const asset = {
+        id: '77777777-7777-4777-8777-000000000001',
+        bucket: 'cms-library',
+        path: 'images/unused.webp',
+        name: 'Unused fixture',
+        alt: '',
+        mime: 'image/webp',
+        bytes: 100,
+        width: 40,
+        height: 40,
+        archived: true,
+        version: 1,
+      }
+      const backend = await nativeBackend(context, doc, [asset])
+      await ownerSession(context)
+      await context.route('**/cms-public/source', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: '<!doctype html><html>Source unavailable</html>',
+        }),
+      )
+      await context.route('https://admin-harness.invalid/storage/**', (route) =>
+        route.fulfill({
+          contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>',
+        }),
+      )
+      await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+      await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+      await page
+        .locator('#cms-library')
+        .getByRole('button', { name: 'Resurser', exact: true })
+        .click()
+      await page.getByRole('button', { name: 'Arkiverade', exact: true }).click()
+      await page.locator('.cms-resource-card button').filter({ hasText: asset.name }).click()
+      await page.getByText(/Utkast: 0 placeringar/).waitFor()
+      await page.getByText(/Publicerat: 0 · Historik: 0/).waitFor()
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Flytta till papperskorg', exact: true })
+          .isEnabled(),
+        true,
+      )
+      assert.deepEqual(backend.writes, [])
+      return { indexedUnderCsp: true }
+    })
     await check('capture-without-animation-frames', async (page, context) => {
       // The source protocol describes its actual iframe viewport, not a forced
       // layout prop. Match the Desktop context just as readCorePageSource does.

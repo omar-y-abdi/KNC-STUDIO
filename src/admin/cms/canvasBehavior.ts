@@ -34,7 +34,7 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
       const root = doc.querySelector<HTMLElement>('[data-knc-surface="mobile-home"]')
       const motion = mobileFold(root?.scrollTop ?? 0, win.innerHeight)
       const scope = '[data-knc-surface="mobile-home"] [data-knc-fold='
-      style.textContent =
+      const css =
         visibility +
         `${scope}"panel"]{position:sticky!important;top:0!important;height:calc(100dvh - ${motion.collapse}px)!important;border-radius:${motion.compact ? '0 0 28px 28px' : '0'}!important}` +
         `${scope}"spacer"]{height:${motion.collapse}px!important}` +
@@ -42,6 +42,8 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
         `${scope}"mark"]{opacity:${motion.compact ? 1 : 0}!important}` +
         `${scope}"return"]{display:${motion.compact ? 'flex' : 'none'}!important}` +
         `${scope}"hero"]{opacity:${motion.opacity}!important;pointer-events:${motion.opacity === 0 ? 'none' : 'auto'}!important}`
+      if (style.textContent === css) return
+      style.textContent = css
       editor.refresh()
     }
     const schedule = (): void => {
@@ -59,10 +61,11 @@ export function canvasBehavior(editor: Editor, scene: CmsScene, mode: CmsMode): 
       style.remove()
     }
   }
-  editor.on('canvas:frame:load', attach)
+  // Initial frame events precede Canvas selecting its document; editor load is the first usable document.
+  editor.on('load canvas:frame:load:body', attach)
   attach()
   return () => {
-    editor.off('canvas:frame:load', attach)
+    editor.off('load canvas:frame:load:body', attach)
     dispose()
   }
 }

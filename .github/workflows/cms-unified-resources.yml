@@ -9,7 +9,7 @@ concurrency:
   group: cms-unified-${{ github.ref }}
   cancel-in-progress: true
 env:
-  CMS_UNIFIED_SUITES: cms-owner cms-interaction-latency cms-resource-usage cms-resource-workflow cms-site-resources cms-contextual-resources cms-graphic-projection cms-composition-roundtrip cms-draft-resources cms-hierarchical-resize cms-new-page-mobile cms-unified-home
+  CMS_UNIFIED_SUITES: cms-context-latency cms-public-regression cms-owner cms-interaction-latency cms-resource-usage cms-resource-workflow cms-site-resources cms-contextual-resources cms-graphic-projection cms-composition-roundtrip cms-draft-resources cms-hierarchical-resize cms-new-page-mobile cms-unified-home
 jobs:
   unified:
     name: Unified editor (${{ matrix.engine }})

@@ -335,14 +335,14 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.revision,
         conflict.remote.fingerprint,
       )
-      next.document = ensureCorePages(next.document)
+      if (needsCorePageSource(next.document)) next.document = ensureCorePages(next.document)
       setDraft(next)
       setConflict(null)
     } else {
       draft.revert()
       // The first authoritative publication may be empty. Restore its source-derived
       // editing scaffold without pretending those templates have already been published.
-      draft.document = ensureCorePages(draft.document)
+      if (needsCorePageSource(draft.document)) draft.document = ensureCorePages(draft.document)
     }
     setVersion((v) => v + 1)
   }
@@ -946,6 +946,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           >
             <CmsEditorBoundary contextKey={`${page.id}:${lang}:${mode}`}>
               <CmsEditor
+                active={!workspaceView && !locked}
                 scene={scene}
                 onClosePanel={() => setMobilePanel(null)}
                 inspectorModal={compact && mobilePanel === 'inspector'}
@@ -1026,7 +1027,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   device={device}
                   onError={setError}
                   onRestore={(old) => {
-                    commitDraft(ensureCorePages(old))
+                    commitDraft(needsCorePageSource(old) ? ensureCorePages(old) : old)
                     setDialog(null)
                   }}
                 />

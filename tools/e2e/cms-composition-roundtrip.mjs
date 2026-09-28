@@ -36,6 +36,8 @@ try {
       shared,
     )
     document.presentation.pages = [home, about]
+    const initial = composedCanvas(home, document.presentation, 'sv', 'light')
+    const repeatedSharedRules = initial.css.split('section{box-sizing:border-box}').length - 1
     const lengths = []
     for (let i = 0; i < 8; i++) {
       const canvas = composedCanvas(
@@ -66,9 +68,14 @@ try {
     globalThis.document.body.append(host)
     const homeColor = globalThis.getComputedStyle(host.querySelector('h1')).color
     host.remove()
-    return { lengths, homeColor, aboutCss: about.content.sv.css.light }
+    return { lengths, homeColor, repeatedSharedRules, aboutCss: about.content.sv.css.light }
   })
   console.log(JSON.stringify({ roundtripLengths: result.lengths, homeColor: result.homeColor }))
+  assert.equal(
+    result.repeatedSharedRules,
+    1,
+    'Home must not import identical shared styles for each About preview',
+  )
   assert.ok(
     result.lengths.every(([home, about]) => home < 2000 && about < 2000),
     'Repeated unified edits must not amplify shared styles exponentially',

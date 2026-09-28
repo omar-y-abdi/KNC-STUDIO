@@ -212,6 +212,7 @@ async function verifyFreshLanguageToggle(browser) {
 }
 
 for (const [name, engine] of Object.entries({ chromium, webkit })) {
+  if (process.env.CMS_ENGINE && process.env.CMS_ENGINE !== name) continue
   const browser = await engine.launch()
   try {
     const context = await browser.newContext({
