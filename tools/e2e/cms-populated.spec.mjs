@@ -145,7 +145,7 @@ test('cms-populated', async ({ page, context, browserName }) => {
       .locator('[data-testid="fold-booking"]')
       .getByText('Fixture barber A', { exact: true })
       .waitFor()
-    await live.reload()
+    await live.reload({ waitUntil: 'domcontentloaded' })
     await live.getByText('Owner edited the populated site', { exact: true }).waitFor()
     console.log(`PASS populated ${name}: roster, photos, publication, reload, native booking`)
     await page.bringToFront()
@@ -155,7 +155,7 @@ test('cms-populated', async ({ page, context, browserName }) => {
     await page.waitForFunction(() =>
       globalThis.document.querySelector('.cms-status')?.textContent?.includes('Publicerad'),
     )
-    await live.reload()
+    await live.reload({ waitUntil: 'domcontentloaded' })
     await live.getByAltText('Owner logo description', { exact: true }).waitFor()
     await page.screenshot({ path: `/tmp/cms-native-${name}-populated-image.png` })
     console.log(`PASS populated ${name}: original image edit survives publication and reload`)
@@ -169,7 +169,7 @@ test('cms-populated', async ({ page, context, browserName }) => {
         .getAttribute('src'),
       '/icons/moon.svg',
     )
-    await live.reload()
+    await live.reload({ waitUntil: 'domcontentloaded' })
     await live.getByText('KNC source en', { exact: true }).waitFor()
     assert.equal(
       await live
@@ -191,7 +191,7 @@ test('cms-populated', async ({ page, context, browserName }) => {
         return bounds && bounds.top >= 0 && bounds.top < 300
       }
       await live.waitForFunction(aboutAtTop)
-      await live.reload()
+      await live.reload({ waitUntil: 'domcontentloaded' })
       await live.waitForFunction(aboutAtTop)
       await live.getByText('Fixture barber A', { exact: true }).waitFor()
       await live.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
