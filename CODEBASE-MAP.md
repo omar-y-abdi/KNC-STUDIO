@@ -114,7 +114,7 @@ Browser
 | `tools/release/`                        | Public-booking expand/contract rollout validation.                                                                       |
 | `tools/backup/`                         | DB/Storage inventory, backup, restore, integrity checks.                                                                 |
 | `tools/e2e/`                            | Public smoke plus source-harness admin history/CMS browser regressions.                                                  |
-| `tools/visual/`                         | Deterministic captures + pixel compare.                                                                                  |
+| `tools/visual/`                         | Approved screenshot baselines and design-review capture/collage utilities.                                               |
 | `.github/workflows/ci.yml`              | Definitive CI gate.                                                                                                      |
 | `.github/workflows/database-backup.yml` | Scheduled encrypted DB + Storage backup.                                                                                 |
 | `docs/operations/`                      | Booking-gateway rollout + backup/restore runbooks.                                                                       |

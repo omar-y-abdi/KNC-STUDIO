@@ -18,7 +18,6 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
       const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
       const evidence = evidenceDir
       await mkdir(evidence, { recursive: true })
-      const failures = []
       context.setDefaultTimeout(10000)
       const navigation = []
       const traceReload = scenario === 'logos'
@@ -990,10 +989,10 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
         passed = true
         console.log(`PASS owner ${name}: ${scenario}`)
       } catch (error) {
-        failures.push(`${name}/${scenario}: ${error.message}`)
         console.error(`FAIL owner ${name}: ${scenario}`, error)
         console.error('OWNER_EDITOR', (await page.locator('body').innerText()).slice(0, 3000))
         await page.screenshot({ path: `/tmp/cms-native-${name}-owner-${scenario}-failure.png` })
+        throw error
       } finally {
         if (traceReload) {
           if (!passed) {
@@ -1004,11 +1003,6 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           }
         }
       }
-      assert.deepEqual(
-        failures,
-        [],
-        'Owner workflows must work beyond the initial green smoke test',
-      )
     })
   })
 }

@@ -11,7 +11,6 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
     test('cms-conflict', async ({ context, browserName }) => {
       const name = browserName
       const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
-      const failures = []
       context.setDefaultTimeout(10000)
       const backend = await nativeBackend(context)
       await context.route('**/functions/v1/cms-studio', async (route) => {
@@ -111,17 +110,12 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
         await second.screenshot({ path: `/tmp/cms-native-${name}-revision-${scenario}.png` })
         console.log(`PASS revision ${name}: ${scenario}`)
       } catch (error) {
-        failures.push(`${name}/${scenario}: ${error.message}`)
         console.error(`FAIL revision ${name}: ${scenario}`, error)
         await second.screenshot({
           path: `/tmp/cms-native-${name}-revision-${scenario}-failure.png`,
         })
+        throw error
       }
-      assert.deepEqual(
-        failures,
-        [],
-        'Concurrent editing and stale recovery must not silently overwrite',
-      )
     })
   })
 }
