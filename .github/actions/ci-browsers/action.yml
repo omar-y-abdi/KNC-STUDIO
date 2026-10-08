@@ -1,0 +1,31 @@
+name: Prepare exact browser binaries
+description: Cache browser downloads by Playwright version, platform and engines; always install system libraries.
+inputs:
+  engines:
+    description: Space-separated Playwright engines.
+    required: true
+  cache:
+    description: Cache downloads; false exercises the cold path.
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - name: Resolve exact browser cache identity
+      id: version
+      shell: bash
+      env:
+        ENGINES: ${{ inputs.engines }}
+      run: |
+        node --input-type=module -e 'import {readFileSync,appendFileSync} from "node:fs"; const version=JSON.parse(readFileSync("node_modules/playwright/package.json")).version; const engines=process.env.ENGINES.split(/\s+/).sort().join("-"); appendFileSync(process.env.GITHUB_OUTPUT, `key=knc-browsers-${process.env.RUNNER_OS}-${process.env.RUNNER_ARCH}-ubuntu24.04-${version}-${engines}\n`);'
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      if: inputs.cache == 'true'
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.version.outputs.key }}
+    - name: Install browsers and system libraries
+      shell: bash
+      env:
+        ENGINES: ${{ inputs.engines }}
+      run: |
+        read -ra browsers <<< "$ENGINES"
+        npx playwright install --with-deps "${browsers[@]}"

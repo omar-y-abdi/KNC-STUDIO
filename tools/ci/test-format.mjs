@@ -44,28 +44,39 @@ function fixture(t, files) {
   return { directory, run, git, read: (name) => readFileSync(join(directory, name), 'utf8') }
 }
 
-test('workflow formats first and shares the same patch with every dependent job', () => {
+test('workflow formats first and all verification jobs consume the same source artifact', () => {
   assert.match(workflow, /^jobs:\n {2}format:/m)
   assert.match(workflow, /contents: read/)
   assert.doesNotMatch(workflow, /contents: write|pull_request_target|continue-on-error/)
-  const jobs = ['format', 'frontend', 'cms-shell', 'edge-functions', 'database']
-  const section = (job, index) =>
-    workflow.split(`\n  ${job}:\n`)[1]?.split(`\n  ${jobs[index + 1]}:\n`)[0] ?? ''
-  const first = section('format', 0)
-  assert.ok(first.indexOf('npm ci') < first.indexOf('bash tools/ci/format.sh'))
-  assert.ok(first.indexOf('bash tools/ci/format.sh') < first.indexOf('npm run lint'))
-  assert.match(first, /node --test tools\/ci\/test-format.mjs/)
+  const section = (job) => workflow.split(`\n  ${job}:\n`)[1]?.split(/\n {2}[a-z-]+:\n/)[0] ?? ''
+  const first = section('format')
+  assert.ok(first.indexOf('ci-node') < first.indexOf('bash tools/ci/format.sh'))
+  assert.match(first, /formatted: 'false'/)
   assert.match(first, /overwrite: true/)
-  for (const [index, job] of jobs.entries()) {
-    if (job === 'format') continue
-    const body = section(job, index)
-    assert.match(body, /^ {4}needs: format$/m)
-    assert.match(body, /actions\/download-artifact@[0-9a-f]{40}/)
-    assert.match(body, /git apply --allow-empty "\$RUNNER_TEMP\/ci-format\/format.patch"/)
-    assert.ok(body.indexOf('git apply') < body.indexOf('npm ci'))
-    // A stable per-run name also works when only failed jobs are re-run.
-    assert.match(body, /name: ci-format-\$\{\{ github.run_id \}\}/)
+  assert.match(first, /name: ci-source-\$\{\{ github.run_id \}\}/)
+  assert.equal((workflow.match(/formatted: 'false'/g) ?? []).length, 1)
+  for (const job of [
+    'quality',
+    'build',
+    'public-browsers',
+    'cms',
+    'startup',
+    'edge-functions',
+    'database-current',
+    'database-rollout',
+  ]) {
+    const body = section(job)
+    assert.match(body, /^ {4}needs: (format|\[format, build\])$/m)
+    assert.match(body, /uses: \.\/\.github\/actions\/ci-node/)
+    assert.doesNotMatch(body, /formatted: 'false'/)
   }
+  const node = readFileSync(join(root, '.github/actions/ci-node/action.yml'), 'utf8')
+  assert.match(node, /actions\/download-artifact@[0-9a-f]{40}/)
+  assert.match(node, /name: ci-source-\$\{\{ github.run_id \}\}/)
+  assert.match(node, /git apply --allow-empty "\$RUNNER_TEMP\/ci-source\/format.patch"/)
+  assert.match(node, /verify-source "\$RUNNER_TEMP\/ci-source"/)
+  assert.ok(node.indexOf('git apply') < node.indexOf('run: npm ci'))
+  assert.match(section('quality'), /node --test tools\/ci\/test-\*\.mjs/)
 })
 
 test('formats supported files, leaves unsupported and ignored files intact, and replays the patch', (t) => {

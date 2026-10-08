@@ -838,18 +838,18 @@ Also: HSTS, `nosniff`, `X-Frame-Options: DENY`, strict referrer policy, restrict
 | pgTAP              | `npx supabase test db --local`               | effective schema, constraints, grants/RLS, functions, gateway contracts                                                              |
 | Edge type check    | CI Deno `2.9.5` loop                         | every `supabase/functions/*/index.ts` checks with frozen lock                                                                        |
 | Browser smoke      | `npm run test:e2e`; `npm run test:e2e:admin` | public interactions; admin persisted writes across ABA/remount/failure, load gates, customer field ownership, delayed catalog reveal |
-| Customer browser   | `npm run test:e2e -- --customer`             | real HTTPS Worker/Edge/DB; Chromium/Firefox/WebKit cookies, identity switching and revocation                                        |
+| Customer browser   | `npm run test:e2e:customer`                  | real HTTPS Worker/Edge/DB; Chromium/Firefox/WebKit cookies, identity switching and revocation                                        |
 | Visual             | `tools/visual/capture.mjs` + `compare.mjs`   | 8 deterministic homepage variants plus the Swedish privacy-banner baseline                                                           |
 | Cloudflare dry run | `npm run deploy:dry-run`                     | build + Wrangler deployment validation                                                                                               |
 | Live smoke         | `node tools/smoke-live.mjs`                  | live Supabase availability/gateway/security; **not** full Worker metadata validation                                                 |
 
-`npm run test:e2e -- --customer` additionally runs the actual HTTPS Worker → Edge → DB in Chromium, Firefox and WebKit. The existing smoke script owns temporary TLS/build/server lifecycle and isolated fixtures. It rejects remote stack URLs; only blocked-cookie acceptance is intercepted, with real backend responses. It proves successful profile hydration/customer switching, cookie acceptance/denial, invalid links, rotation, concurrent first bookings, optional receipt scope, withdrawal and cancellation.
+`npm run test:e2e:customer` additionally runs the actual HTTPS Worker → Edge → DB in Chromium, Firefox and WebKit. Native customer projects use a fixture that owns temporary TLS/build/server lifecycle and isolated data; browser contexts and failure traces belong to Playwright Test. It rejects remote stack URLs; only blocked-cookie acceptance is intercepted, with real backend responses. It proves successful profile hydration/customer switching, cookie acceptance/denial, invalid links, rotation, concurrent first bookings, optional receipt scope, withdrawal and cancellation.
 
 ### 8.2 Integration test constraints
 
 `vitest.integration.config.ts`: `fileParallelism: false`, `testTimeout: 30_000`, `hookTimeout: 30_000`. Suites share one local Supabase/PostgreSQL stack and reset shared tables. **Do not enable cross-file concurrency**; truncate/fixture races create misleading failures.
 
-`tests/integration/reviewAccessHelpers.ts` supplies Node integration with an explicit test origin and cookie jar: the real `customerGateway` Worker handler calls the running Edge/DB. Permanent-link/customer-switch/rotation coverage lives in existing `reviews.test.ts`. The local/CI `CUSTOMER_GATEWAY_SECRET` must match the Edge env. CI restores current migrations after historical rollout compatibility checks. Five concurrency cases in `reviews.test.ts` observe actual `pg_blocking_pids`: permanent/legacy mint versus rotation in both lock orders, and repair versus newer rotation. Credential/outbox cleanup stays scoped to each test identity.
+`tests/integration/reviewAccessHelpers.ts` supplies Node integration with an explicit test origin and cookie jar: the real `customerGateway` Worker handler calls the running Edge/DB. Permanent-link/customer-switch/rotation coverage lives in existing `reviews.test.ts`. The local/CI `CUSTOMER_GATEWAY_SECRET` must match the Edge env. CI runs destructive historical rollout compatibility checks on a separate runner; current-schema integration never needs a restorative reset. Five concurrency cases in `reviews.test.ts` observe actual `pg_blocking_pids`: permanent/legacy mint versus rotation in both lock orders, and repair versus newer rotation. Credential/outbox cleanup stays scoped to each test identity.
 
 `tests/integration/_helpers.ts` exports `TURNSTILE_TEST_TOKEN = 'integration-test-token'` (`TURNSTILE_TEST_TOKEN`). Local/CI Edge Functions use Cloudflare's official always-pass test secret `1x0000000000000000000000000000000AA`, so normal `siteverify` accepts that token. Reuse the helper token; it is not an application bypass.
 
@@ -884,33 +884,22 @@ Local transport: `vite.config.ts` forwards exact customer API/root-link routes t
 `.github/workflows/ci.yml` is definitive.
 
 ```text
-frontend/browser:
-  npm ci
-  npm audit --omit=dev --audit-level=high
-  npm run format:check
-  npm run lint
-  npm run typecheck
-  npm test
-  npm run build
-  npm run deploy:dry-run
-  font-license/artifact checks
-  Playwright smoke
-  visual capture + pixel compare
-
-edge:
-  deno check --frozen --node-modules-dir=manual each supabase/functions/*/index.ts
-
-database/integration:
-  write local function test env
-  npx supabase start
-  bash tools/release/test-public-booking-stages.sh
-  npx supabase db reset --local
-  npx supabase test db --local
-  npm run test:integration
-  install Playwright Chromium/Firefox/WebKit
-  npm run test:e2e -- --customer
-  npx supabase stop --no-backup
+format: frozen npm install → auto-format + check → exact source artifact
+quality: formatter/runner failure contracts + Furl safety → lint → types → units → audit → release stamp
+build: production assets → Worker dry-run without duplicate build → CSP fixture build → hashed artifact
+public: native Chromium/Firefox/WebKit projects; admin, booking, privacy, delayed verification and visuals (2 shards)
+cms: every owner/resource/workspace/latency/adversarial contract in Chromium and WebKit (4 shards per engine)
+startup: actual CSP fixture build in Chromium and WebKit
+edge: Deno 2.9.5 checks every entrypoint with frozen dependencies
+current DB: actual Supabase → all pgTAP → serial integration → real Edge/Storage copy → native customer projects
+historical DB: isolated runner → original expand and contract migration checks
+protected gates: all required dependencies must succeed; missing/skipped/cancelled/failed outcomes stay fatal
 ```
+
+Native browser reports are compared against each shard's discovered plan. No skipped cases, retries,
+missing results or tracked source drift are accepted. Download caches are keyed by exact tool versions;
+`workflow_dispatch` with `cold-cache=true` exercises every gate without caches. Every pull request and
+push to main runs the full graph. [CI.md](docs/CI.md) records architecture, coverage and measured evidence.
 
 Useful local frontend baseline: `npm run typecheck && npm run lint && npm test && npm run deploy:dry-run`; not a substitute for full CI.
 
@@ -1024,23 +1013,24 @@ After contract, regranting anonymous mutation/lookup RPC execution is emergency 
 
 ### 10.4 Operational tooling
 
-| Tool                                               | Purpose                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------ |
-| `tools/smoke-live.mjs`                             | live Supabase availability/gateway/direct-RPC contract smoke |
-| `tools/release/test-public-booking-stages.sh`      | validate expand/contract compatibility locally               |
-| `tools/release/public-booking-migration-stages.sh` | shared explicit migration manifest for rollout and CI        |
-| `tools/backup/capture-storage-references.sh`       | capture DB-owned Storage refs                                |
-| `tools/backup/storage-backup.sh`                   | export Storage objects + metadata/checksums                  |
-| `tools/backup/storage-restore.sh`                  | restore + verify Storage                                     |
-| `tools/backup/verify-backup-tree.sh`               | validate backup structure/manifests/lineage                  |
-| `tools/backup/prepare-migration-history.sql`       | restore migration-lineage prep                               |
-| `tools/e2e/smoke.mjs`                              | Playwright smoke                                             |
-| `tools/e2e/admin-state.mjs`                        | Admin history/delayed-scroll/CMS draft browser regression    |
-| `tools/e2e/admin-harness.html`, `.tsx`             | In-memory Vite source harness for admin browser test         |
-| `tools/visual/capture.mjs`                         | 8 homepage variants plus the Swedish privacy-banner state    |
-| `tools/visual/compare.mjs`                         | pixel compare vs approved baseline                           |
-| `tools/og/render.mjs`                              | social-card generation                                       |
-| `tools/seed-admin-users.mjs`                       | local/admin seed helper                                      |
+| Tool                                                      | Purpose                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------- |
+| `tools/smoke-live.mjs`                                    | live Supabase availability/gateway/direct-RPC contract smoke  |
+| `tools/release/test-public-booking-stages.sh`             | validate expand/contract compatibility locally                |
+| `tools/release/public-booking-migration-stages.sh`        | shared explicit migration manifest for rollout and CI         |
+| `tools/backup/capture-storage-references.sh`              | capture DB-owned Storage refs                                 |
+| `tools/backup/storage-backup.sh`                          | export Storage objects + metadata/checksums                   |
+| `tools/backup/storage-restore.sh`                         | restore + verify Storage                                      |
+| `tools/backup/verify-backup-tree.sh`                      | validate backup structure/manifests/lineage                   |
+| `tools/backup/prepare-migration-history.sql`              | restore migration-lineage prep                                |
+| `tools/e2e/public-smoke.spec.mjs`, `customer.spec.mjs`    | Native public and actual Worker/Edge customer acceptance      |
+| `tools/e2e/admin-state.spec.mjs`, `admin-shared.spec.mjs` | Admin ordering, hydration, privacy and CMS shell regression   |
+| `tools/e2e/admin-harness.html`, `.tsx`                    | In-memory Vite source harness for admin browser test          |
+| `tools/visual/capture.mjs`                                | 8 homepage variants plus the Swedish privacy-banner state     |
+| `tools/e2e/visual.spec.mjs`                               | Native screenshot comparison against approved baselines       |
+| `playwright.config.ts`, `tools/e2e/fixtures.mjs`          | Browser projects, isolated fixtures, server lifecycle, traces |
+| `tools/og/render.mjs`                                     | social-card generation                                        |
+| `tools/seed-admin-users.mjs`                              | local/admin seed helper                                       |
 
 ### 10.5 Backup properties + restore invariants
 
@@ -1115,7 +1105,7 @@ Use this instead of grep for first-hop navigation.
 | `supabase/functions/send-confirmation/README.md` | Function README describes the current durable booking-email ledger; it does not describe the separate customer-access session proxy.                                             | `public-booking-actions/README.md`, current Worker/Edge code, and subsystem ownership in §5                                           |
 | `.claude/runtime/SLOT_PACKING_SPEC.md`           | Any statement that `BookingFlow.tsx` directly consumes `packSlots()` is shorthand for mock mode.                                                                                 | actual: `localCalendar.ts` consumes `slotPacking.ts`; live uses `available_slots()`                                                   |
 | `src/admin/adapters/schedulesAdmin.ts` comments  | Header/JSDoc still describes old direct-upsert/RLS week save.                                                                                                                    | executable `saveWeek()` + `20260813115437_transactional_availability_mutations.sql`; direct authenticated schedule writes are revoked |
-| `docs/REVIEW_FINDINGS.md`                             | Predates later hardening migrations.                                                                                                                                             | historical context only; current code/migrations/tests                                                                                |
+| `docs/REVIEW_FINDINGS.md`                        | Predates later hardening migrations.                                                                                                                                             | historical context only; current code/migrations/tests                                                                                |
 
 ---
 

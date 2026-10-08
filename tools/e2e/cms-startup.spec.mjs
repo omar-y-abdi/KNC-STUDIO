@@ -1,0 +1,416 @@
+/* global window, document, location */
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { emptyDocument } from '../../shared/cms.ts'
+import { nativeBackend } from './cms-backend.mjs'
+import { test, devices } from './fixtures.mjs'
+const base = process.env.CMS_STARTUP_URL ?? 'http://127.0.0.1:4189'
+function storedDocument() {
+  const doc = emptyDocument()
+  doc.presentation.pages = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].map(
+    (path, index) => {
+      const html =
+        '<div data-knc-native="1"><main data-knc-surface="mobile-home"><h1 id="owner-heading">Stored owner heading</h1></main></div>'
+      return {
+        id: `10000000-0000-4000-8000-00000000000${index + 1}`,
+        path,
+        kind: 'page',
+        inMenu: true,
+        name: { sv: path, en: path },
+        title: { sv: '', en: '' },
+        description: { sv: '', en: '' },
+        content: {
+          sv: { html, css: { light: '', dark: '' } },
+          en: { html, css: { light: '', dark: '' } },
+        },
+      }
+    },
+  )
+  return doc
+}
+async function ownerSession(context) {
+  const user = {
+    id: '20000000-0000-4000-8000-000000000001',
+    email: 'cms-test@example.invalid',
+    aud: 'authenticated',
+    role: 'authenticated',
+  }
+  const exp = Math.floor(Date.now() / 1000) + 3600
+  const jwt = [
+    Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url'),
+    Buffer.from(JSON.stringify({ sub: user.id, exp, role: 'authenticated' })).toString('base64url'),
+    'fixture',
+  ].join('.')
+  await context.addInitScript(
+    (session) => window.localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
+    {
+      user,
+      access_token: jwt,
+      refresh_token: 'fixture',
+      expires_at: exp,
+      expires_in: 3600,
+      token_type: 'bearer',
+    },
+  )
+  await context.route('https://admin-harness.invalid/rest/v1/profiles*', (route) =>
+    route.fulfill({
+      headers: {
+        'access-control-allow-origin': new URL(base).origin,
+        'access-control-allow-headers': '*',
+      },
+      json: { role: 'owner', barber_id: null, must_change_password: false, account_enabled: true },
+    }),
+  )
+}
+const headerFile = await readFile(new URL('../../public/_headers', import.meta.url), 'utf8')
+const policy = headerFile.match(/Content-Security-Policy:\s*([^\n]+)/)?.[1]
+assert.ok(policy, 'production CSP must be present')
+async function csp(context) {
+  await context.route(`${base}/**`, async (route) => {
+    if (route.request().resourceType() !== 'document') return route.fallback()
+    const response = await route.fetch()
+    const value = policy
+      .replace(/;?\s*upgrade-insecure-requests/g, '')
+      .replace("connect-src 'self'", "connect-src 'self' https://admin-harness.invalid")
+      .replace(
+        'frame-src https://challenges.cloudflare.com',
+        "frame-src 'self' https://challenges.cloudflare.com",
+      )
+      .replace(/frame-ancestors [^;]+/, "frame-ancestors 'self'")
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), 'content-security-policy': value },
+    })
+  })
+}
+
+test.use({ ...devices['iPhone 15'], reducedMotion: 'reduce' })
+
+test('stored-page-independent-of-source', async ({ page, context }, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    const doc = storedDocument()
+    if (process.env.CMS_STARTUP_PRESENTATION)
+      doc.presentation = JSON.parse(
+        await readFile(process.env.CMS_STARTUP_PRESENTATION, 'utf8'),
+      ).presentation
+    const backend = await nativeBackend(context, doc, undefined, base)
+    await ownerSession(context)
+    // A failed optional source has the real protocol but no usable snapshot.
+    await context.route('**/cms-public/source', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html data-knc-source-listening="1"><script>addEventListener("message",e=>{document.documentElement.dataset.kncSourceError=e.data.id;document.documentElement.dataset.kncSourceFailure="Offline source"})</script></html>',
+      }),
+    )
+    const start = Date.now()
+    await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+    await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .locator('[data-knc-surface="mobile-home"]')
+      .waitFor({ timeout: 1000 })
+    const readyMs = Date.now() - start
+    assert.ok(readyMs < 3000, `Stored page startup took ${readyMs}ms; budget is 3000ms`)
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'Dina befintliga sidor går fortfarande att redigera' })
+      .waitFor()
+    await page
+      .locator('.cms-mobile-tools')
+      .getByRole('button', { name: 'Design', exact: true })
+      .click()
+    await page.getByLabel('Namn', { exact: true }).fill('Owner edit after source failure')
+    await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+    assert.equal(
+      await page.locator('.cms-canvas-breadcrumb strong').innerText(),
+      'Owner edit after source failure',
+    )
+    assert.deepEqual(backend.writes, [])
+    return { readyMs }
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})
+test('source-upgrade-preserves-editable-page', async ({ page, context }, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    const doc = storedDocument()
+    if (process.env.CMS_STARTUP_PRESENTATION)
+      doc.presentation = JSON.parse(
+        await readFile(process.env.CMS_STARTUP_PRESENTATION, 'utf8'),
+      ).presentation
+    const backend = await nativeBackend(context, doc, undefined, base)
+    await ownerSession(context)
+    const start = Date.now()
+    await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+    await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .locator('[data-knc-surface="mobile-home"]')
+      .waitFor()
+    const readyMs = Date.now() - start
+    const capture = page.locator('iframe[title="Läser den befintliga webbplatsen"]')
+    await capture.waitFor({ state: 'attached' })
+    // Edit before the optional capture finishes. Its response must merge with
+    // the current draft, not the old document that started the operation.
+    await page
+      .locator('.cms-mobile-tools')
+      .getByRole('button', { name: 'Design', exact: true })
+      .click()
+    await page.getByLabel('Namn', { exact: true }).fill('Owner edit during capture')
+    await page.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+    await capture.waitFor({ state: 'detached', timeout: 30000 })
+    assert.equal(
+      await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).count(),
+      0,
+    )
+    assert.equal(
+      await page.locator('.cms-canvas-breadcrumb strong').innerText(),
+      'Owner edit during capture',
+    )
+    assert.equal(
+      await page.getByRole('alert').count(),
+      0,
+      'the real source upgrade must finish without errors',
+    )
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .locator('[data-knc-surface="mobile-home"]')
+      .waitFor()
+    assert.deepEqual(backend.writes, [])
+    return { readyMs, upgradedMs: Date.now() - start }
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})
+test('legacy-backup-without-pages-keeps-authoritative-layouts', async ({
+  page,
+  context,
+}, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    const backend = await nativeBackend(context, storedDocument(), undefined, base)
+    await ownerSession(context)
+    const backup = emptyDocument()
+    backup.settings.business_name = 'Unsaved owner business name'
+    await context.addInitScript((draft) => {
+      if (window !== window.top) return
+      window.sessionStorage.setItem('knc-cms-tab', 'startup-recovery')
+      window.localStorage.setItem(
+        'knc-cms-draft:startup-recovery',
+        JSON.stringify({
+          savedAt: '2026-09-23T00:00:00Z',
+          document: draft,
+        }),
+      )
+    }, backup)
+    await context.route('**/cms-public/source', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html>Source unavailable</html>',
+      }),
+    )
+    await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+    await page.locator('.gjs-frame').first().waitFor()
+    const saved = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+    )
+    assert.equal(saved.document.settings.business_name, 'Unsaved owner business name')
+    assert.equal(saved.document.presentation.pages.length, 6)
+    const canvas = await page.locator('.cms-canvas-shell').boundingBox()
+    assert.ok(
+      canvas && canvas.height >= 240 && canvas.y + canvas.height <= page.viewportSize().height,
+      'Recovered drafts must leave a usable canvas inside the phone viewport',
+    )
+    assert.deepEqual(backend.writes, [])
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})
+test('page-import-failure-keeps-workspace', async ({ page, context }, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    const doc = storedDocument()
+    for (const variant of Object.values(doc.presentation.pages[0].content))
+      variant.html = variant.html.replace(
+        'id="owner-heading"',
+        'id="owner-heading" data-knc-baseline="broken-json"',
+      )
+    await nativeBackend(context, doc, undefined, base)
+    await ownerSession(context)
+    await context.route('**/cms-public/source', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html><body>Source unavailable</body></html>',
+      }),
+    )
+    await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).waitFor()
+    assert.equal(await page.locator('.cms-topbar').isVisible(), true)
+    await page.getByText('Teknisk felinformation', { exact: true }).click()
+    assert.ok((await page.locator('details').innerText()).length > 'Teknisk felinformation'.length)
+    await page
+      .locator('.cms-mobile-tools')
+      .getByRole('button', { name: 'Sidor', exact: true })
+      .click()
+    await page.locator('.cms-page-list button').filter({ hasText: '/terms' }).click()
+    await page.locator('.gjs-frame').first().waitFor()
+    assert.equal(
+      await page.getByRole('heading', { name: 'Sidan kunde inte öppnas i editorn' }).count(),
+      0,
+    )
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})
+test('resource-worker-under-production-policy', async ({ page, context }, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const doc = storedDocument()
+    // Legal pages use authored markup, not the native-only metadata allowance.
+    for (const entry of doc.presentation.pages.filter((item) =>
+      ['/privacy', '/terms'].includes(item.path),
+    ))
+      for (const variant of Object.values(entry.content))
+        variant.html = '<main><h1>Legal page</h1></main>'
+    const asset = {
+      id: '77777777-7777-4777-8777-000000000001',
+      bucket: 'cms-library',
+      path: 'images/unused.webp',
+      name: 'Unused fixture',
+      alt: '',
+      mime: 'image/webp',
+      bytes: 100,
+      width: 40,
+      height: 40,
+      archived: true,
+      version: 1,
+    }
+    const backend = await nativeBackend(context, doc, [asset], base)
+    await ownerSession(context)
+    await context.route('**/cms-public/source', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><html>Source unavailable</html>',
+      }),
+    )
+    await context.route('https://admin-harness.invalid/storage/**', (route) =>
+      route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>',
+      }),
+    )
+    await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
+    await page.locator('.gjs-frame').first().waitFor({ timeout: 10000 })
+    await page
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Resurser', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Arkiverade', exact: true }).click()
+    await page.locator('.cms-resource-card button').filter({ hasText: asset.name }).click()
+    await page.getByText(/Utkast: 0 placeringar/).waitFor()
+    await page.getByText(/Publicerat: 0 · Historik: 0/).waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Flytta till papperskorg', exact: true }).isEnabled(),
+      true,
+    )
+    assert.deepEqual(backend.writes, [])
+    return { indexedUnderCsp: true }
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})
+test('capture-without-animation-frames', async ({ page, context }, testInfo) => {
+  page.setDefaultTimeout(5000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await csp(context)
+  const metrics = await (async (page, context) => {
+    // The source protocol describes its actual iframe viewport, not a forced
+    // layout prop. Match the Desktop context just as readCorePageSource does.
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const backend = await nativeBackend(context, undefined, undefined, base)
+    const reads = [],
+      challenges = []
+    context.on('request', (request) => {
+      if (request.url().includes('/rest/v1/site_content')) reads.push(request.url())
+      if (request.url().includes('challenges.cloudflare.com')) challenges.push(request.url())
+    })
+    await context.addInitScript(() => {
+      window.requestAnimationFrame = () => 0
+    })
+    await page.goto(`${base}/cms-public/source`)
+    await page.waitForFunction(
+      () => document.documentElement.dataset.kncSourceListening === '1',
+      null,
+      { polling: 20 },
+    )
+    for (const [index, scene] of ['home', 'my-bookings', 'home'].entries()) {
+      const id = `capture-${index}`
+      await page.evaluate(
+        ({ id, scene, index }) =>
+          window.postMessage(
+            {
+              type: 'knc-source-context',
+              id,
+              scene,
+              lang: 'sv',
+              mode: index === 2 ? 'dark' : 'light',
+              device: 'Desktop',
+            },
+            location.origin,
+          ),
+        { id, scene, index },
+      )
+      await page.waitForFunction(
+        (id) => document.documentElement.dataset.kncSourceReady === id,
+        id,
+        { polling: 20 },
+      )
+    }
+    assert.equal(reads.length, 1, 'source copy is loaded once, not once per scene/theme')
+    assert.deepEqual(challenges, [], 'read-only previews never mount a Turnstile challenge')
+    assert.deepEqual(backend.writes, [])
+    return { copyReads: reads.length }
+  })(page, context)
+  assert.deepEqual(errors, [], 'no unhandled errors')
+  await testInfo.attach('metrics', {
+    body: JSON.stringify(metrics ?? {}, null, 2),
+    contentType: 'application/json',
+  })
+})

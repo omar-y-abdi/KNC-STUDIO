@@ -1,3 +1,7 @@
 .claude/runtime/
 HANDOFF.md
 supabase/.temp/
+test-results/
+playwright-report/
+blob-report/
+dist-startup/

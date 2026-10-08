@@ -1,0 +1,33 @@
+name: Prepare the tested source and Node tools
+description: Replay the same formatted tree, install frozen npm dependencies, prepare concise logs.
+inputs:
+  formatted:
+    description: Download and verify the source artifact from the format job.
+    default: 'true'
+  cache:
+    description: Cache downloads; false exercises the cold path.
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: 22
+        cache: ${{ inputs.cache == 'true' && 'npm' || '' }}
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      if: inputs.formatted == 'true'
+      with:
+        name: ci-source-${{ github.run_id }}
+        path: ${{ runner.temp }}/ci-source
+    - name: Apply and verify the formatted source
+      if: inputs.formatted == 'true'
+      shell: bash
+      run: |
+        git apply --allow-empty "$RUNNER_TEMP/ci-source/format.patch"
+        node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+    - name: Install frozen dependencies
+      shell: bash
+      run: npm ci
+    - name: Prepare concise logs
+      shell: bash
+      run: bash tools/ci/setup-furl.sh
