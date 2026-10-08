@@ -15,6 +15,11 @@ const elements = (node: Node): Element[] =>
   'childNodes' in node
     ? node.childNodes.filter((child): child is Element => 'tagName' in child)
     : []
+const textContent = (node: Node): string => {
+  if ('value' in node && node.nodeName === '#text') return node.value
+  if (!('childNodes' in node)) return ''
+  return node.childNodes.map((child) => textContent(child)).join('')
+}
 function find(node: Node, predicate: (node: Element) => boolean): Element | undefined {
   if ('tagName' in node && predicate(node)) return node
   for (const child of elements(node)) {
@@ -173,15 +178,11 @@ export function renderSitePage(
         children.length === 2 &&
         new Set(
           children.map((child) =>
-            serialize(child)
-              .replace(/<[^>]*>/g, '')
-              .trim(),
+            textContent(child).trim(),
           ),
         ).size === 2 &&
         children.every((child) => {
-          const text = serialize(child)
-            .replace(/<[^>]*>/g, '')
-            .trim()
+          const text = textContent(child).trim()
           return (
             child.tagName === 'button' &&
             ['SV', 'EN'].includes(text) &&
@@ -231,27 +232,17 @@ export function renderSitePage(
       if (legacyLanguagePill) addClass(current, languageAction)
       for (const child of elements(current)) clean(child)
       if (current.tagName === 'button') {
-        const text = serialize(current)
-          .replace(/<[^>]*>/g, '')
-          .trim()
+        const text = textContent(current).trim()
         const label = attr(current, 'aria-label')
         const hasPressedState = attr(current, 'aria-pressed') !== ''
         const combinedLanguagePill =
           children.length === 2 &&
           children.every((child) => child.tagName === 'span') &&
           new Set(
-            children.map((child) =>
-              serialize(child)
-                .replace(/<[^>]*>/g, '')
-                .trim(),
-            ),
+            children.map((child) => textContent(child).trim()),
           ).size === 2 &&
           children.every((child) =>
-            ['SV', 'EN'].includes(
-              serialize(child)
-                .replace(/<[^>]*>/g, '')
-                .trim(),
-            ),
+            ['SV', 'EN'].includes(textContent(child).trim()),
           )
         const languageToggle =
           combinedLanguagePill ||

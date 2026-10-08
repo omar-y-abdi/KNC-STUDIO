@@ -369,7 +369,8 @@ test('capture-without-animation-frames', async ({ page, context }, testInfo) => 
       challenges = []
     context.on('request', (request) => {
       if (request.url().includes('/rest/v1/site_content')) reads.push(request.url())
-      if (request.url().includes('challenges.cloudflare.com')) challenges.push(request.url())
+      if (new URL(request.url()).hostname === 'challenges.cloudflare.com')
+        challenges.push(request.url())
     })
     await context.addInitScript(() => {
       window.requestAnimationFrame = () => 0

@@ -184,14 +184,14 @@ export async function customerStackFixture({ browserName }, use) {
     children.push(child)
     return child
   }
-  const ready = async (url, child, name) => {
+  const ready = async (url, child, name, ca) => {
     for (let attempt = 0; attempt < 150; attempt++) {
       assert(
         child.exitCode === null,
         `${name} exited before readiness: ${readFileSync(join(work, `${name}.log`), 'utf8')}`,
       )
       const ok = await new Promise((resolveReady) => {
-        const req = httpsRequest(url, { rejectUnauthorized: false }, (response) => {
+        const req = httpsRequest(url, { ca }, (response) => {
           response.resume()
           resolveReady(response.statusCode === 200)
         })
@@ -235,6 +235,7 @@ export async function customerStackFixture({ browserName }, use) {
       ],
       { stdio: 'ignore' },
     )
+    const ca = readFileSync(cert, 'utf8')
     phase('customer: build local frontend')
     execFileSync('npm', ['run', 'build', '--', '--outDir', assets, '--emptyOutDir'], {
       env,
@@ -301,8 +302,8 @@ export async function customerStackFixture({ browserName }, use) {
       env,
     )
     await Promise.all([
-      ready(`${workerOrigin}/robots.txt`, worker, 'worker'),
-      ready(origin, preview, 'preview'),
+      ready(`${workerOrigin}/robots.txt`, worker, 'worker', ca),
+      ready(origin, preview, 'preview', ca),
     ])
     cms = await customerCmsFixture({ db, stack, origin, workerOrigin, work })
     await use({
