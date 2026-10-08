@@ -14,6 +14,7 @@ dist-startup
 test-results
 playwright-report
 blob-report
+__pycache__/
 *.local
 supabase/functions/.env
 
