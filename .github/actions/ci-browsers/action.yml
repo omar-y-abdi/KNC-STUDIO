@@ -10,6 +10,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Prefer official Ubuntu HTTPS package mirrors
+      shell: bash
+      run: |
+        # The hosted image prefers Azure HTTP, which stalled for 15 minutes in run 37761876549.
+        # Keep Ubuntu's signed repositories and HTTPS fallback; change download priority only.
+        printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
     - name: Resolve exact browser cache identity
       id: version
       shell: bash

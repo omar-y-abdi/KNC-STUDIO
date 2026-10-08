@@ -15,7 +15,9 @@ The source preparation module (`.github/actions/ci-node`) owns frozen npm instal
 format patch, source identity verification and Furl setup. Its interface is the checked-in composite
 action; consumers receive the same tested source. The browser preparation adapter caches downloads
 by the exact pinned Playwright version, OS, architecture and requested engines. System libraries are
-always installed. Cache misses execute the same checks.
+always installed. It prioritizes Ubuntu's official HTTPS mirrors instead of the hosted image's
+Azure HTTP mirror, which stalled the first migrated public shard for 15 minutes. Repository
+signatures and package requirements remain enforced. Cache misses execute the same checks.
 
 `@playwright/test` owns projects, browser reuse, isolated contexts/pages, fixture teardown, test
 scheduling, timeouts, server readiness/shutdown, failure screenshots and traces. Product behavior
