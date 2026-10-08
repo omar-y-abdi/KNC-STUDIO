@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 
 import { join } from 'node:path'
 
@@ -22,7 +22,7 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
     token: randomBytes(32).toString('hex'),
     booking: randomUUID(),
     name: `Customer ${label}`,
-    phone: `070${String(randomBytes(4).readUInt32BE() % 10000000).padStart(7, '0')}`,
+    phone: `070${String(randomInt(0, 10000000)).padStart(7, '0')}`,
     email: `${label.toLowerCase()}-${marker}@example.test`,
   }))
   state.fixture = { barber, people, attempts: [] }
