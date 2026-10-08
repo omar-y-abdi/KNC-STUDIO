@@ -124,9 +124,9 @@ async function readPublishedHero(page, label) {
   return { opacity: glyph.opacity, sampleCount: samples.length, sampledValues: observed }
 }
 
-async function verifyNoScriptFallback(browser, workerOrigin) {
-  const enabledContext = await browser.newContext({ ignoreHTTPSErrors: true })
-  const disabledContext = await browser.newContext({
+async function verifyNoScriptFallback(createContext, workerOrigin) {
+  const enabledContext = await createContext({ ignoreHTTPSErrors: true })
+  const disabledContext = await createContext({
     ignoreHTTPSErrors: true,
     javaScriptEnabled: false,
   })
@@ -177,8 +177,8 @@ async function verifyNoScriptFallback(browser, workerOrigin) {
 }
 
 /** Exercise real Worker HTML and client startup while the public presentation request is controlled. */
-export async function verifyPublicFirstPaint(browser, workerOrigin, work) {
-  const context = await browser.newContext({
+export async function verifyPublicFirstPaint(createContext, engineName, workerOrigin, work) {
+  const context = await createContext({
     viewport: { width: 390, height: 844 },
     colorScheme: 'light',
     reducedMotion: 'reduce',
@@ -250,7 +250,7 @@ export async function verifyPublicFirstPaint(browser, workerOrigin, work) {
     assert.equal((await directResponseReady).status(), 200)
     const directPaint = await readPublishedHero(page, 'new tab')
     await page.screenshot({
-      path: join(work, `public-first-paint-${browser.browserType().name()}-new-tab.png`),
+      path: join(work, `public-first-paint-${engineName}-new-tab.png`),
     })
 
     const reloadRequest = page.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
@@ -263,7 +263,7 @@ export async function verifyPublicFirstPaint(browser, workerOrigin, work) {
     await reload
     const reloadPaint = await readPublishedHero(page, 'hard refresh')
     await page.screenshot({
-      path: join(work, `public-first-paint-${browser.browserType().name()}-hard-refresh.png`),
+      path: join(work, `public-first-paint-${engineName}-hard-refresh.png`),
     })
 
     const privatePage = await context.newPage()
@@ -345,9 +345,9 @@ export async function verifyPublicFirstPaint(browser, workerOrigin, work) {
       'An authoritative empty response renders only the unstyled code baseline',
     )
 
-    const noScriptFallback = await verifyNoScriptFallback(browser, workerOrigin)
+    const noScriptFallback = await verifyNoScriptFallback(createContext, workerOrigin)
     const metrics = {
-      browser: browser.browserType().name(),
+      browser: engineName,
       presentationSource: 'intercepted local CMS response fixture',
       directLoad: { ...directPending, ...directPaint },
       hardRefresh: { ...reloadPending, ...reloadPaint },

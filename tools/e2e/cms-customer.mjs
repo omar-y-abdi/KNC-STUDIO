@@ -96,7 +96,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
     enBlock: `Independent English block ${pageSuffix}`,
   }
   return {
-    async publish(browser) {
+    async publish(createContext) {
       const created = await service.auth.admin.createUser({ email, password, email_confirm: true })
       assert.equal(created.error, null, 'Temporary CMS owner could not be created')
       owner = created.data.user.id
@@ -105,7 +105,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
          values($1,'owner',true,false)`,
         [owner],
       )
-      const context = await browser.newContext({
+      const context = await createContext({
         viewport: { width: 1440, height: 900 },
         ignoreHTTPSErrors: true,
         colorScheme: 'light',
@@ -364,7 +364,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         ])
           assert.ok(legalPage.content.sv.html.includes(`id="${slot}"`), `${slot} survives publish`)
 
-        publicContext = await browser.newContext({
+        publicContext = await createContext({
           viewport: { width: 390, height: 844 },
           colorScheme: 'light',
           reducedMotion: 'reduce',

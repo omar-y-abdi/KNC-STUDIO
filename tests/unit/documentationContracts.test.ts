@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 describe('handoff documentation contracts', () => {
   it('marks historical findings and avoids superseded deployment or test references', () => {
     const env = readFileSync(new URL('../../.env', import.meta.url), 'utf8')
-    const findings = readFileSync(new URL('../../REVIEW_FINDINGS.md', import.meta.url), 'utf8')
+    const findings = readFileSync(new URL('../../docs/REVIEW_FINDINGS.md', import.meta.url), 'utf8')
     const map = readFileSync(new URL('../../CODEBASE-MAP.md', import.meta.url), 'utf8')
     const emailSetup = readFileSync(
       new URL('../../supabase/functions/send-confirmation/README.md', import.meta.url),
@@ -65,7 +65,7 @@ describe('handoff documentation contracts', () => {
       ),
       'utf8',
     )
-    const findings = readFileSync(new URL('../../REVIEW_FINDINGS.md', import.meta.url), 'utf8')
+    const findings = readFileSync(new URL('../../docs/REVIEW_FINDINGS.md', import.meta.url), 'utf8')
     const map = readFileSync(new URL('../../CODEBASE-MAP.md', import.meta.url), 'utf8')
     const supabaseConfig = readFileSync(
       new URL('../../supabase/config.toml', import.meta.url),
@@ -108,7 +108,7 @@ describe('handoff documentation contracts', () => {
     expect(map).toContain('`supabase/functions/send-confirmation/README.md`')
     expect(map).toContain('`BACKEND.md`')
     expect(map).toContain('`src/admin/adapters/schedulesAdmin.ts`')
-    expect(map).toContain('`REVIEW_FINDINGS.md`')
+    expect(map).toContain('`docs/REVIEW_FINDINGS.md`')
     expect(supabaseConfig).not.toContain('[functions.calendar-sync]')
   })
 })
