@@ -62,7 +62,7 @@
     "typescript-eslint": "^8.61.1",
     "vite": "^8.0.12",
     "vitest": "^4.1.11",
-    "wrangler": "4.147.0",
+    "wrangler": "4.149.0",
     "@types/css-tree": "2.3.11",
     "@types/fontkit": "2.0.9"
   }
