@@ -5,4 +5,4 @@ set -euo pipefail
 npm run format -- --ignore-unknown --log-level warn
 npm run format:check
 # Share the formatted tree with every job without pushing commits or widening permissions.
-git diff --binary --no-ext-diff > "$RUNNER_TEMP/format.patch"
+git diff HEAD --binary --no-ext-diff --no-color > "$RUNNER_TEMP/format.patch"

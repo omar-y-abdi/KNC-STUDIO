@@ -40,7 +40,7 @@ CMS_ALLOWED_ORIGINS=https://127.0.0.1:4197
 PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 EOF
 npx supabase start
-npm run test:e2e -- --customer
+npm run test:e2e:customer
 ```
 
 Use a dedicated local Supabase stack. Preserve any existing local Function env values when adding
@@ -52,7 +52,9 @@ servers. It also signs in as a temporary owner, edits existing desktop/mobile co
 publishes through the real Edge Function, and runs customer scenarios with that published presentation.
 The gate checks authored copy after navigation and reload, restores its CMS changes, and deletes its
 temporary owner. It sends no provider email and rejects non-loopback database/API addresses. Logs and
-screenshots remain in the printed temporary directory. Vite preview provides the local TLS bridge;
+screenshots remain in the printed temporary directory and `test-results/`; Playwright owns browser
+projects, fixture teardown, traces and failure screenshots. Each customer engine uses isolated data
+and publishes its own real CMS fixture before acceptance checks. Vite preview provides the local TLS bridge;
 public page HTML, CMS presentation and customer APIs run through the actual Worker. The gate asserts
 bounded native HTML and both desktop/mobile edits in the public presentation API before checking
 visible copy through browser navigation and reload.
@@ -165,17 +167,20 @@ for server-side security. Current controls:
 
 ## Pixel-parity gate
 
-UI changes are guarded by a pixel-regression gate: `tools/visual/` screenshots a served build (run it
-with `VITE_CLOCK=fixed` so the calendar is deterministic) and diffs it against the checked-in
-baselines (`tools/visual/baseline/`) pixel-for-pixel:
+UI changes are guarded by `tools/e2e/visual.spec.mjs`. Playwright compares eight desktop/mobile ×
+light/dark × Swedish/English views against the existing approved screenshots. Linux CI uses
+`tools/visual/baseline-linux/`; local non-Linux runs use `tools/visual/baseline/`.
 
 ```bash
-node tools/visual/capture.mjs   # BASE=<url> OUT=<dir>  → 8 homepage variants
-node tools/visual/compare.mjs   # BASELINE vs CANDIDATE via pixelmatch; non-zero exit on drift
+npm run build
+E2E_GROUP=public npx playwright test visual.spec.mjs --project=public-chromium
+node tools/visual/capture.mjs   # optional design evidence: BASE=<url> OUT=<dir>
 ```
 
-Chromium renders deterministically here (identical input → 0.000% mismatch), so any real visual
-drift fails the gate.
+The policy retains the prior `0.1` pixel colour threshold, maximum `0.001` mismatch ratio and 2×
+image dimensions. Missing snapshots fail; CI never creates or updates approved baselines. Playwright
+also waits for consecutive stable screenshots. Design capture, collage and social-card tools remain
+explicit automation utilities. See [CI architecture and verification](docs/CI.md) for the complete gates.
 
 ---
 

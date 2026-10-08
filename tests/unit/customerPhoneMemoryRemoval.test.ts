@@ -26,7 +26,9 @@ describe('customer phone-memory removal contract', () => {
   })
 
   it('keeps public smoke free of phone-memory while privacy controls remain mounted', () => {
-    const smoke = readFileSync('tools/e2e/smoke.mjs', 'utf8')
+    const smoke =
+      readFileSync('tools/e2e/public-checks.mjs', 'utf8') +
+      readFileSync('tools/e2e/customer.spec.mjs', 'utf8')
 
     expect(smoke).not.toContain('bladeblend_mybookings_phone')
     expect(readFileSync('src/site/PrivacyBanner.tsx', 'utf8')).toContain('functional-storage')
