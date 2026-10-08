@@ -1115,7 +1115,7 @@ Use this instead of grep for first-hop navigation.
 | `supabase/functions/send-confirmation/README.md` | Function README describes the current durable booking-email ledger; it does not describe the separate customer-access session proxy.                                             | `public-booking-actions/README.md`, current Worker/Edge code, and subsystem ownership in §5                                           |
 | `.claude/runtime/SLOT_PACKING_SPEC.md`           | Any statement that `BookingFlow.tsx` directly consumes `packSlots()` is shorthand for mock mode.                                                                                 | actual: `localCalendar.ts` consumes `slotPacking.ts`; live uses `available_slots()`                                                   |
 | `src/admin/adapters/schedulesAdmin.ts` comments  | Header/JSDoc still describes old direct-upsert/RLS week save.                                                                                                                    | executable `saveWeek()` + `20260813115437_transactional_availability_mutations.sql`; direct authenticated schedule writes are revoked |
-| `REVIEW_FINDINGS.md`                             | Predates later hardening migrations.                                                                                                                                             | historical context only; current code/migrations/tests                                                                                |
+| `docs/REVIEW_FINDINGS.md`                             | Predates later hardening migrations.                                                                                                                                             | historical context only; current code/migrations/tests                                                                                |
 
 ---
 
@@ -1139,7 +1139,7 @@ node tools/smoke-live.mjs     # live Supabase gateway/security smoke
 
 - `README.md`
 - `BACKEND.md` - useful context; apply §12 drift notes.
-- `LAUNCH_READINESS_PLAN.md`
+- `docs/operations/LAUNCH_RELEASE_2026-09-13.md`
 - `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`
 - `docs/operations/BACKUP_RESTORE.md`
 - Latest relevant migrations + tests for the subsystem being changed.
