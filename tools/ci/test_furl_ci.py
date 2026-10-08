@@ -111,7 +111,9 @@ class ShellTests(unittest.TestCase):
 
     def test_term_reaches_shell_and_cleanup_runs(self):
         ready = Path(self.directory.name) / "ready"
-        self.script.write_text(f"trap 'echo cleanup' EXIT\ntrap 'exit 143' TERM\ntouch '{ready}'\nsleep 30\n")
+        # Signal only after the long-lived child exists; otherwise Bash can
+        # spawn a foreground sleep after the one forwarded TERM was delivered.
+        self.script.write_text(f"trap 'echo cleanup' EXIT\ntrap 'exit 143' TERM\nsleep 30 &\nchild=$!\nprintf '%s\\n' \"$child\" > '{ready}'\nwait \"$child\"\n")
         process = subprocess.Popen([sys.executable, str(self.wrapper), str(self.script)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 5
