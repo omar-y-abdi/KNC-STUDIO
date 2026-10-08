@@ -215,7 +215,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await live.goto(base)
           await live.getByText('Current published copy', { exact: true }).waitFor()
           await publish()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           await live.getByText('KNC source sv', { exact: true }).first().waitFor()
         } else if (scenario === 'email-preview') {
           await page.getByRole('button', { name: 'Mejl', exact: true }).click()
@@ -294,7 +294,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             await live.locator(`[id="${id}"]`).innerText(),
             'First line\nSecond <literal> line',
           )
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           assert.equal(
             await live.locator(`[id="${id}"]`).innerText(),
             'First line\nSecond <literal> line',
@@ -308,7 +308,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await inspector.getByRole('button', { name: 'Förälder', exact: true }).click()
           assert.equal(await copy.innerText(), 'Direct first line\nDirect second line')
           await publish()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           assert.equal(
             await live.locator(`[id="${id}"]`).innerText(),
             'Direct first line\nDirect second line',
@@ -326,7 +326,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           assert.equal(await phone.innerText(), 'Call\nnow')
           assert.equal(await phone.locator('img').count(), 1, 'Multiline text must retain its icon')
           await publish()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           const publicPhone = live.locator('a[href^="tel:"]').first()
           await publicPhone.filter({ hasText: 'Call' }).waitFor()
           assert.equal(await publicPhone.innerText(), 'Call\nnow')
@@ -433,7 +433,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             .first()
           await liveLogo.waitFor()
           assert.equal(await liveLogo.getAttribute('alt'), 'Blade & Blend Studio')
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           await liveLogo.waitFor()
           assert.equal(await liveLogo.getAttribute('alt'), 'Blade & Blend Studio')
         } else if (scenario === 'legacy-preview-repair') {
@@ -514,7 +514,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             await live.setViewportSize({ width: device === 'Dator' ? 1440 : 390, height: 900 })
             await live.goto(`${base}${title === 'Bokning' ? '/booking' : '/'}`)
             await live.locator(`[id="${id}"]`).filter({ hasText: replacement }).waitFor()
-            await live.reload()
+            await live.reload({ waitUntil: 'domcontentloaded' })
             const lettering = live.locator(`[id="${id}"]`).filter({ hasText: replacement })
             await lettering.waitFor()
             assert.equal(
@@ -841,7 +841,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await live.goto(base)
           await live.getByText('Owner duplicated the real site', { exact: true }).waitFor()
           await live.getByText('KNC source sv', { exact: true }).first().waitFor()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           await live.getByText('Owner duplicated the real site', { exact: true }).waitFor()
         } else if (scenario === 'add-block') {
           await inspector.getByRole('tab', { name: 'Lägg till', exact: true }).click()
@@ -855,7 +855,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           const live = await context.newPage()
           await live.goto(base)
           await live.getByRole('heading', { name: 'Ny rubrik', exact: true }).waitFor()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           await live.getByRole('heading', { name: 'Ny rubrik', exact: true }).waitFor()
         } else if (scenario === 'revert-reload') {
           await publish()
@@ -973,7 +973,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           const live = await context.newPage()
           await live.goto(base)
           await live.getByText('Newer unsaved owner edit', { exact: true }).waitFor()
-          await live.reload()
+          await live.reload({ waitUntil: 'domcontentloaded' })
           await live.getByText('Newer unsaved owner edit', { exact: true }).waitFor()
         } else {
           await selectCopy()
