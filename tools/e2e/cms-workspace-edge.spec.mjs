@@ -7,7 +7,7 @@ test.describe.configure({ timeout: 900_000 })
 
 test.use({
   viewport: { width: 1440, height: 900 },
-  reducedMotion: 'reduce',
+  contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-workspace-edge', async ({ page, context, browserName, evidenceDir }) => {
   const name = browserName

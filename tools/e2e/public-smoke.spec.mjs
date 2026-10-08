@@ -9,14 +9,14 @@ for (const viewport of [
   { width: 390, height: 844 },
 ])
   test.describe('public ' + viewport.width, () => {
-    test.use({ viewport, reducedMotion: 'reduce', hasTouch: true })
+    test.use({ viewport, contextOptions: { reducedMotion: 'reduce' }, hasTouch: true })
     test('booking, my bookings, gallery and discovery', async ({ page }) =>
       verifyPublicPage(page, viewport))
   })
 test.describe('normal motion', () => {
   test.use({
     viewport: { width: 2400, height: 900 },
-    reducedMotion: 'no-preference',
+    contextOptions: { reducedMotion: 'no-preference' },
     hasTouch: true,
   })
   test('gallery keyboard and pointer controls', async ({ page }) =>

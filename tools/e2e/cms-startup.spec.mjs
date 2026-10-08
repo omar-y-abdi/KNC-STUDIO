@@ -84,7 +84,7 @@ async function csp(context) {
   })
 }
 
-test.use({ ...devices['iPhone 15'], reducedMotion: 'reduce' })
+test.use({ ...devices['iPhone 15'], contextOptions: { reducedMotion: 'reduce' } })
 
 test('stored-page-independent-of-source', async ({ page, context }, testInfo) => {
   page.setDefaultTimeout(5000)

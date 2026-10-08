@@ -7,7 +7,7 @@ test.use({
   viewport: { width: 390, height: 844 },
   colorScheme: 'dark',
 })
-test('cms-public-regression', async ({ page, context, browser, browserName }) => {
+test('cms-public-regression', async ({ page, context, newContext, browserName }) => {
   const name = browserName
   const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
   const languageToggleSelector =
@@ -196,8 +196,8 @@ test('cms-public-regression', async ({ page, context, browser, browserName }) =>
     await waitForLanguage('en')
     await assertPill('en')
   }
-  async function verifyFreshLanguageToggle(browser) {
-    const context = await browser.newContext({
+  async function verifyFreshLanguageToggle() {
+    const context = await newContext({
       viewport: { width: 1440, height: 900 },
       colorScheme: 'dark',
       reducedMotion: 'reduce',
@@ -205,15 +205,11 @@ test('cms-public-regression', async ({ page, context, browser, browserName }) =>
     context.setDefaultTimeout(15000)
     await nativeBackend(context, emptyDocument())
     const page = await context.newPage()
-    try {
-      for (const viewport of [
-        { width: 1440, height: 900 },
-        { width: 390, height: 844 },
-      ])
-        await verifyLanguageToggle(page, { viewport, surface: null })
-    } finally {
-      await context.close()
-    }
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ])
+      await verifyLanguageToggle(page, { viewport, surface: null })
   }
   context.setDefaultTimeout(15000)
   const seed = emptyDocument()
@@ -224,7 +220,7 @@ test('cms-public-regression', async ({ page, context, browser, browserName }) =>
         .replaceAll('https://soktgawvexeumqvtyhda.supabase.co', 'https://admin-harness.invalid'),
     ).presentation
   const backend = await nativeBackend(context, seed)
-  await verifyFreshLanguageToggle(browser)
+  await verifyFreshLanguageToggle()
   const check = async (mode) => {
     await page.waitForFunction(
       (mode) => globalThis.document.documentElement.style.colorScheme === mode,

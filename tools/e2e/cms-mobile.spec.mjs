@@ -9,7 +9,7 @@ for (const width of [390, 320]) {
   test.describe(String(width), () => {
     test.use({
       viewport: { width, height: width === 390 ? 690 : 568 },
-      reducedMotion: 'reduce',
+      contextOptions: { reducedMotion: 'reduce' },
       isMobile: true,
       hasTouch: true,
     })

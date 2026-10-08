@@ -14,7 +14,7 @@ for (const viewport of [
           viewport: { width: viewport.width, height: viewport.height },
           colorScheme: scheme,
           deviceScaleFactor: 2,
-          reducedMotion: 'reduce',
+          contextOptions: { reducedMotion: 'reduce' },
         })
         test('approved public screenshot', async ({ page, context }) => {
           await installEmptyCmsPresentation(context)

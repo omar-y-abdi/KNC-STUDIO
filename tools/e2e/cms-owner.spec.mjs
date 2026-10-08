@@ -11,7 +11,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
     test.use({
       viewport: { width: 1440, height: 900 },
       colorScheme: 'light',
-      reducedMotion: 'reduce',
+      contextOptions: { reducedMotion: 'reduce' },
     })
     test('cms-owner', async ({ page, context, browserName, evidenceDir }) => {
       const name = browserName

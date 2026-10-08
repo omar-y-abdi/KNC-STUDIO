@@ -5,7 +5,7 @@ import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 test.use({
   viewport: { width: 1440, height: 1000 },
-  reducedMotion: 'reduce',
+  contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-scenes', async ({ page, context, browserName }) => {
   const name = browserName

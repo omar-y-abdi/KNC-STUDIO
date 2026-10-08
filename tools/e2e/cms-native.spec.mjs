@@ -5,7 +5,7 @@ import { test } from './fixtures.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   colorScheme: 'light',
-  reducedMotion: 'reduce',
+  contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
   const name = browserName

@@ -10,7 +10,7 @@ for (const width of [1440, 390]) {
   test.describe(String(width), () => {
     test.use({
       viewport: { width, height: width <= 900 ? 844 : 900 },
-      reducedMotion: 'reduce',
+      contextOptions: { reducedMotion: 'reduce' },
       colorScheme: 'light',
     })
     test('cms-workspace-views', async ({ page, context, browserName, evidenceDir }) => {

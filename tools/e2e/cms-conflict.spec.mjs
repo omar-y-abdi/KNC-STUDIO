@@ -6,7 +6,7 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
   test.describe(String(scenario), () => {
     test.use({
       viewport: { width: 1440, height: 900 },
-      reducedMotion: 'reduce',
+      contextOptions: { reducedMotion: 'reduce' },
     })
     test('cms-conflict', async ({ context, browserName }) => {
       const name = browserName

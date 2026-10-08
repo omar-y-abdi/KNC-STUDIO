@@ -12,6 +12,9 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      'dist-startup/**',
+      'test-results/**',
+      'playwright-report/**',
       'node_modules/**',
       '.wrangler/tmp/**',
       'tools/visual/**/*.png',

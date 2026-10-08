@@ -731,6 +731,15 @@ function calendarErrorResult(message = 'Synthetic Calendar status failure') {
   return { ok: false, error: { kind: 'network', message } }
 }
 
+async function pauseCalendarClock(page) {
+  // Freeze Date before pausing: separate browser/runner round trips otherwise
+  // let the observed instant become the past. Timer ticks remain unchanged.
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.setFixedTime(now)
+  await page.clock.pauseAt(now)
+  await page.clock.setSystemTime(now)
+}
+
 async function mountCalendarHarness(page, lang = 'en', mode = 'component') {
   // Preact schedules passive effects through the module's original timer reference. Let the first
   // effect run on a resumed fake clock, then pause at the observed instant before exact timer checks.
@@ -743,7 +752,7 @@ async function mountCalendarHarness(page, lang = 'en', mode = 'component') {
   )
   await page.getByTestId('calendar-harness').waitFor()
   await waitCalendarCalls(page, 'statusCalls', 'a', 1, 'initial Calendar status read missing')
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+  await pauseCalendarClock(page)
   return page.evaluate(async (currentLang) => {
     const { adminText } = await import('/src/i18n/adminStrings.ts')
     return adminText(currentLang)
@@ -1034,7 +1043,7 @@ async function verifyCalendarSync(page) {
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'b')
     await page.waitForTimeout(25)
-    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'port B initial read missing')
     await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
     await page.waitForFunction(
@@ -1051,7 +1060,7 @@ async function verifyCalendarSync(page) {
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'a')
     await page.waitForTimeout(25)
-    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'a', 5, 'port A remount read missing')
     await calendarControl(page, 'unmount')
     await calendarControl(page, 'resolve-status', 'a', 4, calendarStatusResult({ connected: true }))
@@ -1079,7 +1088,7 @@ async function verifyCalendarSync(page) {
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'b')
     await page.waitForTimeout(25)
-    await page.clock.pauseAt(await page.evaluate(() => Date.now()))
+    await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'connect-race port B read missing')
     await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
     await calendarControl(page, 'resolve-connect', 'a', 0, {

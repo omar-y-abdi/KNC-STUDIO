@@ -104,7 +104,7 @@ const mount = async (
 }
 test.describe.configure({ timeout: 900_000 })
 
-test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' })
+test.use({ viewport: { width: 1440, height: 900 }, contextOptions: { reducedMotion: 'reduce' } })
 
 test('metadata-wire', async ({ page, context }) => {
   page.setDefaultTimeout(10000)

@@ -5,7 +5,7 @@ import { emptyDocument } from '../../shared/cms.ts'
 import { test } from './fixtures.mjs'
 test.use({
   viewport: { width: 1440, height: 1000 },
-  reducedMotion: 'reduce',
+  contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-draft-resources', async ({ page, context, browserName, evidenceDir }) => {
   const engine = browserName
