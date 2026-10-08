@@ -92,6 +92,6 @@ const svc = createClient(stack.API_URL, stack.SERVICE_ROLE_KEY, { auth: { persis
 for (const user of [OWNER, BARBER]) {
   const id = await createUser(svc, user)
   await upsertProfile(stack.DB_URL, id, user.role, user.barberId)
-  console.log(`seeded ${user.role.padEnd(6)} ${user.email}  (password: ${user.password})`)
+  console.log(`seeded ${user.role.padEnd(6)} ${user.email}`)
 }
 console.log('\nDone. Open the app, go to /login, and sign in with either account.')
