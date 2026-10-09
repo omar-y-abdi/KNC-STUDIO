@@ -34,7 +34,7 @@ describe('business structured data', () => {
     )
 
     expect(data.priceRange).toBe('300–450 kr')
-    expect(data.employee).toEqual([
+    expect(data.employee).toMatchObject([
       { '@type': 'Person', name: 'Ada' },
       { '@type': 'Person', name: 'Bo' },
     ])

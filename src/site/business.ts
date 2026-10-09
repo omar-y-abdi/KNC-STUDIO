@@ -340,6 +340,10 @@ export function buildBusinessStructuredData(
     structured['employee'] = facts.barbers.map((barber) => ({
       '@type': 'Person',
       name: barber.name,
+      description: 'Barberare hos ' + business.name + ', frisörsalong i ' + business.city + '.',
+      url: root + '/about',
+      jobTitle: 'Barberare',
+      worksFor: { '@id': root + '/#business' },
     }))
   }
   return structured
