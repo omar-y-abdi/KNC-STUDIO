@@ -585,13 +585,25 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await reorderedTrack.evaluate((node) =>
       node.scrollIntoView({ block: 'center', inline: 'nearest' }),
     )
-    for (
-      let attempt = 0;
-      attempt < 4 && (await centeredBarber(live)) !== 'Owner-styled A';
-      attempt++
+    // A free-drag carousel may end on either slide after any fixed number of swipes.
+    // Verify the reordered track still responds to touch-like dragging, then select
+    // the authored card directly and require Embla to center it.
+    const reorderedDrag = await dragLeft(live, reorderedTrack)
+    assert.ok(
+      Math.abs(reorderedDrag.after - reorderedDrag.before) > 2,
+      `Reordered barber track ignored the drag: ${JSON.stringify(reorderedDrag)}`,
     )
-      await dragLeft(live, reorderedTrack)
+    await reorderedCards.nth(1).focus()
+    await reorderedCards.nth(1).press('Enter')
+    await live.waitForFunction((cardId) => {
+      const card = globalThis.document.getElementById(cardId)
+      if (card?.getAttribute('aria-expanded') !== 'true') return false
+      const bounds = card.getBoundingClientRect()
+      return bounds.left >= -1 && bounds.right <= globalThis.innerWidth + 1
+    }, owned.cardId)
     assert.equal(await centeredBarber(live), 'Owner-styled A')
+    await reorderedCards.nth(1).press('Enter')
+    assert.equal(await reorderedCards.nth(1).getAttribute('aria-expanded'), 'false')
     await clickVisibleCard(live, reorderedCards.nth(1))
     assert.equal(await reorderedCards.nth(1).getAttribute('aria-expanded'), 'true')
     const reorderedBounds = await reorderedCards.nth(1).boundingBox()
