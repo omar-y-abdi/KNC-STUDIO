@@ -60,7 +60,7 @@
     "terser": "^5.48.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.61.1",
-    "vite": "^8.0.12",
+    "vite": "^8.3.5",
     "vitest": "^4.1.11",
     "wrangler": "4.149.0",
     "@types/css-tree": "2.3.11",
