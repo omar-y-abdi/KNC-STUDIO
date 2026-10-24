@@ -1093,7 +1093,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
         request.method === 'HEAD' ? null : (legalDiscovery ?? loadDiscovery(env)),
-        legalPage ? legalBaseCss(request, env) : '',
+        legalPage && request.method !== 'HEAD' ? legalBaseCss(request, env) : '',
       ])
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
       const mode = requestedCmsMode(url.searchParams.get('mode'))

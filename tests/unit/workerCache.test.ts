@@ -16,6 +16,11 @@ import worker, { PublicContent, isCmsPagePath, renderCmsPage } from '../../src/w
 const SITE = 'https://bladeblendstudio.se'
 const SHELL = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const DISCOVERY = { settings: {}, barbers: [], services: [], schedules: [] }
+// The Worker inlines these deployed sheets as the base of a CMS legal page (STY-7).
+const LEGAL_SHEETS: Readonly<Record<string, string>> = {
+  '/tokens.css': ':root{--bb-surface:#fff}',
+  '/info.css': 'main.bb-doc{margin:0 auto}',
+}
 
 type WorkerContext = Parameters<typeof worker.fetch>[2]
 
@@ -179,7 +184,7 @@ describe('requests that cannot be CMS pages', () => {
 describe('CMS page reads that do not depend on each other', () => {
   it('reads discovery while it looks up /terms in the CMS', async () => {
     const flight = createFlight()
-    const files = createAssets({ '/index.html': SHELL }, flight)
+    const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS }, flight)
     stubRpcs(
       {
         public_cms_presentation: publishedWith(terms),
@@ -234,8 +239,8 @@ describe('CMS page reads that do not depend on each other', () => {
     expect(files.requested).toEqual(['/terms.html'])
   })
 
-  it('never reads discovery for a HEAD request', async () => {
-    const files = createAssets({ '/index.html': SHELL })
+  it('never reads discovery or the legal base sheets for a HEAD request', async () => {
+    const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS })
     const { calls } = stubRpcs({ public_cms_presentation: publishedWith(terms) })
     const response = await worker.fetch(
       new Request(`${SITE}/terms`, { method: 'HEAD' }),
@@ -244,6 +249,7 @@ describe('CMS page reads that do not depend on each other', () => {
     )
     expect(response.status).toBe(200)
     expect(calls).toEqual(['public_cms_presentation'])
+    expect(files.requested.filter((path) => path in LEGAL_SHEETS)).toEqual([])
   })
 })
 
