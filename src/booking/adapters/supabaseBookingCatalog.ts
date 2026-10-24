@@ -1,4 +1,7 @@
-import { getSupabase } from '../../backend/supabaseClient'
+import type { RealtimeClient } from '@supabase/realtime-js'
+import { publicObjectUrl } from '../../backend/publicApi'
+import { getPublicRealtime } from '../../backend/publicRealtime'
+import { getPublicRest } from '../../backend/publicRest'
 import {
   parseWith,
   publicBookingCatalogResponse,
@@ -37,10 +40,7 @@ const catalogListeners = new Set<() => void>()
 let stopCatalogSubscription: (() => void) | null = null
 
 function toRoster(row: PublicBarberRow & { readonly photo_path: string | null }): RosterBarber {
-  const photoUrl =
-    row.photo_path === null
-      ? null
-      : getSupabase().storage.from(PHOTO_BUCKET).getPublicUrl(row.photo_path).data.publicUrl
+  const photoUrl = row.photo_path === null ? null : publicObjectUrl(PHOTO_BUCKET, row.photo_path)
   return {
     barber: { id: asBarberId(row.id), name: row.name, ig: row.ig },
     copy: { roleSv: row.role_sv, roleEn: row.role_en, bioSv: row.bio_sv, bioEn: row.bio_en },
@@ -53,7 +53,7 @@ function toService(row: PublicServiceRow): ServiceItem {
 }
 
 async function loadBookingCatalog(): Promise<BookingCatalog> {
-  const { data, error } = await getSupabase().rpc('public_booking_catalog')
+  const { data, error } = await getPublicRest().rpc('public_booking_catalog')
   if (error !== null) throw new Error('public booking catalog unavailable')
   const parsed = parseWith(publicBookingCatalogResponse, data)
   if (!parsed.ok) throw new Error('public booking catalog malformed')
@@ -171,9 +171,8 @@ function revalidateCatalogListeners(): void {
   })
 }
 
-function startCatalogSubscription(): () => void {
-  const client = getSupabase()
-  let channel = client.channel('public-booking-catalog')
+function openCatalogChannel(realtime: RealtimeClient): () => void {
+  let channel = realtime.channel('public-booking-catalog')
   let awaitingPostgresReady = true
   const changed = (): void => {
     // Receiving an actual change also proves the Postgres Changes listener is live.
@@ -196,7 +195,24 @@ function startCatalogSubscription(): () => void {
     if (status === 'SUBSCRIBED') awaitingPostgresReady = true
   })
   return () => {
-    void client.removeChannel(channel)
+    void realtime.removeChannel(channel)
+  }
+}
+
+/**
+ * Open the catalog channel once the Realtime client has loaded. Stopping first, before it has
+ * loaded, means no channel is ever created.
+ */
+function startCatalogSubscription(): () => void {
+  let stopped = false
+  let closeChannel = (): void => undefined
+  void getPublicRealtime().then((realtime) => {
+    if (stopped) return
+    closeChannel = openCatalogChannel(realtime)
+  })
+  return () => {
+    stopped = true
+    closeChannel()
   }
 }
 

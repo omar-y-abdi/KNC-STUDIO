@@ -3,6 +3,8 @@
 // Realtime remains an opt-in dynamic import, started by useSiteChrome during idle time.
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../backend/config'
+import { publicApiHeaders, publicObjectUrl } from '../../backend/publicApi'
+import { getPublicRealtime } from '../../backend/publicRealtime'
 import {
   parseWith,
   publicBusinessDiscoveryResponse,
@@ -30,12 +32,7 @@ const TEXT_KEYS: ReadonlySet<string> = new Set(SITE_TEXT_KEYS)
 
 function apiHeaders(json = false): Headers | null {
   if (SUPABASE_ANON_KEY === undefined) return null
-  const headers = new Headers({ apikey: SUPABASE_ANON_KEY })
-  // Legacy anon keys are JWTs. PostgREST applies RLS from Authorization, not the apikey header.
-  // New publishable keys are opaque and must not be sent as bearer tokens.
-  if (SUPABASE_ANON_KEY.split('.').length === 3) {
-    headers.set('Authorization', `Bearer ${SUPABASE_ANON_KEY}`)
-  }
+  const headers = new Headers(publicApiHeaders(SUPABASE_ANON_KEY))
   if (json) headers.set('Content-Type', 'application/json')
   return headers
 }
@@ -46,14 +43,6 @@ async function publicJson(url: URL, init?: RequestInit): Promise<unknown | null>
   const response = await fetch(url, { ...init, headers })
   if (!response.ok) return null
   return response.json()
-}
-
-function publicObjectUrl(bucket: string, path: string): string | null {
-  if (SUPABASE_URL === undefined) return null
-  return new URL(
-    `storage/v1/object/public/${bucket}/${path}`,
-    `${SUPABASE_URL.replace(/\/$/, '')}/`,
-  ).toString()
 }
 
 async function loadSiteChrome(lang: Lang): Promise<SiteChrome | null> {
@@ -124,10 +113,9 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
     let closed = false
     let stop = (): void => undefined
 
-    void import('../../backend/supabaseClient')
-      .then(({ getSupabase }) => {
+    void getPublicRealtime()
+      .then((realtime) => {
         if (closed) return
-        const supabase = getSupabase()
         let reloadRequested = false
         let reloadPromise: Promise<void> | null = null
         const reload = (): void => {
@@ -152,7 +140,7 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
           awaitingPostgresReady = false
           reload()
         }
-        const channel = supabase
+        const channel = realtime
           .channel(`site-chrome:${lang}`)
           .on('system', {}, (payload) => {
             if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
@@ -172,7 +160,7 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
           })
 
         stop = (): void => {
-          void supabase.removeChannel(channel)
+          void realtime.removeChannel(channel)
         }
       })
       .catch(() => undefined)

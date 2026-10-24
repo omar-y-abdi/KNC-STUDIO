@@ -48,20 +48,19 @@ const {
   }
 })
 
-vi.mock('../../src/backend/supabaseClient', () => ({
-  getSupabase: () => ({
-    rpc,
-    channel: () => channel,
-    removeChannel,
-    storage: {
-      from: () => ({
-        getPublicUrl: (path: string) => ({ data: { publicUrl: `https://img/${path}` } }),
-      }),
-    },
-  }),
+// The Realtime client arrives asynchronously (its library is loaded on first use); `ready` lets a
+// test hold it back.
+const realtime = vi.hoisted(() => ({ ready: Promise.resolve() }))
+
+vi.mock('../../src/backend/publicRest', () => ({ getPublicRest: () => ({ rpc }) }))
+
+vi.mock('../../src/backend/publicRealtime', () => ({
+  getPublicRealtime: () => realtime.ready.then(() => ({ channel: () => channel, removeChannel })),
 }))
 
 vi.mock('../../src/backend/config', () => ({
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJ.test.signature',
   isBackendConfigured: () => true,
 }))
 
@@ -75,8 +74,14 @@ import {
 } from '../../src/booking/adapters/supabaseBookingCatalog'
 import { asBarberId } from '../../src/booking/domain'
 
+const channelOpened = () => vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalled())
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 describe('shared public booking catalog', () => {
-  beforeEach(() => resetChannel())
+  beforeEach(() => {
+    resetChannel()
+    realtime.ready = Promise.resolve()
+  })
 
   it('hydrates roster/photos/services through one cached RPC', async () => {
     rpc.mockResolvedValue({
@@ -122,7 +127,7 @@ describe('shared public booking catalog', () => {
       {
         barber: { id: 'db-barber', name: 'Database Barber', ig: 'db' },
         copy: { roleSv: 'Barberare', roleEn: 'Barber', bioSv: 'Bio', bioEn: 'Bio' },
-        photoUrl: 'https://img/db.webp',
+        photoUrl: 'https://example.supabase.co/storage/v1/object/public/barber-photos/db.webp',
       },
     ])
     expect(services).toEqual([{ id: 'db-service', name: 'Database Service', price: 425, dur: 45 }])
@@ -201,6 +206,7 @@ describe('shared public booking catalog', () => {
 
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    await channelOpened()
     triggerSubscribed()
     await Promise.resolve()
     expect(rpc).toHaveBeenCalledTimes(1)
@@ -222,6 +228,7 @@ describe('shared public booking catalog', () => {
 
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    await channelOpened()
 
     triggerSubscribed()
     triggerPostgresReady()
@@ -257,6 +264,7 @@ describe('shared public booking catalog', () => {
     await refreshBookingCatalog()
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    await channelOpened()
     triggerSubscribed()
     triggerPostgresReady()
     await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2))
@@ -278,6 +286,7 @@ describe('shared public booking catalog', () => {
 
     const onCatalogChange = vi.fn()
     const unsubscribe = subscribeBookingCatalog(onCatalogChange)
+    await channelOpened()
 
     expect(channel.on).toHaveBeenCalledWith(
       'postgres_changes',
@@ -297,5 +306,36 @@ describe('shared public booking catalog', () => {
 
     unsubscribe()
     expect(removeChannel).toHaveBeenCalledWith(channel)
+  })
+
+  it('opens no channel when the last listener leaves before Realtime is ready', async () => {
+    let release = (): void => undefined
+    realtime.ready = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const unsubscribe = subscribeBookingCatalog(vi.fn())
+    unsubscribe()
+    release()
+    await flush()
+
+    expect(channel.on).not.toHaveBeenCalled()
+    expect(channel.subscribe).not.toHaveBeenCalled()
+    expect(removeChannel).not.toHaveBeenCalled()
+  })
+
+  it('opens one channel when a listener returns while Realtime is still loading', async () => {
+    let release = (): void => undefined
+    realtime.ready = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    subscribeBookingCatalog(vi.fn())()
+    const unsubscribe = subscribeBookingCatalog(vi.fn())
+    release()
+    await channelOpened()
+    await flush()
+
+    expect(channel.subscribe).toHaveBeenCalledTimes(1)
+    unsubscribe()
+    expect(removeChannel).toHaveBeenCalledTimes(1)
   })
 })

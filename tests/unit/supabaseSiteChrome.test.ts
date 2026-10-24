@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   systemHandlers: [] as ((payload: unknown) => void)[],
   subscriptionHandler: undefined as ((status: string) => void) | undefined,
   removeChannel: vi.fn(),
+  realtimeReady: Promise.resolve(),
 }))
 
 vi.mock('../../src/backend/config', () => ({
@@ -21,8 +22,8 @@ vi.mock('../../src/backend/config', () => ({
   isBackendConfigured: () => true,
 }))
 
-vi.mock('../../src/backend/supabaseClient', () => ({
-  getSupabase: () => {
+vi.mock('../../src/backend/publicRealtime', () => ({
+  getPublicRealtime: () => {
     const channel = {
       on: vi.fn(
         (event: string, filter: Record<string, unknown>, handler: (payload?: unknown) => void) => {
@@ -39,10 +40,10 @@ vi.mock('../../src/backend/supabaseClient', () => ({
         return channel
       }),
     }
-    return {
+    return state.realtimeReady.then(() => ({
       channel: () => channel,
       removeChannel: state.removeChannel,
-    }
+    }))
   },
 }))
 
@@ -60,6 +61,7 @@ describe('Supabase site chrome resolution', () => {
     state.systemHandlers = []
     state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
+    state.realtimeReady = Promise.resolve()
 
     vi.stubGlobal(
       'fetch',
@@ -237,5 +239,20 @@ describe('Supabase site chrome resolution', () => {
         style: 'monochrome',
       },
     })
+  })
+
+  it('opens no channel when the subscription is closed before Realtime is ready', async () => {
+    let release = (): void => undefined
+    state.realtimeReady = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', vi.fn())
+    unsubscribe?.()
+    release()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(state.subscriptionHandler).toBeUndefined()
+    expect(state.changeFilters).toEqual([])
+    expect(state.removeChannel).not.toHaveBeenCalled()
   })
 })
