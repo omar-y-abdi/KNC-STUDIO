@@ -35,7 +35,9 @@ const protectedIds = new Set([
 
 // The marquee code moves these nodes or measures them; the individual transform
 // properties are transforms too. The gallery loop math also owns its tile sizes.
+// `all` resets every one of them, and Chromium keeps it as one CSSOM entry instead of longhands.
 const marqueeMotion = [
+  'all',
   'transform',
   'translate',
   'rotate',

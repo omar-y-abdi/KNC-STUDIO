@@ -44,6 +44,17 @@ export function marqueeCardWidth(scale: number): string {
   return `calc((100vw - 24px) * ${scale})`
 }
 
+/** The smallest card scale at which Embla keeps looping `cards` mobile slides at every mobile
+ * width up to 768 px. Embla drops `loop` (and AutoScroll halts at the end) unless the other slides
+ * cover the view (SlideLooper.canLoop): an edge slide measures its card plus one 24 px margin, an
+ * inner slide its card plus both. A single card never animates. */
+export function minLoopScale(cards: number): number {
+  if (cards < 2) return 0.1
+  const view = 768
+  const width = cards === 2 ? view - 24 : (view + 48) / (cards - 1) - 48
+  return Math.max(0.1, Math.ceil((width / (view - 24)) * 100) / 100)
+}
+
 /** Embla positions mobile slides from their layout width; zoom would only scale their paint. */
 export function marqueeCardStyle(
   style: ReturnType<Component['getStyle']>,
@@ -125,11 +136,15 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       return
     }
     const cards = editor.getDevice() === 'Mobile' ? barberStripCards(before.component) : []
-    const scale = scaledZoom(
+    const requestedScale = scaledZoom(
       cards.length ? before.cardScale : before.zoom,
       before[property],
       requested,
     )
+    // A short roster keeps its cards wide enough to loop; a frozen strip is never a valid size.
+    const scale = cards.length
+      ? Math.max(minLoopScale(cards.length), requestedScale)
+      : requestedScale
     if (!Number.isFinite(scale) || before[property] <= 0) return
     updating = true
     try {
