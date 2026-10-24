@@ -194,11 +194,11 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
 
   const kicker = (
     <div
+      class="bb-muted"
       style={{
         fontSize: narrow ? '11px' : '13px',
         fontWeight: 600,
         letterSpacing: narrow ? '2.5px' : '1.5px',
-        opacity: 0.45,
         marginBottom: '14px',
       }}
     >
@@ -363,10 +363,10 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
           {t.loginHeading}
         </h1>
         <p
+          class="bb-muted"
           style={{
             fontSize: '15px',
             lineHeight: 1.5,
-            opacity: 0.5,
             maxWidth: '380px',
             margin: '0 auto 28px',
           }}

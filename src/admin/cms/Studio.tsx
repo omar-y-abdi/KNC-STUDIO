@@ -26,6 +26,7 @@ import {
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
+import { upgradeLegacyLegalPages } from './legacyLegal'
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
@@ -110,7 +111,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const stored = hasCorePageLayouts(loaded.document)
       if (stored) retainCorePageLayouts(loaded.document)
       else await prepareCorePageSource(loaded.document)
-      const document = stored ? loaded.document : ensureCorePages(loaded.document)
+      const document = upgradeLegacyLegalPages(
+        stored ? loaded.document : ensureCorePages(loaded.document),
+      )
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)

@@ -69,6 +69,11 @@ function shellAssets(shell, unexpected) {
             'Content-Security-Policy': productionCsp,
           },
         })
+      // The legal pages inline these two static files as their base (src/worker.ts legalBaseCss).
+      if (pathname === '/tokens.css' || pathname === '/info.css')
+        return new Response(readFileSync(join(root, 'public', pathname), 'utf8'), {
+          headers: { 'Content-Type': 'text/css; charset=utf-8' },
+        })
       unexpected.push(pathname)
       return new Response('Not found', { status: 404 })
     },

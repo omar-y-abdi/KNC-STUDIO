@@ -28,14 +28,20 @@ const terms: CmsPage = {
 }
 const presentation = { ...emptyDocument().presentation, pages: [terms] }
 
+const publicFile = (path: string): string =>
+  readFileSync(new URL(`../../public${path}`, import.meta.url), 'utf8')
 const env = {
   SUPABASE_URL: 'https://fixture.invalid',
   SUPABASE_ANON_KEY: 'fixture-anon-key',
   ASSETS: {
-    fetch: async (input: Request | URL | string): Promise<Response> =>
-      new URL(input instanceof Request ? input.url : input).pathname === '/index.html'
-        ? new Response(shell, { headers: { 'Content-Type': 'text/html' } })
-        : new Response('Not found', { status: 404 }),
+    fetch: async (input: Request | URL | string): Promise<Response> => {
+      const path = new URL(input instanceof Request ? input.url : input).pathname
+      if (path === '/index.html')
+        return new Response(shell, { headers: { 'Content-Type': 'text/html' } })
+      if (path === '/info.css' || path === '/tokens.css')
+        return new Response(publicFile(path), { headers: { 'Content-Type': 'text/css' } })
+      return new Response('Not found', { status: 404 })
+    },
   },
 }
 const noPublicContent = {
@@ -83,6 +89,19 @@ describe('Worker /terms colour scheme', () => {
     expect(html).toContain('<style id="cms-reset">html,body{background:none}</style>')
     expect(html).not.toMatch(/<script\b[^>]*type="module"/)
   })
+
+  it.each(['', '?mode=dark'])(
+    'inlines the token and layout base before the stored CSS (/terms%s)',
+    async (query) => {
+      const html = await renderTerms(query)
+      expect(sheet(html, 'cms-base')).toBe(
+        `${publicFile('/tokens.css')}\n${publicFile('/info.css')}`,
+      )
+      const base = html.indexOf('<style id="cms-base">')
+      expect(base).toBeGreaterThan(html.indexOf('<style id="cms-reset">'))
+      expect(base).toBeLessThan(html.indexOf('<style id="cms-page-'))
+    },
+  )
 
   it('pins /terms?mode=dark to the dark sheet and colour scheme', async () => {
     const html = await renderTerms('?mode=dark')

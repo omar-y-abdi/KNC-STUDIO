@@ -14,11 +14,13 @@ export function NotFound(): JSX.Element {
       )
   }, [])
   return (
-    <main style={{ maxWidth: '46rem', margin: '0 auto', padding: '4rem 1.5rem' }}>
-      <p>404</p>
+    <main class="bb-status">
+      <p class="bb-muted">404</p>
       <h1>Sidan finns inte</h1>
-      <p>Adressen kan vara felstavad eller sidan kan ha flyttats.</p>
-      <a href="/">Till startsidan och bokningen</a>
+      <p class="bb-muted">Adressen kan vara felstavad eller sidan kan ha flyttats.</p>
+      <a class="bb-btn" href="/">
+        Till startsidan och bokningen
+      </a>
     </main>
   )
 }

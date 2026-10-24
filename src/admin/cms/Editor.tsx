@@ -35,7 +35,7 @@ import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, parseCanvasCss, readCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, legalCanvasBase, parseCanvasCss, readCanvasCss } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -735,6 +735,23 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
   }, [props.active, props.fontCss, props.presentation.themes, props.mode])
+
+  useEffect(() => {
+    const editor = instance.current
+    if (!editor || !props.active) return
+    const base = legalCanvasBase(props.page.path, props.mode)
+    // GrapesJS re-renders the frame's links when `styles` changes; a frame load resets the root.
+    editor.Canvas.getModel().set('styles', base.styles)
+    const pin = (): void => {
+      const root = editor.Canvas.getDocument()?.documentElement
+      if (root) root.style.colorScheme = base.scheme
+    }
+    pin()
+    editor.on('load', pin)
+    return () => {
+      editor.off('load', pin)
+    }
+  }, [props.active, props.page.path, props.mode])
 
   useEffect(() => {
     const editor = instance.current
