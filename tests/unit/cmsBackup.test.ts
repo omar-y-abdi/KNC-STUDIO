@@ -212,16 +212,15 @@ describe('CMS draft backup in IndexedDB', () => {
     expect([...records.keys()].sort()).toEqual(['export', 'reject', 'this-tab'])
     expect((await session.own())?.document).toEqual(named('Återställ'))
 
-    const download = vi.fn()
-    expect(await session.discard(exported, download)).toBe('done')
-    expect(download).toHaveBeenCalledWith(expect.objectContaining({ document: named('Exportera') }))
+    expect(await session.discard(exported)).toBe('done')
     expect([...records.keys()].sort()).toEqual(['reject', 'this-tab'])
     expect(await session.discard(rejected)).toBe('done')
     expect([...records.keys()]).toEqual(['this-tab'])
   })
 
   // Another tab listed the offer, then its own tab reloaded (reclaiming the lock) or wrote again.
-  it.each(['adopt', 'export', 'reject'] as const)(
+  // Exportera downloads the listed draft first, so a stale offer must not delete a newer one.
+  it.each(['adopt', 'discard'] as const)(
     'never lets a stale offer %s the newer draft of a reopened tab',
     async (action) => {
       const { ports, records, held } = memory({
@@ -231,10 +230,7 @@ describe('CMS draft backup in IndexedDB', () => {
       const session = await openBackupSession(ports)
       const [offer] = await session.offers()
       if (!offer) throw new Error('An offer was expected')
-      const act = (download = vi.fn()) =>
-        action === 'adopt'
-          ? session.adopt(offer)
-          : session.discard(offer, action === 'export' ? download : undefined)
+      const act = () => (action === 'adopt' ? session.adopt(offer) : session.discard(offer))
 
       // The tab reopened and holds its lock again.
       held.add('knc-cms-tab:closed')
@@ -244,9 +240,7 @@ describe('CMS draft backup in IndexedDB', () => {
 
       // The tab wrote a newer draft and closed again.
       records.set('closed', record('closed', 'Nyare', '2026-10-24T09:00:00.000Z'))
-      const download = vi.fn()
-      expect(await act(download)).toBe('stale')
-      expect(download).not.toHaveBeenCalled()
+      expect(await act()).toBe('stale')
       expect(records.get('closed')?.document).toBe(JSON.stringify(named('Nyare')))
       expect(records.has('this-tab')).toBe(false)
       expect(await session.offers()).toMatchObject([{ tab: 'closed', document: named('Nyare') }])

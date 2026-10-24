@@ -50,8 +50,8 @@ export interface BackupPorts {
 /** An offer is stale when its tab opened again or its draft changed after it was listed. */
 export type OfferOutcome = 'done' | 'stale'
 
-/** The draft is too large for the reload journal: an immediate reload or close can lose up to the
- * last 500 ms of edits. The IndexedDB backup still works. */
+/** The draft is too large for the reload journal: an immediate reload or close can lose the edits
+ * since the last 500 ms pause in editing. The IndexedDB backup still works. */
 export class JournalFull extends Error {
   constructor() {
     super('The draft is too large for the sessionStorage journal.')
@@ -76,9 +76,8 @@ export interface BackupSession {
   suspend(): Promise<void>
   /** Makes a closed tab's draft this tab's own, then deletes the closed tab's copy. */
   adopt(offer: TabBackup): Promise<OfferOutcome>
-  /** Deletes exactly this draft, after the owner exported (`exporting` receives the draft) or
-   * rejected it. */
-  discard(offer: TabBackup, exporting?: (draft: TabBackup) => void): Promise<OfferOutcome>
+  /** Deletes exactly this draft, after the owner exported or rejected it. */
+  discard(offer: TabBackup): Promise<OfferOutcome>
   /** Keeps this tab's draft under a new id, so the tab never overwrites it. */
   setAside(): Promise<void>
 }
@@ -93,7 +92,8 @@ const lockName = (tab: string): string => `knc-cms-tab:${tab}`
 const JOURNAL = 'knc-cms-journal'
 // lazy dev: WebKit's sessionStorage holds 5 MB, about 2.5 million characters; the production draft
 // has about 1.4 million. A larger draft is reported while the page is open and keeps only the
-// IndexedDB record, at most 500 ms old. Upgrade path: journal the edit as a delta against that record.
+// IndexedDB record, written at the last 500 ms pause in editing. Upgrade path: journal the edit as a
+// delta against that record.
 const JOURNAL_CAPACITY = 2_000_000
 
 interface Journal {
@@ -360,12 +360,7 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
         if (record.savedAt > latest) latest = record.savedAt
         await move(record, tab)
       }),
-    discard: (offer, exporting) =>
-      consume(offer, async (record) => {
-        const draft = parseStored(record)
-        if (exporting && draft) exporting(draft)
-        await ports.records.remove(record.tab)
-      }),
+    discard: (offer) => consume(offer, (record) => ports.records.remove(record.tab)),
     setAside: async () => {
       await flush()
       const record = await storedRecord(ports.records, tab)

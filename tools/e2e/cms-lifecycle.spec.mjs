@@ -63,18 +63,23 @@ const draftHolds = (page, text) =>
     text,
   )
 
-// Edits the first text of the canvas through the actual GrapesJS instance. The editor hands the
-// edit to the draft 180 ms later.
+// Edits an authored source text of the canvas (not a resource slot, which a capture renders again)
+// through the actual GrapesJS instance. The editor hands the edit to the draft 180 ms later.
 const editCanvas = (page, text) =>
   page.evaluate(async (value) => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
     if (!editor) throw new Error('Actual GrapesJS instance missing')
-    const component = editor
-      .getWrapper()
-      .find('*')
-      .find((item) => item.is('text') && item.getEl()?.textContent?.trim())
-    if (!component) throw new Error('No text in the canvas')
+    const element = [...editor.Canvas.getDocument().querySelectorAll('[data-knc-source]')].find(
+      (node) =>
+        node.children.length === 0 &&
+        node.textContent.trim().length > 3 &&
+        node.id &&
+        !node.closest('svg, a, button, [data-knc-slot]'),
+    )
+    if (!element) throw new Error('No source text in the canvas')
+    const component = editor.getWrapper().find(`#${globalThis.CSS.escape(element.id)}`)[0]
+    if (!component) throw new Error('Source component missing')
     component.components(value)
   }, text)
 
@@ -182,7 +187,8 @@ test('cms-lifecycle a canvas edit survives an immediate reload at production siz
 })
 
 // A phone hides the page before its tab is closed, and a hidden page lives on until IndexedDB
-// commits. (A desktop tab closed within about 500 ms of an edit can still lose that edit.)
+// commits. (A desktop tab closed without being hidden first can lose the edits since the last
+// 500 ms pause in editing.)
 test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then closed', async ({
   page,
   context,
@@ -303,15 +309,17 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   await page
     .getByText('Tilldelad i utkastet. Publicera för att visa ändringen.', { exact: true })
     .waitFor({ timeout: 45000 })
+  // The first capture worked: the draft's layouts show the image.
+  const failed = page.getByText(
+    'Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.',
+    { exact: true },
+  )
+  await expect(failed).toHaveCount(0)
 
   const source = '**/cms-public/source?preview=1'
   await context.route(source, (route) => route.abort())
   await page.getByRole('button', { name: 'Dölj från sidan', exact: true }).click()
-  await page
-    .getByText('Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.', {
-      exact: true,
-    })
-    .waitFor({ timeout: 45000 })
+  await failed.waitFor({ timeout: 45000 })
 
   const publish = page.getByRole('button', { name: 'Publicera', exact: true })
   await publish.click()

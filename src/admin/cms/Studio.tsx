@@ -517,13 +517,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const settleOffer = async (offer: TabBackup, exported: boolean): Promise<void> => {
     const session = backups.current
     if (!session) return
+    // Download within the click; the draft is deleted only while it is still this version.
+    if (exported) downloadDraft(offer.document)
     try {
-      // The export is the stored draft, checked under the closed tab's lock before it is deleted.
-      const outcome = await session.discard(
-        offer,
-        exported ? (current) => downloadDraft(current.document) : undefined,
-      )
-      if (outcome === 'stale') setNotice(OFFER_CHANGED)
+      if ((await session.discard(offer)) === 'stale') setNotice(OFFER_CHANGED)
       setOffers(await session.offers())
     } catch {
       setError('Utkastet kunde inte tas bort ur listan. Försök igen.')
