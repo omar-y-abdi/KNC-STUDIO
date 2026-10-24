@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   const out = evidenceDir
   const barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) => ({
     id: `fixture-barber-${index + 1}`,

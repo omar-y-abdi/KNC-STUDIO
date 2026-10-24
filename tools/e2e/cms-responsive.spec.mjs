@@ -2,13 +2,14 @@ import { parse, walk, generate } from 'css-tree'
 import assert from 'node:assert/strict'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-responsive', async ({ page, context, browserName }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context)
   const frame = page.frameLocator('.gjs-frame').first()

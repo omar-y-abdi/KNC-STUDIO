@@ -3,13 +3,14 @@ import fs from 'node:fs'
 import { nativeBackend } from './cms-backend.mjs'
 import { emptyDocument } from '../../shared/cms.ts'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 390, height: 844 },
   colorScheme: 'dark',
 })
 test('cms-public-regression', async ({ page, context, newContext, browserName }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   const languageToggleSelector =
     'button[aria-label="Byt språk till engelska"],button[aria-label="Switch language to Swedish"]'
   const languageOwnerColor = 'rgb(31, 79, 118)'

@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test, devices } from './fixtures.mjs'
-const base = process.env.CMS_STARTUP_URL ?? 'http://127.0.0.1:4189'
+import { startupOrigin } from './origins.mjs'
+const base = startupOrigin
 function storedDocument() {
   const doc = emptyDocument()
   doc.presentation.pages = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].map(

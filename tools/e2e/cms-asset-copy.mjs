@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import pg from 'pg'
 import { loadStackEnv } from '../../tests/integration/loadStackEnv.ts'
+import { publicOrigin } from './origins.mjs'
 const env = loadStackEnv()
 for (const key of ['API_URL', 'DB_URL'])
   assert.ok(
@@ -17,7 +18,7 @@ const db = new pg.Client({ connectionString: env.DB_URL })
 await db.connect()
 let userId, token
 const created = new Map()
-const origin = process.env.CMS_TEST_ORIGIN ?? 'http://127.0.0.1:4173'
+const origin = process.env.CMS_TEST_ORIGIN ?? publicOrigin
 assert.ok(['127.0.0.1', 'localhost'].includes(new URL(origin).hostname), 'Local origin required')
 const call = async (body, authorized = true) =>
   fetch(`${env.API_URL}/functions/v1/cms-studio`, {
