@@ -19,3 +19,51 @@ const CUSTOMER_GATEWAY_PATH = '/api/customer-bookings'
 export function isCustomerGatewayUrl(url) {
   return url.pathname === CUSTOMER_GATEWAY_PATH
 }
+
+// The actions of PublicBookingAction (src/backend/publicBookingActions.ts). Only these names may
+// appear in a failure message; whatever else a body carries is not echoed.
+const GATEWAY_ACTIONS = [
+  'request_link',
+  'confirm_link',
+  'forget_device',
+  'request_access',
+  'exchange_access',
+  'list',
+  'cancel',
+  'review',
+]
+
+/**
+ * Why the harness refused a gateway call, for the guard record. A posted body can carry an access
+ * token, so the reason names the action only when it is a known string, and the fields by name.
+ * @param {() => unknown} readPayload reads the request body as JSON; may throw with the body in its message
+ * @returns {string}
+ */
+export function gatewayRefusalReason(readPayload) {
+  let payload
+  try {
+    payload = readPayload()
+  } catch {
+    return 'unfixtured-harness-request (customer gateway body is not JSON)'
+  }
+  const action = payload?.action
+  const label = GATEWAY_ACTIONS.includes(action)
+    ? `action "${action}"`
+    : typeof action === 'string'
+      ? 'unknown action'
+      : 'non-string action'
+  const fields = Object.keys(payload ?? {}).join(', ')
+  return `unfixtured-harness-request (customer gateway ${label}, fields: ${fields})`
+}
+
+/**
+ * The fixture answer for a call, or undefined when there is none or the body cannot be read.
+ * @param {() => unknown} readPayload
+ */
+export function gatewayAnswerOf(readPayload) {
+  try {
+    return customerGatewayAnswer(readPayload())
+  } catch {
+    return undefined
+  }
+}

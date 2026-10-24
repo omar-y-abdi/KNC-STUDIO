@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createNetworkGuard, networkPolicy } from '../../tools/e2e/network-guard.mjs'
 import { installPublicBackend, installStoredBackend } from '../../tools/e2e/public-fixtures.mjs'
-import { customerGatewayAnswer, isCustomerGatewayUrl } from '../../tools/e2e/customer-gateway.mjs'
+import {
+  customerGatewayAnswer,
+  gatewayAnswerOf,
+  gatewayRefusalReason,
+  isCustomerGatewayUrl,
+} from '../../tools/e2e/customer-gateway.mjs'
 
 const gateway = (path: string) => new URL(path, 'http://127.0.0.1:4388')
 
@@ -32,6 +37,49 @@ describe('customerGatewayAnswer', () => {
 })
 
 const GATEWAY = 'http://127.0.0.1:4388/api/customer-bookings'
+const SENTINEL = 'sentinel-access-token'
+
+// What Playwright's postDataJSON does with a body that is not JSON: the message carries the body.
+const unreadable = () => {
+  throw new SyntaxError(`Unexpected token in {"accessToken":"${SENTINEL}"`)
+}
+
+describe('gatewayRefusalReason', () => {
+  it('names a known action and the field names', () => {
+    expect(gatewayRefusalReason(() => ({ action: 'cancel', accessToken: SENTINEL }))).toBe(
+      'unfixtured-harness-request (customer gateway action "cancel", fields: action, accessToken)',
+    )
+  })
+
+  it('does not echo an action that is not a known name', () => {
+    const reason = gatewayRefusalReason(() => ({ action: `x-${SENTINEL}` }))
+    expect(reason).toBe(
+      'unfixtured-harness-request (customer gateway unknown action, fields: action)',
+    )
+    expect(reason).not.toContain(SENTINEL)
+  })
+
+  it('does not echo a non-string action', () => {
+    const reason = gatewayRefusalReason(() => ({ action: { accessToken: SENTINEL } }))
+    expect(reason).toBe(
+      'unfixtured-harness-request (customer gateway non-string action, fields: action)',
+    )
+    expect(reason).not.toContain(SENTINEL)
+  })
+
+  it('says only that the body is not JSON when reading it throws', () => {
+    const reason = gatewayRefusalReason(unreadable)
+    expect(reason).toBe('unfixtured-harness-request (customer gateway body is not JSON)')
+    expect(reason).not.toContain(SENTINEL)
+  })
+})
+
+describe('gatewayAnswerOf', () => {
+  it('answers a readable fixtured call and nothing for an unreadable one', () => {
+    expect(gatewayAnswerOf(() => ({ action: 'forget_device' }))).toEqual({ ok: true })
+    expect(gatewayAnswerOf(unreadable)).toBeUndefined()
+  })
+})
 
 interface FakeGatewayRoute {
   request: () => { url: () => string; method: () => string; postDataJSON: () => unknown }
@@ -42,9 +90,13 @@ interface Registration {
   handle: (route: FakeGatewayRoute) => unknown
 }
 
-function gatewayRoute(url: string, payload: unknown): FakeGatewayRoute {
+function gatewayRoute(url: string, payload: unknown | (() => never)): FakeGatewayRoute {
   return {
-    request: () => ({ url: () => url, method: () => 'POST', postDataJSON: () => payload }),
+    request: () => ({
+      url: () => url,
+      method: () => 'POST',
+      postDataJSON: typeof payload === 'function' ? (payload as () => never) : () => payload,
+    }),
     fulfill: vi.fn().mockResolvedValue(undefined),
   }
 }
@@ -109,6 +161,33 @@ describe.each(['installPublicBackend', 'installStoredBackend'] as const)(
             'unfixtured-harness-request (customer gateway action "cancel", fields: action, accessToken)',
         },
       ])
+    })
+
+    it.each([
+      ['a body that is not JSON', unreadable, 'customer gateway body is not JSON'],
+      [
+        'a non-string action',
+        { action: { accessToken: SENTINEL } },
+        'customer gateway non-string action, fields: action',
+      ],
+    ])('refuses %s with a 501 and a guard record that carries no token', async (_, body, what) => {
+      const { guard, gateway } = await backendOf(install)
+      const handle = gateway[0]?.handle as Registration['handle']
+      const route = gatewayRoute(`${GATEWAY}?probe=1`, body)
+      await handle(route)
+      expect(route.fulfill).toHaveBeenCalledWith({
+        status: 501,
+        json: { message: 'No public fixture for this call' },
+      })
+      expect(guard.violations).toEqual([
+        {
+          channel: 'request',
+          method: 'POST',
+          url: GATEWAY,
+          reason: `unfixtured-harness-request (${what})`,
+        },
+      ])
+      expect(JSON.stringify([guard.violations, route.fulfill.mock.calls])).not.toContain(SENTINEL)
     })
   },
 )
