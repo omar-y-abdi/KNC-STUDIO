@@ -426,13 +426,14 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       waitUntil: 'domcontentloaded',
     })
     assert.equal(noScriptResponse?.status(), 200)
-    const fallback = disabled.getByText(/Aktivera JavaScript/)
-    await fallback.waitFor({ state: 'visible' })
-    assert.equal(await fallback.isVisible(), true, 'The no-JavaScript fallback remains available')
+    // Well before the boot deadline: without scripting the intro and its fallback show at once.
+    const intro = disabled.locator(`#${INTRO_HEADING_ID}`)
+    await intro.waitFor({ state: 'visible', timeout: INTRO_DEADLINE_MS / 4 })
+    assert.equal(await intro.isVisible(), true, 'Visitors without scripting keep the intro text')
     assert.equal(
-      await disabled.locator(`#${INTRO_HEADING_ID}`).isVisible(),
+      await disabled.getByText(/Aktivera JavaScript/).isVisible(),
       true,
-      'Visitors without scripting keep the intro text',
+      'The no-JavaScript fallback remains available',
     )
     return {
       delayedScripts,
