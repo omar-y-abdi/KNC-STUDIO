@@ -297,13 +297,14 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await liveContext.clock.runFor(90_000)
   const probe = await live.evaluate(readBlankProbe)
   await writeFile(`${evidenceDir}/public-strip.json`, JSON.stringify({ layout, probe }, null, 2))
-  // Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent, so
-  // its loop cycle ends at the last card's right edge rounded there. Behind a strip at a fractional
-  // offset that is up to ceil(edge) - edge px past the real edge. Its slide looper also moves the
-  // next card in only 0.5 px (roundingSafety) into the view. The seam therefore opens at most
-  // 0.5 + ceil(edge) - edge px wider than a gap: 1.125 px for 255.84375 px cards (edge 1191.375).
-  const edge = 24 + 4 * layout.width + 3 * 48
-  const seam = 0.5 + Math.ceil(edge) - edge
+  // Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent and
+  // moves a card across the loop only 0.5 px (roundingSafety) after it reaches the view. Behind a
+  // strip at a fractional offset, a card's left edge, and the cycle's end at the last card's right
+  // edge, each round up to ceil(edge) - edge px late, so a gap opens at most
+  // 0.5 + max(ceil(edge) - edge) px wider: 1.125 px for 255.84375 px cards (cycle end 1191.375).
+  const lefts = [1, 2, 3].map((index) => 24 + index * (layout.width + 48))
+  const edges = [...lefts, 24 + 4 * layout.width + 3 * 48]
+  const seam = 0.5 + Math.max(...edges.map((edge) => Math.ceil(edge) - edge))
   assert.ok(
     probe.maxBlank <= MAX_BLANK + seam,
     `${probe.maxBlank} px of the public strip went blank (seam ${seam} px)`,
