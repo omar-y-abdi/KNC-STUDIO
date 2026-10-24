@@ -36,12 +36,10 @@ const DESKTOP_SCENES = [
 // are the Desktop captures, so those two Mobile renders are checked against them.
 const MOBILE_SCENES = ['home', 'booking', 'my-bookings']
 const MAX_LISTED = 40
-// Orphans that HEAD already has against rev 56: the language switch was rebuilt after the capture,
+// Orphans that HEAD already has against rev 56. The language switch was rebuilt after the capture,
 // from a <div> holding SV and EN <button>s into one <button> holding two <span>s, so stored edits on
-// it are lost today (the live switch renders, so the homepage itself is unchanged). A ratchet: these
-// 12 ids must be orphaned in exactly the four captures of their surface (sv/en x light/dark), 48
-// occurrences in all. Any other orphan fails, and so does a fix until it deletes the entries here.
-const KNOWN_ORPHANS = [
+// it are lost today (the live switch renders, so the homepage itself is unchanged).
+const LANGUAGE_SWITCH_ORPHANS = [
   ['desktop-home', 'knc-desktop-home-0-i0-i1-i2'],
   ['desktop-booking', 'knc-desktop-booking-0-i0-i1-i2'],
   ['mobile-home', 'knc-mobile-home-0-i0-i0-i1-i1-i0'],
@@ -51,6 +49,21 @@ const KNOWN_ORPHANS = [
   { surface, kind: 'retagged', id: `${toggle}-i0`, stored: 'button', live: 'span' },
   { surface, kind: 'retagged', id: `${toggle}-i1`, stored: 'button', live: 'span' },
 ])
+// The Turnstile wrapper of the my-bookings lookup form is a slot that only the real page renders
+// (MyBookingsDialog: challengeRequired is false in preview, and the source renderer is one). The
+// source renderer therefore never carries it, though the real page does and resolves the stored slot.
+const TURNSTILE_ORPHAN = {
+  surface: 'my-bookings',
+  kind: 'missing-slot',
+  id: 'knc-my-bookings-0-i0-i1-i3-i3',
+  stored: 'div',
+  live: null,
+}
+// A ratchet: each of these 13 ids must be orphaned in every capture that checks its surface (the
+// language switch in the four of its surface, sv/en x light/dark; the Turnstile slot in the eight of
+// my-bookings, Desktop and Mobile), 56 occurrences in all. Any other orphan fails, and so does a fix
+// until it deletes the entries here.
+const KNOWN_ORPHANS = [...LANGUAGE_SWITCH_ORPHANS, TURNSTILE_ORPHAN]
 const LANG_MODES = ['sv', 'en'].flatMap((lang) => ['light', 'dark'].map((mode) => ({ lang, mode })))
 const sameOrphan = (a, b) =>
   a.surface === b.surface &&
@@ -58,11 +71,17 @@ const sameOrphan = (a, b) =>
   a.id === b.id &&
   a.stored === b.stored &&
   a.live === b.live
-const orphanKey = ({ lang, mode }, { surface, kind, id, stored, live }) =>
-  `${lang} ${mode} ${surface}: ${kind} ${id} (stored <${stored}>, live <${live}>)`
-const EXPECTED_KNOWN = LANG_MODES.flatMap((capture) =>
-  KNOWN_ORPHANS.map((orphan) => orphanKey(capture, orphan)),
-).sort()
+const orphanKey = ({ lang, mode, device, scene }, { surface, kind, id, stored, live }) =>
+  `${lang} ${mode} ${device} ${scene} ${surface}: ${kind} ${id} (stored <${stored}>, live <${live}>)`
+const EXPECTED_KNOWN = captures()
+  .flatMap((capture) =>
+    surfacesOf(capture.device, capture.scene).flatMap(([, surface]) =>
+      KNOWN_ORPHANS.filter((orphan) => orphan.surface === surface).map((orphan) =>
+        orphanKey(capture, orphan),
+      ),
+    ),
+  )
+  .sort()
 
 /** Stored page and surface that each rendered scene is checked against. */
 function surfacesOf(device, scene) {
@@ -195,6 +214,6 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
   ).toEqual([])
   expect(
     seenKnown.sort(),
-    'the language-switch orphans must occur exactly once per language and mode; after a fix, delete them from KNOWN_ORPHANS',
+    'the known orphans must occur in exactly the captures that check their surface; after a fix, delete them from KNOWN_ORPHANS',
   ).toEqual(EXPECTED_KNOWN)
 })
