@@ -1,0 +1,65 @@
+/* The one look of every user-facing page outside the homepage. The values are the homepage palette
+   (src/app/shared.ts; tests/unit/styleTokens.test.ts keeps them equal). light-dark() follows the
+   element's color-scheme: the visitor's OS unless the page pins one (`?mode`, the staff toggle).
+   The app bundles a copy through src/ui/styles/global.css; static documents, the Worker's legal
+   render and the Studio canvas use this file. */
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('/fonts/InterVariable-Latin.woff2') format('woff2-variations');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Custom properties only: :root paints nothing here, so the app (homepage included) is unchanged.
+   Static documents paint the root from them in /info.css. */
+:root {
+  --bb-bg: light-dark(#ffffff, #1c1c1e);
+  --bb-text: light-dark(#1c1c1e, #f5f5f7);
+  --bb-muted: light-dark(rgba(0, 0, 0, 0.6), rgba(255, 255, 255, 0.55));
+  --bb-line: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1));
+  --bb-surface: light-dark(#f1f0ec, #262629);
+  --bb-accent: light-dark(#1c1c1e, #f5f5f7);
+  --bb-accent-text: light-dark(#ffffff, #1c1c1e);
+  --bb-font: 'Inter Variable', -apple-system, system-ui, sans-serif;
+}
+
+.bb-page,
+.bb-status {
+  min-height: 100vh;
+  background: var(--bb-bg);
+  color: var(--bb-text);
+  font-family: var(--bb-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.bb-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.bb-status > * {
+  margin: 0;
+}
+
+.bb-muted {
+  color: var(--bb-muted);
+}
+
+.bb-btn {
+  display: inline-block;
+  padding: 0.75rem 1.4rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--bb-accent);
+  color: var(--bb-accent-text);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}

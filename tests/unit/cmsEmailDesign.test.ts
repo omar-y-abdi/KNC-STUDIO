@@ -120,14 +120,14 @@ describe('CMS email design', () => {
     const unknownEmail = unknown.emails[0]
     if (!unknownEmail) throw new Error('email fixture missing')
     unknownEmail.intro = 'Hej {totally_unknown}'
-    expect(() => validateDocument(unknown)).toThrow('Unknown placeholder')
+    expect(() => validateDocument(unknown)).toThrow('Okänd platshållare {totally_unknown}.')
 
     const missing = structuredClone(authoritative)
     const missingEmail = missing.emails[0]
     if (!missingEmail) throw new Error('email fixture missing')
     missingEmail.intro = 'Hej kund'
     expect(() => validateCompleteDocument(missing, authoritative)).toThrow(
-      'Required placeholder {customer_name} is missing',
+      'Platshållaren {customer_name} måste finnas kvar.',
     )
   })
 })

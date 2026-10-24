@@ -1,11 +1,4 @@
-@font-face {
-  font-family: 'Inter Variable';
-  src: url('/fonts/InterVariable-Latin.woff2') format('woff2-variations');
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-}
-
+/* Inter is declared in public/tokens.css (imported by global.css). */
 @font-face {
   font-family: 'Playfair Display';
   src: url('/fonts/PlayfairDisplay-Latin-400.woff2') format('woff2');

@@ -147,6 +147,21 @@ async function serveAsset(
   return env.ASSETS.fetch(assetRequest(request, pathname, dynamic))
 }
 
+/** Base sheets of the legal pages, in cascade order before their stored CSS (STY-7). */
+const LEGAL_BASE_SHEETS = ['/tokens.css', '/info.css'] as const
+
+/** The deployed tokens and document layout; stored legal CSS only adds page rules and overrides. */
+async function legalBaseCss(request: Request, env: Env): Promise<string> {
+  const sheets = await Promise.all(
+    LEGAL_BASE_SHEETS.map(async (path) => {
+      const response = await serveAsset(request, env, path, true)
+      if (!response.ok) throw new Error(`Legal base stylesheet ${path} answered ${response.status}`)
+      return response.text()
+    }),
+  )
+  return sheets.join('\n')
+}
+
 export interface BusinessDiscovery {
   readonly business: BusinessSettings
   readonly facts: BusinessDiscoveryFacts
@@ -480,6 +495,7 @@ export function renderCmsPage(
   canonicalUrl: string,
   fontCss = '',
   presentation?: CmsPresentation,
+  baseCss = '',
 ): string {
   const plan = planCmsRender(page, lang, requested, presentation)
   const variant = plan.variant
@@ -502,6 +518,7 @@ export function renderCmsPage(
   )
   const styles =
     `<style id="cms-fonts">${fontCss}</style>` +
+    (baseCss ? `<style id="cms-base">${baseCss}</style>` : '') +
     pageSheets(variant, plan.mode) +
     themeSheets(plan.mode, presentation)
   // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page).
@@ -1072,9 +1089,11 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     const cms = await loadPublicCms(env)
     const cmsPage = cms?.presentation.pages.find((page) => page.path === cleanPathname)
     if (cmsPage) {
-      const [index, discovery] = await Promise.all([
+      const legalPage = cmsPage.path === '/privacy' || cmsPage.path === '/terms'
+      const [index, discovery, baseCss] = await Promise.all([
         serveAsset(request, env, '/index.html', true),
         request.method === 'HEAD' ? null : (legalDiscovery ?? loadDiscovery(env)),
+        legalPage ? legalBaseCss(request, env) : '',
       ])
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
       const mode = requestedCmsMode(url.searchParams.get('mode'))
@@ -1092,6 +1111,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
         canonicalUrl,
         cms ? cmsFontCss(cms.presentation, env.SUPABASE_URL ?? '') : '',
         cms?.presentation,
+        baseCss,
       )
       if (discovery) {
         const structured = buildBusinessStructuredData(

@@ -318,7 +318,7 @@ const RESERVED =
 
 function text(value: unknown, path: string, max = 2000, min = 0): string {
   if (typeof value !== 'string' || value.length < min || value.length > max || value.includes('\0'))
-    fail(path, `Expected ${min}–${max} characters`)
+    fail(path, min === 0 ? `Ange högst ${max} tecken.` : `Ange ${min}–${max} tecken.`)
   return value
 }
 function sqlBtrim(value: string): string {
@@ -350,7 +350,7 @@ function validateSetting(key: string, value: unknown): void {
     case 'business_name':
     case 'business_street':
     case 'business_city':
-      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Expected 1–160 characters')
+      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Ange 1–160 tecken.')
       return
     case 'business_legal_name':
       if (
@@ -360,40 +360,41 @@ function validateSetting(key: string, value: unknown): void {
           return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
         })
       )
-        fail(path, 'Invalid legal business name')
+        fail(path, 'Ange ett juridiskt namn på högst 160 tecken utan radbrytningar.')
       return
     case 'business_org_number':
       if (normalized && !/^[0-9]{6}-?[0-9]{4}$/.test(normalized))
-        fail(path, 'Invalid business registration number')
+        fail(path, 'Ange organisationsnumret med tio siffror, till exempel 556677-8899.')
       return
     case 'business_email':
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.toLowerCase()))
-        fail(path, 'Invalid business email')
+        fail(path, 'Ange en giltig e-postadress.')
       return
     case 'business_phone_display':
-      if (normalized.length > 80) fail(path, 'Expected at most 80 characters')
+      if (normalized.length > 80) fail(path, 'Ange högst 80 tecken.')
       return
     case 'business_phone_tel': {
       const phone = normalized.replace(/[\s().-]/g, '')
-      if (phone && !/^\+?[0-9]{3,20}$/.test(phone)) fail(path, 'Invalid business phone')
+      if (phone && !/^\+?[0-9]{3,20}$/.test(phone))
+        fail(path, 'Ange telefonlänken med 3–20 siffror, gärna med +46 först.')
       return
     }
     case 'business_postal_code': {
       const postalCode = normalized.replace(/\s/g, '')
-      if (!/^[0-9]{5}$/.test(postalCode)) fail(path, 'Invalid business postal code')
+      if (!/^[0-9]{5}$/.test(postalCode)) fail(path, 'Ange postnumret med fem siffror.')
       return
     }
     case 'business_maps_href':
       if (normalized && !/^https:\/\/[^\s]+$/.test(normalized))
-        fail(path, 'Invalid business maps URL')
+        fail(path, 'Ange kartlänken som en https://-adress utan mellanslag.')
       return
     case 'seo_title_sv':
     case 'seo_title_en':
-      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Expected 1–120 characters')
+      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Ange 1–120 tecken.')
       return
     case 'seo_description_sv':
     case 'seo_description_en':
-      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Expected 1–500 characters')
+      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Ange 1–500 tecken.')
       return
   }
 }
@@ -608,7 +609,7 @@ function localizedStyles(raw: unknown, path: string): void {
 export function validateDocument(value: unknown): asserts value is CmsDocument {
   walk(value)
   if (new TextEncoder().encode(JSON.stringify(value)).length > 2 * 1024 * 1024)
-    fail('document', 'Maximum document size is 2 MiB')
+    fail('document', 'Utkastet är större än 2 MiB. Ta bort innehåll som inte behövs.')
   const d = object(value, 'document')
   keys(
     d,
@@ -727,7 +728,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
       if (typeof value !== 'string') continue
       for (const variable of emailVariables(value))
         if (!EMAIL_VARIABLES[template].has(variable))
-          fail(`email.${template}.${key}`, `Unknown placeholder {${variable}}`)
+          fail(`email.${template}.${key}`, `Okänd platshållare {${variable}}.`)
     }
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
@@ -783,7 +784,7 @@ export function validateCompleteDocument(
       const present = typeof after === 'string' ? emailVariables(after) : new Set<string>()
       for (const variable of required)
         if (!present.has(variable))
-          fail(`${path}.${field}`, `Required placeholder {${variable}} is missing`)
+          fail(`${path}.${field}`, `Platshållaren {${variable}} måste finnas kvar.`)
     }
   }
 }

@@ -160,7 +160,9 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     await editor.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const owned = await editor.evaluate(async () => {
-      const backup = (await import('/src/admin/cms/backup.ts')).loadBackup()
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      const backup = await session.own()
       if (!backup) throw new Error('The actual CMS source was not captured')
       const document = globalThis.structuredClone(backup.document)
       const about = document.presentation.pages.find((page) => page.path === '/about')
@@ -232,6 +234,65 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
         !upgradedCss.slice(0, ownerRuleAt).includes(`#${globalThis.CSS.escape(ownerCardId)}{`)
       )
         throw new Error('Mobile CSS did not remap IDs ahead of owner overrides')
+      // Snapshots stored before the gallery markers existed are recaptured and gain them in place.
+      const { needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
+      const aboutTree = (source, lang) =>
+        new globalThis.DOMParser().parseFromString(
+          source.presentation.pages.find((page) => page.path === '/about').content[lang].html,
+          'text/html',
+        )
+      const galleryMarkers = (source, lang) =>
+        [...aboutTree(source, lang).querySelectorAll('[data-knc-fold^="gallery-"]')].map(
+          (node) => `${node.getAttribute('data-knc-source')}=${node.getAttribute('data-knc-fold')}`,
+        )
+      const captured = aboutTree(backup.document, 'sv')
+      const tiles = captured.querySelectorAll('[role="button"][aria-pressed]')
+      if (
+        !tiles.length ||
+        [...tiles].some((tile) => tile.getAttribute('data-knc-fold') !== 'gallery-tile') ||
+        captured.querySelectorAll('[data-knc-fold="gallery-track"]').length !== 4 ||
+        captured.querySelectorAll('[data-knc-fold="gallery-row"]').length !== 4
+      )
+        throw new Error('The captured galleries lack their row, track or tile markers')
+      if (needsCorePageSource(backup.document))
+        throw new Error('A captured document with gallery markers asks for another capture')
+      const unmarked = globalThis.structuredClone(backup.document)
+      const ownerTile = tiles[0].id
+      for (const lang of ['sv', 'en']) {
+        const variant = unmarked.presentation.pages.find((page) => page.path === '/about')?.content[
+          lang
+        ]
+        const tree = aboutTree(unmarked, lang)
+        for (const node of tree.querySelectorAll('[data-knc-fold^="gallery-"]'))
+          node.removeAttribute('data-knc-fold')
+        variant.html = tree.body.innerHTML
+        for (const mode of ['light', 'dark'])
+          variant.css[mode] += `\n#${globalThis.CSS.escape(ownerTile)}{outline:2px solid #123456}`
+      }
+      if (!needsCorePageSource(unmarked))
+        throw new Error('A stored gallery without markers is not recaptured')
+      const remarked = ensureCorePages(unmarked, backup.document.presentation.pages)
+      for (const lang of ['sv', 'en']) {
+        if (
+          JSON.stringify(galleryMarkers(remarked, lang)) !==
+          JSON.stringify(galleryMarkers(backup.document, lang))
+        )
+          throw new Error(`Recapture did not restore every ${lang} gallery marker`)
+        if (
+          !remarked.presentation.pages
+            .find((page) => page.path === '/about')
+            .content[lang].css.light.endsWith(
+              `#${globalThis.CSS.escape(ownerTile)}{outline:2px solid #123456}`,
+            )
+        )
+          throw new Error('Recapturing gallery markers changed the owner CSS')
+      }
+      if (
+        needsCorePageSource(remarked) ||
+        JSON.stringify(ensureCorePages(remarked, backup.document.presentation.pages)) !==
+          JSON.stringify(remarked)
+      )
+        throw new Error('The gallery marker upgrade is not idempotent')
       return { document, cardId, upgraded, gridId, ownerCardId }
     })
     const source = await captureContext.newPage()

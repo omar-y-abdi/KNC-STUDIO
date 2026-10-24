@@ -11,6 +11,30 @@ interface UseBarberMarqueeOptions {
   readonly trackRef: { readonly current: HTMLElement | null }
 }
 
+/** One slide as Embla measures it: offsets, plus the end margin of the last slide. */
+export interface LoopSlide {
+  readonly left: number
+  readonly width: number
+  readonly marginEnd: number
+}
+
+/** The smallest whole-pixel slide width at which Embla keeps `loop` (SlideLooper.canLoop: the other
+ * slides with their gaps cover the view). Like Embla, the first slide counts its start gap, the
+ * last its end margin and every inner slide the distance to the next slide. */
+export function loopFloor(
+  view: number,
+  containerLeft: number,
+  slides: readonly LoopSlide[],
+): number {
+  const gaps = slides.map((slide, index) => {
+    if (index === 0) return Math.abs(containerLeft - slide.left)
+    if (index === slides.length - 1) return slide.marginEnd
+    return (slides[index + 1]?.left ?? slide.left) - slide.left - slide.width
+  })
+  const total = gaps.reduce((sum, gap) => sum + gap, 0)
+  return Math.max(...gaps.map((gap) => Math.ceil((view - (total - gap)) / (slides.length - 1))))
+}
+
 function reducedMotionPreference(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -91,6 +115,48 @@ export function useBarberMarquee({
         ],
       )
       carousel.current = api
+      // A short roster or narrow owner cards make Embla drop loop, and AutoScroll then halts at the
+      // end. Widen every slide just enough to loop; inline !important outranks the owner's #id
+      // rules, and the remembered inline value returns as soon as the slides loop on their own.
+      const floors = new Map<HTMLElement, { readonly value: string; readonly priority: string }>()
+      let fitting = false
+      const restoreSlides = (): void => {
+        for (const [node, natural] of floors)
+          node.style.setProperty('min-width', natural.value, natural.priority)
+        floors.clear()
+      }
+      const fitLoop = (): void => {
+        if (fitting) return
+        fitting = true
+        try {
+          if (floors.size) {
+            restoreSlides()
+            api.reInit()
+          }
+          const slides = api.slideNodes()
+          if (api.internalEngine().options.loop || slides.length < 2) return
+          const last = slides[slides.length - 1]
+          const floor = loopFloor(
+            track.offsetWidth,
+            track.offsetLeft,
+            slides.map((node) => ({
+              left: node.offsetLeft,
+              width: node.offsetWidth,
+              marginEnd: node === last ? parseFloat(getComputedStyle(node).marginRight) : 0,
+            })),
+          )
+          for (const node of slides) {
+            floors.set(node, {
+              value: node.style.getPropertyValue('min-width'),
+              priority: node.style.getPropertyPriority('min-width'),
+            })
+            node.style.setProperty('min-width', `${floor}px`, 'important')
+          }
+          api.reInit()
+        } finally {
+          fitting = false
+        }
+      }
       const syncAutoScroll = (): void => {
         const autoScroll = api.plugins().autoScroll
         const selectedId = selectedRef.current
@@ -124,13 +190,16 @@ export function useBarberMarquee({
           syncAutoScroll()
         })
       }
+      fitLoop()
       syncAutoScroll()
       track.addEventListener('focusin', pauseOnFocus)
       track.addEventListener('focusout', resumeAfterFocus)
       api.on('pointerUp', resumeAfterPointer)
+      api.on('reInit', fitLoop)
       api.on('reInit', syncAutoScroll)
       return () => {
         api.off('pointerUp', resumeAfterPointer)
+        api.off('reInit', fitLoop)
         api.off('reInit', syncAutoScroll)
         track.removeEventListener('focusin', pauseOnFocus)
         track.removeEventListener('focusout', resumeAfterFocus)
@@ -140,6 +209,7 @@ export function useBarberMarquee({
           window.cancelAnimationFrame(pointerResumeFrame.current)
         pointerResumeFrame.current = null
         api.destroy()
+        restoreSlides()
         carousel.current = null
       }
     }
