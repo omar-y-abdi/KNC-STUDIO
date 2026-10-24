@@ -375,6 +375,23 @@ export function CmsResources(props: Props): JSX.Element {
     places: references?.index && asset ? (references.index.get(mediaKey(asset)) ?? []) : null,
     error: references?.error ?? null,
   }
+  const hideFromPage =
+    asset &&
+    assignment.purpose !== 'fonts' &&
+    resourceAssigned(props.document, asset, assignment) ? (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() =>
+          void perform(
+            () => useAsset(currentAsset(asset.id), assignment, false),
+            'Tilldelningen kunde inte tas bort.',
+          )
+        }
+      >
+        Dölj från sidan
+      </button>
+    ) : null
   const navigation = (
     <nav class="cms-resource-navigation cms-segment" aria-label="Resurstyp">
       <button
@@ -655,21 +672,14 @@ export function CmsResources(props: Props): JSX.Element {
                 >
                   Använd i utkastet
                 </button>
-                {resourceAssigned(props.document, asset, assignment) &&
-                  assignment.purpose !== 'fonts' && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void perform(
-                          () => useAsset(currentAsset(asset.id), assignment, false),
-                          'Tilldelningen kunde inte tas bort.',
-                        )
-                      }
-                    >
-                      Dölj från sidan
-                    </button>
-                  )}
+                {hideFromPage}
+                {assignmentNote && <p role="status">{assignmentNote}</p>}
+              </section>
+            )}
+            {stateOf(asset) === 'archived' && hideFromPage && (
+              // An archived file may stay where it is placed; the owner can still remove it there.
+              <section class="cms-resource-use" aria-label="Använd resurs">
+                {hideFromPage}
                 {assignmentNote && <p role="status">{assignmentNote}</p>}
               </section>
             )}

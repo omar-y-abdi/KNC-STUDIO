@@ -5,7 +5,6 @@ import {
   validateCompleteDocument,
   validateDocumentMedia,
   documentMedia,
-  documentMediaPlacements,
   mediaKey,
   type CmsDocument,
   type CmsState,
@@ -239,14 +238,8 @@ Deno.serve(async (request) => {
       storageOrigin: new URL(publicStorage).origin,
       builtAssets: CMS_BUILT_ASSETS,
     }
-    const authoritativeDocument: CmsDocument = structuredClone(authoritative)
-    const authoritativeMarkup = validateDocumentMarkupPlacements(authoritativeDocument, policy)
-    const currentPlacements = [
-      ...documentMediaPlacements(authoritativeDocument),
-      ...authoritativeMarkup,
-    ]
     const authoredMarkup = validateDocumentMarkupPlacements(document, policy)
-    validateDocumentMedia(document, validationState.assets, authoredMarkup, currentPlacements)
+    validateDocumentMedia(document, validationState.assets, authoredMarkup)
     const references = [...documentMedia(document), ...authoredMarkup.map(({ ref }) => ref)]
     const referenceKeys = [...new Set(references.map(mediaKey))]
     const inventory = await service.rpc('internal_cms_missing_media', {
@@ -264,7 +257,11 @@ Deno.serve(async (request) => {
         'En refererad fil saknas eller är inte registrerad. Välj filen på nytt i biblioteket.',
       )
     validateCompleteDocument(document, authoritative)
-    if (body.operation === 'validate') return json({ document })
+    if (body.operation === 'validate') {
+      // Publication applies the archived-media rule under its lock; validation asks the same rule.
+      await invoke('internal_cms_check_media', { p_document: document })
+      return json({ document })
+    }
     if (
       typeof body.baseFingerprint !== 'string' ||
       !/^[0-9a-f]{32}$/.test(body.baseFingerprint) ||
@@ -283,7 +280,7 @@ Deno.serve(async (request) => {
     if (error instanceof CmsValidationError)
       return json({ error: 'invalid_content', message: error.message, requestId }, 422)
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-    if (code === '40001')
+    if (code === 'PT409')
       return json(
         {
           error: 'conflict',
@@ -293,16 +290,15 @@ Deno.serve(async (request) => {
         409,
       )
     if (code === '42501') return json({ error: 'forbidden', requestId }, 403)
-    if (code === 'P4090') {
-      const message =
-        error &&
-        typeof error === 'object' &&
-        'message' in error &&
-        typeof error.message === 'string'
-          ? error.message
-          : 'Resursens livscykel ändrades. Läs in biblioteket igen.'
-      return json({ error: 'asset_lifecycle_conflict', message, requestId }, 409)
-    }
+    // PT422 messages are written in Swedish for the owner by the database rule that raised them.
+    if (
+      code === 'PT422' &&
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof error.message === 'string'
+    )
+      return json({ error: 'invalid_content', message: error.message, requestId }, 422)
     if (['22023', '23514', '23502', '23503', '23505'].includes(code))
       return json(
         {

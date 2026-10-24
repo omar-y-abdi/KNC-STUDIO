@@ -18,4 +18,5 @@ export const CMS_OWNER_SCENARIOS = [
   'email-preview',
   'history-review',
   'resource-lifecycle',
+  'upload-place-publish',
 ]

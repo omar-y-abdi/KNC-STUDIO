@@ -36,64 +36,9 @@ const inspect = (page) =>
 const mount = async (
   page,
   context,
-  { assets = [first], document = emptyDocument(), delay, requests = [], usages = {} } = {},
+  { assets = [first], document = emptyDocument(), delay, usages = {} } = {},
 ) => {
-  await context.route('https://admin-harness.invalid/**', async (route) => {
-    const req = route.request()
-    const headers = {
-      'access-control-allow-origin': base,
-      'access-control-allow-headers': '*',
-      'access-control-allow-methods': 'GET, POST, OPTIONS',
-      'content-type': 'application/json',
-    }
-    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    if (req.url().includes('/storage/')) return route.fulfill({ status: 404, body: '' })
-    if (!req.url().includes('/functions/v1/'))
-      return route.fulfill({ status: 200, headers, body: '[]' })
-    if (req.url().endsWith('/upload-image')) {
-      requests.push({ operation: 'upload' })
-      if (delay?.operation === 'upload') {
-        delay.started.release()
-        await delay.done.promise
-      }
-      return route.fulfill({ status: 200, headers, body: JSON.stringify({ asset: second }) })
-    }
-    const body = req.postDataJSON()
-    requests.push(body)
-    if (delay?.operation === body.operation) {
-      delay.started.release()
-      await delay.done.promise
-    }
-    const asset = assets.find((item) => item.id === body.id)
-    let data
-    if (body.operation === 'asset_usage')
-      data = usages[body.id] ?? { currentReferences: 0, historyReferences: 0 }
-    else if (body.operation === 'asset') {
-      const allowed = new Set(['operation', 'id', 'version', 'name', 'alt', 'archived'])
-      if (Object.keys(body).some((key) => !allowed.has(key)))
-        return route.fulfill({
-          status: 422,
-          headers,
-          body: JSON.stringify({
-            error: 'invalid_content',
-            message: 'request: Unsupported field',
-          }),
-        })
-      data = {
-        ...asset,
-        name: body.name,
-        alt: body.alt,
-        archived: body.archived,
-        version: body.version + 1,
-      }
-    } else if (body.operation === 'asset_lifecycle')
-      data = {
-        asset: { ...asset, archived: body.action === 'archive', version: body.version + 1 },
-        usage: { currentReferences: 0, historyReferences: 0 },
-      }
-    else throw new Error(`Unexpected resource operation ${body.operation}`)
-    return route.fulfill({ status: 200, headers, body: JSON.stringify(data) })
-  })
+  const backend = await nativeBackend(context, emptyDocument(), assets, base, { delay, usages })
   await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
   await page.evaluate(
     async ({ assets, document }) =>
@@ -101,6 +46,7 @@ const mount = async (
     { assets, document },
   )
   await page.locator('.cms-resource-surface').waitFor()
+  return backend
 }
 test.describe.configure({ timeout: 900_000 })
 
@@ -109,8 +55,7 @@ test.use({ viewport: { width: 1440, height: 900 }, contextOptions: { reducedMoti
 test('metadata-wire', async ({ page, context }) => {
   page.setDefaultTimeout(10000)
   await (async (page, context) => {
-    const requests = []
-    await mount(page, context, { requests })
+    const { requests } = await mount(page, context)
     await page.locator('.cms-resource-card button').click()
     await page.getByRole('textbox', { name: 'Namn', exact: true }).fill('Saved name')
     await page.getByRole('button', { name: 'Spara metadata', exact: true }).click()
@@ -131,10 +76,8 @@ for (const state of ['archived', 'trash'])
         ref: { bucket: first.bucket, path: first.path },
         alt: { sv: '', en: '' },
       }
-      const requests = []
-      await mount(page, context, {
+      const { requests } = await mount(page, context, {
         document,
-        requests,
         assets: [
           {
             ...first,
@@ -180,6 +123,35 @@ test('bulk-draft', async ({ page, context }) => {
     )
   })(page, context)
 })
+test('archived-assigned-hide', async ({ page, context }) => {
+  page.setDefaultTimeout(10000)
+  const salon = {
+    ...first,
+    id: '44444444-4444-4444-8444-444444444444',
+    bucket: 'gallery',
+    path: 'salon/archived.webp',
+    name: 'Arkiverad salongsbild',
+    archived: true,
+  }
+  const document = emptyDocument()
+  document.gallery.push({
+    id: salon.id,
+    kind: 'salon',
+    storage_path: salon.path,
+    alt: '',
+    sort_order: 0,
+  })
+  await mount(page, context, { assets: [salon], document })
+  await page.getByRole('button', { name: 'Arkiverade', exact: true }).click()
+  await page.locator('.cms-resource-card button').click()
+  await page.getByRole('button', { name: 'Dölj från sidan', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('.cms-resource-surface')?.getAttribute('aria-busy') === 'false',
+  )
+  const state = await inspect(page)
+  assert.equal(state.error, '')
+  assert.deepEqual(state.document.gallery, [], 'an archived file still placed can be hidden')
+})
 test('replacement-concurrent-edit', async ({ page, context }) => {
   page.setDefaultTimeout(10000)
   await (async (page, context) => {
@@ -189,7 +161,7 @@ test('replacement-concurrent-edit', async ({ page, context }) => {
       alt: { sv: '', en: '' },
     }
     const delay = { operation: 'upload', started: gate(), done: gate() }
-    await mount(page, context, { document, delay })
+    const backend = await mount(page, context, { document, delay })
     await page.locator('.cms-resource-card button').click()
     await page.locator('.cms-resource-detail input[type=file]').setInputFiles({
       name: 'new.webp',
@@ -213,9 +185,10 @@ test('replacement-concurrent-edit', async ({ page, context }) => {
       'Concurrent owner edit',
       'upload acknowledgement must use the current draft',
     )
+    const uploaded = backend.assets.find((item) => item.id !== first.id)
     assert.deepEqual(state.document.presentation.images.hero.ref, {
-      bucket: second.bucket,
-      path: second.path,
+      bucket: uploaded.bucket,
+      path: uploaded.path,
     })
   })(page, context)
 })

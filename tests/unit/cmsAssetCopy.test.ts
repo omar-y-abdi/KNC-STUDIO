@@ -96,6 +96,10 @@ describe('owner resource copy', () => {
     await expect(copyCmsAsset(request, service)).rejects.toThrow()
     expect(copy).not.toHaveBeenCalled()
   })
+  it('reports a stale source as a PT409 conflict', async () => {
+    const { service } = fixture({ ...asset, version: 2 })
+    await expect(copyCmsAsset(request, service)).rejects.toMatchObject({ code: 'PT409' })
+  })
   it('rejects path injection and unknown destination persons', async () => {
     const { service, copy } = fixture()
     await expect(

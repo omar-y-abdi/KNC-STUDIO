@@ -8,7 +8,7 @@ function invalid(message: string): never {
 }
 function conflict(): never {
   throw Object.assign(new Error('Resursen har ändrats. Läs in biblioteket igen.'), {
-    code: '40001',
+    code: 'PT409',
   })
 }
 

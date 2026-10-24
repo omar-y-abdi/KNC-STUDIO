@@ -933,6 +933,72 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           const live = await context.newPage()
           await live.goto(base)
           await live.getByText('Recover the owner edit', { exact: true }).waitFor()
+        } else if (scenario === 'upload-place-publish') {
+          // Owner problem 1: upload, place, save, publish and reload with one request per click.
+          const operations = []
+          page.on('request', (request) => {
+            if (
+              request.method() === 'POST' &&
+              new URL(request.url()).pathname === '/functions/v1/cms-studio'
+            )
+              operations.push(request.postDataJSON().operation)
+          })
+          await page.getByRole('button', { name: 'Resurser', exact: true }).click()
+          const resources = page.getByRole('region', { name: 'Bilder & typsnitt', exact: true })
+          await resources.getByRole('button', { name: 'Ladda upp', exact: true }).click()
+          const upload = page.getByRole('dialog', { name: 'Ladda upp resurs', exact: true })
+          await upload
+            .getByRole('combobox', { name: 'Placera i', exact: true })
+            .selectOption('salon')
+          await upload.locator('input[type=file]').setInputFiles({
+            name: 'salongen.png',
+            mimeType: 'image/png',
+            buffer: Buffer.from('fixture-bytes-are-processed-by-the-fake'),
+          })
+          await upload.waitFor({ state: 'detached' })
+          const uploaded = backend.assets.find((asset) => asset.name === 'salongen.png')
+          assert.ok(uploaded, 'The upload is registered')
+          await resources
+            .locator('.cms-resource-card button')
+            .filter({ hasText: 'salongen.png' })
+            .click()
+          await resources
+            .getByRole('textbox', { name: 'Alternativtext', exact: true })
+            .fill('Salongen')
+          await resources.getByRole('button', { name: 'Spara metadata', exact: true }).click()
+          await page.waitForFunction(() =>
+            globalThis.document.querySelector('.cms-status')?.textContent?.includes('Opublicerade'),
+          )
+          await page.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
+          await resources.waitFor({ state: 'detached' })
+          operations.length = 0
+          await publish()
+          assert.deepEqual(operations, ['publish'], 'One Publicera click sends one request')
+          assert.ok(
+            backend.document.gallery.some(
+              (row) => row.kind === 'salon' && row.storage_path === uploaded.path,
+            ),
+            'The placed upload is published',
+          )
+          // A gallery change recaptures Home, so the source kicker that mount() waits for is gone.
+          await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+          await page.evaluate(async () => {
+            const harness = await import('/tools/e2e/admin-harness.tsx')
+            harness.mountCmsStudioHarness()
+          })
+          await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+          await page.waitForFunction(() =>
+            globalThis.document.querySelector('.cms-status')?.textContent?.startsWith('Publicerad'),
+          )
+          assert.deepEqual(
+            operations.filter((operation) => operation === 'publish'),
+            ['publish'],
+            'A reload does not publish again',
+          )
+          assert.ok(
+            backend.document.gallery.some((row) => row.storage_path === uploaded.path),
+            'The publication survives a reload',
+          )
         } else if (scenario === 'edit-during-save') {
           await publish()
           await selectCopy()
