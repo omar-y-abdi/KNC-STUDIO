@@ -17,6 +17,7 @@ import {
 } from '../shared/site-page'
 import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
+  isPagePath,
   validatePresentation,
   type CmsLang,
   type CmsMode,
@@ -27,7 +28,14 @@ import {
 import { CMS_THEME_SCRIPT } from './site/cmsThemeScript'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
-import { NATIVE_PUBLIC_PATHS, privatePageTitle } from './site/routeMetadata'
+import {
+  CMS_REVISION_ATTRIBUTE,
+  NATIVE_PUBLIC_PATHS,
+  PRESENTATION_PATH,
+  parseCmsRevision,
+  privatePageTitle,
+  requestedPresentationRevision,
+} from './site/routeMetadata'
 import {
   DEFAULT_BUSINESS,
   EMPTY_BUSINESS_FACTS,
@@ -90,6 +98,14 @@ export function isPrivatePath(pathname: string): boolean {
 export function isSpaPath(pathname: string): boolean {
   const path = withoutTrailingSlash(pathname)
   return path === '/' || isPrivatePath(path)
+}
+
+const LEGAL_PAGE_PATHS: readonly string[] = ['/privacy', '/terms']
+
+/** Paths the published presentation can hold a page for: created pages and the two legal pages.
+ * Files, probes and unknown routes never read the presentation. */
+export function isCmsPagePath(pathname: string): boolean {
+  return isPagePath(pathname) || LEGAL_PAGE_PATHS.includes(pathname)
 }
 
 function isNoIndexPath(pathname: string): boolean {
@@ -176,11 +192,22 @@ async function publicCmsResponse(
   }
 }
 
+interface NativeMetadata {
+  readonly title: string
+  readonly description: string
+  /** The published document's revision; null when the RPC names none. */
+  readonly revision: number | null
+}
+
+function wireRevision(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
 async function nativeMetadata(
   env: Env,
   path: string,
   lang: CmsLang,
-): Promise<{ title: string; description: string } | null> {
+): Promise<NativeMetadata | null> {
   const response = await publicCmsResponse(env, 'public_cms_page_metadata', {
     p_path: path,
     p_lang: lang,
@@ -198,7 +225,11 @@ async function nativeMetadata(
     value.description.length > 10000
   )
     return null
-  return { title: value.title, description: value.description }
+  return {
+    title: value.title,
+    description: value.description,
+    revision: 'revision' in value ? wireRevision(value.revision) : null,
+  }
 }
 
 async function loadPublicCms(env: Env): Promise<PublicCmsPresentation | null> {
@@ -322,6 +353,21 @@ function replaceMetaContent(html: string, id: string, value: string): string {
   return `${html.slice(0, bounds.start)}${updated}${html.slice(bounds.end + 1)}`
 }
 
+const DESCRIPTION_META_IDS = [
+  'business-description',
+  'business-og-description',
+  'business-twitter-description',
+] as const
+
+/** A page without a description of its own keeps the shell's default one. */
+function withDescription(html: string, description: string): string {
+  if (description.trim() === '') return html
+  return DESCRIPTION_META_IDS.reduce(
+    (rendered, id) => replaceMetaContent(rendered, id, description),
+    html,
+  )
+}
+
 function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): string {
   return Object.entries(presentation.fonts ?? {})
     .map(([id, font]) => {
@@ -439,11 +485,9 @@ export function renderCmsPage(
   const variant = plan.variant
   let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
   rendered = replaceElementText(rendered, 'business-title', page.title[lang])
-  rendered = replaceMetaContent(rendered, 'business-description', page.description[lang])
   rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
-  rendered = replaceMetaContent(rendered, 'business-og-description', page.description[lang])
   rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
-  rendered = replaceMetaContent(rendered, 'business-twitter-description', page.description[lang])
+  rendered = withDescription(rendered, page.description[lang])
   rendered = rendered.replace(
     /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
     `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
@@ -833,6 +877,34 @@ function notAcceptable(request: Request): Response {
   )
 }
 
+const REVISION_OPENING = /^\s*\{\s*"revision"\s*:\s*(0|[1-9][0-9]*)\s*[,}]/
+const REVISION_OPENING_BYTES = 64
+/** One day at the edge, never served stale after expiry (a failed refresh must not revive old bytes). */
+const IMMUTABLE_EDGE_CACHE = 'max-age=86400, must-revalidate'
+
+/** The revision a `public_cms_presentation` body opens with. PostgreSQL orders jsonb keys by
+ * length, so `revision` precedes `presentation`; any other shape reads as no revision. */
+function openingRevision(body: Uint8Array): number | null {
+  const opening = new TextDecoder().decode(body.subarray(0, REVISION_OPENING_BYTES))
+  return parseCmsRevision(REVISION_OPENING.exec(opening)?.[1])
+}
+
+/** One revision's presentation. The edge keeps it for a day only when the document was read
+ * completely and opens with that very revision; otherwise this is the current document, uncached.
+ * The body is buffered once and never parsed, so a read cut off by the timeout is never stored. */
+async function versionedPresentation(upstream: Response, requested: number): Promise<Response> {
+  const headers = new Headers({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+  let body: ArrayBuffer
+  try {
+    body = await upstream.arrayBuffer()
+  } catch {
+    return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503, headers })
+  }
+  if (openingRevision(new Uint8Array(body)) === requested)
+    headers.set('Cloudflare-CDN-Cache-Control', IMMUTABLE_EDGE_CACHE)
+  return new Response(body, { status: 200, headers })
+}
+
 async function fetchPublicContent(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const pathname = url.pathname
@@ -849,11 +921,13 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     }
   }
 
-  if (pathname === '/api/cms/presentation') {
+  if (pathname === PRESENTATION_PATH) {
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405 })
     // Publication validates the database document; the browser validates its copy on receipt.
     // Stream this public RPC without cloning/parsing/stringifying megabytes at the edge.
     const response = await publicCmsResponse(env, 'public_cms_presentation')
+    const requested = request.method === 'GET' ? requestedPresentationRevision(url) : null
+    if (requested !== null && response?.ok) return versionedPresentation(response, requested)
     return new Response(
       request.method === 'HEAD'
         ? null
@@ -947,16 +1021,19 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       body = replaceElementText(body, 'business-title', metadataTitle)
       for (const id of ['business-og-title', 'business-twitter-title'])
         body = replaceMetaContent(body, id, metadataTitle)
-      for (const id of [
-        'business-description',
-        'business-og-description',
-        'business-twitter-description',
-      ])
-        body = replaceMetaContent(body, id, metadata.description)
+      body = withDescription(body, metadata.description)
     }
     // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
     const view = pathname === '/booking' ? ' data-knc-view="booking"' : ''
-    body = body.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"${view}`)
+    // The app reads this revision and asks the edge for that revision's immutable presentation.
+    const revision =
+      metadata === null || metadata.revision === null
+        ? ''
+        : ` ${CMS_REVISION_ATTRIBUTE}="${metadata.revision}"`
+    body = body.replace(
+      /<html\b[^>]*lang=(['"])[^'"]*\1/i,
+      `<html lang="${lang}"${view}${revision}`,
+    )
     body = body.replace(
       /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
       `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,
@@ -980,19 +1057,28 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     return new Response(request.method === 'HEAD' ? null : body, { status: asset.status, headers })
   }
 
+  const dynamicLegal =
+    (pathname === '/terms' || pathname === '/privacy') &&
+    (request.method === 'GET' || request.method === 'HEAD')
+  // A legal page renders the business whether the CMS holds it or the static file answers, so
+  // discovery is read while the CMS lookup runs, not after it. HEAD never reads it.
+  const legalDiscovery = dynamicLegal && request.method === 'GET' ? loadDiscovery(env) : null
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&
+    isCmsPagePath(cleanPathname) &&
     !isPrivatePath(pathname) &&
     !['/google-calendar', '/contact'].includes(pathname)
   ) {
     const cms = await loadPublicCms(env)
     const cmsPage = cms?.presentation.pages.find((page) => page.path === cleanPathname)
     if (cmsPage) {
-      const index = await serveAsset(request, env, '/index.html', true)
+      const [index, discovery] = await Promise.all([
+        serveAsset(request, env, '/index.html', true),
+        request.method === 'HEAD' ? null : (legalDiscovery ?? loadDiscovery(env)),
+      ])
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
       const mode = requestedCmsMode(url.searchParams.get('mode'))
       const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
-      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
       const headers = new Headers(index.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')
@@ -1034,18 +1120,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
   }
 
   const assetPath = pathname === '/' ? '/index.html' : (PUBLIC_FILE_ALIASES[pathname] ?? pathname)
-  const dynamicHomepage = pathname === '/' && request.method === 'GET'
-  const dynamicLegal =
-    (pathname === '/terms' || pathname === '/privacy') &&
-    (request.method === 'GET' || request.method === 'HEAD')
   const dynamicContact =
     pathname === '/contact' && (request.method === 'GET' || request.method === 'HEAD')
-  const asset = await serveAsset(
-    request,
-    env,
-    assetPath,
-    dynamicHomepage || dynamicLegal || dynamicContact,
-  )
+  const asset = await serveAsset(request, env, assetPath, dynamicLegal || dynamicContact)
   if (asset.status !== 404) {
     if (dynamicContact) {
       const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
@@ -1063,7 +1140,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       )
     }
     if (dynamicLegal) {
-      const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
+      const discovery = await legalDiscovery
       const headers = new Headers(asset.headers)
       headers.delete('Content-Length')
       headers.delete('ETag')
@@ -1075,26 +1152,6 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
           : renderLegalMetadata(await asset.text(), pathname, discovery?.business ?? null),
         { status: asset.status, headers },
       )
-    }
-    if (dynamicHomepage) {
-      const loadedDiscovery = await loadDiscovery(env)
-      const discovery = loadedDiscovery ?? {
-        business: DEFAULT_BUSINESS,
-        facts: EMPTY_BUSINESS_FACTS,
-      }
-      const headers = new Headers(asset.headers)
-      headers.delete('Content-Length')
-      headers.delete('ETag')
-      headers.delete('Last-Modified')
-      headers.set(
-        'Cache-Control',
-        loadedDiscovery === null ? 'no-store' : 'public, max-age=60, s-maxage=300',
-      )
-      return new Response(renderHomepageMetadata(await asset.text(), discovery), {
-        status: asset.status,
-        statusText: asset.statusText,
-        headers,
-      })
     }
     return isNoIndexPath(pathname) ? withNoIndex(asset) : asset
   }
@@ -1139,13 +1196,16 @@ export class PublicContent extends WorkerEntrypoint<Env> {
 }
 
 function isPublicContentRequest(request: Request, url: URL): boolean {
-  // Only HTML uses the cached public-content export. Markdown is handled by the
-  // uncached entrypoint, preventing a URL-only edge cache from mixing representations.
+  // Only HTML and versioned presentations use the cached public-content export. Markdown is
+  // handled by the uncached entrypoint, preventing a URL-only edge cache from mixing
+  // representations. A presentation read without exactly `?rev=<digits>` is never cacheable, so
+  // it skips the cache and is answered by the uncached entrypoint.
   return (
     request.method === 'GET' &&
     ((NATIVE_PUBLIC_PATHS.includes(url.pathname) &&
       preferredRepresentation(request.headers.get('Accept')) === 'html') ||
-      url.pathname === '/llms.txt')
+      url.pathname === '/llms.txt' ||
+      (url.pathname === PRESENTATION_PATH && requestedPresentationRevision(url) !== null))
   )
 }
 

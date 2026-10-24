@@ -575,6 +575,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const stored = await service.storage.from(bucket).upload(path, processed, {
     contentType: 'image/webp',
     upsert: false,
+    cacheControl: '31536000',
   })
 
   if (stored.error !== null) {
