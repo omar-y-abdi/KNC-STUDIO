@@ -27,8 +27,7 @@ export function corsJson(body: unknown, status = 200): Response {
 export const uuid = z.string().uuid()
 
 export type Parsed<T> =
-  | { readonly ok: true; readonly data: T }
-  | { readonly ok: false; readonly detail: string }
+  { readonly ok: true; readonly data: T } | { readonly ok: false; readonly detail: string }
 
 /** Unknown keys outrank field errors: the caller speaks another contract. */
 export function parse<S extends z.ZodTypeAny>(schema: S, raw: unknown): Parsed<z.output<S>> {

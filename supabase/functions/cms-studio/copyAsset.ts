@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CmsValidationError, validMediaRef, type CmsAsset } from '../../../shared/cms.ts'
+import type { CopyRequest } from './request.ts'
 
 const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,trashed_at,version'
-const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 function invalid(message: string): never {
   throw new CmsValidationError('asset', message)
 }
@@ -14,23 +14,8 @@ function conflict(): never {
 
 /** Called only after cms-studio authenticates the current owner. Storage's native
  * copy avoids downloading/re-encoding already verified WebP. The original is never mutated. */
-export async function copyCmsAsset(
-  body: Record<string, unknown>,
-  service: SupabaseClient,
-): Promise<CmsAsset> {
-  if (
-    Object.keys(body).some(
-      (key) => !['operation', 'id', 'version', 'purpose', 'barberId'].includes(key),
-    ) ||
-    typeof body.id !== 'string' ||
-    !UUID.test(body.id) ||
-    !Number.isSafeInteger(body.version) ||
-    Number(body.version) < 0 ||
-    !['salon', 'cuts', 'logo', 'profile'].includes(String(body.purpose))
-  )
-    invalid('Välj en registrerad bild och en giltig destination.')
-  const id = body.id as string
-  const purpose = String(body.purpose)
+export async function copyCmsAsset(body: CopyRequest, service: SupabaseClient): Promise<CmsAsset> {
+  const { id, purpose } = body
   if (purpose === 'profile') {
     if (typeof body.barberId !== 'string' || !/^[a-z0-9-]{1,32}$/.test(body.barberId))
       invalid('Välj en befintlig barberare.')

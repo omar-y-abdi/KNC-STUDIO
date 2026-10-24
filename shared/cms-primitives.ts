@@ -33,7 +33,11 @@ export function object(value: unknown, path: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-export function keys(value: Record<string, unknown>, allowed: readonly string[], path: string): void {
+export function keys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+): void {
   for (const key of Object.keys(value))
     if (!allowed.includes(key)) fail(`${path}.${key}`, 'Unsupported field')
 }

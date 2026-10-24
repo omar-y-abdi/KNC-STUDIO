@@ -20,12 +20,9 @@ import {
   encryptCustomerAccessToken,
   hashCustomerAccessToken,
 } from '../_shared/customerAccess.ts'
+import { json } from '../_shared/http.ts'
+import { parseRequest, type BookingEmailEvent } from './request.ts'
 
-interface WebhookEnvelope {
-  readonly record?: unknown
-  readonly event?: unknown
-}
-type BookingEmailEvent = 'booking_confirmed' | 'booking_cancelled' | 'booking_reminder'
 type DeliveryStatus = 'delivered' | 'skipped' | 'superseded'
 type DeliveryKind = 'customer' | 'barber'
 interface BookingRow {
@@ -42,14 +39,6 @@ interface BookingRow {
   readonly lang: 'sv' | 'en'
   readonly status: 'confirmed' | 'cancelled'
 }
-type RequestResult =
-  | {
-      readonly ok: true
-      readonly id: string | null
-      readonly event: BookingEmailEvent | null
-      readonly deliveryId: string | null
-    }
-  | { readonly ok: false; readonly error: string }
 interface DeliveryJob {
   readonly bookingId: string
   readonly event: Exclude<BookingEmailEvent, 'booking_reminder'>
@@ -65,29 +54,6 @@ function nullableString(value: unknown): string | null {
 function isDeliveryKind(value: unknown): value is DeliveryKind {
   return value === 'customer' || value === 'barber'
 }
-function parseRequest(raw: unknown): RequestResult {
-  if (typeof raw !== 'object' || raw === null)
-    return { ok: false, error: 'payload must be an object' }
-  const envelope = raw as WebhookEnvelope
-  const candidate: unknown = envelope.record === undefined ? raw : envelope.record
-  if (typeof candidate !== 'object' || candidate === null)
-    return { ok: false, error: 'missing record' }
-  const record = candidate as Record<string, unknown>
-  if (nonEmpty(record.delivery_id)) {
-    return { ok: true, id: null, event: null, deliveryId: record.delivery_id }
-  }
-  if (!nonEmpty(record.id)) return { ok: false, error: 'id is required' }
-  const event = record.event ?? envelope.event ?? 'booking_confirmed'
-  if (
-    event !== 'booking_confirmed' &&
-    event !== 'booking_cancelled' &&
-    event !== 'booking_reminder'
-  ) {
-    return { ok: false, error: 'invalid event' }
-  }
-  return { ok: true, id: record.id, event, deliveryId: null }
-}
-
 function serviceClient() {
   const url = Deno.env.get('SUPABASE_URL')
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -389,13 +355,6 @@ async function buildMessages(
         candidate !== null,
     ),
   )
-}
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
 }
 
 async function handleRequest(req: Request): Promise<Response> {

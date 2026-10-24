@@ -5,18 +5,9 @@ import {
   loadEmailTemplate,
   sendViaResend,
 } from '../_shared/email.ts'
+import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
+import { requestSchema } from './request.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return Array.from(new Uint8Array(digest))
@@ -52,11 +43,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch {
     return json({ ok: false, error: 'invalid_json' }, 400)
   }
-  if (typeof raw !== 'object' || raw === null)
-    return json({ ok: false, error: 'invalid_payload' }, 400)
-  const body = raw as Record<string, unknown>
-  const newEmail = typeof body.new_email === 'string' ? body.new_email.trim().toLowerCase() : ''
-  const lang = body.lang === 'en' ? 'en' : 'sv'
+  const parsed = parse(requestSchema, raw)
+  if (!parsed.ok) return json({ ok: false, error: 'invalid_payload' }, 400)
+  const { new_email: newEmail, lang } = parsed.data
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail) || newEmail.length > 254) {
     return json({ ok: false, error: 'invalid_email' }, 400)
   }

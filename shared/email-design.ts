@@ -1,4 +1,13 @@
-import { fail, integer, keys, list, object, validMediaRef, type CmsMode, type MediaRef } from './cms-primitives.ts'
+import {
+  fail,
+  integer,
+  keys,
+  list,
+  object,
+  validMediaRef,
+  type CmsMode,
+  type MediaRef,
+} from './cms-primitives.ts'
 
 export const EMAIL_PARTS = ['title', 'intro', 'details', 'note', 'cta', 'contact'] as const
 export type EmailPart = (typeof EMAIL_PARTS)[number]

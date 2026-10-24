@@ -13,31 +13,8 @@ import {
   customerCookieHeader,
   customerCookieProof,
 } from '../_shared/customerCookies.ts'
-
-type Action =
-  | 'request_access'
-  | 'exchange_access'
-  | 'list'
-  | 'cancel'
-  | 'review'
-  | 'forget_device'
-  | 'request_link'
-  | 'confirm_link'
-type Language = 'sv' | 'en'
-
-interface ParsedAction {
-  readonly action: Action
-  readonly phone?: string
-  readonly email?: string
-  readonly bookingId?: string
-  readonly accessToken?: string
-  readonly rating?: number
-  readonly text?: string
-  readonly turnstileToken?: string
-  readonly lang?: Language
-  readonly linkCode?: string
-  readonly sourceEmail?: string
-}
+import { json } from '../_shared/http.ts'
+import { emailAddress, requestSchema } from './request.ts'
 
 interface Limit {
   readonly windowSecs: number
@@ -78,120 +55,13 @@ function originAllowed(req: Request): boolean {
   return origin === null || allowedOrigins().includes(origin)
 }
 
-function json(req: Request, body: unknown, status = 200, extra?: HeadersInit): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders(req),
-      'content-type': 'application/json',
-      'Cache-Control': 'no-store',
-      ...extra,
-    },
-  })
-}
-
-function isAction(value: unknown): value is Action {
-  return (
-    value === 'request_access' ||
-    value === 'exchange_access' ||
-    value === 'list' ||
-    value === 'cancel' ||
-    value === 'review' ||
-    value === 'forget_device' ||
-    value === 'request_link' ||
-    value === 'confirm_link'
-  )
-}
-
-function normalizePhone(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const phone = value.replace(/[\s\-()]/g, '')
-  return /^07[0-9]{8}$/.test(phone) ? phone : null
-}
-
-function normalizeEmail(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const email = value.trim().toLowerCase()
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254 ? email : null
-}
-
-function opaqueToken(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
-}
-
-function isBookingId(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  )
-}
-
-function parseBody(raw: unknown): ParsedAction | null {
-  if (typeof raw !== 'object' || raw === null) return null
-  const body = raw as Record<string, unknown>
-  if (!isAction(body.action)) return null
-  if (body.action === 'forget_device') return { action: body.action }
-  if (body.action === 'request_link') {
-    const email = normalizeEmail(body.email)
-    const sourceEmail = normalizeEmail(body.sourceEmail)
-    return email !== null && sourceEmail !== null && (body.lang === 'sv' || body.lang === 'en')
-      ? { action: body.action, email, sourceEmail, lang: body.lang }
-      : null
-  }
-  if (body.action === 'confirm_link') {
-    return opaqueToken(body.linkCode)
-      ? { action: body.action, linkCode: body.linkCode.toLowerCase() }
-      : null
-  }
-
-  if (body.action === 'exchange_access') {
-    return opaqueToken(body.accessCode)
-      ? { action: body.action, accessToken: body.accessCode }
-      : null
-  }
-
-  if (body.action === 'list') {
-    return body.accessToken === undefined || opaqueToken(body.accessToken)
-      ? {
-          action: body.action,
-          ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
-        }
-      : null
-  }
-
-  if (body.action === 'cancel') {
-    return (body.accessToken === undefined || opaqueToken(body.accessToken)) &&
-      isBookingId(body.bookingId)
-      ? {
-          action: body.action,
-          ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
-          bookingId: body.bookingId,
-        }
-      : null
-  }
-
-  if (body.action === 'request_access') {
-    const email = normalizeEmail(body.email)
-    const lang = body.lang === 'en' ? 'en' : body.lang === 'sv' ? 'sv' : null
-    return email === null || lang === null || typeof body.turnstileToken !== 'string'
-      ? null
-      : { action: body.action, email, lang, turnstileToken: body.turnstileToken }
-  }
-
-  const phone = normalizePhone(body.phone)
-  if (phone === null || typeof body.turnstileToken !== 'string') return null
-  if (body.accessToken !== undefined && !opaqueToken(body.accessToken)) return null
-  if (!Number.isInteger(body.rating) || Number(body.rating) < 1 || Number(body.rating) > 5)
-    return null
-  if (typeof body.text !== 'string' || body.text.length < 1 || body.text.length > 1000) return null
-  return {
-    action: body.action,
-    phone,
-    ...(opaqueToken(body.accessToken) ? { accessToken: body.accessToken } : {}),
-    rating: Number(body.rating),
-    text: body.text,
-    turnstileToken: body.turnstileToken,
-  }
+function reply(
+  req: Request,
+  body: unknown,
+  status = 200,
+  extra?: Record<string, string>,
+): Response {
+  return json(body, status, { ...corsHeaders(req), 'Cache-Control': 'no-store', ...extra })
 }
 
 function clientIp(req: Request): string {
@@ -247,19 +117,20 @@ async function consumeLimit(
 function scopeEmail(value: unknown): string | null {
   const row = Array.isArray(value) ? value[0] : value
   if (typeof row !== 'object' || row === null) return null
-  return normalizeEmail((row as Record<string, unknown>).email)
+  const email = emailAddress.safeParse((row as Record<string, unknown>).email)
+  return email.success ? email.data : null
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) })
-  if (req.method !== 'POST') return json(req, { ok: false, error: 'method_not_allowed' }, 405)
-  if (!originAllowed(req)) return json(req, { ok: false, error: 'origin_not_allowed' }, 403)
+  if (req.method !== 'POST') return reply(req, { ok: false, error: 'method_not_allowed' }, 405)
+  if (!originAllowed(req)) return reply(req, { ok: false, error: 'origin_not_allowed' }, 403)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   if (!supabaseUrl || !serviceKey) {
     console.error('public-booking-actions: Supabase runtime configuration missing')
-    return json(req, { ok: false, error: 'not_configured' }, 500)
+    return reply(req, { ok: false, error: 'not_configured' }, 500)
   }
 
   let raw: unknown
@@ -268,10 +139,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     bodyText = await req.text()
     raw = JSON.parse(bodyText)
   } catch {
-    return json(req, { ok: false, error: 'invalid_payload' }, 400)
+    return reply(req, { ok: false, error: 'invalid_payload' }, 400)
   }
-  const parsed = parseBody(raw)
-  if (parsed === null) return json(req, { ok: false, error: 'invalid_payload' }, 400)
+  const request = requestSchema.safeParse(raw)
+  if (!request.success) return reply(req, { ok: false, error: 'invalid_payload' }, 400)
+  const parsed = request.data
 
   let ip = clientIp(req)
   let firstPartyGateway = false
@@ -281,7 +153,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       Deno.env.get('CUSTOMER_GATEWAY_SECRET'),
       bodyText,
     )
-    if (forwarded === null) return json(req, { ok: false, error: 'origin_not_allowed' }, 403)
+    if (forwarded === null) return reply(req, { ok: false, error: 'origin_not_allowed' }, 403)
     ip = forwarded
     firstPartyGateway = true
   }
@@ -291,35 +163,35 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const hashSalt = Deno.env.get('PUBLIC_ACTION_HASH_SALT')
   if (protectedAction && (!turnstileSecret || !hashSalt)) {
     console.error('public-booking-actions: public-action protection configuration missing')
-    return json(req, { ok: false, error: 'not_configured' }, 503)
+    return reply(req, { ok: false, error: 'not_configured' }, 503)
   }
 
   const service = serviceClient(supabaseUrl, serviceKey)
   if (parsed.action === 'request_link' || parsed.action === 'confirm_link') {
-    if (!firstPartyGateway) return json(req, { ok: false, error: 'origin_not_allowed' }, 403)
+    if (!firstPartyGateway) return reply(req, { ok: false, error: 'origin_not_allowed' }, 403)
     const cookie = customerCookie(req, CUSTOMER_SESSION_COOKIE)
-    if (cookie === null) return json(req, { ok: false, error: 'access_denied' })
+    if (cookie === null) return reply(req, { ok: false, error: 'access_denied' })
     const sessionHash = await sha256(cookie)
     if (parsed.action === 'confirm_link') {
       const result = await service.rpc('confirm_customer_email_link', {
         p_session_hash: sessionHash,
         p_code_hash: await sha256(parsed.linkCode ?? ''),
       })
-      if (result.error) return json(req, { ok: false, error: 'system' }, 500)
-      return json(req, result.data)
+      if (result.error) return reply(req, { ok: false, error: 'system' }, 500)
+      return reply(req, result.data)
     }
-    if (!hashSalt) return json(req, { ok: false, error: 'not_configured' }, 503)
+    if (!hashSalt) return reply(req, { ok: false, error: 'not_configured' }, 503)
     const scope = await service.rpc('customer_booking_access_scope', {
       p_session_hash: sessionHash,
     })
-    if (scope.error) return json(req, { ok: false, error: 'system' }, 500)
+    if (scope.error) return reply(req, { ok: false, error: 'system' }, 500)
     const sourceEmail = scopeEmail(scope.data)
     if (sourceEmail === null || sourceEmail !== parsed.sourceEmail)
-      return json(req, { ok: false, error: 'access_denied' })
+      return reply(req, { ok: false, error: 'access_denied' })
     // Bound both sender and recipient, including attempts from several authenticated profiles.
     for (const email of new Set([sourceEmail, parsed.email ?? ''])) {
       const limited = await consumeLimit(service, 'request_access', email, ip, hashSalt)
-      if (limited !== 'ok') return json(req, { ok: false, error: limited })
+      if (limited !== 'ok') return reply(req, { ok: false, error: limited })
     }
     const sourceCode = createCustomerAccessToken()
     const targetCode = createCustomerAccessToken()
@@ -338,8 +210,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       p_target_ciphertext: targetCiphertext,
       p_lang: parsed.lang,
     })
-    if (result.error) return json(req, { ok: false, error: 'system' }, 500)
-    return json(req, result.data)
+    if (result.error) return reply(req, { ok: false, error: 'system' }, 500)
+    return reply(req, result.data)
   }
   if (parsed.action === 'forget_device') {
     const receipt = customerCookie(req, CUSTOMER_RECEIPT_COOKIE)
@@ -350,7 +222,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       if (error) console.error('public-booking-actions: receipt revocation failed', error.code)
     }
     // Clear optional device access even during a database outage; email-link sessions are separate.
-    return json(req, { ok: true }, 200, {
+    return reply(req, { ok: true }, 200, {
       'Set-Cookie': customerCookieHeader(CUSTOMER_RECEIPT_COOKIE, '', 0),
     })
   }
@@ -362,10 +234,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (error) {
       console.error('public-booking-actions: access exchange RPC failed', error.code)
-      return json(req, { ok: false, error: 'system' }, 500)
+      return reply(req, { ok: false, error: 'system' }, 500)
     }
     return data === true
-      ? json(
+      ? reply(
           req,
           { ok: true, session_proof: await customerCookieProof(accessToken, 'session') },
           200,
@@ -373,7 +245,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             'Set-Cookie': customerCookieHeader(CUSTOMER_SESSION_COOKIE, accessToken),
           },
         )
-      : json(req, { ok: false, error: 'invalid' })
+      : reply(req, { ok: false, error: 'invalid' })
   }
 
   if (parsed.action === 'list' || parsed.action === 'cancel') {
@@ -393,15 +265,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
           'public-booking-actions: session establishment failed',
           established.error.code,
         )
-        return json(req, { ok: false, error: 'system' }, 500)
+        return reply(req, { ok: false, error: 'system' }, 500)
       }
       if (established.data !== true) {
-        return json(req, { ok: false, error: 'access_denied' })
+        return reply(req, { ok: false, error: 'access_denied' })
       }
       setCookie = customerCookieHeader(CUSTOMER_SESSION_COOKIE, sessionToken)
     }
     if (sessionToken === null && receiptToken === null)
-      return json(req, { ok: false, error: 'access_denied' })
+      return reply(req, { ok: false, error: 'access_denied' })
     const accessHash = sessionToken === null ? null : await sha256(sessionToken)
     const receiptHash = receiptToken === null ? null : await sha256(receiptToken)
     const result =
@@ -417,7 +289,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           })
     if (result.error) {
       console.error(`public-booking-actions: ${parsed.action} access RPC failed`, result.error.code)
-      return json(req, { ok: false, error: 'system' }, 500)
+      return reply(req, { ok: false, error: 'system' }, 500)
     }
     const responseBody =
       parsed.action === 'list' &&
@@ -437,7 +309,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
               : {}),
           }
         : result.data
-    return json(
+    return reply(
       req,
       responseBody,
       200,
@@ -457,22 +329,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
       ),
     ))
   ) {
-    return json(req, { ok: false, error: 'failed_challenge' })
+    return reply(req, { ok: false, error: 'failed_challenge' })
   }
 
   let sessionHash: string | null = null
   if (parsed.action === 'review') {
     const token = parsed.accessToken ?? customerCookie(req, CUSTOMER_SESSION_COOKIE)
     if (token !== null) sessionHash = await sha256(token.toLowerCase())
-    if (sessionHash === null) return json(req, { ok: false, error: 'no_booking' })
+    if (sessionHash === null) return reply(req, { ok: false, error: 'no_booking' })
     // The review RPC checks phone + a completed booking within the verified email profile.
     // A cookie's historical phone snapshot must not reject another number owned by that profile.
   }
 
   const limitScope = parsed.action === 'request_access' ? (parsed.email ?? '') : phone
   const limited = await consumeLimit(service, parsed.action, limitScope, ip, hashSalt ?? '')
-  if (limited === 'system') return json(req, { ok: false, error: 'system' }, 500)
-  if (limited === 'rate_limited') return json(req, { ok: false, error: 'rate_limited' })
+  if (limited === 'system') return reply(req, { ok: false, error: 'system' }, 500)
+  if (limited === 'rate_limited') return reply(req, { ok: false, error: 'rate_limited' })
 
   if (parsed.action === 'request_access') {
     const code = createCustomerAccessToken()
@@ -487,9 +359,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     })
     if (error) {
       console.error('public-booking-actions: access rotation RPC failed', error.code)
-      return json(req, { ok: false, error: 'system' }, 500)
+      return reply(req, { ok: false, error: 'system' }, 500)
     }
-    return json(req, { ok: true })
+    return reply(req, { ok: true })
   }
 
   const result = await service.rpc('create_review_with_access', {
@@ -500,7 +372,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   })
   if (result.error) {
     console.error('public-booking-actions: review RPC failed', result.error.code)
-    return json(req, { ok: false, error: 'system' }, 500)
+    return reply(req, { ok: false, error: 'system' }, 500)
   }
-  return json(req, result.data)
+  return reply(req, result.data)
 })
