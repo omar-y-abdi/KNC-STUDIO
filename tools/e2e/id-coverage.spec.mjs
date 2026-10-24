@@ -12,8 +12,9 @@
 import { test, expect } from './fixtures.mjs'
 import { installStoredBackend, storedPresentationResponse } from './public-fixtures.mjs'
 import { coverageProblems, describeProblem } from './id-coverage.mjs'
+import { publicOrigin } from './origins.mjs'
 
-const base = process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:4173'
+const base = publicOrigin
 const CAPTURE_TIME = new Date('2026-09-14T08:00:00Z')
 const DEVICES = {
   Desktop: { width: 1440, height: 900 },
