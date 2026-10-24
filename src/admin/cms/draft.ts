@@ -1,5 +1,18 @@
 import type { CmsDocument, CmsSave } from '../../../shared/cms'
 
+// Draft transactions replace snapshots instead of mutating them, so a snapshot's JSON is fixed
+// by its identity. A production document serializes to over a million characters.
+const serialized = new WeakMap<CmsDocument, string>()
+
+function serialize(document: CmsDocument): string {
+  let json = serialized.get(document)
+  if (json === undefined) {
+    json = JSON.stringify(document)
+    serialized.set(document, json)
+  }
+  return json
+}
+
 export class CmsDraft {
   document: CmsDocument
   base: CmsDocument
@@ -31,14 +44,14 @@ export class CmsDraft {
       this.dirtyComparison = {
         document: this.document,
         base: this.base,
-        dirty: JSON.stringify(this.document) !== JSON.stringify(this.base),
+        dirty: serialize(this.document) !== serialize(this.base),
       }
     }
     return this.dirtyComparison.dirty
   }
 
   change(next: CmsDocument, group = ''): void {
-    if (JSON.stringify(next) === JSON.stringify(this.document)) return
+    if (serialize(next) === serialize(this.document)) return
     const now = Date.now()
     if (!group || group !== this.lastGroup || now - this.lastChange > 800) {
       this.undoStack.push(this.document)
