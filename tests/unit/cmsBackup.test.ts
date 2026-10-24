@@ -705,6 +705,28 @@ describe('a write IndexedDB refused', () => {
     expect(session.unsaved()).toBe(false)
   })
 
+  // A newer draft is scheduled while a flush waits for the write IndexedDB then refuses: the newer
+  // draft goes in its place, at once, and its debounce adds no further write.
+  it('writes the newer scheduled draft, not the refused one, for a waiting flush', async () => {
+    vi.useFakeTimers()
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    const answer = deferred()
+    refuseLater(ports, answer.promise)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    const refused = session.flush()
+    const waiter = session.flush()
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    answer.resolve()
+    await expect(refused).rejects.toBe(refusal)
+    await waiter
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+    expect(session.unsaved()).toBe(false)
+  })
+
   // The tab closes while the debounced write is in flight: beforeunload's flush and pagehide's
   // suspend wait for it, and IndexedDB refuses it meanwhile. One more write goes, not one per call.
   it('writes the draft once more when IndexedDB refuses the write a flush waits for', async () => {
