@@ -3,7 +3,7 @@ import { captureResourceLayouts, resourceLayoutsChanged } from './captureResourc
 import { createSitePage } from '../../../shared/site-page'
 import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   mediaUrl,
   isPagePath,
@@ -28,7 +28,7 @@ import {
 } from './corePages'
 import { upgradeLegacyLegalPages } from './legacyLegal'
 import { CmsDraft, mergeCmsDocuments, restoreRevision } from './draft'
-import { normalizeMarqueeZoom } from './normalizeDocument'
+import { normalizeMarqueeZoom, unresolvedMarqueeZoom } from './normalizeDocument'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsEditorBoundary } from './EditorBoundary'
@@ -207,7 +207,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       .then(() => {
         if (stopped || currentDraft.current !== draft) return
         editor.current?.flush()
-        draft.change(ensureCorePages(draft.document))
+        // Recaptured strip markers make legacy zoom convertible only now.
+        draft.change(normalizeMarqueeZoom(ensureCorePages(draft.document)))
         setVersion((value) => value + 1)
       })
       .catch((reason: unknown) => {
@@ -255,6 +256,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       flush()
     }
   }, [])
+  const unresolvedZoom = useMemo(
+    () => (draft ? unresolvedMarqueeZoom(draft.document) : []),
+    [draft?.document],
+  )
 
   const commitDraft = (
     update: CmsDocument | ((current: CmsDocument) => CmsDocument),
@@ -450,11 +455,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           ? draft.document
           : remote,
     )
+    // Undo must reach the migrated remote, never its raw legacy zoom; the raw remote stays base.
     const next = new CmsDraft(
-      conflict.remote.document,
+      upgradeLegacyLegalPages(normalizeMarqueeZoom(remote)),
       conflict.remote.revision,
       conflict.remote.fingerprint,
     )
+    next.base = structuredClone(conflict.remote.document)
     next.change(normalizeMarqueeZoom(resolved))
     setDraft(next)
     setConflict(null)
@@ -762,6 +769,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           <button type="button" aria-label="Stäng meddelande" onClick={() => setNotice(null)}>
             <CmsIcon name="close" />
           </button>
+        </div>
+      )}
+      {unresolvedZoom.length > 0 && (
+        <div class="cms-notice" role="alert" inert={drawerOpen}>
+          <CmsIcon name="info" />
+          <span>
+            Barberarremsan i Om oss har en äldre zoom ({unresolvedZoom.join(', ')}) som inte kan
+            räknas om till kortbredd och lämnar tomrum i karusellen på mobilen. Välj remsan och
+            varje kort i mobilvyn, skriv zoom under Avancerad CSS med tomt värde och tryck Tillämpa.
+            Ändra sedan storleken igen.
+          </span>
         </div>
       )}
       {error && dialog !== 'new-page' && dialog !== 'backup' && (

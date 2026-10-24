@@ -3,21 +3,61 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
 import { emptyDocument } from '../../shared/cms.ts'
+import { minLoopScale } from '../../src/admin/cms/hierarchicalResize.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 1000 },
   contextOptions: { reducedMotion: 'reduce' },
 })
-test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir }) => {
-  const engine = browserName
+const groupSelector = '[data-knc-fold="barber-marquee"][data-knc-source]'
+
+const select = (page, selector) =>
+  page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const target = editor.getWrapper().find(selector)[0]
+    if (!target) throw new Error(`Missing target ${selector}`)
+    editor.select(target)
+  }, selector)
+const measure = (frame) =>
+  frame.locator(groupSelector).evaluate((group) => {
+    const rect = (node) => {
+      const r = node.getBoundingClientRect()
+      return { width: r.width, height: r.height, bottom: r.bottom, top: r.top }
+    }
+    const cards = [...group.children]
+    return {
+      group: rect(group),
+      cards: cards.map((card) => ({
+        id: card.id,
+        rect: rect(card),
+        // Embla positions slides by offsetWidth; zoom changes only the painted rect.
+        layoutWidth: card.offsetWidth,
+        photo: rect(
+          card.querySelector('img') ??
+            card.querySelector('[data-knc-surface]') ??
+            card.firstElementChild,
+        ),
+        text: card.textContent,
+      })),
+      next: rect(group.nextElementSibling),
+    }
+  })
+const height = async (page, value) => {
+  const input = page.locator('#cms-inspector .gjs-sm-property__height input').first()
+  await input.fill(String(Math.round(value)))
+  await input.press('Enter')
+  await input.press('Tab')
+}
+
+/** The Studio harness with the given active barbers on the published About page. */
+async function openStudio(page, context, ids) {
   const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
-  const out = evidenceDir
-  await mkdir(out, { recursive: true })
   context.setDefaultTimeout(10000)
   const seed = emptyDocument()
-  seed.barbers = ['a', 'b', 'c', 'd'].map((id, i) => ({
+  seed.barbers = ids.map((id, i) => ({
     id,
     name: `Barber ${id}`,
     ig: id,
@@ -44,46 +84,20 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
       },
     })
   })
-  const select = (selector) =>
-    page.evaluate(async (selector) => {
-      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const editor = cmsGrapes.editors.at(-1)
-      const target = editor.getWrapper().find(selector)[0]
-      if (!target) throw new Error(`Missing target ${selector}`)
-      editor.select(target)
-    }, selector)
-  const groupSelector = '[data-knc-fold="barber-marquee"][data-knc-source]'
-  let frame
-  const measure = () =>
-    frame.locator(groupSelector).evaluate((group) => {
-      const rect = (node) => {
-        const r = node.getBoundingClientRect()
-        return { width: r.width, height: r.height, bottom: r.bottom, top: r.top }
-      }
-      const cards = [...group.children]
-      return {
-        group: rect(group),
-        cards: cards.map((card) => ({
-          id: card.id,
-          rect: rect(card),
-          // Embla positions slides by offsetWidth; zoom changes only the painted rect.
-          layoutWidth: card.offsetWidth,
-          photo: rect(
-            card.querySelector('img') ??
-              card.querySelector('[data-knc-surface]') ??
-              card.firstElementChild,
-          ),
-          text: card.textContent,
-        })),
-        next: rect(group.nextElementSibling),
-      }
-    })
-  const height = async (value) => {
-    const input = page.locator('#cms-inspector .gjs-sm-property__height input').first()
-    await input.fill(String(Math.round(value)))
-    await input.press('Enter')
-    await input.press('Tab')
-  }
+  await page.goto(`${base}/tools/e2e/admin-harness.html`)
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  const frame = page.frameLocator('.gjs-frame').first()
+  await frame.locator(groupSelector).waitFor({ timeout: 90000 })
+  return { backend, frame }
+}
+
+test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir }) => {
+  const engine = browserName
+  const out = evidenceDir
+  await mkdir(out, { recursive: true })
+  const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
   // Mobile cards are Embla slides: a resize gives each card the requested layout width.
   const assertCardScale = (cards, reference, scale, message) => {
     for (const [index, card] of cards.entries()) {
@@ -97,22 +111,16 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
       )
     }
   }
-  await page.goto(`${base}/tools/e2e/admin-harness.html`)
-  await page.evaluate(async () =>
-    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
-  )
-  frame = page.frameLocator('.gjs-frame').first()
-  await frame.locator(groupSelector).waitFor({ timeout: 90000 })
-  const desktop = await measure()
+  const desktop = await measure(frame)
   await page.getByRole('button', { name: 'Mobil', exact: true }).click()
   await page.waitForFunction(
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
   )
-  const before = await measure()
+  const before = await measure(frame)
   assert.equal(before.cards.length, 4)
-  await select(groupSelector)
-  await height(before.group.height / 2)
-  const after = await measure()
+  await select(page, groupSelector)
+  await height(page, before.group.height / 2)
+  const after = await measure(frame)
   await writeFile(
     `${out}/${engine}-geometry.json`,
     JSON.stringify({ desktop, before, after }, null, 2),
@@ -133,14 +141,14 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     before.cards.map((card) => card.text),
   )
   await page.getByRole('button', { name: 'Ångra', exact: true }).click()
-  const undone = await measure()
+  const undone = await measure(frame)
   assert.ok(
     Math.abs(undone.cards[0].photo.height - before.cards[0].photo.height) < 2,
     'Undo restores nested geometry',
   )
-  await select(`${groupSelector} > div:first-child`)
-  await height(before.cards[0].rect.height * 0.75)
-  const linked = await measure()
+  await select(page, `${groupSelector} > div:first-child`)
+  await height(page, before.cards[0].rect.height * 0.75)
+  const linked = await measure(frame)
   assertCardScale(linked.cards, before.cards, 0.75, 'Card resize')
   assert.ok(
     linked.cards.every((card) => Math.abs(card.rect.height - linked.cards[0].rect.height) < 2),
@@ -159,7 +167,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await page.waitForFunction(
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 1440,
   )
-  const desktopAgain = await measure()
+  const desktopAgain = await measure(frame)
   await writeFile(
     `${out}/${engine}-desktop-roundtrip.json`,
     JSON.stringify({ desktop, desktopAgain }, null, 2),
@@ -174,7 +182,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
   )
   const assertRetainedScale = async (stage) => {
-    const actual = await measure()
+    const actual = await measure(frame)
     assert.ok(
       Math.abs(actual.cards[0].photo.height - linked.cards[0].photo.height) < 2,
       `${stage}: the rendered portrait retains its authored scale`,
@@ -234,4 +242,30 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   console.log(
     'PASS hierarchical resize: nested geometry, peers, undo, devices, themes and published reload',
   )
+})
+
+test('cms-hierarchical-resize: two barbers keep their loop width', async ({
+  page,
+  context,
+  evidenceDir,
+}) => {
+  await mkdir(evidenceDir, { recursive: true })
+  const { backend, frame } = await openStudio(page, context, ['a', 'b'])
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
+  )
+  const before = await measure(frame)
+  assert.equal(before.cards.length, 2)
+  await select(page, groupSelector)
+  await height(page, before.group.height / 2)
+  const after = await measure(frame)
+  await writeFile(`${evidenceDir}/two-barbers.json`, JSON.stringify({ before, after }, null, 2))
+  // Half-width cards would end Embla's loop and freeze the public strip.
+  for (const [index, card] of after.cards.entries())
+    assert.ok(
+      card.layoutWidth >= before.cards[index].layoutWidth * minLoopScale(2) - 1,
+      `Card ${index} shrank to ${card.layoutWidth}px of ${before.cards[index].layoutWidth}px`,
+    )
+  assert.equal(backend.writes.length, 0, 'Geometry inspection does not publish')
 })

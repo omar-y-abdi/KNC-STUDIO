@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
-import { marqueeCardWidth } from '../../src/admin/cms/hierarchicalResize.ts'
+import { marqueeCardWidth, minLoopScale } from '../../src/admin/cms/hierarchicalResize.ts'
 import { installBlankProbe, readBlankProbe } from './cms-marquee-probe.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -18,8 +18,8 @@ const cardWidth = (scale) =>
     `width:${marqueeCardWidth(scale)}!important;flex-basis:${marqueeCardWidth(scale)}!important`,
   )
 
-/** 90 s of AutoScroll on the fake clock with the given owner card CSS at 390 px. */
-async function measureStrip(newContext, css) {
+/** 90 s of AutoScroll on the fake clock with the given owner card CSS and roster at 390 px. */
+async function measureStrip(newContext, css, barbers = 4) {
   const context = await newContext({
     viewport: { width: 390, height: 844 },
     reducedMotion: 'no-preference',
@@ -28,10 +28,14 @@ async function measureStrip(newContext, css) {
   const page = await context.newPage()
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   await page.evaluate(
-    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css),
-    css,
+    async ([css, barbers]) =>
+      (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, barbers),
+    [css, barbers],
   )
-  await page.locator(`${strip} > [role="button"]`).nth(3).waitFor()
+  await page
+    .locator(`${strip} > [role="button"]`)
+    .nth(barbers - 1)
+    .waitFor()
   // Effects, Embla's setup and AutoScroll's 800 ms start delay all run on the fake clock.
   await context.clock.runFor(3000)
   await page.evaluate(installBlankProbe, strip)
@@ -48,20 +52,120 @@ test('mobile barber strip control: legacy card zoom leaves the viewport blank', 
   assert.ok(probe.maxBlank > MAX_BLANK + SEAM, `Card zoom left only ${probe.maxBlank} px blank`)
 })
 
-for (const scale of [0.7, 0.5])
-  test(`mobile barber strip: cards at ${scale} width keep the viewport covered while moving`, async ({
+// Each 10 s sample moved on from the one before.
+const moving = (probe) =>
+  probe.offsets.slice(1).every((value, index) => Math.abs(value - probe.offsets[index]) > 1)
+
+for (const [barbers, scale] of [
+  [4, 0.7],
+  [4, 0.5],
+  [3, minLoopScale(3)],
+  [2, minLoopScale(2)],
+])
+  test(`mobile barber strip: ${barbers} cards at ${scale} width keep the viewport covered while moving`, async ({
     newContext,
     evidenceDir,
   }) => {
-    const probe = await measureStrip(newContext, cardWidth(scale))
-    await writeFile(`${evidenceDir}/barber-strip-${scale}.json`, JSON.stringify(probe, null, 2))
+    const probe = await measureStrip(newContext, cardWidth(scale), barbers)
+    await writeFile(
+      `${evidenceDir}/barber-strip-${barbers}-${scale}.json`,
+      JSON.stringify(probe, null, 2),
+    )
     assert.ok(probe.samples >= 1800, `The probe sampled only ${probe.samples} times`)
     assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
-    assert.ok(
-      probe.offsets.slice(1).every((value, index) => Math.abs(value - probe.offsets[index]) > 1),
-      `The strip stopped moving (${probe.offsets.join(', ')})`,
-    )
+    assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
   })
+
+// Below these widths Embla alone drops loop and AutoScroll halts; the runtime floor keeps it looping.
+for (const [barbers, scale] of [
+  [2, 0.5],
+  [3, 0.3],
+])
+  test(`mobile barber strip: ${barbers} cards at ${scale} width, below their loop scale, still loop`, async ({
+    newContext,
+    evidenceDir,
+  }) => {
+    const probe = await measureStrip(newContext, cardWidth(scale), barbers)
+    await writeFile(
+      `${evidenceDir}/barber-strip-${barbers}-${scale}-floor.json`,
+      JSON.stringify(probe, null, 2),
+    )
+    assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+    assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
+  })
+
+test('mobile barber strip: the loop floor returns to the inline width once cards loop alone', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 3),
+    cardWidth(0.4),
+  )
+  const minWidths = () =>
+    page.evaluate(
+      (selector) =>
+        [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].map((card) => ({
+          value: card.style.getPropertyValue('min-width'),
+          priority: card.style.getPropertyPriority('min-width'),
+          width: card.offsetWidth,
+        })),
+      strip,
+    )
+  // 3 cards at 0.4 (146 px) cannot loop at 390 px; every slide gets the same wider floor.
+  await page.waitForFunction(
+    (selector) =>
+      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].every(
+        (card) => card.style.getPropertyPriority('min-width') === 'important',
+      ),
+    strip,
+  )
+  const floored = await minWidths()
+  assert.ok(
+    floored.every(
+      ({ value, width }) =>
+        value === floored[0]?.value && width === parseInt(value, 10) && width > 0.4 * 366 + 1,
+    ),
+    JSON.stringify(floored),
+  )
+  // Wider owner cards loop on their own: Embla's resize reInit drops the floor again.
+  await page.evaluate((css) => {
+    const style = globalThis.document.createElement('style')
+    style.textContent = css
+    globalThis.document.head.appendChild(style)
+  }, cardWidth(0.7))
+  await page.waitForFunction(
+    (selector) =>
+      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].every(
+        (card) => card.style.getPropertyPriority('min-width') === '',
+      ),
+    strip,
+  )
+  const natural = await minWidths()
+  assert.ok(
+    natural.every(({ value, width }) => value === '0px' && Math.abs(width - 0.7 * 366) < 1),
+    JSON.stringify(natural),
+  )
+})
+
+test('mobile barber strip: a single barber stays a static, fully visible card', async ({
+  newContext,
+  evidenceDir,
+}) => {
+  const probe = await measureStrip(newContext, '', 1)
+  await writeFile(`${evidenceDir}/barber-strip-1.json`, JSON.stringify(probe, null, 2))
+  assert.ok(
+    probe.offsets.every((value) => value === 0),
+    `One card moved (${probe.offsets.join(', ')})`,
+  )
+  // The lone card keeps 12 px margins on both sides.
+  assert.ok(probe.maxBlank <= 24 + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+})
 
 test('the gallery loop follows the width of its container', async ({ page }) => {
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)

@@ -15,14 +15,14 @@ const photos: readonly GalleryPhoto[] = [1, 2, 3].map((number) => ({
   alt: `Gallery fixture ${number}`,
 }))
 
-const barbers: BarbersPort = {
+const barbers = (count: number): BarbersPort => ({
   listActive: async () =>
-    ['A', 'B', 'C', 'D'].map((id) => ({
+    ['A', 'B', 'C', 'D'].slice(0, count).map((id) => ({
       barber: { id: asBarberId(`barber-${id}`), name: `Barber ${id}`, ig: id.toLowerCase() },
       copy: null,
       photoUrl: null,
     })),
-}
+})
 
 const reviews: ReviewsPort = {
   list: async () => [],
@@ -46,8 +46,9 @@ export function mountGallery(width: number): void {
   render(<GalleryMarquee photos={photos} alt="Gallery fixture" c={palette(false)} />, container)
 }
 
-/** The mobile About section with four barbers; `css` plays the owner's stored card styles. */
-export function mountBarberStrip(css: string): void {
+/** The mobile About section with 1-4 barbers; `css` plays the owner's stored card styles. */
+export function mountBarberStrip(css: string, count = 4): void {
+  if (count < 1 || count > 4) throw new Error(`The fixture has 1-4 barbers, not ${count}`)
   const style = document.createElement('style')
   style.textContent = css
   document.head.appendChild(style)
@@ -57,7 +58,7 @@ export function mountBarberStrip(css: string): void {
       lang="sv"
       mobile
       port={reviews}
-      barbersPort={barbers}
+      barbersPort={barbers(count)}
       aboutContentPort={{ overlay: async () => ({}) }}
       galleryPort={{ list: async () => [] }}
       challengeEnabled={false}

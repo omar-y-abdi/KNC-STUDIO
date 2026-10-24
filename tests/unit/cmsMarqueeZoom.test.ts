@@ -4,6 +4,7 @@ import { emptyDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
 import {
   normalizeMarqueeCardZoom,
   normalizeMarqueeZoom,
+  unresolvedMarqueeZoom,
 } from '../../src/admin/cms/normalizeDocument'
 
 const ids = { group: 'strip', cards: ['card-a', 'card-b'] }
@@ -48,6 +49,67 @@ describe('normalizeMarqueeCardZoom', () => {
         `@media (max-width:768px){#card-a{}}@media (max-width:768px){#card-a{width:${width('0.75')};flex-basis:${width('0.75')}}}`,
       ),
     )
+  })
+
+  it('lets an !important zoom win over a later one in either order', () => {
+    const half = `width:${width('0.5')}!important;flex-basis:${width('0.5')}!important`
+    expect(
+      normalizeMarqueeCardZoom(
+        '@media(max-width:768px){#card-a{zoom:.5!important}#card-a{zoom:1}}',
+        ids,
+      ),
+    ).toBe(css(`@media (max-width:768px){#card-a{${half}}#card-a{}}`))
+    expect(
+      normalizeMarqueeCardZoom(
+        '@media(max-width:768px){#card-a{zoom:.75}#card-a{zoom:.5!important}}',
+        ids,
+      ),
+    ).toBe(css(`@media (max-width:768px){#card-a{}#card-a{${half}}}`))
+    expect(
+      normalizeMarqueeCardZoom(
+        '@media(max-width:768px){#card-a{zoom:.5}#card-a{zoom:normal}}',
+        ids,
+      ),
+    ).toBe(css('@media (max-width:768px){#card-a{}#card-a{}}'))
+  })
+
+  it('resolves calc() over numbers before it removes the zoom', () => {
+    for (const value of ['calc(.5)', 'calc(1 / 2)', 'calc((1 - .5) * 1)', 'calc(0.25 * 2)'])
+      expect(
+        normalizeMarqueeCardZoom(`@media (max-width:768px){#card-a{zoom:${value}}}`, ids),
+      ).toBe(
+        css(`@media (max-width:768px){#card-a{width:${width('0.5')};flex-basis:${width('0.5')}}}`),
+      )
+  })
+
+  it('keeps CSS it cannot resolve byte for byte and reports the value', () => {
+    for (const source of [
+      '@media (max-width:768px){#card-a{zoom:var(--scale)}}',
+      '@media (max-width:768px){#strip{zoom:calc(50%)}#card-b{zoom:.5}}',
+      '@media (max-width:768px){#card-a{zoom:.5}#card-a{zoom:calc(1px / 2)}}',
+    ])
+      expect(normalizeMarqueeCardZoom(source, ids)).toBe(source)
+    const legacy = documentWith(
+      aboutPage('@media (max-width:768px){#strip{zoom:var(--scale)}#card-a{zoom:.5}}'),
+    )
+    expect(normalizeMarqueeZoom(legacy, () => ids)).toBe(legacy)
+    expect(unresolvedMarqueeZoom(legacy, () => ids)).toEqual(['var(--scale)'])
+    const overridden = documentWith(
+      aboutPage('@media (max-width:768px){#card-a{zoom:var(--scale)}#card-a{zoom:.5}}'),
+    )
+    expect(
+      unresolvedMarqueeZoom(
+        normalizeMarqueeZoom(overridden, () => ids),
+        () => ids,
+      ),
+    ).toEqual([])
+    const plain = documentWith(aboutPage('@media (max-width:768px){#card-a{zoom:.5!important}}'))
+    const unread = (): never => {
+      throw new Error('Plain zoom values are never parsed for the notice')
+    }
+    expect(unresolvedMarqueeZoom(plain, unread)).toEqual([])
+    const zero = documentWith(aboutPage('@media (max-width:768px){#card-a{zoom:0}}'))
+    expect(unresolvedMarqueeZoom(zero, () => ids)).toEqual(['0'])
   })
 
   it('drops an identity zoom without inventing a width', () => {
