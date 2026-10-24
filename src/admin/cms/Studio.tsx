@@ -277,9 +277,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setError(null)
     try {
       const request = draft.beginSave()
-      const checked = await cmsApi.validate(request.document)
+      // cms-studio validates and sanitizes the document as part of publication.
       const result = await cmsApi.publish(
-        checked.document,
+        request.document,
         request.baseRevision,
         request.baseFingerprint,
         request.requestId,
