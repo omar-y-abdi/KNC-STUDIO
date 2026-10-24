@@ -1,5 +1,5 @@
 begin;
-select plan(73);
+select plan(76);
 
 select ok(not has_table_privilege('anon', 'public.external_action_jobs', 'SELECT'),
   'anon cannot inspect external action jobs');
@@ -19,6 +19,12 @@ select ok(has_function_privilege('service_role', 'public.internal_queue_storage_
   'service role can durably queue emergency Storage cleanup');
 select ok(not has_function_privilege('authenticated', 'public.internal_queue_storage_deletion(text,text)', 'EXECUTE'),
   'authenticated cannot queue arbitrary Storage cleanup');
+select ok(not has_function_privilege('anon', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'anon cannot invoke orphaned Storage reconciliation');
+select ok(not has_function_privilege('authenticated', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'authenticated cannot invoke orphaned Storage reconciliation');
+select ok(not has_function_privilege('service_role', 'public.queue_orphaned_storage_objects()', 'EXECUTE'),
+  'service role cannot invoke scheduler-owned orphaned Storage reconciliation');
 select ok(not has_table_privilege('authenticated', 'public.gallery_images', 'INSERT'),
   'authenticated cannot bypass gallery upload gateway');
 select ok(not has_table_privilege('authenticated', 'public.gallery_images', 'UPDATE'),
