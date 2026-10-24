@@ -651,10 +651,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_orphan_cleanup_failed',
       retryable: true,
-    })
+    } satisfies Partial<ExternalActionError>)
 
     expect(queuePayloads).toEqual([
       {
@@ -899,10 +899,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_delete_failed',
       retryable: true,
-    })
+    } satisfies Partial<ExternalActionError>)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -933,10 +933,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_authorization_required',
       retryable: false,
-    })
+    } satisfies Partial<ExternalActionError>)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -977,7 +977,9 @@ describe('external action contract', () => {
         service,
         { googleClientId: undefined, googleClientSecret: undefined },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({ code: 'calendar_events_pending' })
+    ).rejects.toMatchObject({
+      code: 'calendar_events_pending',
+    } satisfies Partial<ExternalActionError>)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalled()
   })
