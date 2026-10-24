@@ -113,7 +113,17 @@ export function resourceReference(raw: string, policy: MarkupPolicy): MediaRef |
   }
   const ref = { bucket, path }
   if (!validMediaRef(ref)) reject('resource', 'Invalid storage reference')
-  return ref as MediaRef
+  // The database finds stored references by their literal spelling only (archived-media rule,
+  // usage and retention), so percent-encoding, dot segments or a different host spelling would
+  // hide the reference from it.
+  const media = ref as MediaRef
+  if (value !== storageUrl(media, policy)) reject('resource', NON_CANONICAL_RESOURCE)
+  return media
+}
+const NON_CANONICAL_RESOURCE =
+  'Bildadressen måste vara bibliotekets egen adress. Välj filen på nytt under Resurser.'
+function storageUrl(ref: MediaRef, policy: MarkupPolicy): string {
+  return `${policy.storageOrigin}/storage/v1/object/public/${ref.bucket}/${ref.path}`
 }
 export function safeLink(value: string, base: string): boolean {
   if (!value || hasControlOrSpace(value) || value.startsWith('//')) return false
@@ -178,6 +188,8 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
       const value = decodeCss(node.value)
       if (/^#[a-zA-Z][\w:.-]*$/.test(value)) return
       const ref = resourceReference(value, policy)
+      // Stylesheets are stored as authored: a CSS escape would hide the reference from SQL.
+      if (ref && !css.includes(storageUrl(ref, policy))) reject('css', NON_CANONICAL_RESOURCE)
       if (ref) refs.push(ref)
     }
   })

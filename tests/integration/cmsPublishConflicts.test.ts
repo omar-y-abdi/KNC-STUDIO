@@ -265,6 +265,18 @@ describe.sequential('CMS publication: hybrid archived-media rule', () => {
     await expectRejected(validation, 'okand-arkiverad.png')
   }, 30_000)
 
+  it('rejects a percent-encoded spelling that would hide an archived image from the rule', async () => {
+    const encoded = image(assets.unknown).replace('/images/', '/%69mages/')
+    expect(encoded).toContain('%69mages')
+    const response = await publish((document) =>
+      withPage(document, page(PAGE_B, '/it-arkiv-b', encoded)),
+    )
+    expect(response.status, await response.clone().text()).toBe(422)
+    const body = (await response.json()) as { error: string; message: string }
+    expect(body.error).toBe('invalid_content')
+    expect(body.message).toContain('Bildadressen måste vara bibliotekets egen adress')
+  }, 30_000)
+
   it('keeps an archived image on its existing structured key', async () => {
     await expectPublished(await publish((document) => document))
   }, 30_000)
