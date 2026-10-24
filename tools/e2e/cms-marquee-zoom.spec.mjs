@@ -131,7 +131,9 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   const capturePage = await captureContext.newPage()
   await mountStudio(capturePage)
   const { captured, ids } = await capturePage.evaluate(async () => {
-    const backup = (await import('/src/admin/cms/backup.ts')).loadBackup()
+    const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+    await session.flush()
+    const backup = await session.own()
     if (!backup) throw new Error('The CMS source was not captured')
     const about = backup.document.presentation.pages.find((page) => page.path === '/about')
     const ids = {}
