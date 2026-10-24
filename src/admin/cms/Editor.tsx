@@ -725,15 +725,24 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor || !props.active) return
-    const frame = editor.Canvas.getDocument()
-    if (!frame) return
-    let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
-    if (!style) {
-      style = frame.createElement('style')
-      style.id = 'cms-uploaded-fonts'
-      frame.head.appendChild(style)
+    const css = props.fontCss + siteThemeCss(props.presentation, props.mode)
+    // A frame load replaces the document, so the sheet is written again into each new head.
+    const apply = (): void => {
+      const frame = editor.Canvas.getDocument()
+      if (!frame) return
+      let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
+      if (!style) {
+        style = frame.createElement('style')
+        style.id = 'cms-uploaded-fonts'
+        frame.head.appendChild(style)
+      }
+      style.textContent = css
     }
-    style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
+    apply()
+    editor.on('canvas:frame:load:head', apply)
+    return () => {
+      editor.off('canvas:frame:load:head', apply)
+    }
   }, [props.active, props.fontCss, props.presentation.themes, props.mode])
 
   useEffect(() => {
