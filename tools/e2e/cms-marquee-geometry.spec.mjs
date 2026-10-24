@@ -6,8 +6,10 @@ import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
 const strip = '[data-knc-fold="barber-marquee"]'
-// Neighbouring cards keep 24 px margins each: beside a visible card at most two such gaps fit.
-const MAX_BLANK = 96
+// Neighbouring cards keep 24 px margins each.
+const GAP = 48
+// Beside a visible card of the usual widths at most two such gaps fit.
+const MAX_BLANK = 2 * GAP
 // Embla measures slides by whole-pixel offsetWidth, so its loop seam may open up to 1 px wider.
 const SEAM = 1
 
@@ -163,7 +165,10 @@ test('mobile barber strip: narrow 10vw cards spread by space-between still loop'
     `@media (max-width:768px){${strip}{justify-content:space-between!important}}`
   const probe = await measureStrip(newContext, css, 4)
   await writeFile(`${evidenceDir}/barber-strip-space-between.json`, JSON.stringify(probe, null, 2))
-  assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+  assert.ok(probe.looping, 'Embla dropped loop')
+  // The floor stops at 98 px, so three of the regular 48 px gaps fit in the viewport at once: bound
+  // the widest single hole by one gap, which a loop seam opening up would exceed.
+  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
