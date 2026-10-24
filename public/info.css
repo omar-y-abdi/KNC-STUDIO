@@ -1,10 +1,7 @@
-/* Small, script-free information pages; same warm neutral palette as the salon. */
+/* Document layout of the script-free information pages (.bb-doc inside a .bb-page). Colours and
+   the font come from /tokens.css; the Worker inlines both files before the stored legal CSS. */
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
-  line-height: 1.65;
-  color: #1c1c1e;
-  background: #f4f3f0;
 }
 * {
   box-sizing: border-box;
@@ -12,49 +9,43 @@
 body {
   margin: 0;
 }
-main {
+.bb-doc {
   max-width: 46rem;
   margin: auto;
   padding: 2.5rem 1.4rem 5rem;
+  line-height: 1.65;
 }
-nav {
+.bb-doc nav {
   margin-bottom: 2rem;
 }
-h1 {
+.bb-doc h1 {
   font-size: clamp(1.8rem, 5vw, 2.6rem);
   line-height: 1.2;
 }
-h2 {
+.bb-doc h2 {
   margin-top: 2rem;
   font-size: 1.25rem;
 }
-a {
+.bb-doc a {
   color: inherit;
   text-underline-offset: 0.2em;
 }
-a:hover {
+.bb-doc a:hover {
   text-decoration-thickness: 0.15em;
 }
-:focus-visible {
+.bb-doc :focus-visible {
   outline: 3px solid currentColor;
   outline-offset: 4px;
 }
-footer {
+.bb-doc footer {
   margin-top: 3rem;
   border-top: 1px solid currentColor;
   padding-top: 1rem;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f5f5f7;
-    background: #1c1c1e;
-  }
-}
-
-dt {
+.bb-doc dt {
   font-weight: 600;
 }
-dd {
+.bb-doc dd {
   margin: 0 0 0.75rem;
   overflow-wrap: anywhere;
 }
