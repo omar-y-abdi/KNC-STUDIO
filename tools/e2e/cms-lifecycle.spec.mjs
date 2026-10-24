@@ -44,6 +44,45 @@ const storedDrafts = (page) =>
       }),
   )
 
+// Whether a draft IndexedDB holds contains `text`.
+const draftHolds = (page, text) =>
+  page.evaluate(
+    (needle) =>
+      new Promise((resolve, reject) => {
+        const opening = indexedDB.open('knc-cms-drafts', 1)
+        opening.onerror = () => reject(opening.error)
+        opening.onsuccess = () => {
+          const request = opening.result.transaction('records').objectStore('records').getAll()
+          request.onerror = () => reject(request.error)
+          request.onsuccess = () => {
+            opening.result.close()
+            resolve(request.result.some((record) => record.document.includes(needle)))
+          }
+        }
+      }),
+    text,
+  )
+
+// Edits the first text of the canvas through the actual GrapesJS instance. The editor hands the
+// edit to the draft 180 ms later.
+const editCanvas = (page, text) =>
+  page.evaluate(async (value) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    if (!editor) throw new Error('Actual GrapesJS instance missing')
+    const component = editor
+      .getWrapper()
+      .find('*')
+      .find((item) => item.is('text') && item.getEl()?.textContent?.trim())
+    if (!component) throw new Error('No text in the canvas')
+    component.components(value)
+  }, text)
+
+// From here the page clock moves only when the test resumes it, so the editor's 180 ms and the
+// backup's 500 ms timers cannot fire: only the lifecycle handlers can save the edit.
+const pauseClock = async (page) =>
+  page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
 // The sanitised production presentation: its draft serializes to about 1.4 million characters.
@@ -124,6 +163,55 @@ test('cms-lifecycle an edit survives an immediate reload at production size', as
   await expect.poll(() => storedDrafts(page)).toEqual(['Omladdad direkt'])
 })
 
+test('cms-lifecycle a canvas edit survives an immediate reload at production size', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context, await productionDocument())
+  await page.clock.install()
+  await openStudio(page)
+  await pauseClock(page)
+  const text = 'Ändrad i canvas precis före omladdning'
+  await editCanvas(page, text)
+  await page.reload()
+  // The reloaded page starts with the clock paused too.
+  await page.clock.resume()
+  await openStudio(page)
+  await page.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
+  await expect.poll(() => draftHolds(page, text)).toBe(true)
+})
+
+// A phone hides the page before its tab is closed, and a hidden page lives on until IndexedDB
+// commits. (A desktop tab closed within about 500 ms of an edit can still lose that edit.)
+test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then closed', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context, await productionDocument())
+  await page.clock.install()
+  await openStudio(page)
+  await pauseClock(page)
+  const text = 'Ändrad i canvas innan fliken doldes'
+  await editCanvas(page, text)
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    })
+    globalThis.document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => draftHolds(page, text)).toBe(true)
+  await page.close()
+  await context.clock.resume()
+
+  const next = await context.newPage()
+  await openStudio(next)
+  await next.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = next.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  await next.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
+})
+
 test('cms-lifecycle a reload right after Publicera does not bring back the old backup', async ({
   page,
   context,
@@ -196,6 +284,47 @@ test('cms-lifecycle a failed capture keeps the assignment and guards Publicera',
     backend.document.gallery.map((row) => row.storage_path),
     [salonImage.path],
   )
+})
+
+// The published layouts never showed the image, but the draft's do: an assignment whose capture
+// worked, then a removal whose capture failed, leaves the data published and the layouts stale.
+test('cms-lifecycle Publicera captures again after a removal whose capture failed', async ({
+  page,
+  context,
+}) => {
+  const backend = await nativeBackend(context, emptyDocument(), [salonImage])
+  await openStudio(page)
+  await page
+    .locator('.cms-library-tabs')
+    .getByRole('button', { name: 'Resurser', exact: true })
+    .click()
+  await page.locator('.cms-resource-card button').filter({ hasText: salonImage.name }).click()
+  await page.getByRole('button', { name: 'Använd i utkastet', exact: true }).click()
+  await page
+    .getByText('Tilldelad i utkastet. Publicera för att visa ändringen.', { exact: true })
+    .waitFor({ timeout: 45000 })
+
+  const source = '**/cms-public/source?preview=1'
+  await context.route(source, (route) => route.abort())
+  await page.getByRole('button', { name: 'Dölj från sidan', exact: true }).click()
+  await page
+    .getByText('Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.', {
+      exact: true,
+    })
+    .waitFor({ timeout: 45000 })
+
+  const publish = page.getByRole('button', { name: 'Publicera', exact: true })
+  await publish.click()
+  await page
+    .getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)
+    .waitFor({ timeout: 45000 })
+  assert.equal(backend.writes.filter((write) => write === 'publish').length, 0)
+
+  await context.unroute(source)
+  await publish.click()
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+  assert.equal(backend.writes.filter((write) => write === 'publish').length, 1)
+  assert.deepEqual(backend.document.gallery, [])
 })
 
 test('cms-lifecycle a page-name edit stays a short task at production size', async ({
