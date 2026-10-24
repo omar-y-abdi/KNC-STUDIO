@@ -1,5 +1,5 @@
 begin;
-select plan(67);
+select plan(80);
 
 insert into auth.users(id,email) values
  ('96000000-0000-4000-8000-000000000001','cms-single-pass-owner@example.invalid');
@@ -256,6 +256,42 @@ select ok(not exists(select 1 from public.cms_revisions where revision=(select r
   'The old revision that pinned the raw paths is deleted then');
 select ok(public.internal_cms_media_retained('gallery','salon/Joe''s.webp'),
   'The head keeps the file it shows by its raw path in markup');
+-- A raw space does not end a scanned path, and an encoded end of the prefix trips on its own.
+select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(pg_temp.state()->'document',
+    '96000000-0000-4000-8000-0000000000c5','salon/Joe''s.webp'))$$,
+  'An old revision pins two legacy files by their raw paths again');
+create temporary table retention_repins as select revision from public.cms_site where id;
+update public.cms_revisions set created_at=now()-interval '31 days' where revision=(select revision from retention_repins);
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_gallery_row(pg_temp.without_gallery_row(
+    pg_temp.state()->'document','96000000-0000-4000-8000-0000000000c3'),'96000000-0000-4000-8000-0000000000c5'),
+    '<img src="/storage/v1/object/public/gallery/salon/legacy encod%65d.webp">'))$$,
+  'The head shows a file with a raw space and a later percent-encoding');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the encoding follows a raw space');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_repins)),
+  'The old revision that pins the raw paths survives the raw space');
+select ok(public.internal_cms_media_retained('gallery','salon/legacy encoded.webp'),
+  'The file the head spells after a raw space stays retained');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.state()->'document',
+    '<img src="/storage/v1/object/publi&#99;/gallery/salon/Joe&apos;s.webp">'))$$,
+  'The head shows a file only behind a storage prefix that ends encoded');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the head spells the end of the storage prefix encoded');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_repins)),
+  'The old revision that pins the raw paths survives the encoded prefix');
+select ok(public.internal_cms_media_retained('gallery','salon/Joe''s.webp'),
+  'The file behind the encoded prefix stays retained');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.state()->'document',
+    '<img srcset="/storage/v1/object/public/gallery/salon/legacy encoded.webp 2x" alt="Salongen">'))$$,
+  'The head shows a file by its raw path followed by a space and plain text');
+select set_config('test.expected_pruned',(select count(*) from public.cms_revisions r
+  where r.created_at<now()-interval '30 days'
+    and r.revision<>(select s.revision from public.cms_site s where s.id)
+    and r.revision<>(select max(n.revision) from public.cms_revisions n))::text,true);
+select is(public.prune_cms_revisions(),current_setting('test.expected_pruned')::integer,
+  'A raw path followed by a space and plain text does not stop the prune');
+select ok(not exists(select 1 from public.cms_revisions where revision=(select revision from retention_repins)),
+  'The old revision that pinned the raw paths again is deleted then');
+select ok(public.internal_cms_media_retained('gallery','salon/legacy encoded.webp'),
+  'The head keeps the file it shows by its raw path before a space');
 select ok((select p.prosecdef and p.proconfig=array['search_path=""'] from pg_proc p
     where p.oid='public.prune_cms_revisions()'::regprocedure),
   'The prune runs as its owner with an empty search_path');

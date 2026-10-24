@@ -150,19 +150,29 @@ declare
   v_pruned integer;
 begin
   -- internal_cms_media_retained finds a path only as a raw substring of a revision. A candidate runs
-  -- from a storage prefix in the head's JSON text to the next quote (the escaped \" included),
-  -- whitespace or angle bracket, so no filename punctuation ends it. While a candidate holds a
-  -- percent-encoding, any other JSON escape (a backslash, a tab, a newline) or an HTML character
-  -- reference other than &quot;, the head may spell a path, bucket included, that the browser
-  -- decodes; an older revision may hold the only raw copy that keeps the file, so nothing is pruned.
-  -- A head that quotes a storage URL with &apos; therefore keeps every revision as well.
+  -- from a storage prefix in the head's JSON text to the next quote (the escaped \" included) or
+  -- angle bracket, so neither filename punctuation nor a raw space ends it. While a candidate holds
+  -- a percent-encoding, any other JSON escape (a backslash, a tab, a newline) or an HTML character
+  -- reference other than &quot;, or the head spells the end of the prefix (/object/publi) any other
+  -- way than raw, the head may spell a path, bucket included, that the browser decodes; an older
+  -- revision may hold the only raw copy that keeps the file, so nothing is pruned. A head that
+  -- quotes a storage URL with &apos;, or encodes a query string after it, keeps every revision too.
+  -- Not detected: an encoding earlier in the prefix, such as stor%61ge. No editor or tool writes
+  -- one. The placement filter does not recognise such a URL either, so a publication is not refused
+  -- for it; the residual is accepted.
   if exists (
     select 1
     from public.cms_site s
     join public.cms_revisions head on head.revision = s.revision
-    cross join lateral regexp_matches(head.document::text,
-      '/storage/v1/object/public/(([^"\s<>\\]|\\[^"])*)', 'g') as candidate(parts)
-    where s.id and candidate.parts[1] ~ '%[0-9A-Fa-f]{2}|\\[^"]|&(?!quot;)'
+    where s.id and (
+      head.document::text ~ '/object/publi(?!c/)'
+      or exists (
+        select 1
+        from regexp_matches(head.document::text,
+          '/storage/v1/object/public/(([^"<>\\]|\\[^"])*)', 'g') as candidate(parts)
+        where candidate.parts[1] ~ '%[0-9A-Fa-f]{2}|\\[^"]|&(?!quot;)'
+      )
+    )
   ) then
     raise warning 'CMS revisions not pruned: the head spells a storage path encoded';
     return 0;
