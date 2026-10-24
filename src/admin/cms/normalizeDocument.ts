@@ -208,6 +208,27 @@ export function normalizeMarqueeZoom(
   return JSON.stringify(next) === JSON.stringify(document) ? document : next
 }
 
+/** True when some zoom declaration is more than a positive number, percentage or identity
+ * keyword; only such values can stay unresolved, so Studio skips parsing everything else. */
+function hasComplexZoom(css: string): boolean {
+  for (const match of css.matchAll(/zoom\s*:/gi)) {
+    const start = match.index + match[0].length
+    const ends = [css.indexOf(';', start), css.indexOf('}', start)].filter((end) => end >= 0)
+    const value = css
+      .slice(start, ends.length ? Math.min(...ends) : undefined)
+      .trim()
+      .replace(/!\s*important$/i, '')
+      .trim()
+      .toLowerCase()
+    const plain =
+      value === 'normal' ||
+      value === 'reset' ||
+      (/^[0-9.]+%?$/.test(value) && Number(value.replace('%', '')) > 0)
+    if (!plain) return true
+  }
+  return false
+}
+
 /** Strip and card zoom that normalizeMarqueeZoom had to keep because its value is not a number,
  * a percentage or calc() over numbers (for example var(--scale)). The owner removes it by hand. */
 export function unresolvedMarqueeZoom(
@@ -218,7 +239,7 @@ export function unresolvedMarqueeZoom(
   for (const page of document.presentation.pages) {
     if (page.path !== '/about') continue
     for (const variant of Object.values(page.content)) {
-      const sheets = [variant.css.light, variant.css.dark].filter((css) => css.includes('zoom'))
+      const sheets = [variant.css.light, variant.css.dark].filter(hasComplexZoom)
       const ids = sheets.length ? read(variant.html) : null
       if (!ids) continue
       for (const css of sheets)

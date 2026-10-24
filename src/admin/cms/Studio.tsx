@@ -1121,9 +1121,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           type="button"
           onClick={() => {
             editor.current?.flush()
-            if (!draft.undo()) return
-            draft.document = normalizeMarqueeZoom(draft.document)
-            setVersion((v) => v + 1)
+            if (draft.undo()) setVersion((v) => v + 1)
           }}
         >
           <CmsIcon name="undo" />
@@ -1133,9 +1131,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           type="button"
           onClick={() => {
             editor.current?.flush()
-            if (!draft.redo()) return
-            draft.document = normalizeMarqueeZoom(draft.document)
-            setVersion((v) => v + 1)
+            if (draft.redo()) setVersion((v) => v + 1)
           }}
         >
           <CmsIcon name="redo" />

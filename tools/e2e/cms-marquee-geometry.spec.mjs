@@ -76,14 +76,81 @@ for (const [barbers, scale] of [
     assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
   })
 
-test('mobile barber strip control: two cards below their loop scale freeze', async ({
+// Below these widths Embla alone drops loop and AutoScroll halts; the runtime floor keeps it looping.
+for (const [barbers, scale] of [
+  [2, 0.5],
+  [3, 0.3],
+])
+  test(`mobile barber strip: ${barbers} cards at ${scale} width, below their loop scale, still loop`, async ({
+    newContext,
+    evidenceDir,
+  }) => {
+    const probe = await measureStrip(newContext, cardWidth(scale), barbers)
+    await writeFile(
+      `${evidenceDir}/barber-strip-${barbers}-${scale}-floor.json`,
+      JSON.stringify(probe, null, 2),
+    )
+    assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+    assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
+  })
+
+test('mobile barber strip: the loop floor returns to the inline width once cards loop alone', async ({
   newContext,
-  evidenceDir,
 }) => {
-  // Embla drops loop when the other card cannot cover the view; AutoScroll then halts at the end.
-  const probe = await measureStrip(newContext, cardWidth(0.5), 2)
-  await writeFile(`${evidenceDir}/barber-strip-2-0.5.json`, JSON.stringify(probe, null, 2))
-  assert.ok(!moving(probe), `Two half-width cards kept moving (${probe.offsets.join(', ')})`)
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 3),
+    cardWidth(0.4),
+  )
+  const minWidths = () =>
+    page.evaluate(
+      (selector) =>
+        [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].map((card) => ({
+          value: card.style.getPropertyValue('min-width'),
+          priority: card.style.getPropertyPriority('min-width'),
+          width: card.offsetWidth,
+        })),
+      strip,
+    )
+  // 3 cards at 0.4 (146 px) cannot loop at 390 px; every slide gets the same wider floor.
+  await page.waitForFunction(
+    (selector) =>
+      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].every(
+        (card) => card.style.getPropertyPriority('min-width') === 'important',
+      ),
+    strip,
+  )
+  const floored = await minWidths()
+  assert.ok(
+    floored.every(
+      ({ value, width }) =>
+        value === floored[0]?.value && width === parseInt(value, 10) && width > 0.4 * 366 + 1,
+    ),
+    JSON.stringify(floored),
+  )
+  // Wider owner cards loop on their own: Embla's resize reInit drops the floor again.
+  await page.evaluate((css) => {
+    const style = globalThis.document.createElement('style')
+    style.textContent = css
+    globalThis.document.head.appendChild(style)
+  }, cardWidth(0.7))
+  await page.waitForFunction(
+    (selector) =>
+      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].every(
+        (card) => card.style.getPropertyPriority('min-width') === '',
+      ),
+    strip,
+  )
+  const natural = await minWidths()
+  assert.ok(
+    natural.every(({ value, width }) => value === '0px' && Math.abs(width - 0.7 * 366) < 1),
+    JSON.stringify(natural),
+  )
 })
 
 test('mobile barber strip: a single barber stays a static, fully visible card', async ({

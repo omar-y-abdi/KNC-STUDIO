@@ -103,6 +103,13 @@ describe('normalizeMarqueeCardZoom', () => {
         () => ids,
       ),
     ).toEqual([])
+    const plain = documentWith(aboutPage('@media (max-width:768px){#card-a{zoom:.5!important}}'))
+    const unread = (): never => {
+      throw new Error('Plain zoom values are never parsed for the notice')
+    }
+    expect(unresolvedMarqueeZoom(plain, unread)).toEqual([])
+    const zero = documentWith(aboutPage('@media (max-width:768px){#card-a{zoom:0}}'))
+    expect(unresolvedMarqueeZoom(zero, () => ids)).toEqual(['0'])
   })
 
   it('drops an identity zoom without inventing a width', () => {
