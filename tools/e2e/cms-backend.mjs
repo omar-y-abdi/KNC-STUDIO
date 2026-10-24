@@ -118,7 +118,9 @@ function uploadedAsset(form) {
 
 /**
  * Options: `usages` overrides asset_usage per asset id; `delay` ({ operation, started, done })
- * holds the first matching request ('upload' for upload-image) until `done` resolves.
+ * holds the first matching request ('upload' for upload-image) until `done` resolves;
+ * `objects` lists the storage objects ({ bucket, path }) that exist, by default one for every
+ * registered asset.
  */
 export async function nativeBackend(
   context,
@@ -147,6 +149,8 @@ export async function nativeBackend(
       (asset) => !supplied.some((item) => mediaKey(item) === mediaKey(asset)),
     ),
   ]
+  // storage.objects, kept apart from cms_assets: the registry row and the bytes can drift apart.
+  const objects = new Set((options.objects ?? assets).map(mediaKey))
   const policy = {
     siteOrigin: new URL(base).origin,
     storageOrigin: STORAGE_ORIGIN,
@@ -165,7 +169,8 @@ export async function nativeBackend(
     options.delay.started.release()
     await options.delay.done.promise
   }
-  // validate and publish share the Edge pipeline in cms-studio/index.ts.
+  // validate and publish share the Edge pipeline in cms-studio/index.ts; internal_cms_missing_media
+  // requires both the registry row and the storage object.
   const validated = (body) => {
     const candidate = globalThis.structuredClone(body.document)
     validateCompleteDocument(candidate, document)
@@ -173,7 +178,7 @@ export async function nativeBackend(
     validateDocumentMedia(candidate, assets, markup)
     const registeredKeys = new Set(assets.map(mediaKey))
     const references = [...documentMedia(candidate), ...markup.map(({ ref }) => ref)]
-    if (references.some((ref) => !registeredKeys.has(mediaKey(ref))))
+    if (references.some((ref) => !registeredKeys.has(mediaKey(ref)) || !objects.has(mediaKey(ref))))
       throw new CmsValidationError('media', MISSING_MEDIA)
     validateCompleteDocument(candidate, document)
     return { candidate, markup }
@@ -230,6 +235,7 @@ export async function nativeBackend(
       return { status: 422, value: RULE_REJECTED }
     if (body.action === 'delete') {
       assets = assets.filter((item) => item.id !== asset.id)
+      objects.delete(mediaKey(asset))
       return { value: { deleted: true, id: asset.id, usage: references } }
     }
     const next = {
@@ -282,6 +288,7 @@ export async function nativeBackend(
       headers: { 'content-type': request.headers()['content-type'] },
     }).formData()
     const asset = uploadedAsset(form)
+    objects.add(mediaKey(asset))
     assets = [asset, ...assets]
     return { value: { ok: true, asset } }
   }
