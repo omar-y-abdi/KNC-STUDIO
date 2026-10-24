@@ -372,19 +372,20 @@ const legalContents = async (studio, expected) =>
   )
 
 // Adopting an imported document or a server head runs ensureCorePages, which writes each core page's
-// html back as a DOMParser body.innerHTML: the whitespace before the first element is dropped. The
-// local draft restore below skips it, so that test compares the upgraded content byte for byte.
-const adoptedContents = (page, contents) =>
-  page.evaluate(async (contents) => {
-    const { ensureCorePages } = await import('/src/admin/cms/corePages.ts')
-    const pages = Object.entries(contents).map(([path, content]) => ({ path, content }))
-    return Object.fromEntries(
-      ensureCorePages({ presentation: { pages } }, pages).presentation.pages.map((item) => [
-        item.path,
-        item.content,
-      ]),
-    )
-  }, contents)
+// html back as a DOMParser body.innerHTML: the whitespace before the first element is dropped and
+// nothing else may change. The local draft restore below skips it and compares byte for byte.
+const adoptedContents = (contents) =>
+  Object.fromEntries(
+    Object.entries(contents).map(([path, content]) => [
+      path,
+      Object.fromEntries(
+        Object.entries(content).map(([lang, variant]) => [
+          lang,
+          { ...variant, html: variant.html.replace(/^\s+/, '') },
+        ]),
+      ),
+    ]),
+  )
 
 // A local draft saved before the legal upgrade at the server's own revision is restored without a
 // merge; the recovered draft still gets the upgrade and keeps the owner's other edits.
@@ -420,7 +421,7 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
 // An exported JSON draft from before the legal upgrade imports with the upgrade applied.
 test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, studio }) => {
   const { draft, expected } = preUpgradeDraft((await savedBackup(page)).document)
-  const imported = await adoptedContents(page, expected)
+  const imported = adoptedContents(expected)
   await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
   await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
     name: 'pre-upgrade.json',
@@ -444,7 +445,7 @@ test('legal upgrade survives conflict resolution, Undo and Redo', async ({ page,
       .filter((page) => page.path in upgradedHead)
       .map((page) => [page.path, page.content]),
   )
-  const serverHead = await adoptedContents(page, upgradedHead)
+  const serverHead = adoptedContents(upgradedHead)
   // Another session publishes the legacy pages, so this draft's next publication is stale.
   await page.evaluate(
     async ({ legacyHead, revision, fingerprint }) =>
