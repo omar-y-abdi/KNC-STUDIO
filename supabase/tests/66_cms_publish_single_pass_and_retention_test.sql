@@ -1,5 +1,5 @@
 begin;
-select plan(33);
+select plan(37);
 
 insert into auth.users(id,email) values
  ('96000000-0000-4000-8000-000000000001','cms-single-pass-owner@example.invalid');
@@ -116,6 +116,8 @@ update public.cms_revisions set created_at=now()-interval '60 days' where revisi
 update public.cms_revisions set created_at=now()-interval '31 days' where revision=(select revision from retention_old);
 update public.cms_revisions set created_at=now()-interval '29 days' where revision=(select revision from retention_young);
 update public.cms_revisions set created_at=now()-interval '45 days' where revision=(select revision from retention_head);
+insert into public.cms_revisions(revision,created_at,document,fingerprint,summary)
+select revision+1000,now()-interval '90 days','{}','newest-test','Newest revision' from retention_head;
 select set_config('test.storage_deletions',pg_temp.storage_deletions()::text,true);
 select set_config('test.expected_pruned',(select count(*) from public.cms_revisions
   where revision<=(select revision from retention_old))::text,true);
@@ -130,10 +132,22 @@ select ok(exists(select 1 from public.cms_revisions where revision=(select revis
   'A revision younger than 30 days survives');
 select ok(exists(select 1 from public.cms_revisions r join public.cms_site s on s.id and r.revision=s.revision),
   'The head, which is the published revision, survives although older than 30 days');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision+1000 from retention_head)),
+  'The newest revision survives although older than 30 days');
 select is((select count(*)::int from public.cms_revision_media where revision<=(select revision from retention_old)),0,
   'Pruned revisions leave no media index rows');
 select is(pg_temp.storage_deletions(),current_setting('test.storage_deletions')::bigint,
   'Pruning queues no Storage deletion');
+select ok(public.queue_orphaned_storage_objects()>=1,'The nightly reconcile runs after the prune');
+select is((select count(*)::int from public.external_action_jobs j
+    where j.action_type='storage_object_delete'
+      and (j.dedupe_key='gallery:salon/legacy head.webp'
+        or j.dedupe_key in (select m.bucket || ':' || m.path from public.cms_revision_media m
+          where m.revision=(select revision from retention_head)))),0,
+  'The nightly reconcile after a prune queues no file the head references');
+select is((select count(*)::int from public.external_action_jobs
+    where action_type='storage_object_delete' and dedupe_key='gallery:salon/legacy old only.webp'),1,
+  'The nightly reconcile queues the legacy file that only pruned revisions showed');
 select ok((select bool_and(public.internal_cms_media_retained(m.bucket,m.path)) from public.cms_revision_media m
     where m.revision=(select revision from retention_head)),
   'Every file the head references stays retained');

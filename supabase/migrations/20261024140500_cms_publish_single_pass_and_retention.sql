@@ -6,8 +6,8 @@
 -- signature, the grants and the returned state (revision, fingerprint, request identity, document)
 -- are unchanged, so cms-studio calls it exactly as before.
 --
--- Decision 24: a daily pg_cron job deletes CMS revisions older than 30 days, never the head. The head
--- is cms_site.revision, which is also the published revision. Deleting a revision cascades only to
+-- Decision 24: a daily pg_cron job deletes CMS revisions older than 30 days, never the head or the
+-- newest revision. The head is cms_site.revision, which is also the published revision. Deleting a revision cascades only to
 -- its cms_revision_media rows; no trigger runs on delete and nothing is queued for Storage. A file
 -- that only pruned revisions referenced loses that retention: an unregistered legacy file becomes an
 -- orphan for the daily reconciler, a library asset becomes deletable by the owner. Restore points
@@ -21,6 +21,8 @@ begin;
 
 -- Body from 20261024043000_cms_conflicts_and_archived_media.sql (internal_cms_publish_unchecked).
 -- Changed: the archived-media rule of the former wrapper runs right after the stale-base check.
+-- Validation still runs before the lock, so a document that is both malformed and stale gets 22023
+-- where the former wrapper answered PT409.
 create or replace function public.internal_cms_publish(p_actor uuid,p_document jsonb,p_base_revision bigint,p_base_fingerprint text,p_request_id uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare v_head bigint; v_before jsonb; v_after jsonb; v_previous public.cms_revisions%rowtype; row_data jsonb; pair record; cell record; v_current_ids text[]; v_new_ids text[];
@@ -132,8 +134,10 @@ comment on function public.internal_cms_publish(uuid,jsonb,bigint,text,uuid) is
 
 drop function public.internal_cms_publish_unchecked(uuid,jsonb,bigint,text,uuid);
 
--- The head only ever advances to a revision inserted in the same transaction, so a publication
--- that commits during the delete cannot make it reach the new head.
+-- Owner decision 24. A request identity replays its revision only inside the 30-day window; a
+-- trashed asset that only pruned revisions referenced becomes deletable. The head only ever advances
+-- to a revision inserted in the same transaction, so a publication that commits during the delete
+-- cannot make it reach the new head.
 create function public.prune_cms_revisions()
 returns integer
 language sql
@@ -144,6 +148,7 @@ as $$
     delete from public.cms_revisions r
     where r.created_at < pg_catalog.now() - interval '30 days'
       and r.revision <> (select s.revision from public.cms_site s where s.id)
+      and r.revision <> (select max(newest.revision) from public.cms_revisions newest)
     returning 1
   )
   select count(*)::integer from pruned;
