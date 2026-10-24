@@ -7,7 +7,8 @@
 -- are unchanged, so cms-studio calls it exactly as before.
 --
 -- Decision 24: a daily pg_cron job deletes CMS revisions older than 30 days, never the head or the
--- newest revision. The head is cms_site.revision, which is also the published revision. Deleting a revision cascades only to
+-- newest revision, and nothing at all while the head spells a storage path encoded. The head is
+-- cms_site.revision, which is also the published revision. Deleting a revision cascades only to
 -- its cms_revision_media rows; no trigger runs on delete and nothing is queued for Storage. A file
 -- that only pruned revisions referenced loses that retention: an unregistered legacy file becomes an
 -- orphan for the daily reconciler, a library asset becomes deletable by the owner. Restore points
@@ -22,7 +23,8 @@ begin;
 -- Body from 20261024043000_cms_conflicts_and_archived_media.sql (internal_cms_publish_unchecked).
 -- Changed: the archived-media rule of the former wrapper runs right after the stale-base check.
 -- Validation still runs before the lock, so a document that is both malformed and stale gets 22023
--- where the former wrapper answered PT409.
+-- where the former wrapper answered PT409. The owner is checked once, before the lock; B2 also
+-- re-checked it after the lock.
 create or replace function public.internal_cms_publish(p_actor uuid,p_document jsonb,p_base_revision bigint,p_base_fingerprint text,p_request_id uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare v_head bigint; v_before jsonb; v_after jsonb; v_previous public.cms_revisions%rowtype; row_data jsonb; pair record; cell record; v_current_ids text[]; v_new_ids text[];
@@ -140,10 +142,23 @@ drop function public.internal_cms_publish_unchecked(uuid,jsonb,bigint,text,uuid)
 -- cannot make it reach the new head.
 create function public.prune_cms_revisions()
 returns integer
-language sql
+language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_pruned integer;
+begin
+  -- internal_cms_media_retained finds a path only as a raw substring of a revision. While the head
+  -- spells a storage path, bucket included, percent-encoded, CSS-escaped or with an HTML character
+  -- reference, an older revision may hold the only raw copy that keeps the file, so nothing is pruned.
+  if exists (
+    select 1 from public.cms_site s join public.cms_revisions head on head.revision = s.revision
+    where s.id and head.document::text ~ '/storage/v1/object/public/[^\\"''()<>?#%&]*(%[0-9A-Fa-f]{2}|\\\\|&(?!quot;|apos;)(#|[A-Za-z][A-Za-z0-9]*;))'
+  ) then
+    raise warning 'CMS revisions not pruned: the head spells a storage path encoded';
+    return 0;
+  end if;
   with pruned as (
     delete from public.cms_revisions r
     where r.created_at < pg_catalog.now() - interval '30 days'
@@ -151,7 +166,9 @@ as $$
       and r.revision <> (select max(newest.revision) from public.cms_revisions newest)
     returning 1
   )
-  select count(*)::integer from pruned;
+  select count(*)::integer into v_pruned from pruned;
+  return v_pruned;
+end;
 $$;
 revoke all on function public.prune_cms_revisions() from public,anon,authenticated,service_role;
 
