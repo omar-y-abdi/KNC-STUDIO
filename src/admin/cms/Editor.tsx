@@ -55,7 +55,8 @@ import { isSitePage, renderSitePage, createSitePage } from '../../../shared/site
 
 export interface EditorHandle {
   flush: () => void
-  fit: () => number
+  /** The fitted zoom; undefined while the canvas has no frame yet. */
+  fit: () => number | undefined
 }
 
 interface Props {
@@ -141,7 +142,10 @@ function label(component: Component | null): string {
   return `${tag}${id ? ` · #${id}` : ''}`
 }
 
-function fitEditor(editor: Editor): number {
+/** Fits the canvas and returns its zoom; undefined before GrapesJS has created the frame. */
+function fitEditor(editor: Editor): number | undefined {
+  // GrapesJS creates the frame when it loads the project, in a later task; fitViewport reads it.
+  if (!editor.Canvas.getBody()) return undefined
   // Device dimensions describe the page, not the space around the editor.
   // Fit changes only scale; changing height also changes vh units and breakpoints.
   editor.Canvas.fitViewport({
@@ -529,8 +533,9 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('updateBefore', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
     const fit = (): void => {
-      if (!editor.Canvas.getBody()) return
-      latest.current.onZoom(fitEditor(editor))
+      const zoom = fitEditor(editor)
+      if (zoom === undefined) return
+      latest.current.onZoom(zoom)
       const device = editor.Devices.getSelected()
       const frame = editor.Canvas.getWindow()
       if (
@@ -798,7 +803,9 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
     changingDevice.current ||= editor.getDevice() !== props.device
     editor.setDevice(props.device)
-    latest.current.onZoom(fitEditor(editor))
+    // Before the frame exists, the editor's load handler fits it.
+    const zoom = fitEditor(editor)
+    if (zoom !== undefined) latest.current.onZoom(zoom)
   }, [props.active, props.device])
 
   useEffect(() => {
