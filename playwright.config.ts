@@ -38,6 +38,8 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'admin-shared.spec.mjs',
             'public-smoke.spec.mjs',
             'visual.spec.mjs',
+            'visual-stored.spec.mjs',
+            'id-coverage.spec.mjs',
             'upload-budget.spec.mjs',
             'turnstile-layout.spec.mjs',
             'network-guard.spec.mjs',
