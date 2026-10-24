@@ -42,4 +42,15 @@ describe('upload image runtime dependency', () => {
     expect(multipartBranch).toBeGreaterThan(deleteBranch)
     expect(initialization).toBeGreaterThan(multipartBranch)
   })
+
+  // Upload keys are `<prefix>/<uuid>.webp`, so a stored object never changes: PERF-11.
+  it('stores every uploaded object with the one-year cache lifetime of its immutable key', () => {
+    const uploadOptions = (file: string): string =>
+      /\.upload\(path, processed, \{([^}]*)\}/.exec(
+        readFileSync(`supabase/functions/upload-image/${file}`, 'utf8'),
+      )?.[1] ?? ''
+
+    expect(uploadOptions('index.ts')).toContain("cacheControl: '31536000'")
+    expect(uploadOptions('cmsUpload.ts')).toContain("cacheControl: '31536000'")
+  })
 })
