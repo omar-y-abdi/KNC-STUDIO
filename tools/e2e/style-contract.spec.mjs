@@ -124,14 +124,19 @@ for (const scheme of ['light', 'dark']) {
             presentation: presentations[target.presentation],
             shell,
           })
-        // The held chunk never settles, and whether a pending module request delays the load event
-        // differs by engine, so the fallback waits for its own ready text instead.
+        // The held chunk never settles. WebKit keeps the document loading while a module request is
+        // pending, so neither the load event nor document.fonts.ready (which WebKit resolves only
+        // after it) ever comes: the fallback waits for its own ready text and the faces it lays out.
         await page.goto(
           `${publicOrigin}${target.url}`,
           target.holdAdminChunk ? { waitUntil: 'domcontentloaded' } : {},
         )
         await page.locator(target.ready).first().waitFor()
-        await page.evaluate(() => globalThis.document.fonts.ready)
+        if (target.holdAdminChunk)
+          await page.waitForFunction(() =>
+            [...globalThis.document.fonts].every((face) => face.status !== 'loading'),
+          )
+        else await page.evaluate(() => globalThis.document.fonts.ready)
         // The before/after pair of the legal pages, for review (not compared).
         if (target.presentation)
           await page.screenshot({ path: `${evidenceDir}/${scheme}.png`, fullPage: true })
