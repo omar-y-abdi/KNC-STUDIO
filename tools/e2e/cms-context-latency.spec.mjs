@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 1000 } })
 test('cms-context-latency', async ({ page, context, evidenceDir }) => {
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
+  const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
   const out = evidenceDir
   await mkdir(out, { recursive: true })

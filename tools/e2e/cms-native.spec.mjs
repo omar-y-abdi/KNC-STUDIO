@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   colorScheme: 'light',
@@ -9,7 +10,7 @@ test.use({
 })
 test('cms-native', async ({ page, context, browserName, evidenceDir }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context)
   const errors = []

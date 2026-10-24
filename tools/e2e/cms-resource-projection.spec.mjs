@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from './fixtures.mjs'
-const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
+import { harnessOrigin } from './origins.mjs'
+const base = harnessOrigin
 assert.equal(new URL(base).hostname, '127.0.0.1')
 
 test('cms-resource-projection', async ({ page }) => {

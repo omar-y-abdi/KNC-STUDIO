@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 900 } })
 test('cms-resource-usage', async ({ page }) => {
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
+  const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
   page.setDefaultTimeout(5000)
   let attempts = 0

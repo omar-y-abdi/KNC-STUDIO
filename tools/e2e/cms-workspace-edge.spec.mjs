@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.describe.configure({ timeout: 900_000 })
 
 test.use({
@@ -11,7 +12,7 @@ test.use({
 })
 test('cms-workspace-edge', async ({ page, context, browserName, evidenceDir }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   const out = evidenceDir
   await mkdir(out, { recursive: true })
   const checks = []

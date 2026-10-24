@@ -1,7 +1,8 @@
 import { test, expect } from './fixtures.mjs'
 import { installPublicBackend } from './public-fixtures.mjs'
+import { publicOrigin } from './origins.mjs'
 
-const base = process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:4173'
+const base = publicOrigin
 for (const viewport of [
   { device: 'desktop', width: 1280, height: 900 },
   { device: 'mobile', width: 390, height: 844 },
