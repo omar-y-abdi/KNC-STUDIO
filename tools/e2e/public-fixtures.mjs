@@ -13,7 +13,7 @@
 
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
-import { customerGatewayAnswer, isCustomerGatewayUrl } from './customer-gateway.mjs'
+import { gatewayAnswerOf, gatewayRefusalReason, isCustomerGatewayUrl } from './customer-gateway.mjs'
 import { guardOf } from './network-guard.mjs'
 import { installEmptyCmsPresentation } from './public-first-paint.mjs'
 
@@ -212,17 +212,13 @@ async function installCustomerGateway(context) {
   const guard = guardOf(context)
   await context.route(isCustomerGatewayUrl, (route) => {
     const request = route.request()
-    const payload = request.postDataJSON()
-    const body = customerGatewayAnswer(payload)
+    const body = gatewayAnswerOf(() => request.postDataJSON())
     if (body !== undefined) return route.fulfill({ json: body })
-    const action = JSON.stringify(payload?.action)
-    // Field names only: a posted access token must not reach a failure message.
-    const fields = Object.keys(payload ?? {}).join(', ')
     guard.record({
       channel: 'request',
       method: request.method(),
       url: request.url(),
-      reason: `unfixtured-harness-request (customer gateway action ${action}, fields: ${fields})`,
+      reason: gatewayRefusalReason(() => request.postDataJSON()),
     })
     return route.fulfill({ status: 501, json: { message: 'No public fixture for this call' } })
   })
