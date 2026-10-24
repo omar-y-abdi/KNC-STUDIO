@@ -1,6 +1,6 @@
 import { retainCmsObject } from '../_shared/cmsRetention.ts'
 import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
 import { ImageValidationError, processImage } from './processImage.ts'
 import {

@@ -23,7 +23,7 @@
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import {
   buildEmailMessage,
   loadEmailBusiness,

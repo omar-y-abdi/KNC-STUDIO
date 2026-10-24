@@ -1,5 +1,5 @@
 import { retainCmsObject } from './cmsRetention.ts'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   buildEvent,
   deleteEvent,

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { CmsValidationError, validMediaRef, type CmsAsset } from '../../../shared/cms.ts'
 
 const COLUMNS = 'id,bucket,path,name,alt,mime,width,height,bytes,archived,trashed_at,version'

@@ -1,5 +1,5 @@
 import { copyCmsAsset } from './copyAsset.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import {
   CmsValidationError,
   validateCompleteDocument,
