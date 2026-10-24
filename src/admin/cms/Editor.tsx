@@ -21,7 +21,14 @@ import type {
 } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
-import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
+import {
+  configureComponent,
+  deniedProperty,
+  isProtected,
+  isReadOnlyPreview,
+  runtimeOwnedRole,
+  styleSectors,
+} from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
 import {
   composedCanvas,
@@ -1214,6 +1221,20 @@ export function CmsEditor(props: Props): JSX.Element {
                     (value && !CSS.supports(property, value))
                   )
                     return props.onError('CSS-egenskapen eller värdet stöds inte av webbläsaren.')
+                  // Shorthands such as flex or all expand into the longhands the marquee owns.
+                  const expanded = document.createElement('span').style
+                  expanded.setProperty(property, value)
+                  const role = runtimeOwnedRole(
+                    selected.getAttributes(),
+                    selected.parent()?.getAttributes(),
+                  )
+                  const denied = value
+                    ? deniedProperty([property, ...Array.from(expanded)], role)
+                    : undefined
+                  if (denied)
+                    return props.onError(
+                      `CSS-egenskapen ${denied} styrs av den rörliga karusellen och kan inte ändras här.`,
+                    )
                   if (value) selected.addStyle({ [property]: value })
                   else selected.removeStyle(property)
                 }}
