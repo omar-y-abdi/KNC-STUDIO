@@ -118,7 +118,13 @@ describe('customer booking access links', () => {
     const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
     const cookies = readFileSync('supabase/functions/_shared/customerCookies.ts', 'utf8')
     const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
-    const client = readFileSync('src/backend/supabaseClient.ts', 'utf8')
+    const client = [
+      'src/backend/supabaseClient.ts',
+      'src/backend/publicRest.ts',
+      'src/backend/publicRealtime.ts',
+    ]
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n')
     const actionClient = readFileSync('src/backend/publicBookingActions.ts', 'utf8')
     expect(cookies).toContain('__Host-bladeblend_customer_session')
     expect(cookies).toContain('HttpOnly; Secure; SameSite=None')

@@ -3,7 +3,7 @@
 
 import { bookingStrings } from '../../i18n/index'
 import { DEFAULT_BUSINESS } from '../../config'
-import { getSupabase } from '../../backend/supabaseClient'
+import { getPublicRest } from '../../backend/publicRest'
 import {
   availableSlotsResponse,
   bookingReceiptResponse,
@@ -113,12 +113,12 @@ export const supabaseBookingAdapter: BookingPort = {
       // Europe/Stockholm, so the day window matches the salon's timezone (correct on a UTC server).
       const rpc =
         params.serviceId === undefined
-          ? getSupabase().rpc('available_slots', {
+          ? getPublicRest().rpc('available_slots', {
               p_barber_id: params.barberId,
               p_date: params.dateIso,
               p_duration_min: params.durationMin,
             })
-          : getSupabase().rpc('available_slots_for_service', {
+          : getPublicRest().rpc('available_slots_for_service', {
               p_barber_id: params.barberId,
               p_date: params.dateIso,
               p_service_id: params.serviceId,
