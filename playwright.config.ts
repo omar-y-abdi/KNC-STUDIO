@@ -19,7 +19,12 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   ...cmsEngines.map((browserName) => ({
     name: `cms-${browserName}`,
     testMatch: /(^|\/)cms-[^/]*\.spec\.mjs$/,
-    testIgnore: /(^|\/)cms-startup\.spec\.mjs$/,
+    // A *.chromium.spec.mjs case needs an API only Chromium has. WebKit never discovers it, so
+    // its report holds no skipped case.
+    testIgnore:
+      browserName === 'chromium'
+        ? /(^|\/)cms-startup\.spec\.mjs$/
+        : [/(^|\/)cms-startup\.spec\.mjs$/, /(^|\/)[^/]*\.chromium\.spec\.mjs$/],
     use: { browserName },
     metadata: { group: 'cms' },
   })),
