@@ -120,6 +120,26 @@ test('guards contexts created through the newContext fixture', async ({
   expect(hosts(networkGuard.takeViolations())).toEqual(['example.supabase.co'])
 })
 
+// A real worker script served by the dev harness: with workers allowed the registration takes
+// effect, so a pass here proves the block and not a missing script. Registration may reject or
+// resolve depending on the blocker, so the check counts live registrations.
+const SERVICE_WORKER_SCRIPT = '/tools/e2e/fixtures/noop-sw.js'
+
+test('registers no service worker, so none can answer requests outside the guard', async ({
+  page,
+  baseURL,
+}) => {
+  await page.goto(`${baseURL}/tools/e2e/admin-harness.html`)
+  const registrations = await page.evaluate(async (script) => {
+    const workers = globalThis.navigator.serviceWorker
+    await workers.register(script).catch(() => undefined)
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 500))
+    return (await workers.getRegistrations()).length
+  }, SERVICE_WORKER_SCRIPT)
+  expect(registrations).toBe(0)
+  expect(page.context().serviceWorkers()).toEqual([])
+})
+
 test('lets local and stubbed traffic through without a violation', async ({
   page,
   baseURL,

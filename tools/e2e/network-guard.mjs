@@ -3,6 +3,18 @@
 // refuses every host outside an explicit allowlist, covers HTTP requests, WebSockets and the
 // APIRequestContext of each guarded browser context, and fails the test that attempted it.
 //
+// Known limits, mitigated rather than closed:
+//  - Playwright routes see only the first URL of a redirect chain, and APIRequestContext follows
+//    redirects itself. Harness builds never embed production URLs and no local server redirects to
+//    production.
+//  - route.fetch() and route.continue() inside a test's own handler bypass this guard. The three
+//    route.fetch() sites (cms-responsive.spec.mjs, cms-startup.spec.mjs, customer.spec.mjs) fetch the
+//    local page or local /api/customer-bookings only.
+//  - Service workers are refused by an init script in every frame (ServiceWorkerContainer.register
+//    rejects). Playwright's own serviceWorkers: 'block' is not used: it reads navigator.serviceWorker
+//    in sandboxed iframes, where that read throws and fails the CMS suites' no-page-error checks.
+//  - Module-level Node fetch outside a test is not covered.
+//
 // Test routes registered later on the same context or page take precedence over the guard, so a
 // test may stub a foreign host (for example the Turnstile script) without reaching the network.
 
@@ -94,6 +106,20 @@ function resolveAgainst(rawUrl, baseURL) {
   }
 }
 
+// Runs in every frame before page scripts. It never reads navigator.serviceWorker (that read throws
+// in sandboxed frames); it replaces the prototype method instead.
+export function refuseServiceWorkers() {
+  const container = globalThis.ServiceWorkerContainer
+  if (container === undefined) return
+  container.prototype.register = () =>
+    Promise.reject(
+      new globalThis.DOMException(
+        'Service workers are blocked by the e2e network guard',
+        'SecurityError',
+      ),
+    )
+}
+
 function describeViolations(violations, policy) {
   const listed = violations
     .slice(0, MAX_LISTED_VIOLATIONS)
@@ -150,12 +176,12 @@ export function createNetworkGuard(policy) {
   }
 
   // page.request / context.request bypass browser routing, so their methods are wrapped directly.
-  function guardApiRequest(apiRequest) {
+  function guardApiRequest(apiRequest, baseURL = policy.baseURL) {
     for (const method of API_REQUEST_METHODS) {
       const original = apiRequest[method].bind(apiRequest)
       apiRequest[method] = (target, options) => {
         const url = typeof target === 'string' ? target : target.url()
-        const verdict = judgeUrl(resolveAgainst(url, policy.baseURL), policy)
+        const verdict = judgeUrl(resolveAgainst(url, baseURL), policy)
         if (verdict.allowed) return original(target, options)
         record({
           channel: 'api-request',
@@ -172,16 +198,50 @@ export function createNetworkGuard(policy) {
     }
   }
 
-  async function attach(context) {
+  // A context may carry its own baseURL: relative APIRequestContext targets resolve against that.
+  async function attach(context, { baseURL = policy.baseURL } = {}) {
     if (guards.has(context)) return
     guards.set(context, guard)
     await context.route(isBlocked, blockRequest)
     await context.routeWebSocket(isBlocked, blockWebSocket)
-    guardApiRequest(context.request)
+    await context.addInitScript(refuseServiceWorkers)
+    guardApiRequest(context.request, baseURL)
+  }
+
+  /** Refuse a base URL the policy blocks, so relative requests cannot be aimed at production. */
+  function requireAllowedBaseURL(baseURL) {
+    if (baseURL === undefined) return
+    const verdict = judgeUrl(baseURL, policy)
+    if (!verdict.allowed)
+      throw new Error(
+        `e2e network guard: base URL ${withoutQuery(baseURL)} is blocked [${verdict.reason}]`,
+      )
+  }
+
+  /** Wrap globalThis.fetch for one test; returns the function that restores it. */
+  function guardNodeFetch() {
+    const original = globalThis.fetch
+    globalThis.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : (input.url ?? input.href)
+      const verdict = judgeUrl(url, policy)
+      if (verdict.allowed) return original(input, init)
+      const method = (init?.method ?? input.method ?? 'GET').toUpperCase()
+      record({ channel: 'node-fetch', method, url, reason: verdict.reason })
+      return Promise.reject(
+        new Error(
+          `e2e network guard: fetch to ${withoutQuery(url)} is blocked [${verdict.reason}]`,
+        ),
+      )
+    }
+    return () => {
+      globalThis.fetch = original
+    }
   }
 
   const guard = Object.freeze({
     attach,
+    requireAllowedBaseURL,
+    guardNodeFetch,
     guardApiRequest,
     record,
     get violations() {

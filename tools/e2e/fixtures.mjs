@@ -12,7 +12,12 @@ export const test = base.extend({
     async ({ baseURL }, use, info) => {
       const group = info.project.metadata?.group
       const guard = createNetworkGuard(networkPolicy({ baseURL, group }))
-      await use(guard)
+      const restoreFetch = guard.guardNodeFetch()
+      try {
+        await use(guard)
+      } finally {
+        restoreFetch()
+      }
       guard.assertClean()
     },
     { auto: true },
@@ -28,9 +33,10 @@ export const test = base.extend({
   newContext: async ({ browser, networkGuard }, use) => {
     const contexts = []
     await use(async (options) => {
+      networkGuard.requireAllowedBaseURL(options?.baseURL)
       const context = await browser.newContext(options)
       contexts.push(context)
-      await networkGuard.attach(context)
+      await networkGuard.attach(context, { baseURL: options?.baseURL })
       return context
     })
     await Promise.all(contexts.map((context) => context.close()))

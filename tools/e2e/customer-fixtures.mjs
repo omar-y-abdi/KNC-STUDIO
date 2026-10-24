@@ -9,9 +9,10 @@ export const test = base.extend({
       throw new Error('Customer fixture requires local HTTPS')
     const contexts = []
     await use(async (options) => {
+      networkGuard.requireAllowedBaseURL(options?.baseURL)
       const context = await browser.newContext(options)
       contexts.push(context)
-      await networkGuard.attach(context)
+      await networkGuard.attach(context, { baseURL: options?.baseURL })
       return context
     })
     await Promise.all(contexts.map((context) => context.close()))

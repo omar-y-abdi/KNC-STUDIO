@@ -8,6 +8,7 @@ import {
   guardOf,
   judgeUrl,
   networkPolicy,
+  refuseServiceWorkers,
 } from '../../tools/e2e/network-guard.mjs'
 
 const publicPolicy = networkPolicy({ baseURL: 'http://127.0.0.1:4188', group: 'public' })
@@ -129,6 +130,7 @@ function fakeSocket(url: string): FakeSocket {
 function fakeContext() {
   const routes: Registration<FakeRoute>[] = []
   const sockets: Registration<FakeSocket>[] = []
+  const initScripts: (() => void)[] = []
   const reachNetwork = () => vi.fn().mockResolvedValue('reached the network')
   const originals = {
     fetch: reachNetwork(),
@@ -144,6 +146,10 @@ function fakeContext() {
     sockets,
     originals,
     request: { ...originals },
+    initScripts,
+    addInitScript: vi.fn(async (script: () => void) => {
+      initScripts.push(script)
+    }),
     route: vi.fn(async (matches: Registration<FakeRoute>['matches'], handle) => {
       routes.push({ matches, handle })
     }),
@@ -249,6 +255,89 @@ describe('createNetworkGuard', () => {
     await expect(context.request.get('/privacy')).rejects.toThrow(/network guard/)
   })
 
+  it("resolves relative API URLs against the context's own base URL, not the test's", async () => {
+    const guard = createNetworkGuard(publicPolicy)
+    const context = fakeContext()
+    await guard.attach(context, { baseURL: 'https://example.supabase.co' })
+    await expect(context.request.post('/functions/v1/cms-studio')).rejects.toThrow(/network guard/)
+    expect(context.originals['post']).not.toHaveBeenCalled()
+    expect(guard.violations).toMatchObject([
+      { channel: 'api-request', url: '/functions/v1/cms-studio' },
+    ])
+  })
+
+  it('installs the service worker refusal on every attached context', async () => {
+    const { context } = await attached()
+    expect(context.initScripts).toEqual([refuseServiceWorkers])
+  })
+
+  it('makes ServiceWorkerContainer.register reject without reading navigator.serviceWorker', async () => {
+    class FakeContainer {
+      register(): Promise<string> {
+        return Promise.resolve('registered')
+      }
+    }
+    const scope = globalThis as { ServiceWorkerContainer?: unknown }
+    scope.ServiceWorkerContainer = FakeContainer
+    try {
+      refuseServiceWorkers()
+      await expect(new FakeContainer().register()).rejects.toThrow(
+        /blocked by the e2e network guard/,
+      )
+    } finally {
+      delete scope.ServiceWorkerContainer
+    }
+  })
+
+  it('does nothing in an environment without service workers', () => {
+    expect(() => refuseServiceWorkers()).not.toThrow()
+  })
+
+  it('refuses a context base URL on a blocked host and accepts local or missing ones', () => {
+    const { requireAllowedBaseURL } = createNetworkGuard(publicPolicy)
+    expect(() => requireAllowedBaseURL('https://example.supabase.co')).toThrow(/base URL.*blocked/)
+    expect(() => requireAllowedBaseURL('https://bladeblendstudio.se')).toThrow(/production-host/)
+    expect(() => requireAllowedBaseURL('http://127.0.0.1:4173')).not.toThrow()
+    expect(() => requireAllowedBaseURL(undefined)).not.toThrow()
+  })
+
+  it('rejects and records Node fetch to a blocked host, then restores the original', async () => {
+    const guard = createNetworkGuard(publicPolicy)
+    const original = globalThis.fetch
+    const reached = vi.fn(async () => new Response('ok'))
+    globalThis.fetch = reached
+    const restore = guard.guardNodeFetch()
+    try {
+      await expect(fetch('https://example.supabase.co/rest/v1/x?apikey=k')).rejects.toThrow(
+        /network guard/,
+      )
+      await expect(
+        fetch(new URL('https://bladeblendstudio.se/'), { method: 'POST' }),
+      ).rejects.toThrow(/network guard/)
+      expect(reached).not.toHaveBeenCalled()
+      await fetch('http://127.0.0.1:4173/robots.txt')
+      expect(reached).toHaveBeenCalledTimes(1)
+      expect(guard.violations).toEqual([
+        {
+          channel: 'node-fetch',
+          method: 'GET',
+          url: 'https://example.supabase.co/rest/v1/x',
+          reason: 'production-host',
+        },
+        {
+          channel: 'node-fetch',
+          method: 'POST',
+          url: 'https://bladeblendstudio.se/',
+          reason: 'production-host',
+        },
+      ])
+    } finally {
+      restore()
+      expect(globalThis.fetch).toBe(reached)
+      globalThis.fetch = original
+    }
+  })
+
   it('fails the test on teardown and names every blocked request', async () => {
     const { guard, context } = await attached()
     await context.routes[0]?.handle(fakeRoute('https://bladeblendstudio.se/'))
@@ -316,7 +405,9 @@ describe('e2e suite wiring', () => {
       'customer-fixtures.mjs',
       'fixtures.mjs',
     ])
-    for (const { text } of creators) expect(text).toMatch(/networkGuard\.attach\(/)
+    for (const { text } of creators) {
+      expect(text).toMatch(/networkGuard\.attach\(/)
+    }
   })
 
   it('lets only the guard spec drain recorded violations', () => {
