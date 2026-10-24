@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { CmsPage } from '../../shared/cms'
 import { renderCmsPage } from '../../src/worker'
@@ -61,12 +62,113 @@ describe('canonical CMS public page rendering', () => {
     expect(html).toContain('data-cms-public="1"')
     expect(html).toContain('data-cms-mode="dark"')
     expect(html).toContain('<main><h1>Hello</h1></main>')
-    expect(html).toContain('<style id="cms-page-light" media="not all">body{color:#222}</style>')
-    expect(html).toContain('<style id="cms-page-dark" media="all">body{color:#ddd}</style>')
+    expect(html).toContain('<style id="cms-page-dark">body{color:#ddd}</style>')
+    expect(html).not.toContain('cms-page-light')
     expect(html).toContain('English title')
     expect(html).toContain('English description')
     expect(html).toContain('href="https://bladeblendstudio.se/"')
     expect(html).toContain('property="og:locale" content="en_US"')
     expect(html).toContain('property="og:locale:alternate" content="sv_SE"')
+  })
+})
+
+// The real shell, so a later edit of its pre-paint block fails these tests instead of reviving the
+// two-tone legal page. Vite moves the entry into <head> and adds preloads and the stylesheet.
+const sourceShell = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
+const builtShell = sourceShell
+  .replace('<script type="module" src="/src/main.tsx"></script>', '')
+  .replace(
+    '</head>',
+    '<script type="module" crossorigin src="/assets/entry.js"></script><link rel="modulepreload" crossorigin href="/assets/chunk.js"><link rel="stylesheet" crossorigin href="/assets/entry.css"></head>',
+  )
+const legalCss =
+  ':root{color:#1c1c1e;background:#f4f3f0}@media (prefers-color-scheme: dark){:root{color:#f5f5f7;background:#1c1c1e}}'
+const terms: CmsPage = {
+  ...page,
+  id: '10000000-0000-4000-8000-000000000006',
+  kind: 'terms',
+  path: '/terms',
+  content: {
+    sv: { html: '<main><h1>Bokningsvillkor</h1></main>', css: { light: legalCss, dark: legalCss } },
+    en: { html: '<main><h1>Booking terms</h1></main>', css: { light: legalCss, dark: legalCss } },
+  },
+}
+const canonical = 'https://bladeblendstudio.se/terms'
+const moduleScripts = (html: string): number =>
+  html.match(/<script\b[^>]*type="module"/g)?.length ?? 0
+
+describe('authored pages follow the visitor colour scheme', () => {
+  it('renders both media-scoped sheets after a reset of the shell grey when no mode is requested', () => {
+    const html = renderCmsPage(sourceShell, terms, 'sv', null, canonical)
+    expect(html).toContain('data-cms-mode="auto"')
+    expect(html).toContain(
+      '<style id="cms-page-light" media="(prefers-color-scheme: light)">:root{color:#1c1c1e;background:#f4f3f0}</style>',
+    )
+    expect(html).toContain(
+      '<style id="cms-page-dark" media="(prefers-color-scheme: dark)">:root{color:#1c1c1e;background:#f4f3f0}:root{color:#f5f5f7;background:#1c1c1e}</style>',
+    )
+    expect(html).toContain('<meta name="color-scheme" content="light dark" />')
+    const shellStyleEnd = html.indexOf('background-color: #242427;')
+    const reset = html.indexOf('<style id="cms-reset">html,body{background:none}</style>')
+    expect(shellStyleEnd).toBeGreaterThan(0)
+    expect(reset).toBeGreaterThan(shellStyleEnd)
+    expect(html.indexOf('<style id="cms-page-light"')).toBeGreaterThan(reset)
+  })
+
+  it.each(['light', 'dark'] as const)(
+    'pins an explicit %s mode to one page sheet and its colour scheme',
+    (mode) => {
+      const html = renderCmsPage(sourceShell, terms, 'sv', mode, canonical)
+      expect(html.match(/<style id="cms-page-/g)).toHaveLength(1)
+      expect(html).toContain(`<style id="cms-page-${mode}">:root{`)
+      expect(html).not.toContain('(prefers-color-scheme: light)">')
+      expect(html).toContain(`<meta name="color-scheme" content="${mode}" />`)
+      expect(html).toContain(`data-cms-mode="${mode}"`)
+      expect(html).toContain('<style id="cms-reset">html,body{background:none}</style>')
+    },
+  )
+
+  it.each([null, 'dark'] as const)(
+    'serves an island-free page without the app bundle but with its theme script (mode %s)',
+    (mode) => {
+      const html = renderCmsPage(builtShell, terms, 'sv', mode, canonical)
+      expect(moduleScripts(html)).toBe(0)
+      expect(html).not.toContain('modulepreload')
+      expect(html).toContain('<link rel="stylesheet" crossorigin href="/assets/entry.css">')
+      expect(html).toMatch(/<script>[^<]+<\/script><\/body>/)
+      expect(html).not.toContain('PlayfairDisplay')
+      expect(html).toContain('/fonts/InterVariable-Latin.woff2')
+    },
+  )
+
+  it('keeps the Playfair preload when the page CSS uses Playfair', () => {
+    const styled = structuredClone(terms)
+    styled.content.sv.css.light += 'h1{font-family:"Playfair Display",serif}'
+    styled.content.sv.css.dark = styled.content.sv.css.light
+    expect(renderCmsPage(builtShell, styled, 'sv', null, canonical)).toContain(
+      '/fonts/PlayfairDisplay-Latin-700.woff2',
+    )
+  })
+
+  it('keeps the app bundle for a runtime island', () => {
+    const island = structuredClone(terms)
+    island.content.sv.html = '<main><div id="knc-booking-runtime"></div></main>'
+    const html = renderCmsPage(builtShell, island, 'sv', null, canonical)
+    expect(moduleScripts(html)).toBe(1)
+    expect(html).toContain('<link rel="modulepreload" crossorigin href="/assets/chunk.js">')
+    expect(html).toMatch(/<script>[^<]+<\/script><\/body>/)
+  })
+
+  it('leaves native markup to the app: explicit light first paint, bundle, no reset or theme script', () => {
+    const native = structuredClone(page)
+    native.content.sv.html = '<div data-knc-native="1"><main>Native</main></div>'
+    const html = renderCmsPage(builtShell, native, 'sv', null, 'https://bladeblendstudio.se/')
+    expect(html).toContain('data-cms-mode="light"')
+    expect(html).toContain('<style id="cms-page-light">body{color:#111}</style>')
+    expect(html).not.toContain('cms-page-dark')
+    expect(html).not.toContain('cms-reset')
+    expect(html).not.toMatch(/<script>[^<]+<\/script><\/body>/)
+    expect(html).toContain('<meta name="color-scheme" content="light dark" />')
+    expect(moduleScripts(html)).toBe(1)
   })
 })

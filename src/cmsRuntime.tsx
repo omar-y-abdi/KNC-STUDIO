@@ -8,7 +8,13 @@ type Mode = 'light' | 'dark'
 
 export function mountCmsRuntime(root: HTMLElement): void {
   const lang: Lang = document.documentElement.lang === 'en' ? 'en' : 'sv'
-  const mode: Mode = root.dataset['cmsMode'] === 'dark' ? 'dark' : 'light'
+  const requested = root.dataset['cmsMode']
+  // `auto` follows the visitor's OS scheme, as the native app does (src/app/App.tsx).
+  const mode: Mode =
+    requested === 'dark' ||
+    (requested === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      ? 'dark'
+      : 'light'
   const about = root.querySelector<HTMLElement>('#knc-about-runtime')
   if (about) render(<AboutSection mode={mode} lang={lang} />, about)
   const booking = root.querySelector<HTMLElement>('#knc-booking-runtime')
