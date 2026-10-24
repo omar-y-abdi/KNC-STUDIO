@@ -106,19 +106,26 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
   // Repeat the photo set enough times that ONE loop-half always spans at least the row's full width.
   // A short photo list otherwise leaves a wide screen half-empty — tiles bunch on one side with a
   // hard clip and dead space instead of a continuous stream (the reported "clipped/broken" look).
-  // `perHalf` sets are rendered TWICE (the two halves) so the wrap is seamless. Recomputed on resize.
+  // `perHalf` sets are rendered TWICE (the two halves) so the wrap is seamless. Recomputed whenever
+  // the row itself changes width (a window resize or a container that grows inside the page alike);
+  // the state setter ignores an unchanged count, so a resize without a new count renders nothing.
   const [perHalf, setPerHalf] = useState(1)
   useLayoutEffect(() => {
-    const el = trackRef.current
-    if (el === null) return
+    const row = trackRef.current?.parentElement
+    if (!row) return
     const compute = (): void => {
-      const container = el.parentElement !== null ? el.parentElement.clientWidth : 0
+      const container = row.clientWidth
       const base = itemCount * (TILE_W + TILE_GAP)
       setPerHalf(base > 0 && container > 0 ? Math.max(1, Math.ceil(container / base)) : 1)
     }
     compute()
-    window.addEventListener('resize', compute)
-    return () => window.removeEventListener('resize', compute)
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', compute)
+      return () => window.removeEventListener('resize', compute)
+    }
+    const observer = new ResizeObserver(compute)
+    observer.observe(row)
+    return () => observer.disconnect()
   }, [itemCount])
 
   const tiles = [...Array(itemCount * perHalf * 2).keys()]
@@ -327,6 +334,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
       ref={rowRef}
       style={rowStyle}
       data-testid="marquee-row"
+      data-knc-fold="gallery-row"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
@@ -338,6 +346,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
         ref={trackRef}
         style={trackStyle}
         data-testid="marquee-track"
+        data-knc-fold="gallery-track"
         data-dir={String(props.initialDir)}
       >
         {tiles.map((j) => {
@@ -369,6 +378,7 @@ function MarqueeRow(props: MarqueeRowProps): JSX.Element {
             <div
               key={`${logicalKey}:${Math.floor(j / itemCount)}`}
               data-tile-key={key}
+              data-knc-fold="gallery-tile"
               style={tileStyle}
               role={accessible ? 'button' : undefined}
               tabIndex={accessible ? 0 : undefined}
