@@ -10,8 +10,11 @@ interface Connection {
 }
 
 // IndexedDB as a fake factory over one record map; every open() is a new connection, born in the
-// state `born` gives it.
-function fakeIndexedDb(born: (index: number) => Connection['state'] = () => 'open') {
+// state `born` gives it. An open succeeds once `hold` settles for its index (at once without it).
+function fakeIndexedDb(
+  born: (index: number) => Connection['state'] = () => 'open',
+  hold: (index: number) => Promise<void> = () => Promise.resolve(),
+) {
   const records = new Map<string, unknown>()
   const connections: Connection[] = []
   const connect = (): Connection => {
@@ -59,8 +62,9 @@ function fakeIndexedDb(born: (index: number) => Connection['state'] = () => 'ope
   vi.stubGlobal('indexedDB', {
     open: () => {
       const opening: { result?: IDBDatabase; onsuccess?: () => void } = {}
+      const held = hold(connections.length)
       const { db } = connect()
-      queueMicrotask(() => {
+      void held.then(() => {
         opening.result = db
         opening.onsuccess?.()
       })
@@ -83,7 +87,73 @@ const serverLost = new DOMException(
 )
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+// The reopen waits behind another page's blocked upgrade or deleteDatabase: open() does not settle.
+describe('IndexedDB reopen that waits in the connection queue', () => {
+  const never = (): Promise<void> => new Promise(() => undefined)
+  // How the operation ended so far: undefined while it waits.
+  const outcome = (operation: Promise<unknown>) => {
+    const seen: { reason?: unknown; done?: true } = {}
+    operation.then(
+      () => (seen.done = true),
+      (reason: unknown) => (seen.reason = reason),
+    )
+    return seen
+  }
+
+  it('rejects the operation with a TimeoutError at the bound, not before', async () => {
+    vi.useFakeTimers()
+    const fake = fakeIndexedDb(undefined, (index) => (index === 0 ? Promise.resolve() : never()))
+    const store = await openKeyedStore('knc-cms-drafts', 'tab')
+    fake.nth(0).db.close()
+    const put = outcome(store.put(draft))
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(put).toEqual({})
+    await vi.advanceTimersByTimeAsync(1)
+    expect(put.reason).toMatchObject({ name: 'TimeoutError' })
+    expect(fake.connections).toHaveLength(2)
+  })
+
+  it('lets every waiting operation share one open, each with its own bound', async () => {
+    vi.useFakeTimers()
+    const fake = fakeIndexedDb(undefined, (index) => (index === 0 ? Promise.resolve() : never()))
+    const store = await openKeyedStore('knc-cms-drafts', 'tab')
+    fake.nth(0).db.close()
+    const first = outcome(store.put(draft))
+    const second = outcome(store.all())
+    await vi.advanceTimersByTimeAsync(2500)
+    // Started while the reopen is pending: it waits for that open, not a new one.
+    const later = outcome(store.put(draft))
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(first.reason).toMatchObject({ name: 'TimeoutError' })
+    expect(second.reason).toMatchObject({ name: 'TimeoutError' })
+    expect(later).toEqual({})
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(later.reason).toMatchObject({ name: 'TimeoutError' })
+    expect(fake.connections).toHaveLength(2)
+  })
+
+  it('adopts an open that succeeds late; the expired operation never writes', async () => {
+    vi.useFakeTimers()
+    let release = (): void => undefined
+    const late = new Promise<void>((done) => {
+      release = done
+    })
+    const fake = fakeIndexedDb(undefined, (index) => (index === 0 ? Promise.resolve() : late))
+    const store = await openKeyedStore('knc-cms-drafts', 'tab')
+    fake.nth(0).db.close()
+    const expired = outcome(store.put(draft))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(expired.reason).toMatchObject({ name: 'TimeoutError' })
+    release()
+    const next = { tab: 'next-tab', document: '{}' }
+    await store.put(next)
+    expect(fake.connections).toHaveLength(2)
+    expect([...fake.records.values()]).toEqual([next])
+  })
 })
 
 describe('IndexedDB store over a connection the browser closed', () => {

@@ -27,6 +27,18 @@ function dead(db: IDBDatabase): boolean {
   }
 }
 
+// A local open settles within milliseconds; 5 s is far above that and still reports the failure
+// while the owner is on the page.
+const REOPEN_BOUND = 5000
+const bounded = <T>(pending: Promise<T>): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new DOMException('IndexedDB did not reopen in time.', 'TimeoutError')),
+      REOPEN_BOUND,
+    )
+    void pending.then(resolve, reject).finally(() => clearTimeout(timer))
+  })
+
 function transact<T>(
   db: IDBDatabase,
   mode: IDBTransactionMode,
@@ -60,22 +72,38 @@ export async function openKeyedStore(database: string, keyPath: string): Promise
     db.onclose = () => closed.add(db)
     return db
   }
-  let connection = connect()
-  await connection
-  // A refusal on a dead connection (closed, or a reopen that failed) gets one new connection and
-  // one more attempt, whose error reaches the caller unchanged. Any other refusal reaches it as is.
+  let db = await connect()
+  // One reopen at a time, shared by every operation that needs it. It may wait in the connection
+  // queue behind another page's upgrade or deleteDatabase, without an event for this page, so each
+  // operation waits for it at most REOPEN_BOUND. A late success becomes the connection.
+  let reopening: Promise<IDBDatabase> | null = null
+  const reopen = (): Promise<IDBDatabase> => {
+    reopening ??= connect().then(
+      (opened) => {
+        db = opened
+        reopening = null
+        return opened
+      },
+      (reason: unknown) => {
+        reopening = null
+        throw reason
+      },
+    )
+    return bounded(reopening)
+  }
+  // A refusal on a dead connection gets one new connection and one more attempt, whose error
+  // reaches the caller unchanged. Any other refusal reaches it as is.
   const run = async <T>(
     mode: IDBTransactionMode,
     work: (store: IDBObjectStore) => IDBRequest<T>,
   ): Promise<T> => {
-    const used = connection
+    const used = reopening ? await reopen() : db
     try {
-      return await transact(await used, mode, work)
+      return await transact(used, mode, work)
     } catch (reason) {
-      if (!(await used.then(dead, () => true))) throw reason
-      // Operations refused on the same connection share one new connection.
-      if (connection === used) connection = connect()
-      return transact(await connection, mode, work)
+      if (!dead(used)) throw reason
+      // An operation refused on a connection already replaced uses the new one.
+      return transact(used === db ? await reopen() : db, mode, work)
     }
   }
   return {
