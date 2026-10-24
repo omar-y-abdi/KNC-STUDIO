@@ -8,8 +8,12 @@ const stampFile = new URL('shared/cms-release.ts', root)
 export const releaseFiles = [
   'supabase/functions/cms-studio/index.ts',
   'supabase/functions/cms-studio/copyAsset.ts',
+  'supabase/functions/cms-studio/request.ts',
   'supabase/functions/cms-studio/deno.json',
+  'supabase/functions/_shared/http.ts',
   'shared/cms.ts',
+  'shared/cms-primitives.ts',
+  'shared/email-design.ts',
   'shared/cms-markup.ts',
   'shared/cms-built-assets.ts',
 ]

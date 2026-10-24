@@ -219,6 +219,8 @@ describe('send-confirmation request', () => {
     [{ id: 5 }, 'id is required'],
     [{ id: ID, event: 'booking_deleted' }, 'invalid event'],
     [{ delivery_id: '' }, 'id is required'],
+    [{ delivery_id: 5 }, 'id is required'],
+    [{ delivery_id: null, extra: 1 }, 'id is required'],
   ])('answers %j with the error %s', (raw, error) => {
     expect(sendConfirmation(raw)).toEqual({ ok: false, error })
   })
@@ -227,6 +229,7 @@ describe('send-confirmation request', () => {
     { delivery_id: ID, extra: 1 },
     { id: ID, extra: 1 },
     { id: ID, record: {} },
+    { id: ID, delivery_id: '' },
     { record: { id: ID } },
   ])('rejects the unknown key in %j', (raw) => {
     expect(sendConfirmation(raw).ok).toBe(false)

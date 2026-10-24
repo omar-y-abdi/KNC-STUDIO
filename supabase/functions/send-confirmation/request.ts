@@ -32,10 +32,21 @@ const bookingSchema = z
   )
   .strict()
 
+function text(raw: unknown, key: string): string | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const value = (raw as Record<string, unknown>)[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 function carriesDelivery(raw: unknown): boolean {
-  if (typeof raw !== 'object' || raw === null) return false
-  const id = (raw as Record<string, unknown>).delivery_id
-  return typeof id === 'string' && id.length > 0
+  return text(raw, 'delivery_id') !== undefined
+}
+
+/** A present but unusable `delivery_id` beside no `id` was always answered as a missing id. */
+function lacksBothIdentities(raw: unknown): boolean {
+  return (
+    typeof raw === 'object' && raw !== null && 'delivery_id' in raw && text(raw, 'id') === undefined
+  )
 }
 
 export function parseRequest(raw: unknown): RequestResult {
@@ -45,6 +56,7 @@ export function parseRequest(raw: unknown): RequestResult {
       ? { ok: true, id: null, event: null, deliveryId: delivery.data.delivery_id }
       : { ok: false, error: delivery.detail }
   }
+  if (lacksBothIdentities(raw)) return { ok: false, error: 'id is required' }
   const booking = parse(bookingSchema, raw)
   return booking.ok
     ? {
