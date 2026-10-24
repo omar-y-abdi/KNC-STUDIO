@@ -164,19 +164,33 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await publish(page, 2)
   assertCardWidths(backend.document, ids, 'Load')
 
-  // The editor neither offers nor accepts the properties the marquee code owns.
-  const policy = await page.evaluate(async () => {
+  // The editor neither offers nor accepts the properties the marquee code owns, and neither a
+  // selection nor a Style Manager read changes the draft. Every step records the status and
+  // GrapesJS's own dirty count, which rises at once; Studio shows a change 180 ms later.
+  const policyProbe = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
+    const steps = []
+    const record = (step) =>
+      steps.push({
+        step,
+        status: globalThis.document.querySelector('.cms-status')?.textContent,
+        dirty: editor.getDirtyCount(),
+      })
+    const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
     const offered = async (selector, sector, property) => {
       const target = editor.getWrapper().find(selector)[0]
       if (!target) throw new Error(`Missing ${selector}`)
       editor.select(target)
       // The Style Manager applies a new selection on its next tick.
-      await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
-      return editor.StyleManager.getProperty(sector, property)?.isVisible() ?? false
+      await tick(50)
+      record(`select ${selector}`)
+      const visible = editor.StyleManager.getProperty(sector, property)?.isVisible() ?? false
+      record(`read ${sector} ${property}`)
+      return visible
     }
-    return {
+    record('start')
+    const policy = {
       trackTransform: await offered('[data-knc-fold="gallery-track"]', 'position', 'transform'),
       tileWidth: await offered('[data-knc-fold="gallery-tile"]', 'layout', 'width'),
       stripOverflow: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'overflow'),
@@ -184,9 +198,18 @@ test('legacy barber zoom never survives load, import, history or backup restore'
       stripHeight: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'height'),
       textColor: await offered('[data-knc-fold="gallery-tile"]', 'typography', 'color'),
     }
+    // Past Studio's change debounce, so a change any step made has reached the status.
+    await tick(400)
+    record('settled')
+    return { policy, steps }
   })
+  assert.equal(
+    policyProbe.steps.at(-1)?.status,
+    'Publicerad · rev 2',
+    `Selecting or reading the Style Manager changed the draft: ${JSON.stringify(policyProbe.steps)}`,
+  )
   // The loop floor needs a strip width that does not follow its cards; its height stays the owner's.
-  assert.deepEqual(policy, {
+  assert.deepEqual(policyProbe.policy, {
     trackTransform: false,
     tileWidth: false,
     stripOverflow: false,
