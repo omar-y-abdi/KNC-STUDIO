@@ -634,6 +634,150 @@ describe('sessionStorage journal across a reload', () => {
   })
 })
 
+// The business names of the drafts this tab sent to IndexedDB, in call order.
+const sent = (ports: BackupPorts): unknown[] => {
+  const documents = vi.mocked(ports.records.put).mock.calls.map(([stored]) => stored.document)
+  return documents.map((json) => (JSON.parse(json) as CmsDocument).settings.business_name)
+}
+
+describe('a write IndexedDB refused', () => {
+  const refusal = new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+  // IndexedDB answers the next write only once `answer` resolves, then refuses it.
+  const refuseLater = (ports: BackupPorts, answer: Promise<void>): void => {
+    vi.mocked(ports.records.put).mockImplementationOnce(async () => {
+      await answer
+      throw refusal
+    })
+  }
+
+  // The debounced write was refused and no edit followed: closing or hiding the tab must still
+  // write the draft once IndexedDB takes it again.
+  it.each(['flush', 'suspend'] as const)(
+    'writes the refused draft again on %s while nothing newer is scheduled',
+    async (action) => {
+      vi.useFakeTimers()
+      const browser = memory({ tab: 'this-tab' })
+      const session = await openBackupSession(browser.ports)
+      vi.mocked(browser.ports.records.put).mockRejectedValueOnce(refusal)
+      const report = vi.fn()
+      session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT }, report)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(report).toHaveBeenCalledWith(refusal)
+      expect(browser.records.has('this-tab')).toBe(false)
+      expect(session.unsaved()).toBe(true)
+
+      await session[action]()
+      expect(sent(browser.ports)).toEqual(['Nekad', 'Nekad'])
+      expect((await session.own())?.document).toEqual(named('Nekad'))
+      expect(session.unsaved()).toBe(false)
+      expect(browser.tabs.has(JOURNAL)).toBe(false)
+    },
+  )
+
+  it('never writes a refused draft after a newer one', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValueOnce(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    await session.flush()
+    await session.flush()
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+  })
+
+  it('never writes again a refused draft that a newer write had already replaced', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    const answer = deferred()
+    refuseLater(ports, answer.promise)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    const refused = session.flush()
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    const newer = session.flush()
+    answer.resolve()
+    await expect(refused).rejects.toBe(refusal)
+    await newer
+    await session.flush()
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+    expect(session.unsaved()).toBe(false)
+  })
+
+  // The tab closes while the debounced write is in flight: beforeunload's flush and pagehide's
+  // suspend wait for it, and IndexedDB refuses it meanwhile. One more write goes, not one per call.
+  it('writes the draft once more when IndexedDB refuses the write a flush waits for', async () => {
+    vi.useFakeTimers()
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    const answer = deferred()
+    refuseLater(browser.ports, answer.promise)
+    const report = vi.fn()
+    session.schedule({ document: named('I luften'), revision: 4, fingerprint: FINGERPRINT }, report)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sent(browser.ports)).toEqual(['I luften'])
+    const leaving = session.flush()
+    const hiding = session.suspend()
+    answer.resolve()
+    await Promise.all([leaving, hiding])
+    expect(report).toHaveBeenCalledWith(refusal)
+    expect(sent(browser.ports)).toEqual(['I luften', 'I luften'])
+    expect((await session.own())?.document).toEqual(named('I luften'))
+    expect(session.unsaved()).toBe(false)
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
+  })
+
+  it('sends one retry for flushes that overlap it', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValueOnce(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    const answer = deferred()
+    const store = vi.mocked(ports.records.put).getMockImplementation()
+    vi.mocked(ports.records.put).mockImplementationOnce(async (value) => {
+      await answer.promise
+      await store?.(value)
+    })
+    const first = session.flush()
+    const second = session.flush()
+    answer.resolve()
+    await Promise.all([first, second])
+    expect(sent(ports)).toEqual(['Nekad', 'Nekad'])
+    expect(session.unsaved()).toBe(false)
+  })
+
+  it('makes one attempt per flush while IndexedDB keeps refusing', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValue(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    await expect(session.flush()).rejects.toBe(refusal)
+    expect(sent(ports)).toEqual(['Nekad', 'Nekad'])
+    // Still unsaved: the leave prompt keeps protecting the draft.
+    expect(session.unsaved()).toBe(true)
+  })
+
+  // A clean draft's delete was refused: the old record must not be offered after the tab closes.
+  it('removes a clean draft again after IndexedDB refused the delete', async () => {
+    const { ports, records } = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Före publicering', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.remove).mockRejectedValueOnce(refusal)
+    session.schedule(null)
+    await expect(session.flush()).rejects.toBe(refusal)
+    expect(records.has('this-tab')).toBe(true)
+    expect(session.unsaved()).toBe(false)
+    await session.flush()
+    expect(ports.records.remove).toHaveBeenCalledTimes(2)
+    expect(records.has('this-tab')).toBe(false)
+  })
+})
+
 describe('migration from localStorage', () => {
   const legacy = {
     'knc-cms-draft:old-tab': JSON.stringify({
