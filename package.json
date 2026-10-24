@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "@imagemagick/magick-wasm": "0.0.42",
+    "@supabase/postgrest-js": "2.112.2",
+    "@supabase/realtime-js": "2.112.2",
     "@supabase/supabase-js": "2.112.2",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
