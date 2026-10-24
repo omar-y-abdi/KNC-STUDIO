@@ -595,6 +595,43 @@ describe('sessionStorage journal across a reload', () => {
     await written
     expect(session.unsaved()).toBe(false)
   })
+
+  // A clean draft schedules a delete: closing the tab then loses nothing, so it never prompts.
+  it('never reports a pending delete of a clean draft as unsaved work', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    session.schedule(null)
+    expect(session.unsaved()).toBe(false)
+
+    // A draft write still in flight, then the draft became clean (e.g. after Publicera).
+    const put = deferred()
+    const store = vi.mocked(browser.ports.records.put).getMockImplementation()
+    vi.mocked(browser.ports.records.put).mockImplementationOnce(async (value) => {
+      await put.promise
+      await store?.(value)
+    })
+    session.schedule({ document: named('Publiceras'), revision: 4, fingerprint: FINGERPRINT })
+    const putting = session.flush()
+    session.schedule(null)
+    expect(session.unsaved()).toBe(false)
+
+    // The delete itself in flight.
+    const remove = deferred()
+    const drop = vi.mocked(browser.ports.records.remove).getMockImplementation()
+    vi.mocked(browser.ports.records.remove).mockImplementationOnce(async (tab) => {
+      await remove.promise
+      await drop?.(tab)
+    })
+    const removing = session.flush()
+    expect(session.unsaved()).toBe(false)
+    put.resolve()
+    remove.resolve()
+    await Promise.all([putting, removing])
+    expect(session.unsaved()).toBe(false)
+
+    session.schedule({ document: named('Ny ändring'), revision: 5, fingerprint: FINGERPRINT })
+    expect(session.unsaved()).toBe(true)
+  })
 })
 
 describe('migration from localStorage', () => {

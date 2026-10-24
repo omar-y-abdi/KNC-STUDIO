@@ -70,8 +70,9 @@ export interface BackupSession {
   schedule(draft: BackupDraft | null, report?: (reason: unknown) => void): void
   /** Writes the scheduled draft now. */
   flush(): Promise<void>
-  /** A scheduled draft, or a write IndexedDB has not confirmed (or failed): closing the tab now
-   * can lose it. */
+  /** The newest scheduled draft, else the newest write IndexedDB has not confirmed (or that
+   * failed), is a draft: closing the tab now can lose it. A pending delete of a clean draft is
+   * not unsaved work. */
   unsaved(): boolean
   /** For `pagehide`: flushes, and journals the unconfirmed write synchronously, because the page
    * may end before IndexedDB commits it. The next page in this tab replays the journal. Never
@@ -346,7 +347,7 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
       timer = setTimeout(() => void flush().catch(report), 500)
     },
     flush,
-    unsaved: () => pending !== null || unconfirmed !== null,
+    unsaved: () => (pending ? pending.draft : (unconfirmed?.draft ?? null)) !== null,
     suspend: () => {
       const written = flush()
       try {
