@@ -349,8 +349,9 @@ test('block whole day warns for an in-progress booking before anything is writte
 })
 
 test('block whole day does not warn for a booking that has already ended', async ({ page }) => {
-  // Ended at 07:15, before the 08:00 "now": the database ignores it, so the pre-check must too.
-  const backend = await installBackend(page, { bookings: [booking(-90)], timeOffConflicts: true })
+  // Ended at 07:15, before the 08:00 "now": the database ignores it (the mock accepts the write), so
+  // the pre-check must not raise the dialog either.
+  const backend = await installBackend(page, { bookings: [booking(-90)] })
   await openSchedule(page)
 
   await page.getByRole('button', { name: 'Blockera hela dagen' }).click()
