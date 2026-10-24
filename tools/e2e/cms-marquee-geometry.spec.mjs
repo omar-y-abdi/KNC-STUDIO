@@ -10,8 +10,22 @@ const strip = '[data-knc-fold="barber-marquee"]'
 const GAP = 48
 // Beside a visible card of the usual widths at most two such gaps fit.
 const MAX_BLANK = 2 * GAP
-// Embla measures slides by whole-pixel offsetWidth, so its loop seam may open up to 1 px wider.
+// Whole-pixel tolerance for the cases that do not loop; a looping case derives its own (loopSeam).
 const SEAM = 1
+
+/** Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent and
+ * moves a card across the loop only 0.5 px (roundingSafety) after it reaches the view. Behind a
+ * strip at a fractional offset, a card's left edge, and the cycle's end at the last card's right
+ * edge (rounded with the first card's left edge), each round up to ceil(edge) - edge px late, so a
+ * gap opens at most 0.5 + the largest of those px wider, plus the 0.005 px by which Translate
+ * rounds the painted position to two decimals. Edges are in the strip, without loop shifts, and
+ * snapped to layout's 1/64 px. */
+function loopSeam(cards) {
+  const late = (edge) => Math.ceil(edge) - edge
+  const inner = cards.slice(1).map((card) => late(card.left))
+  const end = late(cards[cards.length - 1].right) + late(cards[0].left)
+  return 0.505 + Math.max(end, ...inner)
+}
 
 const cardRule = (declarations) =>
   `@media (max-width:768px){${strip}>[role="button"]{${declarations}}}`
@@ -45,16 +59,26 @@ async function measureStrip(newContext, css, barbers = 4, width = 390) {
   const probe = await page.evaluate(readBlankProbe)
   // Embla's slide looper translates slides only while the carousel loops; the native fallback
   // scrolls the strip itself.
-  const { looping, native } = await page.evaluate(
-    (selector) => ({
-      looping: [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].some(
-        (card) => card.style.transform !== '',
-      ),
-      native: globalThis.document.querySelector(selector)?.style.overflowX === 'auto',
-    }),
-    strip,
-  )
-  return { ...probe, looping, native }
+  const { looping, native, cards } = await page.evaluate((selector) => {
+    const track = globalThis.document.querySelector(selector)
+    const slides = [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)]
+    const origin = track?.getBoundingClientRect().left ?? 0
+    const shift = (node) => {
+      const transform = globalThis.getComputedStyle(node).transform
+      return transform === 'none' ? 0 : new globalThis.DOMMatrixReadOnly(transform).m41
+    }
+    const snap = (edge) => Math.round(edge * 64) / 64
+    return {
+      looping: slides.some((card) => card.style.transform !== ''),
+      native: track?.style.overflowX === 'auto',
+      cards: slides.map((card) => {
+        const rect = card.getBoundingClientRect()
+        const offset = origin + shift(card)
+        return { left: snap(rect.left - offset), right: snap(rect.right - offset) }
+      }),
+    }
+  }, strip)
+  return { ...probe, looping, native, cards, seam: loopSeam(cards) }
 }
 
 /** Init script: every ResizeObserver the page creates, with the targets it still watches. */
@@ -136,7 +160,10 @@ for (const [barbers, scale] of [
       JSON.stringify(probe, null, 2),
     )
     assert.ok(probe.samples >= 1800, `The probe sampled only ${probe.samples} times`)
-    assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+    assert.ok(
+      probe.maxBlank <= MAX_BLANK + probe.seam,
+      `${probe.maxBlank} px of the viewport went blank (seam ${probe.seam} px)`,
+    )
     assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
   })
 
@@ -154,7 +181,10 @@ for (const [barbers, scale] of [
       `${evidenceDir}/barber-strip-${barbers}-${scale}-floor.json`,
       JSON.stringify(probe, null, 2),
     )
-    assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+    assert.ok(
+      probe.maxBlank <= MAX_BLANK + probe.seam,
+      `${probe.maxBlank} px of the viewport went blank (seam ${probe.seam} px)`,
+    )
     assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
   })
 
@@ -171,7 +201,10 @@ test('mobile barber strip: narrow 10vw cards spread by space-between still loop'
   assert.ok(probe.looping, 'Embla dropped loop')
   // The floor stops at 98 px, so three of the regular 48 px gaps fit in the viewport at once: bound
   // the widest single hole by one gap, which a loop seam opening up would exceed.
-  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
+  assert.ok(
+    probe.maxHole <= GAP + probe.seam,
+    `A ${probe.maxHole} px hole opened in the strip (seam ${probe.seam} px)`,
+  )
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
@@ -189,7 +222,10 @@ test('mobile barber strip: an owner min-width transition does not hold back the 
   assert.ok(!probe.native, 'The strip fell back to native scrolling')
   assert.ok(probe.looping, 'Embla dropped loop')
   // The 98 px floor leaves three regular gaps in the viewport, as in the space-between case.
-  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
+  assert.ok(
+    probe.maxHole <= GAP + probe.seam,
+    `A ${probe.maxHole} px hole opened in the strip (seam ${probe.seam} px)`,
+  )
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
@@ -204,7 +240,10 @@ test('mobile barber strip: an owner max-width on the strip still loops across th
   await writeFile(`${evidenceDir}/barber-strip-max-width.json`, JSON.stringify(probe, null, 2))
   assert.ok(!probe.native, 'The strip fell back to native scrolling')
   assert.ok(probe.looping, 'Embla dropped loop')
-  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
+  assert.ok(
+    probe.maxHole <= GAP + probe.seam,
+    `A ${probe.maxHole} px hole opened in the strip (seam ${probe.seam} px)`,
+  )
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
@@ -224,7 +263,10 @@ test('mobile barber strip: six 4vw cards spread by space-between at 768 px still
   )
   assert.ok(probe.looping, 'Embla dropped loop')
   assert.ok(probe.samples >= 1800, `The probe sampled only ${probe.samples} times`)
-  assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+  assert.ok(
+    probe.maxBlank <= MAX_BLANK + probe.seam,
+    `${probe.maxBlank} px of the viewport went blank (seam ${probe.seam} px)`,
+  )
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
