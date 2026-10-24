@@ -35,7 +35,30 @@ export function loopFloor(
   return Math.max(...gaps.map((gap) => Math.ceil((view - (total - gap)) / (slides.length - 1))))
 }
 
-const MAX_FIT_PASSES = 3
+/** The whole-pixel slide width at which any n - 1 slides cover the view on their own. Embla sizes
+ * every slide with its gap, so unless the cards overlap, the last one has a negative end margin or
+ * the strip widens with its cards, this width loops whatever space-between distributes. */
+export function gaplessLoopFloor(view: number, slideCount: number): number {
+  return Math.ceil(view / (slideCount - 1))
+}
+
+export const MAX_FIT_PASSES = 3
+
+/** The floor of fitting pass `pass` (from 0) after the floor `floor`: the estimate from the
+ * measured gaps, at least a pixel wider than before. Widening can shrink distributed gaps
+ * (justify-content), so the last pass also takes the gapless floor and the passes end looping. */
+export function passFloor(
+  pass: number,
+  floor: number,
+  view: number,
+  containerLeft: number,
+  slides: readonly LoopSlide[],
+): number {
+  const estimate = Math.max(loopFloor(view, containerLeft, slides), floor + 1)
+  return pass < MAX_FIT_PASSES - 1
+    ? estimate
+    : Math.max(estimate, gaplessLoopFloor(view, slides.length))
+}
 
 function reducedMotionPreference(): boolean {
   return (
@@ -155,7 +178,7 @@ export function useBarberMarquee({
         api.reInit()
       }
       // One reInit per pass. Widening can shrink distributed gaps (justify-content), so each pass
-      // re-measures the floored geometry; after MAX_FIT_PASSES the widest floor tried stays.
+      // re-measures the floored geometry, and the last one takes the gapless floor (passFloor).
       const fitLoop = (): void => {
         fitFrame = 0
         if (api.slideNodes().length < 2) return
@@ -166,7 +189,7 @@ export function useBarberMarquee({
           return
         }
         if (api.internalEngine().options.loop || passes >= MAX_FIT_PASSES) return
-        const next = Math.max(loopFloor(track.offsetWidth, track.offsetLeft, geometry()), floor + 1)
+        const next = passFloor(passes, floor, track.offsetWidth, track.offsetLeft, geometry())
         for (const node of api.slideNodes()) {
           if (!floors.has(node))
             floors.set(node, {
@@ -178,11 +201,18 @@ export function useBarberMarquee({
         floor = next
         passes += 1
         reInit()
+        // Only owner CSS that breaks the gapless floor's premise gets here. A strip that cannot
+        // loop would halt at its end, so it falls back to the native scroll layout instead.
+        if (passes === MAX_FIT_PASSES && !api.internalEngine().options.loop) {
+          setEngineFailed(true)
+          throw new Error(`The barber strip cannot loop, not even with ${next}px slides`)
+        }
       }
-      // Embla 8.6 starts observing slide sizes one frame after each init, and a reInit before that
-      // frame orphans the observer. Fit only after two frames, coalesced, and cancel on cleanup.
+      // Embla 8.6 starts observing slide sizes in a frame it queues on every init and never
+      // cancels, so a reInit before that frame orphans the observer. Every init restarts the
+      // two-frame delay behind the latest engine's observation; cleanup cancels it.
       const scheduleFit = (): void => {
-        if (fitFrame) return
+        window.cancelAnimationFrame(fitFrame)
         fitFrame = window.requestAnimationFrame(() => {
           fitFrame = window.requestAnimationFrame(fitLoop)
         })

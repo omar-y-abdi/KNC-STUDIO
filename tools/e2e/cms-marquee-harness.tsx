@@ -17,7 +17,7 @@ const photos: readonly GalleryPhoto[] = [1, 2, 3].map((number) => ({
 
 const barbers = (count: number): BarbersPort => ({
   listActive: async () =>
-    ['A', 'B', 'C', 'D'].slice(0, count).map((id) => ({
+    ['A', 'B', 'C', 'D', 'E', 'F'].slice(0, count).map((id) => ({
       barber: { id: asBarberId(`barber-${id}`), name: `Barber ${id}`, ig: id.toLowerCase() },
       copy: null,
       photoUrl: null,
@@ -56,9 +56,9 @@ export function mountGallery(width: number): void {
   render(<GalleryMarquee photos={photos} alt="Gallery fixture" c={palette(false)} />, container)
 }
 
-/** The mobile About section with 1-4 barbers; `css` plays the owner's stored card styles. */
+/** The mobile About section with 1-6 barbers; `css` plays the owner's stored card styles. */
 export function mountBarberStrip(css: string, count = 4): void {
-  if (count < 1 || count > 4) throw new Error(`The fixture has 1-4 barbers, not ${count}`)
+  if (count < 1 || count > 6) throw new Error(`The fixture has 1-6 barbers, not ${count}`)
   const style = document.createElement('style')
   style.textContent = css
   document.head.appendChild(style)
