@@ -26,7 +26,7 @@ import {
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
-import { CmsDraft, mergeCmsDocuments } from './draft'
+import { CmsDraft, mergeCmsDocuments, restoreRevision } from './draft'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsEditorBoundary } from './EditorBoundary'
@@ -1027,7 +1027,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   device={device}
                   onError={setError}
                   onRestore={(old) => {
-                    commitDraft(needsCorePageSource(old) ? ensureCorePages(old) : old)
+                    const active = currentDraft.current
+                    if (!active) return
+                    const restored = restoreRevision(old, active.document)
+                    commitDraft(
+                      needsCorePageSource(restored.document)
+                        ? ensureCorePages(restored.document)
+                        : restored.document,
+                    )
+                    if (restored.reconciled)
+                      setNotice(
+                        'Personalen har ändrats sedan den versionen. Barberare som slutat togs bort och nya behölls som de är nu.',
+                      )
                     setDialog(null)
                   }}
                 />

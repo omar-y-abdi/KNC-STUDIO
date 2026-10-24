@@ -1,4 +1,4 @@
-import type { CmsDocument, CmsSave } from '../../../shared/cms'
+import type { CmsBarber, CmsDocument, CmsSave } from '../../../shared/cms'
 
 // Draft transactions replace snapshots instead of mutating them, so a snapshot's JSON is fixed
 // by its identity. A production document serializes to over a million characters.
@@ -169,4 +169,41 @@ export function mergeCmsDocuments(
     return structuredClone(resolution === 'remote' ? r : l)
   }
   return { document: merge(base, local, remote, '') as CmsDocument, conflicts }
+}
+
+export interface RevisionRestore {
+  document: CmsDocument
+  /** The revision's staff differed from the current roster and was matched to it. */
+  reconciled: boolean
+}
+
+const rosterIds = (barbers: CmsBarber[]): string =>
+  barbers
+    .map((barber) => barber.id)
+    .sort()
+    .join('\n')
+
+/** A published revision as a draft the database accepts: it publishes only the current roster.
+ * Barbers and photos keep the revision's content for ids that still exist, the current entry
+ * for barbers added since, and drop barbers who have left. */
+export function restoreRevision(
+  revision: CmsDocument,
+  current: Pick<CmsDocument, 'barbers' | 'photos'>,
+): RevisionRestore {
+  if (rosterIds(revision.barbers) === rosterIds(current.barbers))
+    return { document: revision, reconciled: false }
+  const restored = new Map(revision.barbers.map((barber) => [barber.id, barber]))
+  const photos: Record<string, string> = {}
+  for (const { id } of current.barbers) {
+    const path = revision.photos[id] ?? current.photos[id]
+    if (path !== undefined) photos[id] = path
+  }
+  return {
+    document: {
+      ...revision,
+      barbers: current.barbers.map((barber) => restored.get(barber.id) ?? barber),
+      photos,
+    },
+    reconciled: true,
+  }
 }
