@@ -10,7 +10,9 @@ const strip = '[data-knc-fold="barber-marquee"]'
 const GAP = 48
 // Beside a visible card of the usual widths at most two such gaps fit.
 const MAX_BLANK = 2 * GAP
-// Whole-pixel tolerance for the cases that do not loop; a looping case derives its own (loopSeam).
+// Whole-pixel seam tolerance. Whole-pixel edges derive only 0.505 px (loopSeam), which no run has
+// measured and one frame of AutoScroll lag (0.18 px) would exceed, so the derived bound only
+// loosens this where the geometry demands it, as for 256.2 px or 179.34 px cards.
 const SEAM = 1
 
 /** Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent and
@@ -78,7 +80,7 @@ async function measureStrip(newContext, css, barbers = 4, width = 390) {
       }),
     }
   }, strip)
-  return { ...probe, looping, native, cards, seam: loopSeam(cards) }
+  return { ...probe, looping, native, cards, seam: Math.max(loopSeam(cards), SEAM) }
 }
 
 /** Init script: every ResizeObserver the page creates, with the targets it still watches. */
