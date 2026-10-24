@@ -38,13 +38,28 @@ import { CmsWorkspaceView } from './WorkspaceView'
 import { HistoryPanel } from './HistoryPanel'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
-import { clearBackup, loadBackup, saveBackup } from './backup'
+import { cmsBackups, type BackupSession, type TabBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
 import { CmsTextarea } from './Textarea'
 import './studio.css'
 import { pageScenes, type CmsScene } from '../../cms/Scene'
 
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
+const BACKUP_FAILED =
+  'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.'
+
+function downloadDraft(document: CmsDocument): void {
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(document, null, 2)], {
+      type: 'application/json',
+    }),
+  )
+  const link = window.document.createElement('a')
+  link.href = url
+  link.download = 'knc-cms-draft.json'
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 500)
+}
 
 export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [draft, setDraft] = useState<CmsDraft | null>(null)
@@ -82,6 +97,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     'theme' | 'history' | 'resources' | 'business' | 'email' | 'new-page' | 'backup' | null
   >(null)
   const [history, setHistory] = useState<CmsRevision[]>([])
+  const backups = useRef<BackupSession | null>(null)
+  const [offers, setOffers] = useState<TabBackup[]>([])
   const [resources, setResources] = useState<CmsAsset[]>([])
   const [resourceDestination, setResourceDestination] = useState<ResourceDestination | null>(null)
   const [newName, setNewName] = useState('Ny sida')
@@ -106,18 +123,20 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setError(null)
     setNotice(null)
     try {
+      const session = await cmsBackups().catch(() => null)
+      backups.current = session
       const loaded = await cmsApi.state()
       const stored = hasCorePageLayouts(loaded.document)
       if (stored) retainCorePageLayouts(loaded.document)
       else await prepareCorePageSource(loaded.document)
       const document = stored ? loaded.document : ensureCorePages(loaded.document)
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
-      const backup = loadBackup()
+      const backup = session ? await session.own() : null
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
       setConflict(null)
       if (seeded) next.base = structuredClone(loaded.document)
-      if (backup && isInventedSite(backup.document)) {
-        localStorage.setItem('knc-cms-retained-template-draft', JSON.stringify(backup))
+      if (backup && session && isInventedSite(backup.document)) {
+        await session.setAside()
         setNotice('Det äldre mallutkastet har bevarats lokalt men används inte som din webbplats.')
       }
       if (
@@ -150,6 +169,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         }
       }
       setDraft(next)
+      setOffers(session ? await session.offers() : [])
+      if (!session) setError(BACKUP_FAILED)
       if (seeded && !backup)
         setNotice(
           'Originalwebbplatsen har lästs in som ett opublicerat utkast. Granska före publicering.',
@@ -196,21 +217,33 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
   useLayoutEffect(() => {
     if (!draft) return
-    try {
-      if (draft.dirty || conflict)
-        saveBackup(
-          draft.document,
-          draft.revision,
-          draft.fingerprint,
-          conflict ? (conflict.base ?? undefined) : draft.base,
-        )
-      else clearBackup()
-    } catch {
-      setError(
-        'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.',
-      )
-    }
+    const base = conflict ? (conflict.base ?? undefined) : draft.base
+    backups.current?.schedule(
+      draft.dirty || conflict
+        ? {
+            document: draft.document,
+            revision: draft.revision,
+            fingerprint: draft.fingerprint,
+            ...(base ? { base } : {}),
+          }
+        : null,
+      () => setError(BACKUP_FAILED),
+    )
   }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
+  useEffect(() => {
+    // A closed or backgrounded tab must not lose the last 500 ms of edits.
+    const flush = (): void => void backups.current?.flush().catch(() => setError(BACKUP_FAILED))
+    const hidden = (): void => {
+      if (window.document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    window.document.addEventListener('visibilitychange', hidden)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.document.removeEventListener('visibilitychange', hidden)
+      flush()
+    }
+  }, [])
 
   const commitDraft = (
     update: CmsDocument | ((current: CmsDocument) => CmsDocument),
@@ -379,6 +412,31 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       setError(reason instanceof Error ? reason.message : 'Historiken kunde inte läsas.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Another tab's draft replaces this tab's draft only while this one has nothing unpublished.
+  const restoreOffer = async (offer: TabBackup): Promise<void> => {
+    const session = backups.current
+    if (!session || currentDraft.current?.dirty) return
+    try {
+      await session.adopt(offer)
+    } catch {
+      setError('Utkastet kunde inte hämtas till den här fliken. Det finns kvar i listan.')
+      return
+    }
+    setDialog(null)
+    await refresh()
+  }
+  const settleOffer = async (offer: TabBackup, exported: boolean): Promise<void> => {
+    const session = backups.current
+    if (!session) return
+    if (exported) downloadDraft(offer.document)
+    try {
+      await session.discard(offer)
+      setOffers(await session.offers())
+    } catch {
+      setError('Utkastet kunde inte tas bort ur listan. Försök igen.')
     }
   }
 
@@ -661,6 +719,25 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           </button>
           <button type="button" onClick={() => resolveConflict('remote')}>
             Använd serverns konfliktändringar
+          </button>
+        </div>
+      )}
+      {offers.length > 0 && dialog !== 'backup' && (
+        <div class="cms-notice cms-notice-info" role="status" inert={drawerOpen}>
+          <CmsIcon name="backup" />
+          <span>
+            {offers.length === 1
+              ? 'Ett opublicerat utkast från en stängd flik finns kvar.'
+              : `${offers.length} opublicerade utkast från stängda flikar finns kvar.`}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              editor.current?.flush()
+              setDialog('backup')
+            }}
+          >
+            Visa utkast
           </button>
         </div>
       )}
@@ -1242,16 +1319,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   type="button"
                   onClick={() => {
                     editor.current?.flush()
-                    const url = URL.createObjectURL(
-                      new Blob([JSON.stringify(draft.document, null, 2)], {
-                        type: 'application/json',
-                      }),
-                    )
-                    const link = window.document.createElement('a')
-                    link.href = url
-                    link.download = 'knc-cms-draft.json'
-                    link.click()
-                    window.setTimeout(() => URL.revokeObjectURL(url), 500)
+                    downloadDraft(draft.document)
                   }}
                 >
                   Export
@@ -1275,6 +1343,51 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   }}
                 />
               </div>
+              {offers.length > 0 && (
+                <section class="cms-backup-offers" aria-label="Utkast från stängda flikar">
+                  <h3>Utkast från stängda flikar</h3>
+                  {draft.dirty && (
+                    <p>
+                      Publicera, återställ eller exportera utkastet i den här fliken innan du
+                      fortsätter med ett annat.
+                    </p>
+                  )}
+                  <ul>
+                    {offers.map((offer) => {
+                      const template = isInventedSite(offer.document)
+                      const label = `${template ? 'Äldre mallutkast' : 'Utkast'} från ${new Date(offer.savedAt).toLocaleString('sv-SE')}`
+                      return (
+                        <li key={offer.tab} class="cms-actions-row" aria-label={label}>
+                          <span>{label}</span>
+                          {!template && (
+                            <button
+                              type="button"
+                              disabled={busy || draft.dirty}
+                              onClick={() => void restoreOffer(offer)}
+                            >
+                              Fortsätt här
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void settleOffer(offer, true)}
+                          >
+                            Exportera
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void settleOffer(offer, false)}
+                          >
+                            Kasta
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )}
             </div>
           )}
         </CmsModal>
