@@ -34,9 +34,11 @@ describe('parallel CMS media retention', () => {
       expect(f.remove).not.toHaveBeenCalled()
     }
   })
-  it('retains old cleanup behavior before the additive migration is installed', async () => {
-    const f = fixture(null, { code: 'PGRST202', message: 'Function not installed' })
-    await executeExternalAction(action, f.service, {})
-    expect(f.remove).toHaveBeenCalledTimes(1)
+  it('does not destroy a file when the retention function is missing', async () => {
+    for (const code of ['PGRST202', '42883']) {
+      const f = fixture(null, { code, message: 'Function not installed' })
+      await expect(executeExternalAction(action, f.service, {})).rejects.toThrow()
+      expect(f.remove).not.toHaveBeenCalled()
+    }
   })
 })
