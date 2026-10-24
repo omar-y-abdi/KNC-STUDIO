@@ -124,7 +124,12 @@ for (const scheme of ['light', 'dark']) {
             presentation: presentations[target.presentation],
             shell,
           })
-        await page.goto(`${publicOrigin}${target.url}`)
+        // The held chunk never settles, and whether a pending module request delays the load event
+        // differs by engine, so the fallback waits for its own ready text instead.
+        await page.goto(
+          `${publicOrigin}${target.url}`,
+          target.holdAdminChunk ? { waitUntil: 'domcontentloaded' } : {},
+        )
         await page.locator(target.ready).first().waitFor()
         await page.evaluate(() => globalThis.document.fonts.ready)
         // The before/after pair of the legal pages, for review (not compared).
