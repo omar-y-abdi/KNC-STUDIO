@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, type CmsDocument, type CmsPage } from '../../shared/cms'
+import { mergeCmsDocuments } from '../../src/admin/cms/draft'
 import { LEGACY_LEGAL_CSS, upgradeLegacyLegalPages } from '../../src/admin/cms/legacyLegal'
 
 // The constants are copies of git objects at c202df2. CI checks out one commit, so the copies are
@@ -95,6 +96,27 @@ describe('legacy legal page upgrade (STY-7)', () => {
     change(legal(document, '/terms'))
     const expected = structuredClone(legal(document, '/terms'))
     expect(legal(upgradeLegacyLegalPages(document), '/terms')).toEqual(expected)
+  })
+
+  // Studio recovers a local draft by merging it raw against the raw server base and upgrades only the
+  // result, so a draft saved before the upgrade neither conflicts with nor undoes it.
+  it('upgrades a recovered pre-upgrade draft and keeps its unrelated owner edit', () => {
+    const local = fixture()
+    const home = local.presentation.pages.find((page) => !(page.path in LEGACY_LEGAL_CSS))
+    if (!home) throw new Error('The fixture has no other page')
+    home.title.sv = 'Ägarens rubrik'
+    const merged = mergeCmsDocuments(fixture(), local, upgradeLegacyLegalPages(fixture()))
+    // Merged when the server moved on, restored as is when the draft was saved at its revision.
+    for (const recovered of [merged.document, local].map(upgradeLegacyLegalPages)) {
+      expect(recovered.presentation.pages.find((page) => page.id === home.id)?.title.sv).toBe(
+        'Ägarens rubrik',
+      )
+      for (const path of ['/terms', '/privacy'] as const) {
+        expect(sheets(legal(recovered, path))).toEqual(['', '', '', ''])
+        expect(legal(recovered, path).content.sv.html).toContain('<main class="bb-doc">')
+      }
+    }
+    expect(merged.conflicts).toEqual([])
   })
 
   it('is a no-op on its own output and on documents without legacy CSS', () => {

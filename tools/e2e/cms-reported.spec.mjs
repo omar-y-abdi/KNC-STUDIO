@@ -29,11 +29,25 @@ seed.emails = EMAIL_NAMES.flatMap((template) =>
     }
   }),
 )
+// One uploaded font in the published head, so the canvas carries its @font-face sheet.
+const UPLOADED_FONT_ID = '6f1d2c3b-4a5e-4f70-8a9b-0c1d2e3f4a5b'
+const fontSeed = globalThis.structuredClone(seed)
+fontSeed.presentation.fonts = {
+  [UPLOADED_FONT_ID]: {
+    ref: { bucket: 'cms-library', path: 'fonts/reload-check.woff2' },
+    name: 'Reload Check',
+  },
+}
 const test = baseTest.extend({
   catalogFixture: [false, { option: true }],
-  studio: async ({ page, context, browserName, evidenceDir, catalogFixture }, use, info) => {
+  fontFixture: [false, { option: true }],
+  studio: async (
+    { page, context, browserName, evidenceDir, catalogFixture, fontFixture },
+    use,
+    info,
+  ) => {
     page.setDefaultTimeout(15000)
-    const backend = await nativeBackend(context, seed)
+    const backend = await nativeBackend(context, fontFixture ? fontSeed : seed)
     if (catalogFixture) {
       const cors = {
         'Access-Control-Allow-Origin': new URL(base).origin,
@@ -159,38 +173,74 @@ async function expectPublicBackgrounds(context, presentation) {
 }
 
 // The legal canvas paints on the base sheets the Worker inlines publicly, with the edited mode
-// pinned as `?mode` pins it; other pages get neither.
-test('legal canvas links the public base sheets and pins the mode', async ({ page, studio }) => {
-  const { frame } = studio
-  const head = () =>
-    page.evaluate(() => {
-      const doc = globalThis.document.querySelector('.gjs-frame')?.contentDocument
-      const links = [...(doc?.querySelectorAll('link[rel="stylesheet"]') ?? [])]
-      const layout = doc?.querySelector('.bb-doc')
-      return {
-        links: links.map((link) => link.getAttribute('href')),
-        loaded: links.every((link) => link.sheet !== null),
-        scheme: doc?.documentElement.style.colorScheme ?? null,
-        layoutWidth: layout ? getComputedStyle(layout).maxWidth : null,
-      }
+// pinned as `?mode` pins it, also after the frame reloads; other pages get neither. The uploaded
+// fonts' sheet comes back with a reloaded frame too.
+test.describe('with an uploaded font', () => {
+  test.use({ fontFixture: true })
+  test('legal canvas links the public base sheets and pins the mode', async ({ page, studio }) => {
+    const { frame } = studio
+    const fontFace = `@font-face{font-family:"CMSFont-${UPLOADED_FONT_ID}";src:url("`
+    const head = () =>
+      page.evaluate((fontFace) => {
+        const doc = globalThis.document.querySelector('.gjs-frame')?.contentDocument
+        const links = [...(doc?.querySelectorAll('link[rel="stylesheet"]') ?? [])]
+        const layout = doc?.querySelector('.bb-doc')
+        const fonts = doc?.getElementById('cms-uploaded-fonts')
+        return {
+          links: links.map((link) => link.getAttribute('href')),
+          loaded: links.every((link) => link.sheet !== null),
+          scheme: doc?.documentElement.style.colorScheme ?? null,
+          layoutWidth: layout ? getComputedStyle(layout).maxWidth : null,
+          fontFace: fonts?.textContent.includes(fontFace) ?? false,
+          fontSheet: fonts?.sheet?.cssRules.length > 0,
+        }
+      }, fontFace)
+    const legal = (scheme) => ({
+      links: ['/tokens.css', '/info.css'],
+      loaded: true,
+      scheme,
+      layoutWidth: '736px',
+      fontFace: true,
+      fontSheet: true,
     })
-  const legal = (scheme) => ({
-    links: ['/tokens.css', '/info.css'],
-    loaded: true,
-    scheme,
-    layoutWidth: '736px',
+    await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
+    await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+    await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
+    await expect.poll(head, { message: 'legal canvas in Mörk' }).toEqual(legal('dark'))
+    // GrapesJS rebuilds a reloaded frame from scratch without any prop change. Mörk under an OS light
+    // page shows the pin: without it the tokens fall back to the light surface.
+    const reloadMarker = () =>
+      page.evaluate(
+        () =>
+          globalThis.document.querySelector('.gjs-frame')?.contentWindow.cmsReloadMarker ?? null,
+      )
+    await page.evaluate(() => {
+      const frameWindow = globalThis.document.querySelector('.gjs-frame').contentWindow
+      frameWindow.cmsReloadMarker = 'before'
+      frameWindow.location.reload()
+    })
+    await expect.poll(reloadMarker, { message: 'the canvas frame reloaded' }).toBe(null)
+    await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
+    await expect.poll(head, { message: 'legal canvas after a frame reload' }).toEqual(legal('dark'))
+    const canvas = await (await page.locator('.gjs-frame').first().elementHandle()).contentFrame()
+    await expect
+      .poll(() => canvas.evaluate(documentColours), {
+        message: 'legal colours after a frame reload',
+      })
+      .toEqual({ background: 'rgb(28, 28, 30)', text: 'rgb(245, 245, 247)' })
+    await page.getByRole('button', { name: 'Ljus', exact: true }).click()
+    await expect.poll(head, { message: 'legal canvas in Ljus' }).toEqual(legal('light'))
+    await page.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
+    await expect.poll(head, { message: 'home canvas' }).toEqual({
+      links: [],
+      loaded: true,
+      scheme: '',
+      layoutWidth: null,
+      fontFace: true,
+      fontSheet: true,
+    })
   })
-  await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
-  await page.getByRole('button', { name: 'Mörk', exact: true }).click()
-  await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
-  await expect.poll(head, { message: 'legal canvas in Mörk' }).toEqual(legal('dark'))
-  await page.getByRole('button', { name: 'Ljus', exact: true }).click()
-  await expect.poll(head, { message: 'legal canvas in Ljus' }).toEqual(legal('light'))
-  await page.getByRole('button', { name: 'Startsida', exact: true }).click()
-  await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
-  await expect
-    .poll(head, { message: 'home canvas' })
-    .toEqual({ links: [], loaded: true, scheme: '', layoutWidth: null })
 })
 
 /** What a reader sees inside the legal document: the first painted background in the element
@@ -269,6 +319,93 @@ test('legal page shows the owner body colours in the canvas and to visitors', as
     await visitor.close()
     await rendering.close()
   }
+})
+
+const LEGACY_LEGAL_CSS = Object.fromEntries(
+  ['terms', 'privacy'].map((kind) => [
+    `/${kind}`,
+    readFileSync(new URL(`../../src/admin/cms/legacy-legal-${kind}.txt`, import.meta.url), 'utf8'),
+  ]),
+)
+const OWNER_CSS = '\n.owner-edit{letter-spacing:.01em}'
+
+/** The document as a draft saved before the legal upgrade held it (legacy sheets, bare <main>), with
+ * an owner rule beside the legacy block on /terms, and the legal page contents the upgrade must
+ * give back: the owner rule kept, the legacy block gone, the document class restored. */
+function preUpgradeDraft(document) {
+  const draft = globalThis.structuredClone(document)
+  const expected = {}
+  for (const page of draft.presentation.pages) {
+    const legacy = LEGACY_LEGAL_CSS[page.path]
+    if (legacy === undefined) continue
+    const edit = page.path === '/terms' ? OWNER_CSS : ''
+    expected[page.path] = globalThis.structuredClone(page.content)
+    for (const lang of ['sv', 'en']) {
+      const variant = page.content[lang]
+      assert.match(variant.html, /^\s*<main class="bb-doc">/, `${page.path} ${lang} document shape`)
+      variant.html = variant.html.replace('<main class="bb-doc">', '<main>')
+      variant.css = { light: legacy + edit, dark: legacy + edit }
+      expected[page.path][lang].css = { light: edit, dark: edit }
+    }
+  }
+  assert.deepEqual(Object.keys(expected).sort(), ['/privacy', '/terms'])
+  return { draft, expected }
+}
+
+/** The Studio's local backup, once it has written one (a seeded draft is saved straight away). */
+async function savedBackup(page) {
+  const read = () =>
+    page.evaluate(async () => (await import('/src/admin/cms/backup.ts')).loadBackup())
+  await expect.poll(async () => (await read()) !== null, { message: 'a local backup' }).toBe(true)
+  return read()
+}
+
+const legalContents = async (studio, expected) =>
+  Object.fromEntries(
+    (await studio.capture()).presentation.pages
+      .filter((page) => page.path in expected)
+      .map((page) => [page.path, page.content]),
+  )
+
+// A local draft saved before the legal upgrade at the server's own revision is restored without a
+// merge; the recovered draft still gets the upgrade and keeps the owner's other edits.
+test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }) => {
+  const backup = await savedBackup(page)
+  const { draft, expected } = preUpgradeDraft(backup.document)
+  await page.evaluate(
+    async ({ backup, draft }) =>
+      (await import('/src/admin/cms/backup.ts')).saveBackup(
+        draft,
+        backup.revision,
+        backup.fingerprint,
+        backup.base,
+      ),
+    { backup, draft },
+  )
+  await page.reload()
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+  await page.getByText('Ett lokalt utkast från', { exact: false }).waitFor()
+  await expect
+    .poll(() => legalContents(studio, expected), { message: 'the recovered legal pages' })
+    .toEqual(expected)
+})
+
+// An exported JSON draft from before the legal upgrade imports with the upgrade applied.
+test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, studio }) => {
+  const { draft, expected } = preUpgradeDraft((await savedBackup(page)).document)
+  await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
+    name: 'pre-upgrade.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(draft)),
+  })
+  await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
+  await expect
+    .poll(() => legalContents(studio, expected), { message: 'the imported legal pages' })
+    .toEqual(expected)
 })
 
 test('1-legal-background', async ({ page, context, studio }, testInfo) => {

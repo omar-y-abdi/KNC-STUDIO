@@ -160,7 +160,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           !sameHead && backup.base
             ? mergeCmsDocuments(backup.base, local, document)
             : { document: local, conflicts: sameHead ? [] : [{ path: '' }] }
-        next.change(merged.document)
+        // A backup written before the legal upgrade still holds the legacy sheets; upgrade the
+        // recovered result, never the merge inputs, so the server snapshot stays the base.
+        next.change(upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document)))
         if (merged.conflicts.length) {
           next.base = structuredClone(backup.base ?? loaded.document)
           next.revision = backup.revision ?? -1
@@ -388,7 +390,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             ensureCorePages(remote.document),
           )
           const next = new CmsDraft(
-            normalizeMarqueeZoom(merged.document),
+            upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document)),
             remote.revision,
             remote.fingerprint,
           )
@@ -425,7 +427,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.fingerprint,
       )
       if (needsCorePageSource(next.document)) next.document = ensureCorePages(next.document)
-      next.document = normalizeMarqueeZoom(next.document)
+      next.document = upgradeLegacyLegalPages(normalizeMarqueeZoom(next.document))
       setDraft(next)
       setConflict(null)
     } else {
@@ -433,7 +435,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       // The first authoritative publication may be empty. Restore its source-derived
       // editing scaffold without pretending those templates have already been published.
       if (needsCorePageSource(draft.document)) draft.document = ensureCorePages(draft.document)
-      draft.document = normalizeMarqueeZoom(draft.document)
+      draft.document = upgradeLegacyLegalPages(normalizeMarqueeZoom(draft.document))
     }
     setVersion((v) => v + 1)
   }
@@ -441,11 +443,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     if (!draft || !conflict) return
     editor.current?.flush()
     const remote = ensureCorePages(conflict.remote.document)
-    const resolved = conflict.base
-      ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
-      : resolution === 'local'
-        ? draft.document
-        : remote
+    const resolved = upgradeLegacyLegalPages(
+      conflict.base
+        ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
+        : resolution === 'local'
+          ? draft.document
+          : remote,
+    )
     const next = new CmsDraft(
       conflict.remote.document,
       conflict.remote.revision,
@@ -540,7 +544,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       editor.current?.flush()
       const parsed = JSON.parse(await file.text()) as unknown
       const checked = await cmsApi.validate(parsed as CmsDocument)
-      const next = normalizeMarqueeZoom(ensureCorePages(checked.document))
+      const next = upgradeLegacyLegalPages(normalizeMarqueeZoom(ensureCorePages(checked.document)))
       commitDraft(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
       setNotice('JSON-utkastet importerades och är ännu inte publicerat.')
@@ -1166,10 +1170,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     if (!active) return
                     const restored = restoreRevision(old, active.document)
                     commitDraft(
-                      normalizeMarqueeZoom(
-                        needsCorePageSource(restored.document)
-                          ? ensureCorePages(restored.document)
-                          : restored.document,
+                      upgradeLegacyLegalPages(
+                        normalizeMarqueeZoom(
+                          needsCorePageSource(restored.document)
+                            ? ensureCorePages(restored.document)
+                            : restored.document,
+                        ),
                       ),
                     )
                     if (restored.reconciled)
