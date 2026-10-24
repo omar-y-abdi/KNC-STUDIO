@@ -1,28 +1,36 @@
-import type * as Preact from 'preact'
+import { useState } from 'preact/hooks'
+import { act } from 'preact/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-interface RenderedIsland {
-  readonly props: { readonly mode?: string }
-}
-
-const rendered = vi.hoisted((): RenderedIsland[] => [])
-vi.mock('preact', async (original) => ({
-  ...(await original<typeof Preact>()),
-  render: (node: RenderedIsland) => rendered.push(node),
+// A stand-in booking island that holds typed input in component state. It renders no DOM, so real
+// Preact can mount it into a plain container in the node test environment.
+const booking = vi.hoisted(() => ({
+  renders: [] as { readonly mode: string; readonly typed: string }[],
+  type: (() => undefined) as (value: string) => void,
 }))
-// The islands themselves are irrelevant here: only the mode the runtime hands them is asserted.
+vi.mock('../../src/booking/BookingFlow', () => ({
+  BookingFlow: ({ mode }: { readonly mode: string }) => {
+    const [typed, setTyped] = useState('')
+    booking.type = setTyped
+    booking.renders.push({ mode, typed })
+    return null
+  },
+}))
 vi.mock('../../src/about/AboutSection', () => ({ AboutSection: () => null }))
-vi.mock('../../src/booking/BookingFlow', () => ({ BookingFlow: () => null }))
 vi.mock('../../src/mybookings/MyBookingsDialog', () => ({ MyBookingsDialog: () => null }))
 
 const { mountCmsRuntime } = await import('../../src/cmsRuntime')
 
-function mountBookingIsland(cmsMode: string, osDark: boolean): string | undefined {
-  rendered.length = 0
+function mountBookingIsland(cmsMode: string, osDark: boolean) {
+  booking.renders.length = 0
+  const scheme = { osDark, listeners: [] as (() => void)[] }
   vi.stubGlobal('document', { documentElement: { lang: 'sv' } })
   vi.stubGlobal('window', {
     matchMedia: (query: string) => ({
-      matches: osDark && query === '(prefers-color-scheme: dark)',
+      get matches() {
+        return scheme.osDark && query === '(prefers-color-scheme: dark)'
+      },
+      addEventListener: (_type: string, listener: () => void) => scheme.listeners.push(listener),
     }),
   })
   const island = {}
@@ -30,8 +38,15 @@ function mountBookingIsland(cmsMode: string, osDark: boolean): string | undefine
     dataset: { cmsMode },
     querySelector: (selector: string) => (selector === '#knc-booking-runtime' ? island : null),
   }
-  mountCmsRuntime(root as unknown as HTMLElement)
-  return rendered[0]?.props.mode
+  act(() => mountCmsRuntime(root as unknown as HTMLElement))
+  const flipOs = (dark: boolean): void => {
+    scheme.osDark = dark
+    act(() => {
+      for (const listener of scheme.listeners) listener()
+    })
+  }
+  const last = () => booking.renders.at(-1)
+  return { scheme, flipOs, last }
 }
 
 describe('CMS runtime islands', () => {
@@ -43,11 +58,22 @@ describe('CMS runtime islands', () => {
     [true, 'dark'],
     [false, 'light'],
   ] as const)('resolves the auto marker from the OS scheme (OS dark: %s)', (osDark, expected) => {
-    expect(mountBookingIsland('auto', osDark)).toBe(expected)
+    expect(mountBookingIsland('auto', osDark).last()?.mode).toBe(expected)
   })
 
-  it('keeps an explicit mode over the OS scheme', () => {
-    expect(mountBookingIsland('light', true)).toBe('light')
-    expect(mountBookingIsland('dark', false)).toBe('dark')
+  it('follows both OS transitions after mount without losing typed booking data', () => {
+    const page = mountBookingIsland('auto', false)
+    act(() => booking.type('Ada Lovelace'))
+    page.flipOs(true)
+    expect(page.last()).toEqual({ mode: 'dark', typed: 'Ada Lovelace' })
+    page.flipOs(false)
+    expect(page.last()).toEqual({ mode: 'light', typed: 'Ada Lovelace' })
+  })
+
+  it('keeps an explicit mode pinned over the OS scheme', () => {
+    const light = mountBookingIsland('light', true)
+    expect(light.last()?.mode).toBe('light')
+    expect(light.scheme.listeners).toHaveLength(0)
+    expect(mountBookingIsland('dark', false).last()?.mode).toBe('dark')
   })
 })
