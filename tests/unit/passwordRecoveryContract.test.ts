@@ -16,11 +16,20 @@ describe('password recovery Turnstile contract', () => {
 
     ordered(source, [
       "from '../_shared/turnstile.ts'",
-      "typeof body.turnstileToken === 'string'",
+      'parse(requestSchema, raw)',
+      'const { email, lang, turnstileToken } = parsed.data',
       "Deno.env.get('TURNSTILE_SECRET')",
       'await verifyTurnstile(',
       "service.rpc('consume_auth_email_send'",
     ])
+  })
+
+  it('reads the challenge token as text in the request schema and passes it to the verifier', () => {
+    const schema = readFileSync('supabase/functions/send-recovery-email/request.ts', 'utf8')
+    const source = readFileSync('supabase/functions/send-recovery-email/index.ts', 'utf8')
+
+    expect(schema).toContain('turnstileToken: z.string()')
+    ordered(source, ['await verifyTurnstile(', 'turnstileToken,'])
   })
 
   it('keeps failed challenge outcomes neutral to the recovery requester', () => {
