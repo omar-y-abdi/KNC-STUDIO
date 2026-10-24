@@ -127,7 +127,7 @@ const NON_CANONICAL_RESOURCE =
 function storageUrl(ref: MediaRef, policy: MarkupPolicy): string {
   return `${policy.storageOrigin}/storage/v1/object/public/${ref.bucket}/${ref.path}`
 }
-export function safeLink(value: string, base: string): boolean {
+function safeLink(value: string, base: string): boolean {
   if (!value || hasControlOrSpace(value) || value.startsWith('//')) return false
   if (value.startsWith('#')) return /^#[a-zA-Z0-9_.:-]*$/.test(value)
   if (/^mailto:[^<>"'\s@]+@[^<>"'\s@]+$/i.test(value)) return true

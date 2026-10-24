@@ -15,14 +15,9 @@ import { validateEmailDesign, type EmailDesign } from './email-design.ts'
 
 // The editor, the tests and the Edge Functions keep importing these from here.
 export { CmsValidationError, validMediaRef } from './cms-primitives.ts'
-export type { CmsLang, CmsMode, MediaBucket, MediaRef } from './cms-primitives.ts'
-export {
-  defaultEmailDesign,
-  EMAIL_DESIGN_LIMITS,
-  EMAIL_PARTS,
-  validateEmailDesign,
-} from './email-design.ts'
-export type { EmailDesign, EmailPalette, EmailPart } from './email-design.ts'
+export type { CmsLang, CmsMode, MediaRef } from './cms-primitives.ts'
+export { defaultEmailDesign, EMAIL_DESIGN_LIMITS, validateEmailDesign } from './email-design.ts'
+export type { EmailDesign } from './email-design.ts'
 
 export const CMS_HTML_LIMIT = 100_000
 // Native captures include bounded identities and light/dark source styles.
@@ -146,9 +141,9 @@ export interface CmsPage {
   /** New authored pages own their complete layout, including a freely editable header/footer. */
   layout?: 'independent'
 }
-export const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
+const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
 export type CmsRegion = (typeof REGION_NAMES)[number]
-export const COPY_GROUPS = [
+const COPY_GROUPS = [
   'app',
   'booking',
   'about',
@@ -202,7 +197,7 @@ export interface CmsPublication {
   document: CmsDocument
 }
 
-export const SITE_KEYS = [
+const SITE_KEYS = [
   'kicker',
   'hours',
   'yourDetails',
@@ -220,7 +215,7 @@ export const SITE_KEYS = [
   'confirmSent',
   'addToCal',
 ] as const
-export const ABOUT_KEYS = [
+const ABOUT_KEYS = [
   'eyebrow',
   'heading',
   'intro',
@@ -229,7 +224,7 @@ export const ABOUT_KEYS = [
   'stylistsTitle',
   'reviewsTitle',
 ] as const
-export const SETTING_KEYS = [
+const SETTING_KEYS = [
   'homepage_scale',
   'about_scale',
   'homepage_logo_path',
@@ -250,7 +245,7 @@ export const SETTING_KEYS = [
   'seo_title_en',
   'seo_description_en',
 ] as const
-export const STYLE_KEYS = [
+const STYLE_KEYS = [
   'display',
   'width',
   'height',
@@ -301,7 +296,7 @@ export const STYLE_KEYS = [
   'transform',
   'objectFit',
 ] as const
-export const THEME_KEYS = [
+const THEME_KEYS = [
   'background',
   'surface',
   'text',
@@ -435,7 +430,7 @@ export function isPagePath(path: string): boolean {
     !['/privacy', '/terms', '/404', '/index'].includes(path)
   )
 }
-export function validCssValue(value: string): boolean {
+function validCssValue(value: string): boolean {
   return (
     value.length <= 160 &&
     /^[a-zA-Z0-9#.,%() +\-/_]*$/.test(value) &&

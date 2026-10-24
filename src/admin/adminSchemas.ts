@@ -10,7 +10,6 @@
 import { z } from 'zod'
 
 export { parseWith } from '../backend/rpcSchemas'
-export type { Parsed } from '../backend/rpcSchemas'
 
 /** ISO-8601 timestamp WITH offset (how PostgREST serializes `timestamptz`). */
 const isoTimestamp = z.string().datetime({ offset: true })
@@ -57,7 +56,6 @@ export const profileRow = z.object({
   must_change_password: z.boolean(),
   account_enabled: z.boolean(),
 })
-export type ProfileRow = z.infer<typeof profileRow>
 
 // --- barbers -------------------------------------------------------------------------------------
 
@@ -72,7 +70,6 @@ export const barberRow = z.object({
   active: z.boolean(),
   sort_order: z.number(),
 })
-export type BarberRow = z.infer<typeof barberRow>
 export const barberRows = z.array(barberRow)
 
 // --- barber_schedules ----------------------------------------------------------------------------
@@ -86,7 +83,6 @@ const scheduleRow = z.object({
   start_min: z.number().int().min(0).max(1440),
   end_min: z.number().int().min(0).max(1440),
 })
-export type ScheduleRow = z.infer<typeof scheduleRow>
 export const scheduleRows = z.array(scheduleRow)
 
 const availabilityMutationConflict = z.object({
@@ -113,7 +109,6 @@ const timeOffRow = z.object({
   end_date: isoDate,
   reason: z.string(),
 })
-export type TimeOffRow = z.infer<typeof timeOffRow>
 export const timeOffRows = z.array(timeOffRow)
 export const addTimeOffResponse = z.union([
   z.object({ ok: z.literal(true), row: timeOffRow }),
@@ -130,7 +125,6 @@ const slotBlockRow = z.object({
   start_min: z.number().int().min(0).max(1440),
   end_min: z.number().int().min(0).max(1440),
 })
-export type SlotBlockRow = z.infer<typeof slotBlockRow>
 export const slotBlockRows = z.array(slotBlockRow)
 export const addSlotBlockResponse = z.union([
   z.object({ ok: z.literal(true), row: slotBlockRow }),
@@ -147,7 +141,6 @@ const recurringBreakRow = z.object({
   start_min: z.number().int().min(540).max(1065),
   end_min: z.number().int().min(555).max(1080),
 })
-export type RecurringBreakRow = z.infer<typeof recurringBreakRow>
 export const recurringBreakRows = z.array(recurringBreakRow)
 export const addRecurringBreakResponse = z.union([
   z.object({ ok: z.literal(true), row: recurringBreakRow }),
@@ -199,14 +192,12 @@ const siteContentRow = z.object({
   lang,
   value: z.string(),
 })
-export type SiteContentRowT = z.infer<typeof siteContentRow>
 export const siteContentRows = z.array(siteContentRow)
 
 const siteSettingRow = z.object({
   key: z.string().min(1).max(40),
   value: z.string().max(500),
 })
-export type SiteSettingRowT = z.infer<typeof siteSettingRow>
 export const siteSettingRows = z.array(siteSettingRow)
 
 // --- email_templates -----------------------------------------------------------------------------
@@ -235,7 +226,6 @@ const emailTemplateRow = z.object({
   cta_label: z.string(),
   contact_lead: z.string().nullable(),
 })
-export type EmailTemplateRowT = z.infer<typeof emailTemplateRow>
 export const emailTemplateRows = z.array(emailTemplateRow)
 
 export const failedBookingEmailDeliveryRow = z.object({
@@ -264,7 +254,6 @@ export const barberPhotoRowT = z.object({
   barber_id: z.string(),
   storage_path: z.string(),
 })
-export type BarberPhotoRowT = z.infer<typeof barberPhotoRowT>
 
 export const uploadBarberPhotoResponse = z
   .object({
@@ -303,7 +292,6 @@ const galleryRow = z.object({
   alt: z.string(),
   sort_order: z.number(),
 })
-export type GalleryRow = z.infer<typeof galleryRow>
 export const galleryRows = z.array(galleryRow)
 
 export const uploadGalleryImageResponse = z
@@ -350,7 +338,6 @@ const adminBookingRow = z.object({
   lang,
   status: z.enum(['confirmed', 'cancelled']),
 })
-export type AdminBookingRow = z.infer<typeof adminBookingRow>
 export const adminBookingRows = z.array(adminBookingRow)
 
 // --- admin_create_booking RPC (Task 2 §4) --------------------------------------------------------
@@ -365,7 +352,6 @@ export const adminCreateBookingResponse = z.discriminatedUnion('ok', [
   adminCreateOk,
   adminCreateErr,
 ])
-export type AdminCreateBookingResponse = z.infer<typeof adminCreateBookingResponse>
 
 // --- admin_cancel_booking RPC --------------------------------------------------------------------
 // {ok:true, booking:{...}} | {ok:false, error:'forbidden'|'not_found'}
@@ -386,7 +372,6 @@ const cancelErr = z.object({
   error: z.enum(['forbidden', 'not_found']),
 })
 export const adminCancelResponse = z.discriminatedUnion('ok', [cancelOk, cancelErr])
-export type AdminCancelResponse = z.infer<typeof adminCancelResponse>
 
 // --- admin_delete_barber RPC ---------------------------------------------------------------------
 // Owner-only hard delete. With `p_purge_bookings=false` the RPC REFUSES while the barber still has
@@ -436,7 +421,6 @@ export const adminDeleteBarberResponse = z.union([
   deleteBarberDeliveryPending,
   deleteBarberDenied,
 ])
-export type AdminDeleteBarberResponse = z.infer<typeof adminDeleteBarberResponse>
 
 // --- admin_delete_bookings RPC -------------------------------------------------------------------
 // Bulk hard delete of bookings by id (owner any barber; a barber only their own). Intended for
@@ -455,7 +439,6 @@ export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
   deleteBookingsOk,
   deleteBookingsErr,
 ])
-export type AdminDeleteBookingsResponse = z.infer<typeof adminDeleteBookingsResponse>
 
 // --- admin_purge_history RPC ---------------------------------------------------------------------
 // Owner-only: delete ALL past/cancelled history in one shot, reporting the row count removed.
@@ -472,7 +455,6 @@ export const adminPurgeHistoryResponse = z.discriminatedUnion('ok', [
   purgeHistoryOk,
   purgeHistoryErr,
 ])
-export type AdminPurgeHistoryResponse = z.infer<typeof adminPurgeHistoryResponse>
 
 // --- available_slots RPC -------------------------------------------------------------------------
 // `setof text` -> PostgREST returns an array of `HH:MM` strings.

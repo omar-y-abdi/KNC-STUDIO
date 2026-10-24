@@ -5,7 +5,7 @@ PORTED and EXTENDED describe implementation coverage. They do not certify browse
 The executable acceptance checks are:
 
 - `tools/e2e/cms-native.spec.mjs`: original desktop/mobile appearance, editor source capture, publication and fresh public reload in Chromium and WebKit.
-- `tools/e2e/cms-owner.spec.mjs` and `cms-populated.spec.mjs`: owner edits and populated content through the editor and shared publication validators in both engines. These use a fixture backend.
+- `tools/e2e/cms-owner.spec.mjs` and `tools/e2e/cms-populated.spec.mjs`: owner edits and populated content through the editor and shared publication validators in both engines. These use a fixture backend.
 - `tools/e2e/cms-projection.spec.mjs`: actual nested components retain published text/image/style edits, callbacks, state, and newly loaded live entries in both engines.
 - `tools/e2e/cms-scenes.spec.mjs`: booking steps, details, confirmation and customer list editing/publication; ordinary runtime forms and changing customer data; mobile fold with no stored scroll styles. Chromium and WebKit, with optional published-presentation input.
 - `tools/e2e/cms-public-regression.spec.mjs`: repeated Home edit/publication/reload, bounded stored content, theme color and viewport backgrounds in Chromium/WebKit.

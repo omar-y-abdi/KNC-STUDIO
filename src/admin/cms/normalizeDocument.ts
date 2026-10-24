@@ -172,7 +172,7 @@ export function normalizeMarqueeCardZoom(css: string, ids: MarqueeIds): string {
 }
 
 /** The barber strip's identities in stored About HTML. */
-export function readMarqueeIds(html: string): MarqueeIds | null {
+function readMarqueeIds(html: string): MarqueeIds | null {
   const strip = new DOMParser()
     .parseFromString(html, 'text/html')
     .querySelector('[data-knc-fold="barber-marquee"][data-knc-source]')

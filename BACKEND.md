@@ -73,10 +73,19 @@ development may use the existing mock adapters; it must not silently become a pr
 
 ## Apply backend changes
 
-For the current release, follow `docs/operations/LAUNCH_RELEASE_2026-09-13.md`.
-`docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md` records the previous cookie/receipt rollout. The earlier
-`CUSTOMER_ACCESS_REPAIR_2026-09-10.md` describes PR58, already released. The historical
-`PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` must not be replayed as a current deployment checklist.
+Apply reviewed forward migrations before the matching Edge Functions and Worker/frontend.
+Use the current migration tree and `supabase/config.toml` as the deployment inventory; completed
+September rollout checklists are retired. The public gateway contract is already authoritative:
+never restore anonymous execution of booking/customer RPCs during recovery. After an irreversible
+schema retirement, use a reviewed forward migration and compatible application artifacts.
+
+The durable `booking_calendar_sync_on_change` trigger queues Calendar work through
+`calendar_event_sync`; `external-cleanup` dispatches it. The legacy Calendar webhook/function
+is retired. Verify the current schema, function inventory and Edge/Vault secret parity before
+release; repository source alone does not prove a hosted environment matches it.
+
+Follow `docs/operations/CMS_RELEASE.md` for backend/frontend compatibility, publication checks
+and recovery. Follow `docs/operations/BACKUP_RESTORE.md` before database changes.
 
 Required Edge Function secrets:
 
@@ -173,7 +182,7 @@ Production smoke test:
 
 See [README local setup](README.md#local-customer-links-and-cookies). Vite dev/preview proxy the
 customer route to the real local Worker; a Vite server alone cannot implement customer sessions.
-`npm run test:e2e -- --customer` runs the actual HTTPS Worker → Edge → PostgreSQL path in Chromium,
+`npm run test:e2e:customer` runs the actual HTTPS Worker → Edge → PostgreSQL path in Chromium,
 Firefox and WebKit. It verifies host-only HttpOnly cookies, successful profile hydration, shared-cookie
 customer switching, cookie rejection, invalid-link denial, rotation, concurrent booking receipts,
 consent withdrawal and device cancellation. Only cookie rejection is

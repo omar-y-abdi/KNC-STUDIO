@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DesktopSitePreviewPorts } from '../../src/app/DesktopSite'
-import { readOnlyHomepagePreviewPorts } from '../../src/admin/views/homepageReplicaPorts'
+import { readOnlyHomepagePreviewPorts } from '../../src/cms/homepageReplicaPorts'
 import { asBarberId } from '../../src/booking/domain'
 
 describe('homepage replica preview ports', () => {

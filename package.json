@@ -20,7 +20,6 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "E2E_GROUP=public playwright test",
     "test:e2e:admin": "E2E_GROUP=public playwright test admin-state.spec.mjs admin-shared.spec.mjs",

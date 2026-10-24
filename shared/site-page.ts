@@ -105,7 +105,7 @@ function updateChromeActionLinks(
   return changed ? serialize(tree) : html
 }
 
-export function sitePageLinks(pages: readonly CmsPage[], lang: CmsLang, mode: CmsMode): string {
+function sitePageLinks(pages: readonly CmsPage[], lang: CmsLang, mode: CmsMode): string {
   return pages
     .filter((page) => page.inMenu && isSitePage(page))
     .map((page) => `<a href="${href(page.path, lang, mode)}">${escape(page.name[lang])}</a>`)
@@ -189,11 +189,7 @@ export function renderSitePage(
       const legacyLanguagePill =
         current.tagName === 'div' &&
         children.length === 2 &&
-        new Set(
-          children.map((child) =>
-            textContent(child).trim(),
-          ),
-        ).size === 2 &&
+        new Set(children.map((child) => textContent(child).trim())).size === 2 &&
         children.every((child) => {
           const text = textContent(child).trim()
           return (
@@ -251,12 +247,8 @@ export function renderSitePage(
         const combinedLanguagePill =
           children.length === 2 &&
           children.every((child) => child.tagName === 'span') &&
-          new Set(
-            children.map((child) => textContent(child).trim()),
-          ).size === 2 &&
-          children.every((child) =>
-            ['SV', 'EN'].includes(textContent(child).trim()),
-          )
+          new Set(children.map((child) => textContent(child).trim())).size === 2 &&
+          children.every((child) => ['SV', 'EN'].includes(textContent(child).trim()))
         const languageToggle =
           combinedLanguagePill ||
           /language|språk/i.test(label) ||

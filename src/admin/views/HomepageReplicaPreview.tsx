@@ -8,7 +8,7 @@ import { DesktopSite } from '../../app/DesktopSite'
 import { chromeIcon, shellPalette, type View } from '../../app/shared'
 import { LangSwitch, ThemeSwitch } from '../chrome'
 import type { AdminStylesBundle } from './viewTypes'
-import { readOnlyHomepagePreviewPorts } from './homepageReplicaPorts'
+import { readOnlyHomepagePreviewPorts } from '../../cms/homepageReplicaPorts'
 import { appStrings, type Lang } from '../../i18n/index'
 import {
   formatBusinessAddress,
