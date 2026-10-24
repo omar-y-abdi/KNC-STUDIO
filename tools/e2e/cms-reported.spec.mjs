@@ -1,12 +1,15 @@
 /* global getComputedStyle */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { test as baseTest } from './fixtures.mjs'
+import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
+import { expect, test as baseTest } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 const base = harnessOrigin
+const SOURCE_SHELL = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
 const seed = emptyDocument()
 seed.emails = EMAIL_NAMES.flatMap((template) =>
   ['sv', 'en'].map((lang) => {
@@ -98,7 +101,59 @@ test.use({
   contextOptions: { reducedMotion: 'reduce' },
 })
 
-test('1-legal-background', async ({ page, studio }, testInfo) => {
+// The published legal page as the Worker serves it to a visitor who has not picked a mode: the
+// owner's background for each scheme, the browser chrome in the same colour, and no app bundle.
+async function expectPublicBackgrounds(context, presentation) {
+  const rendering = await loadWorker()
+  const visitor = await context.newPage()
+  try {
+    const scripts = []
+    const errors = []
+    visitor.on('request', (request) => {
+      if (request.resourceType() === 'script') scripts.push(request.url())
+    })
+    visitor.on('pageerror', (error) => errors.push(error.message))
+    await routeWorkerDocuments(visitor, {
+      origin: new URL(base).origin,
+      paths: ['/terms'],
+      worker: rendering.worker,
+      presentation,
+      shell: SOURCE_SHELL,
+    })
+    const paint = () =>
+      visitor.evaluate(() => ({
+        background: getComputedStyle(globalThis.document.body).backgroundColor,
+        themeColors: [...globalThis.document.querySelectorAll('meta[name="theme-color"]')].map(
+          (meta) => meta.content,
+        ),
+      }))
+    const painted = {}
+    for (const scheme of ['light', 'dark']) {
+      const expected = scheme === 'dark' ? 'rgb(18, 52, 86)' : 'rgb(35, 69, 103)'
+      await visitor.emulateMedia({ colorScheme: scheme })
+      if (scheme === 'light') await visitor.goto(`${base}/terms`, { waitUntil: 'load' })
+      await expect
+        .poll(paint, { message: `public /terms in OS ${scheme}` })
+        .toEqual({ background: expected, themeColors: [expected, expected] })
+      painted[scheme] = await paint()
+    }
+    assert.equal(
+      await visitor.evaluate(
+        () => globalThis.document.querySelectorAll('script[type="module"]').length,
+      ),
+      0,
+      'the published legal page ships without the app bundle',
+    )
+    assert.deepEqual(scripts, [], 'no script is requested')
+    assert.deepEqual(errors, [], 'no unhandled visitor errors')
+    return painted
+  } finally {
+    await visitor.close()
+    await rendering.close()
+  }
+}
+
+test('1-legal-background', async ({ page, context, studio }, testInfo) => {
   const { frame, shot, backend } = studio
   await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
   await page.getByRole('button', { name: 'Mörk', exact: true }).click()
@@ -230,6 +285,10 @@ test('1-legal-background', async ({ page, studio }, testInfo) => {
     ])
       assert.ok(html.includes(`id="${slot}"`), `${lang} legal content retains ${slot}`)
   }
+  const publicPixels = await expectPublicBackgrounds(
+    context,
+    globalThis.structuredClone(backend.document.presentation),
+  )
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
@@ -277,7 +336,7 @@ test('1-legal-background', async ({ page, studio }, testInfo) => {
   assert.equal(await readSelectedBackground(), 'rgb(35, 69, 103)')
   await shot('light-reloaded')
   await testInfo.attach('metrics', {
-    body: JSON.stringify({ dark: darkPixels, light: lightPixels }, null, 2),
+    body: JSON.stringify({ dark: darkPixels, light: lightPixels, public: publicPixels }, null, 2),
     contentType: 'application/json',
   })
 })

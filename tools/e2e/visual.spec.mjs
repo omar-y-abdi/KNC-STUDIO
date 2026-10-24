@@ -1,3 +1,7 @@
+// Code-fallback guard (TST-2): approved screenshots of the homepage as the app code renders it when
+// the CMS document is empty (installPublicBackend serves an empty presentation), on the plain Vite
+// preview without the Worker. It does not cover Worker-rendered CMS pages: legal-mode.spec.mjs
+// renders those through the real Worker.
 import { test, expect } from './fixtures.mjs'
 import { installPublicBackend } from './public-fixtures.mjs'
 import { publicOrigin } from './origins.mjs'

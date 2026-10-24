@@ -9,7 +9,12 @@ import {
 import { repairDesktopCss } from '../shared/cms-device-css'
 import { siteThemeCss, themeDeclarations } from '../shared/site-theme'
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { isSitePage, renderSitePage } from '../shared/site-page'
+import {
+  isIndependentPage,
+  isSitePage,
+  renderIndependentSitePage,
+  renderSitePage,
+} from '../shared/site-page'
 import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
   validatePresentation,
@@ -17,7 +22,9 @@ import {
   type CmsMode,
   type CmsPage,
   type CmsPresentation,
+  type PageVariant,
 } from '../shared/cms'
+import { CMS_THEME_SCRIPT } from './site/cmsThemeScript'
 import { publicBusinessDiscoveryResponse } from './backend/rpcSchemas'
 import { customerGateway } from './mybookings/customerGateway'
 import { NATIVE_PUBLIC_PATHS, privatePageTitle } from './site/routeMetadata'
@@ -327,20 +334,109 @@ function cmsFontCss(presentation: CmsPresentation, storageOrigin: string): strin
     .join('\n')
 }
 
+/** `?mode` pins a colour scheme; without a valid one the page follows the visitor's OS scheme. */
+function requestedCmsMode(value: string | null): CmsMode | null {
+  return value === 'light' || value === 'dark' ? value : null
+}
+
+/** One explicit scheme, or both behind `prefers-color-scheme` media queries. */
+type RenderedMode = CmsMode | 'auto'
+
+/** Native markup is restored for one mode here and owned by the app after mount. Authored markup
+ * (legal and created pages) is complete without the app bundle. */
+type CmsRender =
+  | { readonly markup: 'native'; readonly mode: CmsMode; readonly variant: PageVariant }
+  | { readonly markup: 'authored'; readonly mode: RenderedMode; readonly variant: PageVariant }
+
+const COLOR_SCHEMES: readonly CmsMode[] = ['light', 'dark']
+const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
+const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
+const MODULE_SCRIPT = /<script\b[^>]*\btype="module"[^>]*>[\s\S]*?<\/script>\s*/gi
+const MODULE_PRELOAD = /<link\b[^>]*\brel="modulepreload"[^>]*>\s*/gi
+const PLAYFAIR_PRELOAD =
+  /<link\b(?=[^>]*\brel="preload")(?=[^>]*\bhref="\/fonts\/PlayfairDisplay-)[^>]*>\s*/gi
+const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
+
+function planCmsRender(
+  page: CmsPage,
+  lang: CmsLang,
+  requested: CmsMode | null,
+  presentation?: CmsPresentation,
+): CmsRender {
+  const native = page.content[lang].html.includes('data-knc-native="1"')
+  if (!presentation || !isSitePage(page)) {
+    const variant = page.content[lang]
+    return native
+      ? { markup: 'native', mode: requested ?? 'light', variant }
+      : { markup: 'authored', mode: requested ?? 'auto', variant }
+  }
+  if (requested === null && !native && isIndependentPage(page))
+    return { markup: 'authored', mode: 'auto', variant: renderIndependentSitePage(page, lang) }
+  // A derived site layout inlines one mode's styles into its markup, so it cannot follow the OS.
+  const mode = requested ?? 'light'
+  const site = renderSitePage(presentation, page, lang, mode)
+  const variant = { html: site.html, css: { light: site.css, dark: site.css } }
+  return native ? { markup: 'native', mode, variant } : { markup: 'authored', mode, variant }
+}
+
+const sheetSchemes = (mode: RenderedMode): readonly CmsMode[] =>
+  mode === 'auto' ? COLOR_SCHEMES : [mode]
+
+function schemeMedia(mode: RenderedMode, scheme: CmsMode): string {
+  return mode === 'auto' ? ` media="(prefers-color-scheme: ${scheme})"` : ''
+}
+
+/** Each shipped sheet is passed through `modeCss` for its own explicit scheme. */
+function pageSheets(variant: PageVariant, mode: RenderedMode): string {
+  return sheetSchemes(mode)
+    .map(
+      (scheme) =>
+        `<style id="cms-page-${scheme}"${schemeMedia(mode, scheme)}>${modeCss(repairDesktopCss(variant.css[scheme]), scheme)}</style>`,
+    )
+    .join('')
+}
+
+function themeSheets(mode: RenderedMode, presentation?: CmsPresentation): string {
+  const css = (scheme: CmsMode): string => (presentation ? siteThemeCss(presentation, scheme) : '')
+  if (mode !== 'auto') return `<style id="cms-theme">${css(mode)}</style>`
+  return COLOR_SCHEMES.map(
+    (scheme) =>
+      `<style id="cms-theme-${scheme}"${schemeMedia(mode, scheme)}>${css(scheme)}</style>`,
+  ).join('')
+}
+
+function withColorScheme(html: string, mode: RenderedMode): string {
+  const scheme = mode === 'auto' ? 'light dark' : mode
+  return COLOR_SCHEME_META.test(html)
+    ? html.replace(COLOR_SCHEME_META, `$1${scheme}$2`)
+    : html.replace('</head>', `<meta name="color-scheme" content="${scheme}"></head>`)
+}
+
+function beforeBodyEnd(html: string, snippet: string): string {
+  const end = html.lastIndexOf('</body>')
+  return end < 0 ? `${html}${snippet}` : `${html.slice(0, end)}${snippet}${html.slice(end)}`
+}
+
+/** Authored pages carry their own theme logic. Without a runtime island they use nothing from the
+ * app bundle, so its entry and preloads go, and the Playfair preload unless their CSS uses it. */
+function authoredDocument(html: string, mode: RenderedMode, markup: string, css: string): string {
+  const themed = beforeBodyEnd(withColorScheme(html, mode), `<script>${CMS_THEME_SCRIPT}</script>`)
+  if (RUNTIME_ISLAND.test(markup)) return themed
+  const bundleFree = themed.replace(MODULE_SCRIPT, '').replace(MODULE_PRELOAD, '')
+  return /Playfair/i.test(css) ? bundleFree : bundleFree.replace(PLAYFAIR_PRELOAD, '')
+}
+
 export function renderCmsPage(
   html: string,
   page: CmsPage,
   lang: CmsLang,
-  mode: CmsMode,
+  requested: CmsMode | null,
   canonicalUrl: string,
   fontCss = '',
   presentation?: CmsPresentation,
 ): string {
-  const sitePage =
-    presentation && isSitePage(page) ? renderSitePage(presentation, page, lang, mode) : null
-  const variant = sitePage
-    ? { html: sitePage.html, css: { light: sitePage.css, dark: sitePage.css } }
-    : page.content[lang]
+  const plan = planCmsRender(page, lang, requested, presentation)
+  const variant = plan.variant
   let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
   rendered = replaceElementText(rendered, 'business-title', page.title[lang])
   rendered = replaceMetaContent(rendered, 'business-description', page.description[lang])
@@ -360,14 +456,18 @@ export function renderCmsPage(
     /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
     `$1${escapeAttribute(canonicalUrl)}$2`,
   )
+  const styles =
+    `<style id="cms-fonts">${fontCss}</style>` +
+    pageSheets(variant, plan.mode) +
+    themeSheets(plan.mode, presentation)
+  // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page).
   rendered = rendered.replace(
     '</head>',
-    `<style id="cms-fonts">${fontCss}</style>` +
-      `<style id="cms-page-light" media="${mode === 'light' ? 'all' : 'not all'}">${modeCss(repairDesktopCss(variant.css.light), 'light')}</style>` +
-      `<style id="cms-page-dark" media="${mode === 'dark' ? 'all' : 'not all'}">${modeCss(repairDesktopCss(variant.css.dark), 'dark')}</style><style id="cms-theme">${presentation ? siteThemeCss(presentation, mode) : ''}</style></head>`,
+    `${plan.markup === 'authored' ? CMS_RESET : ''}${styles}</head>`,
   )
   let markup = variant.html
-  if (markup.includes('data-knc-native="1"')) {
+  if (plan.markup === 'native') {
+    const mode = plan.mode
     // Source styles are stored once in the document; restore them for the first HTML response.
     const fragment = parseFragment(markup)
     const restoreSource = (node: DefaultTreeAdapterMap['node']): void => {
@@ -429,11 +529,11 @@ export function renderCmsPage(
     const opening = rendered.slice(bounds.start, bounds.end + 1)
     const marked = opening.replace(
       /\s*>$/,
-      ` data-cms-public="1" data-cms-mode="${mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
+      ` data-cms-public="1" data-cms-mode="${plan.mode}" data-cms-page-id="${escapeAttribute(page.id)}">`,
     )
     rendered = `${rendered.slice(0, bounds.start)}${marked}${rendered.slice(bounds.end + 1)}`
   }
-  return rendered
+  return plan.markup === 'native' ? rendered : authoredDocument(rendered, plan.mode, markup, styles)
 }
 
 export function renderHomepageMetadata(
@@ -888,7 +988,7 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
     if (cmsPage) {
       const index = await serveAsset(request, env, '/index.html', true)
       const lang: CmsLang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv'
-      const mode: CmsMode = url.searchParams.get('mode') === 'dark' ? 'dark' : 'light'
+      const mode = requestedCmsMode(url.searchParams.get('mode'))
       const canonicalUrl = `${SITE_URL}${cmsPage.path === '/' ? '/' : cmsPage.path}`
       const discovery = request.method === 'HEAD' ? null : await loadDiscovery(env)
       const headers = new Headers(index.headers)

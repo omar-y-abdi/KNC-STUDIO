@@ -2,13 +2,16 @@ import { themeDeclarations, siteThemeCss } from './site-theme.ts'
 import { repairDesktopCss } from './cms-device-css.ts'
 import { generate, parse, walk } from 'css-tree'
 import { parseFragment, serialize, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
-import type { CmsLang, CmsMode, CmsPage, CmsPresentation } from './cms'
+import type { CmsLang, CmsMode, CmsPage, CmsPresentation, PageVariant } from './cms'
 
 type Node = DefaultTreeAdapterMap['node']
 type Element = DefaultTreeAdapterMap['element']
 const corePaths = new Set(['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'])
 export const isSitePage = (page: CmsPage): boolean =>
   page.kind === 'page' && !corePaths.has(page.path)
+export type IndependentPage = CmsPage & { readonly layout: 'independent' }
+export const isIndependentPage = (page: CmsPage): page is IndependentPage =>
+  page.layout === 'independent'
 const attr = (node: Element, name: string): string =>
   node.attrs.find((item) => item.name === name)?.value ?? ''
 const elements = (node: Node): Element[] =>
@@ -47,7 +50,15 @@ function addClass(node: Element, name: string): void {
   node.attrs.push({ name: 'class', value: existing ? `${existing} ${name}` : name })
 }
 
-function updateChromeActionLinks(html: string, path: string, lang: CmsLang, mode: CmsMode): string {
+/** `mode` null: the response follows the visitor's OS scheme. The language link then omits `mode`
+ * so the next page follows it too; the theme link still pins one (dark, the opposite of the light
+ * default), which the page's theme script retargets to the opposite of the shown scheme. */
+function updateChromeActionLinks(
+  html: string,
+  path: string,
+  lang: CmsLang,
+  mode: CmsMode | null,
+): string {
   const tree = parseFragment(html)
   const header = find(
     tree,
@@ -76,7 +87,9 @@ function updateChromeActionLinks(html: string, path: string, lang: CmsLang, mode
         }
         if (url.origin !== 'https://site.invalid' || url.pathname !== path) return
         url.searchParams.set('lang', languageToggle ? (lang === 'sv' ? 'en' : 'sv') : lang)
-        url.searchParams.set('mode', themeToggle ? (mode === 'light' ? 'dark' : 'light') : mode)
+        if (themeToggle) url.searchParams.set('mode', mode === 'dark' ? 'light' : 'dark')
+        else if (mode) url.searchParams.set('mode', mode)
+        else url.searchParams.delete('mode')
         node.attrs = node.attrs.map((item) =>
           item.name === 'href'
             ? { ...item, value: `${url.pathname}${url.search}${url.hash}` }
@@ -291,6 +304,16 @@ export function renderSitePage(
   return {
     html: `<div id="cms-site-shell" style="${escape(rootStyle)}"><header id="cms-site-header">${headerHtml}</header><nav id="cms-site-menu" aria-label="${lang === 'sv' ? 'Sidmeny' : 'Pages'}">${menu}</nav><div id="cms-site-content">${variant.html}</div><footer id="cms-site-footer">${infoHtml}${footerHtml}</footer></div>`,
     css: `${siteThemeCss(presentation, mode)}\n${repairDesktopCss(home.css[mode])}\n${repairDesktopCss(about?.css[mode] ?? '')}\n${repairDesktopCss(variant.css[mode])}\n#cms-site-shell{min-height:100dvh;display:flex;flex-direction:column;padding:0}#cms-site-header>div{position:relative!important;height:auto!important;min-height:61px;flex-wrap:wrap;gap:14px}:where(#cms-site-header) a{color:inherit;text-decoration:none}#cms-site-menu{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 24px;padding:18px 24px;border-bottom:1px solid currentColor;font-size:13px}#cms-site-menu a{color:inherit;text-underline-offset:4px}#cms-site-content{flex:1;min-width:0}#cms-site-footer{border-top:1px solid currentColor}#cms-site-footer>div{position:static!important;padding:24px!important;flex-wrap:wrap;gap:12px}#cms-site-footer>footer{padding-bottom:24px!important}@media(max-width:768px){#cms-site-header>div{padding:16px!important;justify-content:center!important}#cms-site-content main{padding:40px 24px!important}#cms-site-header .cms-site-chrome{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px 12px}#cms-site-header .cms-site-controls{display:contents}#cms-site-header .cms-site-brand{grid-column:1/3;grid-row:1;justify-self:start;min-width:0;margin:0}#cms-site-header .cms-site-brand svg{display:block;width:210px;max-width:100%;height:auto;max-height:36px}#cms-site-header .cms-site-directions{grid-column:3;grid-row:1;font-size:11px;white-space:nowrap;padding:6px 8px;gap:4px}#cms-site-header .cms-site-phone{grid-column:1;grid-row:2;min-width:0;font-size:12px;white-space:nowrap;gap:4px}#cms-site-header .cms-site-action-language{grid-column:2;grid-row:2}#cms-site-header .cms-site-action-theme{grid-column:3;grid-row:2}#cms-site-header .cms-site-phone img,#cms-site-header .cms-site-directions img{width:14px;height:14px;flex:none}}`,
+  }
+}
+
+/** An independent page owns one markup for both colour schemes (its styles live in per-mode CSS),
+ * so one response can serve both: the markup with links that follow the OS, and each mode's CSS. */
+export function renderIndependentSitePage(page: IndependentPage, lang: CmsLang): PageVariant {
+  const variant = normalizeSitePageContent(page.content[lang], `${page.id}-${lang}`)
+  return {
+    html: updateChromeActionLinks(variant.html, page.path, lang, null),
+    css: { light: repairDesktopCss(variant.css.light), dark: repairDesktopCss(variant.css.dark) },
   }
 }
 
