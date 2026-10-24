@@ -143,14 +143,23 @@ export function useBarberMarquee({
       // A short roster or narrow owner cards make Embla drop loop, and AutoScroll then halts at the
       // end. Widen every slide just enough to loop; inline !important outranks the owner's #id
       // rules, and the remembered inline value returns as soon as the slides loop on their own.
-      const floors = new Map<HTMLElement, { readonly value: string; readonly priority: string }>()
+      // An owner's min-width transition would hold the floor back while Embla measures it, so a
+      // floored card's own transition is important too. Only its priority returns: a render may
+      // have rewritten the value meanwhile.
+      const floors = new Map<
+        HTMLElement,
+        { readonly value: string; readonly priority: string; readonly transitionPriority: string }
+      >()
       let floor = 0
       let passes = 0
       let ownReInit = false
       let fitFrame = 0
       const restoreSlides = (): void => {
-        for (const [node, natural] of floors)
+        for (const [node, natural] of floors) {
           node.style.setProperty('min-width', natural.value, natural.priority)
+          const transition = node.style.getPropertyValue('transition')
+          node.style.setProperty('transition', transition, natural.transitionPriority)
+        }
         floors.clear()
         floor = 0
       }
@@ -191,11 +200,15 @@ export function useBarberMarquee({
         if (api.internalEngine().options.loop || passes >= MAX_FIT_PASSES) return
         const next = passFloor(passes, floor, track.offsetWidth, track.offsetLeft, geometry())
         for (const node of api.slideNodes()) {
-          if (!floors.has(node))
+          if (!floors.has(node)) {
             floors.set(node, {
               value: node.style.getPropertyValue('min-width'),
               priority: node.style.getPropertyPriority('min-width'),
+              transitionPriority: node.style.getPropertyPriority('transition'),
             })
+            const transition = node.style.getPropertyValue('transition')
+            node.style.setProperty('transition', transition, 'important')
+          }
           node.style.setProperty('min-width', `${next}px`, 'important')
         }
         floor = next
@@ -312,6 +325,35 @@ export function useBarberMarquee({
       detach?.()
     }
   }, [animate, rootRef, rosterIds.length, trackRef])
+
+  // Owner CSS that defeats the loop floor may also size, float or position the strip by its cards,
+  // which leaves the native fallback nothing to scroll. A failed phone strip keeps its own inline
+  // width and overflow, important now, and initial values for the rest. On cleanup, a declaration
+  // that is no longer important was rewritten by a render and stays as the render left it.
+  useLayoutEffect(() => {
+    const style = trackRef.current?.style
+    if (!style || !enabled || !engineFailed) return
+    const forced = Object.entries({
+      width: style.getPropertyValue('width'),
+      'overflow-x': style.getPropertyValue('overflow-x'),
+      // Initial values: the strip sets none of these itself and no stock stylesheet targets it.
+      'min-width': 'auto',
+      'max-width': 'none',
+      float: 'none',
+      position: 'static',
+    })
+    const natural = forced.map(([property]) => ({
+      property,
+      value: style.getPropertyValue(property),
+      priority: style.getPropertyPriority(property),
+    }))
+    for (const [property, value] of forced) style.setProperty(property, value, 'important')
+    return () => {
+      for (const { property, value, priority } of natural)
+        if (style.getPropertyPriority(property) === 'important')
+          style.setProperty(property, value, priority)
+    }
+  }, [enabled, engineFailed, trackRef])
 
   const rosterKey = rosterIds.join('\u0000')
   useLayoutEffect(() => {

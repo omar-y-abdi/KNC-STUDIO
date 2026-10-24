@@ -43,15 +43,18 @@ async function measureStrip(newContext, css, barbers = 4, width = 390) {
   await page.evaluate(installBlankProbe, strip)
   await context.clock.runFor(90_000)
   const probe = await page.evaluate(readBlankProbe)
-  // Embla's slide looper translates slides only while the carousel loops.
-  const looping = await page.evaluate(
-    (selector) =>
-      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].some(
+  // Embla's slide looper translates slides only while the carousel loops; the native fallback
+  // scrolls the strip itself.
+  const { looping, native } = await page.evaluate(
+    (selector) => ({
+      looping: [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].some(
         (card) => card.style.transform !== '',
       ),
+      native: globalThis.document.querySelector(selector)?.style.overflowX === 'auto',
+    }),
     strip,
   )
-  return { ...probe, looping }
+  return { ...probe, looping, native }
 }
 
 /** Init script: every ResizeObserver the page creates, with the targets it still watches. */
@@ -168,6 +171,24 @@ test('mobile barber strip: narrow 10vw cards spread by space-between still loop'
   assert.ok(probe.looping, 'Embla dropped loop')
   // The floor stops at 98 px, so three of the regular 48 px gaps fit in the viewport at once: bound
   // the widest single hole by one gap, which a loop seam opening up would exceed.
+  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
+  assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
+})
+
+test('mobile barber strip: an owner min-width transition does not hold back the loop floor', async ({
+  newContext,
+  evidenceDir,
+}) => {
+  // CSS transitions run on real time, not on the fake clock: unless the floor bypasses the owner's
+  // transition, all fitting passes measure the cards before its 1 s delay ends and fall back.
+  const css = cardRule(
+    'width:10vw!important;flex-basis:10vw!important;transition:min-width 1s linear 1s!important',
+  )
+  const probe = await measureStrip(newContext, css, 4)
+  await writeFile(`${evidenceDir}/barber-strip-transition.json`, JSON.stringify(probe, null, 2))
+  assert.ok(!probe.native, 'The strip fell back to native scrolling')
+  assert.ok(probe.looping, 'Embla dropped loop')
+  // The 98 px floor leaves three regular gaps in the viewport, as in the space-between case.
   assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
@@ -402,6 +423,44 @@ test('mobile barber strip: a strip no floor can loop falls back to native scroll
           card.style.getPropertyPriority('min-width') === '',
       )
     )
+  }, strip)
+})
+
+test('mobile barber strip: the native fallback scrolls to the last card of a strip sized by its cards', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const failure = page.waitForEvent('pageerror')
+  // Two stock cards: the strip is as wide as they are, so no floor loops it, and unless the
+  // fallback restores the strip's own width it has nothing to scroll.
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
+    `@media (max-width:768px){${strip}{width:max-content!important}}`,
+  )
+  assert.match((await failure).message, /The barber strip cannot loop/)
+  await page.waitForFunction(
+    (selector) => globalThis.document.querySelector(selector)?.style.overflowX === 'auto',
+    strip,
+  )
+  const range = await page.evaluate((selector) => {
+    const track = globalThis.document.querySelector(selector)
+    return { scrollWidth: track?.scrollWidth, clientWidth: track?.clientWidth }
+  }, strip)
+  assert.ok(range.scrollWidth > range.clientWidth, `Nothing to scroll: ${JSON.stringify(range)}`)
+  await page.evaluate((selector) => {
+    const track = globalThis.document.querySelector(selector)
+    if (track) track.scrollLeft = track.scrollWidth
+  }, strip)
+  // Scroll snapping may settle a frame later; the card must end up inside the window.
+  await page.waitForFunction((selector) => {
+    const cards = globalThis.document.querySelectorAll(`${selector} > [role="button"]`)
+    const rect = cards[cards.length - 1]?.getBoundingClientRect()
+    return rect !== undefined && rect.left >= -1 && rect.right <= globalThis.innerWidth + 1
   }, strip)
 })
 
