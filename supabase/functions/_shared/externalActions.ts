@@ -880,3 +880,59 @@ export async function executeExternalAction(
     }
   }
 }
+
+/** How the outbox recorded one dispatched job after its side effect was attempted. */
+export type ExternalActionSettlement =
+  | { readonly status: 'completed' }
+  | { readonly status: 'failed'; readonly code: string }
+  | { readonly status: 'database_failed' }
+
+/**
+ * Runs one dispatched job and records the outcome under its dispatch token. A job completes only
+ * after its side effect succeeded; any thrown error schedules a retry, or blocks the job when the
+ * error is not retryable.
+ */
+export async function settleExternalAction(
+  action: ExternalAction,
+  service: ExternalActionService,
+  runtime: ExternalActionRuntime,
+): Promise<ExternalActionSettlement> {
+  try {
+    await executeExternalAction(action, service, runtime)
+  } catch (error) {
+    return recordExternalActionFailure(action, service, error)
+  }
+
+  const completed = await service.rpc('complete_external_action', {
+    p_id: action.id,
+    p_dispatch_token: action.dispatch_token,
+  })
+  if (completed.error !== null || completed.data !== true) {
+    console.error('external-cleanup: completion update failed', completed.error?.code)
+    return { status: 'database_failed' }
+  }
+  return { status: 'completed' }
+}
+
+async function recordExternalActionFailure(
+  action: ExternalAction,
+  service: ExternalActionService,
+  error: unknown,
+): Promise<ExternalActionSettlement> {
+  const code = error instanceof ExternalActionError ? error.code : 'external_action_failed'
+  console.error(
+    `external-cleanup: ${action.action_type} failed`,
+    error instanceof Error ? error.message : 'unknown',
+  )
+  const resolutionRpc =
+    error instanceof ExternalActionError && !error.retryable
+      ? 'block_external_action'
+      : 'fail_external_action'
+  const failed = await service.rpc(resolutionRpc, {
+    p_id: action.id,
+    p_dispatch_token: action.dispatch_token,
+    p_error_code: code,
+  })
+  if (failed.error !== null || failed.data !== true) return { status: 'database_failed' }
+  return { status: 'failed', code }
+}

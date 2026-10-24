@@ -1,9 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
-  executeExternalAction,
-  ExternalActionError,
   isMissingCalendarDispatcherError,
   parseExternalAction,
+  settleExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
@@ -104,43 +103,24 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ ok: false, error: 'invalid_context' }, 503)
   }
 
-  try {
-    await executeExternalAction(action, service as unknown as ExternalActionService, {
+  const settlement = await settleExternalAction(
+    action,
+    service as unknown as ExternalActionService,
+    {
       googleClientId: Deno.env.get('GOOGLE_OAUTH_CLIENT_ID'),
       googleClientSecret: Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET'),
       resendApiKey: Deno.env.get('RESEND_API_KEY'),
       customerAccessHashSalt: Deno.env.get('PUBLIC_ACTION_HASH_SALT'),
-    })
-  } catch (error) {
-    const code = error instanceof ExternalActionError ? error.code : 'external_action_failed'
-    console.error(
-      `external-cleanup: ${action.action_type} failed`,
-      error instanceof Error ? error.message : 'unknown',
-    )
-    const resolutionRpc =
-      error instanceof ExternalActionError && !error.retryable
-        ? 'block_external_action'
-        : 'fail_external_action'
-    const failed = await service.rpc(resolutionRpc, {
-      p_id: action.id,
-      p_dispatch_token: action.dispatch_token,
-      p_error_code: code,
-    })
-    if (failed.error !== null || failed.data !== true) {
+    },
+  )
+  switch (settlement.status) {
+    case 'completed':
+      return json({ ok: true, status: 'completed', action: action.action_type })
+    case 'failed':
+      return json({ ok: false, error: settlement.code }, 503)
+    case 'database_failed':
       return json({ ok: false, error: 'database_failed' }, 500)
-    }
-    return json({ ok: false, error: code }, 503)
   }
-
-  const completed = await service.rpc('complete_external_action', {
-    p_id: action.id,
-    p_dispatch_token: action.dispatch_token,
-  })
-  if (completed.error !== null || completed.data !== true) {
-    console.error('external-cleanup: completion update failed', completed.error?.code)
-    return json({ ok: false, error: 'database_failed' }, 500)
-  }
-  return json({ ok: true, status: 'completed', action: action.action_type })
 }
 
 Deno.serve((req: Request) => retainTaskUntilSettled(handleRequest(req)))
