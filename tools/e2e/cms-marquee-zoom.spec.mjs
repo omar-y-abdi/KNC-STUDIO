@@ -254,9 +254,11 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await page.evaluate(
     async (legacy) => {
       const { cmsApi } = await import('/src/admin/cms/api.ts')
-      const { saveBackup } = await import('/src/admin/cms/backup.ts')
+      const { cmsBackups } = await import('/src/admin/cms/backup.ts')
       const head = await cmsApi.state()
-      saveBackup(legacy, head.revision, head.fingerprint)
+      const session = await cmsBackups()
+      session.schedule({ document: legacy, revision: head.revision, fingerprint: head.fingerprint })
+      await session.flush()
     },
     withLegacyZoom(captured, ids, 'Om oss (backup)'),
   )
