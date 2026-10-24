@@ -26,6 +26,7 @@ import {
   needsCorePageSource,
   CORE_PAGE_IDS,
 } from './corePages'
+import { upgradeLegacyLegalPages } from './legacyLegal'
 import { CmsDraft, mergeCmsDocuments } from './draft'
 import { normalizeMarqueeZoom } from './normalizeDocument'
 import { cmsApi } from './api'
@@ -111,8 +112,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const stored = hasCorePageLayouts(loaded.document)
       if (stored) retainCorePageLayouts(loaded.document)
       else await prepareCorePageSource(loaded.document)
-      const document = normalizeMarqueeZoom(
-        stored ? loaded.document : ensureCorePages(loaded.document),
+      const document = upgradeLegacyLegalPages(
+        normalizeMarqueeZoom(stored ? loaded.document : ensureCorePages(loaded.document)),
       )
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()

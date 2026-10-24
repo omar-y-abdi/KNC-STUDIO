@@ -44,6 +44,11 @@ function adminRed(dark: boolean): string {
   return dark ? '#ff453a' : '#ff3b30'
 }
 
+/** Apple's increased-contrast red: staff error text meets WCAG AA (4.5:1) on every admin surface. */
+function staffErrorRed(dark: boolean): string {
+  return dark ? '#ff6961' : '#d70015'
+}
+
 /** Apple-system green (light/dark) for "saved" confirmations. */
 function adminGreen(dark: boolean): string {
   return dark ? '#30d158' : '#34c759'
@@ -258,7 +263,7 @@ export function buildAdminStyles(c: Palette, dark: boolean): AdminStyles {
     },
     fieldRow: { display: 'flex', flexDirection: 'column', gap: '0', marginBottom: '14px' },
     successText: { color: green, fontSize: '12.5px', fontWeight: 600 },
-    errorText: { color: red, fontSize: '12.5px', fontWeight: 600 },
+    errorText: { color: staffErrorRed(dark), fontSize: '12.5px', fontWeight: 600 },
     mutedText: { opacity: 0.55, fontSize: '12.5px' },
   }
 }

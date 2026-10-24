@@ -45,12 +45,14 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
             'turnstile-layout.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
+            'style-contract.spec.mjs',
           ]
         : [
             'admin-shared.spec.mjs',
             'turnstile-layout.spec.mjs',
             'network-guard.spec.mjs',
             'legal-mode.spec.mjs',
+            'style-contract.spec.mjs',
           ],
     use: { browserName },
     metadata: { group: 'public' },

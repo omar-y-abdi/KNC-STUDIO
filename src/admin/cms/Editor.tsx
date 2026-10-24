@@ -42,7 +42,7 @@ import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, parseCanvasCss, readCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, legalCanvasBase, parseCanvasCss, readCanvasCss } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -742,6 +742,34 @@ export function CmsEditor(props: Props): JSX.Element {
     }
     style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
   }, [props.active, props.fontCss, props.presentation.themes, props.mode])
+
+  useEffect(() => {
+    const editor = instance.current
+    if (!editor || !props.active) return
+    const base = legalCanvasBase(props.page.path, props.mode)
+    // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
+    // head directly. A frame load replaces the document, so the base is applied again then.
+    const apply = (): void => {
+      const frame = editor.Canvas.getDocument()
+      if (!frame) return
+      frame.documentElement.style.colorScheme = base.scheme
+      const linked = [...frame.querySelectorAll('link[data-cms-legal-base]')]
+      if (linked.map((link) => link.getAttribute('href')).join() === base.styles.join()) return
+      linked.forEach((link) => link.remove())
+      for (const href of base.styles) {
+        const link = frame.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = href
+        link.dataset['cmsLegalBase'] = ''
+        frame.head.appendChild(link)
+      }
+    }
+    apply()
+    editor.on('load', apply)
+    return () => {
+      editor.off('load', apply)
+    }
+  }, [props.active, props.page.path, props.mode])
 
   useEffect(() => {
     const editor = instance.current

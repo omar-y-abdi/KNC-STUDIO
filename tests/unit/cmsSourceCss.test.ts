@@ -7,17 +7,12 @@ const policy = {
   storageOrigin: 'https://fixture.supabase.co',
 }
 
-it.each(['privacy', 'terms'])('accepts the original %s CSS', (page) => {
+it.each(['privacy', 'terms'])('accepts the CSS the importer stores for %s', (page) => {
   const html = readFileSync(new URL(`../../public/${page}.html`, import.meta.url), 'utf8')
-  const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)]
-  const links = [...html.matchAll(/rel="stylesheet" href="([^"]+)"/g)]
-  const css = [
-    ...styles.map((match) => match[1]),
-    ...links.map((match) =>
-      readFileSync(new URL(`../../public${match[1]}`, import.meta.url), 'utf8'),
-    ),
-  ].join('\n')
-  expect(css.length).toBeGreaterThan(0)
+  // Only the page's own <style> is stored; the Worker inlines the linked base sheets (STY-7).
+  const links = [...html.matchAll(/rel="stylesheet" href="([^"]+)"/g)].map((match) => match[1])
+  expect(links).toEqual(['/tokens.css', '/info.css'])
+  const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1]).join('\n')
   expect(() => validateMarkup('', css, policy)).not.toThrow()
 })
 

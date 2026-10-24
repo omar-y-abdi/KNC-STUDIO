@@ -5,6 +5,15 @@ import { generate, ident, parse, walk } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 
+/** /terms and /privacy render on the base sheets the Worker inlines (STY-7). The canvas links the
+ * same files and pins the edited mode, as `?mode` does publicly, so the owner edits what visitors
+ * see. Other pages get neither. Linked sheets sit outside the editor's CSS, so nothing is exported. */
+export function legalCanvasBase(path: string, mode: CmsMode): { styles: string[]; scheme: string } {
+  return path === '/terms' || path === '/privacy'
+    ? { styles: ['/tokens.css', '/info.css'], scheme: mode }
+    : { styles: [], scheme: '' }
+}
+
 /** The CMS keeps every composer rule and uses avoidInlineStyle. Resolving each
  * component's style only to collect unused selector IDs makes full export quadratic. */
 export function readCanvasCss(editor: Editor): string {

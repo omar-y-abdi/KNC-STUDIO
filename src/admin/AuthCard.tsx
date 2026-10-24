@@ -33,16 +33,12 @@ export function AuthCard(props: AuthCardProps): JSX.Element {
   const { dark } = useTheme()
   const c = palette(dark)
 
+  // Surface, text colour and font come from the bb-page tokens (public/tokens.css).
   const wrapStyle: JSX.CSSProperties = {
-    minHeight: '100vh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '24px',
-    background: c.bg,
-    color: c.text,
-    fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-    WebkitFontSmoothing: 'antialiased',
   }
   const cardStyle: JSX.CSSProperties = {
     width: '100%',
@@ -68,12 +64,12 @@ export function AuthCard(props: AuthCardProps): JSX.Element {
   }
 
   return (
-    <div style={wrapStyle}>
+    <main class="bb-page" style={wrapStyle}>
       <div style={cardStyle}>
         <h1 style={titleStyle}>Blade & Blend Studio</h1>
         <p style={leadStyle}>{props.subtitle}</p>
         {props.children}
       </div>
-    </div>
+    </main>
   )
 }
