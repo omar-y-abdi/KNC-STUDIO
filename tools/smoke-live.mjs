@@ -1,12 +1,13 @@
 // smoke-live.mjs — live, non-browser smoke test for the Blade & Blend Studio backend.
 //
 // Hits the LIVE Supabase project with the PUBLIC anon key only (never a service_role
-// key). Verifies public entry points the booking UI depends on:
+// key), and the site's own /api/bookings relay for booking submission. Verifies public entry
+// points the booking UI depends on:
 //
 //   1. public catalog + available_slots — discovers current database IDs and returns bookable slots.
-//   2. submit-booking (400)  — rejects a malformed body with HTTP 400.
-//   3. submit-booking email  — malformed email is rejected before the bot check.
-//   4. submit-booking gate   — an empty Turnstile token is rejected (failed_challenge),
+//   2. /api/bookings (400)   — the Worker relay to submit-booking rejects a malformed body with HTTP 400.
+//   3. /api/bookings email   — malformed email is rejected before the bot check.
+//   4. /api/bookings gate    — an empty Turnstile token is rejected (failed_challenge),
 //                              proving the bot gate is active in production.
 //   5. public action gateway — rejects an empty Turnstile token (failed_challenge).
 //   6. lookup_booking RPC    — denied in both stages because the gateway contract is already live;
@@ -20,25 +21,29 @@
 // Usage:
 //   SUPABASE_URL=https://<ref>.supabase.co \
 //   SUPABASE_ANON_KEY=<anon-jwt> \
+//   SITE_ORIGIN=https://bladeblendstudio.se \
 //   PUBLIC_BOOKING_STAGE=expand|contract \
 //   node tools/smoke-live.mjs
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY
+const SITE_ORIGIN = process.env.SITE_ORIGIN
 const PUBLIC_BOOKING_STAGE = process.env.PUBLIC_BOOKING_STAGE
 
 if (
   !SUPABASE_URL ||
   !SUPABASE_ANON_KEY ||
+  !SITE_ORIGIN ||
   (PUBLIC_BOOKING_STAGE !== 'expand' && PUBLIC_BOOKING_STAGE !== 'contract')
 ) {
   console.error(
-    'FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, and PUBLIC_BOOKING_STAGE=expand|contract are required.',
+    'FATAL: SUPABASE_URL, SUPABASE_ANON_KEY, SITE_ORIGIN, and PUBLIC_BOOKING_STAGE=expand|contract are required.',
   )
   process.exit(1)
 }
 
 const baseUrl = SUPABASE_URL.replace(/\/+$/, '') // tolerate a trailing slash
+const siteOrigin = new URL(SITE_ORIGIN).origin
 
 // A future date computed at run time. The smoke probes several dates because production schedules
 // and service weekdays are owner-managed database state; no weekday or barber is assumed here.
@@ -59,10 +64,10 @@ const headers = {
 
 // POST a JSON body and return { status, json, text }. `json` is undefined when the
 // response body is not valid JSON (so a check can distinguish "bad JSON" from null).
-async function postJson(path, body) {
-  const res = await fetch(`${baseUrl}${path}`, {
+async function postJson(path, body, { url = baseUrl, requestHeaders = headers } = {}) {
+  const res = await fetch(`${url}${path}`, {
     method: 'POST',
-    headers,
+    headers: requestHeaders,
     body: JSON.stringify(body),
   })
   const text = await res.text()
@@ -73,6 +78,15 @@ async function postJson(path, body) {
     json = undefined
   }
   return { status: res.status, json, text }
+}
+
+// Bookings go through the Worker relay, which signs them for submit-booking; the browser never
+// reaches submit-booking directly. The relay requires its own origin and a JSON content type.
+function postBooking(body) {
+  return postJson('/api/bookings', body, {
+    url: siteOrigin,
+    requestHeaders: { Origin: siteOrigin, 'Content-Type': 'application/json' },
+  })
 }
 
 let catalogPromise
@@ -147,9 +161,9 @@ async function checkAvailableSlots() {
   }
 }
 
-// 2. submit-booking with an empty body — expect HTTP 400 (true client fault).
+// 2. /api/bookings with an empty body — expect HTTP 400 (true client fault).
 async function checkSubmitBookingInvalid() {
-  const { status, json } = await postJson('/functions/v1/submit-booking', {})
+  const { status, json } = await postBooking({})
   const pass = status === 400
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
@@ -157,7 +171,7 @@ async function checkSubmitBookingInvalid() {
 // 3. Malformed email is rejected before Turnstile verification.
 async function checkSubmitBookingInvalidEmail() {
   const [catalog] = await smokeCatalog()
-  const { status, json } = await postJson('/functions/v1/submit-booking', {
+  const { status, json } = await postBooking({
     booking: {
       barberId: catalog.barberId,
       serviceId: catalog.serviceId,
@@ -178,11 +192,11 @@ async function checkSubmitBookingInvalidEmail() {
   return { pass, detail: `status=${status} body=${JSON.stringify(json)}` }
 }
 
-// 4. submit-booking with a valid body but empty Turnstile token — expect HTTP 200 +
+// 4. /api/bookings with a valid body but empty Turnstile token — expect HTTP 200 +
 //    { ok:false, error:"failed_challenge" }. This proves Turnstile is active and fail-closed.
 async function checkSubmitBookingTurnstileGate() {
   const [catalog] = await smokeCatalog()
-  const { status, json } = await postJson('/functions/v1/submit-booking', {
+  const { status, json } = await postBooking({
     booking: {
       barberId: catalog.barberId,
       serviceId: catalog.serviceId,
@@ -239,10 +253,10 @@ async function checkDirectLookupContract() {
 
 const checks = [
   ['database-owned catalog + available_slots', checkAvailableSlots],
-  ['submit-booking invalid (empty body -> 400)', checkSubmitBookingInvalid],
-  ['submit-booking invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
+  ['/api/bookings invalid (empty body -> 400)', checkSubmitBookingInvalid],
+  ['/api/bookings invalid email (malformed -> 400)', checkSubmitBookingInvalidEmail],
   [
-    'submit-booking turnstile gate (empty token -> failed_challenge)',
+    '/api/bookings turnstile gate (empty token -> failed_challenge)',
     checkSubmitBookingTurnstileGate,
   ],
   ['public action gateway (empty token -> failed_challenge)', checkPublicActionGateway],
@@ -250,7 +264,7 @@ const checks = [
 ]
 
 async function main() {
-  console.log(`Blade & Blend Studio live smoke test -> ${baseUrl}\n`)
+  console.log(`Blade & Blend Studio live smoke test -> ${baseUrl} + ${siteOrigin}\n`)
   let failures = 0
   for (const [name, fn] of checks) {
     let pass = false

@@ -1,10 +1,5 @@
-import {
-  defaultEmailDesign,
-  validateEmailDesign,
-  type CmsLang,
-  type CmsMode,
-  type EmailDesign,
-} from './cms.ts'
+import type { CmsLang, CmsMode } from './cms-primitives.ts'
+import { defaultEmailDesign, validateEmailDesign, type EmailDesign } from './email-design.ts'
 
 export interface DesignedEmailCopy {
   subject: string
