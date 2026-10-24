@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { coverageProblems, describeProblem } from '../../tools/e2e/id-coverage.mjs'
+import {
+  coverageProblems,
+  describeOrphan,
+  describeProblem,
+  ratchetVerdict,
+} from '../../tools/e2e/id-coverage.mjs'
 
 type Kind = 'source' | 'slot'
 
@@ -112,5 +117,88 @@ describe('describeProblem', () => {
         live: 'h4',
       }),
     ).toBe('about (Desktop home sv light): retagged knc-about-0-i0-i3 (stored <h3>, live <h4>)')
+  })
+})
+
+describe('describeOrphan', () => {
+  it('names the surface, the capture and the id', () => {
+    const capture = { lang: 'sv', mode: 'dark', device: 'Mobile', scene: 'home' }
+    const orphan = {
+      surface: 'mobile-home',
+      kind: 'retagged' as const,
+      id: 'knc-mobile-home-0-i0',
+      stored: 'div',
+      live: 'button',
+    }
+    expect(describeOrphan(capture, orphan)).toBe(
+      'mobile-home (Mobile home sv dark): retagged knc-mobile-home-0-i0 (stored <div>, live <button>)',
+    )
+  })
+})
+
+describe('ratchetVerdict', () => {
+  const capture = (lang: string, device = 'Desktop') => ({
+    lang,
+    mode: 'light',
+    device,
+    scene: 'my-bookings',
+  })
+  const orphan = {
+    surface: 'my-bookings',
+    kind: 'missing-slot' as const,
+    id: 'knc-my-bookings-0-i0-i1-i3-i3',
+    stored: 'div',
+    live: null,
+  }
+  const line = (device: string, lang: string) =>
+    `my-bookings (${device} my-bookings ${lang} light): missing-slot knc-my-bookings-0-i0-i1-i3-i3 (stored <div>, live absent)`
+  const known = [{ orphan, captures: [capture('sv'), capture('en')] }]
+  const found = (...captures: ReturnType<typeof capture>[]) =>
+    captures.map((where) => ({ capture: where, orphan }))
+
+  it('holds when the orphan occurs in every capture that lists it, and nowhere else', () => {
+    expect(ratchetVerdict(found(capture('sv'), capture('en')), known)).toEqual({
+      unexpected: [],
+      absent: [],
+    })
+  })
+
+  it('fails a listed orphan in a capture that does not list it', () => {
+    const verdict = ratchetVerdict(
+      found(capture('sv'), capture('en'), capture('sv', 'Mobile')),
+      known,
+    )
+    expect(verdict).toEqual({ unexpected: [line('Mobile', 'sv')], absent: [] })
+  })
+
+  it('fails a listed orphan that is missing from a listed capture', () => {
+    expect(ratchetVerdict(found(capture('sv')), known)).toEqual({
+      unexpected: [],
+      absent: [line('Desktop', 'en')],
+    })
+  })
+
+  it('fails an orphan that no entry lists, in a capture that lists another one', () => {
+    const other = { ...orphan, id: 'knc-my-bookings-0-i0-i1-i3-i4' }
+    const verdict = ratchetVerdict(
+      [...found(capture('sv'), capture('en')), { capture: capture('sv'), orphan: other }],
+      known,
+    )
+    expect(verdict.absent).toEqual([])
+    expect(verdict.unexpected).toEqual([
+      'my-bookings (Desktop my-bookings sv light): missing-slot knc-my-bookings-0-i0-i1-i3-i4 (stored <div>, live absent)',
+    ])
+  })
+
+  it('counts a repeat of a listed orphan in a listed capture as one too many', () => {
+    const verdict = ratchetVerdict(found(capture('sv'), capture('sv'), capture('en')), known)
+    expect(verdict).toEqual({ unexpected: [line('Desktop', 'sv')], absent: [] })
+  })
+
+  it('fails every listed occurrence when the orphan is gone, as after a fix', () => {
+    expect(ratchetVerdict([], known)).toEqual({
+      unexpected: [],
+      absent: [line('Desktop', 'sv'), line('Desktop', 'en')],
+    })
   })
 })

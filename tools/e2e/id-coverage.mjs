@@ -93,3 +93,50 @@ export function coverageProblems(stored, live) {
 export function describeProblem(where, { kind, id, stored, live }) {
   return `${where}: ${kind} ${id} (stored <${stored}>, live ${live === null ? 'absent' : `<${live}>`})`
 }
+
+/**
+ * @typedef {{ lang: string, mode: string, device: string, scene: string }} Capture
+ *   One render of the source renderer: language, colour mode, device size and scene.
+ * @typedef {CoverageProblem & { surface: string }} Orphan
+ *   A problem of one stored surface.
+ * @typedef {{ orphan: Orphan, captures: Capture[] }} KnownOrphan
+ *   An orphan that HEAD already has, with every capture it must occur in, once each.
+ */
+
+/** The capture and the surface that a problem was found in, as `describeProblem` prints them. */
+export function describeWhere({ lang, mode, device, scene }, surface) {
+  return `${surface} (${device} ${scene} ${lang} ${mode})`
+}
+
+/** One orphan in one capture: the line that a failure prints and that the ratchet counts. */
+export function describeOrphan(capture, { surface, ...problem }) {
+  return describeProblem(describeWhere(capture, surface), problem)
+}
+
+// `keys` without one occurrence of each of `others`, so repeats count.
+function without(keys, others) {
+  const cancelled = new Map()
+  for (const key of others) cancelled.set(key, (cancelled.get(key) ?? 0) + 1)
+  return keys.filter((key) => {
+    const left = cancelled.get(key) ?? 0
+    if (left > 0) cancelled.set(key, left - 1)
+    return left === 0
+  })
+}
+
+/**
+ * The ratchet of known orphans, exact to the capture. `unexpected`: orphans found beyond what the
+ * known ones list (a new orphan, a known one in a capture that does not list it, a repeat).
+ * `absent`: listed occurrences that were not found (fixed, or gone from one capture). The ratchet
+ * holds when both are empty.
+ * @param {{ capture: Capture, orphan: Orphan }[]} found
+ * @param {KnownOrphan[]} known
+ * @returns {{ unexpected: string[], absent: string[] }}
+ */
+export function ratchetVerdict(found, known) {
+  const seen = found.map(({ capture, orphan }) => describeOrphan(capture, orphan))
+  const listed = known.flatMap(({ orphan, captures }) =>
+    captures.map((capture) => describeOrphan(capture, orphan)),
+  )
+  return { unexpected: without(seen, listed), absent: without(listed, seen) }
+}
