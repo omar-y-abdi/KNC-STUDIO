@@ -1,7 +1,8 @@
 // Admin schedule regressions on the REAL AdminApp: every backend request is answered here, and any
-// other host is left to the shared network guard in fixtures.mjs. Covers what the unit tests cannot see — keyboard operation of the day grid,
-// the aria-live report of a failed write, the week autosave debounce, and the booking-conflict
-// pre-check agreeing with the database (an in-progress booking warns BEFORE any write is sent).
+// other host is left to the shared network guard in fixtures.mjs. Covers what the unit tests cannot
+// see — keyboard operation of the day grid, the aria-live report of a failed write, the week
+// autosave debounce, and the booking-conflict pre-check agreeing with the database (an in-progress
+// booking warns BEFORE any write is sent).
 import assert from 'node:assert/strict'
 import { test, expect } from './fixtures.mjs'
 
