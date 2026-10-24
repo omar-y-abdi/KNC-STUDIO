@@ -12,6 +12,7 @@ import {
   type CmsAsset,
   type CmsDocument,
   type CmsPage,
+  type CmsPublication,
   type CmsState,
   type MediaRef,
 } from '../../shared/cms'
@@ -360,6 +361,22 @@ describe.sequential('CMS publication: conflicts and idempotency', () => {
     } finally {
       await terminateRetryingBackends()
     }
+  }, 30_000)
+
+  it('answers a publication with the new state that the next state read returns', async () => {
+    const base = await state()
+    const request = publication(base, structuredClone(base.document))
+    const response = await call(request)
+    expect(response.status, await response.clone().text()).toBe(200)
+    const published = (await response.json()) as CmsPublication
+    const next = await state()
+    expect(published).toEqual({
+      revision: base.revision + 1,
+      fingerprint: next.fingerprint,
+      requestId: request.requestId,
+      document: next.document,
+    })
+    expect(next.revision).toBe(published.revision)
   }, 30_000)
 
   it('replays the same request identity and document as the original revision', async () => {
