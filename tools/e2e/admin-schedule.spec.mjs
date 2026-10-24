@@ -89,14 +89,9 @@ async function installBackend(page, options = {}) {
   const calls = []
   const unexpected = []
   const rpc = (name) => calls.filter((call) => call.path === `/rest/v1/rpc/${name}`)
-  // With holdWeekSave the week save is received but not answered until the test releases it.
-  let releaseWeekSave = () => undefined
-  const weekSaveGate = options.holdWeekSave
-    ? new Promise((resolve) => {
-        releaseWeekSave = resolve
-      })
-    : Promise.resolve()
-  await page.clock.setFixedTime(NOW)
+  // fakeTimers hands the page clock to the test (pauseAt/runFor); otherwise only the date is fixed.
+  if (options.fakeTimers) await page.clock.install({ time: NOW })
+  else await page.clock.setFixedTime(NOW)
   await page.addInitScript(
     (stored) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(stored)),
     session(),
@@ -121,7 +116,7 @@ async function installBackend(page, options = {}) {
     } catch {
       /* GET/DELETE carry no JSON body. */
     }
-    const call = { path: url.pathname, method: request.method(), body, at: Date.now() }
+    const call = { path: url.pathname, method: request.method(), body }
     calls.push(call)
     const get = request.method() === 'GET'
     switch (url.pathname) {
@@ -164,7 +159,6 @@ async function installBackend(page, options = {}) {
         if (request.method() === 'DELETE') return reply(null, 204)
         break
       case '/rest/v1/rpc/admin_save_barber_week':
-        await weekSaveGate
         return reply({ ok: true })
       case '/rest/v1/rpc/admin_add_slot_block':
         if (options.failSlotBlock) return reply({ message: 'boom', code: 'XX000' }, 500)
@@ -198,7 +192,7 @@ async function installBackend(page, options = {}) {
     unexpected.push(`${request.method()} ${url.pathname}`)
     return reply({ message: 'Unexpected request in schedule spec' }, 500)
   })
-  return { calls, unexpected, rpc, releaseWeekSave: () => releaseWeekSave() }
+  return { calls, unexpected, rpc }
 }
 
 async function openSchedule(page) {
@@ -297,39 +291,51 @@ test('a failed write is reported in the assertive aria-live region and the chip 
   assertClean(backend)
 })
 
-test('week autosave: a burst of edits is debounced into one save of the final week', async ({
+test('week autosave: each edit restarts the debounce and one save lands 600 ms after the last', async ({
   page,
 }) => {
-  const backend = await installBackend(page, { holdWeekSave: true })
+  const backend = await installBackend(page, { fakeTimers: true })
   await openSchedule(page)
   const barberSelect = page.getByLabel('Välj barberare att hantera')
   await expect(barberSelect).toBeEnabled()
 
-  // Both switches flip in one page task, a microtask apart so the first edit renders before the
-  // second: the burst stays inside the debounce window however slow the machine is, which two
-  // Playwright clicks (each waiting for actionability) cannot promise.
-  const flipped = Date.now()
-  await page.evaluate(async () => {
-    const press = (name) => {
-      const toggle = globalThis.document.querySelector(`[role="switch"][aria-label="${name}"]`)
-      if (!(toggle instanceof globalThis.HTMLElement)) throw new Error(`no switch named ${name}`)
+  // From here the page clock moves only when this test advances it, so the debounce deadline is
+  // exact instead of racing the machine. Edits are DOM clicks inside page.evaluate: Playwright's own
+  // click waits for animation frames, which a paused clock never delivers.
+  // pauseAt only moves forward, so leave room for the round trip between reading the page time and
+  // pausing (time still flows until then).
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+  const flip = (name) =>
+    page.evaluate((label) => {
+      const toggle = globalThis.document.querySelector(`[role="switch"][aria-label="${label}"]`)
+      if (!(toggle instanceof globalThis.HTMLElement)) throw new Error(`no switch named ${label}`)
       toggle.click()
-    }
-    press('Jobbar Lördag')
-    await Promise.resolve()
-    press('Jobbar Söndag')
-  })
+    }, name)
+  const savesSoFar = async () => {
+    await page.evaluate(() => Promise.resolve()) // a save request in flight has left the page
+    await page.waitForTimeout(150)
+    return backend.rpc('admin_save_barber_week').length
+  }
+
+  await flip('Jobbar Lördag')
+  await page.clock.runFor(SAVE_DEBOUNCE_MS / 2)
+  expect(await savesSoFar(), 'saved halfway into the debounce').toBe(0)
   // The saving state is entered at once and locks the owner's barber switch until the save settles.
   await expect(barberSelect).toBeDisabled()
 
-  await expect.poll(() => backend.rpc('admin_save_barber_week').length).toBe(1)
-  const [save] = backend.rpc('admin_save_barber_week')
-  expect(save.at - flipped, 'saved before the debounce elapsed').toBeGreaterThanOrEqual(
-    SAVE_DEBOUNCE_MS - 20,
-  )
-  await expect(barberSelect, 'still locked while the save is in flight').toBeDisabled()
+  await flip('Jobbar Söndag') // restarts the deadline: a full debounce from now, not what was left
+  await page.clock.runFor(SAVE_DEBOUNCE_MS - 1)
+  expect(await savesSoFar(), 'saved 1 ms before the debounce after the last edit').toBe(0)
 
-  backend.releaseWeekSave()
+  await page.clock.runFor(1)
+  await expect
+    .poll(() => backend.rpc('admin_save_barber_week').length, {
+      message: 'no save once the debounce after the last edit elapsed',
+      timeout: 3_000,
+    })
+    .toBe(1)
+
+  await page.clock.resume()
   await expect(page.getByText('Sparat ✓', { exact: true })).toBeVisible()
   await expect(barberSelect).toBeEnabled()
   await page.waitForTimeout(SAVE_DEBOUNCE_MS + 100)
