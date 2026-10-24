@@ -458,11 +458,10 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
       setOffMsg({ kind: 'err', text: t.scheduleTimeOffDateError })
       return
     }
-    const now = defaultClock().getTime()
     const start = offStart
     const end = offEnd
     const reason = offReason.trim()
-    const orphans = orphansInRange(bookings, start, end).filter((b) => b.startAt.getTime() >= now)
+    const orphans = orphansInRange(bookings, start, end, defaultClock())
     if (orphans.length === 0) {
       setOffBusy(true)
       setOffMsg(null)
@@ -491,8 +490,7 @@ export function ScheduleView(props: ScheduleViewProps): JSX.Element {
   // error from the boolean). A clash → open the dialog and report success so the grid doesn't flag an
   // error; the dialog then applies the block (and cancels, if chosen).
   const onBlockDay = async (dateIso: string): Promise<boolean> => {
-    const now = defaultClock().getTime()
-    const orphans = orphansOnDate(bookings, dateIso).filter((b) => b.startAt.getTime() >= now)
+    const orphans = orphansOnDate(bookings, dateIso, defaultClock())
     if (orphans.length === 0) return (await addOff(dateIso, dateIso, '')) !== 'error'
     void conflict.request({
       orphans,
