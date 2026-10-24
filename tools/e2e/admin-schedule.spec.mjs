@@ -1,5 +1,5 @@
-// Admin schedule regressions on the REAL AdminApp: every backend request is intercepted, nothing
-// leaves the machine. Covers what the unit tests cannot see — keyboard operation of the day grid,
+// Admin schedule regressions on the REAL AdminApp: every backend request is answered here, and any
+// other host is left to the shared network guard in fixtures.mjs. Covers what the unit tests cannot see — keyboard operation of the day grid,
 // the aria-live report of a failed write, the week autosave debounce, and the booking-conflict
 // pre-check agreeing with the database (an in-progress booking warns BEFORE any write is sent).
 import assert from 'node:assert/strict'
@@ -78,12 +78,12 @@ const weekRows = () =>
   }))
 
 /**
- * Intercepts the whole context: same-origin requests continue, the backend host is answered here,
- * everything else is aborted and recorded (a test fails if anything leaked or was unexpected).
+ * Intercepts the context: same-origin requests continue, the backend host is answered here, any other
+ * host falls through to the shared network guard. A backend request this spec does not model is
+ * answered with a 500 and recorded, and the test fails on it.
  */
 async function installBackend(page, options = {}) {
   const calls = []
-  const external = []
   const unexpected = []
   const rpc = (name) => calls.filter((call) => call.path === `/rest/v1/rpc/${name}`)
   await page.clock.setFixedTime(NOW)
@@ -95,10 +95,7 @@ async function installBackend(page, options = {}) {
     const request = route.request()
     const url = new URL(request.url())
     if (url.origin === origin) return route.continue()
-    if (url.hostname !== BACKEND) {
-      external.push(`${request.method()} ${url.origin}${url.pathname}`)
-      return route.abort()
-    }
+    if (url.hostname !== BACKEND) return route.fallback()
     const headers = {
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Headers': '*',
@@ -190,7 +187,7 @@ async function installBackend(page, options = {}) {
     unexpected.push(`${request.method()} ${url.pathname}`)
     return reply({ message: 'Unexpected request in schedule spec' }, 500)
   })
-  return { calls, external, unexpected, rpc }
+  return { calls, unexpected, rpc }
 }
 
 async function openSchedule(page) {
@@ -243,8 +240,7 @@ async function reachFirstQuarterChip(page) {
 }
 
 const assertClean = (backend) => {
-  expect(backend.external, 'requests that left the harness').toEqual([])
-  expect(backend.unexpected, 'requests the spec did not expect').toEqual([])
+  expect(backend.unexpected, 'backend requests the spec does not model').toEqual([])
 }
 
 test('quarter chip: Tab reaches it and Space toggles aria-pressed', async ({ page }) => {
