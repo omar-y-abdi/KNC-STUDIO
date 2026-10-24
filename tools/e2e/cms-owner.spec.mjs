@@ -968,7 +968,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await page.waitForFunction(() =>
             globalThis.document.querySelector('.cms-status')?.textContent?.includes('Opublicerade'),
           )
-          await page.keyboard.press('Escape')
+          await page.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
           await resources.waitFor({ state: 'detached' })
           operations.length = 0
           await publish()
@@ -979,8 +979,21 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             ),
             'The placed upload is published',
           )
-          await mount()
-          assert.equal(await page.locator('.cms-status').innerText(), 'Publicerad')
+          // A gallery change recaptures Home, so the source kicker that mount() waits for is gone.
+          await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+          await page.evaluate(async () => {
+            const harness = await import('/tools/e2e/admin-harness.tsx')
+            harness.mountCmsStudioHarness()
+          })
+          await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+          await page.waitForFunction(() =>
+            globalThis.document.querySelector('.cms-status')?.textContent?.startsWith('Publicerad'),
+          )
+          assert.deepEqual(
+            operations.filter((operation) => operation === 'publish'),
+            ['publish'],
+            'A reload does not publish again',
+          )
           assert.ok(
             backend.document.gallery.some((row) => row.storage_path === uploaded.path),
             'The publication survives a reload',
