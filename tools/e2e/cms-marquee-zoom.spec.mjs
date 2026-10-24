@@ -10,8 +10,6 @@ import { harnessOrigin } from './origins.mjs'
 // Production stored this card zoom in revisions 33-43; Embla then left most of the strip blank.
 const LEGACY_ZOOM = 0.699029
 const MAX_BLANK = 96
-// Embla measures slides by whole-pixel offsetWidth, so its loop seam may open up to 1 px wider.
-const SEAM = 1
 const strip = '[data-knc-fold="barber-marquee"]'
 
 const barbers = ['A', 'B', 'C', 'D'].map((name, index) => ({
@@ -166,19 +164,33 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await publish(page, 2)
   assertCardWidths(backend.document, ids, 'Load')
 
-  // The editor neither offers nor accepts the properties the marquee code owns.
-  const policy = await page.evaluate(async () => {
+  // The editor neither offers nor accepts the properties the marquee code owns, and neither a
+  // selection nor a Style Manager read changes the draft. Every step records the status and
+  // GrapesJS's own dirty count, which rises at once; Studio shows a change 180 ms later.
+  const policyProbe = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const editor = cmsGrapes.editors.at(-1)
+    const steps = []
+    const record = (step) =>
+      steps.push({
+        step,
+        status: globalThis.document.querySelector('.cms-status')?.textContent,
+        dirty: editor.getDirtyCount(),
+      })
+    const tick = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
     const offered = async (selector, sector, property) => {
       const target = editor.getWrapper().find(selector)[0]
       if (!target) throw new Error(`Missing ${selector}`)
       editor.select(target)
       // The Style Manager applies a new selection on its next tick.
-      await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
-      return editor.StyleManager.getProperty(sector, property)?.isVisible() ?? false
+      await tick(50)
+      record(`select ${selector}`)
+      const visible = editor.StyleManager.getProperty(sector, property)?.isVisible() ?? false
+      record(`read ${sector} ${property}`)
+      return visible
     }
-    return {
+    record('start')
+    const policy = {
       trackTransform: await offered('[data-knc-fold="gallery-track"]', 'position', 'transform'),
       tileWidth: await offered('[data-knc-fold="gallery-tile"]', 'layout', 'width'),
       stripOverflow: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'overflow'),
@@ -186,9 +198,23 @@ test('legacy barber zoom never survives load, import, history or backup restore'
       stripHeight: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'height'),
       textColor: await offered('[data-knc-fold="gallery-tile"]', 'typography', 'color'),
     }
+    // Past Studio's change debounce, so a change any step made has reached the status.
+    await tick(400)
+    record('settled')
+    return { policy, steps }
   })
+  // Every run keeps the steps, so a draft that turns dirty only sometimes leaves its trail.
+  await test.info().attach('policy-probe-steps', {
+    body: JSON.stringify(policyProbe.steps, null, 2),
+    contentType: 'application/json',
+  })
+  assert.equal(
+    policyProbe.steps.at(-1)?.status,
+    'Publicerad · rev 2',
+    `Selecting or reading the Style Manager changed the draft: ${JSON.stringify(policyProbe.steps)}`,
+  )
   // The loop floor needs a strip width that does not follow its cards; its height stays the owner's.
-  assert.deepEqual(policy, {
+  assert.deepEqual(policyProbe.policy, {
     trackTransform: false,
     tileWidth: false,
     stripOverflow: false,
@@ -299,9 +325,17 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await liveContext.clock.runFor(90_000)
   const probe = await live.evaluate(readBlankProbe)
   await writeFile(`${evidenceDir}/public-strip.json`, JSON.stringify({ layout, probe }, null, 2))
+  // Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent and
+  // moves a card across the loop only 0.5 px (roundingSafety) after it reaches the view. Behind a
+  // strip at a fractional offset, a card's left edge, and the cycle's end at the last card's right
+  // edge, each round up to ceil(edge) - edge px late, so a gap opens at most
+  // 0.5 + max(ceil(edge) - edge) px wider: 1.125 px for 255.84375 px cards (cycle end 1191.375).
+  const lefts = [1, 2, 3].map((index) => 24 + index * (layout.width + 48))
+  const edges = [...lefts, 24 + 4 * layout.width + 3 * 48]
+  const seam = 0.5 + Math.max(...edges.map((edge) => Math.ceil(edge) - edge))
   assert.ok(
-    probe.maxBlank <= MAX_BLANK + SEAM,
-    `${probe.maxBlank} px of the public strip went blank`,
+    probe.maxBlank <= MAX_BLANK + seam,
+    `${probe.maxBlank} px of the public strip went blank (seam ${seam} px)`,
   )
   assert.ok(
     probe.offsets.slice(1).every((value, index) => Math.abs(value - probe.offsets[index]) > 1),
