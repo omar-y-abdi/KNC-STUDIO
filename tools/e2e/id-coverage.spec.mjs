@@ -31,7 +31,9 @@ const DESKTOP_SCENES = [
   'booking-confirmation',
   'my-bookings-list',
 ]
-// readCorePageSource renders no booking stages or bookings list on Mobile.
+// readCorePageSource renders no booking stages or bookings list on Mobile. It renders the Mobile
+// About (in 'home') and 'my-bookings' but stores neither: the stored /about and /my-bookings pages
+// are the Desktop captures, so those two Mobile renders are checked against them.
 const MOBILE_SCENES = ['home', 'booking', 'my-bookings']
 const MAX_LISTED = 40
 // Orphans that HEAD already has against rev 56: the language switch was rebuilt after the capture,
