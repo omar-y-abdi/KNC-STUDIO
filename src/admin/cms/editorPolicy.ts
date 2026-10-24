@@ -69,7 +69,44 @@ export interface RuntimeOwnedRole {
   readonly resizable: boolean
 }
 
-const stripRole: RuntimeOwnedRole = { denied: marqueeMotion, resizable: true }
+// The strip loops at its gapless floor only while its cards sit in one row and its width does not
+// follow them (gaplessLoopFloor in src/about/useBarberMarquee.ts).
+const stripGeometry = [
+  // max-content, fit-content and their kin size the strip by its cards.
+  'width',
+  'inline-size',
+  'min-width',
+  'min-inline-size',
+  'max-width',
+  'max-inline-size',
+  // A float, or an absolute or fixed box, shrinks to fit its cards.
+  'float',
+  'position',
+  // A column, a wrapped row or a vertical writing mode stacks cards that then overlap horizontally.
+  'flex-direction',
+  'flex-wrap',
+  'flex-flow',
+  'writing-mode',
+]
+// A card must neither overlap its neighbours nor end on a negative margin, and a min-width
+// transition would hold back the inline floor while Embla measures it.
+const cardGeometry = [
+  'margin',
+  'margin-left',
+  'margin-right',
+  'margin-inline',
+  'margin-inline-start',
+  'margin-inline-end',
+  'position',
+  'transition',
+  'transition-property',
+]
+
+const stripRole: RuntimeOwnedRole = {
+  denied: [...marqueeMotion, ...stripGeometry],
+  resizable: true,
+}
+const cardRole: RuntimeOwnedRole = { denied: [...marqueeMotion, ...cardGeometry], resizable: true }
 const galleryRole: RuntimeOwnedRole = {
   denied: [...marqueeMotion, ...gallerySize],
   resizable: false,
@@ -88,7 +125,7 @@ export function runtimeOwnedRole(attrs: Attributes, parent?: Attributes): Runtim
   const role = runtimeOwnedFolds.get(String(attrs['data-knc-fold'] ?? ''))
   if (role) return role
   return parent?.['data-knc-fold'] === 'barber-marquee' && attrs['data-knc-source']
-    ? stripRole
+    ? cardRole
     : null
 }
 
