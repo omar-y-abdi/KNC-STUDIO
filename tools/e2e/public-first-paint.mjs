@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { inflateSync } from 'node:zlib'
 import { emptyDocument } from '../../shared/cms.ts'
 
 const PRESENTATION_PATH = '/api/cms/presentation'
@@ -8,6 +9,16 @@ const HERO_AMPERSAND =
   '[data-knc-surface="mobile-home"] svg[aria-label="Blade & Blend Studio"] > text:nth-of-type(3)'
 const BASELINE_HERO_AMPERSAND =
   '[data-knc-fold="hero"] svg[aria-label="Blade & Blend Studio"] > text:nth-of-type(3)'
+const DESKTOP_PANEL = '[data-testid="desktop-top-panel"]'
+const INTRO_HEADING_ID = 'public-intro-heading'
+// The shell shows the intro when the app has not booted by then (index.html animation delay).
+const INTRO_DEADLINE_MS = 8000
+const LOADING_TEXT = 'Laddar webbplatsen…'
+const ERROR_TEXT = 'Webbplatsen kunde inte laddas just nu.'
+const RETRY_BUTTON = { name: 'Försök igen', exact: true }
+// The client pauses about 500 ms, then about 1,500 ms, before its two automatic re-reads.
+const FIRST_RETRY_GAP_MS = 400
+const SECOND_RETRY_GAP_MS = 1300
 const TIMEOUT = 15000
 const NO_STORE = { 'cache-control': 'no-store' }
 
@@ -48,35 +59,171 @@ export async function installEmptyCmsPresentation(context) {
   )
 }
 
-function heldResponse() {
+const answers = {
+  presentation: (presentation) => (route) =>
+    route.fulfill({ headers: NO_STORE, json: { revision: 1, presentation } }),
+  // The Worker's own answer when the database read fails or times out (src/worker.ts).
+  unavailable: () => (route) =>
+    route.fulfill({ status: 503, headers: NO_STORE, json: { error: 'unavailable' } }),
+  invalid: () => (route) =>
+    route.fulfill({ headers: NO_STORE, json: { revision: 2, presentation: null } }),
+}
+
+/** An answer that waits for `release()`. The page may abort the request while it waits. */
+function heldAnswer(presentation) {
   let release
-  const waiting = new Promise((resolve) => {
+  const released = new Promise((resolve) => {
     release = resolve
   })
-  return { waiting, release }
+  const answer = async (route) => {
+    await released
+    await route.fulfill({ headers: NO_STORE, json: { revision: 1, presentation } }).catch(() => {
+      // Leaving the route aborted this request; there is nobody left to answer.
+    })
+  }
+  return { answer, release }
 }
 
-async function clientNavigate(page, path) {
-  await page.evaluate((nextPath) => {
-    globalThis.history.pushState({}, '', nextPath)
-    globalThis.dispatchEvent(new globalThis.PopStateEvent('popstate'))
-  }, path)
+/**
+ * Every presentation read is answered from a plan, in request order, and logged with its arrival
+ * time. A read without a planned answer is a failure: it is what a second, unreused request per
+ * load (or a retry that should not exist) looks like.
+ */
+async function installPresentationPlan(context) {
+  const planned = []
+  const served = []
+  const unplanned = []
+  await context.route('**/api/cms/presentation', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const answer = planned.shift()
+    served.push(Date.now())
+    if (answer === undefined) {
+      unplanned.push(served.length)
+      return route.fulfill({ status: 500, headers: NO_STORE, json: { error: 'unplanned' } })
+    }
+    return answer(route)
+  })
+  return {
+    plan: (...next) => planned.push(...next),
+    served,
+    assertSettled(label) {
+      assert.deepEqual(unplanned, [], `${label}: every presentation read was planned`)
+      assert.equal(planned.length, 0, `${label}: every planned presentation read happened`)
+    },
+  }
 }
 
-async function assertLoadingWithoutLegacy(page, label) {
-  await page.getByText('Laddar webbplatsen…', { exact: true }).waitFor()
+/** Per animation frame: what the visitor could see before and while the app renders. */
+function installPaintSampler(selectors) {
+  const state = {
+    ampersand: [],
+    introFrames: 0,
+    loadingFrames: 0,
+    errorFrames: 0,
+    firstErrorAt: null,
+  }
+  globalThis.window.__kncCmsAmpersandPaintSamples = state.ampersand
+  globalThis.window.__kncFirstPaint = state
+  // Visually hidden means the usual clip pattern: a box of at most 1 x 1 px.
+  const shown = (element) => {
+    const box = element?.getBoundingClientRect()
+    return box !== undefined && (box.width > 1 || box.height > 1)
+  }
+  const elementWithText = (text) => {
+    const walker = globalThis.document.createTreeWalker(globalThis.document.body, 4)
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode())
+      if (node.textContent?.includes(text)) return node.parentElement
+    return null
+  }
+  const sample = () => {
+    const document = globalThis.document
+    const glyph =
+      document.querySelector(selectors.published) ?? document.querySelector(selectors.baseline)
+    if (glyph) state.ampersand.push(globalThis.getComputedStyle(glyph).opacity)
+    const intro = document.getElementById(selectors.intro)
+    if (intro !== null && intro.getClientRects().length > 0) {
+      const style = globalThis.getComputedStyle(intro)
+      if (style.visibility === 'visible' && Number(style.opacity) > 0) state.introFrames++
+    }
+    const text = document.body?.textContent ?? ''
+    if (text.includes(selectors.loading) && shown(elementWithText(selectors.loading)))
+      state.loadingFrames++
+    if (text.includes(selectors.error)) {
+      state.errorFrames++
+      state.firstErrorAt ??= Date.now()
+    }
+    globalThis.window.requestAnimationFrame(sample)
+  }
+  globalThis.window.requestAnimationFrame(sample)
+}
+
+const paintState = (page) => page.evaluate(() => ({ ...globalThis.window.__kncFirstPaint }))
+
+function paeth(left, up, upLeft) {
+  const estimate = left + up - upLeft
+  const [a, b, c] = [left, up, upLeft].map((value) => Math.abs(estimate - value))
+  return a <= b && a <= c ? left : b <= c ? up : upLeft
+}
+
+/** Distinct colours of a screenshot (8-bit RGB or RGBA, not interlaced: what every engine writes). */
+function screenshotColours(png) {
+  const chunks = []
+  let header
+  for (let offset = 8; offset < png.length;) {
+    const length = png.readUInt32BE(offset)
+    const type = png.toString('latin1', offset + 4, offset + 8)
+    const data = png.subarray(offset + 8, offset + 8 + length)
+    if (type === 'IHDR') header = data
+    if (type === 'IDAT') chunks.push(data)
+    offset += length + 12
+  }
+  const [width, height] = [header.readUInt32BE(0), header.readUInt32BE(4)]
+  const channels = { 2: 3, 6: 4 }[header[9]]
+  assert.ok(header[8] === 8 && header[12] === 0 && channels, 'unsupported screenshot PNG format')
+  const pixels = inflateSync(Buffer.concat(chunks))
+  const stride = width * channels
+  let previous = Buffer.alloc(stride)
+  const colours = new Set()
+  for (let y = 0; y < height; y++) {
+    const filter = pixels[y * (stride + 1)]
+    const row = Buffer.from(pixels.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)))
+    for (let x = 0; x < stride; x++) {
+      const left = x >= channels ? row[x - channels] : 0
+      const upLeft = x >= channels ? previous[x - channels] : 0
+      const predictor = [0, left, previous[x], (left + previous[x]) >> 1]
+      row[x] += filter === 4 ? paeth(left, previous[x], upLeft) : predictor[filter]
+    }
+    for (let x = 0; x < stride; x += channels)
+      colours.add((row[x] << 16) | (row[x + 1] << 8) | row[x + 2])
+    previous = row
+  }
+  return colours
+}
+
+const pageBackground = (page) =>
+  page.evaluate(() => ({
+    html: globalThis.getComputedStyle(globalThis.document.documentElement).backgroundColor,
+    body: globalThis.getComputedStyle(globalThis.document.body).backgroundColor,
+  }))
+
+/** While the presentation is read the page is its background: no intro, gate text or old hero. */
+async function assertBackgroundOnly(page, label) {
+  // Leave the browser a few frames to paint (and the sampler to record) whatever it would show.
   await page.waitForTimeout(450)
   const state = await page.evaluate(
     (selectors) => ({
-      loading: globalThis.document.querySelector('main[role="status"]') !== null,
       ampersand: globalThis.document.querySelector(selectors.published) !== null,
       baselineAmpersand: globalThis.document.querySelector(selectors.baseline) !== null,
       fallbackVisible: globalThis.document.body.innerText.includes('Aktivera JavaScript'),
-      sampledOpacities: [...(globalThis.window.__kncCmsAmpersandPaintSamples ?? [])],
+      statusInsideMain:
+        globalThis.document.querySelector('main [role="status"]')?.textContent ===
+        selectors.loading,
+      landmarkRole: globalThis.document.querySelector('main[role]')?.getAttribute('role') ?? null,
     }),
-    { published: HERO_AMPERSAND, baseline: BASELINE_HERO_AMPERSAND },
+    { published: HERO_AMPERSAND, baseline: BASELINE_HERO_AMPERSAND, loading: LOADING_TEXT },
   )
-  assert.equal(state.loading, true, `${label}: native route waits for its CMS presentation`)
+  const painted = await paintState(page)
+  const colours = screenshotColours(await page.screenshot())
   assert.equal(state.ampersand, false, `${label}: the old hero is not rendered during the request`)
   assert.equal(
     state.baselineAmpersand,
@@ -88,15 +235,21 @@ async function assertLoadingWithoutLegacy(page, label) {
     false,
     `${label}: no-JavaScript copy is hidden with scripting enabled`,
   )
+  assert.equal(painted.introFrames, 0, `${label}: no frame showed the agent intro text`)
+  assert.equal(painted.loadingFrames, 0, `${label}: no frame showed visible loading text`)
+  assert.equal(
+    state.statusInsideMain,
+    true,
+    `${label}: assistive technology still hears the loading status`,
+  )
+  assert.equal(state.landmarkRole, null, `${label}: the gate keeps its main landmark role`)
+  assert.equal(colours.size, 1, `${label}: the page shows only its background colour`)
   assert.deepEqual(
-    state.sampledOpacities,
+    painted.ampersand,
     [],
     `${label}: the browser never sampled the legacy opaque ampersand`,
   )
-  return {
-    gateVisible: state.loading,
-    oldHeroVisible: state.ampersand || state.baselineAmpersand,
-  }
+  return { background: await pageBackground(page), screenshotColours: colours.size }
 }
 
 async function readPublishedHero(page, label) {
@@ -124,6 +277,97 @@ async function readPublishedHero(page, label) {
   return { opacity: glyph.opacity, sampleCount: samples.length, sampledValues: observed }
 }
 
+/** 'hero' once the published hero renders, 'error' once the failure state does. */
+async function outcomeOf(page) {
+  const outcome = await page.waitForFunction(
+    ({ hero, error }) =>
+      globalThis.document.querySelector(hero) !== null
+        ? 'hero'
+        : (globalThis.document.body.textContent?.includes(error) ?? false) && 'error',
+    { hero: HERO_AMPERSAND, error: ERROR_TEXT },
+  )
+  return outcome.jsonValue()
+}
+
+async function clientNavigate(page, path) {
+  await page.evaluate((nextPath) => {
+    globalThis.history.pushState({}, '', nextPath)
+    globalThis.dispatchEvent(new globalThis.PopStateEvent('popstate'))
+  }, path)
+}
+
+async function leaveForLogin(page) {
+  await clientNavigate(page, '/login')
+  await page.waitForFunction(
+    (loading) =>
+      globalThis.document.title.startsWith('Logga in') &&
+      !globalThis.document.body.textContent?.includes(loading),
+    LOADING_TEXT,
+  )
+}
+
+/** A held read on a new tab or a reload: background only, then the published home, one request. */
+async function verifyHeldLoad(page, presentations, presentation, label, load) {
+  const held = heldAnswer(presentation)
+  const before = presentations.served.length
+  presentations.plan(held.answer)
+  const request = page.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
+  const checked = request
+    .then(() => assertBackgroundOnly(page, label))
+    .finally(() => held.release())
+  // Both settle before this returns, so a failed check never leaves the navigation unobserved.
+  const [pending] = await Promise.all([checked, load()])
+  return { pending, requests: () => presentations.served.length - before }
+}
+
+/** A guarded context whose frames are sampled and whose presentation reads follow a plan. */
+async function firstPaintContext(createContext, options) {
+  const context = await createContext({
+    reducedMotion: 'reduce',
+    ignoreHTTPSErrors: true,
+    ...options,
+  })
+  context.setDefaultTimeout(TIMEOUT)
+  await context.addInitScript(installPaintSampler, {
+    published: HERO_AMPERSAND,
+    baseline: BASELINE_HERO_AMPERSAND,
+    intro: INTRO_HEADING_ID,
+    loading: LOADING_TEXT,
+    error: ERROR_TEXT,
+  })
+  return { context, presentations: await installPresentationPlan(context) }
+}
+
+/** Desktop pre-paint (STY-3): the background before the app equals the one it paints. */
+async function verifyDesktopPrePaint(createContext, presentation, workerOrigin, scheme) {
+  const { context, presentations } = await firstPaintContext(createContext, {
+    viewport: { width: 1280, height: 720 },
+    colorScheme: scheme,
+  })
+  try {
+    const page = await context.newPage()
+    const label = `desktop ${scheme}`
+    const load = await verifyHeldLoad(page, presentations, presentation, label, () =>
+      page.goto(`${workerOrigin}/`, { waitUntil: 'domcontentloaded' }),
+    )
+    await page.locator(DESKTOP_PANEL).waitFor({ state: 'visible' })
+    const painted = await pageBackground(page)
+    assert.deepEqual(
+      load.pending.background,
+      painted,
+      `${label}: the pre-paint background equals the painted home`,
+    )
+    assert.equal(load.requests(), 1, `${label}: one presentation request for the load`)
+    presentations.assertSettled(label)
+    const reportedDark = await page.evaluate(
+      () => globalThis.matchMedia('(prefers-color-scheme: dark)').matches,
+    )
+    return { requested: scheme, reportedDark, prePaint: load.pending.background, painted }
+  } finally {
+    await context.close()
+  }
+}
+
 async function verifyNoScriptFallback(createContext, workerOrigin) {
   const enabledContext = await createContext({ ignoreHTTPSErrors: true })
   const disabledContext = await createContext({
@@ -146,10 +390,12 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       }
       return route.continue()
     })
+    const navigatedAt = Date.now()
     const response = await enabled.goto(`${workerOrigin}/`, { waitUntil: 'commit' })
     assert.equal(response?.status(), 200, 'The local Worker serves the native homepage')
     const html = await response.text()
     assert.match(html, /<noscript>[\s\S]*Aktivera JavaScript[\s\S]*<\/noscript>/)
+    assert.match(html, new RegExp(`id="${INTRO_HEADING_ID}"`), 'Agents receive the intro text')
     await enabled.waitForTimeout(700)
     assert.ok(
       delayedScripts > 0,
@@ -160,16 +406,52 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       false,
       'Script-enabled visitors never see the fallback while the bundle is delayed or blocked',
     )
+    assert.equal(
+      await enabled.locator(`#${INTRO_HEADING_ID}`).isVisible(),
+      false,
+      'Script-enabled visitors never see the agent intro while the bundle is delayed or blocked',
+    )
+    // The shell's boot deadline (index.html, 8 s) shows the readable intro when the app never boots.
+    await enabled
+      .locator(`#${INTRO_HEADING_ID}`)
+      .waitFor({ state: 'visible', timeout: INTRO_DEADLINE_MS + 2000 - (Date.now() - navigatedAt) })
+    const introShownAfterMs = Date.now() - navigatedAt
+    assert.ok(
+      introShownAfterMs >= INTRO_DEADLINE_MS - 500,
+      `The intro stays hidden until the boot deadline (shown after ${introShownAfterMs} ms)`,
+    )
 
     const disabled = await disabledContext.newPage()
-    const noScriptResponse = await disabled.goto(`${workerOrigin}/`, {
-      waitUntil: 'domcontentloaded',
-    })
+    const noScriptResponse = await disabled.goto(`${workerOrigin}/`, { waitUntil: 'commit' })
+    const committedAt = Date.now()
     assert.equal(noScriptResponse?.status(), 200)
-    const fallback = disabled.getByText(/Aktivera JavaScript/)
-    await fallback.waitFor({ state: 'visible' })
-    assert.equal(await fallback.isVisible(), true, 'The no-JavaScript fallback remains available')
-    return { delayedScripts, fallbackVisibleWithoutScripting: true }
+    // Well before the boot deadline, counted from the response rather than document completion:
+    // without scripting the intro and its fallback show at once.
+    const intro = disabled.locator(`#${INTRO_HEADING_ID}`)
+    await intro.waitFor({
+      state: 'visible',
+      timeout: INTRO_DEADLINE_MS / 4 - (Date.now() - committedAt),
+    })
+    assert.equal(await intro.isVisible(), true, 'Visitors without scripting keep the intro text')
+    // The noscript style cancels the deadline animation, so an expired deadline cannot pass this.
+    assert.equal(
+      await disabled
+        .locator(`main[aria-labelledby='${INTRO_HEADING_ID}']`)
+        .evaluate((main) => globalThis.getComputedStyle(main).animationName),
+      'none',
+      'Without scripting the intro does not wait for the boot deadline',
+    )
+    assert.equal(
+      await disabled.getByText(/Aktivera JavaScript/).isVisible(),
+      true,
+      'The no-JavaScript fallback remains available',
+    )
+    return {
+      delayedScripts,
+      introShownAfterMs,
+      fallbackVisibleWithoutScripting: true,
+      introWithoutScripting: true,
+    }
   } finally {
     await enabledContext.close()
     await disabledContext.close()
@@ -178,90 +460,36 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
 
 /** Exercise real Worker HTML and client startup while the public presentation request is controlled. */
 export async function verifyPublicFirstPaint(createContext, engineName, workerOrigin, work) {
-  const context = await createContext({
+  const { context, presentations } = await firstPaintContext(createContext, {
     viewport: { width: 390, height: 844 },
     colorScheme: 'light',
-    reducedMotion: 'reduce',
-    ignoreHTTPSErrors: true,
   })
-  context.setDefaultTimeout(TIMEOUT)
   const presentation = firstPaintPresentation()
   const emptyPresentation = emptyDocument().presentation
-  const holds = new Map([1, 2, 3].map((number) => [number, heldResponse()]))
-  let requestCount = 0
-  const noStore = NO_STORE
-
-  await context.addInitScript(
-    (selectors) => {
-      const samples = []
-      globalThis.window.__kncCmsAmpersandPaintSamples = samples
-      const sample = () => {
-        const node =
-          globalThis.document.querySelector(selectors.published) ??
-          globalThis.document.querySelector(selectors.baseline)
-        if (node) samples.push(globalThis.getComputedStyle(node).opacity)
-        globalThis.window.requestAnimationFrame(sample)
-      }
-      globalThis.window.requestAnimationFrame(sample)
-    },
-    { published: HERO_AMPERSAND, baseline: BASELINE_HERO_AMPERSAND },
-  )
-
-  await context.route('**/api/cms/presentation', async (route) => {
-    requestCount++
-    if (requestCount <= 3) {
-      const hold = holds.get(requestCount)
-      try {
-        await hold.waiting
-        await route.fulfill({ headers: noStore, json: { revision: 1, presentation } })
-      } catch {
-        // The SPA transition case intentionally aborts one held request after leaving the route.
-      }
-      return
-    }
-    if (requestCount === 4)
-      return route.fulfill({ headers: noStore, json: { revision: 2, presentation: null } })
-    if (requestCount === 5)
-      return route.fulfill({
-        status: 503,
-        headers: noStore,
-        json: { message: 'Local presentation fixture unavailable' },
-      })
-    if (requestCount === 6)
-      return route.fulfill({ headers: noStore, json: { revision: 3, presentation } })
-    return route.fulfill({
-      headers: noStore,
-      json: { revision: 4, presentation: emptyPresentation },
-    })
-  })
-
-  const isPresentationResponse = (response) =>
-    response.request().method() === 'GET' && new URL(response.url()).pathname === PRESENTATION_PATH
 
   try {
     const page = await context.newPage()
-    const firstRequest = page.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
-    const directResponse = await page.goto(`${workerOrigin}/`, { waitUntil: 'domcontentloaded' })
+    let directResponse
+    const direct = await verifyHeldLoad(page, presentations, presentation, 'new tab', async () => {
+      directResponse = await page.goto(`${workerOrigin}/`, { waitUntil: 'domcontentloaded' })
+    })
     assert.equal(directResponse?.status(), 200, 'A new public tab receives the Worker homepage')
-    await firstRequest
-    const directPending = await assertLoadingWithoutLegacy(page, 'new tab')
-    const directResponseReady = page.waitForResponse(isPresentationResponse, { timeout: TIMEOUT })
-    holds.get(1).release()
-    assert.equal((await directResponseReady).status(), 200)
     const directPaint = await readPublishedHero(page, 'new tab')
+    assert.equal(direct.requests(), 1, 'new tab: one presentation request for the load')
+    assert.deepEqual(
+      await pageBackground(page),
+      direct.pending.background,
+      'new tab: the pre-paint background equals the painted home',
+    )
     await page.screenshot({
       path: join(work, `public-first-paint-${engineName}-new-tab.png`),
     })
 
-    const reloadRequest = page.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
-    const reload = page.reload({ waitUntil: 'domcontentloaded' })
-    await reloadRequest
-    const reloadPending = await assertLoadingWithoutLegacy(page, 'hard refresh')
-    const reloadResponseReady = page.waitForResponse(isPresentationResponse, { timeout: TIMEOUT })
-    holds.get(2).release()
-    assert.equal((await reloadResponseReady).status(), 200)
-    await reload
+    const reload = await verifyHeldLoad(page, presentations, presentation, 'hard refresh', () =>
+      page.reload({ waitUntil: 'domcontentloaded' }),
+    )
     const reloadPaint = await readPublishedHero(page, 'hard refresh')
+    assert.equal(reload.requests(), 1, 'hard refresh: one presentation request for the load')
     await page.screenshot({
       path: join(work, `public-first-paint-${engineName}-hard-refresh.png`),
     })
@@ -269,50 +497,109 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
     const privatePage = await context.newPage()
     await privatePage.goto(`${workerOrigin}/login`, { waitUntil: 'domcontentloaded' })
     await privatePage.waitForFunction(() => globalThis.document.title.startsWith('Logga in'))
+    const held = heldAnswer(presentation)
+    presentations.plan(held.answer)
     const delayedRequest = privatePage.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
     await clientNavigate(privatePage, '/')
     await delayedRequest
-    const routePending = await assertLoadingWithoutLegacy(privatePage, 'admin to public navigation')
+    const routePending = await assertBackgroundOnly(privatePage, 'admin to public navigation')
     const requestCanceled = privatePage.waitForEvent('requestfailed', {
       predicate: isPresentationRequest,
       timeout: TIMEOUT,
     })
-    await clientNavigate(privatePage, '/login')
-    await privatePage.waitForFunction(
-      () =>
-        globalThis.document.title.startsWith('Logga in') &&
-        !globalThis.document.querySelector('main[role="status"]'),
-    )
+    await leaveForLogin(privatePage)
     await requestCanceled
-    holds.get(3).release()
+    held.release()
 
-    const invalidResponse = privatePage.waitForResponse(isPresentationResponse, {
-      timeout: TIMEOUT,
-    })
-    await clientNavigate(privatePage, '/')
-    assert.equal(
-      (await invalidResponse).status(),
-      200,
-      'A null payload returns a successful HTTP response',
+    // Leaving the route during the pause before a retry ends the sequence.
+    const abandonedFrom = presentations.served.length
+    presentations.plan(answers.unavailable())
+    const abandoned = privatePage.waitForResponse(
+      (response) => isPresentationRequest(response.request()),
+      { timeout: TIMEOUT },
     )
-    await privatePage.getByText('Webbplatsen kunde inte laddas just nu.', { exact: true }).waitFor()
-    assert.equal(await privatePage.locator(HERO_AMPERSAND).count(), 0)
+    await clientNavigate(privatePage, '/')
+    await abandoned
+    await leaveForLogin(privatePage)
+    await privatePage.waitForTimeout(FIRST_RETRY_GAP_MS + 600)
+    assert.equal(
+      presentations.served.length - abandonedFrom,
+      1,
+      'leaving the route cancels the pending retry',
+    )
 
-    const unavailableResponse = privatePage.waitForResponse(isPresentationResponse, {
-      timeout: TIMEOUT,
+    // Three failed reads end in the error state; the manual retry starts a new bounded sequence.
+    await privatePage.evaluate(() => {
+      globalThis.window.__kncFirstPaint.firstErrorAt = null
     })
-    await privatePage.getByRole('button', { name: 'Försök igen', exact: true }).click()
-    assert.equal((await unavailableResponse).status(), 503, 'HTTP 503 stays in the failure state')
-    await privatePage.getByText('Webbplatsen kunde inte laddas just nu.', { exact: true }).waitFor()
+    const exhaustedFrom = presentations.served.length
+    presentations.plan(answers.unavailable(), answers.invalid(), answers.unavailable())
+    await clientNavigate(privatePage, '/')
+    await privatePage.getByText(ERROR_TEXT, { exact: true }).waitFor()
+    const exhausted = presentations.served.slice(exhaustedFrom)
+    assert.equal(exhausted.length, 3, 'failed reads: two automatic retries before the error state')
+    assert.ok(
+      exhausted[1] - exhausted[0] >= FIRST_RETRY_GAP_MS &&
+        exhausted[2] - exhausted[1] >= SECOND_RETRY_GAP_MS,
+      `failed reads: the retries back off (${exhausted[1] - exhausted[0]} ms, ${exhausted[2] - exhausted[1]} ms)`,
+    )
+    const failed = await paintState(privatePage)
+    assert.ok(
+      failed.firstErrorAt >= exhausted[2],
+      'failed reads: the error state appears only after the last read',
+    )
     assert.equal(await privatePage.locator(HERO_AMPERSAND).count(), 0)
 
-    const retryResponse = privatePage.waitForResponse(isPresentationResponse, { timeout: TIMEOUT })
-    await privatePage.getByRole('button', { name: 'Försök igen', exact: true }).click()
-    assert.equal((await retryResponse).status(), 200)
+    const manualFrom = presentations.served.length
+    presentations.plan(answers.unavailable(), answers.presentation(presentation))
+    const manualFailure = privatePage.waitForResponse(
+      (response) => isPresentationRequest(response.request()),
+      { timeout: TIMEOUT },
+    )
+    await privatePage.getByRole('button', RETRY_BUTTON).click()
+    assert.equal((await manualFailure).status(), 503, 'manual retry: the first read fails again')
+    const errorFramesAfterClick = (await paintState(privatePage)).errorFrames
+    assert.equal(await outcomeOf(privatePage), 'hero', 'manual retry: its bounded retry succeeds')
+    assert.equal(
+      (await paintState(privatePage)).errorFrames,
+      errorFramesAfterClick,
+      'manual retry: the error state never flashed during its automatic retry',
+    )
+    assert.equal(presentations.served.length - manualFrom, 2, 'manual retry: one automatic retry')
     const retryPaint = await readPublishedHero(privatePage, 'manual retry')
 
+    // A new visitor during a slow database (start of a minute): the 503 is retried, never shown.
+    const transientPage = await context.newPage()
+    const transientFrom = presentations.served.length
+    presentations.plan(answers.unavailable(), answers.presentation(presentation))
+    await transientPage.goto(`${workerOrigin}/`, { waitUntil: 'domcontentloaded' })
+    assert.equal(
+      await outcomeOf(transientPage),
+      'hero',
+      'transient 503: the client retries automatically instead of showing the error state',
+    )
+    const transient = presentations.served.slice(transientFrom)
+    assert.equal(transient.length, 2, 'transient 503: one automatic retry')
+    assert.ok(
+      transient[1] - transient[0] >= FIRST_RETRY_GAP_MS,
+      `transient 503: the retry waits first (${transient[1] - transient[0]} ms)`,
+    )
+    const transientFrames = await paintState(transientPage)
+    assert.equal(transientFrames.errorFrames, 0, 'transient 503: the error state never flashed')
+    assert.equal(transientFrames.loadingFrames, 0, 'transient 503: no visible loading text')
+    assert.equal(transientFrames.introFrames, 0, 'transient 503: no frame showed the agent intro')
+    const transientPaint = await readPublishedHero(transientPage, 'transient 503')
+
+    const desktop = []
+    for (const scheme of ['light', 'dark'])
+      desktop.push(await verifyDesktopPrePaint(createContext, presentation, workerOrigin, scheme))
+
     const emptyPage = await context.newPage()
-    const emptyResponse = emptyPage.waitForResponse(isPresentationResponse, { timeout: TIMEOUT })
+    presentations.plan(answers.presentation(emptyPresentation))
+    const emptyResponse = emptyPage.waitForResponse(
+      (response) => isPresentationRequest(response.request()),
+      { timeout: TIMEOUT },
+    )
     await emptyPage.goto(`${workerOrigin}/?cms-empty-presentation=1`, {
       waitUntil: 'domcontentloaded',
     })
@@ -344,15 +631,21 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
       ['1'],
       'An authoritative empty response renders only the unstyled code baseline',
     )
+    presentations.assertSettled('presentation reads')
 
     const noScriptFallback = await verifyNoScriptFallback(createContext, workerOrigin)
     const metrics = {
       browser: engineName,
       presentationSource: 'intercepted local CMS response fixture',
-      directLoad: { ...directPending, ...directPaint },
-      hardRefresh: { ...reloadPending, ...reloadPaint },
+      directLoad: { ...direct.pending, ...directPaint },
+      hardRefresh: { ...reload.pending, ...reloadPaint },
       adminToPublic: routePending,
-      nullThen503Retry: retryPaint,
+      transient503Retry: { gapMs: transient[1] - transient[0], ...transientPaint },
+      exhaustedRetries: {
+        gapsMs: [exhausted[1] - exhausted[0], exhausted[2] - exhausted[1]],
+      },
+      manualRetry: retryPaint,
+      desktopPrePaint: desktop,
       authoritativeEmptyBaseline: {
         opacity: baselineOpacity,
         sampleCount: emptySamples.length,
@@ -366,7 +659,6 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
     )
     return metrics
   } finally {
-    for (const hold of holds.values()) hold.release()
     await context.close()
   }
 }
