@@ -152,14 +152,8 @@ describe('Calendar external-action ownership', () => {
     expect(disconnect).not.toHaveBeenCalled()
   })
 
-  it('uses the Calendar dispatcher first and falls back to the generic seam only when absent', () => {
-    expect(
-      externalCleanup.indexOf("service.rpc('calendar_external_action_for_dispatch'"),
-    ).toBeGreaterThan(-1)
-    expect(externalCleanup.indexOf("service.rpc('external_action_for_dispatch'")).toBeGreaterThan(
-      -1,
-    )
-    expect(externalCleanup).toContain('isMissingCalendarDispatcherError')
-    expect(externalCleanup).toContain('calendarContext.data !== null')
+  it('dispatches every action, Calendar included, through the generic dispatcher alone', () => {
+    expect(externalCleanup).toContain("service.rpc('external_action_for_dispatch'")
+    expect(externalCleanup).not.toContain("service.rpc('calendar_external_action_for_dispatch'")
   })
 })
