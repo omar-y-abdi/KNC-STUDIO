@@ -128,12 +128,19 @@ function readSurface({ html, surface }) {
     ),
   )
   const shape = (node) => `${node.localName}(${[...node.children].map(shape).join(',')})`
-  // As projectNativeTree reads an element's id: the source id, else the slot id.
+  // As projectNativeTree reads an element: the slot attribute decides how it resolves, the source
+  // id (else the slot id) is the identity that duplicates are counted by.
   const nodeOf = (node) => {
     const source = node.getAttribute('data-knc-source')
-    if (source !== null) return { id: source, tag: node.localName, kind: 'source' }
     const slot = node.getAttribute('data-knc-slot')
-    return slot === null ? null : { id: slot, tag: node.localName, kind: 'slot' }
+    if (slot !== null)
+      return {
+        id: slot,
+        tag: node.localName,
+        kind: 'slot',
+        ...(source === null ? {} : { identity: source }),
+      }
+    return source === null ? null : { id: source, tag: node.localName, kind: 'source' }
   }
   const read = (root) => {
     const tree = { nodes: [], tracks: {} }

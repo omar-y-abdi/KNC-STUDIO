@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
+import { customerGatewayAnswer, isCustomerGatewayUrl } from './customer-gateway.mjs'
 import { guardOf } from './network-guard.mjs'
 import { installEmptyCmsPresentation } from './public-first-paint.mjs'
 
@@ -227,24 +228,12 @@ export function storedPresentationResponse() {
   return storedResponse
 }
 
-/**
- * The customer gateway's answer for a visitor with no session, or undefined for a call this module
- * does not fixture. A page boot makes these two (src/app/App.tsx): `forget_device` for a visitor who
- * refused functional storage, and a `list` without a token that restores a returning customer.
- */
-function customerGatewayAnswer(payload) {
-  if (payload?.action === 'forget_device') return { ok: true }
-  if (payload?.action === 'list' && payload.accessToken === undefined)
-    return { ok: false, error: 'access_denied' }
-  return undefined
-}
-
 // In production the Worker relays /api/customer-bookings. The preview proxies it to 127.0.0.1:8787
 // (vite.config.ts), out of the browser guard's sight, so the stored baselines would depend on
 // whatever listens there. Answer it here and refuse what is not fixtured.
 async function installCustomerGateway(context) {
   const guard = guardOf(context)
-  await context.route('**/api/customer-bookings', (route) => {
+  await context.route(isCustomerGatewayUrl, (route) => {
     const request = route.request()
     const payload = request.postDataJSON()
     const body = customerGatewayAnswer(payload)

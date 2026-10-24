@@ -2,6 +2,8 @@
 // in the browser; this module decides, without a DOM, which stored edits the live tree would lose.
 // projectNativeTree (src/cms/NativeSurface.tsx) resolves every stored id against the live nativeTree
 // output, in which an element is a source (a native element) or a slot (the wrapper of a component):
+//  - an element that carries both attributes is resolved as a slot, which is read first, while
+//    duplicates are counted by its source id, which is the one projectNativeTree registers;
 //  - a stored source takes the live source with its id, and the live one wins when the tag differs;
 //    failing that it takes the live slot with its id;
 //  - a stored slot takes the live slot with its id, or else the live source whatever its tag;
@@ -9,9 +11,11 @@
 //  - it keeps the unprojected tree when a stored id repeats, among sources and slots together.
 
 /**
- * @typedef {{ id: string, tag: string, kind: 'source' | 'slot' }} SourceNode
+ * @typedef {{ id: string, tag: string, kind: 'source' | 'slot', identity?: string }} SourceNode
  *   `kind` names the attribute that carries `id`: data-knc-source on a native element, or
- *   data-knc-slot on the div that nativeTree puts around a component. An element has one of them.
+ *   data-knc-slot on the div that nativeTree puts around a component. nativeTree emits one of
+ *   them; a stored element can carry both, and then `kind` is 'slot' with the slot id in `id` and
+ *   the source id in `identity`, the id that counts for duplicates.
  * @typedef {{ nodes: SourceNode[], tracks: Record<string, string[]> }} SourceTree
  *   `tracks`: marquee track id -> tag shape of each tile. Tile ids hash gallery row ids, which the
  *   sanitised fixture cannot carry, so tiles are compared by shape and left out of `nodes`.
@@ -25,7 +29,10 @@
 
 function duplicates(nodes) {
   const seen = new Set()
-  return nodes.filter(({ id }) => seen.has(id) || !seen.add(id))
+  return nodes.filter((node) => {
+    const identity = node.identity ?? node.id
+    return seen.has(identity) || !seen.add(identity)
+  })
 }
 
 // nativeTree keeps sources and slots apart (its `nodes` and `slots` maps); so does the lookup.
@@ -78,9 +85,9 @@ function trackProblem([id, shapes], liveTracks) {
 export function coverageProblems(stored, live) {
   const index = liveIndex(live.nodes)
   return [
-    ...duplicates(stored.nodes).map(({ id, tag }) => ({
+    ...duplicates(stored.nodes).map(({ id, identity, tag }) => ({
       kind: 'duplicate',
-      id,
+      id: identity ?? id,
       stored: tag,
       live: null,
     })),

@@ -9,8 +9,17 @@ import {
 type Kind = 'source' | 'slot'
 
 // A node is a native element (data-knc-source) unless marked 'slot' (a component wrapper, data-knc-slot).
-const tree = (nodes: [string, string, Kind?][], tracks: Record<string, string[]> = {}) => ({
-  nodes: nodes.map(([id, tag, kind = 'source']) => ({ id, tag, kind })),
+// A slot node can also carry a source id (identity): the stored element has both attributes.
+const tree = (
+  nodes: [string, string, Kind?, string?][],
+  tracks: Record<string, string[]> = {},
+) => ({
+  nodes: nodes.map(([id, tag, kind = 'source', identity]) => ({
+    id,
+    tag,
+    kind,
+    ...(identity === undefined ? {} : { identity }),
+  })),
   tracks,
 })
 
@@ -90,6 +99,30 @@ describe('coverageProblems', () => {
     ])
     expect(coverageProblems(sourceFirst, live)).toEqual(duplicate)
     expect(coverageProblems(slotFirst, live)).toEqual(duplicate)
+  })
+
+  it('resolves a stored element with both attributes by its slot, as the projection does', () => {
+    const stored = tree([['knc-slot-a', 'div', 'slot', 'knc-source-b']])
+    const live = tree([['knc-source-b', 'div']])
+    expect(coverageProblems(stored, live)).toEqual([
+      { kind: 'missing-slot', id: 'knc-slot-a', stored: 'div', live: null },
+    ])
+    expect(coverageProblems(stored, tree([['knc-slot-a', 'div', 'slot']]))).toEqual([])
+    expect(coverageProblems(stored, tree([['knc-slot-a', 'section']]))).toEqual([])
+  })
+
+  it('counts duplicates of a dual element by its source id', () => {
+    const stored = tree([
+      ['knc-slot-a', 'div', 'slot', 'knc-source-b'],
+      ['knc-source-b', 'div'],
+    ])
+    const live = tree([
+      ['knc-slot-a', 'div', 'slot'],
+      ['knc-source-b', 'div'],
+    ])
+    expect(coverageProblems(stored, live)).toEqual([
+      { kind: 'duplicate', id: 'knc-source-b', stored: 'div', live: null },
+    ])
   })
 
   it('compares marquee tracks by distinct tile shape, whatever the viewport-driven tile count', () => {
