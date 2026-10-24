@@ -5,8 +5,8 @@ import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
-// Adoption paths that cms-marquee-zoom.spec.mjs does not reach: the asynchronous source upgrade
-// of a stored About page without strip markers, and undo after a conflict resolution.
+// Paths that cms-marquee-zoom.spec.mjs does not reach: the asynchronous source upgrade of a stored
+// About page without strip markers, undo after a conflict resolution, and `all` in Avancerad CSS.
 
 const LEGACY_ZOOM = 0.699029
 
@@ -22,6 +22,15 @@ const barbers = ['A', 'B', 'C', 'D'].map((name, index) => ({
   sort_order: index,
   photo_path: null,
 }))
+const gallery = ['salon', 'cuts'].flatMap((kind) =>
+  [1, 2, 3].map((number) => ({
+    id: `${kind}-${number}`,
+    kind,
+    storage_path: `${kind}/${number}.png`,
+    alt: `${kind} fixture ${number}`,
+    sort_order: number,
+  })),
+)
 
 async function fixtureRoutes(context) {
   await context.route('https://admin-harness.invalid/**', (route) => {
@@ -30,7 +39,12 @@ async function fixtureRoutes(context) {
     if (route.request().method() === 'OPTIONS') return route.fallback()
     if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
       return route.fulfill({ headers, json: { barbers, services: [] } })
-    if (url.pathname === '/rest/v1/gallery_images') return route.fulfill({ headers, json: [] })
+    if (url.pathname === '/rest/v1/gallery_images') {
+      const kind = url.searchParams.get('kind')?.slice(3)
+      return route.fulfill({ headers, json: gallery.filter((item) => item.kind === kind) })
+    }
+    if (url.pathname.startsWith('/storage/v1/object/public/'))
+      return route.fulfill({ headers, contentType: 'image/png', path: 'public/og-image.png' })
     return route.fallback()
   })
 }
@@ -193,4 +207,41 @@ test('undo after a conflict resolution never returns to the raw legacy zoom', as
   await publish(page, 3)
   assert.equal(aboutPage(backend.document).title.sv, 'Om oss (server)')
   assertCardWidths(backend.document, ids, 'Conflict undo')
+})
+
+test('Avancerad CSS rejects all on the marquee nodes in the real CSSOM', async ({ newContext }) => {
+  test.setTimeout(300_000)
+  const context = await newContext({ viewport: { width: 1440, height: 900 } })
+  context.setDefaultTimeout(15000)
+  const backend = await nativeBackend(context)
+  await fixtureRoutes(context)
+  const page = await context.newPage()
+  await mountStudio(page)
+  const advanced = page.locator('#cms-inspector .cms-advanced')
+  const rejection = page.getByRole('alert').filter({
+    hasText: 'CSS-egenskapen all styrs av den rörliga karusellen och kan inte ändras här.',
+  })
+  for (const selector of [
+    '[data-knc-fold="barber-marquee"]',
+    '[data-knc-fold="barber-marquee"] > [data-knc-source]',
+    '[data-knc-fold="gallery-tile"]',
+  ])
+    for (const value of ['initial', 'unset', 'revert']) {
+      await page.evaluate(async (selector) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const target = editor.getWrapper().find(selector)[0]
+        if (!target) throw new Error(`Missing ${selector}`)
+        editor.select(target)
+      }, selector)
+      if ((await advanced.getAttribute('open')) === null) await advanced.locator('summary').click()
+      await advanced.getByLabel('Egenskap', { exact: true }).fill('all')
+      await advanced.getByLabel('Värde', { exact: true }).fill(value)
+      await advanced.getByRole('button', { name: 'Tillämpa', exact: true }).click()
+      // Chromium keeps all as one CSSOM entry; WebKit expands it. Both must name all itself.
+      await rejection.waitFor()
+      await rejection.getByRole('button', { name: 'Stäng', exact: true }).click()
+      await rejection.waitFor({ state: 'detached' })
+    }
+  assert.equal(backend.writes.length, 0, 'A rejected declaration was published')
 })
