@@ -5,6 +5,7 @@ import { mobMuted, shellPalette } from '../../src/app/shared'
 
 // STY-12: public/tokens.css is derived from the homepage palette; this ties the two together.
 const tokensCss = readFileSync(new URL('../../public/tokens.css', import.meta.url), 'utf8')
+const desktopSite = readFileSync(new URL('../../src/app/DesktopSite.tsx', import.meta.url), 'utf8')
 
 const HOMEPAGE: Readonly<Record<string, (dark: boolean) => string>> = {
   '--bb-bg': (dark) => shellPalette(dark).bg,
@@ -21,7 +22,8 @@ function channels(color: string): readonly number[] {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1]
   if (hex !== undefined) return [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16)).concat(1)
   const parts = /^rgba?\(([^)]*)\)$/.exec(color)?.[1]?.split(',').map(Number)
-  if (parts === undefined || parts.some(Number.isNaN)) throw new Error(`Unsupported colour ${color}`)
+  if (parts === undefined || parts.some(Number.isNaN))
+    throw new Error(`Unsupported colour ${color}`)
   return parts.length === 3 ? [...parts, 1] : parts
 }
 
@@ -50,12 +52,39 @@ function declarations(): ReadonlyMap<string, string> {
 describe('public/tokens.css', () => {
   it('defines exactly the homepage palette as light-dark() tokens', () => {
     const tokens = declarations()
-    expect([...tokens.keys()].sort()).toEqual(Object.keys(HOMEPAGE).sort())
+    expect([...tokens.keys()].sort()).toEqual([...Object.keys(HOMEPAGE), '--bb-font'].sort())
     for (const [name, homepage] of Object.entries(HOMEPAGE)) {
       const [light, dark] = lightDark(tokens.get(name) ?? '')
       expect(channels(light), `${name} light`).toEqual(channels(homepage(false)))
       expect(channels(dark), `${name} dark`).toEqual(channels(homepage(true)))
     }
+  })
+
+  it('names the homepage font stack', () => {
+    const families = (stack: string): string[] =>
+      stack.split(',').map((family) => family.trim().replace(/^['"]|['"]$/g, ''))
+    const homepage = /fontFamily: "('Inter Variable'[^"]*)"/.exec(desktopSite)?.[1] ?? ''
+    expect(families(declarations().get('--bb-font') ?? '')).toEqual(families(homepage))
+    expect(families(homepage)[0]).toBe('Inter Variable')
+  })
+
+  // The app bundles this file, so the root may only gain custom properties: no paint on the homepage.
+  it('declares nothing but custom properties on :root', () => {
+    const rootDeclarations: string[] = []
+    walk(parse(tokensCss), {
+      visit: 'Rule',
+      enter(node) {
+        if (generate(node.prelude) !== ':root') return
+        walk(node.block, {
+          visit: 'Declaration',
+          enter(declaration) {
+            rootDeclarations.push(declaration.property)
+          },
+        })
+      },
+    })
+    expect(rootDeclarations.length).toBeGreaterThan(0)
+    expect(rootDeclarations.filter((property) => !property.startsWith('--bb-'))).toEqual([])
   })
 
   it('styles only .bb-* classes and :root', () => {

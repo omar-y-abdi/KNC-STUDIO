@@ -188,6 +188,84 @@ test('legal canvas links the public base sheets and pins the mode', async ({ pag
     .toEqual({ links: [], loaded: true, scheme: '', layoutWidth: null })
 })
 
+/** What a reader sees inside the legal document: the first painted background in the element
+ * stack at a point within main.bb-doc, and the colour of its text. Runs in the page or frame. */
+const documentColours = () => {
+  const doc = globalThis.document
+  const main = doc.querySelector('main.bb-doc')
+  if (!main) return null
+  const box = main.getBoundingClientRect()
+  const background = doc
+    .elementsFromPoint(box.left + 4, Math.min(box.top + 8, globalThis.innerHeight - 1))
+    .map((element) => getComputedStyle(element).backgroundColor)
+    .find((color) => color !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(color))
+  return { background: background ?? null, text: getComputedStyle(main.querySelector('p')).color }
+}
+
+// The legal surface sits on the root, so the owner's body styles are what readers see, not a token
+// colour painted over them by a wrapper, and the browser chrome follows the same colour.
+test('legal page shows the owner body colours in the canvas and to visitors', async ({
+  page,
+  context,
+  studio,
+}) => {
+  const { frame, backend } = studio
+  const owner = { background: 'rgb(18, 52, 86)', text: 'rgb(254, 220, 186)' }
+  await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
+  await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+  await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
+  const canvas = await (await page.locator('.gjs-frame').first().elementHandle()).contentFrame()
+  const canvasColours = () => canvas.evaluate(documentColours)
+  await expect
+    .poll(canvasColours, { message: 'token surface before the edit' })
+    .toEqual({ background: 'rgb(28, 28, 30)', text: 'rgb(245, 245, 247)' })
+  await select(page, 'body')
+  await openSector(page, 'Yta & kanter')
+  const background = page.getByRole('textbox', { name: 'Bakgrundsfärg', exact: true })
+  await background.fill('#123456')
+  await background.press('Enter')
+  // The body inspector offers no Typografi sector, so the text colour goes through the selected
+  // component's style, the rule an inspector colour field writes.
+  await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    cmsGrapes.editors.at(-1).getSelected().addStyle({ color: '#fedcba' })
+  })
+  await expect.poll(canvasColours, { message: 'owner colours in the canvas' }).toEqual(owner)
+  const publication = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith('/functions/v1/cms-studio') &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.operation === 'publish',
+  )
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  assert.equal((await publication).status(), 200)
+  const rendering = await loadWorker()
+  const visitor = await context.newPage()
+  try {
+    await routeWorkerDocuments(visitor, {
+      origin: new URL(base).origin,
+      paths: ['/terms'],
+      worker: rendering.worker,
+      presentation: globalThis.structuredClone(backend.document.presentation),
+      shell: SOURCE_SHELL,
+    })
+    await visitor.emulateMedia({ colorScheme: 'dark' })
+    await visitor.goto(`${base}/terms`, { waitUntil: 'load' })
+    const seen = async () => ({
+      ...(await visitor.evaluate(documentColours)),
+      themeColor: await visitor.evaluate(
+        () => globalThis.document.querySelector('meta[name="theme-color"]')?.content ?? null,
+      ),
+    })
+    await expect
+      .poll(seen, { message: 'published legal page' })
+      .toEqual({ ...owner, themeColor: owner.background })
+  } finally {
+    await visitor.close()
+    await rendering.close()
+  }
+})
+
 test('1-legal-background', async ({ page, context, studio }, testInfo) => {
   const { frame, shot, backend } = studio
   await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()

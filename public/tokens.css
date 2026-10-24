@@ -11,10 +11,9 @@
   font-display: swap;
 }
 
-/* .bb-muted carries the tokens itself, so muted text resolves outside a page too. */
-.bb-page,
-.bb-status,
-.bb-muted {
+/* Custom properties only: :root paints nothing here, so the app (homepage included) is unchanged.
+   Static documents paint the root from them in /info.css. */
+:root {
   --bb-bg: light-dark(#ffffff, #1c1c1e);
   --bb-text: light-dark(#1c1c1e, #f5f5f7);
   --bb-muted: light-dark(rgba(0, 0, 0, 0.6), rgba(255, 255, 255, 0.55));
@@ -22,6 +21,7 @@
   --bb-surface: light-dark(#f1f0ec, #262629);
   --bb-accent: light-dark(#1c1c1e, #f5f5f7);
   --bb-accent-text: light-dark(#ffffff, #1c1c1e);
+  --bb-font: 'Inter Variable', -apple-system, system-ui, sans-serif;
 }
 
 .bb-page,
@@ -29,11 +29,7 @@
   min-height: 100vh;
   background: var(--bb-bg);
   color: var(--bb-text);
-  font-family:
-    'Inter Variable',
-    -apple-system,
-    system-ui,
-    sans-serif;
+  font-family: var(--bb-font);
   -webkit-font-smoothing: antialiased;
 }
 

@@ -1,7 +1,13 @@
-/* Document layout of the script-free information pages (.bb-doc inside a .bb-page). Colours and
-   the font come from /tokens.css; the Worker inlines both files before the stored legal CSS. */
+/* The script-free information pages: a <main class="bb-doc"> on a root painted from /tokens.css.
+   The surface sits on the root, as the first legal import's CSS had it, so a CMS legal page's own
+   body background, text colour and font (owner CSS after this file) are what visitors see. The
+   Worker inlines /tokens.css and this file before the stored legal CSS; the homepage loads neither
+   this file nor any root paint. */
 :root {
   color-scheme: light dark;
+  background: var(--bb-bg);
+  color: var(--bb-text);
+  font-family: var(--bb-font);
 }
 * {
   box-sizing: border-box;
@@ -14,6 +20,7 @@ body {
   margin: auto;
   padding: 2.5rem 1.4rem 5rem;
   line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
 }
 .bb-doc nav {
   margin-bottom: 2rem;

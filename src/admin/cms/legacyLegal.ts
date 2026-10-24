@@ -12,19 +12,19 @@ export const LEGACY_LEGAL_CSS: Readonly<Record<'/terms' | '/privacy', string>> =
 
 const LEGACY_MAIN = /^(\s*)<main>([\s\S]*)<\/main>(\s*)$/
 
-/** The importer's token shape around the stored main, or null when the page has another shape. */
-function tokenShape(html: string): string | null {
+/** The importer's document shape (`<main class="bb-doc">`), or null for any other shape. */
+function documentShape(html: string): string | null {
   const parts = LEGACY_MAIN.exec(html)
   if (!parts || parts[2]?.includes('<main')) return null
-  return `${parts[1]}<div class="bb-page"><main class="bb-doc">${parts[2]}</main></div>${parts[3]}`
+  return `${parts[1]}<main class="bb-doc">${parts[2]}</main>${parts[3]}`
 }
 
 function upgradedPage(page: CmsPage, legacy: string): CmsPage | null {
   const { sv, en } = page.content
   const sheets = [sv.css.light, sv.css.dark, en.css.light, en.css.dark]
   if (!sheets.every((css) => css.includes(legacy))) return null
-  const svHtml = tokenShape(sv.html)
-  const enHtml = tokenShape(en.html)
+  const svHtml = documentShape(sv.html)
+  const enHtml = documentShape(en.html)
   if (svHtml === null || enHtml === null) return null
   const strip = (variant: PageVariant, html: string): PageVariant => ({
     html,
@@ -37,7 +37,7 @@ function upgradedPage(page: CmsPage, legacy: string): CmsPage | null {
 }
 
 /** A legal page whose four stored sheets still hold exactly the imported legacy CSS loses that block
- * and gets the importer's token shape; its other CSS and its inner HTML stay byte for byte. Any
+ * and gets the importer's document shape; its other CSS and its inner HTML stay byte for byte. Any
  * other page, or a legal page of another shape, is returned untouched, so a second run is a no-op. */
 export function upgradeLegacyLegalPages(document: CmsDocument): CmsDocument {
   let changed = false

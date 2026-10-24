@@ -21,20 +21,24 @@ const fixture = JSON.parse(
 // The homepage surface (src/app/shared.ts) that every tokenised page paints.
 const SURFACE = { light: 'rgb(255, 255, 255)', dark: 'rgb(28, 28, 30)' }
 const WORKER_PATHS = ['/terms', '/privacy']
-// `tokens: false`: the stored legal CSS still carries its own palette until the upgrade is published.
+// Where the token surface is painted: the app's status and staff screens on their own element, the
+// documents on the root (public/info.css) so a CMS legal page's own body styles stay visible. `null`:
+// the stored legal CSS still carries its own palette until the upgrade is published.
+const APP = '.bb-page, .bb-status'
+const DOC = ':root'
 const PAGES = [
-  { url: '/404.html', ready: 'h1', tokens: true },
-  { url: '/no-such-page', ready: 'h1', tokens: true },
-  { url: '/login', ready: 'text=Laddar', tokens: true, holdAdminChunk: true },
-  { url: '/login', ready: '#admin-email', tokens: true },
-  { url: '/reset', ready: 'h1', tokens: true },
-  { url: '/privacy.html', ready: 'h1', tokens: true },
-  { url: '/google-calendar.html', ready: 'h1', tokens: true },
-  { url: '/contact.html', ready: 'h1', tokens: true },
-  { url: '/terms', ready: 'h1', tokens: false, presentation: 'stored' },
-  { url: '/privacy', ready: 'h1', tokens: false, presentation: 'stored' },
-  { url: '/terms', ready: 'h1', tokens: true, presentation: 'upgraded' },
-  { url: '/privacy', ready: 'h1', tokens: true, presentation: 'upgraded' },
+  { url: '/404.html', ready: 'h1', surface: DOC },
+  { url: '/no-such-page', ready: 'h1', surface: APP },
+  { url: '/login', ready: 'text=Laddar', surface: APP, holdAdminChunk: true },
+  { url: '/login', ready: '#admin-email', surface: APP },
+  { url: '/reset', ready: 'h1', surface: APP },
+  { url: '/privacy.html', ready: 'h1', surface: DOC },
+  { url: '/google-calendar.html', ready: 'h1', surface: DOC },
+  { url: '/contact.html', ready: 'h1', surface: DOC },
+  { url: '/terms', ready: 'h1', surface: null, presentation: 'stored' },
+  { url: '/privacy', ready: 'h1', surface: null, presentation: 'stored' },
+  { url: '/terms', ready: 'h1', surface: DOC, presentation: 'upgraded' },
+  { url: '/privacy', ready: 'h1', surface: DOC, presentation: 'upgraded' },
 ]
 
 let rendering
@@ -80,16 +84,24 @@ async function audit(page) {
   })
 }
 
-/** The tokenised surface's background and font, or null when the page has none. */
-const tokenSurface = (page) =>
-  page.evaluate(() => {
-    const surface = globalThis.document.querySelector('.bb-page, .bb-status')
+/** The surface's background and font; on a document also the colour a visitor sees inside its
+ * main: the first painted background in the stack at a point within main.bb-doc. */
+const tokenSurface = (page, selector) =>
+  page.evaluate((selector) => {
+    const surface = globalThis.document.querySelector(selector)
     if (!surface) return null
     const style = globalThis.getComputedStyle(surface)
     // Chromium quotes the family name in the computed value; Firefox and WebKit do not.
     const font = style.fontFamily.split(',')[0].replaceAll('"', '').trim()
-    return { background: style.backgroundColor, font }
-  })
+    const doc = globalThis.document.querySelector('main.bb-doc')
+    if (!doc) return { background: style.backgroundColor, font }
+    const box = doc.getBoundingClientRect()
+    const seen = globalThis.document
+      .elementsFromPoint(box.left + 4, Math.min(box.top + 8, globalThis.innerHeight - 1))
+      .map((element) => globalThis.getComputedStyle(element).backgroundColor)
+      .find((color) => color !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(color))
+    return { background: style.backgroundColor, font, seen: seen ?? null }
+  }, selector)
 
 for (const scheme of ['light', 'dark']) {
   test.describe(`OS ${scheme}`, () => {
@@ -122,10 +134,11 @@ for (const scheme of ['light', 'dark']) {
         testInfo.annotations.push({ type: 'metrics', description: JSON.stringify(result) })
         expect(result.violations, `${label}: axe wcag2aa`).toEqual([])
         expect(result.minContrast, `${label}: lowest text contrast`).toBeGreaterThanOrEqual(4.5)
-        if (target.tokens)
-          expect(await tokenSurface(page), `${label}: token surface`).toEqual({
+        if (target.surface)
+          expect(await tokenSurface(page, target.surface), `${label}: token surface`).toEqual({
             background: SURFACE[scheme],
             font: 'Inter Variable',
+            ...(target.surface === DOC ? { seen: SURFACE[scheme] } : {}),
           })
       })
     }

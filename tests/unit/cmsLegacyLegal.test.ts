@@ -51,7 +51,7 @@ describe('legacy legal page upgrade (STY-7)', () => {
   })
 
   it.each(['/terms', '/privacy'] as const)(
-    'strips the fixture %s legacy CSS and wraps its one main in the token shape',
+    'strips the fixture %s legacy CSS and gives its one main the document class',
     (path) => {
       const before = legal(fixture(), path)
       const after = legal(upgradeLegacyLegalPages(fixture()), path)
@@ -62,7 +62,7 @@ describe('legacy legal page upgrade (STY-7)', () => {
         expect(after.content[lang].html).toBe(
           before.content[lang].html.replace(
             `<main>${inner}</main>`,
-            `<div class="bb-page"><main class="bb-doc">${inner}</main></div>`,
+            `<main class="bb-doc">${inner}</main>`,
           ),
         )
         expect(after.content[lang].html.match(/<main\b/g)).toHaveLength(1)
