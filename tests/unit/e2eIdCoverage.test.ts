@@ -3,6 +3,8 @@ import {
   coverageProblems,
   describeOrphan,
   describeProblem,
+  nodeOf,
+  sourceTree,
   ratchetVerdict,
 } from '../../tools/e2e/id-coverage.mjs'
 
@@ -137,6 +139,46 @@ describe('coverageProblems', () => {
     expect(coverageProblems(stored, tree([]))).toEqual([
       { kind: 'reshaped', id: 'track', stored: tile, live: null },
     ])
+  })
+})
+
+describe('nodeOf', () => {
+  it('reads an element with both attributes by its slot, keeping the source id as identity', () => {
+    expect(nodeOf({ source: 'knc-b', slot: 'knc-a', tag: 'div' })).toEqual({
+      id: 'knc-a',
+      tag: 'div',
+      kind: 'slot',
+      identity: 'knc-b',
+    })
+  })
+
+  it('reads a lone slot and a lone source as what they are, and a bare element as nothing', () => {
+    expect(nodeOf({ source: null, slot: 'knc-a', tag: 'div' })).toEqual({
+      id: 'knc-a',
+      tag: 'div',
+      kind: 'slot',
+    })
+    expect(nodeOf({ source: 'knc-b', slot: null, tag: 'h2' })).toEqual({
+      id: 'knc-b',
+      tag: 'h2',
+      kind: 'source',
+    })
+    expect(nodeOf({ source: null, slot: null, tag: 'p' })).toBeNull()
+  })
+
+  it('builds the tree of a page, skipping elements without either attribute', () => {
+    expect(
+      sourceTree({
+        elements: [
+          { source: null, slot: null, tag: 'p' },
+          { source: 'knc-b', slot: 'knc-a', tag: 'div' },
+        ],
+        tracks: { 'knc-t': ['div()'] },
+      }),
+    ).toEqual({
+      nodes: [{ id: 'knc-a', tag: 'div', kind: 'slot', identity: 'knc-b' }],
+      tracks: { 'knc-t': ['div()'] },
+    })
   })
 })
 

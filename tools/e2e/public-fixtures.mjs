@@ -7,8 +7,9 @@
 // fixture barbers: it is the code-fallback guard of visual.spec.mjs. installStoredBackend serves the
 // committed rev-56 presentation (fixtures/presentation.json.gz) together with the entities that
 // presentation was captured from, so its stored barber-card and booking ids meet live nodes
-// (PAR-18 stored baselines, LIB-14 id coverage). It also answers the two customer-gateway calls
-// that a page boot makes (installCustomerGateway); installPublicBackend does not.
+// (PAR-18 stored baselines, LIB-14 id coverage). Both also answer the two customer-gateway calls
+// that a page boot makes and refuse every other one (installCustomerGateway), so no spec of the
+// public or visual groups reaches the preview's loopback proxy.
 
 import { readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
@@ -144,14 +145,16 @@ function galleryRows(rows, url) {
 function answersFor({ barbers, services, gallery, weekdays }) {
   const discovery = discoveryOf(barbers, services, weekdays)
   const catalog = { barbers, services }
-  return new Map([
-    ['GET /rest/v1/site_content', () => []],
-    ['GET /rest/v1/about_content', () => []],
-    ['GET /rest/v1/reviews', () => []],
-    ['GET /rest/v1/gallery_images', (url) => galleryRows(gallery, url)],
-    ['POST /rest/v1/rpc/public_business_discovery', () => discovery],
-    ['POST /rest/v1/rpc/public_booking_catalog', () => catalog],
-  ])
+  return new Map(
+    /** @type {[string, (url: URL) => unknown][]} */ ([
+      ['GET /rest/v1/site_content', () => []],
+      ['GET /rest/v1/about_content', () => []],
+      ['GET /rest/v1/reviews', () => []],
+      ['GET /rest/v1/gallery_images', (url) => galleryRows(gallery, url)],
+      ['POST /rest/v1/rpc/public_business_discovery', () => discovery],
+      ['POST /rest/v1/rpc/public_booking_catalog', () => catalog],
+    ]),
+  )
 }
 
 const CODE_FALLBACK_ANSWERS = answersFor({
@@ -202,8 +205,32 @@ function answer(route, guard, answers) {
 const TURNSTILE_STUB =
   'window.turnstile={render:(_node,options)=>{queueMicrotask(()=>options.callback("local-test-token"));return "local"},remove:()=>{},reset:()=>{}}'
 
+// In production the Worker relays /api/customer-bookings. The preview proxies it to 127.0.0.1:8787
+// (vite.config.ts), out of the browser guard's sight, so shots and assertions would depend on
+// whatever listens there. Answer it here and refuse what is not fixtured.
+async function installCustomerGateway(context) {
+  const guard = guardOf(context)
+  await context.route(isCustomerGatewayUrl, (route) => {
+    const request = route.request()
+    const payload = request.postDataJSON()
+    const body = customerGatewayAnswer(payload)
+    if (body !== undefined) return route.fulfill({ json: body })
+    const action = JSON.stringify(payload?.action)
+    // Field names only: a posted access token must not reach a failure message.
+    const fields = Object.keys(payload ?? {}).join(', ')
+    guard.record({
+      channel: 'request',
+      method: request.method(),
+      url: request.url(),
+      reason: `unfixtured-harness-request (customer gateway action ${action}, fields: ${fields})`,
+    })
+    return route.fulfill({ status: 501, json: { message: 'No public fixture for this call' } })
+  })
+}
+
 async function installBackendRoutes(context, answers) {
   const guard = guardOf(context)
+  await installCustomerGateway(context)
   await context.route('https://challenges.cloudflare.com/**', (route) =>
     route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }),
   )
@@ -228,29 +255,6 @@ export function storedPresentationResponse() {
   return storedResponse
 }
 
-// In production the Worker relays /api/customer-bookings. The preview proxies it to 127.0.0.1:8787
-// (vite.config.ts), out of the browser guard's sight, so the stored baselines would depend on
-// whatever listens there. Answer it here and refuse what is not fixtured.
-async function installCustomerGateway(context) {
-  const guard = guardOf(context)
-  await context.route(isCustomerGatewayUrl, (route) => {
-    const request = route.request()
-    const payload = request.postDataJSON()
-    const body = customerGatewayAnswer(payload)
-    if (body !== undefined) return route.fulfill({ json: body })
-    const action = JSON.stringify(payload?.action)
-    // Field names only: a posted access token must not reach a failure message.
-    const fields = Object.keys(payload ?? {}).join(', ')
-    guard.record({
-      channel: 'request',
-      method: request.method(),
-      url: request.url(),
-      reason: `unfixtured-harness-request (customer gateway action ${action}, fields: ${fields})`,
-    })
-    return route.fulfill({ status: 501, json: { message: 'No public fixture for this call' } })
-  })
-}
-
 /**
  * The stored (rev-56) presentation and its captured entities for one guarded context, and the
  * customer gateway.
@@ -260,6 +264,5 @@ export async function installStoredBackend(context) {
   await context.route('**/api/cms/presentation', (route) =>
     route.fulfill({ headers: { 'content-type': 'application/json', ...NO_STORE }, json: response }),
   )
-  await installCustomerGateway(context)
   await installBackendRoutes(context, STORED_ANSWERS)
 }

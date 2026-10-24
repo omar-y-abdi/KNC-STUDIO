@@ -27,6 +27,27 @@
  * }} CoverageProblem
  */
 
+/**
+ * What one element's attributes make of it, as projectNativeTree reads an element: the slot
+ * attribute decides how it resolves, the source id (else the slot id) is its identity.
+ * @param {{ source: string | null, slot: string | null, tag: string }} element
+ * @returns {SourceNode | null} null for an element with neither attribute
+ */
+export function nodeOf({ source, slot, tag }) {
+  if (slot !== null)
+    return { id: slot, tag, kind: 'slot', ...(source === null ? {} : { identity: source }) }
+  return source === null ? null : { id: source, tag, kind: 'source' }
+}
+
+/**
+ * A page's elements as a SourceTree.
+ * @param {{ elements: { source: string | null, slot: string | null, tag: string }[], tracks: Record<string, string[]> }} read
+ * @returns {SourceTree}
+ */
+export function sourceTree({ elements, tracks }) {
+  return { nodes: elements.map(nodeOf).filter((node) => node !== null), tracks }
+}
+
 function duplicates(nodes) {
   const seen = new Set()
   return nodes.filter((node) => {

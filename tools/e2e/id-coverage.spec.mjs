@@ -13,7 +13,7 @@
 
 import { test, expect } from './fixtures.mjs'
 import { installStoredBackend, storedPresentationResponse } from './public-fixtures.mjs'
-import { coverageProblems, describeWhere, ratchetVerdict } from './id-coverage.mjs'
+import { coverageProblems, describeWhere, ratchetVerdict, sourceTree } from './id-coverage.mjs'
 import { publicOrigin } from './origins.mjs'
 
 const base = publicOrigin
@@ -112,7 +112,7 @@ async function renderSource(page, capture, id) {
 }
 
 /**
- * Stored and live source and slot nodes of one surface; marquee tiles become shapes (see
+ * Stored and live source and slot elements of one surface; marquee tiles become shapes (see
  * id-coverage.mjs).
  */
 function readSurface({ html, surface }) {
@@ -128,27 +128,17 @@ function readSurface({ html, surface }) {
     ),
   )
   const shape = (node) => `${node.localName}(${[...node.children].map(shape).join(',')})`
-  // As projectNativeTree reads an element: the slot attribute decides how it resolves, the source
-  // id (else the slot id) is the identity that duplicates are counted by.
-  const nodeOf = (node) => {
-    const source = node.getAttribute('data-knc-source')
-    const slot = node.getAttribute('data-knc-slot')
-    if (slot !== null)
-      return {
-        id: slot,
-        tag: node.localName,
-        kind: 'slot',
-        ...(source === null ? {} : { identity: source }),
-      }
-    return source === null ? null : { id: source, tag: node.localName, kind: 'source' }
-  }
+  // The attributes of every element that has one, as the page carries them; nodeOf in
+  // id-coverage.mjs decides what they mean.
   const read = (root) => {
-    const tree = { nodes: [], tracks: {} }
+    const tree = { elements: [], tracks: {} }
     const visit = (node, inTrack) => {
-      const found = nodeOf(node)
-      const track = found !== null && found.kind === 'source' && trackIds.has(found.id)
-      if (found !== null && !inTrack) tree.nodes.push(found)
-      if (track) tree.tracks[found.id] = [...node.children].map(shape)
+      const source = node.getAttribute('data-knc-source')
+      const slot = node.getAttribute('data-knc-slot')
+      const track = source !== null && slot === null && trackIds.has(source)
+      if ((source !== null || slot !== null) && !inTrack)
+        tree.elements.push({ source, slot, tag: node.localName })
+      if (track) tree.tracks[source] = [...node.children].map(shape)
       for (const child of node.children) visit(child, inTrack || track)
     }
     visit(root, false)
@@ -179,11 +169,12 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
     await renderSource(page, capture, `lib14-${index}`)
     for (const [path, surface] of surfacesOf(capture.device, capture.scene)) {
       const html = pages.get(path).content[capture.lang].html
-      const read = await page.evaluate(readSurface, { html, surface })
-      if (read.error !== undefined) {
+      const raw = await page.evaluate(readSurface, { html, surface })
+      if (raw.error !== undefined) {
         unreadable.push(`${describeWhere(capture, surface)}: ${read.error}`)
         continue
       }
+      const read = { stored: sourceTree(raw.stored), live: sourceTree(raw.live) }
       checkedIds += read.stored.nodes.length
       checkedSlots += read.stored.nodes.filter(({ kind }) => kind === 'slot').length
       checkedTracks += Object.keys(read.stored.tracks).length
