@@ -1,7 +1,9 @@
-// LIB-14 id coverage. Every data-knc-source id in the committed rev-56 presentation must exist,
-// with the same tag, in the nativeTree output of the public surfaces (DesktopSite, MobileSite,
-// AboutSection, GalleryMarquee, BookingFlow, MyBookingsDialog, Dialog). Otherwise
-// projectNativeTree silently drops or ignores that stored edit.
+// LIB-14 id coverage. Every data-knc-source and data-knc-slot id in the committed rev-56
+// presentation must resolve in the nativeTree output of the public surfaces (DesktopSite,
+// MobileSite, AboutSection, GalleryMarquee, BookingFlow, MyBookingsDialog, Dialog): a source id to
+// a live source with the same tag, a slot id to a live slot or source. Otherwise projectNativeTree
+// silently drops or ignores that stored edit, and a missing slot makes its component vanish. The
+// rules are in id-coverage.mjs.
 //
 // The live tree is read exactly where the CMS captured the stored one: the source renderer at
 // /cms-public/source, driven by the same `knc-source-context` messages and device sizes as
@@ -11,7 +13,7 @@
 
 import { test, expect } from './fixtures.mjs'
 import { installStoredBackend, storedPresentationResponse } from './public-fixtures.mjs'
-import { coverageProblems, describeProblem } from './id-coverage.mjs'
+import { coverageProblems, describeWhere, ratchetVerdict, sourceTree } from './id-coverage.mjs'
 import { publicOrigin } from './origins.mjs'
 
 const base = publicOrigin
@@ -29,36 +31,49 @@ const DESKTOP_SCENES = [
   'booking-confirmation',
   'my-bookings-list',
 ]
-// readCorePageSource renders no booking stages or bookings list on Mobile.
+// readCorePageSource renders no booking stages or bookings list on Mobile. It renders the Mobile
+// About (in 'home') and 'my-bookings' but stores neither: the stored /about and /my-bookings pages
+// are the Desktop captures, so those two Mobile renders are checked against them.
 const MOBILE_SCENES = ['home', 'booking', 'my-bookings']
 const MAX_LISTED = 40
-// Orphans that HEAD already has against rev 56: the language switch was rebuilt after the capture,
-// from a <div> holding SV and EN <button>s into one <button> holding two <span>s, so stored edits on
-// it are lost today (the live switch renders, so the homepage itself is unchanged). A ratchet: these
-// 12 ids must be orphaned in exactly the four captures of their surface (sv/en x light/dark), 48
-// occurrences in all. Any other orphan fails, and so does a fix until it deletes the entries here.
-const KNOWN_ORPHANS = [
-  ['desktop-home', 'knc-desktop-home-0-i0-i1-i2'],
-  ['desktop-booking', 'knc-desktop-booking-0-i0-i1-i2'],
-  ['mobile-home', 'knc-mobile-home-0-i0-i0-i1-i1-i0'],
-  ['mobile-booking', 'knc-mobile-booking-0-i0-i0-i1-i1-i0'],
-].flatMap(([surface, toggle]) => [
-  { surface, kind: 'retagged', id: toggle, stored: 'div', live: 'button' },
-  { surface, kind: 'retagged', id: `${toggle}-i0`, stored: 'button', live: 'span' },
-  { surface, kind: 'retagged', id: `${toggle}-i1`, stored: 'button', live: 'span' },
-])
 const LANG_MODES = ['sv', 'en'].flatMap((lang) => ['light', 'dark'].map((mode) => ({ lang, mode })))
-const sameOrphan = (a, b) =>
-  a.surface === b.surface &&
-  a.kind === b.kind &&
-  a.id === b.id &&
-  a.stored === b.stored &&
-  a.live === b.live
-const orphanKey = ({ lang, mode }, { surface, kind, id, stored, live }) =>
-  `${lang} ${mode} ${surface}: ${kind} ${id} (stored <${stored}>, live <${live}>)`
-const EXPECTED_KNOWN = LANG_MODES.flatMap((capture) =>
-  KNOWN_ORPHANS.map((orphan) => orphanKey(capture, orphan)),
-).sort()
+const capturesOf = (device, scene) =>
+  LANG_MODES.map(({ lang, mode }) => ({ lang, mode, device, scene }))
+// Orphans that HEAD already has against rev 56. The language switch was rebuilt after the capture,
+// from a <div> holding SV and EN <button>s into one <button> holding two <span>s, so stored edits on
+// it are lost today (the live switch renders, so the homepage itself is unchanged).
+const LANGUAGE_SWITCH_ORPHANS = [
+  ['desktop-home', 'knc-desktop-home-0-i0-i1-i2', 'Desktop', 'home'],
+  ['desktop-booking', 'knc-desktop-booking-0-i0-i1-i2', 'Desktop', 'booking'],
+  ['mobile-home', 'knc-mobile-home-0-i0-i0-i1-i1-i0', 'Mobile', 'home'],
+  ['mobile-booking', 'knc-mobile-booking-0-i0-i0-i1-i1-i0', 'Mobile', 'booking'],
+].flatMap(([surface, toggle, device, scene]) => {
+  const captures = capturesOf(device, scene)
+  return [
+    { id: toggle, stored: 'div', live: 'button' },
+    { id: `${toggle}-i0`, stored: 'button', live: 'span' },
+    { id: `${toggle}-i1`, stored: 'button', live: 'span' },
+  ].map((retagged) => ({ orphan: { surface, kind: 'retagged', ...retagged }, captures }))
+})
+// The Turnstile wrapper of the my-bookings lookup form. MyBookingsDialog.tsx:122 sets
+// `challengeRequired = turnstileConfigured && previewPorts === undefined` and /cms-public/source
+// passes previewPorts, so no capture carries the slot; the real /my-bookings renders it (probed).
+const TURNSTILE_ORPHAN = {
+  orphan: {
+    surface: 'my-bookings',
+    kind: 'missing-slot',
+    id: 'knc-my-bookings-0-i0-i1-i3-i3',
+    stored: 'div',
+    live: null,
+  },
+  captures: ['Desktop', 'Mobile'].flatMap((device) => capturesOf(device, 'my-bookings')),
+}
+// A ratchet, exact to the capture: each orphan must occur in the captures listed with it (device,
+// scene, language, mode), once each, and nowhere else: the 12 language-switch ids in 4 captures
+// each (48), the Turnstile slot in 8 (56 in all). Any other orphan fails, a listed one in another
+// capture too, and so does a fix until it deletes the entries here.
+const KNOWN_ORPHANS = [...LANGUAGE_SWITCH_ORPHANS, TURNSTILE_ORPHAN]
+const KNOWN_OCCURRENCES = KNOWN_ORPHANS.reduce((total, { captures }) => total + captures.length, 0)
 
 /** Stored page and surface that each rendered scene is checked against. */
 function surfacesOf(device, scene) {
@@ -96,7 +111,10 @@ async function renderSource(page, capture, id) {
   }, id)
 }
 
-/** Stored and live source nodes of one surface; marquee tiles become shapes (see id-coverage.mjs). */
+/**
+ * Stored and live source and slot elements of one surface; marquee tiles become shapes (see
+ * id-coverage.mjs).
+ */
 function readSurface({ html, surface }) {
   const live = globalThis.document.querySelector(`[data-knc-surface="${surface}"]`)
   const stored = new globalThis.DOMParser()
@@ -110,13 +128,17 @@ function readSurface({ html, surface }) {
     ),
   )
   const shape = (node) => `${node.localName}(${[...node.children].map(shape).join(',')})`
+  // The attributes of every element that has one, as the page carries them; nodeOf in
+  // id-coverage.mjs decides what they mean.
   const read = (root) => {
-    const tree = { nodes: [], tracks: {} }
+    const tree = { elements: [], tracks: {} }
     const visit = (node, inTrack) => {
-      const id = node.getAttribute('data-knc-source')
-      const track = id !== null && trackIds.has(id)
-      if (id !== null && !inTrack) tree.nodes.push({ id, tag: node.localName })
-      if (track) tree.tracks[id] = [...node.children].map(shape)
+      const source = node.getAttribute('data-knc-source')
+      const slot = node.getAttribute('data-knc-slot')
+      const track = source !== null && slot === null && trackIds.has(source)
+      if ((source !== null || slot !== null) && !inTrack)
+        tree.elements.push({ source, slot, tag: node.localName })
+      if (track) tree.tracks[source] = [...node.children].map(shape)
       for (const child of node.children) visit(child, inTrack || track)
     }
     visit(root, false)
@@ -138,36 +160,37 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
     () => globalThis.document.documentElement.dataset.kncSourceListening === '1',
   )
 
-  const problems = []
-  const seenKnown = []
+  const unreadable = []
+  const found = []
   let checkedIds = 0
+  let checkedSlots = 0
   let checkedTracks = 0
   for (const [index, capture] of captures().entries()) {
     await renderSource(page, capture, `lib14-${index}`)
     for (const [path, surface] of surfacesOf(capture.device, capture.scene)) {
-      const where = `${surface} (${capture.device} ${capture.scene} ${capture.lang} ${capture.mode})`
       const html = pages.get(path).content[capture.lang].html
-      const read = await page.evaluate(readSurface, { html, surface })
-      if (read.error !== undefined) {
-        problems.push(`${where}: ${read.error}`)
+      const raw = await page.evaluate(readSurface, { html, surface })
+      if (raw.error !== undefined) {
+        unreadable.push(`${describeWhere(capture, surface)}: ${read.error}`)
         continue
       }
+      const read = { stored: sourceTree(raw.stored), live: sourceTree(raw.live) }
       checkedIds += read.stored.nodes.length
+      checkedSlots += read.stored.nodes.filter(({ kind }) => kind === 'slot').length
       checkedTracks += Object.keys(read.stored.tracks).length
-      for (const problem of coverageProblems(read.stored, read.live)) {
-        const orphan = { surface, ...problem }
-        if (KNOWN_ORPHANS.some((known) => sameOrphan(known, orphan)))
-          seenKnown.push(orphanKey(capture, orphan))
-        else problems.push(describeProblem(where, problem))
-      }
+      for (const problem of coverageProblems(read.stored, read.live))
+        found.push({ capture, orphan: { surface, ...problem } })
     }
   }
 
+  const { unexpected, absent } = ratchetVerdict(found, KNOWN_ORPHANS)
+  const problems = [...unreadable, ...unexpected]
   test.info().annotations.push({
     type: 'id coverage',
-    description: `${checkedIds} stored ids and ${checkedTracks} marquee tracks checked; ${problems.length} new orphans; ${seenKnown.length} known orphan occurrences`,
+    description: `${checkedIds} stored ids (${checkedSlots} of them slots) and ${checkedTracks} marquee tracks checked; ${problems.length} new orphans; ${found.length - unexpected.length} of ${KNOWN_OCCURRENCES} known orphan occurrences`,
   })
   expect(checkedIds, 'the stored presentation has source ids to check').toBeGreaterThan(0)
+  expect(checkedSlots, 'the stored presentation has slot ids to check').toBeGreaterThan(0)
   expect(
     problems,
     [
@@ -177,7 +200,7 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
     ].join('\n'),
   ).toEqual([])
   expect(
-    seenKnown.sort(),
-    'the language-switch orphans must occur exactly once per language and mode; after a fix, delete them from KNOWN_ORPHANS',
-  ).toEqual(EXPECTED_KNOWN)
+    absent,
+    'known orphans that no longer occur in a capture that lists them; after a fix, delete them from KNOWN_ORPHANS',
+  ).toEqual([])
 })
