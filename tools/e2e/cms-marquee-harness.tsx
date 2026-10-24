@@ -32,10 +32,20 @@ const reviews: ReviewsPort = {
   }),
 }
 
+let mounted: HTMLElement | null = null
+
 function host(): HTMLElement {
+  if (mounted) render(null, mounted)
   const element = document.createElement('div')
   document.body.replaceChildren(element)
+  mounted = element
   return element
+}
+
+/** Unmounts the last fixture, so its effects clean up as on a real navigation. */
+export function unmountFixture(): void {
+  if (mounted) render(null, mounted)
+  mounted = null
 }
 
 /** Three photos in a container the spec resizes without resizing the window. */

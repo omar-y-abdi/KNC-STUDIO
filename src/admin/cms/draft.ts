@@ -70,6 +70,27 @@ export class CmsDraft {
     this.pending = null
   }
 
+  /** A migration is not an edit: it rewrites the current document and every undo/redo snapshot
+   * without a history entry, so no undo returns to an unmigrated document. The base stays the
+   * authoritative server document. `adopted` hears each replaced snapshot. */
+  migrate(
+    update: (document: CmsDocument) => CmsDocument,
+    adopted: (previous: CmsDocument, next: CmsDocument) => void,
+  ): void {
+    const apply = (document: CmsDocument): CmsDocument => {
+      const next = update(document)
+      if (serialize(next) === serialize(document)) return document
+      adopted(document, next)
+      return next
+    }
+    this.undoStack = this.undoStack.map(apply)
+    this.redoStack = this.redoStack.map(apply)
+    const next = apply(this.document)
+    if (next === this.document) return
+    this.document = next
+    this.pending = null
+  }
+
   undo(): boolean {
     const previous = this.undoStack.pop()
     if (!previous) return false

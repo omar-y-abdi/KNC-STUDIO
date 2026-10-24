@@ -162,6 +162,27 @@ test('legacy zoom is converted once the source upgrade restores the strip marker
   await publish(page, 2)
   assert.equal(aboutPage(backend.document).title.sv, 'Om oss (utan markör)')
   assertCardWidths(backend.document, ids, 'Source upgrade')
+  // The upgrade was a migration, not an edit: Ångra has no markerless, zoomed snapshot to return to.
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+  if ((await page.locator('.cms-status').textContent()) !== 'Publicerad · rev 2')
+    await publish(page, 3)
+  for (const lang of ['sv', 'en'])
+    assert.ok(
+      aboutPage(backend.document).content[lang].html.includes('data-knc-fold="barber-marquee"'),
+      `${lang} lost the strip marker after Ångra`,
+    )
+  assertCardWidths(backend.document, ids, 'Source upgrade, Ångra')
+  assert.equal(
+    await page.locator('.cms-status').textContent(),
+    'Publicerad · rev 2',
+    'Ångra returned to the unmigrated snapshot',
+  )
 })
 
 test('undo after a conflict resolution never returns to the raw legacy zoom', async ({

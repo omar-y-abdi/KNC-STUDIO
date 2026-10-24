@@ -35,6 +35,8 @@ export function loopFloor(
   return Math.max(...gaps.map((gap) => Math.ceil((view - (total - gap)) / (slides.length - 1))))
 }
 
+const MAX_FIT_PASSES = 3
+
 function reducedMotionPreference(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -119,43 +121,76 @@ export function useBarberMarquee({
       // end. Widen every slide just enough to loop; inline !important outranks the owner's #id
       // rules, and the remembered inline value returns as soon as the slides loop on their own.
       const floors = new Map<HTMLElement, { readonly value: string; readonly priority: string }>()
-      let fitting = false
+      let floor = 0
+      let passes = 0
+      let ownReInit = false
+      let fitFrame = 0
       const restoreSlides = (): void => {
         for (const [node, natural] of floors)
           node.style.setProperty('min-width', natural.value, natural.priority)
         floors.clear()
+        floor = 0
       }
+      const geometry = (): LoopSlide[] => {
+        const slides = api.slideNodes()
+        const last = slides[slides.length - 1]
+        return slides.map((node) => ({
+          left: node.offsetLeft,
+          width: node.offsetWidth,
+          marginEnd: node === last ? parseFloat(window.getComputedStyle(node).marginRight) : 0,
+        }))
+      }
+      // Measured without the floor, restored in the same task: nothing paints or resizes meanwhile.
+      const loopsAlone = (): boolean => {
+        for (const [node, natural] of floors)
+          node.style.setProperty('min-width', natural.value, natural.priority)
+        const slides = geometry()
+        for (const node of floors.keys())
+          node.style.setProperty('min-width', `${floor}px`, 'important')
+        const needed = loopFloor(track.offsetWidth, track.offsetLeft, slides)
+        return slides.every((slide) => slide.width >= needed)
+      }
+      const reInit = (): void => {
+        ownReInit = true
+        api.reInit()
+      }
+      // One reInit per pass. Widening can shrink distributed gaps (justify-content), so each pass
+      // re-measures the floored geometry; after MAX_FIT_PASSES the widest floor tried stays.
       const fitLoop = (): void => {
-        if (fitting) return
-        fitting = true
-        try {
-          if (floors.size) {
-            restoreSlides()
-            api.reInit()
-          }
-          const slides = api.slideNodes()
-          if (api.internalEngine().options.loop || slides.length < 2) return
-          const last = slides[slides.length - 1]
-          const floor = loopFloor(
-            track.offsetWidth,
-            track.offsetLeft,
-            slides.map((node) => ({
-              left: node.offsetLeft,
-              width: node.offsetWidth,
-              marginEnd: node === last ? parseFloat(getComputedStyle(node).marginRight) : 0,
-            })),
-          )
-          for (const node of slides) {
+        fitFrame = 0
+        if (api.slideNodes().length < 2) return
+        if (floors.size && loopsAlone()) {
+          restoreSlides()
+          passes = 0
+          reInit()
+          return
+        }
+        if (api.internalEngine().options.loop || passes >= MAX_FIT_PASSES) return
+        const next = Math.max(loopFloor(track.offsetWidth, track.offsetLeft, geometry()), floor + 1)
+        for (const node of api.slideNodes()) {
+          if (!floors.has(node))
             floors.set(node, {
               value: node.style.getPropertyValue('min-width'),
               priority: node.style.getPropertyPriority('min-width'),
             })
-            node.style.setProperty('min-width', `${floor}px`, 'important')
-          }
-          api.reInit()
-        } finally {
-          fitting = false
+          node.style.setProperty('min-width', `${next}px`, 'important')
         }
+        floor = next
+        passes += 1
+        reInit()
+      }
+      // Embla 8.6 starts observing slide sizes one frame after each init, and a reInit before that
+      // frame orphans the observer. Fit only after two frames, coalesced, and cancel on cleanup.
+      const scheduleFit = (): void => {
+        if (fitFrame) return
+        fitFrame = window.requestAnimationFrame(() => {
+          fitFrame = window.requestAnimationFrame(fitLoop)
+        })
+      }
+      const fitAfterReInit = (): void => {
+        if (ownReInit) ownReInit = false
+        else passes = 0
+        scheduleFit()
       }
       const syncAutoScroll = (): void => {
         const autoScroll = api.plugins().autoScroll
@@ -190,16 +225,16 @@ export function useBarberMarquee({
           syncAutoScroll()
         })
       }
-      fitLoop()
+      scheduleFit()
       syncAutoScroll()
       track.addEventListener('focusin', pauseOnFocus)
       track.addEventListener('focusout', resumeAfterFocus)
       api.on('pointerUp', resumeAfterPointer)
-      api.on('reInit', fitLoop)
+      api.on('reInit', fitAfterReInit)
       api.on('reInit', syncAutoScroll)
       return () => {
         api.off('pointerUp', resumeAfterPointer)
-        api.off('reInit', fitLoop)
+        api.off('reInit', fitAfterReInit)
         api.off('reInit', syncAutoScroll)
         track.removeEventListener('focusin', pauseOnFocus)
         track.removeEventListener('focusout', resumeAfterFocus)
@@ -208,6 +243,7 @@ export function useBarberMarquee({
         if (pointerResumeFrame.current !== null)
           window.cancelAnimationFrame(pointerResumeFrame.current)
         pointerResumeFrame.current = null
+        window.cancelAnimationFrame(fitFrame)
         api.destroy()
         restoreSlides()
         carousel.current = null

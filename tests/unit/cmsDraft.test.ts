@@ -120,4 +120,32 @@ describe('CMS draft amendment', () => {
     expect(draft.redo()).toBe(true)
     expect(draft.document).toBe(captured)
   })
+
+  it('migrates every retained snapshot without an undo step and keeps the raw base', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, '0123456789abcdef0123456789abcdef')
+    const raw = draft.base
+    for (const name of ['A', 'B', 'C']) {
+      const next = structuredClone(draft.document)
+      next.settings.business_name = name
+      draft.change(next)
+    }
+    expect(draft.undo()).toBe(true)
+    const adopted: [string | undefined, string | undefined][] = []
+    draft.migrate(
+      (document) => {
+        const next = structuredClone(document)
+        next.settings.tagline = 'migrated'
+        return next
+      },
+      (previous, next) => adopted.push([previous.settings.business_name, next.settings.tagline]),
+    )
+    expect(draft.document.settings).toMatchObject({ business_name: 'B', tagline: 'migrated' })
+    expect(adopted).toHaveLength(4)
+    expect(draft.base).toBe(raw)
+    expect(draft.dirty).toBe(true)
+    while (draft.undo()) expect(draft.document.settings.tagline).toBe('migrated')
+    expect(draft.document.settings.business_name).toBeUndefined()
+    while (draft.redo()) expect(draft.document.settings.tagline).toBe('migrated')
+    expect(draft.document.settings.business_name).toBe('C')
+  })
 })

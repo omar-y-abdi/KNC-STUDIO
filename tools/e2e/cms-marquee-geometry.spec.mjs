@@ -94,6 +94,112 @@ for (const [barbers, scale] of [
     assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
   })
 
+test('mobile barber strip: narrow 10vw cards spread by space-between still loop', async ({
+  newContext,
+  evidenceDir,
+}) => {
+  // Widening the cards consumes the distributed space, so one measured floor is not enough.
+  const css =
+    cardRule('width:10vw!important;flex-basis:10vw!important') +
+    `@media (max-width:768px){${strip}{justify-content:space-between!important}}`
+  const probe = await measureStrip(newContext, css, 4)
+  await writeFile(`${evidenceDir}/barber-strip-space-between.json`, JSON.stringify(probe, null, 2))
+  assert.ok(probe.maxBlank <= MAX_BLANK + SEAM, `${probe.maxBlank} px of the viewport went blank`)
+  assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
+})
+
+test('mobile barber strip: no Embla observer outlives its carousel', async ({ newContext }) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  // Every live ResizeObserver with the targets it still watches.
+  await context.addInitScript(() => {
+    const live = new Map()
+    globalThis.__observed = live
+    const Native = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class extends Native {
+      constructor(callback) {
+        super(callback)
+        live.set(this, new Set())
+      }
+      observe(target, options) {
+        live.get(this).add(target)
+        super.observe(target, options)
+      }
+      unobserve(target) {
+        live.get(this).delete(target)
+        super.unobserve(target)
+      }
+      disconnect() {
+        live.get(this).clear()
+        super.disconnect()
+      }
+    }
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const frames = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          let count = 0
+          const next = () => (++count >= 8 ? resolve() : globalThis.requestAnimationFrame(next))
+          globalThis.requestAnimationFrame(next)
+        }),
+    )
+  const mount = async (barbers) => {
+    await page.evaluate(
+      async ([css, barbers]) =>
+        (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, barbers),
+      [cardWidth(0.3), barbers],
+    )
+    // Below their loop scale the slides pass through several floor reInits.
+    await page.waitForFunction(
+      ([selector, barbers]) => {
+        const cards = [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)]
+        return (
+          cards.length === barbers &&
+          cards.every((card) => card.style.getPropertyPriority('min-width') === 'important')
+        )
+      },
+      [strip, barbers],
+    )
+    await frames()
+  }
+  const observers = () =>
+    page.evaluate((selector) => {
+      const track = globalThis.document.querySelector(selector)
+      const watching = [...globalThis.__observed.values()]
+      return {
+        track: watching.filter((targets) => track && targets.has(track)).length,
+        targets: watching.reduce((sum, targets) => sum + targets.size, 0),
+      }
+    }, strip)
+  await mount(2)
+  assert.equal((await observers()).track, 1, 'Two cards: one Embla observer watches the strip')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await frames()
+  assert.deepEqual(await observers(), { track: 0, targets: 0 }, 'Reduced motion left observers')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.waitForFunction(
+    (selector) =>
+      [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)].every(
+        (card) => card.style.getPropertyPriority('min-width') === 'important',
+      ),
+    strip,
+  )
+  await frames()
+  assert.equal((await observers()).track, 1, 'Motion again: one Embla observer')
+  await mount(3)
+  assert.equal((await observers()).track, 1, 'Three cards: one Embla observer')
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/cms-marquee-harness.tsx')).unmountFixture(),
+  )
+  await frames()
+  assert.deepEqual(await observers(), { track: 0, targets: 0 }, 'Unmount left observers')
+})
+
 test('mobile barber strip: the loop floor returns to the inline width once cards loop alone', async ({
   newContext,
 }) => {
