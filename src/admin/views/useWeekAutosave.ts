@@ -69,10 +69,6 @@ export function useWeekAutosave(input: WeekAutosaveInput): WeekAutosave {
   // a previously-selected barber) can never clobber newer state.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveGen = useRef(0)
-  const pendingSave = useRef<{
-    readonly week: WeekSchedule
-    readonly allowExistingBookings: boolean
-  } | null>(null)
   const persistedWeek = useRef<WeekSchedule>(defaultWeek())
 
   const doSave = async (
@@ -81,7 +77,6 @@ export function useWeekAutosave(input: WeekAutosaveInput): WeekAutosave {
     allowExistingBookings = false,
   ): Promise<void> => {
     const gen = ++saveGen.current
-    pendingSave.current = null
     setWeekSave({ kind: 'saving' })
     const result = await saveWeek(barberId, next, allowExistingBookings)
     if (gen !== saveGen.current) return // superseded by a newer edit/save
@@ -116,12 +111,10 @@ export function useWeekAutosave(input: WeekAutosaveInput): WeekAutosave {
     if (saveTimer.current !== null) clearTimeout(saveTimer.current)
     saveGen.current++ // invalidate any in-flight save; this edit supersedes it
     if (!weekIsValid(next)) {
-      pendingSave.current = null
       setWeekSave({ kind: 'invalid' })
       return
     }
     setWeekSave({ kind: 'saving' })
-    pendingSave.current = { week: next, allowExistingBookings }
     const barberId = input.barberId
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null
@@ -131,7 +124,7 @@ export function useWeekAutosave(input: WeekAutosaveInput): WeekAutosave {
 
   // Trigger B — a veckoschema change (weekday off / narrowed hours / same-time-all-days) that would
   // strand confirmed bookings is HELD behind the conflict dialog instead of silently saving. The
-  // change stays deferred (week/pendingSave untouched) until the barber chooses, so aborting needs no
+  // change stays deferred (week untouched) until the barber chooses, so aborting needs no
   // revert and a barber-switch flush can't commit a conflicted week. Invalid weeks skip the check
   // (they never save anyway) and fall through to the inline "invalid hours" state.
   const edit = (next: WeekSchedule): void => {
@@ -157,8 +150,6 @@ export function useWeekAutosave(input: WeekAutosaveInput): WeekAutosave {
         clearTimeout(saveTimer.current)
         saveTimer.current = null
       }
-      const pending = pendingSave.current
-      if (pending !== null) pendingSave.current = null
     }
   }, [input.barberId])
 
