@@ -741,7 +741,8 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!editor || !props.active) return
     const base = legalCanvasBase(props.page.path, props.mode)
     // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
-    // head directly. A frame load replaces the document, so the base is applied again then.
+    // head directly. Every frame load replaces the document, not only the editor's first one, so the
+    // base is applied again once GrapesJS has rendered the new head (before `load:head` it is empty).
     const apply = (): void => {
       const frame = editor.Canvas.getDocument()
       if (!frame) return
@@ -758,9 +759,9 @@ export function CmsEditor(props: Props): JSX.Element {
       }
     }
     apply()
-    editor.on('load', apply)
+    editor.on('canvas:frame:load:head', apply)
     return () => {
-      editor.off('load', apply)
+      editor.off('canvas:frame:load:head', apply)
     }
   }, [props.active, props.page.path, props.mode])
 
