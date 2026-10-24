@@ -5,7 +5,8 @@ import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test as baseTest } from './fixtures.mjs'
-const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+import { harnessOrigin } from './origins.mjs'
+const base = harnessOrigin
 const seed = emptyDocument()
 seed.emails = EMAIL_NAMES.flatMap((template) =>
   ['sv', 'en'].map((lang) => {

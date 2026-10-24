@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   contextOptions: { reducedMotion: 'reduce' },
@@ -9,7 +10,7 @@ test.use({
 })
 test('cms-populated', async ({ page, context, browserName }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   const id = (number) => `11111111-1111-4111-8111-${String(number).padStart(12, '0')}`
   const seed = emptyDocument()
   seed.settings.homepage_logo_path = `logo/${id(30)}.webp`

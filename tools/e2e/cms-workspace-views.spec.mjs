@@ -4,6 +4,7 @@ import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.describe.configure({ timeout: 900_000 })
 
 for (const width of [1440, 390]) {
@@ -15,7 +16,7 @@ for (const width of [1440, 390]) {
     })
     test('cms-workspace-views', async ({ page, context, browserName, evidenceDir }) => {
       const engineName = browserName
-      const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+      const base = harnessOrigin
       const out = evidenceDir
       await mkdir(out, { recursive: true })
       const failures = []

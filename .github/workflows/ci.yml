@@ -87,12 +87,14 @@ jobs:
         run: |
           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
           ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
-      - name: Preserve public build and build the CSP fixture once
+      - name: Build the harness test build once for the public and startup browsers
+        # Browser tests must never reach production: both groups run against a bundle that embeds
+        # the fake Supabase origin, never the production URL from .env (see network-guard.mjs).
         run: |
           mkdir -p "$RUNNER_TEMP/ci-build"
-          cp -a dist "$RUNNER_TEMP/ci-build/public"
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key \
             npm run build -- --outDir "$RUNNER_TEMP/ci-build/startup" --emptyOutDir
+          cp -a "$RUNNER_TEMP/ci-build/startup" "$RUNNER_TEMP/ci-build/public"
           node tools/ci/build-artifact.mjs record "$RUNNER_TEMP/ci-build"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
