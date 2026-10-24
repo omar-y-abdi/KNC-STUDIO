@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 900 } })
 test('cms-unified-home', async ({ page, context }) => {
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
+  const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
   const backend = await nativeBackend(context)
   context.setDefaultTimeout(15000)

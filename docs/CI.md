@@ -81,6 +81,17 @@ Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI
 per engine and two public shards. Each runner uses one browser worker so latency/CPU assertions do
 not compete with another local test. Failure in one matrix member does not cancel unrelated members.
 
+Several worktrees can run Playwright at the same time if each one has its own `E2E_PORT_OFFSET`, for
+example `E2E_PORT_OFFSET=100 npm run test:e2e:cms`. The harness dev server, the public preview and
+the startup preview then listen on 4188, 4173 and 4189 plus the offset (an integer from 0 to 1000,
+default 0; CI sets none and is unchanged). Keep concurrent offsets at least 20 apart, such as 0, 100
+and 200: offsets 1, 15 or 16 apart make one run's port another run's port. Locally
+`reuseExistingServer` is on, so two runs with the same offset do not fail; the second silently tests
+the first worktree's code. `BASE_URL`, `PUBLIC_BASE_URL` and `CMS_STARTUP_URL` still override the
+origins the tests visit. Vite's dependency cache lives in `.vite-cache` inside each worktree because
+every worktree's `node_modules` is one shared install. The customer group keeps its own ports and
+the shared local Supabase stack, so it cannot run in parallel.
+
 Each shard records its discovered plan before running. `verify-playwright-report.mjs` compares the
 native JSON report to that plan: every expected case must execute exactly once and pass. Missing,
 duplicate, skipped, flaky, interrupted, failed or retried outcomes fail the gate. A final source

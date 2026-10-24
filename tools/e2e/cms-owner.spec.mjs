@@ -6,6 +6,7 @@ import { emptyDocument, EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms
 import { renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 for (const scenario of CMS_OWNER_SCENARIOS) {
   test.describe(String(scenario), () => {
     test.use({
@@ -15,7 +16,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
     })
     test('cms-owner', async ({ page, context, browserName, evidenceDir }) => {
       const name = browserName
-      const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+      const base = harnessOrigin
       const evidence = evidenceDir
       await mkdir(evidence, { recursive: true })
       context.setDefaultTimeout(10000)

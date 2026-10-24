@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
 
 import { installPublicBackend } from './public-fixtures.mjs'
+import { publicOrigin } from './origins.mjs'
 
-const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
+const baseUrl = publicOrigin.replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
 let currentPhase = 'startup'
 
