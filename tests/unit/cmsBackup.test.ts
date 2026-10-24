@@ -547,10 +547,256 @@ describe('sessionStorage journal across a reload', () => {
     })
     void session.suspend()
     const next = await openBackupSession(reload(browser))
+    // The adopted draft is 13:00:00.001, the later edit one millisecond newer.
     expect(await next.own()).toMatchObject({
       document: named('Senare redigering'),
-      savedAt: '2026-10-24T13:00:00.001Z',
+      savedAt: '2026-10-24T13:00:00.002Z',
     })
+  })
+
+  it('gives an adopted draft a version no copied pre-adoption journal can beat', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('closed', 'Erbjuden', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    session.schedule({ document: named('Före adoption'), revision: 4, fingerprint: FINGERPRINT })
+    await session.flush()
+    const before = browser.records.get('this-tab')?.savedAt
+    // A journal of that write, e.g. inherited by a tab this one opened.
+    const copied = `${JSON.stringify({ tab: 'this-tab', savedAt: before, revision: 4, fingerprint: FINGERPRINT })}\n${JSON.stringify(named('Kopierad'))}`
+    const [offer] = await session.offers()
+    if (!offer) throw new Error('An offer was expected')
+    expect(await session.adopt(offer)).toBe('done')
+    expect((browser.records.get('this-tab')?.savedAt ?? '') > (before ?? '')).toBe(true)
+
+    // This tab is closed; the copy's next page replays the journal under the same tab id.
+    browser.tabs.set(JOURNAL, copied)
+    const next = await openBackupSession(reload(browser))
+    expect((await next.own())?.document).toEqual(named('Erbjuden'))
+  })
+
+  it('reports unsaved work until IndexedDB confirms it', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    expect(session.unsaved()).toBe(false)
+    const write = deferred()
+    const put = vi.mocked(browser.ports.records.put)
+    const store = put.getMockImplementation()
+    put.mockImplementation(async (value) => {
+      await write.promise
+      await store?.(value)
+    })
+    session.schedule({ document: named('Osparad'), revision: 4, fingerprint: FINGERPRINT })
+    expect(session.unsaved()).toBe(true)
+    const written = session.flush()
+    expect(session.unsaved()).toBe(true)
+    write.resolve()
+    await written
+    expect(session.unsaved()).toBe(false)
+  })
+
+  // A clean draft schedules a delete: closing the tab then loses nothing, so it never prompts.
+  it('never reports a pending delete of a clean draft as unsaved work', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    session.schedule(null)
+    expect(session.unsaved()).toBe(false)
+
+    // A draft write still in flight, then the draft became clean (e.g. after Publicera).
+    const put = deferred()
+    const store = vi.mocked(browser.ports.records.put).getMockImplementation()
+    vi.mocked(browser.ports.records.put).mockImplementationOnce(async (value) => {
+      await put.promise
+      await store?.(value)
+    })
+    session.schedule({ document: named('Publiceras'), revision: 4, fingerprint: FINGERPRINT })
+    const putting = session.flush()
+    session.schedule(null)
+    expect(session.unsaved()).toBe(false)
+
+    // The delete itself in flight.
+    const remove = deferred()
+    const drop = vi.mocked(browser.ports.records.remove).getMockImplementation()
+    vi.mocked(browser.ports.records.remove).mockImplementationOnce(async (tab) => {
+      await remove.promise
+      await drop?.(tab)
+    })
+    const removing = session.flush()
+    expect(session.unsaved()).toBe(false)
+    put.resolve()
+    remove.resolve()
+    await Promise.all([putting, removing])
+    expect(session.unsaved()).toBe(false)
+
+    session.schedule({ document: named('Ny ändring'), revision: 5, fingerprint: FINGERPRINT })
+    expect(session.unsaved()).toBe(true)
+  })
+})
+
+// The business names of the drafts this tab sent to IndexedDB, in call order.
+const sent = (ports: BackupPorts): unknown[] => {
+  const documents = vi.mocked(ports.records.put).mock.calls.map(([stored]) => stored.document)
+  return documents.map((json) => (JSON.parse(json) as CmsDocument).settings.business_name)
+}
+
+describe('a write IndexedDB refused', () => {
+  const refusal = new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+  // IndexedDB answers the next write only once `answer` resolves, then refuses it.
+  const refuseLater = (ports: BackupPorts, answer: Promise<void>): void => {
+    vi.mocked(ports.records.put).mockImplementationOnce(async () => {
+      await answer
+      throw refusal
+    })
+  }
+
+  // The debounced write was refused and no edit followed: closing or hiding the tab must still
+  // write the draft once IndexedDB takes it again.
+  it.each(['flush', 'suspend'] as const)(
+    'writes the refused draft again on %s while nothing newer is scheduled',
+    async (action) => {
+      vi.useFakeTimers()
+      const browser = memory({ tab: 'this-tab' })
+      const session = await openBackupSession(browser.ports)
+      vi.mocked(browser.ports.records.put).mockRejectedValueOnce(refusal)
+      const report = vi.fn()
+      session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT }, report)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(report).toHaveBeenCalledWith(refusal)
+      expect(browser.records.has('this-tab')).toBe(false)
+      expect(session.unsaved()).toBe(true)
+
+      await session[action]()
+      expect(sent(browser.ports)).toEqual(['Nekad', 'Nekad'])
+      expect((await session.own())?.document).toEqual(named('Nekad'))
+      expect(session.unsaved()).toBe(false)
+      expect(browser.tabs.has(JOURNAL)).toBe(false)
+    },
+  )
+
+  it('never writes a refused draft after a newer one', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValueOnce(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    await session.flush()
+    await session.flush()
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+  })
+
+  it('never writes again a refused draft that a newer write had already replaced', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    const answer = deferred()
+    refuseLater(ports, answer.promise)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    const refused = session.flush()
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    const newer = session.flush()
+    answer.resolve()
+    await expect(refused).rejects.toBe(refusal)
+    await newer
+    await session.flush()
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+    expect(session.unsaved()).toBe(false)
+  })
+
+  // A newer draft is scheduled while a flush waits for the write IndexedDB then refuses: the newer
+  // draft goes in its place, at once, and its debounce adds no further write.
+  it('writes the newer scheduled draft, not the refused one, for a waiting flush', async () => {
+    vi.useFakeTimers()
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    const answer = deferred()
+    refuseLater(ports, answer.promise)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    const refused = session.flush()
+    const waiter = session.flush()
+    session.schedule({ document: named('Nyare'), revision: 4, fingerprint: FINGERPRINT })
+    answer.resolve()
+    await expect(refused).rejects.toBe(refusal)
+    await waiter
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sent(ports)).toEqual(['Nekad', 'Nyare'])
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+    expect(session.unsaved()).toBe(false)
+  })
+
+  // The tab closes while the debounced write is in flight: beforeunload's flush and pagehide's
+  // suspend wait for it, and IndexedDB refuses it meanwhile. One more write goes, not one per call.
+  it('writes the draft once more when IndexedDB refuses the write a flush waits for', async () => {
+    vi.useFakeTimers()
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    const answer = deferred()
+    refuseLater(browser.ports, answer.promise)
+    const report = vi.fn()
+    session.schedule({ document: named('I luften'), revision: 4, fingerprint: FINGERPRINT }, report)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(sent(browser.ports)).toEqual(['I luften'])
+    const leaving = session.flush()
+    const hiding = session.suspend()
+    answer.resolve()
+    await Promise.all([leaving, hiding])
+    expect(report).toHaveBeenCalledWith(refusal)
+    expect(sent(browser.ports)).toEqual(['I luften', 'I luften'])
+    expect((await session.own())?.document).toEqual(named('I luften'))
+    expect(session.unsaved()).toBe(false)
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
+  })
+
+  it('sends one retry for flushes that overlap it', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValueOnce(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    const answer = deferred()
+    const store = vi.mocked(ports.records.put).getMockImplementation()
+    vi.mocked(ports.records.put).mockImplementationOnce(async (value) => {
+      await answer.promise
+      await store?.(value)
+    })
+    const first = session.flush()
+    const second = session.flush()
+    answer.resolve()
+    await Promise.all([first, second])
+    expect(sent(ports)).toEqual(['Nekad', 'Nekad'])
+    expect(session.unsaved()).toBe(false)
+  })
+
+  it('makes one attempt per flush while IndexedDB keeps refusing', async () => {
+    const { ports } = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.put).mockRejectedValue(refusal)
+    session.schedule({ document: named('Nekad'), revision: 4, fingerprint: FINGERPRINT })
+    await expect(session.flush()).rejects.toBe(refusal)
+    await expect(session.flush()).rejects.toBe(refusal)
+    expect(sent(ports)).toEqual(['Nekad', 'Nekad'])
+    // Still unsaved: the leave prompt keeps protecting the draft.
+    expect(session.unsaved()).toBe(true)
+  })
+
+  // A clean draft's delete was refused: the old record must not be offered after the tab closes.
+  it('removes a clean draft again after IndexedDB refused the delete', async () => {
+    const { ports, records } = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Före publicering', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(ports)
+    vi.mocked(ports.records.remove).mockRejectedValueOnce(refusal)
+    session.schedule(null)
+    await expect(session.flush()).rejects.toBe(refusal)
+    expect(records.has('this-tab')).toBe(true)
+    expect(session.unsaved()).toBe(false)
+    await session.flush()
+    expect(ports.records.remove).toHaveBeenCalledTimes(2)
+    expect(records.has('this-tab')).toBe(false)
   })
 })
 

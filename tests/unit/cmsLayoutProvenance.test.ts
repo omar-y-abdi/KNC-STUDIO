@@ -106,6 +106,19 @@ describe('Home/About layout provenance', () => {
     expect(staleSide.stale(merged, merged)).toBe(true)
   })
 
+  // Studio's 409 path: the merged document must be marked on the draft that holds it.
+  it('tracks a merged draft by the clone the draft holds, never by the input', () => {
+    const published = emptyDocument()
+    const merged = withGallery(published, [])
+    const layouts = new LayoutProvenance()
+    const next = new CmsDraft(merged, 2, 'remote')
+    expect(next.document).not.toBe(merged)
+    layouts.unknown(merged)
+    expect(layouts.stale(next.document, next.base)).toBe(false)
+    layouts.unknown(next.document)
+    expect(layouts.stale(next.document, next.base)).toBe(true)
+  })
+
   it('gives a restored revision the layouts of its own resource data', () => {
     const old = withGallery(emptyDocument(), [salonImage])
     const reconciled = withGallery(old, [])

@@ -68,8 +68,13 @@ export interface BackupSession {
   /** Writes this tab's draft (null removes it) 500 ms after the last call. `report` hears of a
    * failed write, and of a draft too large for the journal (JournalFull). */
   schedule(draft: BackupDraft | null, report?: (reason: unknown) => void): void
-  /** Writes the scheduled draft now. */
+  /** Writes the scheduled draft now. Without one, writes the newest draft again when IndexedDB
+   * refused it, also when IndexedDB refuses it while this call waits for it. */
   flush(): Promise<void>
+  /** The newest scheduled draft, else the newest write IndexedDB has not confirmed (or that
+   * failed), is a draft: closing the tab now can lose it. A pending delete of a clean draft is
+   * not unsaved work. */
+  unsaved(): boolean
   /** For `pagehide`: flushes, and journals the unconfirmed write synchronously, because the page
    * may end before IndexedDB commits it. The next page in this tab replays the journal. Never
    * throws; a failed journal write rejects, and the previous journal stays whole. */
@@ -254,8 +259,10 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
   let timer: ReturnType<typeof setTimeout> | undefined
   // Writes stay in call order, so an older draft never lands after a newer one.
   let writing: Promise<void> = Promise.resolve()
-  // The newest write IndexedDB has not confirmed yet.
+  // The newest write IndexedDB has not confirmed yet: in flight, or refused.
   let unconfirmed: Write | null = null
+  // The last write IndexedDB refused. While it is still the newest write, flush issues it again.
+  let failed: Write | null = null
 
   const own = async (): Promise<TabBackup | null> =>
     (await readAll(ports.records)).find((record) => record.tab === tab) ?? null
@@ -267,6 +274,24 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     latest = now > latest ? now : new Date(Date.parse(latest) + 1).toISOString()
     return latest
   }
+  const issue = (write: Write): void => {
+    unconfirmed = write
+    writing = writing
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await (write.draft
+            ? ports.records.put(toStored({ ...write.draft, savedAt: write.savedAt, tab }))
+            : ports.records.remove(tab))
+        } catch (reason) {
+          failed = write
+          throw reason
+        }
+        if (unconfirmed !== write) return
+        unconfirmed = null
+        ports.tabs.removeItem(JOURNAL)
+      })
+  }
   const flush = (): Promise<void> => {
     clearTimeout(timer)
     const next = pending
@@ -274,18 +299,16 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     if (next) {
       if (next.draft && serialize(next.draft.document).length > JOURNAL_CAPACITY)
         next.report(new JournalFull())
-      const write: Write = { draft: next.draft, savedAt: stamp() }
-      unconfirmed = write
-      writing = writing
-        .catch(() => undefined)
-        .then(async () => {
-          await (write.draft
-            ? ports.records.put(toStored({ ...write.draft, savedAt: write.savedAt, tab }))
-            : ports.records.remove(tab))
-          if (unconfirmed !== write) return
-          unconfirmed = null
-          ports.tabs.removeItem(JOURNAL)
-        })
+      issue({ draft: next.draft, savedAt: stamp() })
+    } else if (failed && failed === unconfirmed) {
+      // IndexedDB refused the newest write (a full disk, an aborted transaction) and nothing newer
+      // is scheduled: the same version goes again, once per call.
+      const retry = failed
+      failed = null
+      issue(retry)
+    } else if (unconfirmed) {
+      // The newest write is in flight; if IndexedDB refuses it, it goes again.
+      return writing.catch(() => flush())
     }
     return writing
   }
@@ -343,6 +366,7 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
       timer = setTimeout(() => void flush().catch(report), 500)
     },
     flush,
+    unsaved: () => (pending ? pending.draft : (unconfirmed?.draft ?? null)) !== null,
     suspend: () => {
       const written = flush()
       try {
@@ -356,9 +380,10 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     adopt: (offer) =>
       consume(offer, async (record) => {
         await flush()
-        // This tab's next write must stay newer than the adopted draft, whatever the clock says.
+        // The adopted draft becomes this tab's newest version, newer than the offer and than any
+        // earlier write or journal of this tab, whatever the clock says.
         if (record.savedAt > latest) latest = record.savedAt
-        await move(record, tab)
+        await move({ ...record, savedAt: stamp() }, tab)
       }),
     discard: (offer) => consume(offer, (record) => ports.records.remove(record.tab)),
     setAside: async () => {
