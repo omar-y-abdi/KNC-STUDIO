@@ -1,5 +1,5 @@
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import { validateEmailDesign, type EmailDesign } from '../../../shared/cms.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { validateEmailDesign, type EmailDesign } from '../../../shared/email-design.ts'
 
 import type {
   EmailLanguage,
