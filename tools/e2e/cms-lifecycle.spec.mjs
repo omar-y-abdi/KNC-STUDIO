@@ -46,6 +46,14 @@ const storedDrafts = (page) =>
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
+// The sanitised production presentation: its draft serializes to about 1.4 million characters.
+const productionDocument = async () => ({
+  ...emptyDocument(),
+  presentation: JSON.parse(
+    gunzipSync(await readFile(new URL('./fixtures/presentation.json.gz', import.meta.url))),
+  ).presentation,
+})
+
 test('cms-lifecycle closed tabs keep their drafts until the owner acts', async ({ context }) => {
   await nativeBackend(context)
   // Publish the seeded site first, so every tab starts from a clean draft.
@@ -99,6 +107,41 @@ test('cms-lifecycle flushes the draft when the tab is hidden or closed', async (
   )
   // Well inside the 500 ms debounce: only the flush can have written it.
   await expect.poll(() => storedDrafts(page), { timeout: 400 }).toEqual(['Precis innan stängning'])
+})
+
+// A reload ends the page before an IndexedDB write started in pagehide commits; the
+// synchronous sessionStorage journal carries the last edit across it.
+test('cms-lifecycle an edit survives an immediate reload at production size', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context, await productionDocument())
+  await openStudio(page)
+  await nameField(page).fill('Omladdad direkt')
+  await page.reload()
+  await openStudio(page)
+  await expect(nameField(page)).toHaveValue('Omladdad direkt')
+  await expect.poll(() => storedDrafts(page)).toEqual(['Omladdad direkt'])
+})
+
+test('cms-lifecycle a reload right after Publicera does not bring back the old backup', async ({
+  page,
+  context,
+}) => {
+  const backend = await nativeBackend(context, await productionDocument())
+  await openStudio(page)
+  await nameField(page).fill('Publicerat namn')
+  // A backup from before the publication exists.
+  await expect.poll(() => storedDrafts(page)).toEqual(['Publicerat namn'])
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+  // The server changes after the publication; a resurrected backup would overwrite this.
+  backend.document.presentation.pages[0].name.sv = 'Serverns namn'
+  await page.reload()
+  await openStudio(page)
+  await expect(nameField(page)).toHaveValue('Serverns namn')
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/)
+  assert.deepEqual(await storedDrafts(page), [])
 })
 
 const salonImage = {
@@ -159,10 +202,7 @@ test('cms-lifecycle a page-name edit stays a short task at production size', asy
   page,
   context,
 }) => {
-  const fixture = JSON.parse(
-    gunzipSync(await readFile(new URL('./fixtures/presentation.json.gz', import.meta.url))),
-  )
-  await nativeBackend(context, { ...emptyDocument(), presentation: fixture.presentation })
+  await nativeBackend(context, await productionDocument())
   await openStudio(page)
   const durations = await nameField(page).evaluate(async (input) => {
     // The longest gap between back-to-back tasks is the longest task the edit caused,

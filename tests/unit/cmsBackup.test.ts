@@ -36,9 +36,20 @@ function memory(
   const held = new Set(options.held ?? [])
   const legacy = new Map(Object.entries(options.legacy ?? {}))
   const tabs = new Map(options.tab ? [['knc-cms-tab', options.tab]] : [])
+  return { ports: pagePorts(records, held, legacy, tabs), records, held, legacy, tabs }
+}
+
+// One page's ports over the browser state; a reload is a new page over the same maps.
+function pagePorts(
+  records: Map<string, StoredBackup>,
+  held: Set<string>,
+  legacy: Map<string, string>,
+  tabs: Map<string, string>,
+  start = 0,
+): BackupPorts {
   let ids = 0
-  let clock = 0
-  const ports: BackupPorts = {
+  let clock = start
+  return {
     records: {
       all: async () => [...records.values()].map((record) => structuredClone(record)),
       put: vi.fn(async (record: StoredBackup) => {
@@ -58,7 +69,8 @@ function memory(
     },
     tabs: {
       getItem: (key) => tabs.get(key) ?? null,
-      setItem: (key, value) => void tabs.set(key, value),
+      setItem: vi.fn((key: string, value: string) => void tabs.set(key, value)),
+      removeItem: (key) => void tabs.delete(key),
     },
     legacy: {
       get length() {
@@ -71,7 +83,6 @@ function memory(
     newId: () => `tab-${++ids}`,
     now: () => new Date(Date.UTC(2026, 9, 24, 12, 0, ++clock)).toISOString(),
   }
-  return { ports, records, held, legacy, tabs }
 }
 
 const record = (tab: string, name: string, savedAt: string): StoredBackup => ({
@@ -228,6 +239,177 @@ describe('CMS draft backup in IndexedDB', () => {
       ['tab-1', named('Mall')],
     ])
     expect(records.has('this-tab')).toBe(false)
+  })
+})
+
+// The page ends before IndexedDB answers, so its writes never confirm.
+function unload(ports: BackupPorts): void {
+  vi.mocked(ports.records.put).mockImplementation(() => new Promise(() => undefined))
+  vi.mocked(ports.records.remove).mockImplementation(() => new Promise(() => undefined))
+}
+// The next page in the same tab: the old page's lock is released, sessionStorage stays.
+const reload = (browser: ReturnType<typeof memory>): BackupPorts =>
+  pagePorts(browser.records, new Set(), browser.legacy, browser.tabs, 100)
+const JOURNAL_KEYS = ['knc-cms-journal', 'knc-cms-journal-document']
+
+describe('sessionStorage journal across a reload', () => {
+  it('replays an unconfirmed write, with the stored base while its revision matches', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Sparad', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    session.schedule({
+      document: named('Osparad'),
+      revision: 4,
+      fingerprint: FINGERPRINT,
+      base: emptyDocument(),
+    })
+    void session.suspend()
+    // The journal holds the document and the base's identity, never the base itself.
+    expect(JSON.parse(browser.tabs.get('knc-cms-journal') ?? '')).toEqual({
+      tab: 'this-tab',
+      savedAt: '2026-10-24T12:00:01.000Z',
+      revision: 4,
+      fingerprint: FINGERPRINT,
+    })
+    const next = await openBackupSession(reload(browser))
+    expect(await next.own()).toEqual({
+      document: named('Osparad'),
+      revision: 4,
+      fingerprint: FINGERPRINT,
+      base: emptyDocument(),
+      savedAt: '2026-10-24T12:00:01.000Z',
+    })
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+  })
+
+  it('replays without a base after the revision moved on', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Sparad', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    session.schedule({ document: named('Efter publicering'), revision: 5, fingerprint: 'next' })
+    void session.suspend()
+    const next = await openBackupSession(reload(browser))
+    // The studio uses the server head as the base, or keeps this document in a conflict.
+    expect(await next.own()).toEqual({
+      document: named('Efter publicering'),
+      revision: 5,
+      fingerprint: 'next',
+      savedAt: '2026-10-24T12:00:01.000Z',
+    })
+  })
+
+  it('journals a clean draft as a deletion marker, so an older backup cannot come back', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Före publicering', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    session.schedule(null)
+    void session.suspend()
+    expect(browser.tabs.has('knc-cms-journal-document')).toBe(false)
+    const next = await openBackupSession(reload(browser))
+    expect(await next.own()).toBeNull()
+    expect([...browser.records.keys()]).toEqual([])
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+  })
+
+  it('orders the journal after the stored record when the clock went back', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Framtid', '2026-10-24T13:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    session.schedule({ document: named('Senare'), revision: 4, fingerprint: FINGERPRINT })
+    void session.suspend()
+    const next = await openBackupSession(reload(browser))
+    expect(await next.own()).toMatchObject({
+      document: named('Senare'),
+      savedAt: '2026-10-24T13:00:00.001Z',
+    })
+  })
+
+  it('never lets a journal beat a newer IndexedDB record', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Nyare', '2026-10-24T09:00:00.000Z')],
+    })
+    browser.tabs.set(
+      'knc-cms-journal',
+      JSON.stringify({ tab: 'this-tab', savedAt: '2026-10-24T08:00:00.000Z', revision: 4 }),
+    )
+    browser.tabs.set('knc-cms-journal-document', JSON.stringify(named('Äldre')))
+    const session = await openBackupSession(browser.ports)
+    expect((await session.own())?.document).toEqual(named('Nyare'))
+    expect(browser.ports.records.put).not.toHaveBeenCalled()
+    // IndexedDB already confirmed newer data, so the journal is done.
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+  })
+
+  it('never replays a copied journal into a tab that is still open', async () => {
+    // A window.open'd tab inherits the opener's sessionStorage, journal included.
+    const browser = memory({ tab: 'opener', held: ['knc-cms-tab:opener'] })
+    browser.tabs.set('knc-cms-journal', JSON.stringify({ tab: 'opener', savedAt: '2026-10-25' }))
+    browser.tabs.set('knc-cms-journal-document', JSON.stringify(named('Kopia')))
+    const session = await openBackupSession(browser.ports)
+    expect(session.tab).toBe('tab-1')
+    expect(browser.ports.records.put).not.toHaveBeenCalled()
+    expect(browser.records.size).toBe(0)
+  })
+
+  it('forgets the journal once IndexedDB confirms the write', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    const write = deferred()
+    const put = vi.mocked(browser.ports.records.put)
+    const store = put.getMockImplementation()
+    put.mockImplementation(async (value) => {
+      await write.promise
+      await store?.(value)
+    })
+    session.schedule({ document: named('Bekräftas'), revision: 4, fingerprint: FINGERPRINT })
+    const written = session.suspend()
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual(JOURNAL_KEYS)
+    write.resolve()
+    await written
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    expect(browser.records.get('this-tab')?.document).toBe(JSON.stringify(named('Bekräftas')))
+  })
+
+  it('keeps the IndexedDB record as the fallback when the document does not fit', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('this-tab', 'Sparad', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    vi.mocked(browser.ports.tabs.setItem).mockImplementation((key, value) => {
+      if (key === 'knc-cms-journal-document')
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+      browser.tabs.set(key, value)
+    })
+    session.schedule({ document: named('För stor'), revision: 4, fingerprint: FINGERPRINT })
+    expect(() => void session.suspend()).not.toThrow()
+    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    const next = await openBackupSession(reload(browser))
+    expect((await next.own())?.document).toEqual(named('Sparad'))
+  })
+
+  it('surfaces any other sessionStorage failure', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    vi.mocked(browser.ports.tabs.setItem).mockImplementation(() => {
+      throw new TypeError('sessionStorage is unavailable')
+    })
+    session.schedule({ document: named('A'), revision: 1, fingerprint: FINGERPRINT })
+    expect(() => void session.suspend()).toThrow('sessionStorage is unavailable')
   })
 })
 

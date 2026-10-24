@@ -234,15 +234,17 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     )
   }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
   useEffect(() => {
-    // A closed or backgrounded tab must not lose the last 500 ms of edits.
+    // A closed or backgrounded tab must not lose the last 500 ms of edits. A hidden page lives on
+    // until IndexedDB commits; a page that goes away also journals the write synchronously.
     const flush = (): void => void backups.current?.flush().catch(() => setError(BACKUP_FAILED))
+    const suspend = (): void => void backups.current?.suspend().catch(() => setError(BACKUP_FAILED))
     const hidden = (): void => {
       if (window.document.visibilityState === 'hidden') flush()
     }
-    window.addEventListener('pagehide', flush)
+    window.addEventListener('pagehide', suspend)
     window.document.addEventListener('visibilitychange', hidden)
     return () => {
-      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('pagehide', suspend)
       window.document.removeEventListener('visibilitychange', hidden)
       flush()
     }

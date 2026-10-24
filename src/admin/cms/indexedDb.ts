@@ -21,9 +21,16 @@ export async function openKeyedStore(database: string, keyPath: string): Promise
     new Promise<T>((resolve, reject) => {
       const transaction = db.transaction('records', mode, { durability: 'strict' })
       const request = work(transaction.objectStore('records'))
-      transaction.oncomplete = () => resolve(request.result)
+      // An explicitly committed transaction may complete before the request's result is readable.
+      let result: T
+      request.onsuccess = () => {
+        result = request.result
+      }
+      transaction.oncomplete = () => resolve(result)
       transaction.onabort = () =>
         reject(transaction.error ?? new DOMException('Aborted', 'AbortError'))
+      // Commit a write now instead of after its result reaches this page, which may be gone.
+      if (mode === 'readwrite') transaction.commit()
     })
   return {
     all: () => run('readonly', (store) => store.getAll()),

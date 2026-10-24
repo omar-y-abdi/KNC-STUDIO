@@ -36,7 +36,8 @@ export interface TabLocks {
 export interface BackupPorts {
   records: BackupRecords
   locks: TabLocks
-  tabs: Pick<Storage, 'getItem' | 'setItem'>
+  /** sessionStorage: the tab id, and the journal that carries the last write across a reload. */
+  tabs: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
   legacy: Pick<Storage, 'length' | 'key' | 'getItem' | 'removeItem'>
   newId: () => string
   now: () => string
@@ -52,6 +53,9 @@ export interface BackupSession {
   schedule(draft: BackupDraft | null, report?: (reason: unknown) => void): void
   /** Writes the scheduled draft now. */
   flush(): Promise<void>
+  /** For `pagehide`: flushes, and journals the unconfirmed write synchronously, because the page
+   * may end before IndexedDB commits it. The next page in this tab replays the journal. */
+  suspend(): Promise<void>
   /** Makes a closed tab's draft this tab's own, then deletes the closed tab's copy. */
   adopt(offer: TabBackup): Promise<void>
   /** Deletes exactly this draft, after the owner exported or rejected it. */
@@ -64,6 +68,23 @@ const TAB_KEY = 'knc-cms-tab'
 const LEGACY_DRAFT = /^knc-cms-draft:(.+)$/
 const LEGACY_TEMPLATE = 'knc-cms-retained-template-draft'
 const lockName = (tab: string): string => `knc-cms-tab:${tab}`
+// The journal holds the document without its base (a production base would not fit beside it in
+// WebKit's 5 MB sessionStorage); revision and fingerprint identify the base on replay.
+const JOURNAL = 'knc-cms-journal'
+const JOURNAL_DOCUMENT = 'knc-cms-journal-document'
+
+interface Journal {
+  tab: string
+  savedAt: string
+  /** A clean draft: the tab's record must go, so an older backup cannot come back. */
+  removed?: true
+  revision?: number
+  fingerprint?: string
+}
+interface Write {
+  draft: BackupDraft | null
+  savedAt: string
+}
 
 function isBackup(value: unknown): value is CmsBackup {
   if (!value || typeof value !== 'object') return false
@@ -113,6 +134,71 @@ async function readAll(records: BackupRecords): Promise<TabBackup[]> {
   return (await records.all()).flatMap((value) => parseStored(value) ?? [])
 }
 
+/** A tab's record in its stored form, without parsing the other tabs' documents. */
+async function storedRecord(records: BackupRecords, tab: string): Promise<StoredBackup | null> {
+  const value = (await records.all()).find(
+    (item) => Boolean(item) && typeof item === 'object' && (item as { tab?: unknown }).tab === tab,
+  )
+  return parseStored(value) ? (value as StoredBackup) : null
+}
+
+function parseJournal(json: string | null): Journal | null {
+  try {
+    const value: unknown = JSON.parse(json ?? 'null')
+    if (!value || typeof value !== 'object') return null
+    const journal = value as Partial<Journal>
+    return typeof journal.tab === 'string' &&
+      typeof journal.savedAt === 'string' &&
+      (journal.revision === undefined || Number.isSafeInteger(journal.revision)) &&
+      (journal.fingerprint === undefined || typeof journal.fingerprint === 'string')
+      ? (journal as Journal)
+      : null
+  } catch {
+    // A damaged journal stays untouched and is never replayed; the IndexedDB record remains.
+    return null
+  }
+}
+
+function forgetJournal(tabs: BackupPorts['tabs']): void {
+  tabs.removeItem(JOURNAL)
+  tabs.removeItem(JOURNAL_DOCUMENT)
+}
+
+/** Replays the journal the previous page of this tab left, unless IndexedDB already holds that
+ * write or a newer one: a copy that a window.open'd tab inherits never beats newer data, and never
+ * writes into a tab that is still open. The base is the stored record's when the record has the
+ * same revision and fingerprint; otherwise the studio finds it as the server head, or resolves a
+ * conflict with the journal's document as the owner's draft. */
+async function replayJournal(ports: BackupPorts, tab: string): Promise<void> {
+  const journal = parseJournal(ports.tabs.getItem(JOURNAL))
+  if (!journal) return
+  if (journal.tab !== tab && (await ports.locks.held()).has(lockName(journal.tab))) return
+  const stored = await storedRecord(ports.records, journal.tab)
+  if (!stored || stored.savedAt < journal.savedAt) {
+    if (journal.removed) {
+      if (stored) await ports.records.remove(journal.tab)
+    } else {
+      const document = ports.tabs.getItem(JOURNAL_DOCUMENT)
+      const sameBase =
+        stored?.base !== undefined &&
+        stored.revision === journal.revision &&
+        stored.fingerprint === journal.fingerprint
+      const record: StoredBackup = {
+        tab: journal.tab,
+        savedAt: journal.savedAt,
+        document: document ?? '',
+        ...(journal.revision === undefined ? {} : { revision: journal.revision }),
+        ...(journal.fingerprint === undefined ? {} : { fingerprint: journal.fingerprint }),
+        ...(sameBase ? { base: stored.base } : {}),
+      }
+      // A journal without a readable document is damaged: keep it and the record untouched.
+      if (document === null || !parseStored(record)) return
+      await ports.records.put(record)
+    }
+  }
+  forgetJournal(ports.tabs)
+}
+
 /** Copies every localStorage draft into IndexedDB; deletes an original only after its write. */
 async function migrateLegacy(ports: BackupPorts): Promise<void> {
   const stored = new Map((await readAll(ports.records)).map((record) => [record.tab, record]))
@@ -138,27 +224,67 @@ async function claimTab(ports: BackupPorts): Promise<string> {
 
 export async function openBackupSession(ports: BackupPorts): Promise<BackupSession> {
   const tab = await claimTab(ports)
+  await replayJournal(ports, tab)
   await migrateLegacy(ports)
   let pending: { draft: BackupDraft | null; report: (reason: unknown) => void } | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   // Writes stay in call order, so an older draft never lands after a newer one.
   let writing: Promise<void> = Promise.resolve()
+  // The newest write IndexedDB has not confirmed yet.
+  let unconfirmed: Write | null = null
 
   const own = async (): Promise<TabBackup | null> =>
     (await readAll(ports.records)).find((record) => record.tab === tab) ?? null
+  // A tab's savedAt only grows, even when the clock goes back, so the journal's newer-than check
+  // orders this tab's writes like a sequence.
+  let latest = (await own())?.savedAt ?? ''
+  const stamp = (): string => {
+    const now = ports.now()
+    latest = now > latest ? now : new Date(Date.parse(latest) + 1).toISOString()
+    return latest
+  }
   const flush = (): Promise<void> => {
     clearTimeout(timer)
     const next = pending
     pending = null
-    if (next)
+    if (next) {
+      const write: Write = { draft: next.draft, savedAt: stamp() }
+      unconfirmed = write
       writing = writing
         .catch(() => undefined)
-        .then(() =>
-          next.draft
-            ? ports.records.put(toStored({ ...next.draft, savedAt: ports.now(), tab }))
-            : ports.records.remove(tab),
-        )
+        .then(async () => {
+          await (write.draft
+            ? ports.records.put(toStored({ ...write.draft, savedAt: write.savedAt, tab }))
+            : ports.records.remove(tab))
+          if (unconfirmed !== write) return
+          unconfirmed = null
+          forgetJournal(ports.tabs)
+        })
+    }
     return writing
+  }
+  const journal = ({ draft, savedAt }: Write): void => {
+    forgetJournal(ports.tabs)
+    if (draft)
+      try {
+        ports.tabs.setItem(JOURNAL_DOCUMENT, serialize(draft.document))
+      } catch (reason) {
+        if (!(reason instanceof DOMException && reason.name === 'QuotaExceededError')) throw reason
+        // lazy dev: the document alone must fit in sessionStorage (WebKit: 5 MB, about 2.5 million
+        // characters; the production draft has about 1.4 million). A larger one keeps only the
+        // IndexedDB record, at most 500 ms old. Upgrade path: journal the edit as a delta against
+        // that record instead of the whole document.
+        return
+      }
+    const entry: Journal = draft
+      ? {
+          tab,
+          savedAt,
+          ...(draft.revision === undefined ? {} : { revision: draft.revision }),
+          ...(draft.fingerprint === undefined ? {} : { fingerprint: draft.fingerprint }),
+        }
+      : { tab, savedAt, removed: true }
+    ports.tabs.setItem(JOURNAL, JSON.stringify(entry))
   }
   const move = async (record: TabBackup, to: string): Promise<void> => {
     await ports.records.put(toStored({ ...record, tab: to }))
@@ -185,6 +311,11 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
       timer = setTimeout(() => void flush().catch(report), 500)
     },
     flush,
+    suspend: () => {
+      const written = flush()
+      if (unconfirmed) journal(unconfirmed)
+      return written
+    },
     adopt: async (offer) => {
       await flush()
       await move(offer, tab)
