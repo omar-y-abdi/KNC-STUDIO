@@ -1,5 +1,5 @@
 begin;
-select plan(50);
+select plan(67);
 
 insert into auth.users(id,email) values
  ('96000000-0000-4000-8000-000000000001','cms-single-pass-owner@example.invalid');
@@ -41,6 +41,10 @@ create function pg_temp.storage_deletions() returns bigint language sql as $$
 $$;
 create function pg_temp.with_markup(p_document jsonb, p_html text) returns jsonb language sql as $$
   select jsonb_set(p_document,'{presentation,legacyMarkup}',to_jsonb(p_html))
+$$;
+create function pg_temp.without_pinned_rows(p_document jsonb) returns jsonb language sql as $$
+  select pg_temp.without_gallery_row(pg_temp.without_gallery_row(pg_temp.without_gallery_row(p_document,
+    '96000000-0000-4000-8000-0000000000c4'),'96000000-0000-4000-8000-0000000000c5'),'96000000-0000-4000-8000-0000000000c6')
 $$;
 
 -- One publication function: the lifecycle wrapper and the unchecked writer are merged.
@@ -168,7 +172,7 @@ select is((public.internal_cms_asset_usage('96000000-0000-4000-8000-000000000001
 select is(public.prune_cms_revisions(),0,'A second prune deletes nothing');
 
 -- The retention check finds a path only as a raw substring. While the head spells a storage path
--- percent-encoded, CSS-escaped or with an HTML character reference, nothing is pruned.
+-- percent-encoded, with a JSON escape or with an HTML character reference, nothing is pruned.
 insert into storage.objects(bucket_id,name,created_at) values
  ('gallery','salon/legacy encoded.webp',now()-interval '60 days');
 select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(pg_temp.state()->'document',
@@ -202,6 +206,56 @@ select ok(not exists(select 1 from public.cms_revisions where revision=(select r
   'The old revision that pinned the raw path is deleted then');
 select ok(public.internal_cms_media_retained('gallery','salon/legacy encoded.webp'),
   'The head keeps the file once it shows the raw path');
+-- Filename punctuation cannot end a scanned path, and &apos; and control characters count as encodings.
+insert into storage.objects(bucket_id,name,created_at) values
+ ('gallery','salon/cut(1) final.webp',now()-interval '60 days'),
+ ('gallery','salon/Joe''s.webp',now()-interval '60 days'),
+ ('gallery','salon/split tab.webp',now()-interval '60 days');
+select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(pg_temp.with_gallery_row(pg_temp.with_gallery_row(
+    pg_temp.state()->'document',
+    '96000000-0000-4000-8000-0000000000c4','salon/cut(1) final.webp'),
+    '96000000-0000-4000-8000-0000000000c5','salon/Joe''s.webp'),
+    '96000000-0000-4000-8000-0000000000c6','salon/split tab.webp'))$$,
+  'An old revision pins three more legacy files by their raw paths');
+create temporary table retention_pins as select revision from public.cms_site where id;
+update public.cms_revisions set created_at=now()-interval '31 days' where revision=(select revision from retention_pins);
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_pinned_rows(pg_temp.state()->'document'),
+    '<img src="/storage/v1/object/public/gallery/salon/cut(1)%20final.webp">'))$$,
+  'The head shows a file whose name has parentheses only percent-encoded after them');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the encoding follows a parenthesis');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_pins)),
+  'The old revision that pins the raw paths survives the parenthesised name');
+select ok(public.internal_cms_media_retained('gallery','salon/cut(1) final.webp'),
+  'The file whose name has parentheses stays retained');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_pinned_rows(pg_temp.state()->'document'),
+    '<img src="/storage/v1/object/public/gallery/salon/Joe&apos;s.webp">'))$$,
+  'The head shows a file whose name has an apostrophe only as &apos;');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the head spells a storage path with &apos;');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_pins)),
+  'The old revision that pins the raw paths survives the &apos; reference');
+select ok(public.internal_cms_media_retained('gallery','salon/Joe''s.webp'),
+  'The file whose name has an apostrophe stays retained');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_pinned_rows(pg_temp.state()->'document'),
+    '<img src="/storage/v1/object/public/gallery/salon/sp' || chr(9) || 'lit tab.webp">'))$$,
+  'The head shows a file only with a tab inside its path, which the browser drops');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the head spells a storage path with a control character');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_pins)),
+  'The old revision that pins the raw paths survives the control character');
+select ok(public.internal_cms_media_retained('gallery','salon/split tab.webp'),
+  'The file the head spells with a tab stays retained');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_pinned_rows(pg_temp.state()->'document'),
+    '<img src="/storage/v1/object/public/gallery/salon/Joe''s.webp">'))$$,
+  'The head shows the file by its raw path, ended by an escaped JSON quote');
+select set_config('test.expected_pruned',(select count(*) from public.cms_revisions r
+  where r.created_at<now()-interval '30 days'
+    and r.revision<>(select s.revision from public.cms_site s where s.id)
+    and r.revision<>(select max(n.revision) from public.cms_revisions n))::text,true);
+select is(public.prune_cms_revisions(),current_setting('test.expected_pruned')::integer,
+  'A raw path followed by an escaped JSON quote does not stop the prune');
+select ok(not exists(select 1 from public.cms_revisions where revision=(select revision from retention_pins)),
+  'The old revision that pinned the raw paths is deleted then');
+select ok(public.internal_cms_media_retained('gallery','salon/Joe''s.webp'),
+  'The head keeps the file it shows by its raw path in markup');
 select ok((select p.prosecdef and p.proconfig=array['search_path=""'] from pg_proc p
     where p.oid='public.prune_cms_revisions()'::regprocedure),
   'The prune runs as its owner with an empty search_path');

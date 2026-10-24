@@ -149,12 +149,20 @@ as $$
 declare
   v_pruned integer;
 begin
-  -- internal_cms_media_retained finds a path only as a raw substring of a revision. While the head
-  -- spells a storage path, bucket included, percent-encoded, CSS-escaped or with an HTML character
-  -- reference, an older revision may hold the only raw copy that keeps the file, so nothing is pruned.
+  -- internal_cms_media_retained finds a path only as a raw substring of a revision. A candidate runs
+  -- from a storage prefix in the head's JSON text to the next quote (the escaped \" included),
+  -- whitespace or angle bracket, so no filename punctuation ends it. While a candidate holds a
+  -- percent-encoding, any other JSON escape (a backslash, a tab, a newline) or an HTML character
+  -- reference other than &quot;, the head may spell a path, bucket included, that the browser
+  -- decodes; an older revision may hold the only raw copy that keeps the file, so nothing is pruned.
+  -- A head that quotes a storage URL with &apos; therefore keeps every revision as well.
   if exists (
-    select 1 from public.cms_site s join public.cms_revisions head on head.revision = s.revision
-    where s.id and head.document::text ~ '/storage/v1/object/public/[^\\"''()<>?#%&]*(%[0-9A-Fa-f]{2}|\\\\|&(?!quot;|apos;)(#|[A-Za-z][A-Za-z0-9]*;))'
+    select 1
+    from public.cms_site s
+    join public.cms_revisions head on head.revision = s.revision
+    cross join lateral regexp_matches(head.document::text,
+      '/storage/v1/object/public/(([^"\s<>\\]|\\[^"])*)', 'g') as candidate(parts)
+    where s.id and candidate.parts[1] ~ '%[0-9A-Fa-f]{2}|\\[^"]|&(?!quot;)'
   ) then
     raise warning 'CMS revisions not pruned: the head spells a storage path encoded';
     return 0;
