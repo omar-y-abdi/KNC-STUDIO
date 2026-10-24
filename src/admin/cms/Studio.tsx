@@ -27,6 +27,7 @@ import {
   CORE_PAGE_IDS,
 } from './corePages'
 import { CmsDraft, mergeCmsDocuments } from './draft'
+import { normalizeMarqueeZoom } from './normalizeDocument'
 import { cmsApi } from './api'
 import { CmsEditor, type EditorHandle } from './Editor'
 import { CmsEditorBoundary } from './EditorBoundary'
@@ -110,7 +111,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const stored = hasCorePageLayouts(loaded.document)
       if (stored) retainCorePageLayouts(loaded.document)
       else await prepareCorePageSource(loaded.document)
-      const document = stored ? loaded.document : ensureCorePages(loaded.document)
+      const document = normalizeMarqueeZoom(
+        stored ? loaded.document : ensureCorePages(loaded.document),
+      )
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = loadBackup()
       const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
@@ -125,9 +128,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         !isInventedSite(backup.document) &&
         JSON.stringify(backup.document) !== JSON.stringify(document)
       ) {
-        const local = hasCorePageLayouts(backup.document)
-          ? backup.document
-          : ensureCorePages(backup.document)
+        const local = normalizeMarqueeZoom(
+          hasCorePageLayouts(backup.document) ? backup.document : ensureCorePages(backup.document),
+        )
         const sameHead =
           backup.revision === loaded.revision && backup.fingerprint === loaded.fingerprint
         const merged =
@@ -302,7 +305,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             draft.document,
             ensureCorePages(remote.document),
           )
-          const next = new CmsDraft(merged.document, remote.revision, remote.fingerprint)
+          const next = new CmsDraft(
+            normalizeMarqueeZoom(merged.document),
+            remote.revision,
+            remote.fingerprint,
+          )
           next.base = structuredClone(remote.document)
           if (merged.conflicts.length) {
             next.base = structuredClone(draft.base)
@@ -336,6 +343,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.fingerprint,
       )
       if (needsCorePageSource(next.document)) next.document = ensureCorePages(next.document)
+      next.document = normalizeMarqueeZoom(next.document)
       setDraft(next)
       setConflict(null)
     } else {
@@ -343,6 +351,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       // The first authoritative publication may be empty. Restore its source-derived
       // editing scaffold without pretending those templates have already been published.
       if (needsCorePageSource(draft.document)) draft.document = ensureCorePages(draft.document)
+      draft.document = normalizeMarqueeZoom(draft.document)
     }
     setVersion((v) => v + 1)
   }
@@ -360,7 +369,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       conflict.remote.revision,
       conflict.remote.fingerprint,
     )
-    next.change(resolved)
+    next.change(normalizeMarqueeZoom(resolved))
     setDraft(next)
     setConflict(null)
     setNotice('Konflikten är löst i utkastet. Granska före publicering.')
@@ -424,7 +433,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       editor.current?.flush()
       const parsed = JSON.parse(await file.text()) as unknown
       const checked = await cmsApi.validate(parsed as CmsDocument)
-      const next = ensureCorePages(checked.document)
+      const next = normalizeMarqueeZoom(ensureCorePages(checked.document))
       commitDraft(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
       setNotice('JSON-utkastet importerades och är ännu inte publicerat.')
@@ -1027,7 +1036,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                   device={device}
                   onError={setError}
                   onRestore={(old) => {
-                    commitDraft(needsCorePageSource(old) ? ensureCorePages(old) : old)
+                    commitDraft(
+                      normalizeMarqueeZoom(needsCorePageSource(old) ? ensureCorePages(old) : old),
+                    )
                     setDialog(null)
                   }}
                 />

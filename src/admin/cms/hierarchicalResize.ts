@@ -24,13 +24,44 @@ export function barberScalePeers(component: Component): Component[] {
   return cards.map(photo).filter((item): item is Component => Boolean(item))
 }
 
+const isStrip = (component: Component): boolean => {
+  const attrs = component.getAttributes()
+  return attrs['data-knc-fold'] === 'barber-marquee' && Boolean(attrs['data-knc-source'])
+}
+
+/** The cards when the selection is the strip or one of its cards; never for their photos. */
+export function barberStripCards(component: Component): Component[] {
+  const strip = isStrip(component) ? component : component.parent()
+  if (!strip || !isStrip(strip)) return []
+  if (strip !== component && !component.getAttributes()['data-knc-source']) return []
+  return strip
+    .components()
+    .filter((child: Component) => Boolean(child.getAttributes()['data-knc-source']))
+}
+
+/** The runtime mobile card width (AboutSection), scaled. */
+export function marqueeCardWidth(scale: number): string {
+  return `calc((100vw - 24px) * ${scale})`
+}
+
+/** Embla positions mobile slides from their layout width; zoom would only scale their paint. */
+export function marqueeCardStyle(
+  style: ReturnType<Component['getStyle']>,
+  scale: number,
+): ReturnType<Component['getStyle']> {
+  const next = { ...style, width: marqueeCardWidth(scale), 'flex-basis': marqueeCardWidth(scale) }
+  Reflect.deleteProperty(next, 'zoom')
+  return next
+}
+
 export function scaledZoom(zoom: number, before: number, requested: number): number {
   if (![zoom, before, requested].every((value) => Number.isFinite(value) && value > 0)) return zoom
   return Math.max(0.1, Math.min(4, Number(((zoom * requested) / before).toFixed(6))))
 }
 
 /** CSS zoom participates in layout, unlike transform:scale. Keep intrinsic child
- * geometry and let the browser scale text, portraits, padding and subsequent flow. */
+ * geometry and let the browser scale text, portraits, padding and subsequent flow.
+ * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
 export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
   type Styled = NonNullable<ReturnType<Editor['getSelectedToStyle']>>
   let snapshot:
@@ -41,6 +72,7 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
         width: number
         height: number
         zoom: number
+        cardScale: number
       }
     | undefined
   let updating = false
@@ -55,8 +87,12 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       return
     }
     const rect = element.getBoundingClientRect()
-    const rawZoom = element.ownerDocument.defaultView?.getComputedStyle(element).zoom ?? '1'
+    const view = element.ownerDocument.defaultView
+    const rawZoom = view?.getComputedStyle(element).zoom ?? '1'
     const zoom = (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1)
+    const cards = barberStripCards(component)
+    const card = cards.includes(component) ? component : cards[0]
+    const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
       model,
@@ -64,6 +100,7 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       width: rect.width,
       height: rect.height,
       zoom,
+      cardScale: view && cardWidth > 0 ? cardWidth / (view.innerWidth - 24) : 1,
     }
   }
   const remember = (): void => {
@@ -87,18 +124,27 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       remember()
       return
     }
-    const zoom = scaledZoom(before.zoom, before[property], requested)
-    if (!Number.isFinite(zoom) || before[property] <= 0) return
+    const cards = editor.getDevice() === 'Mobile' ? barberStripCards(before.component) : []
+    const scale = scaledZoom(
+      cards.length ? before.cardScale : before.zoom,
+      before[property],
+      requested,
+    )
+    if (!Number.isFinite(scale) || before[property] <= 0) return
     updating = true
     try {
       const style = { ...before.model.getStyle() }
-      // The new size is represented by layout zoom, not a clipping height.
+      // The new size is represented by layout zoom or card width, not a clipping height.
       for (const axis of ['width', 'height'] as const) {
         if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
         else style[axis] = before.style[axis]
       }
       before.model.setStyle(style)
-      for (const peer of barberScalePeers(before.component)) peer.addStyle({ zoom: String(zoom) })
+      if (cards.length)
+        for (const card of cards) card.setStyle(marqueeCardStyle(card.getStyle(), scale))
+      else
+        for (const peer of barberScalePeers(before.component))
+          peer.addStyle({ zoom: String(scale) })
     } finally {
       updating = false
     }
