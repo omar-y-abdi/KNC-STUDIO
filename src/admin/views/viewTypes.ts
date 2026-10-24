@@ -16,3 +16,9 @@ export type {
   Weekday,
   WeekSchedule,
 } from '../types'
+
+/** A one-line outcome a card shows in its aria-live region (`err` renders in the error colour). */
+export interface StatusMessage {
+  readonly kind: 'ok' | 'err'
+  readonly text: string
+}

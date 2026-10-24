@@ -36,6 +36,7 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
         ? [
             'admin-state.spec.mjs',
             'admin-shared.spec.mjs',
+            'admin-schedule.spec.mjs',
             'public-smoke.spec.mjs',
             'visual.spec.mjs',
             'visual-stored.spec.mjs',

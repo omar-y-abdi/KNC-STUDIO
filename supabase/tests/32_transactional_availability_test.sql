@@ -1,5 +1,5 @@
 begin;
-select plan(35);
+select plan(46);
 
 insert into public.barbers (id, name) values ('availability-test', 'Availability Test');
 insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
@@ -156,6 +156,99 @@ select is(
   public.admin_save_barber_week('availability-test', '[]'::jsonb) ->> 'error',
   'invalid', 'schedule RPC rejects incomplete week'
 );
+
+-- A confirmed booking is a conflict while end_at > now(): one that started 10 minutes ago still blocks
+-- the change, one that already ended does not. A dedicated barber keeps these rows out of the lists
+-- asserted above (they are ordered by start_at), and every call below is scoped to cover BOTH
+-- bookings, so "the finished booking is not reported" can only come from the end_at predicate and
+-- never from an out-of-scope date. Dates come from the rows (salon-local), so the block is correct at
+-- any time of day, including just after midnight.
+reset role;
+
+insert into public.barbers (id, name) values ('availability-live', 'Availability Live');
+insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
+select 'availability-live', weekday, true, 540, 1080
+from generate_series(0, 6) weekday;
+
+-- The slot-overlap arithmetic compares minutes-of-day and cannot see a booking that ends inside the
+-- 00:00 minute, so the in-progress booking is one minute longer when "now + 35 min" would land there.
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, lang, status)
+select '32000000-0000-0000-0000-000000000021', 'availability-live', 'h', 'Hår', 350, d.mins,
+  pg_catalog.now() - interval '10 minutes',
+  pg_catalog.now() - interval '10 minutes' + pg_catalog.make_interval(mins => d.mins),
+  'In Progress Kund', 'phone', '0703200021', 'sv', 'confirmed'
+from (
+  select case
+    when ((pg_catalog.now() + interval '35 minutes') at time zone 'Europe/Stockholm')::time < time '00:01'
+      then 46
+    else 45
+  end as mins
+) d;
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, lang, status)
+values
+  ('32000000-0000-0000-0000-000000000022', 'availability-live', 'h', 'Hår', 350, 45,
+   pg_catalog.now() - interval '3 hours', pg_catalog.now() - interval '135 minutes',
+   'Finished Kund', 'phone', '0703200022', 'sv', 'confirmed');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub','32000000-0000-0000-0000-000000000001')::text, true);
+
+-- Week save (a closed week strands every booking that has not ended).
+select set_config('test.live_week', public.admin_save_barber_week(
+  'availability-live', current_setting('test.closed_week')::jsonb
+)::text, true);
+select is((current_setting('test.live_week')::jsonb) ->> 'error', 'booking_conflict',
+  'week save: an in-progress booking is a conflict');
+select ok((current_setting('test.live_week')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000021',
+  'week save reports the in-progress booking');
+select ok(not ((current_setting('test.live_week')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000022'),
+  'week save does not report the finished booking');
+
+-- Time off over every salon-local date that holds one of the two bookings.
+select set_config('test.live_off', public.admin_add_time_off(
+  'availability-live',
+  (select min((start_at at time zone 'Europe/Stockholm')::date)
+     from public.bookings where barber_id = 'availability-live'),
+  (select max((start_at at time zone 'Europe/Stockholm')::date)
+     from public.bookings where barber_id = 'availability-live'),
+  'Live'
+)::text, true);
+select is((current_setting('test.live_off')::jsonb) ->> 'error', 'booking_conflict',
+  'time off: an in-progress booking is a conflict');
+select ok((current_setting('test.live_off')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000021',
+  'time off reports the in-progress booking');
+select ok(not ((current_setting('test.live_off')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000022'),
+  'time off does not report the finished booking');
+select is((select count(*)::int from public.barber_time_off where barber_id='availability-live'), 0,
+  'conflicting time off inserts nothing');
+
+-- Slot block over the whole salon-local day of each booking (0-1440 minutes), one call per booking.
+select set_config('test.live_slot', public.admin_add_slot_block(
+  'availability-live',
+  (select (start_at at time zone 'Europe/Stockholm')::date
+     from public.bookings where id = '32000000-0000-0000-0000-000000000021'),
+  0, 1440
+)::text, true);
+select is((current_setting('test.live_slot')::jsonb) ->> 'error', 'booking_conflict',
+  'slot block: an in-progress booking is a conflict');
+select ok((current_setting('test.live_slot')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000021',
+  'slot block reports the in-progress booking');
+select is((select count(*)::int from public.barber_slot_blocks where barber_id='availability-live'), 0,
+  'conflicting slot block inserts nothing');
+select set_config('test.live_slot_finished', public.admin_add_slot_block(
+  'availability-live',
+  (select (start_at at time zone 'Europe/Stockholm')::date
+     from public.bookings where id = '32000000-0000-0000-0000-000000000022'),
+  0, 1440
+)::text, true);
+select ok(not coalesce(
+  (current_setting('test.live_slot_finished')::jsonb -> 'booking_ids') ? '32000000-0000-0000-0000-000000000022',
+  false
+), 'slot block does not report the finished booking');
 
 select * from finish();
 rollback;
