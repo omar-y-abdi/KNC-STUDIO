@@ -160,7 +160,9 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     await editor.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const owned = await editor.evaluate(async () => {
-      const backup = (await import('/src/admin/cms/backup.ts')).loadBackup()
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      const backup = await session.own()
       if (!backup) throw new Error('The actual CMS source was not captured')
       const document = globalThis.structuredClone(backup.document)
       const about = document.presentation.pages.find((page) => page.path === '/about')

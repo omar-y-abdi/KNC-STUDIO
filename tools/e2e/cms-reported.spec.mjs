@@ -60,8 +60,13 @@ const test = baseTest.extend({
         path: `${evidenceDir}/${browserName}-${info.title}-${suffix}.png`,
         animations: 'disabled',
       })
+    // The draft as this tab's backup holds it, written now instead of after the debounce.
     const capture = () =>
-      page.evaluate(async () => (await import('/src/admin/cms/backup.ts')).loadBackup().document)
+      page.evaluate(async () => {
+        const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+        await session.flush()
+        return (await session.own()).document
+      })
     await use({ backend, frame, shot, capture })
     assert.deepEqual(errors, [], 'no unhandled browser errors')
   },

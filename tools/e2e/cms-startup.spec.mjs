@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { test, devices } from './fixtures.mjs'
+import { expect, test, devices } from './fixtures.mjs'
 import { startupOrigin } from './origins.mjs'
 const base = startupOrigin
 function storedDocument() {
@@ -232,11 +232,32 @@ test('legacy-backup-without-pages-keeps-authoritative-layouts', async ({
     )
     await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
     await page.locator('.gjs-frame').first().waitFor()
-    const saved = await page.evaluate(() =>
-      JSON.parse(window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+    // The legacy localStorage draft moved to IndexedDB, and this tab recovered it as its own.
+    const recovered = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const opening = window.indexedDB.open('knc-cms-drafts', 1)
+            opening.onerror = () => reject(opening.error)
+            opening.onsuccess = () => {
+              const request = opening.result
+                .transaction('records')
+                .objectStore('records')
+                .get('startup-recovery')
+              request.onerror = () => reject(request.error)
+              request.onsuccess = () => {
+                opening.result.close()
+                const draft = request.result && JSON.parse(request.result.document)
+                resolve(draft && [draft.settings.business_name, draft.presentation.pages.length])
+              }
+            }
+          }),
+      )
+    await expect.poll(recovered).toEqual(['Unsaved owner business name', 6])
+    assert.equal(
+      await page.evaluate(() => window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+      null,
     )
-    assert.equal(saved.document.settings.business_name, 'Unsaved owner business name')
-    assert.equal(saved.document.presentation.pages.length, 6)
     const canvas = await page.locator('.cms-canvas-shell').boundingBox()
     assert.ok(
       canvas && canvas.height >= 240 && canvas.y + canvas.height <= page.viewportSize().height,

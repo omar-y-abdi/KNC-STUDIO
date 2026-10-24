@@ -66,4 +66,58 @@ describe('CMS draft interaction cost', () => {
       stringify.mockRestore()
     }
   })
+
+  it('serializes only the new snapshot per change and reuses it for the dirty state', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, 'head')
+    expect(draft.dirty).toBe(false)
+    const previous = draft.document
+    const next = structuredClone(previous)
+    next.settings.business_name = 'Edited'
+    const stringify = vi.spyOn(JSON, 'stringify')
+    try {
+      const serialized = () =>
+        stringify.mock.calls.filter(
+          ([value]) => value === next || value === previous || value === draft.base,
+        ).length
+      draft.change(next)
+      expect(serialized()).toBe(1)
+      expect(draft.dirty).toBe(true)
+      expect(serialized()).toBe(1)
+    } finally {
+      stringify.mockRestore()
+    }
+  })
+
+  it('keeps no-op and undo semantics with cached serializations', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, 'head')
+    draft.change(structuredClone(draft.document))
+    expect(draft.undo()).toBe(false)
+    expect(draft.dirty).toBe(false)
+
+    const next = structuredClone(draft.document)
+    next.settings.business_name = 'Edited'
+    draft.change(next)
+    draft.change(structuredClone(next))
+    expect(draft.dirty).toBe(true)
+    expect(draft.undo()).toBe(true)
+    expect(draft.dirty).toBe(false)
+    expect(draft.undo()).toBe(false)
+  })
+})
+
+describe('CMS draft amendment', () => {
+  it('completes the current transaction without an undo step of its own', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, 'head')
+    const assigned = structuredClone(draft.document)
+    assigned.settings.business_name = 'Data'
+    draft.change(assigned, 'resources')
+    const captured = structuredClone(assigned)
+    captured.settings.business_city = 'Layout'
+    draft.amend(captured)
+    expect(draft.document).toBe(captured)
+    expect(draft.undo()).toBe(true)
+    expect(draft.dirty).toBe(false)
+    expect(draft.redo()).toBe(true)
+    expect(draft.document).toBe(captured)
+  })
 })
