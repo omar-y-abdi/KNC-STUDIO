@@ -277,6 +277,19 @@ describe.sequential('CMS publication: hybrid archived-media rule', () => {
     expect(body.message).toContain('Bildadressen måste vara bibliotekets egen adress')
   }, 30_000)
 
+  it('rejects an escaped url() function that would load an archived image unseen', async () => {
+    const hidden = `${env.url}/storage/v1/object/public/${assets.unknown.bucket}/${assets.unknown.path.replace('images/', '\\69mages/')}`
+    const response = await publish((document) => {
+      const value = page(PAGE_B, '/it-arkiv-b', '<div class="it-escaped"></div>')
+      value.content.sv.css.light = `.it-escaped{background:u\\72l("${hidden}")}`
+      return withPage(document, value)
+    })
+    expect(response.status, await response.clone().text()).toBe(422)
+    const body = (await response.json()) as { error: string; message: string }
+    expect(body.error).toBe('invalid_content')
+    expect(body.message).toContain('Unsafe CSS function')
+  }, 30_000)
+
   it('keeps an archived image on its existing structured key', async () => {
     await expectPublished(await publish((document) => document))
   }, 30_000)

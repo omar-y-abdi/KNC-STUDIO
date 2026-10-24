@@ -172,7 +172,9 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
       reject('css', `Unsupported @${node.name}`)
     if (
       node.type === 'Function' &&
-      ['expression', 'image-set', '-webkit-image-set', 'attr'].includes(
+      // A plain url( is always a Url node; a Function named url, src or image is an escaped or
+      // string-based resource load that neither this walk nor the database would see.
+      ['expression', 'image-set', '-webkit-image-set', 'attr', 'url', 'src', 'image'].includes(
         decodeCss(node.name).toLowerCase(),
       )
     )
@@ -188,8 +190,6 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
       const value = decodeCss(node.value)
       if (/^#[a-zA-Z][\w:.-]*$/.test(value)) return
       const ref = resourceReference(value, policy)
-      // Stylesheets are stored as authored: a CSS escape would hide the reference from SQL.
-      if (ref && !css.includes(storageUrl(ref, policy))) reject('css', NON_CANONICAL_RESOURCE)
       if (ref) refs.push(ref)
     }
   })
@@ -367,7 +367,23 @@ export function validateMarkup(
   }
   visit(fragment, 0)
   for (const anchor of anchors) if (!ids.has(anchor)) reject('href', `Missing anchor #${anchor}`)
-  return { html: serialize(fragment), refs }
+  const stored = serialize(fragment)
+  const accepted = refs.map(({ bucket, path }) => `${bucket}/${path}`)
+  const visible = [...databaseReferenceKeys(stored), ...databaseReferenceKeys(css)]
+  // Any escape, decoy or hidden path makes the two multisets differ, whatever the encoding.
+  if (accepted.sort().join('\n') !== visible.sort().join('\n'))
+    reject('resource', NON_CANONICAL_RESOURCE)
+  return { html: stored, refs }
+}
+
+// Mirror of the markup branch of internal_cms_document_media_placements: the archived-media rule,
+// usage and retention see exactly these references in the stored HTML and CSS text.
+const DATABASE_REFERENCE =
+  /\/storage\/v1\/object\/public\/(gallery|barber-photos|cms-library)\/([a-zA-Z0-9][a-zA-Z0-9_./-]{0,239})/g
+function databaseReferenceKeys(text: string): string[] {
+  return [...text.matchAll(DATABASE_REFERENCE)]
+    .map(([, bucket, path]) => `${bucket}/${path}`)
+    .filter((key) => !key.includes('..') && !key.includes('//'))
 }
 const RUNTIME_SLOTS: Readonly<Record<string, string>> = {
   '/about': 'knc-about-runtime',
