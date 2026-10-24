@@ -113,57 +113,57 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
     let closed = false
     let stop = (): void => undefined
 
-    void getPublicRealtime()
-      .then((realtime) => {
-        if (closed) return
-        let reloadRequested = false
-        let reloadPromise: Promise<void> | null = null
-        const reload = (): void => {
-          reloadRequested = true
-          if (reloadPromise !== null) return
+    // A Realtime client that fails to load is left to surface as an unhandled rejection; swallowing
+    // it would turn live updates off with no trace. The page works without them.
+    void getPublicRealtime().then((realtime) => {
+      if (closed) return
+      let reloadRequested = false
+      let reloadPromise: Promise<void> | null = null
+      const reload = (): void => {
+        reloadRequested = true
+        if (reloadPromise !== null) return
 
-          reloadPromise = (async () => {
-            let latest: SiteChrome | null = null
-            while (reloadRequested && !closed) {
-              reloadRequested = false
-              latest = await loadSiteChrome(lang)
-            }
-            if (!closed && !reloadRequested && latest !== null) onChange(latest)
-          })().finally(() => {
-            reloadPromise = null
-            if (reloadRequested && !closed) reload()
-          })
-        }
+        reloadPromise = (async () => {
+          let latest: SiteChrome | null = null
+          while (reloadRequested && !closed) {
+            reloadRequested = false
+            latest = await loadSiteChrome(lang)
+          }
+          if (!closed && !reloadRequested && latest !== null) onChange(latest)
+        })().finally(() => {
+          reloadPromise = null
+          if (reloadRequested && !closed) reload()
+        })
+      }
 
-        let awaitingPostgresReady = true
-        const changed = (): void => {
+      let awaitingPostgresReady = true
+      const changed = (): void => {
+        awaitingPostgresReady = false
+        reload()
+      }
+      const channel = realtime
+        .channel(`site-chrome:${lang}`)
+        .on('system', {}, (payload) => {
+          if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
           awaitingPostgresReady = false
           reload()
-        }
-        const channel = realtime
-          .channel(`site-chrome:${lang}`)
-          .on('system', {}, (payload) => {
-            if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
-            awaitingPostgresReady = false
-            reload()
-          })
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
-            changed,
-          )
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') awaitingPostgresReady = true
-          })
+        })
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
+          changed,
+        )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') awaitingPostgresReady = true
+        })
 
-        stop = (): void => {
-          void realtime.removeChannel(channel)
-        }
-      })
-      .catch(() => undefined)
+      stop = (): void => {
+        void realtime.removeChannel(channel)
+      }
+    })
 
     return () => {
       closed = true

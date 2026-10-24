@@ -73,6 +73,7 @@ import {
   subscribeBookingCatalog,
 } from '../../src/booking/adapters/supabaseBookingCatalog'
 import { asBarberId } from '../../src/booking/domain'
+import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
 
 const channelOpened = () => vi.waitFor(() => expect(channel.subscribe).toHaveBeenCalled())
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -337,5 +338,44 @@ describe('shared public booking catalog', () => {
     expect(channel.subscribe).toHaveBeenCalledTimes(1)
     unsubscribe()
     expect(removeChannel).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a Realtime client that fails to load instead of swallowing it', async () => {
+    const failure = new Error('realtime chunk failed to load')
+    let fail: (reason: unknown) => void = () => undefined
+    realtime.ready = new Promise<void>((_resolve, reject) => {
+      fail = reject
+    })
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = subscribeBookingCatalog(vi.fn())
+      fail(failure)
+      await flush()
+      expect(() => unsubscribe()).not.toThrow()
+    })
+
+    expect(surfaced).toEqual([failure])
+    expect(channel.subscribe).not.toHaveBeenCalled()
+    expect(removeChannel).not.toHaveBeenCalled()
+  })
+
+  it('opens no channel and still surfaces the failure when the last listener leaves first', async () => {
+    const failure = new Error('realtime chunk failed to load')
+    let fail: (reason: unknown) => void = () => undefined
+    realtime.ready = new Promise<void>((_resolve, reject) => {
+      fail = reject
+    })
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = subscribeBookingCatalog(vi.fn())
+      expect(() => unsubscribe()).not.toThrow()
+      fail(failure)
+      await flush()
+    })
+
+    expect(surfaced).toEqual([failure])
+    expect(channel.on).not.toHaveBeenCalled()
+    expect(channel.subscribe).not.toHaveBeenCalled()
+    expect(removeChannel).not.toHaveBeenCalled()
   })
 })
