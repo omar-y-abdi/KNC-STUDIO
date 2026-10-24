@@ -20,6 +20,10 @@ export async function nativeBackend(
       body: 'window.turnstile={render:()=>"test",remove:()=>{},reset:()=>{}}',
     }),
   )
+  // GrapesJS loads its default icon font from a CDN; the tests never reach it.
+  await context.route('https://cdnjs.cloudflare.com/**', (route) =>
+    route.fulfill({ contentType: 'text/css', body: '' }),
+  )
   let document = globalThis.structuredClone(initialDocument)
   let revision = 1
   const writes = []

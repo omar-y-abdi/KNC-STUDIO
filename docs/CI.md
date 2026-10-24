@@ -69,10 +69,10 @@ and social-card utilities still use the pinned low-level `playwright` library.
 npm ci
 npx playwright install --with-deps chromium firefox webkit
 npm run test:e2e:cms
-npm run test:e2e                # requires npm run build; public/admin/visual projects
-npm run test:e2e:admin
 VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key \
-  npm run build -- --outDir dist-startup --emptyOutDir
+  npm run build -- --outDir dist-startup --emptyOutDir   # harness build: never embeds production
+E2E_PUBLIC_DIST=dist-startup npm run test:e2e   # public/admin/visual projects
+E2E_PUBLIC_DIST=dist-startup npm run test:e2e:admin
 npm run test:e2e:startup
 npm run test:e2e:customer       # requires dedicated local Supabase + documented Function env
 ```
