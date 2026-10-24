@@ -336,18 +336,26 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   // An exported copy of this draft, imported after Återställ, still shows the image in its
   // layouts while its data equals the published data: Publicera must capture first.
   const backupView = page.getByRole('button', { name: /Utkast & backup/ })
+  // Export and Import share the dialog, so it stays open after either; the owner closes it.
+  const closeBackupView = () =>
+    page
+      .getByRole('dialog', { name: 'Utkast & backup', exact: true })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
   await backupView.click()
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Export', exact: true }).click(),
   ])
   const exported = await download.path()
+  await closeBackupView()
   await page.getByRole('button', { name: 'Återställ', exact: true }).click()
   await backupView.click()
   await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles(exported)
   await page
     .getByText('JSON-utkastet importerades och är ännu inte publicerat.', { exact: true })
     .waitFor()
+  await closeBackupView()
   await publish.click()
   // Publicera clears the previous error first; only a failed capture shows it again.
   await expect(blocked).toHaveCount(0)
@@ -390,8 +398,11 @@ test('cms-lifecycle closing a tab with an unsaved edit asks first and keeps the 
       }
     })
   })
+  // With runBeforeUnload, close() does not wait for the page to close.
+  const closed = page.waitForEvent('close')
   await page.close({ runBeforeUnload: true })
   assert.equal(await prompted, 'beforeunload')
+  await closed
   await probe.close()
   await context.clock.resume()
 
@@ -421,6 +432,9 @@ test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publicat
   const delay = { operation: 'publish', started: gate(), done: gate() }
   const initial = await productionDocument()
   initial.settings.business_name = 'Salongen'
+  // A site has every settings key: the server changes a value during the request, never adds a key
+  // (publication requires every key the server holds).
+  initial.settings.business_legal_name = 'Salongen AB'
   const backend = await nativeBackend(context, initial, [], undefined, { delay })
   await openStudio(page)
   await page.getByRole('button', { name: /Företag & SEO/ }).click()
