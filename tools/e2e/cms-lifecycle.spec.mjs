@@ -90,6 +90,14 @@ const pauseClock = async (page) =>
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
+// The production capture holds legacy legal pages and marquee zoom, which the studio adopts on load
+// into an unpublished draft (cms-marquee-zoom.spec.mjs); "Fortsätt här" waits for a clean draft.
+// Publishing the adopted head first makes the next tab start clean, as after a real rollout.
+const publishAdopted = async (page) => {
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+}
+
 // The sanitised production presentation: its draft serializes to about 1.4 million characters.
 const productionDocument = async () => ({
   ...emptyDocument(),
@@ -196,6 +204,7 @@ test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then
   await nativeBackend(context, await productionDocument())
   await page.clock.install()
   await openStudio(page)
+  await publishAdopted(page)
   await pauseClock(page)
   const text = 'Ändrad i canvas innan fliken doldes'
   await editCanvas(page, text)
@@ -379,6 +388,7 @@ test('cms-lifecycle closing a tab with an unsaved edit asks first and keeps the 
   await nativeBackend(context, await productionDocument())
   await page.clock.install()
   await openStudio(page)
+  await publishAdopted(page)
   // A real click: browsers show the leave prompt only after a user gesture on the page.
   await nameField(page).click()
   await pauseClock(page)

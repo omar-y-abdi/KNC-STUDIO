@@ -493,6 +493,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     if (!draft) return
 
     editor.current?.flush()
+    setError(null)
     if (conflict) {
       const next = new CmsDraft(
         conflict.remote.document,
@@ -635,6 +636,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       // An imported file says nothing about the resource data its layouts were made for.
       if (currentDraft.current?.document === next) layouts.current.unknown(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
+      setError(null)
       setNotice('JSON-utkastet importerades och är ännu inte publicerat.')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'JSON-utkastet kunde inte importeras.')
