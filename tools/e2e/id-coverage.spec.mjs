@@ -1,7 +1,9 @@
-// LIB-14 id coverage. Every data-knc-source id in the committed rev-56 presentation must exist,
-// with the same tag, in the nativeTree output of the public surfaces (DesktopSite, MobileSite,
-// AboutSection, GalleryMarquee, BookingFlow, MyBookingsDialog, Dialog). Otherwise
-// projectNativeTree silently drops or ignores that stored edit.
+// LIB-14 id coverage. Every data-knc-source and data-knc-slot id in the committed rev-56
+// presentation must resolve in the nativeTree output of the public surfaces (DesktopSite,
+// MobileSite, AboutSection, GalleryMarquee, BookingFlow, MyBookingsDialog, Dialog): a source id to
+// a live source with the same tag, a slot id to a live slot or source. Otherwise projectNativeTree
+// silently drops or ignores that stored edit, and a missing slot makes its component vanish. The
+// rules are in id-coverage.mjs.
 //
 // The live tree is read exactly where the CMS captured the stored one: the source renderer at
 // /cms-public/source, driven by the same `knc-source-context` messages and device sizes as
@@ -96,7 +98,10 @@ async function renderSource(page, capture, id) {
   }, id)
 }
 
-/** Stored and live source nodes of one surface; marquee tiles become shapes (see id-coverage.mjs). */
+/**
+ * Stored and live source and slot nodes of one surface; marquee tiles become shapes (see
+ * id-coverage.mjs).
+ */
 function readSurface({ html, surface }) {
   const live = globalThis.document.querySelector(`[data-knc-surface="${surface}"]`)
   const stored = new globalThis.DOMParser()
@@ -110,13 +115,20 @@ function readSurface({ html, surface }) {
     ),
   )
   const shape = (node) => `${node.localName}(${[...node.children].map(shape).join(',')})`
+  // As projectNativeTree reads an element's id: the source id, else the slot id.
+  const nodeOf = (node) => {
+    const source = node.getAttribute('data-knc-source')
+    if (source !== null) return { id: source, tag: node.localName, kind: 'source' }
+    const slot = node.getAttribute('data-knc-slot')
+    return slot === null ? null : { id: slot, tag: node.localName, kind: 'slot' }
+  }
   const read = (root) => {
     const tree = { nodes: [], tracks: {} }
     const visit = (node, inTrack) => {
-      const id = node.getAttribute('data-knc-source')
-      const track = id !== null && trackIds.has(id)
-      if (id !== null && !inTrack) tree.nodes.push({ id, tag: node.localName })
-      if (track) tree.tracks[id] = [...node.children].map(shape)
+      const found = nodeOf(node)
+      const track = found !== null && found.kind === 'source' && trackIds.has(found.id)
+      if (found !== null && !inTrack) tree.nodes.push(found)
+      if (track) tree.tracks[found.id] = [...node.children].map(shape)
       for (const child of node.children) visit(child, inTrack || track)
     }
     visit(root, false)
@@ -141,6 +153,7 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
   const problems = []
   const seenKnown = []
   let checkedIds = 0
+  let checkedSlots = 0
   let checkedTracks = 0
   for (const [index, capture] of captures().entries()) {
     await renderSource(page, capture, `lib14-${index}`)
@@ -153,6 +166,7 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
         continue
       }
       checkedIds += read.stored.nodes.length
+      checkedSlots += read.stored.nodes.filter(({ kind }) => kind === 'slot').length
       checkedTracks += Object.keys(read.stored.tracks).length
       for (const problem of coverageProblems(read.stored, read.live)) {
         const orphan = { surface, ...problem }
@@ -165,9 +179,10 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
 
   test.info().annotations.push({
     type: 'id coverage',
-    description: `${checkedIds} stored ids and ${checkedTracks} marquee tracks checked; ${problems.length} new orphans; ${seenKnown.length} known orphan occurrences`,
+    description: `${checkedIds} stored ids (${checkedSlots} of them slots) and ${checkedTracks} marquee tracks checked; ${problems.length} new orphans; ${seenKnown.length} known orphan occurrences`,
   })
   expect(checkedIds, 'the stored presentation has source ids to check').toBeGreaterThan(0)
+  expect(checkedSlots, 'the stored presentation has slot ids to check').toBeGreaterThan(0)
   expect(
     problems,
     [

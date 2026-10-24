@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { coverageProblems, describeProblem } from '../../tools/e2e/id-coverage.mjs'
 
-const tree = (nodes: [string, string][], tracks: Record<string, string[]> = {}) => ({
-  nodes: nodes.map(([id, tag]) => ({ id, tag })),
+type Kind = 'source' | 'slot'
+
+// A node is a native element (data-knc-source) unless marked 'slot' (a component wrapper, data-knc-slot).
+const tree = (nodes: [string, string, Kind?][], tracks: Record<string, string[]> = {}) => ({
+  nodes: nodes.map(([id, tag, kind = 'source']) => ({ id, tag, kind })),
   tracks,
 })
 
@@ -45,6 +48,43 @@ describe('coverageProblems', () => {
     expect(coverageProblems(stored, tree([['knc-x-0', 'div']]))).toEqual([
       { kind: 'duplicate', id: 'knc-x-0', stored: 'div', live: null },
     ])
+  })
+
+  it('accepts a stored slot that the live tree carries as a slot, or as a source of any tag', () => {
+    const stored = tree([['knc-home-0-i1-i2', 'div', 'slot']])
+    expect(coverageProblems(stored, tree([['knc-home-0-i1-i2', 'div', 'slot']]))).toEqual([])
+    expect(coverageProblems(stored, tree([['knc-home-0-i1-i2', 'section']]))).toEqual([])
+  })
+
+  it('accepts a stored source that the live tree now carries as a slot', () => {
+    const stored = tree([['knc-home-0-i1-i2', 'section']])
+    expect(coverageProblems(stored, tree([['knc-home-0-i1-i2', 'div', 'slot']]))).toEqual([])
+  })
+
+  it('reports a stored slot that the live tree no longer renders, which makes its component vanish', () => {
+    const stored = tree([['knc-home-0-i1-i2', 'div', 'slot']])
+    const live = tree([
+      ['knc-home-0-i1-i3', 'div'],
+      ['knc-home-0-i1-i4', 'div', 'slot'],
+    ])
+    expect(coverageProblems(stored, live)).toEqual([
+      { kind: 'missing-slot', id: 'knc-home-0-i1-i2', stored: 'div', live: null },
+    ])
+  })
+
+  it('reports an id that a stored source and a stored slot share, in either order', () => {
+    const live = tree([['knc-x-0', 'div']])
+    const duplicate = [{ kind: 'duplicate', id: 'knc-x-0', stored: 'div', live: null }]
+    const sourceFirst = tree([
+      ['knc-x-0', 'div'],
+      ['knc-x-0', 'div', 'slot'],
+    ])
+    const slotFirst = tree([
+      ['knc-x-0', 'div', 'slot'],
+      ['knc-x-0', 'div'],
+    ])
+    expect(coverageProblems(sourceFirst, live)).toEqual(duplicate)
+    expect(coverageProblems(slotFirst, live)).toEqual(duplicate)
   })
 
   it('compares marquee tracks by distinct tile shape, whatever the viewport-driven tile count', () => {
