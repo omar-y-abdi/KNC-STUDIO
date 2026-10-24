@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument } from '../../shared/cms'
+import { emptyDocument, type CmsDocument } from '../../shared/cms'
 import { mergeCmsDocuments } from '../../src/admin/cms/draft'
+
+function firstPage(document: CmsDocument) {
+  const page = document.presentation.pages[0]
+  if (!page) throw new Error('Expected the document to contain a page')
+  return page
+}
 
 describe('CMS three-way merge', () => {
   it.each(['local', 'remote'] as const)(
@@ -58,11 +64,11 @@ describe('CMS three-way merge', () => {
     base.presentation.pages.push(page)
     const local = structuredClone(base)
     const remote = structuredClone(base)
-    local.presentation.pages[0].content.sv.html = '<main>local</main>'
-    remote.presentation.pages[0].content.sv.html = '<main>remote</main>'
+    firstPage(local).content.sv.html = '<main>local</main>'
+    firstPage(remote).content.sv.html = '<main>remote</main>'
 
     const result = mergeCmsDocuments(base, local, remote)
     expect(result.conflicts.some(({ path }) => path === 'presentation.pages')).toBe(true)
-    expect(result.document.presentation.pages[0].content.sv.html).toBe('<main>local</main>')
+    expect(firstPage(result.document).content.sv.html).toBe('<main>local</main>')
   })
 })

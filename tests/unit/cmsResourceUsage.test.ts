@@ -48,7 +48,7 @@ describe('resource references in the real native site', () => {
     )
     expect(() => resourceUsage(fixture(true, '/offers').document, image, policy)).toThrow()
     const { document, page } = fixture()
-    document.presentation.regions.header = page.content
+    document.presentation.regions['home-before'] = page.content
     document.presentation.pages = []
     expect(() => resourceUsage(document, image, policy)).toThrow()
   })
