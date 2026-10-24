@@ -1,12 +1,10 @@
-// Boundary validation with Zod + branded types. The booking submit must validate contact
+// Boundary validation with plain functions + branded types. The booking submit must validate contact
 // details before producing a `Booking`. Branded types make a validated value impossible to
 // confuse with a raw string.
 //
 // NOTE (pixel parity): the original mock had NO format validation and NO error UI — its button
 // was gated purely on non-empty fields. This module is used *inside the submit seam* only; it
 // does not drive any visible disabled/error state, so it cannot move a pixel.
-
-import { z } from 'zod'
 
 // --- Branded types -------------------------------------------------------------------------
 
@@ -21,14 +19,13 @@ export type Email = Brand<string, 'Email'>
 export type ValidationResult<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
 
-// --- Schemas -------------------------------------------------------------------------------
+const valid = <T>(value: T): ValidationResult<T> => ({ ok: true, value })
+const invalid = (error: string): ValidationResult<never> => ({ ok: false, error })
+
+// --- Rules ---------------------------------------------------------------------------------
 
 const MAX_NAME = 80
-
-const nameSchema = z
-  .string()
-  .transform((s) => s.trim())
-  .pipe(z.string().min(1, 'Name is required').max(MAX_NAME, 'Name is too long'))
+const MAX_EMAIL = 254
 
 // Swedish mobile: accept `07XXXXXXXX` with spaces/dashes tolerated; an optional `+46`/`0046`
 // country prefix is normalised to a leading `0`. Validation runs on the digit-normalised form
@@ -42,37 +39,63 @@ export function normalizePhone(raw: string): string {
   return national
 }
 
-const phoneSchema = z
-  .string()
-  .transform(normalizePhone)
-  .pipe(z.string().regex(SWEDISH_MOBILE, 'Invalid Swedish mobile number'))
+// Email shape, on the trimmed + lower-cased input: exactly one `@`; a local part of letters, digits
+// and `_ ' + . -` that does not start with a dot, does not end with a dot or quote and holds no
+// `..`; a domain of dot-separated labels (letter or digit first, then letters, digits or `-`)
+// ending in a label of two or more letters. Checked part by part, because one regex for the whole
+// address needs a nested quantifier (`security/detect-unsafe-regex`).
+const EMAIL_LOCAL_CHARS = /^[a-z0-9_'+.-]+$/
+const EMAIL_LOCAL_END = /[a-z0-9_+-]$/
+const EMAIL_LABEL = /^[a-z0-9][a-z0-9-]*$/
+const EMAIL_TLD = /^[a-z]{2,}$/
 
-const emailSchema = z
-  .string()
-  .transform((value) => value.trim().toLowerCase())
-  .pipe(z.string().email('Invalid email address').max(254, 'Email is too long'))
-
-// --- Parsers (safeParse -> Result) ---------------------------------------------------------
-
-function toResult<T>(
-  parsed: z.SafeParseReturnType<unknown, string>,
-  asBrand: (v: string) => T,
-): ValidationResult<T> {
-  if (parsed.success) return { ok: true, value: asBrand(parsed.data) }
-  const first = parsed.error.issues[0]
-  return { ok: false, error: first ? first.message : 'Invalid value' }
+function isEmailLocalPart(local: string): boolean {
+  return (
+    EMAIL_LOCAL_CHARS.test(local) &&
+    EMAIL_LOCAL_END.test(local) &&
+    !local.startsWith('.') &&
+    !local.includes('..')
+  )
 }
 
+function isEmailDomain(domain: string): boolean {
+  const labels = domain.split('.')
+  const tld = labels.pop()
+  return (
+    tld !== undefined &&
+    EMAIL_TLD.test(tld) &&
+    labels.length > 0 &&
+    labels.every((label) => EMAIL_LABEL.test(label))
+  )
+}
+
+function isEmailAddress(email: string): boolean {
+  const parts = email.split('@')
+  const [local, domain] = parts
+  if (parts.length !== 2 || local === undefined || domain === undefined) return false
+  return isEmailLocalPart(local) && isEmailDomain(domain)
+}
+
+// --- Parsers (plain functions -> Result) ---------------------------------------------------
+
 export function parseName(raw: string): ValidationResult<Name> {
-  return toResult(nameSchema.safeParse(raw), (v) => v as Name)
+  const name = raw.trim()
+  if (name.length < 1) return invalid('Name is required')
+  if (name.length > MAX_NAME) return invalid('Name is too long')
+  return valid(name as Name)
 }
 
 export function parsePhone(raw: string): ValidationResult<Phone> {
-  return toResult(phoneSchema.safeParse(raw), (v) => v as Phone)
+  const phone = normalizePhone(raw)
+  if (!SWEDISH_MOBILE.test(phone)) return invalid('Invalid Swedish mobile number')
+  return valid(phone as Phone)
 }
 
 export function parseEmail(raw: string): ValidationResult<Email> {
-  return toResult(emailSchema.safeParse(raw), (v) => v as Email)
+  const email = raw.trim().toLowerCase()
+  if (!isEmailAddress(email)) return invalid('Invalid email address')
+  if (email.length > MAX_EMAIL) return invalid('Email is too long')
+  return valid(email as Email)
 }
 
 /**
