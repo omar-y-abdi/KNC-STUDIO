@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict'
 
 import { test } from './fixtures.mjs'
-const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+import { harnessOrigin } from './origins.mjs'
+const base = harnessOrigin
 async function resources(page, state = 'active') {
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async (state) => {

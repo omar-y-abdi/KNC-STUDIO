@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
+import { harnessOrigin } from './origins.mjs'
 
-const baseUrl = (process.env.BASE_URL ?? 'http://127.0.0.1:4188').replace(/\/$/, '')
+const baseUrl = harnessOrigin.replace(/\/$/, '')
 
 async function mount(page, name, argument, path, shellMinHeight = '0px') {
   await page.goto(`${baseUrl}${path}`, { waitUntil: 'domcontentloaded' })

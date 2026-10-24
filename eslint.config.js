@@ -16,6 +16,7 @@ export default tseslint.config(
       'test-results/**',
       'playwright-report/**',
       'node_modules/**',
+      '.vite-cache/**',
       '.wrangler/tmp/**',
       'tools/visual/**/*.png',
       'supabase/**',
