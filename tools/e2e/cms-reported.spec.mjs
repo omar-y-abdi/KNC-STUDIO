@@ -153,6 +153,41 @@ async function expectPublicBackgrounds(context, presentation) {
   }
 }
 
+// The legal canvas paints on the base sheets the Worker inlines publicly, with the edited mode
+// pinned as `?mode` pins it; other pages get neither.
+test('legal canvas links the public base sheets and pins the mode', async ({ page, studio }) => {
+  const { frame } = studio
+  const head = () =>
+    page.evaluate(() => {
+      const doc = globalThis.document.querySelector('.gjs-frame')?.contentDocument
+      const links = [...(doc?.querySelectorAll('link[rel="stylesheet"]') ?? [])]
+      const layout = doc?.querySelector('.bb-doc')
+      return {
+        links: links.map((link) => link.getAttribute('href')),
+        loaded: links.every((link) => link.sheet !== null),
+        scheme: doc?.documentElement.style.colorScheme ?? null,
+        layoutWidth: layout ? getComputedStyle(layout).maxWidth : null,
+      }
+    })
+  const legal = (scheme) => ({
+    links: ['/tokens.css', '/info.css'],
+    loaded: true,
+    scheme,
+    layoutWidth: '736px',
+  })
+  await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
+  await page.getByRole('button', { name: 'Mörk', exact: true }).click()
+  await frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
+  await expect.poll(head, { message: 'legal canvas in Mörk' }).toEqual(legal('dark'))
+  await page.getByRole('button', { name: 'Ljus', exact: true }).click()
+  await expect.poll(head, { message: 'legal canvas in Ljus' }).toEqual(legal('light'))
+  await page.getByRole('button', { name: 'Startsida', exact: true }).click()
+  await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
+  await expect
+    .poll(head, { message: 'home canvas' })
+    .toEqual({ links: [], loaded: true, scheme: '', layoutWidth: null })
+})
+
 test('1-legal-background', async ({ page, context, studio }, testInfo) => {
   const { frame, shot, backend } = studio
   await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()

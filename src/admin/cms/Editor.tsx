@@ -740,16 +740,27 @@ export function CmsEditor(props: Props): JSX.Element {
     const editor = instance.current
     if (!editor || !props.active) return
     const base = legalCanvasBase(props.page.path, props.mode)
-    // GrapesJS re-renders the frame's links when `styles` changes; a frame load resets the root.
-    editor.Canvas.getModel().set('styles', base.styles)
-    const pin = (): void => {
-      const root = editor.Canvas.getDocument()?.documentElement
-      if (root) root.style.colorScheme = base.scheme
+    // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
+    // head directly. A frame load replaces the document, so the base is applied again then.
+    const apply = (): void => {
+      const frame = editor.Canvas.getDocument()
+      if (!frame) return
+      frame.documentElement.style.colorScheme = base.scheme
+      const linked = [...frame.querySelectorAll('link[data-cms-legal-base]')]
+      if (linked.map((link) => link.getAttribute('href')).join() === base.styles.join()) return
+      linked.forEach((link) => link.remove())
+      for (const href of base.styles) {
+        const link = frame.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = href
+        link.dataset['cmsLegalBase'] = ''
+        frame.head.appendChild(link)
+      }
     }
-    pin()
-    editor.on('load', pin)
+    apply()
+    editor.on('load', apply)
     return () => {
-      editor.off('load', pin)
+      editor.off('load', apply)
     }
   }, [props.active, props.page.path, props.mode])
 

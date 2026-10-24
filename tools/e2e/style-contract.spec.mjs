@@ -1,7 +1,8 @@
 // Style contract (STY-12): every user-facing page outside the homepage takes its look from
 // public/tokens.css and passes axe wcag2aa in both colour schemes. Static documents and the app's
 // status and staff screens are served by the preview build; /terms and /privacy are the real Worker
-// render of the committed production fixture (tools/e2e/cms-render.mjs).
+// render of the committed production fixture (tools/e2e/cms-render.mjs), both as stored and after
+// the Studio's legacy legal upgrade (src/admin/cms/legacyLegal.ts) that the owner publishes.
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
@@ -20,7 +21,7 @@ const fixture = JSON.parse(
 // The homepage surface (src/app/shared.ts) that every tokenised page paints.
 const SURFACE = { light: 'rgb(255, 255, 255)', dark: 'rgb(28, 28, 30)' }
 const WORKER_PATHS = ['/terms', '/privacy']
-// `tokens: false`: the fixture's stored legal CSS still carries its own palette until it is migrated.
+// `tokens: false`: the stored legal CSS still carries its own palette until the upgrade is published.
 const PAGES = [
   { url: '/404.html', ready: 'h1', tokens: true },
   { url: '/no-such-page', ready: 'h1', tokens: true },
@@ -30,15 +31,21 @@ const PAGES = [
   { url: '/privacy.html', ready: 'h1', tokens: true },
   { url: '/google-calendar.html', ready: 'h1', tokens: true },
   { url: '/contact.html', ready: 'h1', tokens: true },
-  { url: '/terms', ready: 'h1', tokens: false },
-  { url: '/privacy', ready: 'h1', tokens: false },
+  { url: '/terms', ready: 'h1', tokens: false, presentation: 'stored' },
+  { url: '/privacy', ready: 'h1', tokens: false, presentation: 'stored' },
+  { url: '/terms', ready: 'h1', tokens: true, presentation: 'upgraded' },
+  { url: '/privacy', ready: 'h1', tokens: true, presentation: 'upgraded' },
 ]
 
 let rendering
 let shell
+const presentations = { stored: fixture }
 test.beforeAll(async () => {
   shell = await (await fetch(`${publicOrigin}/index.html`)).text()
   rendering = await loadWorker()
+  const { upgradeLegacyLegalPages } = await rendering.load('/src/admin/cms/legacyLegal.ts')
+  presentations.upgraded = upgradeLegacyLegalPages({ presentation: fixture }).presentation
+  if (presentations.upgraded === fixture) throw new Error('The fixture has no legacy legal CSS')
 })
 test.afterAll(async () => rendering?.close())
 
@@ -79,28 +86,38 @@ const tokenSurface = (page) =>
     const surface = globalThis.document.querySelector('.bb-page, .bb-status')
     if (!surface) return null
     const style = globalThis.getComputedStyle(surface)
-    return { background: style.backgroundColor, font: style.fontFamily.split(',')[0] }
+    // Chromium quotes the family name in the computed value; Firefox and WebKit do not.
+    const font = style.fontFamily.split(',')[0].replaceAll('"', '').trim()
+    return { background: style.backgroundColor, font }
   })
 
 for (const scheme of ['light', 'dark']) {
   test.describe(`OS ${scheme}`, () => {
     test.use({ colorScheme: scheme })
     for (const target of PAGES) {
-      const label = `${target.url}${target.holdAdminChunk ? ' (loading fallback)' : ''}`
-      test(`${label} meets the style contract`, async ({ page, context }, testInfo) => {
+      const variant = target.holdAdminChunk ? ' (loading fallback)' : ''
+      const label = `${target.url}${target.presentation ? ` (${target.presentation})` : variant}`
+      test(`${label} meets the style contract`, async ({
+        page,
+        context,
+        evidenceDir,
+      }, testInfo) => {
         await installPublicBackend(context)
         if (target.holdAdminChunk) await holdAdminChunk(page)
-        if (WORKER_PATHS.includes(target.url))
+        if (target.presentation)
           await routeWorkerDocuments(page, {
             origin: publicOrigin,
             paths: WORKER_PATHS,
             worker: rendering.worker,
-            presentation: fixture,
+            presentation: presentations[target.presentation],
             shell,
           })
         await page.goto(`${publicOrigin}${target.url}`)
         await page.locator(target.ready).first().waitFor()
         await page.evaluate(() => globalThis.document.fonts.ready)
+        // The before/after pair of the legal pages, for review (not compared).
+        if (target.presentation)
+          await page.screenshot({ path: `${evidenceDir}/${scheme}.png`, fullPage: true })
         const result = await audit(page)
         testInfo.annotations.push({ type: 'metrics', description: JSON.stringify(result) })
         expect(result.violations, `${label}: axe wcag2aa`).toEqual([])
@@ -108,7 +125,7 @@ for (const scheme of ['light', 'dark']) {
         if (target.tokens)
           expect(await tokenSurface(page), `${label}: token surface`).toEqual({
             background: SURFACE[scheme],
-            font: '"Inter Variable"',
+            font: 'Inter Variable',
           })
       })
     }

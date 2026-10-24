@@ -211,6 +211,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
   if (narrow) {
     return (
       <div
+        class="bb-page"
         style={{
           minHeight: '100dvh',
           display: 'flex',
@@ -287,6 +288,7 @@ export function LoginPage(props: LoginPageProps): JSX.Element {
   // ---- DESKTOP: the public desktop chrome — nav bar + hero typography + form card. ----
   return (
     <div
+      class="bb-page"
       style={{
         minHeight: '100dvh',
         display: 'flex',

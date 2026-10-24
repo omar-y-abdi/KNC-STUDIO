@@ -42,7 +42,8 @@ export async function loadWorker() {
     },
   })
   const worker = await server.ssrLoadModule('/src/worker.ts')
-  return { worker, close: () => server.close() }
+  // `load` reaches other source modules through the same loader (e.g. Studio data upgrades).
+  return { worker, load: (path) => server.ssrLoadModule(path), close: () => server.close() }
 }
 
 const urlOf = (input) => (input instanceof Request ? input.url : String(input))
