@@ -93,6 +93,12 @@ function servers(config: PlaywrightTestConfig) {
   }))
 }
 
+type Pattern = string | RegExp | (string | RegExp)[] | undefined
+
+// Only regular expressions are evaluated: Playwright anchors glob strings to the file name itself.
+const matches = (pattern: Pattern, path: string) =>
+  [pattern ?? []].flat().some((entry) => entry instanceof RegExp && entry.test(path))
+
 const HARNESS_PAGE = '/tools/e2e/admin-harness.html'
 
 describe('playwright.config.ts', () => {
@@ -171,6 +177,30 @@ describe('playwright.config.ts', () => {
       'E2E_PORT_OFFSET must be an integer from 0 to 1000',
     )
   })
+
+  // Playwright tests these regular expressions against the absolute path of a spec file. In a
+  // worktree such as /work/cms-conflicts an unanchored `cms-.*` selected every spec, including
+  // customer.spec.mjs, which writes to the local database.
+  it.each([
+    { group: 'cms', file: 'cms-owner.spec.mjs', selected: true },
+    { group: 'cms', file: 'cms-startup.spec.mjs', selected: false },
+    { group: 'cms', file: 'customer.spec.mjs', selected: false },
+    { group: 'cms', file: 'visual.spec.mjs', selected: false },
+    { group: 'startup', file: 'cms-startup.spec.mjs', selected: true },
+    { group: 'startup', file: 'cms-owner.spec.mjs', selected: false },
+    { group: 'customer', file: 'customer.spec.mjs', selected: true },
+    { group: 'customer', file: 'cms-owner.spec.mjs', selected: false },
+  ])(
+    'in a checkout whose path contains "cms-", the $group projects select $file: $selected',
+    async ({ group, file, selected }) => {
+      const config = await loadPlaywrightConfig({ E2E_GROUP: group })
+      const path = `/work/cms-conflicts/tools/e2e/${file}`
+      const selecting = (config.projects ?? []).filter(
+        (project) => matches(project.testMatch, path) && !matches(project.testIgnore, path),
+      )
+      expect(selecting.length > 0).toBe(selected)
+    },
+  )
 })
 
 describe('vite.config.ts', () => {

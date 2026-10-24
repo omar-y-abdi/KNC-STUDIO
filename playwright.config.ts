@@ -13,17 +13,19 @@ process.env['CMS_STARTUP_URL'] = origins.startup
 type BrowserName = 'chromium' | 'firefox' | 'webkit'
 const cmsEngines: BrowserName[] = ['chromium', 'webkit']
 const allEngines: BrowserName[] = ['chromium', 'firefox', 'webkit']
+// Regular expressions are tested against the absolute path: anchor them to the file name, or a
+// checkout whose own path contains "cms-" selects every spec, including customer.spec.mjs.
 const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   ...cmsEngines.map((browserName) => ({
     name: `cms-${browserName}`,
-    testMatch: /cms-.*\.spec\.mjs/,
-    testIgnore: /cms-startup\.spec\.mjs/,
+    testMatch: /(^|\/)cms-[^/]*\.spec\.mjs$/,
+    testIgnore: /(^|\/)cms-startup\.spec\.mjs$/,
     use: { browserName },
     metadata: { group: 'cms' },
   })),
   ...cmsEngines.map((browserName) => ({
     name: `startup-${browserName}`,
-    testMatch: /cms-startup\.spec\.mjs/,
+    testMatch: /(^|\/)cms-startup\.spec\.mjs$/,
     use: { browserName, baseURL: origins.startup },
     metadata: { group: 'startup' },
   })),
@@ -46,7 +48,7 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   })),
   ...allEngines.map((browserName) => ({
     name: `customer-${browserName}`,
-    testMatch: /customer\.spec\.mjs/,
+    testMatch: /(^|\/)customer\.spec\.mjs$/,
     fullyParallel: false,
     timeout: 600_000,
     use: { browserName, ignoreHTTPSErrors: true },
