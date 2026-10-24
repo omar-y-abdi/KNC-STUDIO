@@ -257,7 +257,7 @@ describe('versioned presentation', () => {
     ['PostgreSQL spacing', postgres],
     ['compact JSON', '{"revision":21,"presentation":{"pages":[]}}'],
   ])(
-    'caches revision 21 at the edge for a year when the document opens with it (%s)',
+    'caches revision 21 at the edge for a day when the document opens with it (%s)',
     async (_label, upstream) => {
       const published = new Response(upstream)
       const parse = vi.spyOn(published, 'json')
@@ -269,7 +269,7 @@ describe('versioned presentation', () => {
         publicContentContext(env),
       )
       expect(response.status).toBe(200)
-      expect(response.headers.get('Cloudflare-CDN-Cache-Control')).toBe('max-age=31536000')
+      expect(response.headers.get('Cloudflare-CDN-Cache-Control')).toBe('max-age=86400')
       expect(response.headers.get('Cache-Control')).toBe('no-store')
       expect(response.headers.get('Content-Type')).toBe('application/json')
       response.headers.forEach((value) => {

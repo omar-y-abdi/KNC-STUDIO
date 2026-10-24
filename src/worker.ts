@@ -879,8 +879,8 @@ function notAcceptable(request: Request): Response {
 
 const REVISION_OPENING = /^\s*\{\s*"revision"\s*:\s*(0|[1-9][0-9]*)\s*[,}]/
 const REVISION_OPENING_BYTES = 64
-/** The URL names the revision, so its bytes never change: one year, at the edge only. */
-const IMMUTABLE_EDGE_CACHE = 'max-age=31536000'
+/** The URL names the revision, so its bytes never change: one day, at the edge only. */
+const IMMUTABLE_EDGE_CACHE = 'max-age=86400'
 
 /** The revision a `public_cms_presentation` body opens with. PostgreSQL orders jsonb keys by
  * length, so `revision` precedes `presentation`; any other shape reads as no revision. */
@@ -889,7 +889,7 @@ function openingRevision(body: Uint8Array): number | null {
   return parseCmsRevision(REVISION_OPENING.exec(opening)?.[1])
 }
 
-/** One revision's presentation. The edge keeps it for a year only when the document was read
+/** One revision's presentation. The edge keeps it for a day only when the document was read
  * completely and opens with that very revision; otherwise this is the current document, uncached.
  * The body is buffered once and never parsed, so a read cut off by the timeout is never stored. */
 async function versionedPresentation(upstream: Response, requested: number): Promise<Response> {
