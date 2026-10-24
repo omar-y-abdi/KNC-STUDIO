@@ -1,5 +1,5 @@
 import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
-import { FunctionsHttpError } from '@supabase/supabase-js'
+import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from '@supabase/supabase-js'
 import type {
   CmsAsset,
   CmsDocument,
@@ -20,16 +20,50 @@ export interface AssetLifecycleResult {
 }
 export type CmsAssetPurpose = 'library' | 'salon' | 'cuts' | 'logo' | 'profile'
 
-async function apiError(error: unknown): Promise<unknown> {
-  if (error instanceof FunctionsHttpError) {
-    try {
-      const body: unknown = await error.context.clone().json()
-      if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string')
-        error.message = body.message
-    } catch {
-      // Preserve the original HTTP status even when the gateway did not return JSON.
-    }
+// The owner's Swedish text per HTTP status. `replaces` marks statuses the platform answers itself
+// in English (an expired session, an exhausted worker); the CMS functions explain the others.
+const STATUS_TEXT = new Map<number, { text: string; replaces: boolean }>([
+  [401, { text: 'Du har loggats ut. Logga in igen; utkastet finns kvar lokalt.', replaces: true }],
+  [
+    403,
+    {
+      text: 'Kontot saknar behörighet att ändra webbplatsen. Utkastet finns kvar lokalt.',
+      replaces: false,
+    },
+  ],
+  [546, { text: 'Servern hann inte klart. Försök igen; utkastet finns kvar.', replaces: true }],
+])
+const UNREACHABLE =
+  'Servern kunde inte nås. Kontrollera anslutningen och försök igen; utkastet finns kvar.'
+
+function statusMessage(status: number, explanation: string | null): string {
+  const known = STATUS_TEXT.get(status)
+  if (known?.replaces) return known.text
+  return (
+    explanation ??
+    known?.text ??
+    `Servern svarade med fel ${status}. Försök igen; utkastet finns kvar.`
+  )
+}
+
+async function explanation(error: FunctionsHttpError): Promise<string | null> {
+  try {
+    const body: unknown = await error.context.clone().json()
+    return body && typeof body === 'object' && 'message' in body && typeof body.message === 'string'
+      ? body.message
+      : null
+  } catch {
+    // A gateway may answer with HTML or plain text; the status still explains the failure.
+    return null
   }
+}
+
+// Keep the error object: callers branch on its class and HTTP status (409 starts the merge).
+async function apiError(error: unknown): Promise<unknown> {
+  if (error instanceof FunctionsHttpError)
+    error.message = statusMessage(error.context.status, await explanation(error))
+  else if (error instanceof FunctionsFetchError || error instanceof FunctionsRelayError)
+    error.message = UNREACHABLE
   return error
 }
 

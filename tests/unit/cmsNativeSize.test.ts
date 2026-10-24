@@ -60,5 +60,7 @@ it('still rejects a native document exceeding the combined 2 MiB limit', () => {
       path: '/booking',
     },
   )
-  expect(() => validateDocument(document)).toThrow('Maximum document size is 2 MiB')
+  expect(() => validateDocument(document)).toThrow(
+    'Utkastet är större än 2 MiB. Ta bort innehåll som inte behövs.',
+  )
 })

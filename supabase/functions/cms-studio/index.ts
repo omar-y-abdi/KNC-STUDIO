@@ -35,7 +35,10 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 
       if (size > MAX_BODY) {
         await reader.cancel()
-        throw new CmsValidationError('request', 'Request exceeds 2 MiB')
+        throw new CmsValidationError(
+          'request',
+          'Utkastet är större än 2 MiB. Ta bort innehåll som inte behövs.',
+        )
       }
 
       chunks.push(part.value)
