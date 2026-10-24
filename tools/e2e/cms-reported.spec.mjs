@@ -355,7 +355,11 @@ function preUpgradeDraft(document) {
 /** The Studio's local backup, once it has written one (a seeded draft is saved straight away). */
 async function savedBackup(page) {
   const read = () =>
-    page.evaluate(async () => (await import('/src/admin/cms/backup.ts')).loadBackup())
+    page.evaluate(async () => {
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      return session.own()
+    })
   await expect.poll(async () => (await read()) !== null, { message: 'a local backup' }).toBe(true)
   return read()
 }
@@ -373,13 +377,16 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
   const backup = await savedBackup(page)
   const { draft, expected } = preUpgradeDraft(backup.document)
   await page.evaluate(
-    async ({ backup, draft }) =>
-      (await import('/src/admin/cms/backup.ts')).saveBackup(
-        draft,
-        backup.revision,
-        backup.fingerprint,
-        backup.base,
-      ),
+    async ({ backup, draft }) => {
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      session.schedule({
+        document: draft,
+        revision: backup.revision,
+        fingerprint: backup.fingerprint,
+        base: backup.base,
+      })
+      await session.flush()
+    },
     { backup, draft },
   )
   await page.reload()
