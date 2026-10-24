@@ -137,9 +137,11 @@ comment on function public.internal_cms_publish(uuid,jsonb,bigint,text,uuid) is
 drop function public.internal_cms_publish_unchecked(uuid,jsonb,bigint,text,uuid);
 
 -- Owner decision 24. A request identity replays its revision only inside the 30-day window; a
--- trashed asset that only pruned revisions referenced becomes deletable. The head only ever advances
--- to a revision inserted in the same transaction, so a publication that commits during the delete
--- cannot make it reach the new head.
+-- trashed asset that only pruned revisions referenced becomes deletable. A publication can install
+-- a head that spells a storage path encoded, because the placement filter does not see every such
+-- spelling. So the prune first takes the table locks internal_cms_publish takes, in the same order
+-- and mode: no publication can change the head between the guard and the delete, and the two
+-- cannot deadlock. A publication waits for the prune, which takes milliseconds at 03:37 UTC.
 create function public.prune_cms_revisions()
 returns integer
 language plpgsql
@@ -149,6 +151,7 @@ as $$
 declare
   v_pruned integer;
 begin
+  lock table public.barbers,public.site_content,public.about_content,public.site_settings,public.barber_photos,public.gallery_images,public.email_templates,public.cms_email_designs,public.cms_assets in share row exclusive mode;
   -- internal_cms_media_retained finds a path only as a raw substring of a revision. A candidate runs
   -- from a storage prefix in the head's JSON text to the next quote (the escaped \" included) or
   -- angle bracket, so neither filename punctuation nor a raw space ends it. While a candidate holds

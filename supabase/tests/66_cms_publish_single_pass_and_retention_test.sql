@@ -1,5 +1,5 @@
 begin;
-select plan(80);
+select plan(82);
 
 insert into auth.users(id,email) values
  ('96000000-0000-4000-8000-000000000001','cms-single-pass-owner@example.invalid');
@@ -58,6 +58,22 @@ select ok(not has_function_privilege('authenticated','public.internal_cms_publis
 select is(obj_description('public.internal_cms_publish(uuid,jsonb,bigint,text,uuid)'::regprocedure,'pg_proc'),
   'Publishes a validated CMS document while serializing asset lifecycle changes. Archived media may stay on structured keys the authoritative head already uses and in markup when the head references the asset anywhere; any other placement requires an active asset.',
   'The publication keeps its documented archived-media contract');
+
+-- The prune serializes with publication on the same table locks. Nothing in this transaction has
+-- taken them yet, so every share row exclusive lock held afterwards comes from the prune.
+create temporary table lock_probe as select public.prune_cms_revisions() as pruned;
+select is((select array_agg(c.relname::text order by c.relname) from pg_locks l
+    join pg_class c on c.oid=l.relation join pg_namespace n on n.oid=c.relnamespace
+    where l.pid=pg_backend_pid() and l.locktype='relation' and l.granted
+      and l.mode='ShareRowExclusiveLock' and n.nspname='public'),
+  array['about_content','barber_photos','barbers','cms_assets','cms_email_designs','email_templates',
+    'gallery_images','site_content','site_settings'],
+  'The prune holds the tables a publication locks, in share row exclusive mode');
+select is((select substring(p.prosrc from 'lock table [^;]*;') from pg_proc p
+    where p.oid='public.prune_cms_revisions()'::regprocedure),
+  (select substring(p.prosrc from 'lock table [^;]*;') from pg_proc p
+    where p.oid='public.internal_cms_publish(uuid,jsonb,bigint,text,uuid)'::regprocedure),
+  'The prune locks those tables in the order the publication does');
 
 -- The head document is built once before the writes and once after them.
 set local track_functions='all';
