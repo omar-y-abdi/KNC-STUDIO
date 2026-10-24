@@ -31,6 +31,21 @@ const gallery = ['salon', 'cuts'].flatMap((kind) =>
     sort_order: number,
   })),
 )
+// In production every gallery photo is a registered library file, and the captured About markup
+// references their storage URLs, so the first publication needs them in the registry.
+const galleryAssets = gallery.map((item, index) => ({
+  id: `6a000000-0000-4000-8000-00000000000${index + 1}`,
+  bucket: 'gallery',
+  path: item.storage_path,
+  name: item.storage_path.split('/').at(-1),
+  alt: item.alt,
+  mime: 'image/png',
+  width: 1,
+  height: 1,
+  bytes: 1,
+  archived: false,
+  version: 0,
+}))
 
 async function fixtureRoutes(context) {
   await context.route('https://admin-harness.invalid/**', (route) => {
@@ -68,7 +83,7 @@ const aboutPage = (document) => document.presentation.pages.find((page) => page.
 /** The source-captured site as Studio publishes it, with the strip identities of each language. */
 async function capturedSite(newContext) {
   const context = await newContext({ viewport: { width: 1440, height: 900 } })
-  const backend = await nativeBackend(context)
+  const backend = await nativeBackend(context, undefined, galleryAssets)
   await fixtureRoutes(context)
   const page = await context.newPage()
   await mountStudio(page)
@@ -162,6 +177,27 @@ test('legacy zoom is converted once the source upgrade restores the strip marker
   await publish(page, 2)
   assert.equal(aboutPage(backend.document).title.sv, 'Om oss (utan markör)')
   assertCardWidths(backend.document, ids, 'Source upgrade')
+  // The upgrade was a migration, not an edit: Ångra has no markerless, zoomed snapshot to return to.
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+  if ((await page.locator('.cms-status').textContent()) !== 'Publicerad · rev 2')
+    await publish(page, 3)
+  for (const lang of ['sv', 'en'])
+    assert.ok(
+      aboutPage(backend.document).content[lang].html.includes('data-knc-fold="barber-marquee"'),
+      `${lang} lost the strip marker after Ångra`,
+    )
+  assertCardWidths(backend.document, ids, 'Source upgrade, Ångra')
+  assert.equal(
+    await page.locator('.cms-status').textContent(),
+    'Publicerad · rev 2',
+    'Ångra returned to the unmigrated snapshot',
+  )
 })
 
 test('undo after a conflict resolution never returns to the raw legacy zoom', async ({

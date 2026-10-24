@@ -14,20 +14,59 @@ const motion = [
 ]
 const sizing = ['width', 'height', 'min-width', 'max-height', 'flex-basis', 'inline-size']
 
+const stripNode = { 'data-knc-fold': 'barber-marquee', 'data-knc-source': 'knc-about-0-i0-i6' }
+const stripRole = runtimeOwnedRole(stripNode)
+const cardRole = runtimeOwnedRole({ 'data-knc-source': 'knc-about-0-i0-i6-k6b' }, stripNode)
+
 describe('runtimeOwnedRole', () => {
   it('locks the motion properties of the barber strip and of its cards only', () => {
-    const strip = { 'data-knc-fold': 'barber-marquee', 'data-knc-source': 'knc-about-0-i0-i6' }
-    for (const role of [
-      runtimeOwnedRole(strip),
-      runtimeOwnedRole({ 'data-knc-source': 'knc-about-0-i0-i6-k6b' }, strip),
-    ]) {
+    for (const role of [stripRole, cardRole]) {
       expect(role?.resizable).toBe(true)
       for (const property of [...motion, 'overflow-y', 'display'])
         expect(role?.denied).toContain(property)
-      for (const property of sizing) expect(role?.denied).not.toContain(property)
     }
-    expect(runtimeOwnedRole({ id: 'portrait' }, strip)).toBeNull()
+    expect(runtimeOwnedRole({ id: 'portrait' }, stripNode)).toBeNull()
     expect(runtimeOwnedRole({ 'data-knc-source': 'knc-about-0-i0-i6-k6b-i0' })).toBeNull()
+  })
+
+  it('leaves the card sizes and the strip height to the owner and the resize handles', () => {
+    for (const property of sizing) expect(cardRole?.denied).not.toContain(property)
+    for (const property of ['height', 'max-height', 'flex-basis', 'margin', 'gap'])
+      expect(stripRole?.denied).not.toContain(property)
+    for (const property of ['width', 'flex-wrap']) expect(cardRole?.denied).not.toContain(property)
+  })
+
+  // The gapless loop floor needs the cards in one row and a strip width that does not follow them.
+  it.each([
+    'width',
+    'inline-size',
+    'min-width',
+    'min-inline-size',
+    'max-width',
+    'max-inline-size',
+    'float',
+    'position',
+    'flex-direction',
+    'flex-wrap',
+    'flex-flow',
+    'writing-mode',
+  ])('denies %s on the strip', (property) => {
+    expect(stripRole?.denied).toContain(property)
+  })
+
+  // Cards must not overlap or end on a negative margin, nor transition the inline floor.
+  it.each([
+    'margin',
+    'margin-left',
+    'margin-right',
+    'margin-inline',
+    'margin-inline-start',
+    'margin-inline-end',
+    'position',
+    'transition',
+    'transition-property',
+  ])('denies %s on a barber card', (property) => {
+    expect(cardRole?.denied).toContain(property)
   })
 
   it('also locks the size of the gallery row, track and tiles and their resize handles', () => {
@@ -38,6 +77,31 @@ describe('runtimeOwnedRole', () => {
         expect(role?.denied).toContain(property)
     }
     expect(runtimeOwnedRole({ 'data-knc-fold': 'panel' })).toBeNull()
+  })
+
+  it('keeps the gallery policy exactly as it was', () => {
+    for (const fold of ['gallery-row', 'gallery-track', 'gallery-tile'])
+      expect(runtimeOwnedRole({ 'data-knc-fold': fold })).toEqual({
+        resizable: false,
+        denied: [
+          ...motion,
+          'overflow-y',
+          'display',
+          'width',
+          'height',
+          'min-width',
+          'min-height',
+          'max-width',
+          'max-height',
+          'flex-basis',
+          'inline-size',
+          'block-size',
+          'min-inline-size',
+          'min-block-size',
+          'max-inline-size',
+          'max-block-size',
+        ],
+      })
   })
 })
 
@@ -52,6 +116,20 @@ describe('deniedProperty', () => {
     expect(deniedProperty(['flex', 'flex-grow', 'flex-shrink', 'flex-basis'], card)).toBe(undefined)
     expect(deniedProperty(['flex', 'flex-grow', 'flex-shrink', 'display'], card)).toBe('display')
     expect(deniedProperty(['transform'], null)).toBe(undefined)
+  })
+
+  it('rejects the loop geometry shorthands through the longhands they expand into', () => {
+    expect(deniedProperty(['flex-flow', 'flex-direction', 'flex-wrap'], stripRole)).toBe(
+      'flex-flow',
+    )
+    expect(deniedProperty(['flex-direction'], stripRole)).toBe('flex-direction')
+    expect(
+      deniedProperty(['margin-inline', 'margin-inline-start', 'margin-inline-end'], cardRole),
+    ).toBe('margin-inline')
+    expect(deniedProperty(['margin-block', 'margin-top', 'margin-bottom'], cardRole)).toBe(
+      undefined,
+    )
+    expect(deniedProperty(['inset', 'top', 'right', 'bottom', 'left'], cardRole)).toBe(undefined)
   })
 
   it('rejects all itself, which Chromium does not expand into longhands', () => {
