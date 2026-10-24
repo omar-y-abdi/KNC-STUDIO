@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
 import { emptyDocument } from '../../shared/cms.ts'
 import { test } from './fixtures.mjs'
@@ -63,7 +64,10 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
       return {
         group: rect(group),
         cards: cards.map((card) => ({
+          id: card.id,
           rect: rect(card),
+          // Embla positions slides by offsetWidth; zoom changes only the painted rect.
+          layoutWidth: card.offsetWidth,
           photo: rect(
             card.querySelector('img') ??
               card.querySelector('[data-knc-surface]') ??
@@ -79,6 +83,19 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     await input.fill(String(Math.round(value)))
     await input.press('Enter')
     await input.press('Tab')
+  }
+  // Mobile cards are Embla slides: a resize gives each card the requested layout width.
+  const assertCardScale = (cards, reference, scale, message) => {
+    for (const [index, card] of cards.entries()) {
+      assert.ok(
+        Math.abs(card.rect.width / reference[index].rect.width - scale) < 0.02,
+        `${message}: card ${index} is ${card.rect.width}px wide`,
+      )
+      assert.ok(
+        Math.abs(card.layoutWidth - card.rect.width) < 1,
+        `${message}: card ${index} lays out ${card.layoutWidth}px but paints ${card.rect.width}px`,
+      )
+    }
   }
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async () =>
@@ -106,10 +123,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     Math.abs(after.cards[0].photo.height / before.cards[0].photo.height - 0.5) < 0.08,
     'Group resize must scale its photographs, not crop them',
   )
-  assert.ok(
-    Math.abs(after.group.height / before.group.height - 0.5) < 0.08,
-    'Group geometry must follow the requested size',
-  )
+  assertCardScale(after.cards, before.cards, 0.5, 'Group resize')
   assert.ok(
     after.next.top >= Math.max(...after.cards.map((card) => card.rect.bottom)) - 2,
     'Following content may not overlap cards',
@@ -127,6 +141,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await select(`${groupSelector} > div:first-child`)
   await height(before.cards[0].rect.height * 0.75)
   const linked = await measure()
+  assertCardScale(linked.cards, before.cards, 0.75, 'Card resize')
   assert.ok(
     linked.cards.every((card) => Math.abs(card.rect.height - linked.cards[0].rect.height) < 2),
     'Every corresponding barber card shares its size',
@@ -174,6 +189,38 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await assertRetainedScale('Dark theme')
   await page.getByRole('button', { name: 'Publicera', exact: true }).click()
   await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+  // The published card width must outrank the runtime's inline mobile width and flex basis.
+  const about = backend.document.presentation.pages.find((item) => item.path === '/about')
+  const cardIds = new Set(linked.cards.map((card) => card.id))
+  for (const mode of ['light', 'dark']) {
+    const sized = new Map()
+    walk(parse(about.content.sv.css[mode]), {
+      visit: 'Declaration',
+      enter(declaration) {
+        const id = this.rule ? generate(this.rule.prelude).replace(/^#/, '') : ''
+        if (!cardIds.has(id)) return
+        assert.notEqual(declaration.property, 'zoom', `${mode}: #${id} is still zoomed`)
+        if (
+          this.atrule &&
+          generate(this.atrule.prelude) === '(max-width:768px)' &&
+          ['width', 'flex-basis'].includes(declaration.property)
+        )
+          sized.set(`${id} ${declaration.property}`, {
+            value: generate(declaration.value),
+            important: declaration.important,
+          })
+      },
+    })
+    for (const id of cardIds)
+      for (const property of ['width', 'flex-basis']) {
+        const declaration = sized.get(`${id} ${property}`)
+        const scale = Number(/^calc\(\(100vw - 24px\)\*([0-9.]+)\)$/.exec(declaration?.value)?.[1])
+        assert.ok(
+          Math.abs(scale - 0.75) < 0.02 && declaration.important === true,
+          `${mode}: #${id} publishes ${property} ${JSON.stringify(declaration)}`,
+        )
+      }
+  }
   await page.reload()
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
