@@ -94,8 +94,8 @@ select ok(not has_function_privilege('service_role','public.internal_cms_newly_p
 -- Every optimistic-concurrency conflict is PT409, which PostgREST answers without retrying.
 select throws_ok($$select public.internal_cms_publish('97000000-0000-4000-8000-000000000001',pg_temp.head(),0,md5('stale'),gen_random_uuid())$$,
   'PT409',null,'A stale base raises PT409');
-select throws_ok($$select public.internal_cms_publish_unchecked('97000000-0000-4000-8000-000000000001',pg_temp.head(),0,md5('stale'),gen_random_uuid())$$,
-  'PT409',null,'The unchecked writer raises PT409 for a stale base');
+select hasnt_function('public','internal_cms_publish_unchecked',array['uuid','jsonb','bigint','text','uuid'],
+  'No unchecked writer remains beside internal_cms_publish');
 select throws_ok($$select pg_temp.publish(jsonb_set(pg_temp.head(),'{barbers}','[]'))$$,
   'PT409',null,'A staff membership change raises PT409');
 select throws_ok($$select public.internal_cms_asset_update('97000000-0000-4000-8000-000000000001','97000000-0000-4000-8000-0000000000a2',99,'x','',false)$$,
