@@ -422,14 +422,25 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
     )
 
     const disabled = await disabledContext.newPage()
-    const noScriptResponse = await disabled.goto(`${workerOrigin}/`, {
-      waitUntil: 'domcontentloaded',
-    })
+    const noScriptResponse = await disabled.goto(`${workerOrigin}/`, { waitUntil: 'commit' })
+    const committedAt = Date.now()
     assert.equal(noScriptResponse?.status(), 200)
-    // Well before the boot deadline: without scripting the intro and its fallback show at once.
+    // Well before the boot deadline, counted from the response rather than document completion:
+    // without scripting the intro and its fallback show at once.
     const intro = disabled.locator(`#${INTRO_HEADING_ID}`)
-    await intro.waitFor({ state: 'visible', timeout: INTRO_DEADLINE_MS / 4 })
+    await intro.waitFor({
+      state: 'visible',
+      timeout: INTRO_DEADLINE_MS / 4 - (Date.now() - committedAt),
+    })
     assert.equal(await intro.isVisible(), true, 'Visitors without scripting keep the intro text')
+    // The noscript style cancels the deadline animation, so an expired deadline cannot pass this.
+    assert.equal(
+      await disabled
+        .locator(`main[aria-labelledby='${INTRO_HEADING_ID}']`)
+        .evaluate((main) => globalThis.getComputedStyle(main).animationName),
+      'none',
+      'Without scripting the intro does not wait for the boot deadline',
+    )
     assert.equal(
       await disabled.getByText(/Aktivera JavaScript/).isVisible(),
       true,
