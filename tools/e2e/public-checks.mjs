@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 
-import { installEmptyCmsPresentation } from './public-first-paint.mjs'
+import { installPublicBackend } from './public-fixtures.mjs'
 
 const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'http://127.0.0.1:4173').replace(/\/$/, '')
 const WAIT_TIMEOUT = 15_000
@@ -369,7 +369,7 @@ async function verifyPublicPage(page, viewport) {
   phase(`public ${viewport.width}x${viewport.height}: create context`)
   const errors = []
   const context = page.context()
-  await installEmptyCmsPresentation(context)
+  await installPublicBackend(context)
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
 
@@ -696,12 +696,12 @@ async function verifyPublicPage(page, viewport) {
     .click({ timeout: WAIT_TIMEOUT })
   assert((await about.count()) === 0, 'About section remains mounted while booking is open')
   await page.getByTestId('booking-step-barber').waitFor({ timeout: WAIT_TIMEOUT })
-  // Production data may provide options; an intentionally unconfigured test build must show an
-  // honest empty state instead of bundled barber fixtures.
-  await page
-    .locator('[data-testid="booking-barber-option"],[data-testid="booking-barber-empty"]')
-    .first()
-    .waitFor({ timeout: WAIT_TIMEOUT })
+  // The fixture catalog provides barbers, so booking must offer them and never the empty state.
+  await page.getByTestId('booking-barber-option').first().waitFor({ timeout: WAIT_TIMEOUT })
+  assert(
+    (await page.getByTestId('booking-barber-empty').count()) === 0,
+    'booking shows the empty state although the fixture catalog has barbers',
+  )
 
   assert(errors.length === 0, `page errors: ${errors.join(' | ')}`)
   phase(`public ${viewport.width}x${viewport.height}: context cleanup`)
@@ -710,7 +710,7 @@ async function verifyPublicPage(page, viewport) {
 async function verifyNormalMotionGalleryKeyboard(page) {
   phase('normal-motion gallery: create context')
   const context = page.context()
-  await installEmptyCmsPresentation(context)
+  await installPublicBackend(context)
   context.setDefaultTimeout(WAIT_TIMEOUT)
   context.setDefaultNavigationTimeout(WAIT_TIMEOUT)
   await installGalleryFixtures(page)
