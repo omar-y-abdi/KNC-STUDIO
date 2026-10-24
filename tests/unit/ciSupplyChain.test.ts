@@ -23,7 +23,11 @@ describe('CI supply-chain pins', () => {
 
   it('pins every GitHub Action to an immutable commit SHA', () => {
     const actionRefs = workflows.flatMap((source) =>
-      Array.from(source.matchAll(/\buses:\s*([^\s#]+)/g), (match) => match[1]),
+      Array.from(source.matchAll(/\buses:\s*([^\s#]+)/g), (match) => {
+        const actionRef = match[1]
+        if (actionRef === undefined) throw new Error('Expected `uses:` to capture an action ref')
+        return actionRef
+      }),
     )
     expect(actionRefs.length).toBeGreaterThan(0)
     for (const actionRef of actionRefs) {

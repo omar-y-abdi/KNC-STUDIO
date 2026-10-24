@@ -1,9 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
-  executeExternalAction,
-  ExternalActionError,
-  isMissingCalendarDispatcherError,
   parseExternalAction,
+  settleExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
@@ -59,32 +57,12 @@ async function handleRequest(req: Request): Promise<Response> {
   const service = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const calendarContext = await service.rpc('calendar_external_action_for_dispatch', {
+  // The generic dispatcher resolves Calendar jobs through calendar_external_action_for_dispatch
+  // itself (20260913131739), so one lookup serves every action type.
+  const context = await service.rpc('external_action_for_dispatch', {
     p_id: parsed.actionId,
     p_dispatch_token: parsed.dispatchToken,
   })
-  let context: Awaited<ReturnType<ExternalActionService['rpc']>>
-  if (calendarContext.error === null && calendarContext.data !== null) {
-    context = calendarContext
-  } else if (
-    calendarContext.error === null ||
-    isMissingCalendarDispatcherError(calendarContext.error)
-  ) {
-    // Expand may have reached the database before this Edge version.  Only an explicit missing
-    // function error permits the old generic dispatcher; permissions, network, and SQL failures
-    // must fail closed rather than silently changing the Calendar contract.
-    context = await service.rpc('external_action_for_dispatch', {
-      p_id: parsed.actionId,
-      p_dispatch_token: parsed.dispatchToken,
-    })
-  } else {
-    console.error('external-cleanup: Calendar dispatch lookup failed', {
-      status: calendarContext.status,
-      code: calendarContext.error.code || 'transport_error',
-      message: calendarContext.error.message.slice(0, 240),
-    })
-    return json({ ok: false, error: 'database_failed' }, 500)
-  }
   if (context.error !== null) {
     console.error('external-cleanup: dispatch lookup failed', context.error.code)
     return json({ ok: false, error: 'database_failed' }, 500)
@@ -104,43 +82,24 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ ok: false, error: 'invalid_context' }, 503)
   }
 
-  try {
-    await executeExternalAction(action, service as unknown as ExternalActionService, {
+  const settlement = await settleExternalAction(
+    action,
+    service as unknown as ExternalActionService,
+    {
       googleClientId: Deno.env.get('GOOGLE_OAUTH_CLIENT_ID'),
       googleClientSecret: Deno.env.get('GOOGLE_OAUTH_CLIENT_SECRET'),
       resendApiKey: Deno.env.get('RESEND_API_KEY'),
       customerAccessHashSalt: Deno.env.get('PUBLIC_ACTION_HASH_SALT'),
-    })
-  } catch (error) {
-    const code = error instanceof ExternalActionError ? error.code : 'external_action_failed'
-    console.error(
-      `external-cleanup: ${action.action_type} failed`,
-      error instanceof Error ? error.message : 'unknown',
-    )
-    const resolutionRpc =
-      error instanceof ExternalActionError && !error.retryable
-        ? 'block_external_action'
-        : 'fail_external_action'
-    const failed = await service.rpc(resolutionRpc, {
-      p_id: action.id,
-      p_dispatch_token: action.dispatch_token,
-      p_error_code: code,
-    })
-    if (failed.error !== null || failed.data !== true) {
+    },
+  )
+  switch (settlement.status) {
+    case 'completed':
+      return json({ ok: true, status: 'completed', action: action.action_type })
+    case 'failed':
+      return json({ ok: false, error: settlement.code }, 503)
+    case 'database_failed':
       return json({ ok: false, error: 'database_failed' }, 500)
-    }
-    return json({ ok: false, error: code }, 503)
   }
-
-  const completed = await service.rpc('complete_external_action', {
-    p_id: action.id,
-    p_dispatch_token: action.dispatch_token,
-  })
-  if (completed.error !== null || completed.data !== true) {
-    console.error('external-cleanup: completion update failed', completed.error?.code)
-    return json({ ok: false, error: 'database_failed' }, 500)
-  }
-  return json({ ok: true, status: 'completed', action: action.action_type })
 }
 
 Deno.serve((req: Request) => retainTaskUntilSettled(handleRequest(req)))

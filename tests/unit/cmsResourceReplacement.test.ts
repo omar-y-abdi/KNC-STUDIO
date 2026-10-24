@@ -77,7 +77,7 @@ describe('CMS resource wire boundaries', () => {
     const document = imageDocument()
     replaceDocumentResource(document, oldAsset, newAsset, policy)
     const expected = { bucket: newAsset.bucket, path: newAsset.path }
-    expect(document.presentation.images.hero.ref).toEqual(expected)
+    expect(document.presentation.images.hero?.ref).toEqual(expected)
     expect(document.emails[0]?.design?.logo).toEqual(expected)
     expect(() => validateDocument(document)).not.toThrow()
   })

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
-import { createServer as createViteServer } from 'vite'
+import { createServer as createViteServer, type UserConfig, type UserConfigFn } from 'vite'
 import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
 import { customerGateway } from '../../src/mybookings/customerGateway'
 
@@ -190,8 +190,10 @@ describe('production customer response cookies', () => {
   )
 })
 
-async function localTransportConfig() {
-  const config = (await import('../../vite.config')).default
+async function localTransportConfig(): Promise<UserConfig> {
+  // vite.config.ts is type-checked by tsconfig.node.json. A literal import would also check it under
+  // the stricter options of tsconfig.tests.json, so load it by path and declare what it exports.
+  const { default: config } = await vi.importActual<{ default: UserConfigFn }>('../../vite.config')
   if (typeof config !== 'function') throw new Error('Expected Vite config factory')
   return config({ command: 'serve', mode: 'test' })
 }
@@ -267,14 +269,15 @@ describe('local first-party transport boundaries', () => {
       vi.stubEnv('LOCAL_SUPABASE_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('CUSTOMER_GATEWAY_PROXY_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '1')
-      const config = await localTransportConfig()
+      const proxy = (await localTransportConfig()).server?.proxy
+      if (!proxy) throw new Error('Expected the dev server proxy routes')
       vite = await createViteServer({
         configFile: false,
         cacheDir,
         appType: 'custom',
         optimizeDeps: { noDiscovery: true, include: [] },
         logLevel: 'silent',
-        server: { proxy: config.server?.proxy, host: '127.0.0.1', port: 0, strictPort: true },
+        server: { proxy, host: '127.0.0.1', port: 0, strictPort: true },
       })
       await vite.listen()
       const server = vite.httpServer?.address()
