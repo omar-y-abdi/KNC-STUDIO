@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { corsHeaders, corsJson, json, parse, uuid } from '../../supabase/functions/_shared/http.ts'
@@ -69,16 +69,30 @@ describe('edge import map', () => {
   const read = (path: string) =>
     (JSON.parse(readFileSync(path, 'utf8')) as { imports: Record<string, string> }).imports
 
-  it('pins supabase-js and zod once per map, to the same targets', () => {
-    const maps = [
-      read(`${FUNCTIONS}/import_map.json`),
-      read(`${FUNCTIONS}/cms-studio/deno.json`),
-      read(`${FUNCTIONS}/upload-image/deno.json`),
-    ]
-    for (const imports of maps) {
-      expect(imports['@supabase/supabase-js']).toBe(ESM_SUPABASE)
-      expect(imports['zod']).toBe('npm:zod@3.25.76')
+  // The local runtime hands a shared fallback map to the worker without resolving bare specifiers,
+  // so every function that imports them owns its deno.json.
+  const functions = readdirSync(FUNCTIONS, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .map((entry) => entry.name)
+    .filter((name) => !name.startsWith('calendar-'))
+
+  it('gives every function outside the Calendar set its own deno.json', () => {
+    expect(functions.length).toBeGreaterThan(0)
+    for (const name of functions) {
+      expect(existsSync(`${FUNCTIONS}/${name}/deno.json`), name).toBe(true)
     }
+  })
+
+  it('pins supabase-js and zod to the same targets in every deno.json', () => {
+    for (const name of functions) {
+      const imports = read(`${FUNCTIONS}/${name}/deno.json`)
+      expect(imports['@supabase/supabase-js'], name).toBe(ESM_SUPABASE)
+      expect(imports['zod'], name).toBe('npm:zod@3.25.76')
+    }
+  })
+
+  it('has no shared fallback map that the runtime would not resolve', () => {
+    expect(existsSync(`${FUNCTIONS}/import_map.json`)).toBe(false)
   })
 
   it('leaves no direct esm.sh import outside the Calendar functions', () => {
