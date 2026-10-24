@@ -203,6 +203,11 @@ test('legacy barber zoom never survives load, import, history or backup restore'
     record('settled')
     return { policy, steps }
   })
+  // Every run keeps the steps, so a draft that turns dirty only sometimes leaves its trail.
+  await test.info().attach('policy-probe-steps', {
+    body: JSON.stringify(policyProbe.steps, null, 2),
+    contentType: 'application/json',
+  })
   assert.equal(
     policyProbe.steps.at(-1)?.status,
     'Publicerad · rev 2',
