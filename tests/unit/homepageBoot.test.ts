@@ -16,7 +16,7 @@ const preloads = [...shell.matchAll(/<link\b[^>]*\brel="preload"[^>]*>/g)].map((
 describe('homepage shell pre-paint', () => {
   it('hides the agent intro from scripted browsers only (PERF-3)', () => {
     expect(prePaint).toContain(
-      '@media (scripting: enabled) { #root > main[aria-labelledby="public-intro-heading"] { display: none; } }',
+      "@media (scripting: enabled) { #root > main[aria-labelledby='public-intro-heading'] { display: none; } }",
     )
   })
 
@@ -28,7 +28,7 @@ describe('homepage shell pre-paint', () => {
 
   it('pre-paints the mobile booking view like its panel (STY-3)', () => {
     expect(prePaint).toContain(
-      'html[data-knc-view="booking"], html[data-knc-view="booking"] body { background-color: #fff; } @media (prefers-color-scheme: dark) { html[data-knc-view="booking"], html[data-knc-view="booking"] body { background-color: #1c1c1e; } }',
+      "html[data-knc-view='booking'], html[data-knc-view='booking'] body { background-color: #fff; } @media (prefers-color-scheme: dark) { html[data-knc-view='booking'], html[data-knc-view='booking'] body { background-color: #1c1c1e; } }",
     )
   })
 
@@ -55,7 +55,8 @@ function createEnv() {
   }
 }
 
-async function nativeHtml(path: string): Promise<string> {
+/** The opening root tag of a native route's HTML. */
+async function nativeRoot(path: string): Promise<string | undefined> {
   const env = createEnv()
   const publicContent = new PublicContent({} as never, env)
   const response = await worker.fetch(
@@ -64,16 +65,16 @@ async function nativeHtml(path: string): Promise<string> {
     { exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } } },
   )
   expect(response.status).toBe(200)
-  return response.text()
+  return (await response.text()).match(/<html\b[^>]*>/)?.[0]
 }
 
 describe('native route root attribute', () => {
   it('marks the booking view so its pre-paint matches the booking panel', async () => {
-    expect(await nativeHtml('/booking')).toMatch(/<html lang="sv" data-knc-view="booking"[\s>]/)
+    expect(await nativeRoot('/booking')).toBe('<html lang="sv" data-knc-view="booking">')
   })
 
   it.each(['/', '/about', '/my-bookings'])('leaves %s on the home pre-paint', async (path) => {
-    expect(await nativeHtml(path)).not.toContain('data-knc-view')
+    expect(await nativeRoot(path)).toBe('<html lang="sv">')
   })
 })
 

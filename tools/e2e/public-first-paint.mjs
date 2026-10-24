@@ -315,12 +315,32 @@ async function verifyHeldLoad(page, presentations, presentation, label, load) {
   return { pending, requests: () => presentations.served.length - before }
 }
 
+/** A guarded context whose frames are sampled and whose presentation reads follow a plan. */
+async function firstPaintContext(createContext, options) {
+  const context = await createContext({
+    reducedMotion: 'reduce',
+    ignoreHTTPSErrors: true,
+    ...options,
+  })
+  context.setDefaultTimeout(TIMEOUT)
+  await context.addInitScript(installPaintSampler, {
+    published: HERO_AMPERSAND,
+    baseline: BASELINE_HERO_AMPERSAND,
+    intro: INTRO_HEADING_ID,
+    loading: LOADING_TEXT,
+    error: ERROR_TEXT,
+  })
+  return { context, presentations: await installPresentationPlan(context) }
+}
+
 /** Desktop pre-paint (STY-3): the background before the app equals the one it paints. */
-async function verifyDesktopPrePaint(context, presentations, presentation, workerOrigin, scheme) {
-  const page = await context.newPage()
+async function verifyDesktopPrePaint(createContext, presentation, workerOrigin, scheme) {
+  const { context, presentations } = await firstPaintContext(createContext, {
+    viewport: { width: 1280, height: 720 },
+    colorScheme: scheme,
+  })
   try {
-    await page.setViewportSize({ width: 1280, height: 720 })
-    await page.emulateMedia({ colorScheme: scheme })
+    const page = await context.newPage()
     const label = `desktop ${scheme}`
     const load = await verifyHeldLoad(page, presentations, presentation, label, () =>
       page.goto(`${workerOrigin}/`, { waitUntil: 'domcontentloaded' }),
@@ -333,9 +353,13 @@ async function verifyDesktopPrePaint(context, presentations, presentation, worke
       `${label}: the pre-paint background equals the painted home`,
     )
     assert.equal(load.requests(), 1, `${label}: one presentation request for the load`)
-    return { prePaint: load.pending.background, painted }
+    presentations.assertSettled(label)
+    const reportedDark = await page.evaluate(
+      () => globalThis.matchMedia('(prefers-color-scheme: dark)').matches,
+    )
+    return { requested: scheme, reportedDark, prePaint: load.pending.background, painted }
   } finally {
-    await page.close()
+    await context.close()
   }
 }
 
@@ -404,23 +428,12 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
 
 /** Exercise real Worker HTML and client startup while the public presentation request is controlled. */
 export async function verifyPublicFirstPaint(createContext, engineName, workerOrigin, work) {
-  const context = await createContext({
+  const { context, presentations } = await firstPaintContext(createContext, {
     viewport: { width: 390, height: 844 },
     colorScheme: 'light',
-    reducedMotion: 'reduce',
-    ignoreHTTPSErrors: true,
   })
-  context.setDefaultTimeout(TIMEOUT)
   const presentation = firstPaintPresentation()
   const emptyPresentation = emptyDocument().presentation
-  await context.addInitScript(installPaintSampler, {
-    published: HERO_AMPERSAND,
-    baseline: BASELINE_HERO_AMPERSAND,
-    intro: INTRO_HEADING_ID,
-    loading: LOADING_TEXT,
-    error: ERROR_TEXT,
-  })
-  const presentations = await installPresentationPlan(context)
 
   try {
     const page = await context.newPage()
@@ -547,9 +560,7 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
 
     const desktop = []
     for (const scheme of ['light', 'dark'])
-      desktop.push(
-        await verifyDesktopPrePaint(context, presentations, presentation, workerOrigin, scheme),
-      )
+      desktop.push(await verifyDesktopPrePaint(createContext, presentation, workerOrigin, scheme))
 
     const emptyPage = await context.newPage()
     presentations.plan(answers.presentation(emptyPresentation))

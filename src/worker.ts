@@ -954,7 +954,9 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       ])
         body = replaceMetaContent(body, id, metadata.description)
     }
-    body = body.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
+    // The booking view paints the panel surface on phones too; the shell pre-paints it (index.html).
+    const view = pathname === '/booking' ? ' data-knc-view="booking"' : ''
+    body = body.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"${view}`)
     body = body.replace(
       /(<meta\b[^>]*property="og:locale"[^>]*content=")[^"]*(")/i,
       `$1${lang === 'en' ? 'en_US' : 'sv_SE'}$2`,

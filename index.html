@@ -16,6 +16,36 @@
           background-color: #242427;
         }
       }
+      /* The app paints the panel surface on desktop and on the booking view (App.tsx pageBg), so the
+         first paint does too. This query is the exact complement of MOBILE_MQ. */
+      @media not all and (max-width: 768px) {
+        html,
+        body {
+          background-color: #fff;
+        }
+        @media (prefers-color-scheme: dark) {
+          html,
+          body {
+            background-color: #1c1c1e;
+          }
+        }
+      }
+      html[data-knc-view='booking'],
+      html[data-knc-view='booking'] body {
+        background-color: #fff;
+      }
+      @media (prefers-color-scheme: dark) {
+        html[data-knc-view='booking'],
+        html[data-knc-view='booking'] body {
+          background-color: #1c1c1e;
+        }
+      }
+      /* Agents, crawlers and visitors without scripting read the Worker's intro; the app replaces it. */
+      @media (scripting: enabled) {
+        #root > main[aria-labelledby='public-intro-heading'] {
+          display: none;
+        }
+      }
     </style>
     <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#242427" media="(prefers-color-scheme: dark)" />
@@ -48,6 +78,25 @@
       href="/fonts/PlayfairDisplay-Latin-700.woff2"
       crossorigin
     />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/PlayfairDisplay-Latin-400.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/PlayfairDisplay-Latin-700-Italic.woff2"
+      crossorigin
+    />
+    <!-- Header icons in the first viewport of both layouts. -->
+    <link rel="preload" as="image" href="/icons/mappin.circle.fill.svg" />
+    <link rel="preload" as="image" href="/icons/phone.svg" />
+    <link rel="preload" as="image" href="/icons/sun.max.svg" />
+    <link rel="preload" as="image" href="/icons/moon.svg" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
