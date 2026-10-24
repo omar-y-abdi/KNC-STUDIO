@@ -85,7 +85,7 @@ routes from transient renderer CPU exhaustion while retaining error visibility i
 The presentation is versioned. A native shell carries the revision from `public_cms_page_metadata`
 as `data-cms-revision` on `<html>`, and the app reads `/api/cms/presentation?rev=N`. For that exact
 form the Worker reads the RPC response once, without parsing it, and sets
-`Cloudflare-CDN-Cache-Control: max-age=86400` only when the complete document opens with revision
+`Cloudflare-CDN-Cache-Control: max-age=86400, must-revalidate` only when the complete document opens with revision
 N. A different current revision, a missing or malformed `rev`, or a failed read answers
 `Cache-Control: no-store` (the current document, or 503); browsers never store it and HTML shells
 stay `no-store`. Only `?rev=<digits>` reaches the cached `PublicContent` export. A revision is

@@ -269,7 +269,9 @@ describe('versioned presentation', () => {
         publicContentContext(env),
       )
       expect(response.status).toBe(200)
-      expect(response.headers.get('Cloudflare-CDN-Cache-Control')).toBe('max-age=86400')
+      expect(response.headers.get('Cloudflare-CDN-Cache-Control')).toBe(
+        'max-age=86400, must-revalidate',
+      )
       expect(response.headers.get('Cache-Control')).toBe('no-store')
       expect(response.headers.get('Content-Type')).toBe('application/json')
       response.headers.forEach((value) => {

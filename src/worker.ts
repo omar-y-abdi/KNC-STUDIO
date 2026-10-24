@@ -879,8 +879,8 @@ function notAcceptable(request: Request): Response {
 
 const REVISION_OPENING = /^\s*\{\s*"revision"\s*:\s*(0|[1-9][0-9]*)\s*[,}]/
 const REVISION_OPENING_BYTES = 64
-/** The URL names the revision, so its bytes never change: one day, at the edge only. */
-const IMMUTABLE_EDGE_CACHE = 'max-age=86400'
+/** One day at the edge, never served stale after expiry (a failed refresh must not revive old bytes). */
+const IMMUTABLE_EDGE_CACHE = 'max-age=86400, must-revalidate'
 
 /** The revision a `public_cms_presentation` body opens with. PostgreSQL orders jsonb keys by
  * length, so `revision` precedes `presentation`; any other shape reads as no revision. */
