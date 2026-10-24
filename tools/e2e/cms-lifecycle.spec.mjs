@@ -298,6 +298,8 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   page,
   context,
 }) => {
+  // Three captures wait for their 20 s deadline before the last one works.
+  test.setTimeout(300_000)
   const backend = await nativeBackend(context, emptyDocument(), [salonImage])
   await openStudio(page)
   await page
@@ -470,6 +472,7 @@ test('cms-lifecycle a page-name edit stays a short task at production size', asy
       })
       // Shorter than the 500 ms backup debounce: the sample is the edit and its render.
       await new Promise((resolve) => setTimeout(resolve, 400))
+      tasks.push(...observer.takeRecords())
       observer.disconnect()
       return Math.max(0, ...tasks.map((task) => task.duration))
     }

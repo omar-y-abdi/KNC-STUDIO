@@ -305,7 +305,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       if (!session?.unsaved()) return
       void session.flush().catch(reportBackup)
       event.preventDefault()
-      event.returnValue = ''
+      // Some engines prompt only for a non-empty value; none shows this text.
+      event.returnValue = 'unsaved'
     }
     window.addEventListener('beforeunload', leaving)
     window.addEventListener('pagehide', persist)
