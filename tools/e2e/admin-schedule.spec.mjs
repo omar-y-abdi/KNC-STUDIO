@@ -18,6 +18,8 @@ const BARBER = 'schedule-barber'
 const ROW_ID = 'dddddddd-0000-4000-8000-000000000001'
 const OFF_ID = 'dddddddd-0000-4000-8000-000000000002'
 const BOOKING_ID = 'eeeeeeee-0000-4000-8000-000000000001'
+// Mirrors SAVE_DEBOUNCE_MS in src/admin/views/useWeekAutosave.ts: the autosave timing is the contract.
+const SAVE_DEBOUNCE_MS = 600
 
 test.use({ viewport: { width: 1280, height: 900 }, timezoneId: 'Europe/Stockholm' })
 
@@ -87,6 +89,13 @@ async function installBackend(page, options = {}) {
   const calls = []
   const unexpected = []
   const rpc = (name) => calls.filter((call) => call.path === `/rest/v1/rpc/${name}`)
+  // With holdWeekSave the week save is received but not answered until the test releases it.
+  let releaseWeekSave = () => undefined
+  const weekSaveGate = options.holdWeekSave
+    ? new Promise((resolve) => {
+        releaseWeekSave = resolve
+      })
+    : Promise.resolve()
   await page.clock.setFixedTime(NOW)
   await page.addInitScript(
     (stored) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(stored)),
@@ -112,7 +121,7 @@ async function installBackend(page, options = {}) {
     } catch {
       /* GET/DELETE carry no JSON body. */
     }
-    const call = { path: url.pathname, method: request.method(), body }
+    const call = { path: url.pathname, method: request.method(), body, at: Date.now() }
     calls.push(call)
     const get = request.method() === 'GET'
     switch (url.pathname) {
@@ -155,6 +164,7 @@ async function installBackend(page, options = {}) {
         if (request.method() === 'DELETE') return reply(null, 204)
         break
       case '/rest/v1/rpc/admin_save_barber_week':
+        await weekSaveGate
         return reply({ ok: true })
       case '/rest/v1/rpc/admin_add_slot_block':
         if (options.failSlotBlock) return reply({ message: 'boom', code: 'XX000' }, 500)
@@ -188,7 +198,7 @@ async function installBackend(page, options = {}) {
     unexpected.push(`${request.method()} ${url.pathname}`)
     return reply({ message: 'Unexpected request in schedule spec' }, 500)
   })
-  return { calls, unexpected, rpc }
+  return { calls, unexpected, rpc, releaseWeekSave: () => releaseWeekSave() }
 }
 
 async function openSchedule(page) {
@@ -290,22 +300,39 @@ test('a failed write is reported in the assertive aria-live region and the chip 
 test('week autosave: a burst of edits is debounced into one save of the final week', async ({
   page,
 }) => {
-  const backend = await installBackend(page)
+  const backend = await installBackend(page, { holdWeekSave: true })
   await openSchedule(page)
   const barberSelect = page.getByLabel('Välj barberare att hantera')
   await expect(barberSelect).toBeEnabled()
 
-  await page.getByRole('switch', { name: 'Jobbar Lördag' }).click()
-  // Saving state is entered at once and locks the owner's barber switch until the save settles.
+  // Both switches flip in one page task, a microtask apart so the first edit renders before the
+  // second: the burst stays inside the debounce window however slow the machine is, which two
+  // Playwright clicks (each waiting for actionability) cannot promise.
+  const flipped = Date.now()
+  await page.evaluate(async () => {
+    const press = (name) => {
+      const toggle = globalThis.document.querySelector(`[role="switch"][aria-label="${name}"]`)
+      if (!(toggle instanceof globalThis.HTMLElement)) throw new Error(`no switch named ${name}`)
+      toggle.click()
+    }
+    press('Jobbar Lördag')
+    await Promise.resolve()
+    press('Jobbar Söndag')
+  })
+  // The saving state is entered at once and locks the owner's barber switch until the save settles.
   await expect(barberSelect).toBeDisabled()
-  await page.waitForTimeout(250)
-  expect(backend.rpc('admin_save_barber_week'), 'saved before the debounce elapsed').toHaveLength(0)
-  await page.getByRole('switch', { name: 'Jobbar Söndag' }).click()
 
   await expect.poll(() => backend.rpc('admin_save_barber_week').length).toBe(1)
+  const [save] = backend.rpc('admin_save_barber_week')
+  expect(save.at - flipped, 'saved before the debounce elapsed').toBeGreaterThanOrEqual(
+    SAVE_DEBOUNCE_MS - 20,
+  )
+  await expect(barberSelect, 'still locked while the save is in flight').toBeDisabled()
+
+  backend.releaseWeekSave()
   await expect(page.getByText('Sparat ✓', { exact: true })).toBeVisible()
   await expect(barberSelect).toBeEnabled()
-  await page.waitForTimeout(900)
+  await page.waitForTimeout(SAVE_DEBOUNCE_MS + 100)
   const saves = backend.rpc('admin_save_barber_week')
   expect(saves, 'the burst must coalesce into a single save').toHaveLength(1)
   expect(saves[0].body.p_barber_id).toBe(BARBER)
