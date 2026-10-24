@@ -62,8 +62,10 @@ describe('canonical storage references', () => {
 describe('references visible to the database', () => {
   const escapedPath = canonical.replace('/images/', '/\\69mages/')
   const rejected = 'Bildadressen måste vara bibliotekets egen adress'
-  const native = (attribute: string) =>
-    `<img src="${canonical}" alt="" data-knc-native="1" data-knc-baseline="${attribute}">`
+  // The visible src shows another file, as in a native image whose light baseline is unchanged.
+  const other = canonical.replace('archived.webp', 'visible.webp')
+  const native = (attribute: string, src = other) =>
+    `<img src="${src}" alt="" data-knc-native="1" data-knc-baseline="${attribute}">`
   const json = (src: string) => JSON.stringify({ src }).replaceAll('"', '&quot;')
 
   it('rejects a CSS comment decoy that the database discards', () => {
@@ -91,7 +93,7 @@ describe('references visible to the database', () => {
   })
 
   it('accepts the production shape: a src attribute plus entity-encoded native JSON', () => {
-    const result = validateMarkup(native(json(canonical)), '', policy, { native: true })
+    const result = validateMarkup(native(json(canonical), canonical), '', policy, { native: true })
     expect(result.refs).toEqual([
       { bucket: 'cms-library', path: 'images/archived.webp' },
       { bucket: 'cms-library', path: 'images/archived.webp' },
@@ -99,7 +101,42 @@ describe('references visible to the database', () => {
     expect(result.html).toContain(`&quot;src&quot;:&quot;${canonical}&quot;`)
   })
 
-  it('rejects a storage URL the database reads but no resource attribute declares', () => {
-    expect(() => validateMarkup(`<p>${canonical}</p>`, '', policy)).toThrow(rejected)
+  it('accepts a canonical storage URL mentioned in text', () => {
+    expect(validateMarkup(`<p>${canonical}</p>`, '', policy).refs).toEqual([])
+  })
+
+  it('records a link to a library file as a reference', () => {
+    expect(validateMarkup(`<a href="${canonical}">Bild</a>`, '', policy).refs).toEqual([
+      { bucket: 'cms-library', path: 'images/archived.webp' },
+    ])
+  })
+
+  it('rejects a percent-encoded link to a library file', () => {
+    const href = canonical.replace('/images/', '/%69mages/')
+    expect(() => validateMarkup(`<a href="${href}">Bild</a>`, '', policy)).toThrow(rejected)
+  })
+})
+
+// SVG presentation attributes are CSS: url() in them loads resources like a stylesheet does.
+describe('SVG presentation attributes', () => {
+  const rejected = 'Bildadressen måste vara bibliotekets egen adress'
+  const svg = (attribute: string) =>
+    `<svg viewBox="0 0 1 1"><rect width="1" height="1" ${attribute}/></svg>`
+
+  it.each([
+    ['an escaped path', canonical.replace('/images/', '/\\69mages/')],
+    ['a percent-encoded path', canonical.replace('/images/', '/%69mages/')],
+  ])('rejects a mask with %s', (_case, url) => {
+    expect(() => validateMarkup(svg(`mask="url(${url})"`), '', policy)).toThrow(rejected)
+  })
+
+  it('records a canonical mask image as a reference', () => {
+    expect(validateMarkup(svg(`mask="url(${canonical})"`), '', policy).refs).toEqual([
+      { bucket: 'cms-library', path: 'images/archived.webp' },
+    ])
+  })
+
+  it.each(['mask', 'fill', 'clip-path', 'stroke'])('accepts %s="url(#id)"', (name) => {
+    expect(validateMarkup(svg(`${name}="url(#shape)"`), '', policy).refs).toEqual([])
   })
 })

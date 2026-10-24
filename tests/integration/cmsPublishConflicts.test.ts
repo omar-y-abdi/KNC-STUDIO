@@ -290,6 +290,15 @@ describe.sequential('CMS publication: hybrid archived-media rule', () => {
     expect(body.message).toContain('Unsafe CSS function')
   }, 30_000)
 
+  it('rejects an archived image newly placed through an SVG mask, naming the file', async () => {
+    const url = `${env.url}/storage/v1/object/public/${assets.unknown.bucket}/${assets.unknown.path}`
+    const mask = `<svg viewBox="0 0 1 1"><rect width="1" height="1" mask="url(${url})"/></svg>`
+    await expectRejected(
+      await publish((document) => withPage(document, page(PAGE_B, '/it-arkiv-b', mask))),
+      'okand-arkiverad.png',
+    )
+  }, 30_000)
+
   it('keeps an archived image on its existing structured key', async () => {
     await expectPublished(await publish((document) => document))
   }, 30_000)

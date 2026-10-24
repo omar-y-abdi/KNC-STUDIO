@@ -26,6 +26,8 @@ const SVG_TEXT_ATTRIBUTES = new Set([
   'letter-spacing',
 ])
 const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href'])
+// SVG presentation attributes that browsers parse as CSS and that can load a resource via url().
+const CSS_URL_ATTRIBUTES = new Set(['fill', 'stroke', 'clip-path', 'mask'])
 const BAD_ATTRIBUTES = new Set([
   'srcdoc',
   'srcset',
@@ -212,6 +214,16 @@ export function validateMarkup(
   const refs = checkCss(css, policy, false),
     ids = new Set<string>(),
     anchors: string[] = []
+  // A link to a library file is a reference like an image: registration, archived media, usage.
+  const storageLink = (value: string): MediaRef | null => {
+    let origin: string
+    try {
+      origin = new URL(value, policy.siteOrigin).origin
+    } catch {
+      return null
+    }
+    return origin === policy.storageOrigin ? resourceReference(value, policy) : null
+  }
   const fragment = parseFragment(html, {
     onParseError: (error) => {
       if (error.code === 'duplicate-attribute')
@@ -321,8 +333,12 @@ export function validateMarkup(
                 typeof item !== 'string'
               )
                 reject('html', 'Invalid native metadata field')
-              if (key === 'href' && !safeLink(item as string, policy.siteOrigin))
-                reject('html', 'Unsafe native link')
+              if (key === 'href') {
+                if (!safeLink(item as string, policy.siteOrigin))
+                  reject('html', 'Unsafe native link')
+                const ref = storageLink(item as string)
+                if (ref) refs.push(ref)
+              }
               if (key === 'src') {
                 const ref = resourceReference(item as string, policy)
                 if (ref) refs.push(ref)
@@ -337,10 +353,13 @@ export function validateMarkup(
           ids.add(value)
         }
         if (name === 'style') refs.push(...checkCss(value, policy, true))
+        if (CSS_URL_ATTRIBUTES.has(name)) refs.push(...checkCss(`${name}:${value}`, policy, true))
         if (URL_ATTRIBUTES.has(name)) {
           if (tag === 'a' && name === 'href') {
             if (!safeLink(value, policy.siteOrigin)) reject('href', 'Unsupported link')
             if (value.length > 1 && value[0] === '#') anchors.push(value.slice(1))
+            const ref = storageLink(value)
+            if (ref) refs.push(ref)
           } else if (tag === 'use' && name === 'href') {
             if (!/^#[a-zA-Z][\w:.-]*$/.test(value))
               reject('svg', 'SVG use must reference this document')
@@ -368,10 +387,12 @@ export function validateMarkup(
   visit(fragment, 0)
   for (const anchor of anchors) if (!ids.has(anchor)) reject('href', `Missing anchor #${anchor}`)
   const stored = serialize(fragment)
-  const accepted = refs.map(({ bucket, path }) => `${bucket}/${path}`)
-  const visible = [...databaseReferenceKeys(stored), ...databaseReferenceKeys(css)]
-  // Any escape, decoy or hidden path makes the two multisets differ, whatever the encoding.
-  if (accepted.sort().join('\n') !== visible.sort().join('\n'))
+  const visible = new Set([...databaseReferenceKeys(stored), ...databaseReferenceKeys(css)])
+  // Safety needs accepted ⊆ visible: a file Edge accepted but SQL cannot see would escape the
+  // archived-media rule, usage and retention, whatever the encoding that hid it. SQL seeing more
+  // (a URL in text, alt or a comment) only keeps that file alive or applies the archived rule to
+  // it, so inert mentions are allowed. The SQL rules are set-based, so a set check suffices.
+  if (refs.some(({ bucket, path }) => !visible.has(`${bucket}/${path}`)))
     reject('resource', NON_CANONICAL_RESOURCE)
   return { html: stored, refs }
 }
