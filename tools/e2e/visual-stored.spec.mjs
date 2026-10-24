@@ -12,6 +12,9 @@
 //  - the mobile barber carousel (Embla AutoScroll) waits 800 ms of fake time before it scrolls; a
 //    test may spend at most MAX_FRAMES (640 ms) after the pause.
 // Lazy images load while the spec scrolls through the page with the clock paused: nothing moves.
+// Every shot that includes About asserts that About is loaded right before it and right after it
+// (aboutShot), so a section that fell back to its loading state fails the run and is never written
+// as a baseline by --update-snapshots.
 //
 // The mobile site scrolls inside a fixed-height shell, so its full page is the hero alone. 390 px is
 // covered in viewport steps instead: the hero as a returning visitor sees it, then shell positions
@@ -75,15 +78,18 @@ async function pollUntil(page, check, label) {
 /** Fake frames after the pause, capped so the barber carousel's 800 ms start delay never elapses. */
 function frameBudget(page) {
   let used = 0
-  const step = async () => {
+  const step = async (waitingFor) => {
     used += 1
     if (used > MAX_FRAMES)
-      throw new Error(`Fake-time budget exceeded: ${used} frames of ${FRAME_MS} ms`)
+      throw new Error(
+        `Fake-time budget exceeded: ${used} frames of ${FRAME_MS} ms` +
+          (waitingFor === undefined ? '' : ` while waiting for ${waitingFor}`),
+      )
     await page.clock.runFor(FRAME_MS)
     await sleep(POLL_MS)
   }
-  const stepUntil = async (check) => {
-    while (!(await page.evaluate(check))) await step()
+  const stepUntil = async (check, label) => {
+    while (!(await page.evaluate(check))) await step(label)
   }
   return { step, stepUntil }
 }
@@ -142,6 +148,22 @@ function aboutLoaded() {
   )
 }
 
+async function expectAboutLoaded(page, moment) {
+  expect(await page.evaluate(aboutLoaded), `About is loaded ${moment} the screenshot`).toBe(true)
+}
+
+/**
+ * About's data gate opens from an IntersectionObserver that an effect attaches, and effects run only
+ * on a frame of the paused clock: a remount after the last frame stays in the loading state. The
+ * check before the shot keeps that state out of a baseline; the one after it catches a revert while
+ * the capture ran, which --update-snapshots would otherwise write.
+ */
+async function aboutShot(page, shoot) {
+  await expectAboutLoaded(page, 'before')
+  await shoot()
+  await expectAboutLoaded(page, 'after')
+}
+
 async function settleImages(page) {
   await pollUntil(
     page,
@@ -172,7 +194,7 @@ async function loadLazyImages(page) {
 /** Load About data with the marquees parked, then every image. Leaves the page scrolled. */
 async function hydrateAbout(page, frames) {
   await peekAbout(page)
-  await frames.stepUntil(aboutLoaded)
+  await frames.stepUntil(aboutLoaded, 'About to load')
   // Effects that follow the last data render (the mobile carousel attaches in one) get fixed frames.
   for (let frame = 0; frame < 3; frame++) await frames.step()
   await loadLazyImages(page)
@@ -189,11 +211,15 @@ for (const viewport of VIEWPORTS) {
           // The mobile shell is exactly one viewport tall and About starts below it, so its full
           // page is the hero; the viewport steps below cover the rest. Desktop scrolls the
           // document, so its full page includes About once the section has loaded.
+          const shoot = () => expect(page).toHaveScreenshot(name, { ...SNAPSHOT, fullPage: true })
           if (viewport.width > MOBILE_MAX_WIDTH) {
             await hydrateAbout(page, frames)
             await scrollHomeTo(page, 0)
-          } else await settleImages(page)
-          await expect(page).toHaveScreenshot(name, { ...SNAPSHOT, fullPage: true })
+            await aboutShot(page, shoot)
+          } else {
+            await settleImages(page)
+            await shoot()
+          }
         })
       })
     }
@@ -230,7 +256,9 @@ for (const scheme of ['light', 'dark']) {
         for (const [index, top] of steps.entries()) {
           await scrollHomeTo(page, top)
           if (index === 0) await frames.step()
-          await expect.soft(page).toHaveScreenshot(`${name}-${index + 1}.png`, SNAPSHOT)
+          await aboutShot(page, () =>
+            expect.soft(page).toHaveScreenshot(`${name}-${index + 1}.png`, SNAPSHOT),
+          )
         }
       })
     })
@@ -265,7 +293,7 @@ async function aboutElementShot(page, context, { lang, selector, name }) {
   await element.evaluate((node) => node.scrollIntoView({ block: 'center' }))
   await frames.step()
   const clip = await onScreenClip(page, element)
-  await expect(page).toHaveScreenshot(name, { ...SNAPSHOT, clip })
+  await aboutShot(page, () => expect(page).toHaveScreenshot(name, { ...SNAPSHOT, clip }))
 }
 
 // The moving parts on their own, centred: every scheme and language at 390 px; light Swedish at
