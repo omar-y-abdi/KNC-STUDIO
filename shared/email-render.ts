@@ -1,6 +1,6 @@
 // One renderer for delivered transactional emails and the owner's CMS preview.
 import { renderDesignedEmail } from './cms-email.ts'
-import type { EmailDesign } from './cms.ts'
+import type { EmailDesign } from './email-design.ts'
 
 export type EmailLanguage = 'sv' | 'en'
 export type EmailTemplateName =

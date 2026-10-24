@@ -12,9 +12,7 @@
     "noPropertyAccessFromIndexSignature": false,
     "paths": {
       "react": ["./node_modules/preact/compat/"],
-      "react-dom": ["./node_modules/preact/compat/"],
-      // Edge Functions import supabase-js from esm.sh (Deno); resolve it to the npm package types.
-      "https://esm.sh/@supabase/supabase-js@2.112.2": ["./node_modules/@supabase/supabase-js"]
+      "react-dom": ["./node_modules/preact/compat/"]
     }
   },
   "include": ["tests/unit"]

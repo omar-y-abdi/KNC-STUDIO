@@ -1,45 +1,13 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   executeExternalAction,
   ExternalActionError,
   parseExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-type Body =
-  | { readonly action: 'set_access'; readonly barber_id: string; readonly enabled: boolean }
-  | { readonly action: 'delete'; readonly barber_id: string; readonly purge_bookings: boolean }
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
-
-function parseBody(value: unknown): Body | null {
-  if (typeof value !== 'object' || value === null) return null
-  const body = value as Record<string, unknown>
-  if (typeof body.barber_id !== 'string' || !/^[a-z0-9-]{1,32}$/.test(body.barber_id)) return null
-  if (body.action === 'set_access' && typeof body.enabled === 'boolean') {
-    return { action: body.action, barber_id: body.barber_id, enabled: body.enabled }
-  }
-  if (body.action === 'delete' && typeof body.purge_bookings === 'boolean') {
-    return {
-      action: body.action,
-      barber_id: body.barber_id,
-      purge_bookings: body.purge_bookings,
-    }
-  }
-  return null
-}
+import { corsHeaders, corsJson as json } from '../_shared/http.ts'
+import { requestSchema } from './request.ts'
 
 function isRpcError(value: unknown): value is { readonly ok: false; readonly error: string } {
   if (typeof value !== 'object' || value === null) return false
@@ -142,8 +110,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   } catch {
     return json({ ok: false, error: 'invalid_payload' }, 400)
   }
-  const body = parseBody(rawBody)
-  if (body === null) return json({ ok: false, error: 'invalid_payload' }, 400)
+  const parsed = requestSchema.safeParse(rawBody)
+  if (!parsed.success) return json({ ok: false, error: 'invalid_payload' }, 400)
+  const body = parsed.data
 
   if (body.action === 'set_access') {
     const changed = await caller.rpc('admin_set_barber_account_enabled', {

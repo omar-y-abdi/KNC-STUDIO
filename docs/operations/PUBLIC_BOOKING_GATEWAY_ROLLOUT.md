@@ -176,6 +176,7 @@ legacy service-role downstream functions remain available:
 ```bash
 SUPABASE_URL="https://${PROJECT_REF}.supabase.co" \
 SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+SITE_ORIGIN=https://bladeblendstudio.se \
 PUBLIC_BOOKING_STAGE=expand \
 node tools/smoke-live.mjs
 

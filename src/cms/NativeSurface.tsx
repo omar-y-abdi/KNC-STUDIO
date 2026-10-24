@@ -14,7 +14,12 @@ import {
   type CmsPresentation,
   type CmsPage,
 } from '../../shared/cms'
-import { isNativePublicPath } from '../site/routeMetadata'
+import {
+  CMS_REVISION_ATTRIBUTE,
+  isNativePublicPath,
+  parseCmsRevision,
+  presentationPath,
+} from '../site/routeMetadata'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
@@ -103,7 +108,9 @@ export async function readWithRetries<T>(
 }
 
 async function fetchPublishedPresentation(signal: AbortSignal): Promise<CmsPresentation> {
-  const response = await fetch('/api/cms/presentation', { signal })
+  // The Worker names the revision it rendered this shell from; that revision comes from the edge.
+  const revision = parseCmsRevision(document.documentElement.getAttribute(CMS_REVISION_ATTRIBUTE))
+  const response = await fetch(presentationPath(revision), { signal })
   if (!response.ok) throw new Error('CMS presentation unavailable')
   const value: unknown = await response.json()
   if (!value || typeof value !== 'object' || !('presentation' in value))

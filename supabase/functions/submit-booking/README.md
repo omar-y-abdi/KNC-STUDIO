@@ -1,6 +1,7 @@
 # `submit-booking`
 
-Public booking gateway. Browser never executes `create_booking` directly.
+Public booking gateway. Browser never executes `create_booking` or calls this function directly:
+it posts to the Worker's `/api/bookings`, which signs the relayed request.
 
 ## Request
 
@@ -24,7 +25,10 @@ not accepted from browser; database derives them from active service row.
 
 ## Security
 
-- Function has `verify_jwt = false` because booking is public.
+- Function has `verify_jwt = false` because the Worker relay carries no Supabase user JWT.
+- Every request must carry a valid `x-customer-gateway-signature` (see
+  `_shared/customerGatewayAuth.ts`); otherwise it is `403 origin_not_allowed`. There is no CORS
+  and no unsigned path. The request body allows only the keys above; any other key is `400`.
 - Turnstile is fail-closed. Missing `TURNSTILE_SECRET`, missing `IP_SALT`, or empty token cannot create
   production booking.
 - IP and phone limits backstop Turnstile.
@@ -35,7 +39,7 @@ not accepted from browser; database derives them from active service row.
 Required secrets:
 
 ```bash
-npx supabase secrets set TURNSTILE_SECRET=<secret> IP_SALT=<random-long-value>
+npx supabase secrets set TURNSTILE_SECRET=<secret> IP_SALT=<random-long-value> CUSTOMER_GATEWAY_SECRET=<same-as-worker>
 ```
 
 ## Responses

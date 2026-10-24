@@ -8,8 +8,9 @@ import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 //      the database derives name, price, and duration from
 //      the active services row rather than trusting browser-supplied commercial data.
 //
-// Invocation: browser -> this function (verify_jwt = false; see supabase/config.toml). It is CORS-
-// enabled (preflight + every response) because it is called cross-origin from the static site.
+// Invocation: the Worker's /api/bookings relay -> this function (verify_jwt = false; see
+// supabase/config.toml). Every request must carry the Worker's x-customer-gateway-* signature; the
+// browser never calls it, so there is no CORS and an unsigned request is a 403.
 //
 // HTTP-STATUS DISCIPLINE: supabase-js `functions.invoke` turns any non-2xx into a FunctionsHttpError
 // (data:null, reason buried in error.context). So EVERY EXPECTED outcome — failed_challenge,
@@ -19,8 +20,9 @@ import { verifyTurnstile, turnstilePolicy } from '../_shared/turnstile.ts'
 //
 // Run locally: npx supabase functions serve --no-verify-jwt --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import { verifyCustomerGateway } from '../_shared/customerGatewayAuth.ts'
+import { json, parse } from '../_shared/http.ts'
 import { createCustomerAccessToken, hashCustomerAccessToken } from '../_shared/customerAccess.ts'
 import {
   CUSTOMER_RECEIPT_COOKIE,
@@ -29,16 +31,7 @@ import {
   customerCookieHeader,
   customerCookieProof,
 } from '../_shared/customerCookies.ts'
-
-// --- CORS -------------------------------------------------------------------------------------
-
-// `*` because the static site is served from a different origin (Cloudflare) than the function (Supabase),
-// and the request carries no credentials/cookies — only the public anon apikey header.
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { requestSchema } from './request.ts'
 
 // --- Tunable backstops ------------------------------------------------------------------------
 // GENEROUS, coarse limits — tunable; Turnstile is the real bot gate. These must NOT false-positive on
@@ -48,90 +41,12 @@ const IP_WINDOW_SECONDS = 10 * 60 // 10 minutes
 const MAX_PER_PHONE = 5 // max bookings per phone within PHONE_WINDOW_MS
 const PHONE_WINDOW_SECONDS = 24 * 60 * 60 // 24 hours
 
-// --- Types ------------------------------------------------------------------------------------
-
-interface BookingInput {
-  readonly barberId: string
-  readonly serviceId: string
-  readonly startAt: string // ISO timestamptz string (already Stockholm-correct; see PLAN §3 H2)
-  readonly phone: string
-  readonly email: string
-  readonly lang: string
-  readonly customerName: string
-}
-
-type ParseResult =
-  | {
-      readonly ok: true
-      readonly booking: BookingInput
-      readonly turnstileToken: string
-      readonly rememberBookings: boolean
-    }
-  | { readonly ok: false; readonly error: string }
-
-// --- Validation (boundary; never trust the request body) --------------------------------------
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0
-}
-
-function normalizeEmail(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const email = value.trim().toLowerCase()
-  if (email.length === 0 || email.length > 254) return null
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null
-}
-
-function parseRequest(raw: unknown): ParseResult {
-  if (typeof raw !== 'object' || raw === null) {
-    return { ok: false, error: 'body must be a JSON object' }
-  }
-  const root = raw as Record<string, unknown>
-  const b = root.booking
-  if (typeof b !== 'object' || b === null) {
-    return { ok: false, error: 'booking is required' }
-  }
-  const r = b as Record<string, unknown>
-
-  if (!isNonEmptyString(r.barberId)) return { ok: false, error: 'barberId is required' }
-  if (!isNonEmptyString(r.serviceId)) return { ok: false, error: 'serviceId is required' }
-  if (!isNonEmptyString(r.startAt)) return { ok: false, error: 'startAt is required' }
-  if (!isNonEmptyString(r.phone)) return { ok: false, error: 'phone is required' }
-  const email = normalizeEmail(r.email)
-  if (email === null) return { ok: false, error: 'email is invalid' }
-  if (r.lang !== 'sv' && r.lang !== 'en') return { ok: false, error: 'lang is invalid' }
-  if (!isNonEmptyString(r.customerName)) return { ok: false, error: 'customerName is required' }
-
-  // turnstileToken is optional (empty when the widget is offline / unconfigured); coerce to string.
-  const token = typeof root.turnstileToken === 'string' ? root.turnstileToken : ''
-
-  return {
-    ok: true,
-    rememberBookings: root.rememberBookings === true,
-    turnstileToken: token,
-    booking: {
-      barberId: r.barberId,
-      serviceId: r.serviceId,
-      startAt: r.startAt,
-      phone: r.phone,
-      email,
-      lang: r.lang,
-      customerName: r.customerName,
-    },
-  }
-}
-
 // --- Helpers ----------------------------------------------------------------------------------
 
-function json(body: unknown, status: number, cookie?: string): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders,
-      'content-type': 'application/json',
-      'Cache-Control': 'no-store',
-      ...(cookie ? { 'Set-Cookie': cookie } : {}),
-    },
+function reply(body: unknown, status: number, cookie?: string): Response {
+  return json(body, status, {
+    'Cache-Control': 'no-store',
+    ...(cookie ? { 'Set-Cookie': cookie } : {}),
   })
 }
 
@@ -144,40 +59,33 @@ async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-// Supabase's edge gateway attaches cf-connecting-ip. Caller-controlled forwarding headers are ignored;
-// missing platform metadata falls back to one shared "unknown" bucket rather than bypassing limits.
-function clientIp(req: Request): string {
-  return req.headers.get('cf-connecting-ip')?.trim() || 'unknown'
-}
-
 // Turnstile siteverify. Configuration is checked before this helper; missing/invalid tokens and
 // verification failures all fail closed.
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
 Deno.serve(async (req: Request): Promise<Response> => {
-  // CORS preflight — must be the first thing handled, with the CORS headers.
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
   if (req.method !== 'POST') {
-    return json({ ok: false, error: 'method_not_allowed' }, 405)
+    return reply({ ok: false, error: 'method_not_allowed' }, 405)
   }
 
-  // Parse + validate the body. Bad JSON / wrong shape is a true client fault -> non-2xx.
+  // The signature covers the raw body, so it is checked before the body is parsed.
+  const bodyText = await req.text()
+  const ip = await verifyCustomerGateway(req, Deno.env.get('CUSTOMER_GATEWAY_SECRET'), bodyText)
+  if (ip === null) return reply({ ok: false, error: 'origin_not_allowed' }, 403)
+
+  // Bad JSON / wrong shape is a true client fault -> non-2xx.
   let raw: unknown
-  let bodyText: string
   try {
-    bodyText = await req.text()
     raw = JSON.parse(bodyText)
   } catch {
-    return json({ ok: false, error: 'invalid_json' }, 400)
+    return reply({ ok: false, error: 'invalid_json' }, 400)
   }
-  const parsed = parseRequest(raw)
+  const parsed = parse(requestSchema, raw)
   if (!parsed.ok) {
-    return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
+    return reply({ ok: false, error: 'invalid_payload', detail: parsed.detail }, 400)
   }
-  const { booking, turnstileToken, rememberBookings } = parsed
+  const { booking, turnstileToken, rememberBookings } = parsed.data
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -185,22 +93,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const ipSalt = Deno.env.get('IP_SALT')
   if (!supabaseUrl || !serviceKey || !turnstileSecret || !ipSalt) {
     console.error('submit-booking: missing required server configuration.')
-    return json({ ok: false, error: 'not_configured' }, 500)
+    return reply({ ok: false, error: 'not_configured' }, 500)
   }
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-
-  let ip = clientIp(req)
-  let firstParty = false
-  if (req.headers.has('x-customer-gateway-signature') || req.headers.has('x-customer-gateway-ip')) {
-    const forwarded = await verifyCustomerGateway(
-      req,
-      Deno.env.get('CUSTOMER_GATEWAY_SECRET'),
-      bodyText,
-    )
-    if (forwarded === null) return json({ ok: false, error: 'origin_not_allowed' }, 403)
-    ip = forwarded
-    firstParty = true
-  }
 
   // 1. Turnstile — server-side challenge, fail-closed.
   const challengeOk = await verifyTurnstile(
@@ -210,7 +105,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     turnstilePolicy('booking', Deno.env.get('PUBLIC_SITE_ORIGINS')),
   )
   if (!challengeOk) {
-    return json({ ok: false, error: 'failed_challenge' }, 200)
+    return reply({ ok: false, error: 'failed_challenge' }, 200)
   }
 
   try {
@@ -236,12 +131,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (rpc.error) throw rpc.error
 
     // Receipt failure can never undo a successful booking or turn it into a failed submit.
-    if (
-      firstParty &&
-      rememberBookings &&
-      rpc.data?.ok === true &&
-      typeof rpc.data.booking?.id === 'string'
-    ) {
+    if (rememberBookings && rpc.data?.ok === true && typeof rpc.data.booking?.id === 'string') {
       try {
         const existing = customerCookie(req, CUSTOMER_RECEIPT_COOKIE)
         const session = customerCookie(req, CUSTOMER_SESSION_COOKIE)
@@ -260,7 +150,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           receipt.data.max_age <= 2592000
         ) {
           const token = receipt.data.existing && existing !== null ? existing : candidate
-          return json(
+          return reply(
             { ...rpc.data, receipt_proof: await customerCookieProof(token, 'receipt') },
             200,
             customerCookieHeader(CUSTOMER_RECEIPT_COOKIE, token, receipt.data.max_age),
@@ -274,9 +164,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.error('submit-booking: receipt unavailable')
       }
     }
-    return json(rpc.data, 200)
+    return reply(rpc.data, 200)
   } catch (err) {
     console.error('submit-booking: unhandled error:', err)
-    return json({ ok: false, error: 'server_error' }, 500)
+    return reply({ ok: false, error: 'server_error' }, 500)
   }
 })
