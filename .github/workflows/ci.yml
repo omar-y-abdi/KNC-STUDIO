@@ -81,6 +81,7 @@ jobs:
         with:
           cache: ${{ env.CI_CACHE }}
       - run: npm run build
+      - run: npm run bundle-budget
       - name: Package actual Worker without rebuilding assets
         run: npx wrangler deploy --dry-run
       - name: Reject unlicensed legacy font artifacts
