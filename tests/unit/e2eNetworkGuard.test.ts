@@ -129,9 +129,16 @@ function fakeSocket(url: string): FakeSocket {
 function fakeContext() {
   const routes: Registration<FakeRoute>[] = []
   const sockets: Registration<FakeSocket>[] = []
-  const originals = Object.fromEntries(
-    API_METHODS.map((method) => [method, vi.fn().mockResolvedValue('reached the network')]),
-  )
+  const reachNetwork = () => vi.fn().mockResolvedValue('reached the network')
+  const originals = {
+    fetch: reachNetwork(),
+    get: reachNetwork(),
+    post: reachNetwork(),
+    put: reachNetwork(),
+    patch: reachNetwork(),
+    delete: reachNetwork(),
+    head: reachNetwork(),
+  }
   return {
     routes,
     sockets,

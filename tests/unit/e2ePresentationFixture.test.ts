@@ -100,7 +100,7 @@ describe('refreshPresentation', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(fetchImpl.mock.calls[0]?.[0]).toBe(SOURCE_URL)
     expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ headers: { accept: 'application/json' } })
-    const written = JSON.parse(gunzipSync(readFileSync(out)).toString('utf8'))
+    const written = JSON.parse(gunzipSync(readFileSync(out)).toString())
     expect(written).toEqual(sanitisePresentation(rawResponse()).response)
     expect(result).toMatchObject({ out, revision: 7, supabaseOrigins: 2, emails: 3 })
   })
@@ -121,7 +121,7 @@ describe('refreshPresentation', () => {
 })
 
 describe('committed presentation fixture', () => {
-  const text = gunzipSync(readFileSync(FIXTURE_PATH)).toString('utf8')
+  const text = gunzipSync(readFileSync(FIXTURE_PATH)).toString()
   const fixture = JSON.parse(text)
 
   it('is a public presentation response', () => {
