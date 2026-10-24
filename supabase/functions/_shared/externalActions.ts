@@ -133,20 +133,6 @@ export interface ExternalActionRuntime {
   readonly customerAccessHashSalt?: string | undefined
 }
 
-/** The only safe reason for a new Edge worker to use the pre-migration generic dispatcher. */
-export function isMissingCalendarDispatcherError(
-  error: { readonly code?: string; readonly message?: string } | null,
-): boolean {
-  if (error === null) return false
-  return (
-    error.code === 'PGRST202' ||
-    error.code === '42883' ||
-    /calendar_external_action_for_dispatch.*(does not exist|not found|could not find)/i.test(
-      error.message ?? '',
-    )
-  )
-}
-
 export class ExternalActionError extends Error {
   readonly code: string
   readonly retryable: boolean

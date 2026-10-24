@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(19);
 
 -- The legacy orphan sweeper is gone, and nothing scheduled can still reach it.
 select hasnt_function('public', 'queue_orphaned_storage_objects', array[]::text[],
@@ -83,6 +83,26 @@ reset role;
 select is((select count(*)::int from public.external_action_jobs
   where action_type = 'storage_object_delete'), 0,
   'completed explicit deletion is not re-queued by the dispatcher');
+
+-- external-cleanup now asks only the generic dispatcher, which must still resolve Calendar jobs.
+select set_config('test.calendar_job', public.queue_external_action(
+  'calendar_disconnect', 'sweeper-calendar',
+  pg_catalog.jsonb_build_object('barber_id', 'sweeper-calendar')
+)::text, true);
+set local role service_role;
+select set_config('test.calendar_claim', public.claim_external_action(
+  current_setting('test.calendar_job')::uuid
+)::text, true);
+select is(public.external_action_for_dispatch(
+  current_setting('test.calendar_job')::uuid,
+  (current_setting('test.calendar_claim')::jsonb ->> 'dispatch_token')::uuid
+), public.calendar_external_action_for_dispatch(
+  current_setting('test.calendar_job')::uuid,
+  (current_setting('test.calendar_claim')::jsonb ->> 'dispatch_token')::uuid
+), 'the generic dispatcher returns the Calendar dispatcher''s context for a Calendar job');
+reset role;
+select is(current_setting('test.calendar_claim')::jsonb ->> 'action_type', 'calendar_disconnect',
+  'the Calendar job context is not empty');
 
 -- pg_cron history is bounded by one daily purge job.
 select is((select count(*)::int from cron.job where jobname = 'cron-job-run-details-purge'), 1,

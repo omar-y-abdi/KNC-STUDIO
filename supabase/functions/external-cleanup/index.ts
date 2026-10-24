@@ -1,6 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
-  isMissingCalendarDispatcherError,
   parseExternalAction,
   settleExternalAction,
   type ExternalActionService,
@@ -58,32 +57,12 @@ async function handleRequest(req: Request): Promise<Response> {
   const service = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const calendarContext = await service.rpc('calendar_external_action_for_dispatch', {
+  // The generic dispatcher resolves Calendar jobs through calendar_external_action_for_dispatch
+  // itself (20260913131739), so one lookup serves every action type.
+  const context = await service.rpc('external_action_for_dispatch', {
     p_id: parsed.actionId,
     p_dispatch_token: parsed.dispatchToken,
   })
-  let context: Awaited<ReturnType<ExternalActionService['rpc']>>
-  if (calendarContext.error === null && calendarContext.data !== null) {
-    context = calendarContext
-  } else if (
-    calendarContext.error === null ||
-    isMissingCalendarDispatcherError(calendarContext.error)
-  ) {
-    // Expand may have reached the database before this Edge version.  Only an explicit missing
-    // function error permits the old generic dispatcher; permissions, network, and SQL failures
-    // must fail closed rather than silently changing the Calendar contract.
-    context = await service.rpc('external_action_for_dispatch', {
-      p_id: parsed.actionId,
-      p_dispatch_token: parsed.dispatchToken,
-    })
-  } else {
-    console.error('external-cleanup: Calendar dispatch lookup failed', {
-      status: calendarContext.status,
-      code: calendarContext.error.code || 'transport_error',
-      message: calendarContext.error.message.slice(0, 240),
-    })
-    return json({ ok: false, error: 'database_failed' }, 500)
-  }
   if (context.error !== null) {
     console.error('external-cleanup: dispatch lookup failed', context.error.code)
     return json({ ok: false, error: 'database_failed' }, 500)
