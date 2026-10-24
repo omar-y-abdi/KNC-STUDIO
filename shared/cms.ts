@@ -937,9 +937,6 @@ export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
 export function mediaKey(ref: MediaRef): string {
   return `${ref.bucket}/${ref.path}`
 }
-export function mediaPlacementKey(value: MediaPlacement): string {
-  return JSON.stringify([value.placement, value.ref.bucket, value.ref.path])
-}
 export function documentMediaPlacements(document: CmsDocument): MediaPlacement[] {
   const placements: MediaPlacement[] = []
 
@@ -982,7 +979,6 @@ export function validateDocumentMedia(
   document: CmsDocument,
   assets: readonly CmsAsset[],
   authoredPlacements: readonly MediaPlacement[] = [],
-  currentPlacements: readonly MediaPlacement[] = [],
 ): void {
   const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
   const requireAsset = (
@@ -1018,10 +1014,6 @@ export function validateDocumentMedia(
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
   authoredPlacements.forEach(({ ref, placement }) => requireAsset(ref, placement, 'image'))
-
-  const currentKeys = new Set(currentPlacements.map(mediaPlacementKey))
-  for (const media of [...documentMediaPlacements(document), ...authoredPlacements]) {
-    if (inventory.get(mediaKey(media.ref))?.archived && !currentKeys.has(mediaPlacementKey(media)))
-      fail('media', 'Archived media cannot be newly referenced in a new placement')
-  }
+  // Archived media is governed by internal_cms_assert_media_publishable, which compares against
+  // the authoritative head under the publication lock.
 }
