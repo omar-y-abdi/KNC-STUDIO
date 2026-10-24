@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Bump mcr.microsoft.com/playwright:v<version>-noble in ci.yml in the same PR.
+      playwright:
+        patterns:
+          - playwright
+          - '@playwright/test'
       cloudflare-workers:
         patterns:
           - wrangler

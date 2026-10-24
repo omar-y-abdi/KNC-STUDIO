@@ -7,5 +7,6 @@
     "@imagemagick/magick-wasm": "npm:@imagemagick/magick-wasm@0.0.42",
     "fontkit": "npm:fontkit@2.0.4"
   },
-  "lock": "./deno.lock"
+  "lock": "./deno.lock",
+  "nodeModulesDir": "none"
 }

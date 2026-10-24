@@ -20,31 +20,29 @@ describe('CI supply-chain pins', () => {
   it('keeps frozen dependency resolution on every Edge Function check', () => {
     const edge = workflow.split('\n  edge-functions:\n')[1]?.split('\n  database-current:\n')[0]
     expect(edge).toContain('working-directory: supabase/functions')
-    expect(edge).toContain(
-      'deno check --config deno.json --frozen --node-modules-dir=manual "$file"',
-    )
+    expect(edge).toContain('deno check --config deno.json --frozen "$file"')
+    expect(edge).not.toContain('--node-modules-dir=manual')
     expect(edge).toContain('find . -mindepth 2 -maxdepth 2 -name index.ts')
   })
 
-  it('scopes the Deno lock to pinned function imports and required Node types', () => {
+  it('isolates frozen Deno resolution from the root npm tree and locks required Node types', () => {
     const config = JSON.parse(readFileSync('supabase/functions/deno.json', 'utf8')) as {
       imports: Record<string, string>
       lock: string
+      nodeModulesDir: string
     }
     const lock = JSON.parse(readFileSync('supabase/functions/deno.lock', 'utf8')) as {
+      specifiers: Record<string, string>
+      npm: Record<string, { integrity: string; dependencies?: string[] }>
       workspace: { dependencies: string[]; packageJson?: { dependencies: string[] } }
     }
-    // Manual type-reference resolution reads this manifest for fontkit's Node declarations.
-    const types = JSON.parse(readFileSync('supabase/functions/package.json', 'utf8')) as {
-      private: boolean
-      type: string
-      devDependencies: Record<string, string>
-    }
-    expect(types.private).toBe(true)
-    expect(types.type).toBe('module')
-    expect(types.devDependencies).toEqual({ '@types/node': '24.13.2' })
+    expect(config.nodeModulesDir).toBe('none')
+    expect(existsSync('supabase/functions/package.json')).toBe(false)
     expect(config.lock).toBe('./deno.lock')
-    expect(lock.workspace.packageJson?.dependencies).toEqual(['npm:@types/node@24.13.2'])
+    expect(lock.workspace.packageJson).toBeUndefined()
+    expect(Object.keys(lock.npm).some((name) => name.startsWith('@types/node@'))).toBe(true)
+    for (const [name, entry] of Object.entries(lock.npm))
+      expect(entry.integrity, name).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/)
     expect(lock.workspace.dependencies).toEqual(
       Object.values(config.imports)
         .filter((specifier) => specifier.startsWith('npm:'))
@@ -66,6 +64,33 @@ describe('CI supply-chain pins', () => {
     expect(dependabot).toMatch(
       /cloudflare-workers:\s+patterns:\s+- wrangler\s+- '@cloudflare\/workers-types'/,
     )
+  })
+
+  it('locks every explicit npm import and deno-types reference in Edge and shared source', () => {
+    const lock = JSON.parse(readFileSync('supabase/functions/deno.lock', 'utf8')) as {
+      specifiers: Record<string, string>
+      npm: Record<string, { integrity: string }>
+    }
+    const specifiers = new Set(
+      ['supabase/functions', 'shared'].flatMap((directory) =>
+        readdirSync(directory, { recursive: true })
+          .map(String)
+          .filter((file) => file.endsWith('.ts'))
+          .flatMap((file) =>
+            Array.from(
+              readFileSync(`${directory}/${file}`, 'utf8').matchAll(/["'`](npm:[^"'`\s]+)["'`]/g),
+              (match) => match[1] as string,
+            ),
+          ),
+      ),
+    )
+    expect(specifiers.size).toBeGreaterThan(0)
+    for (const specifier of specifiers) {
+      const version = lock.specifiers[specifier]
+      expect(version, specifier).toBeDefined()
+      const name = specifier.slice('npm:'.length).replace(/@[^@]+$/, '')
+      expect(lock.npm[`${name}@${version}`]?.integrity, specifier).toMatch(/^sha512-/)
+    }
   })
 
   it('pins every GitHub Action to an immutable commit SHA', () => {

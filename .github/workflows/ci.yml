@@ -146,6 +146,7 @@ jobs:
         if: always()
         with:
           name: public-browsers-${{ matrix.shard }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
@@ -189,6 +190,7 @@ jobs:
         if: always()
         with:
           name: cms-${{ matrix.engine }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
@@ -239,6 +241,7 @@ jobs:
         if: always()
         with:
           name: startup-${{ matrix.engine }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
@@ -262,9 +265,13 @@ jobs:
       - name: Type-check every Edge Function entrypoint
         working-directory: supabase/functions
         run: |
+          checked=0
           while IFS= read -r file; do
-            deno check --config deno.json --frozen --node-modules-dir=manual "$file"
+            deno check --config deno.json --frozen "$file"
+            checked=$((checked + 1))
+            printf 'PASS %s\n' "$file"
           done < <(find . -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+          test "$checked" -gt 0
   database-current:
     needs: format
     name: Current schema, integration and customer browsers

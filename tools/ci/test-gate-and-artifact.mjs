@@ -8,18 +8,27 @@ import { join, resolve } from 'node:path'
 import test from 'node:test'
 import { recordArtifact, verifyArtifact, sourceIdentity } from './build-artifact.mjs'
 
-// ESLint already supplies this parser; keep workflow checks on the installed dependency tree.
 const { load } = createRequire(import.meta.url)('js-yaml')
 const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
 const action = (name) => load(readFileSync(`.github/actions/${name}/action.yml`, 'utf8'))
 
+function assertNativeShells(value) {
+  if (!value || typeof value !== 'object') return
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'shell') assert.doesNotMatch(child, /furl/i)
+    if (key === 'run' && typeof child === 'string')
+      assert.doesNotMatch(child, /\btools\/ci\/furl_ci\.py\b/)
+    assertNativeShells(child)
+  }
+}
+
 test('workflow keeps plain Bash, formatted source, strict browser reports and protected gates', () => {
   assert.equal(workflow.defaults.run.shell, 'bash')
+  assertNativeShells(workflow)
   for (const job of Object.values(workflow.jobs))
     for (const step of job.steps) {
       assert.notEqual(step['continue-on-error'], true)
       if (step.shell) assert.equal(step.shell, 'bash')
-      if (step.run) assert.doesNotMatch(step.run, /furl_ci\.py/)
     }
   const node = action('ci-node')
   assert.ok(node.runs.steps.some((step) => step.run === 'npm ci'))
@@ -32,6 +41,11 @@ test('workflow keeps plain Bash, formatted source, strict browser reports and pr
     (step) => step.name === 'Verify CI orchestration and failure paths',
   )
   assert.ok(regressionDependencies >= 0 && regressionTests > regressionDependencies)
+  assert.ok(
+    quality[regressionTests].run.includes(
+      "python3 -m unittest discover -s tools/ci -p 'test_furl_ci.py' -v",
+    ),
+  )
   for (const id of ['frontend', 'database']) {
     const job = workflow.jobs[id]
     assert.equal(job.if, 'always()')
@@ -68,6 +82,62 @@ test('workflow keeps plain Bash, formatted source, strict browser reports and pr
     readFileSync('playwright.config.ts', 'utf8'),
     /forbidOnly: Boolean\(process.env\['CI'\]\)/,
   )
+})
+
+test('native shell guard allows Furl regressions but rejects default, job and step wrappers', () => {
+  const regression = { run: "python3 -m unittest discover -s tools/ci -p 'test_furl_ci.py' -v" }
+  assert.doesNotThrow(() => assertNativeShells({ steps: [regression] }))
+  for (const mutation of [
+    { defaults: { run: { shell: 'python3 tools/ci/furl_ci.py {0}' } } },
+    { jobs: { quality: { defaults: { run: { shell: 'python3 tools/ci/furl_ci.py {0}' } } } } },
+    { steps: [{ shell: 'python3 tools/ci/furl_ci.py {0}', run: 'npm ci' }] },
+    { steps: [{ shell: 'bash', run: 'python3 tools/ci/furl_ci.py npm ci' }] },
+  ])
+    assert.throws(() => assertNativeShells(mutation), /furl/i)
+})
+
+test('uploads explicitly preserve every hidden CI plan', () => {
+  const uploads = Object.values(workflow.jobs).flatMap((job) =>
+    job.steps.filter(
+      (step) =>
+        step.uses?.startsWith('actions/upload-artifact@') &&
+        /(?:^|\/)\.ci-/m.test(step.with?.path ?? ''),
+    ),
+  )
+  assert.ok(uploads.length > 0)
+  for (const upload of uploads) assert.equal(upload.with['include-hidden-files'], true)
+})
+
+test('Dependabot groups both Playwright packages and documents the coupled image update', () => {
+  const source = readFileSync('.github/dependabot.yml', 'utf8')
+  const npm = load(source).updates.find(
+    (update) => update['package-ecosystem'] === 'npm' && update.directory === '/',
+  )
+  assert.deepEqual(npm.groups.playwright.patterns.toSorted(), ['@playwright/test', 'playwright'])
+  assert.match(
+    source,
+    /# Bump mcr\.microsoft\.com\/playwright:v<version>-noble in ci\.yml in the same PR\./,
+  )
+})
+
+test('the YAML parser is a direct exact dependency matching the existing installed lock entry', () => {
+  const manifest = JSON.parse(readFileSync('package.json', 'utf8'))
+  const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'))
+  const version = manifest.devDependencies['js-yaml']
+  assert.match(version, /^\d+\.\d+\.\d+$/)
+  assert.equal(version, lock.packages[''].devDependencies['js-yaml'])
+  assert.equal(version, lock.packages['node_modules/js-yaml'].version)
+})
+
+test('CI documentation describes event coverage and the actual preparation owners', () => {
+  const docs = readFileSync('docs/CI.md', 'utf8').replace(/\s+/g, ' ')
+  assert.doesNotMatch(docs, /runs the complete graph|source identity verification and Furl setup/)
+  assert.ok(docs.includes('Pull requests run the full Chromium CMS matrix'))
+  assert.ok(docs.includes('Pushes to `main` and manual runs use the full WebKit CMS matrix'))
+  assert.ok(docs.includes('Furl setup and regression tests belong to the quality job'))
+  assert.ok(docs.includes(workflow.jobs.cms.container.image))
+  assert.ok(docs.includes('UID 1001'))
+  assert.ok(docs.includes('`nodeModulesDir: none`'))
 })
 
 test('only browser-only jobs use the matching Playwright image and skip browser installation', () => {
@@ -154,6 +224,113 @@ test('container paths come from shell variables or the working directory', () =>
   assert.equal(workflow.jobs.cms.env.AXE_PATH, 'node_modules/axe-core/axe.min.js')
   assert.equal(workflow.jobs['public-browsers'].env.E2E_PUBLIC_DIST, '.ci-build/public')
   assert.equal(workflow.jobs.startup.env.E2E_STARTUP_DIST, '.ci-build/startup')
+})
+
+test('Edge entrypoint loop rejects zero entrypoints and propagates every Deno failure', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'knc-edge-loop-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const step = workflow.jobs['edge-functions'].steps.find(
+    (step) => step.name === 'Type-check every Edge Function entrypoint',
+  )
+  assert.equal(step['working-directory'], 'supabase/functions')
+  await writeFile(join(root, 'check.sh'), step.run)
+  const bin = join(root, 'bin')
+  await mkdir(bin)
+  const log = join(root, 'calls.jsonl')
+  await writeFile(
+    join(bin, 'deno'),
+    '#!/usr/bin/env node\n' +
+      "require('node:fs').appendFileSync(process.env.DENO_CALLS, JSON.stringify(process.argv.slice(2)) + '\\n')\n" +
+      'process.exit(Number(process.env.DENO_STATUS))\n',
+    { mode: 0o755 },
+  )
+  const run = (status = 0) =>
+    spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', 'check.sh'], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        DENO_CALLS: log,
+        DENO_STATUS: String(status),
+      },
+      encoding: 'utf8',
+      timeout: 10000,
+    })
+  const empty = run()
+  assert.notEqual(empty.status, null, empty.error?.message)
+  assert.notEqual(empty.status, 0, 'An empty Edge graph must fail')
+  for (const name of ['a-function', 'b-function']) {
+    await mkdir(join(root, name))
+    await writeFile(join(root, name, 'index.ts'), 'export {}\n')
+  }
+  const success = run()
+  assert.equal(success.status, 0, success.stderr)
+  const calls = (await readFile(log, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  assert.deepEqual(calls, [
+    ['check', '--config', 'deno.json', '--frozen', './a-function/index.ts'],
+    ['check', '--config', 'deno.json', '--frozen', './b-function/index.ts'],
+  ])
+  await writeFile(log, '')
+  const failure = run(7)
+  assert.equal(failure.status, 7, failure.stderr)
+  assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 1)
+})
+
+async function sourceFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'knc-source-tree-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const git = (...args) => {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', timeout: 10000 })
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout.trim()
+  }
+  const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n') + '\n'
+  await writeFile(join(root, 'tracked.txt'), lines)
+  await writeFile(join(root, 'tracked.bin'), Buffer.from([0, 255, 128, 10]))
+  git('init', '--quiet')
+  git('config', 'user.name', 'CI test')
+  git('config', 'user.email', 'ci-test@example.invalid')
+  git('add', '.')
+  git('-c', 'core.hooksPath=/dev/null', 'commit', '--no-gpg-sign', '--quiet', '-m', 'fixture')
+  return { root, git, lines }
+}
+
+test('source identity hashes tracked text, binary content and deletions independent of diff formatting', async (t) => {
+  const { root, git, lines } = await sourceFixture(t)
+  const initial = sourceIdentity(root)
+  assert.equal(initial.commit, git('rev-parse', 'HEAD'))
+  assert.equal(initial.tree, git('rev-parse', 'HEAD^{tree}'))
+  await writeFile(join(root, 'tracked.txt'), lines.replace('line 20\n', 'edited line\n'))
+  git('config', 'diff.context', '1')
+  const narrowDiff = git('diff', 'HEAD', '--binary')
+  const edited = sourceIdentity(root)
+  assert.notEqual(edited.tree, initial.tree)
+  git('config', 'diff.context', '8')
+  assert.notEqual(git('diff', 'HEAD', '--binary'), narrowDiff)
+  assert.deepEqual(sourceIdentity(root), edited)
+  await writeFile(join(root, 'tracked.bin'), Buffer.from([0, 254, 128, 10]))
+  const binary = sourceIdentity(root)
+  assert.notEqual(binary.tree, edited.tree)
+  await rm(join(root, 'tracked.txt'))
+  assert.notEqual(sourceIdentity(root).tree, binary.tree)
+})
+
+test('source identity ignores downloaded and other untracked files and preserves the real index', async (t) => {
+  const { root, git } = await sourceFixture(t)
+  const index = await readFile(join(root, '.git', 'index'))
+  const initial = sourceIdentity(root)
+  assert.equal(initial.tree, git('rev-parse', 'HEAD^{tree}'))
+  for (const name of ['.ci-source', '.ci-build']) {
+    await mkdir(join(root, name))
+    await writeFile(join(root, name, 'download.json'), '{"downloaded":true}\n')
+  }
+  await writeFile(join(root, '.ci-expected.json'), '{}\n')
+  await writeFile(join(root, 'untracked.txt'), 'untracked\n')
+  assert.deepEqual(sourceIdentity(root), initial)
+  assert.deepEqual(await readFile(join(root, '.git', 'index')), index)
 })
 
 test('protected gate executable rejects absent, skipped, failed and cancelled dependencies', () => {
