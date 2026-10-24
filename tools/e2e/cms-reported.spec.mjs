@@ -376,6 +376,9 @@ const legalContents = async (studio, expected) =>
 test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }) => {
   const backup = await savedBackup(page)
   const { draft, expected } = preUpgradeDraft(backup.document)
+  // The mounted Studio writes its own draft on pagehide (a clean one deletes the record), so the
+  // seed goes in after the reload and before the Studio mounts; the tab's session is reused.
+  await page.reload()
   await page.evaluate(
     async ({ backup, draft }) => {
       const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
@@ -389,7 +392,6 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
     },
     { backup, draft },
   )
-  await page.reload()
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
@@ -413,6 +415,81 @@ test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, st
   await expect
     .poll(() => legalContents(studio, expected), { message: 'the imported legal pages' })
     .toEqual(expected)
+})
+
+// A server head still holding the legacy legal pages reaches the draft through a publish conflict.
+// The resolved draft, every Undo and Redo state and the next publication keep the upgrade.
+test('legal upgrade survives conflict resolution, Undo and Redo', async ({ page, studio }) => {
+  const { backend } = studio
+  const backup = await savedBackup(page)
+  const { draft: legacyHead, expected: upgradedHead } = preUpgradeDraft(backup.document)
+  const resolvedLegal = Object.fromEntries(
+    backup.document.presentation.pages
+      .filter((page) => page.path in upgradedHead)
+      .map((page) => [page.path, page.content]),
+  )
+  // Another session publishes the legacy pages, so this draft's next publication is stale.
+  await page.evaluate(
+    async ({ legacyHead, revision, fingerprint }) =>
+      (await import('/src/admin/cms/api.ts')).cmsApi.publish(
+        legacyHead,
+        revision,
+        fingerprint,
+        globalThis.crypto.randomUUID(),
+      ),
+    { legacyHead, revision: backup.revision, fingerprint: backup.fingerprint },
+  )
+  assert.equal(
+    backend.document.presentation.pages.find((page) => page.path === '/terms').content.sv.css.light,
+    LEGACY_LEGAL_CSS['/terms'] + OWNER_CSS,
+  )
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByRole('button', { name: 'Behåll mina konfliktändringar', exact: true }).click()
+  await expect
+    .poll(() => legalContents(studio, upgradedHead), { message: 'the resolved draft' })
+    .toEqual(resolvedLegal)
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await expect
+    .poll(() => legalContents(studio, upgradedHead), { message: 'Undo to the server head' })
+    .toEqual(upgradedHead)
+  await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+  await expect
+    .poll(() => legalContents(studio, upgradedHead), { message: 'Redo to the resolution' })
+    .toEqual(resolvedLegal)
+  await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+  await expect
+    .poll(() => legalContents(studio, upgradedHead), { message: 'Undo again' })
+    .toEqual(upgradedHead)
+  // An owner edit after the Undo, then the publication it goes out with.
+  await page.getByRole('button', { name: 'Bokningsvillkor', exact: true }).click()
+  await studio.frame.getByRole('heading', { name: 'Bokningsvillkor', exact: true }).waitFor()
+  await select(page, 'body')
+  await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    cmsGrapes.editors.at(-1).getSelected().addStyle({ color: '#fedcba' })
+  })
+  const publication = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith('/functions/v1/cms-studio') &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.operation === 'publish',
+  )
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  assert.equal((await publication).status(), 200)
+  const published = backend.document.presentation.pages.filter((page) => page.path in upgradedHead)
+  assert.equal(published.length, 2)
+  for (const legalPage of published)
+    for (const lang of ['sv', 'en']) {
+      const variant = legalPage.content[lang]
+      assert.match(variant.html, /^\s*<main class="bb-doc">/, `${legalPage.path} ${lang} published`)
+      for (const css of [variant.css.light, variant.css.dark])
+        assert.ok(!css.includes(LEGACY_LEGAL_CSS[legalPage.path]), `${legalPage.path} ${lang} css`)
+    }
+  assert.match(
+    published.find((legalPage) => legalPage.path === '/terms').content.sv.css.light,
+    /#fedcba/i,
+    'the owner edit is published',
+  )
 })
 
 test('1-legal-background', async ({ page, context, studio }, testInfo) => {

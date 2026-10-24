@@ -99,24 +99,46 @@ describe('legacy legal page upgrade (STY-7)', () => {
   })
 
   // Studio recovers a local draft by merging it raw against the raw server base and upgrades only the
-  // result, so a draft saved before the upgrade neither conflicts with nor undoes it.
-  it('upgrades a recovered pre-upgrade draft and keeps its unrelated owner edit', () => {
+  // result, so a draft saved before the upgrade never brings the legacy sheets back.
+  const expectUpgraded = (document: CmsDocument): void => {
+    for (const path of ['/terms', '/privacy'] as const) {
+      expect(sheets(legal(document, path))).toEqual(['', '', '', ''])
+      for (const lang of ['sv', 'en'] as const)
+        expect(legal(document, path).content[lang].html).toMatch(/^\s*<main class="bb-doc">/)
+    }
+  }
+
+  it('recovers a pre-upgrade draft with an edit outside the pages without a conflict', () => {
+    const local = fixture()
+    local.settings = { ...local.settings, phone: '+46 70 000 00 00' }
+    const merged = mergeCmsDocuments(fixture(), local, upgradeLegacyLegalPages(fixture()))
+    expect(merged.conflicts).toEqual([])
+    // Merged when the server moved on, restored as is when the draft was saved at its revision.
+    for (const recovered of [merged.document, local].map(upgradeLegacyLegalPages)) {
+      expect(recovered.settings['phone']).toBe('+46 70 000 00 00')
+      expectUpgraded(recovered)
+    }
+  })
+
+  it('resolves a pre-upgrade page edit, which conflicts on the page array, with the edit and the upgrade', () => {
     const local = fixture()
     const home = local.presentation.pages.find((page) => !(page.path in LEGACY_LEGAL_CSS))
     if (!home) throw new Error('The fixture has no other page')
     home.title.sv = 'Ägarens rubrik'
-    const merged = mergeCmsDocuments(fixture(), local, upgradeLegacyLegalPages(fixture()))
-    // Merged when the server moved on, restored as is when the draft was saved at its revision.
-    for (const recovered of [merged.document, local].map(upgradeLegacyLegalPages)) {
+    const base = fixture()
+    const remote = upgradeLegacyLegalPages(fixture())
+    // Arrays merge whole: the owner's page edit and the server's upgrade both change the pages.
+    expect(mergeCmsDocuments(base, local, remote).conflicts).toEqual([
+      { path: 'presentation.pages' },
+    ])
+    // "Behåll mina konfliktändringar", and the same-revision restore that never merges.
+    const kept = mergeCmsDocuments(base, local, remote, 'local').document
+    for (const recovered of [kept, local].map(upgradeLegacyLegalPages)) {
       expect(recovered.presentation.pages.find((page) => page.id === home.id)?.title.sv).toBe(
         'Ägarens rubrik',
       )
-      for (const path of ['/terms', '/privacy'] as const) {
-        expect(sheets(legal(recovered, path))).toEqual(['', '', '', ''])
-        expect(legal(recovered, path).content.sv.html).toContain('<main class="bb-doc">')
-      }
+      expectUpgraded(recovered)
     }
-    expect(merged.conflicts).toEqual([])
   })
 
   it('is a no-op on its own output and on documents without legacy CSS', () => {
