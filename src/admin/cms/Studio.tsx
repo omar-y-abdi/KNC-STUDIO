@@ -85,6 +85,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [resourceBusy, setResourceBusy] = useState(false)
   const resourceCapture = useRef<AbortController | null>(null)
   const busy = requestBusy || resourceBusy
+  // Documents whose Home/About layouts were captured for their resource data. An edit that keeps
+  // the resource data inherits this; undo and redo bring it back with the document.
+  const capturedLayouts = useRef(new WeakSet<CmsDocument>())
   useEffect(() => () => resourceCapture.current?.abort(), [])
   const [sourceLoading, setSourceLoading] = useState(false)
   const [sourceFailure, setSourceFailure] = useState<string | null>(null)
@@ -251,9 +254,57 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   ): void => {
     const active = currentDraft.current
     if (!active) return
-    const next = typeof update === 'function' ? update(active.document) : update
+    const previous = active.document
+    const next = typeof update === 'function' ? update(previous) : update
     active.change(next, group)
+    if (
+      active.document === next &&
+      capturedLayouts.current.has(previous) &&
+      !resourceLayoutsChanged(previous, next)
+    )
+      capturedLayouts.current.add(next)
     setVersion((value) => value + 1)
+  }
+  // The Worker serves the stored Home/About snapshot as first paint: it must match the data.
+  const layoutsStale = (active: CmsDraft): boolean =>
+    resourceLayoutsChanged(active.base, active.document) &&
+    !capturedLayouts.current.has(active.document)
+  /** Captures Home/About for the draft's resource data and completes the current transaction. */
+  const captureLayouts = async (
+    active: CmsDraft,
+  ): Promise<{ captured: true } | { captured: false; reason: string }> => {
+    if (resourceCapture.current) throw new Error('En resursplacering uppdateras redan.')
+    const source = active.document
+    const controller = new AbortController()
+    resourceCapture.current = controller
+    setResourceBusy(true)
+    try {
+      const pages = await captureResourceLayouts(source, controller.signal)
+      controller.signal.throwIfAborted()
+      editor.current?.flush()
+      // Edits made meanwhile keep the layouts stale; Publicera captures them again.
+      if (currentDraft.current !== active || active.document !== source)
+        return { captured: false, reason: 'Sidan ändrades under uppdateringen.' }
+      const next = structuredClone(source)
+      next.presentation.pages = next.presentation.pages.map(
+        (page) => pages.find((item) => item.id === page.id) ?? page,
+      )
+      validateDocument(next)
+      // Resource data and its editable layout form one undoable draft transaction.
+      active.amend(next)
+      capturedLayouts.current.add(next)
+      setVersion((value) => value + 1)
+      return { captured: true }
+    } catch (reason) {
+      if (controller.signal.aborted) throw reason
+      return {
+        captured: false,
+        reason: reason instanceof Error ? reason.message : 'Förhandsvisningen kunde inte skapas.',
+      }
+    } finally {
+      resourceCapture.current = null
+      setResourceBusy(false)
+    }
   }
   const commitResourceDraft = async (
     update: CmsDocument | ((current: CmsDocument) => CmsDocument),
@@ -261,53 +312,48 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     editor.current?.flush()
     const active = currentDraft.current
     if (!active) throw new Error('Studions utkast finns inte längre.')
-    const base = structuredClone(active.document)
-    const next = typeof update === 'function' ? update(base) : update
-    if (!resourceLayoutsChanged(base, next)) {
+    const before = active.document
+    const next = typeof update === 'function' ? update(structuredClone(before)) : update
+    if (!resourceLayoutsChanged(before, next)) {
       commitDraft(next, 'resources')
       return
     }
     if (resourceCapture.current) throw new Error('En resursplacering uppdateras redan.')
-    const controller = new AbortController()
-    resourceCapture.current = controller
-    setResourceBusy(true)
-    try {
-      const pages = await captureResourceLayouts(next, controller.signal)
-      controller.signal.throwIfAborted()
-      if (currentDraft.current !== active)
-        throw new Error('Utkastet ändrades. Välj placeringen igen.')
-      next.presentation.pages = next.presentation.pages.map(
-        (page) => pages.find((item) => item.id === page.id) ?? page,
-      )
-      editor.current?.flush()
-      const merged = mergeCmsDocuments(base, next, active.document)
-      if (merged.conflicts.length)
-        throw new Error(
-          'Sidan ändrades under resursplaceringen. Dina ändringar finns kvar; välj placeringen igen.',
-        )
-      // Resource data and its editable layout form one undoable draft transaction.
-      validateDocument(merged.document)
-      commitDraft(merged.document, 'resources')
-    } finally {
-      resourceCapture.current = null
-      setResourceBusy(false)
-    }
+    validateDocument(next)
+    // Commit the data first: a failed capture must never take back an assignment.
+    commitDraft(next, 'resources')
+    const capture = await captureLayouts(active)
+    if (!capture.captured)
+      setNotice('Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.')
   }
   const replacePages = (pages: CmsPage[]): void => {
-    commitDraft((current) => {
-      const next = structuredClone(current)
-      next.presentation.pages = next.presentation.pages.map(
-        (page) => pages.find((update) => update.id === page.id) ?? page,
-      )
-      return next
-    }, `page:${selectedPage}:${lang}:${mode}`)
+    // Snapshots are never mutated, so unchanged parts are shared instead of cloned per keystroke.
+    commitDraft(
+      (current) => ({
+        ...current,
+        presentation: {
+          ...current.presentation,
+          pages: current.presentation.pages.map(
+            (page) => pages.find((update) => update.id === page.id) ?? page,
+          ),
+        },
+      }),
+      `page:${selectedPage}:${lang}:${mode}`,
+    )
   }
   const replacePage = (page: CmsPage): void => replacePages([page])
   const publish = async (): Promise<void> => {
     if (!draft || conflict || busy) return
     editor.current?.flush()
-    setBusy(true)
     setError(null)
+    if (layoutsStale(draft)) {
+      const capture = await captureLayouts(draft)
+      if (!capture.captured)
+        return setError(
+          `Inget publicerades: startsidan och Om oss kunde inte uppdateras med de nya resurserna (${capture.reason.replace(/\.$/, '')}). Utkastet finns kvar; försök igen.`,
+        )
+    }
+    setBusy(true)
     try {
       const request = draft.beginSave()
       // cms-studio validates and sanitizes the document as part of publication.

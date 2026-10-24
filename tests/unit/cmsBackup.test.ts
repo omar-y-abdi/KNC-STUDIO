@@ -4,7 +4,7 @@ import {
   openBackupSession,
   type BackupPorts,
   type BackupSession,
-  type TabBackup,
+  type StoredBackup,
 } from '../../src/admin/cms/backup'
 
 const FINGERPRINT = '0123456789abcdef0123456789abcdef'
@@ -26,7 +26,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 // IndexedDB, Web Locks, sessionStorage and localStorage as in-memory ports.
 function memory(
   options: {
-    records?: TabBackup[]
+    records?: StoredBackup[]
     held?: string[]
     tab?: string
     legacy?: Record<string, string>
@@ -41,7 +41,7 @@ function memory(
   const ports: BackupPorts = {
     records: {
       all: async () => [...records.values()].map((record) => structuredClone(record)),
-      put: vi.fn(async (record: TabBackup) => {
+      put: vi.fn(async (record: StoredBackup) => {
         records.set(record.tab, structuredClone(record))
       }),
       remove: vi.fn(async (tab: string) => {
@@ -74,12 +74,12 @@ function memory(
   return { ports, records, held, legacy, tabs }
 }
 
-const record = (tab: string, name: string, savedAt: string): TabBackup => ({
+const record = (tab: string, name: string, savedAt: string): StoredBackup => ({
   tab,
-  document: named(name),
+  document: JSON.stringify(named(name)),
   revision: 4,
   fingerprint: FINGERPRINT,
-  base: emptyDocument(),
+  base: JSON.stringify(emptyDocument()),
   savedAt,
 })
 

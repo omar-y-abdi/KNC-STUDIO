@@ -104,3 +104,20 @@ describe('CMS draft interaction cost', () => {
     expect(draft.undo()).toBe(false)
   })
 })
+
+describe('CMS draft amendment', () => {
+  it('completes the current transaction without an undo step of its own', () => {
+    const draft = new CmsDraft(emptyDocument(), 1, 'head')
+    const assigned = structuredClone(draft.document)
+    assigned.settings.business_name = 'Data'
+    draft.change(assigned, 'resources')
+    const captured = structuredClone(assigned)
+    captured.settings.business_city = 'Layout'
+    draft.amend(captured)
+    expect(draft.document).toBe(captured)
+    expect(draft.undo()).toBe(true)
+    expect(draft.dirty).toBe(false)
+    expect(draft.redo()).toBe(true)
+    expect(draft.document).toBe(captured)
+  })
+})

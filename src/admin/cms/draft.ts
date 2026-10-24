@@ -4,7 +4,7 @@ import type { CmsBarber, CmsDocument, CmsSave } from '../../../shared/cms'
 // by its identity. A production document serializes to over a million characters.
 const serialized = new WeakMap<CmsDocument, string>()
 
-function serialize(document: CmsDocument): string {
+export function serialize(document: CmsDocument): string {
   let json = serialized.get(document)
   if (json === undefined) {
     json = JSON.stringify(document)
@@ -61,6 +61,12 @@ export class CmsDraft {
     this.redoStack = []
     this.lastGroup = group
     this.lastChange = now
+    this.pending = null
+  }
+
+  /** Completes the current transaction in place, without an undo step of its own. */
+  amend(next: CmsDocument): void {
+    this.document = next
     this.pending = null
   }
 

@@ -1,4 +1,5 @@
 import type { CmsDocument } from '../../../shared/cms'
+import { serialize } from './draft'
 import { openKeyedStore } from './indexedDb'
 
 export interface CmsBackup {
@@ -14,11 +15,17 @@ export interface TabBackup extends CmsBackup {
   tab: string
 }
 export type BackupDraft = Omit<CmsBackup, 'savedAt'>
+/** The stored form keeps JSON text: IndexedDB then copies two strings instead of walking two
+ * production-size documents, and the draft's text is usually serialized already. */
+export interface StoredBackup extends Omit<TabBackup, 'document' | 'base'> {
+  document: string
+  base?: string
+}
 
 /** IndexedDB in the browser: one record per tab, keyed by `tab`. */
 export interface BackupRecords {
   all(): Promise<unknown[]>
-  put(record: TabBackup): Promise<void>
+  put(record: StoredBackup): Promise<void>
   remove(tab: string): Promise<void>
 }
 /** Web Locks: an open tab holds the lock named after its id until the tab is closed. */
@@ -68,8 +75,29 @@ function isBackup(value: unknown): value is CmsBackup {
     (backup.fingerprint === undefined || typeof backup.fingerprint === 'string')
   )
 }
-const isTabBackup = (value: unknown): value is TabBackup =>
-  isBackup(value) && typeof (value as Partial<TabBackup>).tab === 'string'
+const toStored = ({ document, base, ...metadata }: TabBackup): StoredBackup => ({
+  ...metadata,
+  document: serialize(document),
+  ...(base ? { base: serialize(base) } : {}),
+})
+
+function parseStored(value: unknown): TabBackup | null {
+  if (!value || typeof value !== 'object') return null
+  const { document, base, ...metadata } = value as Partial<StoredBackup>
+  if (typeof document !== 'string' || typeof metadata.tab !== 'string') return null
+  if (base !== undefined && typeof base !== 'string') return null
+  try {
+    const backup = {
+      ...metadata,
+      document: JSON.parse(document) as CmsDocument,
+      ...(base === undefined ? {} : { base: JSON.parse(base) as CmsDocument }),
+    }
+    return isBackup(backup) ? { ...backup, tab: metadata.tab } : null
+  } catch {
+    // A damaged record is never offered and never deleted automatically.
+    return null
+  }
+}
 
 function parseLegacy(json: string | null): CmsBackup | null {
   try {
@@ -82,7 +110,7 @@ function parseLegacy(json: string | null): CmsBackup | null {
 }
 
 async function readAll(records: BackupRecords): Promise<TabBackup[]> {
-  return (await records.all()).filter(isTabBackup)
+  return (await records.all()).flatMap((value) => parseStored(value) ?? [])
 }
 
 /** Copies every localStorage draft into IndexedDB; deletes an original only after its write. */
@@ -94,7 +122,8 @@ async function migrateLegacy(ports: BackupPorts): Promise<void> {
     const backup = key && tab ? parseLegacy(ports.legacy.getItem(key)) : null
     if (!key || !tab || !backup) continue
     const current = stored.get(tab)
-    if (!current || current.savedAt < backup.savedAt) await ports.records.put({ ...backup, tab })
+    if (!current || current.savedAt < backup.savedAt)
+      await ports.records.put(toStored({ ...backup, tab }))
     ports.legacy.removeItem(key)
   }
 }
@@ -126,13 +155,13 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
         .catch(() => undefined)
         .then(() =>
           next.draft
-            ? ports.records.put({ ...next.draft, savedAt: ports.now(), tab })
+            ? ports.records.put(toStored({ ...next.draft, savedAt: ports.now(), tab }))
             : ports.records.remove(tab),
         )
     return writing
   }
   const move = async (record: TabBackup, to: string): Promise<void> => {
-    await ports.records.put({ ...record, tab: to })
+    await ports.records.put(toStored({ ...record, tab: to }))
     await ports.records.remove(record.tab)
   }
   return {
