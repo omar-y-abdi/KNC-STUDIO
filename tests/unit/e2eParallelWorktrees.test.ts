@@ -1,4 +1,5 @@
 import type { PlaywrightTestConfig } from '@playwright/test'
+import type { UserConfigFn } from 'vite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveOrigins } from '../../tools/e2e/origins.mjs'
 
@@ -169,5 +170,15 @@ describe('playwright.config.ts', () => {
     await expect(loadPlaywrightConfig({ E2E_PORT_OFFSET: 'abc' })).rejects.toThrow(
       'E2E_PORT_OFFSET must be an integer from 0 to 1000',
     )
+  })
+})
+
+describe('vite.config.ts', () => {
+  it('keeps the dependency cache in the worktree, not in the shared node_modules', async () => {
+    const { default: config } = await vi.importActual<{ default: UserConfigFn }>(
+      '../../vite.config',
+    )
+    const resolved = await config({ command: 'serve', mode: 'test' })
+    expect(resolved.cacheDir).toBe('.vite-cache')
   })
 })
