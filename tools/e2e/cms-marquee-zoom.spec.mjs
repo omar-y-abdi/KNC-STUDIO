@@ -183,14 +183,17 @@ test('legacy barber zoom never survives load, import, history or backup restore'
       tileWidth: await offered('[data-knc-fold="gallery-tile"]', 'layout', 'width'),
       stripOverflow: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'overflow'),
       stripWidth: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'width'),
+      stripHeight: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'height'),
       textColor: await offered('[data-knc-fold="gallery-tile"]', 'typography', 'color'),
     }
   })
+  // The loop floor needs a strip width that does not follow its cards; its height stays the owner's.
   assert.deepEqual(policy, {
     trackTransform: false,
     tileWidth: false,
     stripOverflow: false,
-    stripWidth: true,
+    stripWidth: false,
+    stripHeight: true,
     textColor: true,
   })
   const advanced = page.locator('#cms-inspector .cms-advanced')

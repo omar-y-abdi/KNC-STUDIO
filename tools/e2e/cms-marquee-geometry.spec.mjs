@@ -193,6 +193,21 @@ test('mobile barber strip: an owner min-width transition does not hold back the 
   assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
 })
 
+test('mobile barber strip: an owner max-width on the strip still loops across the whole phone', async ({
+  newContext,
+  evidenceDir,
+}) => {
+  // In a 100 px view two 110 px cards loop on their own, and their 316 px cycle leaves the rest of
+  // the phone blank. With its own width the strip floors both cards to 366 px and loops at 390 px.
+  const css = cardWidth(0.3) + `@media (max-width:768px){${strip}{max-width:100px!important}}`
+  const probe = await measureStrip(newContext, css, 2)
+  await writeFile(`${evidenceDir}/barber-strip-max-width.json`, JSON.stringify(probe, null, 2))
+  assert.ok(!probe.native, 'The strip fell back to native scrolling')
+  assert.ok(probe.looping, 'Embla dropped loop')
+  assert.ok(probe.maxHole <= GAP + SEAM, `A ${probe.maxHole} px hole opened in the strip`)
+  assert.ok(moving(probe), `The strip stopped moving (${probe.offsets.join(', ')})`)
+})
+
 test('mobile barber strip: six 4vw cards spread by space-between at 768 px still loop', async ({
   newContext,
   evidenceDir,
@@ -405,10 +420,11 @@ test('mobile barber strip: a strip no floor can loop falls back to native scroll
   const page = await context.newPage()
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const failure = page.waitForEvent('pageerror')
-  // Sized by its cards, the strip widens with every floor, so its other slides never cover it.
-  const css = cardWidth(0.3) + `@media (max-width:768px){${strip}{width:max-content!important}}`
+  // The strip keeps its own width, but a column of cards overlaps horizontally: the middle slide
+  // spans nothing, and the floors (238, 302, then 334 px) never let one edge slide cover 390 px.
+  const css = cardWidth(0.3) + `@media (max-width:768px){${strip}{flex-direction:column!important}}`
   await page.evaluate(
-    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 3),
     css,
   )
   assert.match((await failure).message, /The barber strip cannot loop/)
@@ -426,27 +442,12 @@ test('mobile barber strip: a strip no floor can loop falls back to native scroll
   }, strip)
 })
 
-test('mobile barber strip: the native fallback scrolls to the last card of a strip sized by its cards', async ({
-  newContext,
-}) => {
-  const context = await newContext({
-    viewport: { width: 390, height: 844 },
-    reducedMotion: 'no-preference',
-  })
-  const page = await context.newPage()
-  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
-  const failure = page.waitForEvent('pageerror')
-  // Two stock cards: the strip is as wide as they are, so no floor loops it, and unless the
-  // fallback restores the strip's own width it has nothing to scroll.
-  await page.evaluate(
-    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
-    `@media (max-width:768px){${strip}{width:max-content!important}}`,
-  )
-  assert.match((await failure).message, /The barber strip cannot loop/)
-  await page.waitForFunction(
-    (selector) => globalThis.document.querySelector(selector)?.style.overflowX === 'auto',
-    strip,
-  )
+// Owner CSS that sizes the strip by its cards; two stock cards then make it about 828 px wide.
+const sizedStrip = `@media (max-width:768px){${strip}{width:max-content!important}}`
+
+/** The native strip has a scroll range, and scrolling it to its end brings the last card into the
+ * window. */
+async function scrollToLastCard(page) {
   const range = await page.evaluate((selector) => {
     const track = globalThis.document.querySelector(selector)
     return { scrollWidth: track?.scrollWidth, clientWidth: track?.clientWidth }
@@ -462,6 +463,92 @@ test('mobile barber strip: the native fallback scrolls to the last card of a str
     const rect = cards[cards.length - 1]?.getBoundingClientRect()
     return rect !== undefined && rect.left >= -1 && rect.right <= globalThis.innerWidth + 1
   }, strip)
+}
+
+/** The strip's inline overflow-x, and how many of its runtime-owned geometry declarations are
+ * important. */
+const stripGeometry = (page) =>
+  page.evaluate((selector) => {
+    const style = globalThis.document.querySelector(selector)?.style
+    const owned = ['width', 'overflow-x', 'min-width', 'max-width', 'float', 'position']
+    const important = owned.filter((name) => style?.getPropertyPriority(name) === 'important')
+    return { overflowX: style?.getPropertyValue('overflow-x'), important: important.length }
+  }, strip)
+
+test('mobile barber strip: the native fallback after a failed engine load scrolls to the last card', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  const page = await context.newPage()
+  // The strip starts animated, so its overflow-x flips to the native value when the import fails.
+  await page.route(/embla-carousel/, (route) => route.abort())
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
+    sizedStrip,
+  )
+  // Two cards render with the animated strip, so a native overflow-x beside them means it failed.
+  await page.waitForFunction((selector) => {
+    const track = globalThis.document.querySelector(selector)
+    return track?.children.length === 2 && track.style.overflowX === 'auto'
+  }, strip)
+  assert.deepEqual(await stripGeometry(page), { overflowX: 'auto', important: 6 })
+  await scrollToLastCard(page)
+})
+
+test('mobile barber strip: with reduced motion from the start, a strip sized by its cards still scrolls', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'reduce',
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
+    sizedStrip,
+  )
+  await page.locator(`${strip} > [role="button"]`).nth(1).waitFor()
+  // No engine ever starts or fails here: the native row keeps the strip's geometry by itself.
+  assert.deepEqual(await stripGeometry(page), { overflowX: 'auto', important: 6 })
+  await scrollToLastCard(page)
+})
+
+test('mobile barber strip: reduced motion during fitting re-applies the native strip geometry', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(
+    async (css) => (await import('/tools/e2e/cms-marquee-harness.tsx')).mountBarberStrip(css, 2),
+    cardWidth(0.3),
+  )
+  const floored = (priority) =>
+    page.waitForFunction(
+      ([selector, priority]) => {
+        const cards = [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)]
+        return (
+          cards.length === 2 &&
+          cards.every((card) => card.style.getPropertyPriority('min-width') === priority)
+        )
+      },
+      [strip, priority],
+    )
+  await floored('important')
+  assert.deepEqual(await stripGeometry(page), { overflowX: 'visible', important: 6 })
+  // The render that drops the engine rewrites overflow-x; its layout effects run before the
+  // engine's cleanup restores the slides.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await floored('')
+  assert.deepEqual(await stripGeometry(page), { overflowX: 'auto', important: 6 })
 })
 
 test('mobile barber strip: the loop floor returns to the inline width once cards loop alone', async ({
