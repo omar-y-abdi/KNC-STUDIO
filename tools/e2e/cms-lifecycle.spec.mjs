@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
+import { attachTabState } from './cms-tab-state.mjs'
 import { expect, test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
@@ -434,6 +435,8 @@ test('cms-lifecycle closing a tab with an unsaved edit asks first and keeps the 
 
   const next = await context.newPage()
   await openStudio(next)
+  // The closed tab's draft is offered only once the browser released that tab's lock.
+  await attachTabState(next, 'tab state of the next tab')
   await next.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   const offers = next.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
   await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
