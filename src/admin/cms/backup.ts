@@ -70,6 +70,9 @@ export interface BackupSession {
   schedule(draft: BackupDraft | null, report?: (reason: unknown) => void): void
   /** Writes the scheduled draft now. */
   flush(): Promise<void>
+  /** A scheduled draft, or a write IndexedDB has not confirmed (or failed): closing the tab now
+   * can lose it. */
+  unsaved(): boolean
   /** For `pagehide`: flushes, and journals the unconfirmed write synchronously, because the page
    * may end before IndexedDB commits it. The next page in this tab replays the journal. Never
    * throws; a failed journal write rejects, and the previous journal stays whole. */
@@ -343,6 +346,7 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
       timer = setTimeout(() => void flush().catch(report), 500)
     },
     flush,
+    unsaved: () => pending !== null || unconfirmed !== null,
     suspend: () => {
       const written = flush()
       try {
@@ -356,9 +360,10 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     adopt: (offer) =>
       consume(offer, async (record) => {
         await flush()
-        // This tab's next write must stay newer than the adopted draft, whatever the clock says.
+        // The adopted draft becomes this tab's newest version, newer than the offer and than any
+        // earlier write or journal of this tab, whatever the clock says.
         if (record.savedAt > latest) latest = record.savedAt
-        await move(record, tab)
+        await move({ ...record, savedAt: stamp() }, tab)
       }),
     discard: (offer) => consume(offer, (record) => ports.records.remove(record.tab)),
     setAside: async () => {

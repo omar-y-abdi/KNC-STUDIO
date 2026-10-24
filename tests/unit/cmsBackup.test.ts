@@ -547,10 +547,53 @@ describe('sessionStorage journal across a reload', () => {
     })
     void session.suspend()
     const next = await openBackupSession(reload(browser))
+    // The adopted draft is 13:00:00.001, the later edit one millisecond newer.
     expect(await next.own()).toMatchObject({
       document: named('Senare redigering'),
-      savedAt: '2026-10-24T13:00:00.001Z',
+      savedAt: '2026-10-24T13:00:00.002Z',
     })
+  })
+
+  it('gives an adopted draft a version no copied pre-adoption journal can beat', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('closed', 'Erbjuden', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    session.schedule({ document: named('Före adoption'), revision: 4, fingerprint: FINGERPRINT })
+    await session.flush()
+    const before = browser.records.get('this-tab')?.savedAt
+    // A journal of that write, e.g. inherited by a tab this one opened.
+    const copied = `${JSON.stringify({ tab: 'this-tab', savedAt: before, revision: 4, fingerprint: FINGERPRINT })}\n${JSON.stringify(named('Kopierad'))}`
+    const [offer] = await session.offers()
+    if (!offer) throw new Error('An offer was expected')
+    expect(await session.adopt(offer)).toBe('done')
+    expect((browser.records.get('this-tab')?.savedAt ?? '') > (before ?? '')).toBe(true)
+
+    // This tab is closed; the copy's next page replays the journal under the same tab id.
+    browser.tabs.set(JOURNAL, copied)
+    const next = await openBackupSession(reload(browser))
+    expect((await next.own())?.document).toEqual(named('Erbjuden'))
+  })
+
+  it('reports unsaved work until IndexedDB confirms it', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    expect(session.unsaved()).toBe(false)
+    const write = deferred()
+    const put = vi.mocked(browser.ports.records.put)
+    const store = put.getMockImplementation()
+    put.mockImplementation(async (value) => {
+      await write.promise
+      await store?.(value)
+    })
+    session.schedule({ document: named('Osparad'), revision: 4, fingerprint: FINGERPRINT })
+    expect(session.unsaved()).toBe(true)
+    const written = session.flush()
+    expect(session.unsaved()).toBe(true)
+    write.resolve()
+    await written
+    expect(session.unsaved()).toBe(false)
   })
 })
 

@@ -1,4 +1,4 @@
-/* global Event, indexedDB */
+/* global Event, indexedDB, PerformanceObserver, setTimeout */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
@@ -319,13 +319,37 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   const source = '**/cms-public/source?preview=1'
   await context.route(source, (route) => route.abort())
   await page.getByRole('button', { name: 'Dölj från sidan', exact: true }).click()
-  await failed.waitFor({ timeout: 45000 })
+  await page
+    .getByText('Filen är borttagen från sidan. Förhandsvisningen uppdateras när du publicerar.', {
+      exact: true,
+    })
+    .waitFor({ timeout: 45000 })
 
   const publish = page.getByRole('button', { name: 'Publicera', exact: true })
+  const blocked = page.getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)
   await publish.click()
+  await blocked.waitFor({ timeout: 45000 })
+  assert.equal(backend.writes.filter((write) => write === 'publish').length, 0)
+
+  // An exported copy of this draft, imported after Återställ, still shows the image in its
+  // layouts while its data equals the published data: Publicera must capture first.
+  const backupView = page.getByRole('button', { name: /Utkast & backup/ })
+  await backupView.click()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export', exact: true }).click(),
+  ])
+  const exported = await download.path()
+  await page.getByRole('button', { name: 'Återställ', exact: true }).click()
+  await backupView.click()
+  await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles(exported)
   await page
-    .getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)
-    .waitFor({ timeout: 45000 })
+    .getByText('JSON-utkastet importerades och är ännu inte publicerat.', { exact: true })
+    .waitFor()
+  await publish.click()
+  // Publicera clears the previous error first; only a failed capture shows it again.
+  await expect(blocked).toHaveCount(0)
+  await blocked.waitFor({ timeout: 45000 })
   assert.equal(backend.writes.filter((write) => write === 'publish').length, 0)
 
   await context.unroute(source)
@@ -333,4 +357,128 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
   assert.equal(backend.writes.filter((write) => write === 'publish').length, 1)
   assert.deepEqual(backend.document.gallery, [])
+})
+
+// A desktop tab closed right after an edit ends before IndexedDB commits, and its journal goes with
+// it. The leave prompt holds the page while the write commits. The clock is paused, so only the
+// beforeunload handler can save the canvas edit.
+test('cms-lifecycle closing a tab with an unsaved edit asks first and keeps the edit', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context, await productionDocument())
+  await page.clock.install()
+  await openStudio(page)
+  // A real click: browsers show the leave prompt only after a user gesture on the page.
+  await nameField(page).click()
+  await pauseClock(page)
+  const text = 'Ändrad i canvas precis före stängning'
+  await editCanvas(page, text)
+  // Reads IndexedDB while the prompt is open; it opens no studio and holds no tab lock.
+  const probe = await context.newPage()
+  await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  const prompted = new Promise((resolve, reject) => {
+    page.once('dialog', async (dialog) => {
+      try {
+        await expect.poll(() => draftHolds(probe, text)).toBe(true)
+        resolve(dialog.type())
+        await dialog.accept()
+      } catch (reason) {
+        reject(reason)
+      }
+    })
+  })
+  await page.close({ runBeforeUnload: true })
+  assert.equal(await prompted, 'beforeunload')
+  await probe.close()
+  await context.clock.resume()
+
+  const next = await context.newPage()
+  await openStudio(next)
+  await next.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = next.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  await next.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
+})
+
+const gate = () => {
+  let release
+  const promise = new Promise((resolve) => {
+    release = resolve
+  })
+  return { promise, release }
+}
+
+// Publicera captured the layouts for a new display name; during the request the name goes back to
+// the published one and the server moves on. The 409 merge keeps the captured layouts while its
+// data equals the server's, so the next Publicera must capture again.
+test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publication left', async ({
+  page,
+  context,
+}) => {
+  const delay = { operation: 'publish', started: gate(), done: gate() }
+  const initial = await productionDocument()
+  initial.settings.business_name = 'Salongen'
+  const backend = await nativeBackend(context, initial, [], undefined, { delay })
+  await openStudio(page)
+  await page.getByRole('button', { name: /Företag & SEO/ }).click()
+  const name = page.getByLabel('Visningsnamn', { exact: true })
+  await name.fill('Tillfälligt namn')
+  const publish = page.getByRole('button', { name: 'Publicera', exact: true })
+  await publish.click()
+  await delay.started.promise
+  await name.fill('Salongen')
+  backend.document.settings.business_legal_name = 'Serverns AB'
+  const source = '**/cms-public/source?preview=1'
+  await context.route(source, (route) => route.abort())
+  delay.done.release()
+  await page
+    .getByText(
+      'Servern hade nya ändringar. De slogs ihop med ditt utkast; granska och publicera igen.',
+      { exact: true },
+    )
+    .waitFor({ timeout: 45000 })
+  await publish.click()
+  await page
+    .getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)
+    .waitFor({ timeout: 45000 })
+  assert.equal(backend.writes.filter((write) => write === 'publish').length, 0)
+})
+
+// TST-15: the median of 3 in-page samples. Only Chromium has the Long Tasks API, which reports
+// tasks of 50 ms or more. The budget sits between today's edit and the 77-87 ms one before LIFE-16;
+// a 120 ms stall in CmsDraft.change fails it.
+test('cms-lifecycle a page-name edit stays a short task at production size', async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'The Long Tasks API exists only in Chromium.')
+  await nativeBackend(context, await productionDocument())
+  await openStudio(page)
+  const durations = await nameField(page).evaluate(async (input) => {
+    const longestTask = async (value) => {
+      const tasks = []
+      const observer = new PerformanceObserver((list) => tasks.push(...list.getEntries()))
+      observer.observe({ type: 'longtask' })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      tasks.length = 0
+      // The edit runs in a task of its own, as typing does.
+      setTimeout(() => {
+        input.value = value
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      // Shorter than the 500 ms backup debounce: the sample is the edit and its render.
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      observer.disconnect()
+      return Math.max(0, ...tasks.map((task) => task.duration))
+    }
+    const samples = []
+    for (const value of ['Startsida A', 'Startsida AB', 'Startsida ABC'])
+      samples.push(await longestTask(value))
+    return samples
+  })
+  const median = [...durations].sort((a, b) => a - b)[1]
+  console.log(`page-name edit longest task ms: ${durations.map((ms) => ms.toFixed(1)).join(', ')}`)
+  assert.ok(median < 60, `median longest task ${median.toFixed(1)} ms (${durations.join(', ')})`)
 })

@@ -54,6 +54,12 @@ const JOURNAL_FULL =
   'Utkastet är för stort för den snabba reservkopian. Vänta en sekund efter senaste ändringen innan du laddar om eller stänger fliken.'
 const OFFER_CHANGED = 'Utkastet har ändrats eller öppnats i en annan flik. Listan är uppdaterad.'
 
+// A resource change that takes a file off the page ("Dölj från sidan").
+const resourceRemoved = (before: CmsDocument, after: CmsDocument): boolean =>
+  after.gallery.length < before.gallery.length ||
+  Object.keys(after.photos).length < Object.keys(before.photos).length ||
+  (Boolean(before.settings['homepage_logo_path']) && !after.settings['homepage_logo_path'])
+
 function downloadDraft(document: CmsDocument): void {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(document, null, 2)], {
@@ -244,11 +250,19 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
 
   const reportBackup = (reason: unknown): void =>
     setError(reason instanceof JournalFull ? JOURNAL_FULL : BACKUP_FAILED)
+  // The draft state last scheduled, so a lifecycle handler schedules only what is new.
+  const scheduled = useRef<{ document: CmsDocument; conflict: unknown } | null>(null)
   // Reads refs only: the lifecycle handlers below call it without a render in between.
   const scheduleBackup = (): void => {
     const active = currentDraft.current
     const conflicted = currentConflict.current
     if (!active) return
+    if (
+      scheduled.current?.document === active.document &&
+      scheduled.current.conflict === conflicted
+    )
+      return
+    scheduled.current = { document: active.document, conflict: conflicted }
     const base = conflicted ? (conflicted.base ?? undefined) : active.base
     backups.current?.schedule(
       active.dirty || conflicted
@@ -263,7 +277,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       reportBackup,
     )
   }
-  useLayoutEffect(scheduleBackup, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
+  useLayoutEffect(() => {
+    // A new revision (after Publicera) is new backup state even for the same document.
+    scheduled.current = null
+    scheduleBackup()
+  }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
   useEffect(() => {
     // A reloaded, closed or backgrounded tab must not lose the last edits: the canvas holds them
     // for 180 ms and the backup for 500 ms. The editor hands them over synchronously; the backup
@@ -277,9 +295,23 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const hidden = (): void => {
       if (window.document.visibilityState === 'hidden') persist()
     }
+    // A desktop tab closed right after an edit ends before IndexedDB commits, and its journal goes
+    // with it. While a write is unsaved, start it now and ask the browser for its leave prompt; the
+    // write commits while the prompt is open. Without unsaved work there is no prompt.
+    const leaving = (event: BeforeUnloadEvent): void => {
+      editor.current?.flush()
+      scheduleBackup()
+      const session = backups.current
+      if (!session?.unsaved()) return
+      void session.flush().catch(reportBackup)
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', leaving)
     window.addEventListener('pagehide', persist)
     window.document.addEventListener('visibilitychange', hidden)
     return () => {
+      window.removeEventListener('beforeunload', leaving)
       window.removeEventListener('pagehide', persist)
       window.document.removeEventListener('visibilitychange', hidden)
       void backups.current?.flush().catch(reportBackup)
@@ -361,7 +393,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     commitDraft(next, 'resources')
     const capture = await captureLayouts(active)
     if (!capture.captured)
-      setNotice('Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.')
+      setNotice(
+        resourceRemoved(before, next)
+          ? 'Filen är borttagen från sidan. Förhandsvisningen uppdateras när du publicerar.'
+          : 'Filen är tilldelad. Förhandsvisningen uppdateras när du publicerar.',
+      )
   }
   const replacePages = (pages: CmsPage[]): void => {
     // Snapshots are never mutated, so unchanged parts are shared instead of cloned per keystroke.
@@ -423,7 +459,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           )
           const adopted = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
           const next = new CmsDraft(adopted, remote.revision, remote.fingerprint)
-          layouts.current.merged(adopted, [
+          // The constructor clones: the provenance belongs to the draft's own document.
+          layouts.current.merged(next.document, [
             { document: draft.document, stale: layoutsStale(draft) },
             { document: remote.document, stale: false },
           ])
@@ -592,6 +629,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       const checked = await cmsApi.validate(parsed as CmsDocument)
       const next = upgradeLegacyLegalPages(normalizeMarqueeZoom(ensureCorePages(checked.document)))
       commitDraft(next)
+      // An imported file says nothing about the resource data its layouts were made for.
+      if (currentDraft.current?.document === next) layouts.current.unknown(next)
       setSelectedPage(next.presentation.pages[0]?.id ?? CORE_PAGE_IDS[0])
       setNotice('JSON-utkastet importerades och är ännu inte publicerat.')
     } catch (reason) {
