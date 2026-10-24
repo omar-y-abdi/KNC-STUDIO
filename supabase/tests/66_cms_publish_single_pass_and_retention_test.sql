@@ -1,5 +1,5 @@
 begin;
-select plan(37);
+select plan(50);
 
 insert into auth.users(id,email) values
  ('96000000-0000-4000-8000-000000000001','cms-single-pass-owner@example.invalid');
@@ -39,6 +39,9 @@ $$;
 create function pg_temp.storage_deletions() returns bigint language sql as $$
   select count(*) from public.external_action_jobs where action_type='storage_object_delete'
 $$;
+create function pg_temp.with_markup(p_document jsonb, p_html text) returns jsonb language sql as $$
+  select jsonb_set(p_document,'{presentation,legacyMarkup}',to_jsonb(p_html))
+$$;
 
 -- One publication function: the lifecycle wrapper and the unchecked writer are merged.
 select hasnt_function('public','internal_cms_publish_unchecked',array['uuid','jsonb','bigint','text','uuid'],
@@ -72,13 +75,15 @@ select is((select value->>'requestId' from single_pass_result),'96000000-0000-40
   'The publication echoes its request identity');
 
 -- The merged function keeps the wrapper's order: replay, stale base, archived-media rule, staff membership.
+select lives_ok($$select pg_temp.publish(pg_temp.state()->'document' #- '{presentation,images,single.kept}')$$,
+  'The head drops the image the replayed request placed');
 update public.cms_assets set archived=true where id='96000000-0000-4000-8000-0000000000a1';
 select set_config('test.builds',pg_temp.document_builds()::text,true);
 select is((select public.internal_cms_publish('96000000-0000-4000-8000-000000000001',
     pg_temp.with_image(b.value->'document','single.kept','images/single-pass-kept.webp'),
     (b.value->>'revision')::bigint,b.value->>'fingerprint','96000000-0000-4000-8000-0000000000f1') from single_pass_base b),
   (select value from single_pass_result),
-  'An exact replay returns the committed revision although its image was archived since');
+  'An exact replay returns the committed revision although its image was archived since and the head no longer shows it');
 select is(pg_temp.document_builds()-current_setting('test.builds')::bigint,0::bigint,
   'A replay builds no document');
 select throws_ok($$select public.internal_cms_publish('96000000-0000-4000-8000-000000000001',
@@ -93,9 +98,10 @@ select throws_ok($$select pg_temp.publish(jsonb_set(
 select has_function('public','prune_cms_revisions',array[]::text[],'Revisions have a retention function');
 insert into storage.objects(bucket_id,name,created_at) values
  ('gallery','salon/legacy old only.webp',now()-interval '60 days'),
- ('gallery','salon/legacy head.webp',now()-interval '60 days');
+ ('gallery','salon/legacy head.webp',now()-interval '60 days'),
+ ('gallery','salon/legacy markup.webp',now()-interval '60 days');
 select is((select count(*)::int from public.cms_assets
-    where path in ('salon/legacy old only.webp','salon/legacy head.webp')),0,
+    where path in ('salon/legacy old only.webp','salon/legacy head.webp','salon/legacy markup.webp')),0,
   'precondition: the legacy files are not registered library assets');
 select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(
     pg_temp.with_image(pg_temp.state()->'document','retention.old','images/retention-old.webp'),
@@ -106,15 +112,16 @@ select lives_ok($$select pg_temp.publish(pg_temp.without_gallery_row(
     pg_temp.state()->'document' #- '{presentation,images,retention.old}','96000000-0000-4000-8000-0000000000c1'))$$,
   'A younger revision no longer shows them');
 create temporary table retention_young as select revision from public.cms_site where id;
-select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.with_gallery_row(
     pg_temp.with_image(pg_temp.state()->'document','retention.head','images/retention-head.webp'),
-    '96000000-0000-4000-8000-0000000000c2','salon/legacy head.webp'))$$,
-  'The head shows another library image and legacy gallery file');
+    '96000000-0000-4000-8000-0000000000c2','salon/legacy head.webp'),
+    '<img src="/storage/v1/object/public/gallery/salon/legacy markup.webp">'))$$,
+  'The head shows another library image, a legacy gallery file and a legacy file only in markup');
 create temporary table retention_head as select revision from public.cms_site where id;
 
 update public.cms_revisions set created_at=now()-interval '60 days' where revision<(select revision from retention_old);
-update public.cms_revisions set created_at=now()-interval '31 days' where revision=(select revision from retention_old);
-update public.cms_revisions set created_at=now()-interval '29 days' where revision=(select revision from retention_young);
+update public.cms_revisions set created_at=now()-interval '30 days 1 minute' where revision=(select revision from retention_old);
+update public.cms_revisions set created_at=now()-interval '30 days' where revision=(select revision from retention_young);
 update public.cms_revisions set created_at=now()-interval '45 days' where revision=(select revision from retention_head);
 insert into public.cms_revisions(revision,created_at,document,fingerprint,summary)
 select revision+1000,now()-interval '90 days','{}','newest-test','Newest revision' from retention_head;
@@ -127,9 +134,9 @@ select ok(public.internal_cms_media_retained('gallery','salon/legacy old only.we
 select is(public.prune_cms_revisions(),current_setting('test.expected_pruned')::integer,
   'The prune reports every revision it deleted');
 select ok(not exists(select 1 from public.cms_revisions where revision<=(select revision from retention_old)),
-  'Every revision older than 30 days is deleted');
+  'Every revision older than 30 days is deleted, one that is 30 days and 1 minute old included');
 select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_young)),
-  'A revision younger than 30 days survives');
+  'A revision exactly 30 days old survives');
 select ok(exists(select 1 from public.cms_revisions r join public.cms_site s on s.id and r.revision=s.revision),
   'The head, which is the published revision, survives although older than 30 days');
 select ok(exists(select 1 from public.cms_revisions where revision=(select revision+1000 from retention_head)),
@@ -138,16 +145,16 @@ select is((select count(*)::int from public.cms_revision_media where revision<=(
   'Pruned revisions leave no media index rows');
 select is(pg_temp.storage_deletions(),current_setting('test.storage_deletions')::bigint,
   'Pruning queues no Storage deletion');
-select ok(public.queue_orphaned_storage_objects()>=1,'The nightly reconcile runs after the prune');
-select is((select count(*)::int from public.external_action_jobs j
-    where j.action_type='storage_object_delete'
-      and (j.dedupe_key='gallery:salon/legacy head.webp'
-        or j.dedupe_key in (select m.bucket || ':' || m.path from public.cms_revision_media m
-          where m.revision=(select revision from retention_head)))),0,
-  'The nightly reconcile after a prune queues no file the head references');
+-- The reconciler reads no revision, so it may queue a file the head shows only in markup: queueing
+-- can happen, deletion cannot, because the dispatch deletes only bytes internal_cms_media_retained releases.
+select ok(not exists(select 1 from public.gallery_images where storage_path='salon/legacy markup.webp'),
+  'precondition: no gallery row keeps the file the head shows only in markup');
+create temporary table reconcile_run as select public.queue_orphaned_storage_objects() as queued;
 select is((select count(*)::int from public.external_action_jobs
-    where action_type='storage_object_delete' and dedupe_key='gallery:salon/legacy old only.webp'),1,
-  'The nightly reconcile queues the legacy file that only pruned revisions showed');
+    where action_type='storage_object_delete' and dedupe_key='gallery:salon/legacy markup.webp'),1,
+  'The nightly reconcile queues the unregistered file the head shows only in markup');
+select ok(public.internal_cms_media_retained('gallery','salon/legacy markup.webp'),
+  'After the prune the dispatch retention check still keeps the file the head shows only in markup, so its bytes are not removed');
 select ok((select bool_and(public.internal_cms_media_retained(m.bucket,m.path)) from public.cms_revision_media m
     where m.revision=(select revision from retention_head)),
   'Every file the head references stays retained');
@@ -159,6 +166,45 @@ select is((public.internal_cms_asset_usage('96000000-0000-4000-8000-000000000001
     '96000000-0000-4000-8000-0000000000a3')->>'historyReferences')::int,0,
   'A library image that only pruned revisions showed keeps no history reference');
 select is(public.prune_cms_revisions(),0,'A second prune deletes nothing');
+
+-- The retention check finds a path only as a raw substring. While the head spells a storage path
+-- percent-encoded, CSS-escaped or with an HTML character reference, nothing is pruned.
+insert into storage.objects(bucket_id,name,created_at) values
+ ('gallery','salon/legacy encoded.webp',now()-interval '60 days');
+select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(pg_temp.state()->'document',
+    '96000000-0000-4000-8000-0000000000c3','salon/legacy encoded.webp'))$$,
+  'An old revision pins a legacy file by its raw path');
+create temporary table retention_pin as select revision from public.cms_site where id;
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.without_gallery_row(pg_temp.state()->'document',
+    '96000000-0000-4000-8000-0000000000c3'),
+    '<a href="/storage/v1/object/public/gallery/%73alon/legacy%20encoded.webp">'))$$,
+  'The head links the same file only percent-encoded');
+update public.cms_revisions set created_at=now()-interval '31 days' where revision=(select revision from retention_pin);
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the head spells a storage path encoded');
+select ok(exists(select 1 from public.cms_revisions where revision=(select revision from retention_pin)),
+  'The old revision that pins the raw path survives');
+select ok(public.internal_cms_media_retained('gallery','salon/legacy encoded.webp'),
+  'The file the head links encoded stays retained, so the dispatch cannot delete it');
+select lives_ok($$select pg_temp.publish(pg_temp.with_markup(pg_temp.state()->'document',
+    '<a href="/storage/v1/object/public/%67allery/%73alon/legacy%20encoded.webp">'))$$,
+  'The head links the file with its bucket percent-encoded too');
+select is(public.prune_cms_revisions(),0,'The prune deletes nothing while the head spells the bucket encoded');
+select lives_ok($$select pg_temp.publish(pg_temp.with_gallery_row(pg_temp.with_markup(pg_temp.state()->'document',''),
+    '96000000-0000-4000-8000-0000000000c3','salon/legacy encoded.webp'))$$,
+  'The head shows the file by its raw path again');
+select set_config('test.expected_pruned',(select count(*) from public.cms_revisions r
+  where r.created_at<now()-interval '30 days'
+    and r.revision<>(select s.revision from public.cms_site s where s.id)
+    and r.revision<>(select max(n.revision) from public.cms_revisions n))::text,true);
+select is(public.prune_cms_revisions(),current_setting('test.expected_pruned')::integer,
+  'Once the head spells every storage path raw, the prune deletes again');
+select ok(not exists(select 1 from public.cms_revisions where revision=(select revision from retention_pin)),
+  'The old revision that pinned the raw path is deleted then');
+select ok(public.internal_cms_media_retained('gallery','salon/legacy encoded.webp'),
+  'The head keeps the file once it shows the raw path');
+select ok((select p.prosecdef and p.proconfig=array['search_path=""'] from pg_proc p
+    where p.oid='public.prune_cms_revisions()'::regprocedure),
+  'The prune runs as its owner with an empty search_path');
 select ok(not has_function_privilege('service_role','public.prune_cms_revisions()','execute')
   and not has_function_privilege('authenticated','public.prune_cms_revisions()','execute')
   and not has_function_privilege('anon','public.prune_cms_revisions()','execute'),
