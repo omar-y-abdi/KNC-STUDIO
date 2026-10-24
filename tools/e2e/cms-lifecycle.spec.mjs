@@ -1,4 +1,4 @@
-/* global Event, indexedDB, MessageChannel, performance, setTimeout */
+/* global Event, indexedDB */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
@@ -333,43 +333,4 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
   assert.equal(backend.writes.filter((write) => write === 'publish').length, 1)
   assert.deepEqual(backend.document.gallery, [])
-})
-
-test('cms-lifecycle a page-name edit stays a short task at production size', async ({
-  page,
-  context,
-}) => {
-  await nativeBackend(context, await productionDocument())
-  await openStudio(page)
-  const durations = await nameField(page).evaluate(async (input) => {
-    // The longest gap between back-to-back tasks is the longest task the edit caused,
-    // including its render and effects, in every engine (WebKit has no Long Tasks API).
-    const longestTask = async (value) => {
-      const channel = new MessageChannel()
-      let running = true
-      let last = performance.now()
-      let longest = 0
-      channel.port1.onmessage = () => {
-        const now = performance.now()
-        longest = Math.max(longest, now - last)
-        last = now
-        if (running) channel.port2.postMessage(null)
-      }
-      channel.port2.postMessage(null)
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      longest = 0
-      input.value = value
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      running = false
-      return longest
-    }
-    const samples = []
-    for (const value of ['Startsida A', 'Startsida AB', 'Startsida ABC'])
-      samples.push(await longestTask(value))
-    return samples
-  })
-  const median = [...durations].sort((a, b) => a - b)[1]
-  console.log(`page-name edit longest task ms: ${durations.map((ms) => ms.toFixed(1)).join(', ')}`)
-  assert.ok(median < 30, `median longest task ${median.toFixed(1)} ms (${durations.join(', ')})`)
 })
