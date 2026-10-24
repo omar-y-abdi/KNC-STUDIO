@@ -10,8 +10,6 @@ import { harnessOrigin } from './origins.mjs'
 // Production stored this card zoom in revisions 33-43; Embla then left most of the strip blank.
 const LEGACY_ZOOM = 0.699029
 const MAX_BLANK = 96
-// Embla measures slides by whole-pixel offsetWidth, so its loop seam may open up to 1 px wider.
-const SEAM = 1
 const strip = '[data-knc-fold="barber-marquee"]'
 
 const barbers = ['A', 'B', 'C', 'D'].map((name, index) => ({
@@ -299,9 +297,16 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   await liveContext.clock.runFor(90_000)
   const probe = await live.evaluate(readBlankProbe)
   await writeFile(`${evidenceDir}/public-strip.json`, JSON.stringify({ layout, probe }, null, 2))
+  // Embla 8.6 measures slides by whole-pixel offsetLeft and offsetWidth in their offset parent, so
+  // its loop cycle ends at the last card's right edge rounded there. Behind a strip at a fractional
+  // offset that is up to ceil(edge) - edge px past the real edge. Its slide looper also moves the
+  // next card in only 0.5 px (roundingSafety) into the view. The seam therefore opens at most
+  // 0.5 + ceil(edge) - edge px wider than a gap: 1.125 px for 255.84375 px cards (edge 1191.375).
+  const edge = 24 + 4 * layout.width + 3 * 48
+  const seam = 0.5 + Math.ceil(edge) - edge
   assert.ok(
-    probe.maxBlank <= MAX_BLANK + SEAM,
-    `${probe.maxBlank} px of the public strip went blank`,
+    probe.maxBlank <= MAX_BLANK + seam,
+    `${probe.maxBlank} px of the public strip went blank (seam ${seam} px)`,
   )
   assert.ok(
     probe.offsets.slice(1).every((value, index) => Math.abs(value - probe.offsets[index]) > 1),
