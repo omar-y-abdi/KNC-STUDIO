@@ -5,8 +5,8 @@ const { invokePublicBookingAction } = vi.hoisted(() => ({
 }))
 
 vi.mock('../../src/backend/publicBookingActions', () => ({ invokePublicBookingAction }))
-vi.mock('../../src/backend/supabaseClient', () => ({
-  getSupabase: () => ({
+vi.mock('../../src/backend/publicRest', () => ({
+  getPublicRest: () => ({
     from: () => ({
       select: () => ({
         eq: () => ({ order: async () => ({ data: [], error: null }) }),

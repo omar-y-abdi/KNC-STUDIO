@@ -1,8 +1,7 @@
-// The Supabase client seam — the ONLY module that imports `@supabase/supabase-js`. It is reached
-// solely through a DYNAMIC import from the supabase adapters (which the selectors lazy-load when the
-// backend is configured), so supabase-js lands in a SEPARATE chunk and never weighs down the main
-// bundle. The "configured?" check lives in `config.ts` (no supabase-js) so the selectors can decide
-// real-vs-mock without pulling this in.
+// The full Supabase client seam for the admin — the ONLY module that imports `@supabase/supabase-js`.
+// The public pages never load it: they read through `publicRest.ts` and subscribe through
+// `publicRealtime.ts`, which carry only the Data API and Realtime code. The "configured?" check lives
+// in `config.ts` (no supabase-js) so the selectors can decide real-vs-mock without pulling this in.
 //
 // Effects (creating the network client) are isolated here at the edge; the rest of the backend layer
 // takes a ready `SupabaseClient` from `getSupabase()` and stays a pure transform of its responses.

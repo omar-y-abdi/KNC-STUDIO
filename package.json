@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "bundle-budget": "node tools/bundle-budget.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && npm run deploy:frontend",
     "deploy:frontend": "npm run verify:cms-backend && wrangler deploy",
@@ -30,6 +31,8 @@
   },
   "dependencies": {
     "@imagemagick/magick-wasm": "0.0.42",
+    "@supabase/postgrest-js": "2.112.2",
+    "@supabase/realtime-js": "2.112.2",
     "@supabase/supabase-js": "2.112.2",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
