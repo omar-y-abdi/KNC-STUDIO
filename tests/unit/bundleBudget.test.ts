@@ -18,8 +18,10 @@ function build(html: string, assets: Readonly<Record<string, number>>): string {
   return dist
 }
 
-function budget(dist: string, limitKb: number) {
-  const run = spawnSync(process.execPath, ['tools/bundle-budget.mjs', dist, String(limitKb)], {
+/** Runs the tool; without `limitKb` it uses its built-in budget. */
+function budget(dist: string, limitKb?: number) {
+  const args = limitKb === undefined ? [dist] : [dist, String(limitKb)]
+  const run = spawnSync(process.execPath, ['tools/bundle-budget.mjs', ...args], {
     encoding: 'utf8',
   })
   return { code: run.status, out: run.stdout, err: run.stderr }
@@ -69,5 +71,17 @@ describe('public boot budget', () => {
     const result = budget(build(`${entry}${preload('gone.js')}`, { 'entry.js': 100 }), 10)
     expect(result.code).toBe(1)
     expect(result.err).toMatch(/gone\.js is referenced by index\.html but missing/)
+  })
+
+  it('allows 114 kB against the default budget of 115 kB', () => {
+    const result = budget(build(entry, { 'entry.js': 114_000 }))
+    expect(result.code).toBe(0)
+    expect(result.out).toMatch(/public boot JS: 114\.\d kB gzip in 1 files \(budget 115 kB\)/)
+  })
+
+  it('fails 116 kB against the default budget of 115 kB', () => {
+    const result = budget(build(entry, { 'entry.js': 116_000 }))
+    expect(result.code).toBe(1)
+    expect(result.err).toMatch(/over budget/)
   })
 })

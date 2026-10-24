@@ -5,8 +5,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-// Measured 109.1 kB gzip on 2026-10-24 (Embla and zod off the entry), rounded up to the next 5 kB.
-const BUDGET_KB = 110
+// Measured 109.3 kB gzip on 2026-10-24 with the tracked .env (Embla and zod off the entry). The
+// budget keeps about 5 kB of room above that, so a small addition to the boot path does not fail
+// CI; lower it when boot code leaves, css-tree being the next.
+const BUDGET_KB = 115
 
 const [dist = 'dist', budgetArg] = process.argv.slice(2)
 const budgetKb = budgetArg === undefined ? BUDGET_KB : Number(budgetArg)
