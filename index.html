@@ -40,13 +40,28 @@
           background-color: #1c1c1e;
         }
       }
-      /* Agents, crawlers and visitors without scripting read the Worker's intro; the app replaces it. */
-      @media (scripting: enabled) {
-        #root > main[aria-labelledby='public-intro-heading'] {
-          display: none;
+      /* Agents and crawlers read the Worker's intro in the HTML; src/main.tsx replaces it on boot.
+         Visitors see it only when the app has not booted after 8 s (a failed or blocked bundle).
+         lazy dev: a boot slower than 8 s shows the intro, then home. Visibility, not display:
+         Safari 16 cannot animate display. */
+      #root > main[aria-labelledby='public-intro-heading'] {
+        visibility: hidden;
+        animation: knc-intro-deadline 0s 8s forwards;
+      }
+      @keyframes knc-intro-deadline {
+        to {
+          visibility: visible;
         }
       }
     </style>
+    <noscript>
+      <style>
+        #root > main[aria-labelledby='public-intro-heading'] {
+          visibility: visible;
+          animation: none;
+        }
+      </style>
+    </noscript>
     <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#242427" media="(prefers-color-scheme: dark)" />
 

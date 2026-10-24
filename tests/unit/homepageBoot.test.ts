@@ -14,9 +14,16 @@ const preloads = [...shell.matchAll(/<link\b[^>]*\brel="preload"[^>]*>/g)].map((
 )
 
 describe('homepage shell pre-paint', () => {
-  it('hides the agent intro from scripted browsers only (PERF-3)', () => {
+  it('hides the agent intro until an 8 s boot deadline, and never without scripting (PERF-3)', () => {
     expect(prePaint).toContain(
-      "@media (scripting: enabled) { #root > main[aria-labelledby='public-intro-heading'] { display: none; } }",
+      "#root > main[aria-labelledby='public-intro-heading'] { visibility: hidden; animation: knc-intro-deadline 0s 8s forwards; } @keyframes knc-intro-deadline { to { visibility: visible; } }",
+    )
+    const noScript = (shell.match(/<noscript>([\s\S]*?)<\/noscript>/)?.[1] ?? '').replace(
+      /\s+/g,
+      ' ',
+    )
+    expect(noScript).toContain(
+      "<style> #root > main[aria-labelledby='public-intro-heading'] { visibility: visible; animation: none; } </style>",
     )
   })
 

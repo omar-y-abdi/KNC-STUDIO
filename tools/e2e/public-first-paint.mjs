@@ -11,6 +11,8 @@ const BASELINE_HERO_AMPERSAND =
   '[data-knc-fold="hero"] svg[aria-label="Blade & Blend Studio"] > text:nth-of-type(3)'
 const DESKTOP_PANEL = '[data-testid="desktop-top-panel"]'
 const INTRO_HEADING_ID = 'public-intro-heading'
+// The shell shows the intro when the app has not booted by then (index.html animation delay).
+const INTRO_DEADLINE_MS = 8000
 const LOADING_TEXT = 'Laddar webbplatsen…'
 const ERROR_TEXT = 'Webbplatsen kunde inte laddas just nu.'
 const RETRY_BUTTON = { name: 'Försök igen', exact: true }
@@ -139,7 +141,10 @@ function installPaintSampler(selectors) {
       document.querySelector(selectors.published) ?? document.querySelector(selectors.baseline)
     if (glyph) state.ampersand.push(globalThis.getComputedStyle(glyph).opacity)
     const intro = document.getElementById(selectors.intro)
-    if (intro !== null && intro.getClientRects().length > 0) state.introFrames++
+    if (intro !== null && intro.getClientRects().length > 0) {
+      const style = globalThis.getComputedStyle(intro)
+      if (style.visibility === 'visible' && Number(style.opacity) > 0) state.introFrames++
+    }
     const text = document.body?.textContent ?? ''
     if (text.includes(selectors.loading) && shown(elementWithText(selectors.loading)))
       state.loadingFrames++
@@ -385,6 +390,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       }
       return route.continue()
     })
+    const navigatedAt = Date.now()
     const response = await enabled.goto(`${workerOrigin}/`, { waitUntil: 'commit' })
     assert.equal(response?.status(), 200, 'The local Worker serves the native homepage')
     const html = await response.text()
@@ -405,6 +411,15 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       false,
       'Script-enabled visitors never see the agent intro while the bundle is delayed or blocked',
     )
+    // The shell's boot deadline (index.html, 8 s) shows the readable intro when the app never boots.
+    await enabled
+      .locator(`#${INTRO_HEADING_ID}`)
+      .waitFor({ state: 'visible', timeout: INTRO_DEADLINE_MS + 2000 - (Date.now() - navigatedAt) })
+    const introShownAfterMs = Date.now() - navigatedAt
+    assert.ok(
+      introShownAfterMs >= INTRO_DEADLINE_MS - 500,
+      `The intro stays hidden until the boot deadline (shown after ${introShownAfterMs} ms)`,
+    )
 
     const disabled = await disabledContext.newPage()
     const noScriptResponse = await disabled.goto(`${workerOrigin}/`, {
@@ -419,7 +434,12 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       true,
       'Visitors without scripting keep the intro text',
     )
-    return { delayedScripts, fallbackVisibleWithoutScripting: true, introWithoutScripting: true }
+    return {
+      delayedScripts,
+      introShownAfterMs,
+      fallbackVisibleWithoutScripting: true,
+      introWithoutScripting: true,
+    }
   } finally {
     await enabledContext.close()
     await disabledContext.close()
