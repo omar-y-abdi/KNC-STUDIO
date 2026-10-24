@@ -18,7 +18,54 @@ describe('CI supply-chain pins', () => {
   })
 
   it('keeps frozen dependency resolution on every Edge Function check', () => {
-    expect(workflow).toContain('deno check --frozen --node-modules-dir=manual "$file"')
+    const edge = workflow.split('\n  edge-functions:\n')[1]?.split('\n  database-current:\n')[0]
+    expect(edge).toContain('working-directory: supabase/functions')
+    expect(edge).toContain(
+      'deno check --config deno.json --frozen --node-modules-dir=manual "$file"',
+    )
+    expect(edge).toContain('find . -mindepth 2 -maxdepth 2 -name index.ts')
+  })
+
+  it('scopes the Deno lock to pinned function imports and required Node types', () => {
+    const config = JSON.parse(readFileSync('supabase/functions/deno.json', 'utf8')) as {
+      imports: Record<string, string>
+      lock: string
+    }
+    const lock = JSON.parse(readFileSync('supabase/functions/deno.lock', 'utf8')) as {
+      workspace: { dependencies: string[]; packageJson?: { dependencies: string[] } }
+    }
+    // Manual type-reference resolution reads this manifest for fontkit's Node declarations.
+    const types = JSON.parse(readFileSync('supabase/functions/package.json', 'utf8')) as {
+      private: boolean
+      type: string
+      devDependencies: Record<string, string>
+    }
+    expect(types.private).toBe(true)
+    expect(types.type).toBe('module')
+    expect(types.devDependencies).toEqual({ '@types/node': '24.13.2' })
+    expect(config.lock).toBe('./deno.lock')
+    expect(lock.workspace.packageJson?.dependencies).toEqual(['npm:@types/node@24.13.2'])
+    expect(lock.workspace.dependencies).toEqual(
+      Object.values(config.imports)
+        .filter((specifier) => specifier.startsWith('npm:'))
+        .sort(),
+    )
+    expect(existsSync('deno.lock')).toBe(false)
+    for (const entry of readdirSync('supabase/functions', { withFileTypes: true })) {
+      const path = `supabase/functions/${entry.name}/deno.json`
+      if (!entry.isDirectory() || !existsSync(path)) continue
+      const member = JSON.parse(readFileSync(path, 'utf8')) as { imports: Record<string, string> }
+      for (const [name, target] of Object.entries(member.imports))
+        expect(config.imports[name], `${entry.name}: ${name}`).toBe(target)
+    }
+  })
+
+  it('updates the Worker tooling and ambient types together', () => {
+    const dependabot = readFileSync('.github/dependabot.yml', 'utf8')
+    expect(dependabot).toMatch(/package-ecosystem: npm/)
+    expect(dependabot).toMatch(
+      /cloudflare-workers:\s+patterns:\s+- wrangler\s+- '@cloudflare\/workers-types'/,
+    )
   })
 
   it('pins every GitHub Action to an immutable commit SHA', () => {
