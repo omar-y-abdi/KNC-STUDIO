@@ -302,7 +302,9 @@ test('week autosave: each edit restarts the debounce and one save lands 600 ms a
   // From here the page clock moves only when this test advances it, so the debounce deadline is
   // exact instead of racing the machine. Edits are DOM clicks inside page.evaluate: Playwright's own
   // click waits for animation frames, which a paused clock never delivers.
-  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 10)
+  // pauseAt only moves forward, so leave room for the round trip between reading the page time and
+  // pausing (time still flows until then).
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
   const flip = (name) =>
     page.evaluate((label) => {
       const toggle = globalThis.document.querySelector(`[role="switch"][aria-label="${label}"]`)
