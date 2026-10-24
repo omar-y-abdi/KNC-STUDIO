@@ -4,7 +4,6 @@ import { generate, parse, walk } from 'css-tree'
 import { marqueeCardWidth } from '../../src/admin/cms/hierarchicalResize.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { installBlankProbe, readBlankProbe } from './cms-marquee-probe.mjs'
-import { attachTabState } from './cms-tab-state.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 
@@ -280,7 +279,11 @@ test('legacy barber zoom never survives load, import, history or backup restore'
   assert.equal(aboutPage(backend.document).title.sv, 'Om oss (rev 1)')
   assertCardWidths(backend.document, ids, 'History restore')
 
-  // Backup: an unpublished local draft from before the fix is converted when Studio adopts it.
+  // Backup: an unpublished local draft from before the fix is converted when Studio restores it. It
+  // is written after the navigation and before the studio mounts, so the previous page can no longer
+  // replace it; the studio then mounts over the same backup session and restores it as this tab's
+  // own draft.
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   await page.evaluate(
     async (legacy) => {
       const { cmsApi } = await import('/src/admin/cms/api.ts')
@@ -292,16 +295,10 @@ test('legacy barber zoom never survives load, import, history or backup restore'
     },
     withLegacyZoom(captured, ids, 'Om oss (backup)'),
   )
-  await attachTabState(page, 'tab state after the backup write')
-  // mountStudio in steps: between the navigation and the remount, the tab state shows whether the
-  // previous page still holds this tab's lock and whether the backup is still stored.
-  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
-  await attachTabState(page, 'tab state before the remount')
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
   await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
-  await attachTabState(page, 'tab state after the remount')
   await publish(page, 5)
   assert.equal(aboutPage(backend.document).title.sv, 'Om oss (backup)')
   assertCardWidths(backend.document, ids, 'Backup restore')
