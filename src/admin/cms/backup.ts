@@ -9,6 +9,8 @@ export interface CmsBackup {
   revision?: number
   fingerprint?: string
   base?: CmsDocument
+  /** The Home/About layouts may not match the resource data; Publicera captures them first. */
+  layoutsStale?: true
 }
 /** A draft kept for the browser tab that wrote it. */
 export interface TabBackup extends CmsBackup {
@@ -32,6 +34,8 @@ export interface BackupRecords {
 export interface TabLocks {
   claim(name: string): Promise<boolean>
   held(): Promise<ReadonlySet<string>>
+  /** Runs `work` while holding the lock; false, without running it, while a page holds it. */
+  hold(name: string, work: () => Promise<void>): Promise<boolean>
 }
 export interface BackupPorts {
   records: BackupRecords
@@ -43,23 +47,37 @@ export interface BackupPorts {
   now: () => string
 }
 
+/** An offer is stale when its tab opened again or its draft changed after it was listed. */
+export type OfferOutcome = 'done' | 'stale'
+
+/** The draft is too large for the reload journal: an immediate reload or close can lose the edits
+ * since the last 500 ms pause in editing. The IndexedDB backup still works. */
+export class JournalFull extends Error {
+  constructor() {
+    super('The draft is too large for the sessionStorage journal.')
+    this.name = 'JournalFull'
+  }
+}
+
 export interface BackupSession {
   readonly tab: string
   /** This tab's draft, e.g. from before a reload. */
   own(): Promise<CmsBackup | null>
   /** Drafts of closed tabs, newest first. Each stays until the owner acts on it. */
   offers(): Promise<TabBackup[]>
-  /** Writes this tab's draft (null removes it) 500 ms after the last call. */
+  /** Writes this tab's draft (null removes it) 500 ms after the last call. `report` hears of a
+   * failed write, and of a draft too large for the journal (JournalFull). */
   schedule(draft: BackupDraft | null, report?: (reason: unknown) => void): void
   /** Writes the scheduled draft now. */
   flush(): Promise<void>
   /** For `pagehide`: flushes, and journals the unconfirmed write synchronously, because the page
-   * may end before IndexedDB commits it. The next page in this tab replays the journal. */
+   * may end before IndexedDB commits it. The next page in this tab replays the journal. Never
+   * throws; a failed journal write rejects, and the previous journal stays whole. */
   suspend(): Promise<void>
   /** Makes a closed tab's draft this tab's own, then deletes the closed tab's copy. */
-  adopt(offer: TabBackup): Promise<void>
+  adopt(offer: TabBackup): Promise<OfferOutcome>
   /** Deletes exactly this draft, after the owner exported or rejected it. */
-  discard(offer: TabBackup): Promise<void>
+  discard(offer: TabBackup): Promise<OfferOutcome>
   /** Keeps this tab's draft under a new id, so the tab never overwrites it. */
   setAside(): Promise<void>
 }
@@ -69,9 +87,14 @@ const LEGACY_DRAFT = /^knc-cms-draft:(.+)$/
 const LEGACY_TEMPLATE = 'knc-cms-retained-template-draft'
 const lockName = (tab: string): string => `knc-cms-tab:${tab}`
 // The journal holds the document without its base (a production base would not fit beside it in
-// WebKit's 5 MB sessionStorage); revision and fingerprint identify the base on replay.
+// WebKit's 5 MB sessionStorage); revision and fingerprint identify the base on replay. One item,
+// metadata line then document, so a failed write leaves the previous journal whole.
 const JOURNAL = 'knc-cms-journal'
-const JOURNAL_DOCUMENT = 'knc-cms-journal-document'
+// lazy dev: WebKit's sessionStorage holds 5 MB, about 2.5 million characters; the production draft
+// has about 1.4 million. A larger draft is reported while the page is open and keeps only the
+// IndexedDB record, written at the last 500 ms pause in editing. Upgrade path: journal the edit as a
+// delta against that record.
+const JOURNAL_CAPACITY = 2_000_000
 
 interface Journal {
   tab: string
@@ -80,6 +103,7 @@ interface Journal {
   removed?: true
   revision?: number
   fingerprint?: string
+  layoutsStale?: true
 }
 interface Write {
   draft: BackupDraft | null
@@ -93,7 +117,8 @@ function isBackup(value: unknown): value is CmsBackup {
     Boolean(backup.document) &&
     typeof backup.savedAt === 'string' &&
     (backup.revision === undefined || Number.isSafeInteger(backup.revision)) &&
-    (backup.fingerprint === undefined || typeof backup.fingerprint === 'string')
+    (backup.fingerprint === undefined || typeof backup.fingerprint === 'string') &&
+    (backup.layoutsStale === undefined || backup.layoutsStale === true)
   )
 }
 const toStored = ({ document, base, ...metadata }: TabBackup): StoredBackup => ({
@@ -142,26 +167,24 @@ async function storedRecord(records: BackupRecords, tab: string): Promise<Stored
   return parseStored(value) ? (value as StoredBackup) : null
 }
 
-function parseJournal(json: string | null): Journal | null {
+function parseJournal(item: string | null): { journal: Journal; document: string | null } | null {
+  if (item === null) return null
+  const end = item.indexOf('\n')
   try {
-    const value: unknown = JSON.parse(json ?? 'null')
+    const value: unknown = JSON.parse(end === -1 ? item : item.slice(0, end))
     if (!value || typeof value !== 'object') return null
     const journal = value as Partial<Journal>
     return typeof journal.tab === 'string' &&
       typeof journal.savedAt === 'string' &&
       (journal.revision === undefined || Number.isSafeInteger(journal.revision)) &&
-      (journal.fingerprint === undefined || typeof journal.fingerprint === 'string')
-      ? (journal as Journal)
+      (journal.fingerprint === undefined || typeof journal.fingerprint === 'string') &&
+      (journal.layoutsStale === undefined || journal.layoutsStale === true)
+      ? { journal: journal as Journal, document: end === -1 ? null : item.slice(end + 1) }
       : null
   } catch {
     // A damaged journal stays untouched and is never replayed; the IndexedDB record remains.
     return null
   }
-}
-
-function forgetJournal(tabs: BackupPorts['tabs']): void {
-  tabs.removeItem(JOURNAL)
-  tabs.removeItem(JOURNAL_DOCUMENT)
 }
 
 /** Replays the journal the previous page of this tab left, unless IndexedDB already holds that
@@ -170,15 +193,15 @@ function forgetJournal(tabs: BackupPorts['tabs']): void {
  * same revision and fingerprint; otherwise the studio finds it as the server head, or resolves a
  * conflict with the journal's document as the owner's draft. */
 async function replayJournal(ports: BackupPorts, tab: string): Promise<void> {
-  const journal = parseJournal(ports.tabs.getItem(JOURNAL))
-  if (!journal) return
+  const parsed = parseJournal(ports.tabs.getItem(JOURNAL))
+  if (!parsed) return
+  const { journal, document } = parsed
   if (journal.tab !== tab && (await ports.locks.held()).has(lockName(journal.tab))) return
   const stored = await storedRecord(ports.records, journal.tab)
   if (!stored || stored.savedAt < journal.savedAt) {
     if (journal.removed) {
       if (stored) await ports.records.remove(journal.tab)
     } else {
-      const document = ports.tabs.getItem(JOURNAL_DOCUMENT)
       const sameBase =
         stored?.base !== undefined &&
         stored.revision === journal.revision &&
@@ -190,13 +213,14 @@ async function replayJournal(ports: BackupPorts, tab: string): Promise<void> {
         ...(journal.revision === undefined ? {} : { revision: journal.revision }),
         ...(journal.fingerprint === undefined ? {} : { fingerprint: journal.fingerprint }),
         ...(sameBase ? { base: stored.base } : {}),
+        ...(journal.layoutsStale ? { layoutsStale: true } : {}),
       }
       // A journal without a readable document is damaged: keep it and the record untouched.
       if (document === null || !parseStored(record)) return
       await ports.records.put(record)
     }
   }
-  forgetJournal(ports.tabs)
+  ports.tabs.removeItem(JOURNAL)
 }
 
 /** Copies every localStorage draft into IndexedDB; deletes an original only after its write. */
@@ -248,6 +272,8 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     const next = pending
     pending = null
     if (next) {
+      if (next.draft && serialize(next.draft.document).length > JOURNAL_CAPACITY)
+        next.report(new JournalFull())
       const write: Write = { draft: next.draft, savedAt: stamp() }
       unconfirmed = write
       writing = writing
@@ -258,37 +284,43 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
             : ports.records.remove(tab))
           if (unconfirmed !== write) return
           unconfirmed = null
-          forgetJournal(ports.tabs)
+          ports.tabs.removeItem(JOURNAL)
         })
     }
     return writing
   }
   const journal = ({ draft, savedAt }: Write): void => {
-    forgetJournal(ports.tabs)
-    if (draft)
-      try {
-        ports.tabs.setItem(JOURNAL_DOCUMENT, serialize(draft.document))
-      } catch (reason) {
-        if (!(reason instanceof DOMException && reason.name === 'QuotaExceededError')) throw reason
-        // lazy dev: the document alone must fit in sessionStorage (WebKit: 5 MB, about 2.5 million
-        // characters; the production draft has about 1.4 million). A larger one keeps only the
-        // IndexedDB record, at most 500 ms old. Upgrade path: journal the edit as a delta against
-        // that record instead of the whole document.
-        return
-      }
     const entry: Journal = draft
       ? {
           tab,
           savedAt,
           ...(draft.revision === undefined ? {} : { revision: draft.revision }),
           ...(draft.fingerprint === undefined ? {} : { fingerprint: draft.fingerprint }),
+          ...(draft.layoutsStale ? { layoutsStale: true } : {}),
         }
       : { tab, savedAt, removed: true }
-    ports.tabs.setItem(JOURNAL, JSON.stringify(entry))
+    ports.tabs.setItem(
+      JOURNAL,
+      draft ? `${JSON.stringify(entry)}\n${serialize(draft.document)}` : JSON.stringify(entry),
+    )
   }
-  const move = async (record: TabBackup, to: string): Promise<void> => {
-    await ports.records.put(toStored({ ...record, tab: to }))
+  const move = async (record: StoredBackup, to: string): Promise<void> => {
+    await ports.records.put({ ...record, tab: to })
     await ports.records.remove(record.tab)
+  }
+  /** Runs `work` on the offered record while its tab stays closed and its draft unchanged. */
+  const consume = async (
+    offer: TabBackup,
+    work: (record: StoredBackup) => Promise<void>,
+  ): Promise<OfferOutcome> => {
+    let outcome: OfferOutcome = 'stale'
+    const free = await ports.locks.hold(lockName(offer.tab), async () => {
+      const record = await storedRecord(ports.records, offer.tab)
+      if (record?.savedAt !== offer.savedAt) return
+      await work(record)
+      outcome = 'done'
+    })
+    return free ? outcome : 'stale'
   }
   return {
     tab,
@@ -313,17 +345,25 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
     flush,
     suspend: () => {
       const written = flush()
-      if (unconfirmed) journal(unconfirmed)
+      try {
+        if (unconfirmed) journal(unconfirmed)
+      } catch (reason) {
+        // The IndexedDB write goes on; the caller hears of the journal failure either way.
+        return Promise.all([written, Promise.reject(reason)]).then(() => undefined)
+      }
       return written
     },
-    adopt: async (offer) => {
-      await flush()
-      await move(offer, tab)
-    },
-    discard: (offer) => ports.records.remove(offer.tab),
+    adopt: (offer) =>
+      consume(offer, async (record) => {
+        await flush()
+        // This tab's next write must stay newer than the adopted draft, whatever the clock says.
+        if (record.savedAt > latest) latest = record.savedAt
+        await move(record, tab)
+      }),
+    discard: (offer) => consume(offer, (record) => ports.records.remove(record.tab)),
     setAside: async () => {
       await flush()
-      const record = await own()
+      const record = await storedRecord(ports.records, tab)
       if (record) await move(record, ports.newId())
     },
   }
@@ -342,6 +382,12 @@ const browserLocks: TabLocks = {
     }),
   held: async () =>
     new Set(((await navigator.locks.query()).held ?? []).flatMap((lock) => lock.name ?? [])),
+  hold: (name, work) =>
+    navigator.locks.request(name, { ifAvailable: true }, async (lock) => {
+      if (!lock) return false
+      await work()
+      return true
+    }),
 }
 
 let session: Promise<BackupSession> | undefined

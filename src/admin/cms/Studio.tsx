@@ -1,5 +1,6 @@
 import type { ResourceDestination } from '../../../shared/cms-resource-assignment'
 import { captureResourceLayouts, resourceLayoutsChanged } from './captureResourceLayouts'
+import { LayoutProvenance } from './layoutProvenance'
 import { createSitePage } from '../../../shared/site-page'
 import type { JSX } from 'preact'
 import { FunctionsHttpError } from '@supabase/supabase-js'
@@ -40,7 +41,7 @@ import { CmsWorkspaceView } from './WorkspaceView'
 import { HistoryPanel } from './HistoryPanel'
 import { CmsResources } from './Resources'
 import { BusinessPanel, EmailPanel } from './DomainPanels'
-import { cmsBackups, type BackupSession, type TabBackup } from './backup'
+import { cmsBackups, JournalFull, type BackupSession, type TabBackup } from './backup'
 import { SUPABASE_URL } from '../../backend/config'
 import { CmsTextarea } from './Textarea'
 import './studio.css'
@@ -49,6 +50,9 @@ import { pageScenes, type CmsScene } from '../../cms/Scene'
 const protectedIds = new Set<string>(CORE_PAGE_IDS)
 const BACKUP_FAILED =
   'Lokal backup kunde inte sparas. Utkastet finns i studion; exportera innan du lämnar.'
+const JOURNAL_FULL =
+  'Utkastet är för stort för den snabba reservkopian. Vänta en sekund efter senaste ändringen innan du laddar om eller stänger fliken.'
+const OFFER_CHANGED = 'Utkastet har ändrats eller öppnats i en annan flik. Listan är uppdaterad.'
 
 function downloadDraft(document: CmsDocument): void {
   const url = URL.createObjectURL(
@@ -87,9 +91,9 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [resourceBusy, setResourceBusy] = useState(false)
   const resourceCapture = useRef<AbortController | null>(null)
   const busy = requestBusy || resourceBusy
-  // Documents whose Home/About layouts were captured for their resource data. An edit that keeps
-  // the resource data inherits this; undo and redo bring it back with the document.
-  const capturedLayouts = useRef(new WeakSet<CmsDocument>())
+  // The resource data each document's Home/About layouts were captured for. Undo and redo bring
+  // it back with the document.
+  const layouts = useRef(new LayoutProvenance())
   useEffect(() => () => resourceCapture.current?.abort(), [])
   const [sourceLoading, setSourceLoading] = useState(false)
   const [sourceFailure, setSourceFailure] = useState<string | null>(null)
@@ -97,6 +101,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [conflict, setConflict] = useState<{ remote: CmsState; base: CmsDocument | null } | null>(
     null,
   )
+  const currentConflict = useRef(conflict)
+  currentConflict.current = conflict
   const [, setVersion] = useState(0)
   const [dialog, setDialog] = useState<
     'theme' | 'history' | 'resources' | 'business' | 'email' | 'new-page' | 'backup' | null
@@ -162,7 +168,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             : { document: local, conflicts: sameHead ? [] : [{ path: '' }] }
         // A backup written before the legal upgrade still holds the legacy sheets; upgrade the
         // recovered result, never the merge inputs, so the server snapshot stays the base.
-        next.change(upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document)))
+        const recovered = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
+        next.change(recovered)
+        if (next.document === recovered) {
+          if (backup.layoutsStale) layouts.current.unknown(next.document)
+          else if (!sameHead && backup.base)
+            layouts.current.merged(next.document, [
+              { document: local, stale: false },
+              { document, stale: false },
+            ])
+        }
         if (merged.conflicts.length) {
           next.base = structuredClone(backup.base ?? loaded.document)
           next.revision = backup.revision ?? -1
@@ -207,8 +222,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       .then(() => {
         if (stopped || currentDraft.current !== draft) return
         editor.current?.flush()
+        const previous = draft.document
         // Recaptured strip markers make legacy zoom convertible only now.
-        draft.change(normalizeMarqueeZoom(ensureCorePages(draft.document)))
+        draft.change(normalizeMarqueeZoom(ensureCorePages(previous)))
+        layouts.current.follow(previous, draft.document)
         setVersion((value) => value + 1)
       })
       .catch((reason: unknown) => {
@@ -225,35 +242,47 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }, [draft, sourceAttempt])
 
-  useLayoutEffect(() => {
-    if (!draft) return
-    const base = conflict ? (conflict.base ?? undefined) : draft.base
+  const reportBackup = (reason: unknown): void =>
+    setError(reason instanceof JournalFull ? JOURNAL_FULL : BACKUP_FAILED)
+  // Reads refs only: the lifecycle handlers below call it without a render in between.
+  const scheduleBackup = (): void => {
+    const active = currentDraft.current
+    const conflicted = currentConflict.current
+    if (!active) return
+    const base = conflicted ? (conflicted.base ?? undefined) : active.base
     backups.current?.schedule(
-      draft.dirty || conflict
+      active.dirty || conflicted
         ? {
-            document: draft.document,
-            revision: draft.revision,
-            fingerprint: draft.fingerprint,
+            document: active.document,
+            revision: active.revision,
+            fingerprint: active.fingerprint,
             ...(base ? { base } : {}),
+            ...(layoutsStale(active) ? { layoutsStale: true } : {}),
           }
         : null,
-      () => setError(BACKUP_FAILED),
+      reportBackup,
     )
-  }, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
+  }
+  useLayoutEffect(scheduleBackup, [draft?.document, draft?.revision, draft?.fingerprint, conflict])
   useEffect(() => {
-    // A closed or backgrounded tab must not lose the last 500 ms of edits. A hidden page lives on
-    // until IndexedDB commits; a page that goes away also journals the write synchronously.
-    const flush = (): void => void backups.current?.flush().catch(() => setError(BACKUP_FAILED))
-    const suspend = (): void => void backups.current?.suspend().catch(() => setError(BACKUP_FAILED))
-    const hidden = (): void => {
-      if (window.document.visibilityState === 'hidden') flush()
+    // A reloaded, closed or backgrounded tab must not lose the last edits: the canvas holds them
+    // for 180 ms and the backup for 500 ms. The editor hands them over synchronously; the backup
+    // journals the write synchronously, because the page may end before IndexedDB commits it. A
+    // hidden page usually lives on until IndexedDB commits, e.g. before a tab is closed on a phone.
+    const persist = (): void => {
+      editor.current?.flush()
+      scheduleBackup()
+      void backups.current?.suspend().catch(reportBackup)
     }
-    window.addEventListener('pagehide', suspend)
+    const hidden = (): void => {
+      if (window.document.visibilityState === 'hidden') persist()
+    }
+    window.addEventListener('pagehide', persist)
     window.document.addEventListener('visibilitychange', hidden)
     return () => {
-      window.removeEventListener('pagehide', suspend)
+      window.removeEventListener('pagehide', persist)
       window.document.removeEventListener('visibilitychange', hidden)
-      flush()
+      void backups.current?.flush().catch(reportBackup)
     }
   }, [])
   const unresolvedZoom = useMemo(
@@ -270,18 +299,13 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const previous = active.document
     const next = typeof update === 'function' ? update(previous) : update
     active.change(next, group)
-    if (
-      active.document === next &&
-      capturedLayouts.current.has(previous) &&
-      !resourceLayoutsChanged(previous, next)
-    )
-      capturedLayouts.current.add(next)
+    // The layouts stay those of the previous document until a capture replaces them.
+    layouts.current.follow(previous, active.document)
     setVersion((value) => value + 1)
   }
   // The Worker serves the stored Home/About snapshot as first paint: it must match the data.
   const layoutsStale = (active: CmsDraft): boolean =>
-    resourceLayoutsChanged(active.base, active.document) &&
-    !capturedLayouts.current.has(active.document)
+    layouts.current.stale(active.document, active.base)
   /** Captures Home/About for the draft's resource data and completes the current transaction. */
   const captureLayouts = async (
     active: CmsDraft,
@@ -305,7 +329,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       validateDocument(next)
       // Resource data and its editable layout form one undoable draft transaction.
       active.amend(next)
-      capturedLayouts.current.add(next)
+      layouts.current.captured(next)
       setVersion((value) => value + 1)
       return { captured: true }
     } catch (reason) {
@@ -377,7 +401,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         request.requestId,
       )
       editor.current?.flush()
+      const local = { document: draft.document, stale: layoutsStale(draft) }
       draft.acknowledge(result.document, result.revision, result.fingerprint)
+      // Edits made during the request are merged into the published document.
+      layouts.current.merged(draft.document, [local, { document: result.document, stale: false }])
       setNotice(null)
       setVersion((value) => value + 1)
     } catch (reason) {
@@ -394,11 +421,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             draft.document,
             ensureCorePages(remote.document),
           )
-          const next = new CmsDraft(
-            upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document)),
-            remote.revision,
-            remote.fingerprint,
-          )
+          const adopted = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
+          const next = new CmsDraft(adopted, remote.revision, remote.fingerprint)
+          layouts.current.merged(adopted, [
+            { document: draft.document, stale: layoutsStale(draft) },
+            { document: remote.document, stale: false },
+          ])
           next.base = structuredClone(remote.document)
           if (merged.conflicts.length) {
             next.base = structuredClone(draft.base)
@@ -449,12 +477,18 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     editor.current?.flush()
     const remote = ensureCorePages(conflict.remote.document)
     const resolved = upgradeLegacyLegalPages(
-      conflict.base
-        ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
-        : resolution === 'local'
-          ? draft.document
-          : remote,
+      normalizeMarqueeZoom(
+        conflict.base
+          ? mergeCmsDocuments(conflict.base, draft.document, remote, resolution).document
+          : resolution === 'local'
+            ? draft.document
+            : remote,
+      ),
     )
+    layouts.current.merged(resolved, [
+      { document: draft.document, stale: layoutsStale(draft) },
+      { document: conflict.remote.document, stale: false },
+    ])
     // Undo must reach the migrated remote, never its raw legacy zoom; the raw remote stays base.
     const next = new CmsDraft(
       upgradeLegacyLegalPages(normalizeMarqueeZoom(remote)),
@@ -462,7 +496,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       conflict.remote.fingerprint,
     )
     next.base = structuredClone(conflict.remote.document)
-    next.change(normalizeMarqueeZoom(resolved))
+    next.change(resolved)
     setDraft(next)
     setConflict(null)
     setNotice('Konflikten är löst i utkastet. Granska före publicering.')
@@ -489,7 +523,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const session = backups.current
     if (!session || currentDraft.current?.dirty) return
     try {
-      await session.adopt(offer)
+      if ((await session.adopt(offer)) === 'stale') {
+        setNotice(OFFER_CHANGED)
+        setOffers(await session.offers())
+        return
+      }
     } catch {
       setError('Utkastet kunde inte hämtas till den här fliken. Det finns kvar i listan.')
       return
@@ -500,9 +538,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const settleOffer = async (offer: TabBackup, exported: boolean): Promise<void> => {
     const session = backups.current
     if (!session) return
+    // Download within the click; the draft is deleted only while it is still this version.
     if (exported) downloadDraft(offer.document)
     try {
-      await session.discard(offer)
+      if ((await session.discard(offer)) === 'stale') setNotice(OFFER_CHANGED)
       setOffers(await session.offers())
     } catch {
       setError('Utkastet kunde inte tas bort ur listan. Försök igen.')
@@ -1187,6 +1226,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                     const active = currentDraft.current
                     if (!active) return
                     const restored = restoreRevision(old, active.document)
+                    const before = active.document
                     commitDraft(
                       upgradeLegacyLegalPages(
                         normalizeMarqueeZoom(
@@ -1196,6 +1236,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                         ),
                       ),
                     )
+                    // The restored layouts are the old revision's, made for its resource data.
+                    if (active.document !== before) layouts.current.captured(active.document, old)
                     if (restored.reconciled)
                       setNotice(
                         'Personalen har ändrats sedan den versionen. Barberare som slutat togs bort och nya behölls som de är nu.',

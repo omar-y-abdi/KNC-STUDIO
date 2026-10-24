@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { emptyDocument, type CmsDocument } from '../../shared/cms'
 import {
+  JournalFull,
   openBackupSession,
   type BackupPorts,
   type BackupSession,
@@ -66,6 +67,16 @@ function pagePorts(
         return true
       },
       held: async () => new Set(held),
+      hold: async (name, work) => {
+        if (held.has(name)) return false
+        held.add(name)
+        try {
+          await work()
+        } finally {
+          held.delete(name)
+        }
+        return true
+      },
     },
     tabs: {
       getItem: (key) => tabs.get(key) ?? null,
@@ -197,14 +208,60 @@ describe('CMS draft backup in IndexedDB', () => {
     const [restore, exported, rejected] = await session.offers()
     if (!restore || !exported || !rejected) throw new Error('Three offers were expected')
 
-    await session.adopt(restore)
+    expect(await session.adopt(restore)).toBe('done')
     expect([...records.keys()].sort()).toEqual(['export', 'reject', 'this-tab'])
     expect((await session.own())?.document).toEqual(named('Återställ'))
 
-    await session.discard(exported)
+    expect(await session.discard(exported)).toBe('done')
     expect([...records.keys()].sort()).toEqual(['reject', 'this-tab'])
-    await session.discard(rejected)
+    expect(await session.discard(rejected)).toBe('done')
     expect([...records.keys()]).toEqual(['this-tab'])
+  })
+
+  // Another tab listed the offer, then its own tab reloaded (reclaiming the lock) or wrote again.
+  // Exportera downloads the listed draft first, so a stale offer must not delete a newer one.
+  it.each(['adopt', 'discard'] as const)(
+    'never lets a stale offer %s the newer draft of a reopened tab',
+    async (action) => {
+      const { ports, records, held } = memory({
+        tab: 'this-tab',
+        records: [record('closed', 'Listad', '2026-10-24T08:00:00.000Z')],
+      })
+      const session = await openBackupSession(ports)
+      const [offer] = await session.offers()
+      if (!offer) throw new Error('An offer was expected')
+      const act = () => (action === 'adopt' ? session.adopt(offer) : session.discard(offer))
+
+      // The tab reopened and holds its lock again.
+      held.add('knc-cms-tab:closed')
+      expect(await act()).toBe('stale')
+      expect(records.get('closed')?.document).toBe(JSON.stringify(named('Listad')))
+      held.delete('knc-cms-tab:closed')
+
+      // The tab wrote a newer draft and closed again.
+      records.set('closed', record('closed', 'Nyare', '2026-10-24T09:00:00.000Z'))
+      expect(await act()).toBe('stale')
+      expect(records.get('closed')?.document).toBe(JSON.stringify(named('Nyare')))
+      expect(records.has('this-tab')).toBe(false)
+      expect(await session.offers()).toMatchObject([{ tab: 'closed', document: named('Nyare') }])
+
+      // Another tab already took it.
+      records.delete('closed')
+      expect(await act()).toBe('stale')
+      expect(records.has('this-tab')).toBe(false)
+    },
+  )
+
+  it('releases the closed tab lock after acting on its offer', async () => {
+    const { ports, held } = memory({
+      tab: 'this-tab',
+      records: [record('closed', 'Stängd', '2026-10-24T08:00:00.000Z')],
+    })
+    const session = await openBackupSession(ports)
+    const [offer] = await session.offers()
+    if (!offer) throw new Error('An offer was expected')
+    expect(await session.discard(offer)).toBe('done')
+    expect(held.has('knc-cms-tab:closed')).toBe(false)
   })
 
   it('keeps a closed tab draft when adopting it fails', async () => {
@@ -240,6 +297,35 @@ describe('CMS draft backup in IndexedDB', () => {
     ])
     expect(records.has('this-tab')).toBe(false)
   })
+
+  it('keeps the stale-layouts mark of a draft', async () => {
+    const { ports } = memory()
+    const session = await openBackupSession(ports)
+    session.schedule({
+      document: named('Lokal'),
+      revision: 7,
+      fingerprint: FINGERPRINT,
+      layoutsStale: true,
+    })
+    await session.flush()
+    expect(await session.own()).toMatchObject({ layoutsStale: true })
+  })
+
+  it('reports a draft too large for the reload journal, and still writes it', async () => {
+    const { ports } = memory()
+    const session = await openBackupSession(ports)
+    const large = named('x'.repeat(2_000_000))
+    const report = vi.fn()
+    session.schedule({ document: large, revision: 1, fingerprint: FINGERPRINT }, report)
+    await session.flush()
+    expect(report).toHaveBeenCalledWith(expect.any(JournalFull))
+    expect((await session.own())?.document).toEqual(large)
+
+    report.mockClear()
+    session.schedule({ document: named('Liten'), revision: 1, fingerprint: FINGERPRINT }, report)
+    await session.flush()
+    expect(report).not.toHaveBeenCalled()
+  })
 })
 
 // The page ends before IndexedDB answers, so its writes never confirm.
@@ -250,7 +336,10 @@ function unload(ports: BackupPorts): void {
 // The next page in the same tab: the old page's lock is released, sessionStorage stays.
 const reload = (browser: ReturnType<typeof memory>): BackupPorts =>
   pagePorts(browser.records, new Set(), browser.legacy, browser.tabs, 100)
-const JOURNAL_KEYS = ['knc-cms-journal', 'knc-cms-journal-document']
+const JOURNAL = 'knc-cms-journal'
+// The journal's metadata line, before the document.
+const journalMeta = (tabs: Map<string, string>): unknown =>
+  JSON.parse((tabs.get(JOURNAL) ?? '').split('\n')[0] ?? '')
 
 describe('sessionStorage journal across a reload', () => {
   it('replays an unconfirmed write, with the stored base while its revision matches', async () => {
@@ -268,7 +357,7 @@ describe('sessionStorage journal across a reload', () => {
     })
     void session.suspend()
     // The journal holds the document and the base's identity, never the base itself.
-    expect(JSON.parse(browser.tabs.get('knc-cms-journal') ?? '')).toEqual({
+    expect(journalMeta(browser.tabs)).toEqual({
       tab: 'this-tab',
       savedAt: '2026-10-24T12:00:01.000Z',
       revision: 4,
@@ -282,7 +371,7 @@ describe('sessionStorage journal across a reload', () => {
       base: emptyDocument(),
       savedAt: '2026-10-24T12:00:01.000Z',
     })
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
   })
 
   it('replays without a base after the revision moved on', async () => {
@@ -313,11 +402,11 @@ describe('sessionStorage journal across a reload', () => {
     unload(browser.ports)
     session.schedule(null)
     void session.suspend()
-    expect(browser.tabs.has('knc-cms-journal-document')).toBe(false)
+    expect(browser.tabs.get(JOURNAL)).not.toContain('\n')
     const next = await openBackupSession(reload(browser))
     expect(await next.own()).toBeNull()
     expect([...browser.records.keys()]).toEqual([])
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
   })
 
   it('orders the journal after the stored record when the clock went back', async () => {
@@ -342,22 +431,23 @@ describe('sessionStorage journal across a reload', () => {
       records: [record('this-tab', 'Nyare', '2026-10-24T09:00:00.000Z')],
     })
     browser.tabs.set(
-      'knc-cms-journal',
-      JSON.stringify({ tab: 'this-tab', savedAt: '2026-10-24T08:00:00.000Z', revision: 4 }),
+      JOURNAL,
+      `${JSON.stringify({ tab: 'this-tab', savedAt: '2026-10-24T08:00:00.000Z', revision: 4 })}\n${JSON.stringify(named('Äldre'))}`,
     )
-    browser.tabs.set('knc-cms-journal-document', JSON.stringify(named('Äldre')))
     const session = await openBackupSession(browser.ports)
     expect((await session.own())?.document).toEqual(named('Nyare'))
     expect(browser.ports.records.put).not.toHaveBeenCalled()
     // IndexedDB already confirmed newer data, so the journal is done.
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
   })
 
   it('never replays a copied journal into a tab that is still open', async () => {
     // A window.open'd tab inherits the opener's sessionStorage, journal included.
     const browser = memory({ tab: 'opener', held: ['knc-cms-tab:opener'] })
-    browser.tabs.set('knc-cms-journal', JSON.stringify({ tab: 'opener', savedAt: '2026-10-25' }))
-    browser.tabs.set('knc-cms-journal-document', JSON.stringify(named('Kopia')))
+    browser.tabs.set(
+      JOURNAL,
+      `${JSON.stringify({ tab: 'opener', savedAt: '2026-10-25' })}\n${JSON.stringify(named('Kopia'))}`,
+    )
     const session = await openBackupSession(browser.ports)
     expect(session.tab).toBe('tab-1')
     expect(browser.ports.records.put).not.toHaveBeenCalled()
@@ -376,40 +466,91 @@ describe('sessionStorage journal across a reload', () => {
     })
     session.schedule({ document: named('Bekräftas'), revision: 4, fingerprint: FINGERPRINT })
     const written = session.suspend()
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual(JOURNAL_KEYS)
+    expect(browser.tabs.has(JOURNAL)).toBe(true)
     write.resolve()
     await written
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    expect(browser.tabs.has(JOURNAL)).toBe(false)
     expect(browser.records.get('this-tab')?.document).toBe(JSON.stringify(named('Bekräftas')))
   })
 
-  it('keeps the IndexedDB record as the fallback when the document does not fit', async () => {
+  it('keeps the previous journal whole and reports a journal write that does not fit', async () => {
     const browser = memory({
       tab: 'this-tab',
       records: [record('this-tab', 'Sparad', '2026-10-24T08:00:00.000Z')],
     })
     const session = await openBackupSession(browser.ports)
     unload(browser.ports)
-    vi.mocked(browser.ports.tabs.setItem).mockImplementation((key, value) => {
-      if (key === 'knc-cms-journal-document')
-        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
-      browser.tabs.set(key, value)
+    session.schedule({ document: named('Journalförd'), revision: 4, fingerprint: FINGERPRINT })
+    void session.suspend()
+    const quota = new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    vi.mocked(browser.ports.tabs.setItem).mockImplementation(() => {
+      throw quota
     })
     session.schedule({ document: named('För stor'), revision: 4, fingerprint: FINGERPRINT })
-    expect(() => void session.suspend()).not.toThrow()
-    expect(JOURNAL_KEYS.filter((key) => browser.tabs.has(key))).toEqual([])
+    let suspended: Promise<void> = Promise.resolve()
+    expect(() => {
+      suspended = session.suspend()
+    }).not.toThrow()
+    await expect(suspended).rejects.toBe(quota)
     const next = await openBackupSession(reload(browser))
-    expect((await next.own())?.document).toEqual(named('Sparad'))
+    expect((await next.own())?.document).toEqual(named('Journalförd'))
   })
 
-  it('surfaces any other sessionStorage failure', async () => {
+  it('rejects instead of throwing on any other sessionStorage failure', async () => {
     const browser = memory({ tab: 'this-tab' })
     const session = await openBackupSession(browser.ports)
+    const failure = new TypeError('sessionStorage is unavailable')
     vi.mocked(browser.ports.tabs.setItem).mockImplementation(() => {
-      throw new TypeError('sessionStorage is unavailable')
+      throw failure
     })
     session.schedule({ document: named('A'), revision: 1, fingerprint: FINGERPRINT })
-    expect(() => void session.suspend()).toThrow('sessionStorage is unavailable')
+    let suspended: Promise<void> = Promise.resolve()
+    expect(() => {
+      suspended = session.suspend()
+    }).not.toThrow()
+    await expect(suspended).rejects.toBe(failure)
+    // The IndexedDB write went on.
+    await session.flush()
+    expect((await session.own())?.document).toEqual(named('A'))
+  })
+
+  it('replays the stale-layouts mark with the journal', async () => {
+    const browser = memory({ tab: 'this-tab' })
+    const session = await openBackupSession(browser.ports)
+    unload(browser.ports)
+    session.schedule({
+      document: named('Osparad'),
+      revision: 4,
+      fingerprint: FINGERPRINT,
+      layoutsStale: true,
+    })
+    void session.suspend()
+    const next = await openBackupSession(reload(browser))
+    expect(await next.own()).toMatchObject({ document: named('Osparad'), layoutsStale: true })
+  })
+
+  it('keeps a later edit newer than an adopted draft dated ahead of the clock', async () => {
+    const browser = memory({
+      tab: 'this-tab',
+      records: [record('closed', 'Framtida', '2026-10-24T13:00:00.000Z')],
+    })
+    const session = await openBackupSession(browser.ports)
+    const [offer] = await session.offers()
+    if (!offer) throw new Error('An offer was expected')
+    expect(await session.adopt(offer)).toBe('done')
+    unload(browser.ports)
+    // The clock says 12:00:0x, an hour before the adopted draft.
+    session.schedule({
+      document: named('Senare redigering'),
+      revision: 4,
+      fingerprint: FINGERPRINT,
+    })
+    void session.suspend()
+    const next = await openBackupSession(reload(browser))
+    expect(await next.own()).toMatchObject({
+      document: named('Senare redigering'),
+      savedAt: '2026-10-24T13:00:00.001Z',
+    })
   })
 })
 
