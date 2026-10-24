@@ -3,7 +3,7 @@
 // obtained from the booking-email link. A fresh email request rotates and revokes the old token; the
 // phone remains a scope cross-check, not the authorization secret.
 
-import { getSupabase } from '../../../backend/supabaseClient'
+import { getPublicRest } from '../../../backend/publicRest'
 import { invokePublicBookingAction } from '../../../backend/publicBookingActions'
 import { createReviewResponse, parseWith, reviewRow } from '../../../backend/rpcSchemas'
 import type { Review, ReviewError, ReviewResult, ValidReview } from '../domain'
@@ -23,7 +23,7 @@ function reviewError(kind: ReviewError['kind'], message: string): ReviewResult {
 export const supabaseReviewsAdapter: ReviewsPort = {
   async list(): Promise<readonly Review[]> {
     try {
-      const { data, error } = await getSupabase()
+      const { data, error } = await getPublicRest()
         .from('reviews')
         .select('id,name,rating,text')
         .eq('published', true)

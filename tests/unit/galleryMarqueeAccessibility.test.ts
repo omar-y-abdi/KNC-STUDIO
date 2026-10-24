@@ -129,7 +129,7 @@ describe('published gallery photos', () => {
 })
 
 const galleryDb = vi.hoisted(() => ({ from: vi.fn() }))
-vi.mock('../../src/backend/supabaseClient', () => ({ getSupabase: () => galleryDb }))
+vi.mock('../../src/backend/publicRest', () => ({ getPublicRest: () => galleryDb }))
 
 describe('gallery load outcomes', () => {
   it('distinguishes an empty successful read from a failed database read', async () => {

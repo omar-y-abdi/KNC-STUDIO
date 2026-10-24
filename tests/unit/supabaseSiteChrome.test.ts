@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   systemHandlers: [] as ((payload: unknown) => void)[],
   subscriptionHandler: undefined as ((status: string) => void) | undefined,
   removeChannel: vi.fn(),
+  realtimeReady: Promise.resolve(),
 }))
 
 vi.mock('../../src/backend/config', () => ({
@@ -21,8 +22,8 @@ vi.mock('../../src/backend/config', () => ({
   isBackendConfigured: () => true,
 }))
 
-vi.mock('../../src/backend/supabaseClient', () => ({
-  getSupabase: () => {
+vi.mock('../../src/backend/publicRealtime', () => ({
+  getPublicRealtime: () => {
     const channel = {
       on: vi.fn(
         (event: string, filter: Record<string, unknown>, handler: (payload?: unknown) => void) => {
@@ -39,14 +40,17 @@ vi.mock('../../src/backend/supabaseClient', () => ({
         return channel
       }),
     }
-    return {
+    return state.realtimeReady.then(() => ({
       channel: () => channel,
       removeChannel: state.removeChannel,
-    }
+    }))
   },
 }))
 
 import { supabaseSiteChromeAdapter } from '../../src/site/adapters/supabaseSiteChrome'
+import { unhandledRejectionsDuring } from './helpers/unhandledRejections'
+
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 describe('Supabase site chrome resolution', () => {
   beforeEach(() => {
@@ -60,6 +64,7 @@ describe('Supabase site chrome resolution', () => {
     state.systemHandlers = []
     state.subscriptionHandler = undefined
     state.removeChannel.mockReset()
+    state.realtimeReady = Promise.resolve()
 
     vi.stubGlobal(
       'fetch',
@@ -237,5 +242,61 @@ describe('Supabase site chrome resolution', () => {
         style: 'monochrome',
       },
     })
+  })
+
+  it('opens no channel when the subscription is closed before Realtime is ready', async () => {
+    let release = (): void => undefined
+    state.realtimeReady = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', vi.fn())
+    unsubscribe?.()
+    release()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(state.subscriptionHandler).toBeUndefined()
+    expect(state.changeFilters).toEqual([])
+    expect(state.removeChannel).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a Realtime client that fails to load instead of swallowing it', async () => {
+    const failure = new Error('realtime chunk failed to load')
+    let fail: (reason: unknown) => void = () => undefined
+    state.realtimeReady = new Promise<void>((_resolve, reject) => {
+      fail = reject
+    })
+    const onChange = vi.fn()
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', onChange)
+      fail(failure)
+      await flush()
+      expect(() => unsubscribe?.()).not.toThrow()
+    })
+
+    expect(surfaced).toEqual([failure])
+    expect(state.subscriptionHandler).toBeUndefined()
+    expect(state.removeChannel).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('opens no channel and still surfaces the failure when it closes before the client fails', async () => {
+    const failure = new Error('realtime chunk failed to load')
+    let fail: (reason: unknown) => void = () => undefined
+    state.realtimeReady = new Promise<void>((_resolve, reject) => {
+      fail = reject
+    })
+
+    const surfaced = await unhandledRejectionsDuring(async () => {
+      const unsubscribe = supabaseSiteChromeAdapter.subscribe?.('sv', vi.fn())
+      expect(() => unsubscribe?.()).not.toThrow()
+      fail(failure)
+      await flush()
+    })
+
+    expect(surfaced).toEqual([failure])
+    expect(state.subscriptionHandler).toBeUndefined()
+    expect(state.changeFilters).toEqual([])
+    expect(state.removeChannel).not.toHaveBeenCalled()
   })
 })
