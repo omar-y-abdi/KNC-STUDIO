@@ -299,6 +299,81 @@ test('mobile barber strip: a resize between the fitting frames orphans no Embla 
   assert.deepEqual(await observers(page), { track: 0, targets: 0 }, 'Unmount left observers')
 })
 
+/** Mounts two cards below their loop scale and runs `act` in the microtask right after the first
+ * fitting reInit, while the engine it created has not yet had its observation frame. */
+const actAfterFittingReInit = (page, act) =>
+  page.evaluate(
+    async ([selector, css, act]) => {
+      const harness = await import('/tools/e2e/cms-marquee-harness.tsx')
+      const watcher = new globalThis.MutationObserver(() => {
+        const cards = [...globalThis.document.querySelectorAll(`${selector} > [role="button"]`)]
+        const floored = cards.every((card) => card.style.getPropertyPriority('min-width'))
+        if (cards.length !== 2 || !floored) return
+        watcher.disconnect()
+        globalThis.__acted = true
+        if (act === 'unmount') harness.unmountFixture()
+        else {
+          // A new child is a slide change: Embla's own MutationObserver reInits in this frame.
+          const extra = globalThis.document.createElement('div')
+          extra.id = 'extra-slide'
+          globalThis.document.querySelector(selector)?.appendChild(extra)
+        }
+      })
+      watcher.observe(globalThis.document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style'],
+      })
+      harness.mountBarberStrip(css, 2)
+    },
+    [strip, cardWidth(0.3), act],
+  )
+
+test('mobile barber strip: an unmount right after a fitting reInit leaves no observer', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  await context.addInitScript(trackResizeObservers)
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await actAfterFittingReInit(page, 'unmount')
+  await page.waitForFunction(() => globalThis.__acted === true)
+  await frames(page)
+  assert.ok(
+    (await page.evaluate(() => globalThis.__observed.size)) >= 2,
+    'The strip was unmounted before its fitting reInit',
+  )
+  assert.deepEqual(await observers(page), { track: 0, targets: 0 }, 'Unmount left observers')
+})
+
+test('mobile barber strip: a slide change inside an init frame leaves one observer', async ({
+  newContext,
+}) => {
+  const context = await newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'no-preference',
+  })
+  await context.addInitScript(trackResizeObservers)
+  const page = await context.newPage()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await actAfterFittingReInit(page, 'slide')
+  await page.waitForFunction(() => globalThis.__acted === true)
+  await frames(page)
+  await page.evaluate(() => globalThis.document.getElementById('extra-slide')?.remove())
+  await frames(page)
+  assert.deepEqual(
+    await observers(page),
+    { track: 1, targets: 3 },
+    'One Embla observer watches the strip and its two cards',
+  )
+  await unmountStrip(page)
+  await frames(page)
+  assert.deepEqual(await observers(page), { track: 0, targets: 0 }, 'Unmount left observers')
+})
+
 test('mobile barber strip: a strip no floor can loop falls back to native scrolling', async ({
   newContext,
 }) => {

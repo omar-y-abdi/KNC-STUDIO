@@ -255,15 +255,26 @@ export function useBarberMarquee({
           syncAutoScroll()
         })
       }
+      // Embla 8.6 observes each engine's nodes in a frame queued at init that a later destroy does
+      // not cancel, so an engine destroyed before that frame observes them forever. A frame queued
+      // after it runs after it: each replaced or destroyed engine's resize handler is destroyed again.
+      let resizeHandler = api.internalEngine().resizeHandler
+      const retireResizeHandler = (): void => {
+        const retired = resizeHandler
+        resizeHandler = api.internalEngine().resizeHandler
+        window.requestAnimationFrame(() => retired.destroy())
+      }
       scheduleFit()
       syncAutoScroll()
       track.addEventListener('focusin', pauseOnFocus)
       track.addEventListener('focusout', resumeAfterFocus)
       api.on('pointerUp', resumeAfterPointer)
+      api.on('reInit', retireResizeHandler)
       api.on('reInit', fitAfterReInit)
       api.on('reInit', syncAutoScroll)
       return () => {
         api.off('pointerUp', resumeAfterPointer)
+        api.off('reInit', retireResizeHandler)
         api.off('reInit', fitAfterReInit)
         api.off('reInit', syncAutoScroll)
         track.removeEventListener('focusin', pauseOnFocus)
@@ -275,6 +286,7 @@ export function useBarberMarquee({
         pointerResumeFrame.current = null
         window.cancelAnimationFrame(fitFrame)
         api.destroy()
+        retireResizeHandler()
         restoreSlides()
         carousel.current = null
       }
