@@ -18,8 +18,11 @@ vi.mock('../../src/backend/supabaseClient', () => ({
 import { createReviewResponse } from '../../src/backend/rpcSchemas'
 import { supabaseReviewsAdapter } from '../../src/about/reviews/adapters/supabaseReviews'
 import type { ValidReview } from '../../src/about/reviews/domain'
+import { parsePhone } from '../../src/booking/validation'
 
-const review: ValidReview = { phone: '0701234567', rating: 5, text: 'Bra.' }
+const phone = parsePhone('0701234567')
+if (!phone.ok) throw new Error(`Expected the fixture phone to be valid: ${phone.error}`)
+const review: ValidReview = { phone: phone.value, rating: 5, text: 'Bra.' }
 
 describe('review gateway response contract', () => {
   beforeEach(() => invokePublicBookingAction.mockReset())

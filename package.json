@@ -13,7 +13,7 @@
     "verify:cms-backend": "node tools/release/cms-release.mjs verify",
     "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
     "cloudflare:dev": "npm run build && wrangler dev",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

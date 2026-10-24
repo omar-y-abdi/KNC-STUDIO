@@ -46,6 +46,17 @@ function createEnv() {
   }
 }
 
+type WorkerContext = Parameters<typeof worker.fetch>[2]
+
+// For routes that never use the cached public-content export: calling it rejects.
+const noPublicContent: WorkerContext = {
+  exports: {
+    PublicContent: {
+      fetch: () => Promise.reject(new Error('Unexpected PublicContent export call')),
+    },
+  },
+}
+
 function createWorkerContext(env: ReturnType<typeof createEnv>) {
   const publicContent = new PublicContent({} as never, env)
   return {
@@ -117,6 +128,7 @@ describe('Worker route policy', () => {
     const response = await worker.fetch(
       new Request('https://www.bladeblendstudio.se/login?next=%2Fadmin'),
       env,
+      noPublicContent,
     )
 
     expect(response.status).toBe(308)
@@ -201,7 +213,11 @@ describe('Worker route policy', () => {
     expect(customerAccessTokenFromPath(`/${token}?campaign=mail`)).toBeNull()
     expect(customerAccessTokenFromPath(`/${token.slice(1)}`)).toBeNull()
 
-    const response = await worker.fetch(new Request(`https://bladeblendstudio.se/${token}`), env)
+    const response = await worker.fetch(
+      new Request(`https://bladeblendstudio.se/${token}`),
+      env,
+      noPublicContent,
+    )
 
     expect(response.status).toBe(302)
     expect(response.headers.get('Location')).toBe(
@@ -215,6 +231,7 @@ describe('Worker route policy', () => {
     const headResponse = await worker.fetch(
       new Request(`https://bladeblendstudio.se/${token}`, { method: 'HEAD' }),
       env,
+      noPublicContent,
     )
     expect(headResponse.status).toBe(302)
     expect(headResponse.headers.get('Cache-Control')).toBe('no-store')
@@ -227,6 +244,7 @@ describe('Worker route policy', () => {
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/admin/settings'),
       env,
+      noPublicContent,
     )
 
     expect(response.status).toBe(200)
@@ -237,7 +255,11 @@ describe('Worker route policy', () => {
 
   it('returns a genuine noindex 404 for unknown paths', async () => {
     const env = createEnv()
-    const response = await worker.fetch(new Request('https://bladeblendstudio.se/not-a-route'), env)
+    const response = await worker.fetch(
+      new Request('https://bladeblendstudio.se/not-a-route'),
+      env,
+      noPublicContent,
+    )
 
     expect(response.status).toBe(404)
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
@@ -250,6 +272,7 @@ describe('Worker route policy', () => {
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/.well-known/acp.json'),
       env,
+      noPublicContent,
     )
 
     expect(response.status).toBe(404)
@@ -262,10 +285,12 @@ describe('Worker route policy', () => {
     const cleanResponse = await worker.fetch(
       new Request('https://bladeblendstudio.se/privacy'),
       env,
+      noPublicContent,
     )
     const filenameResponse = await worker.fetch(
       new Request('https://bladeblendstudio.se/privacy.html?lang=sv'),
       env,
+      noPublicContent,
     )
 
     expect(cleanResponse.status).toBe(200)
@@ -281,6 +306,7 @@ describe('Worker route policy', () => {
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/google-calendar'),
       env,
+      noPublicContent,
     )
 
     expect(response.status).toBe(200)
@@ -361,6 +387,7 @@ describe('Worker route policy', () => {
       const response = await worker.fetch(
         new Request('https://bladeblendstudio.se/api/cms/presentation'),
         env,
+        noPublicContent,
       )
       expect(response.status).toBe(200)
       expect(response.headers.get('Cache-Control')).toBe('no-store')
@@ -485,6 +512,7 @@ describe('launch page documents', () => {
     const response = await worker.fetch(
       new Request(`https://bladeblendstudio.se${path}`),
       createEnv(),
+      noPublicContent,
     )
     expect(response.status).toBe(path.endsWith('/') ? 308 : 200)
   })
@@ -493,6 +521,7 @@ describe('launch page documents', () => {
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/missing', { method: 'HEAD' }),
       createEnv(),
+      noPublicContent,
     )
     expect(response.status).toBe(404)
     expect(await response.text()).toBe('')
@@ -502,6 +531,7 @@ describe('launch page documents', () => {
     const response = await worker.fetch(
       new Request('https://bladeblendstudio.se/index.html'),
       createEnv(),
+      noPublicContent,
     )
     expect(response.status).toBe(308)
     expect(response.headers.get('location')).toBe('https://bladeblendstudio.se/')

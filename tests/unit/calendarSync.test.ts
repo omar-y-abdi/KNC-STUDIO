@@ -219,7 +219,7 @@ describe('idempotent event insertion', () => {
   })
 
   it('sends the stable id in the insert body', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof fetch>(
       async () =>
         new Response(JSON.stringify({ id: eventId }), {
           status: 200,
@@ -229,7 +229,8 @@ describe('idempotent event insertion', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const init = fetchMock.mock.calls[0]?.[1]
+    if (!init) throw new Error('Expected insertEvent to call fetch with request options')
     const body = JSON.parse(String(init.body)) as Record<string, unknown>
     expect(body).toMatchObject({ id: eventId, summary: event.summary })
     expect(body).not.toHaveProperty('refresh_token')
@@ -312,7 +313,7 @@ describe('parseCalendarStatus', () => {
   })
 
   it('carries a sync error string', () => {
-    expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
+    expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' })?.lastSyncError).toBe(
       'boom',
     )
   })
