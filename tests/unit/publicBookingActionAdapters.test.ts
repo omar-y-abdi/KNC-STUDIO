@@ -8,12 +8,13 @@ vi.mock('../../src/backend/publicBookingActions', () => ({
   invokePublicBookingAction,
 }))
 
+import { asBarberId } from '../../src/booking/domain'
 import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
 import type { MyBooking } from '../../src/mybookings/domain'
 
 const myBooking: MyBooking = {
   id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
-  barber: { id: 'hassan', name: 'Hassan', ig: '' },
+  barber: { id: asBarberId('hassan'), name: 'Hassan', ig: '' },
   serviceName: 'Klippning',
   price: 350,
   durationMin: 45,
