@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.describe.configure({ timeout: 900_000 })
 
 for (const width of [1440, 390, 320]) {
@@ -13,7 +14,7 @@ for (const width of [1440, 390, 320]) {
     })
     test('cms-workspace', async ({ page, context, browserName, evidenceDir }) => {
       const name = browserName
-      const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+      const base = harnessOrigin
       const out = evidenceDir
       await mkdir(out, { recursive: true })
       const failures = []
