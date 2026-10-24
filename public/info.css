@@ -5,6 +5,10 @@
    this file nor any root paint. */
 :root {
   color-scheme: light dark;
+}
+/* Only a document in this shape is painted: a CMS legal page still stored as an old import (a bare
+   <main> under its own CSS, which may paint body rather than the root) keeps exactly its own look. */
+:root:has(main.bb-doc) {
   background: var(--bb-bg);
   color: var(--bb-text);
   font-family: var(--bb-font);
