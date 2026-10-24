@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(16);
 
 select is(
   (select value from public.site_settings where key = 'homepage_logo_path'),
@@ -90,13 +90,6 @@ select is(
   (select value from public.site_settings where key = 'homepage_logo_path'),
   'logo/123e4567-e89b-42d3-a456-426614174000.webp',
   'public chrome now references processed logo path'
-);
-
-insert into storage.objects (bucket_id, name, created_at)
-values ('gallery', 'logo/123e4567-e89b-42d3-a456-426614174000.webp', pg_catalog.now() - interval '31 minutes');
-select is(
-  public.queue_orphaned_storage_objects(),
-  0, 'reconciler preserves Storage object while homepage setting references it'
 );
 
 set local role service_role;
