@@ -326,13 +326,15 @@ export function useBarberMarquee({
     }
   }, [animate, rootRef, rosterIds.length, trackRef])
 
-  // Owner CSS that defeats the loop floor may also size, float or position the strip by its cards,
-  // which leaves the native fallback nothing to scroll. A failed phone strip keeps its own inline
-  // width and overflow, important now, and initial values for the rest. On cleanup, a declaration
-  // that is no longer important was rewritten by a render and stays as the render left it.
+  // Owner CSS may size, float or position the strip by its cards: Embla then loops a view narrower
+  // than the phone, and the native row has nothing to scroll. A phone strip keeps its own inline
+  // width and overflow-x, important now, and initial values for the rest, from before Embla
+  // measures it and again each time `animate` flips its overflow-x. The source render stays plain:
+  // the editor captures its inline styles. On cleanup, a declaration that is no longer important
+  // was rewritten by a render and stays as the render left it.
   useLayoutEffect(() => {
     const style = trackRef.current?.style
-    if (!style || !enabled || !engineFailed) return
+    if (!style || !enabled || source) return
     const forced = Object.entries({
       width: style.getPropertyValue('width'),
       'overflow-x': style.getPropertyValue('overflow-x'),
@@ -353,7 +355,7 @@ export function useBarberMarquee({
         if (style.getPropertyPriority(property) === 'important')
           style.setProperty(property, value, priority)
     }
-  }, [enabled, engineFailed, trackRef])
+  }, [animate, enabled, source, trackRef])
 
   const rosterKey = rosterIds.join('\u0000')
   useLayoutEffect(() => {
