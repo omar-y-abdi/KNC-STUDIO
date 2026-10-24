@@ -26,7 +26,8 @@ select ok(
 
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub','31000000-0000-0000-0000-000000000002')::text, true);
-select is(public.current_role(), 'barber', 'enabled staff JWT resolves its role');
+select throws_ok($$select public.current_role()$$, '42501', null,
+  'enabled staff cannot directly execute the role lookup');
 select is(public.current_barber_id(), 'access-test', 'enabled staff JWT resolves its barber');
 select is((select count(*)::int from public.bookings), 1, 'enabled staff JWT reads own booking');
 select is(
@@ -48,7 +49,8 @@ select is(
 
 -- Same already-issued JWT claims: database authorization must fail immediately.
 select set_config('request.jwt.claims', json_build_object('sub','31000000-0000-0000-0000-000000000002')::text, true);
-select is(public.current_role(), null, 'disabled staff JWT no longer resolves a role');
+select throws_ok($$select public.current_role()$$, '42501', null,
+  'disabled staff cannot directly execute the role lookup');
 select is(public.current_barber_id(), null, 'disabled staff JWT no longer resolves a barber');
 select is((select count(*)::int from public.bookings), 0, 'disabled staff JWT cannot read bookings');
 select is(

@@ -1,5 +1,5 @@
 begin;
-select plan(76);
+select plan(77);
 
 select ok(not has_table_privilege('anon', 'public.external_action_jobs', 'SELECT'),
   'anon cannot inspect external action jobs');
@@ -198,7 +198,9 @@ select is((current_setting('test.calendar_claim')::jsonb) ->> 'google_event_id',
   'worker resolves preserved Google event id server-side');
 select is((current_setting('test.calendar_claim')::jsonb) ->> 'refresh_token', 'refresh-secret',
   'worker resolves OAuth credential server-side only after claim');
-select public.calendar_forget_event('33000000-0000-0000-0000-000000000010');
+select is(public.calendar_forget_event_if_matches(
+  '33000000-0000-0000-0000-000000000010', 'calendar-outbox', 'primary', 'google-event-10'
+), true, 'successful external deletion acknowledges the exact Calendar mapping');
 reset role;
 select is((select count(*)::int from public.calendar_event_map
   where booking_id='33000000-0000-0000-0000-000000000010'), 0,
@@ -230,17 +232,18 @@ select is((select count(*)::int from public.external_action_jobs
   where action_type='calendar_event_delete' and dedupe_key='33000000-0000-0000-0000-000000000011'), 1,
   'hard booking delete queues external event removal');
 
+-- An event left behind after its booking disappeared still needs durable cleanup.
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values ('33000000-0000-0000-0000-000000000012', 'calendar-outbox', 'primary', 'late-google-event');
 set local role service_role;
-select public.calendar_record_event(
-  '33000000-0000-0000-0000-000000000012', 'calendar-outbox', 'late-google-event'
-);
+select public.queue_calendar_event_deletion('33000000-0000-0000-0000-000000000012');
 reset role;
 select is((select count(*)::int from public.calendar_event_map
   where booking_id='33000000-0000-0000-0000-000000000012'), 1,
-  'late Calendar insert preserves identifier despite missing booking');
+  'orphan Calendar cleanup preserves the identifier despite a missing booking');
 select is((select count(*)::int from public.external_action_jobs
   where action_type='calendar_event_delete' and dedupe_key='33000000-0000-0000-0000-000000000012'), 1,
-  'late Calendar insert is immediately queued for deletion');
+  'orphan Calendar cleanup queues durable deletion');
 
 set local role service_role;
 select set_config('test.disconnect', public.prepare_calendar_disconnect('calendar-outbox')::text, true);

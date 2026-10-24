@@ -34,7 +34,7 @@ const md5 = (value) => createHash('md5').update(JSON.stringify(value)).digest('h
 // A cms_assets row with the columns internal_cms_state returns to the studio.
 const registered = (asset) => ({ trashed_at: null, ...asset })
 
-// Structured references and storage URLs in markup, as internal_cms_document_media reads them.
+// Structured references and storage URLs in markup, as internal_cms_document_media_placements reads them.
 function storedReferences(document) {
   const refs = [
     ...documentMedia(document),
