@@ -1,8 +1,9 @@
+import { barberFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
-import { emptyDocument } from '../../shared/cms.ts'
 import { minLoopScale } from '../../src/admin/cms/hierarchicalResize.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -56,34 +57,36 @@ async function openStudio(page, context, ids) {
   const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
   context.setDefaultTimeout(10000)
-  const seed = emptyDocument()
-  seed.barbers = ids.map((id, i) => ({
-    id,
-    name: `Barber ${id}`,
-    ig: id,
-    role_sv: 'Frisör',
-    role_en: 'Barber',
-    bio_sv: 'Presentation',
-    bio_en: 'Presentation',
-    sort_order: i,
-  }))
+  const seed = documentFixture()
+  seed.barbers = ids.map((id, i) =>
+    barberFixture({
+      id,
+      name: `Barber ${id}`,
+      ig: id,
+      role_sv: 'Frisör',
+      role_en: 'Barber',
+      bio_sv: 'Presentation',
+      bio_en: 'Presentation',
+      sort_order: i,
+    }),
+  )
   const backend = await nativeBackend(context, seed)
-  await context.route('https://admin-harness.invalid/rest/v1/rpc/public_*', async (route) => {
-    const headers = {
-      'Access-Control-Allow-Origin': new URL(base).origin,
-      'Access-Control-Allow-Headers': '*',
-    }
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    return route.fulfill({
-      headers,
-      json: {
-        settings: {},
-        barbers: seed.barbers.map((b) => ({ ...b, active: true, photo_path: null })),
-        services: [],
-        schedules: [],
+  await routeApi(context, [
+    [
+      'https://admin-harness.invalid/rest/v1/rpc/public_*',
+      async (route, headers) => {
+        return route.fulfill({
+          headers,
+          json: {
+            settings: {},
+            barbers: seed.barbers.map((b) => ({ ...b, active: true, photo_path: null })),
+            services: [],
+            schedules: [],
+          },
+        })
       },
-    })
-  })
+    ],
+  ])
   await page.goto(`${base}/tools/e2e/admin-harness.html`)
   await page.evaluate(async () =>
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),

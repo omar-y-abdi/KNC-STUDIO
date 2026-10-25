@@ -1,11 +1,15 @@
+import { assetFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
+import { EMAIL_NAMES } from '../../shared/cms.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
-test.describe.configure({ timeout: 900_000 })
+// 2 × max per-case nearest-rank p95 of passing durations across the supplied full reports.
+// Limiting sample: results-cms3-webkit.json:5309 (96487 ms); budget = 96487 × 2.
+test.describe.configure({ timeout: 192_974 })
 
 for (const width of [1440, 390]) {
   test.describe(String(width), () => {
@@ -27,7 +31,7 @@ for (const width of [1440, 390]) {
         checks.push({ passed: Boolean(passed), message, details })
         if (!passed) failures.push(message)
       }
-      const seed = emptyDocument()
+      const seed = documentFixture()
       Object.assign(seed.settings, {
         business_name: 'Blade & Blend Studio',
         business_legal_name: 'Salongen Exempel AB',
@@ -71,40 +75,46 @@ for (const width of [1440, 390]) {
         'Salongen från entrén',
         'Inspiration för nästa besök',
         'Omslag med ett långt filnamn som ska rymmas',
-      ].map((name, i) => ({
-        id: `22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}`,
-        bucket: 'cms-library',
-        path: `images/22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}.webp`,
-        name,
-        alt: name,
-        mime: 'image/webp',
-        bytes: 98240 + i * 12600,
-        width: 1200,
-        height: 630,
-        archived: i === 4 || i === 5,
-        trashed_at: i === 5 ? '2026-09-20T12:00:00Z' : null,
-        version: 1,
-      }))
+      ].map((name, i) =>
+        assetFixture({
+          id: `22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}`,
+          bucket: 'cms-library',
+          path: `images/22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}.webp`,
+          name,
+          alt: name,
+          mime: 'image/webp',
+          bytes: 98240 + i * 12600,
+          width: 1200,
+          height: 630,
+          archived: i === 4 || i === 5,
+          trashed_at: i === 5 ? '2026-09-20T12:00:00Z' : null,
+          version: 1,
+        }),
+      )
       const compact = width <= 900
       context.setDefaultTimeout(12000)
       const backend = await nativeBackend(context, seed, assets)
-      const headers = { 'Access-Control-Allow-Origin': new URL(base).origin }
       let failHistory = false
-      await context.route('**/functions/v1/cms-studio', (route) => {
-        const body = route.request().postDataJSON()
-        if (body.operation === 'asset_usage')
-          return route.fulfill({
-            headers,
-            json: { currentReferences: 0, historyReferences: 0 },
-          })
-        if (body.operation === 'history' && failHistory)
-          return route.fulfill({
-            headers,
-            status: 503,
-            json: { message: 'Historiken kunde inte läsas. Försök igen.' },
-          })
-        return route.fallback()
-      })
+      await routeApi(context, [
+        [
+          '**/functions/v1/cms-studio',
+          (route, headers) => {
+            const body = route.request().postDataJSON()
+            if (body.operation === 'asset_usage')
+              return route.fulfill({
+                headers,
+                json: { currentReferences: 0, historyReferences: 0 },
+              })
+            if (body.operation === 'history' && failHistory)
+              return route.fulfill({
+                headers,
+                status: 503,
+                json: { message: 'Historiken kunde inte läsas. Försök igen.' },
+              })
+            return route.fallback()
+          },
+        ],
+      ])
       await context.route('**/storage/v1/object/public/**', (route) =>
         route.fulfill({
           contentType: 'image/png',

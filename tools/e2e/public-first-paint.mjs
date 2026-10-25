@@ -1,3 +1,4 @@
+import { expect } from './fixtures.mjs'
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -209,7 +210,12 @@ const pageBackground = (page) =>
 /** While the presentation is read the page is its background: no intro, gate text or old hero. */
 async function assertBackgroundOnly(page, label) {
   // Leave the browser a few frames to paint (and the sampler to record) whatever it would show.
-  await page.waitForTimeout(450)
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
   const state = await page.evaluate(
     (selectors) => ({
       ampersand: globalThis.document.querySelector(selectors.published) !== null,
@@ -376,6 +382,10 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
   })
   enabledContext.setDefaultTimeout(TIMEOUT)
   disabledContext.setDefaultTimeout(TIMEOUT)
+  let releaseScripts
+  const scriptGate = new Promise((resolve) => {
+    releaseScripts = resolve
+  })
   try {
     const enabled = await enabledContext.newPage()
     let delayedScripts = 0
@@ -383,7 +393,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       const url = new URL(route.request().url())
       if (url.origin === workerOrigin && route.request().resourceType() === 'script') {
         delayedScripts++
-        await new Promise((resolve) => globalThis.setTimeout(resolve, 600))
+        await scriptGate
         return route.abort().catch(() => {
           // The page may finish its navigation cleanup before Playwright closes this held route.
         })
@@ -396,7 +406,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
     const html = await response.text()
     assert.match(html, /<noscript>[\s\S]*Aktivera JavaScript[\s\S]*<\/noscript>/)
     assert.match(html, new RegExp(`id="${INTRO_HEADING_ID}"`), 'Agents receive the intro text')
-    await enabled.waitForTimeout(700)
+    await expect.poll(() => delayedScripts).toBeGreaterThan(0)
     assert.ok(
       delayedScripts > 0,
       'The app script was delayed and blocked during the visibility check',
@@ -411,6 +421,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       false,
       'Script-enabled visitors never see the agent intro while the bundle is delayed or blocked',
     )
+    releaseScripts()
     // The shell's boot deadline (index.html, 8 s) shows the readable intro when the app never boots.
     await enabled
       .locator(`#${INTRO_HEADING_ID}`)
@@ -453,6 +464,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       introWithoutScripting: true,
     }
   } finally {
+    releaseScripts()
     await enabledContext.close()
     await disabledContext.close()
   }
@@ -495,6 +507,7 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
     })
 
     const privatePage = await context.newPage()
+    await privatePage.clock.install()
     await privatePage.goto(`${workerOrigin}/login`, { waitUntil: 'domcontentloaded' })
     await privatePage.waitForFunction(() => globalThis.document.title.startsWith('Logga in'))
     const held = heldAnswer(presentation)
@@ -521,7 +534,7 @@ export async function verifyPublicFirstPaint(createContext, engineName, workerOr
     await clientNavigate(privatePage, '/')
     await abandoned
     await leaveForLogin(privatePage)
-    await privatePage.waitForTimeout(FIRST_RETRY_GAP_MS + 600)
+    await privatePage.clock.runFor(FIRST_RETRY_GAP_MS + 600)
     assert.equal(
       presentations.served.length - abandonedFrom,
       1,

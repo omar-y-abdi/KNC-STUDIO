@@ -87,12 +87,14 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
           await live.reload()
           await live.getByText('Local owner change', { exact: true }).waitFor()
         }
-        await second.screenshot({ path: `/tmp/cms-native-${name}-revision-${scenario}.png` })
+        await second.screenshot({
+          path: test.info().outputPath(`cms-native-${name}-revision-${scenario}.png`),
+        })
         console.log(`PASS revision ${name}: ${scenario}`)
       } catch (error) {
         console.error(`FAIL revision ${name}: ${scenario}`, error)
         await second.screenshot({
-          path: `/tmp/cms-native-${name}-revision-${scenario}-failure.png`,
+          path: test.info().outputPath(`cms-native-${name}-revision-${scenario}-failure.png`),
         })
         throw error
       }

@@ -11,6 +11,8 @@ test('cms-projection', async ({ page, browserName }) => {
     return fixture.verifyNativeProjection()
   })
   assert.equal(checks.length, 18)
-  await page.screenshot({ path: `/tmp/cms-native-${name}-component-projection.png` })
+  await page.screenshot({
+    path: test.info().outputPath(`cms-native-${name}-component-projection.png`),
+  })
   console.log(`PASS ${name}: ${checks.join('; ')}`)
 })

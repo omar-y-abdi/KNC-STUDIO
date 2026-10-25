@@ -1,7 +1,20 @@
+import { ADMIN_SCROLL_RESTORE_TIMEOUT_MS } from '../../src/admin/navigationState.ts'
+import { test, expect } from './fixtures.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { harnessOrigin } from './origins.mjs'
 
 const baseUrl = harnessOrigin.replace(/\/$/, '')
+
+// Wait for a painted turn after fixture promises resolve, including passive UI effects.
+async function afterPaint(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
+}
 
 async function mount(page, name, argument, path, shellMinHeight = '0px') {
   await page.goto(`${baseUrl}${path}`, { waitUntil: 'domcontentloaded' })
@@ -22,7 +35,6 @@ async function mount(page, name, argument, path, shellMinHeight = '0px') {
 async function mountCmsStudio(page) {
   const { nativeBackend } = await import('./cms-backend.mjs')
   await nativeBackend(page.context())
-  const origin = new URL(baseUrl).origin
   const requests = []
   const browserErrors = []
   page.on('request', (request) => {
@@ -33,52 +45,51 @@ async function mountCmsStudio(page) {
   page.on('console', (message) => {
     if (message.type() === 'error') browserErrors.push(message.text())
   })
-  await page.route('https://admin-harness.invalid/**', async (route) => {
-    const request = route.request()
-    const headers = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Headers': 'authorization,apikey,content-type,x-client-info',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      'Content-Type': 'application/json',
-    }
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    const url = new URL(request.url())
-    if (url.pathname === '/functions/v1/cms-studio') {
-      const body = request.postDataJSON()
-      if (body?.operation === 'state')
-        return route.fulfill({
-          status: 200,
-          headers,
-          body: JSON.stringify({
-            revision: 1,
-            fingerprint: 'cms-shell-e2e',
-            assets: [],
-            document: {
-              schema: 1,
-              site: {},
-              about: {},
-              settings: {},
-              barbers: [],
-              photos: {},
-              gallery: [],
-              emails: [],
-              presentation: {
-                copy: {},
-                styles: {},
-                images: {},
-                themes: { light: {}, dark: {} },
-                pages: [],
-                regions: {},
-              },
-            },
-          }),
-        })
-      if (body?.operation === 'history')
-        return route.fulfill({ status: 200, headers, body: JSON.stringify({ items: [] }) })
-      throw new Error(`Unexpected CMS shell operation: ${JSON.stringify(body)}`)
-    }
-    return route.fallback()
-  })
+  await routeApi(page, [
+    [
+      'https://admin-harness.invalid/**',
+      async (route, headers) => {
+        const request = route.request()
+
+        const url = new URL(request.url())
+        if (url.pathname === '/functions/v1/cms-studio') {
+          const body = request.postDataJSON()
+          if (body?.operation === 'state')
+            return route.fulfill({
+              status: 200,
+              headers,
+              body: JSON.stringify({
+                revision: 1,
+                fingerprint: 'cms-shell-e2e',
+                assets: [],
+                document: {
+                  schema: 1,
+                  site: {},
+                  about: {},
+                  settings: {},
+                  barbers: [],
+                  photos: {},
+                  gallery: [],
+                  emails: [],
+                  presentation: {
+                    copy: {},
+                    styles: {},
+                    images: {},
+                    themes: { light: {}, dark: {} },
+                    pages: [],
+                    regions: {},
+                  },
+                },
+              }),
+            })
+          if (body?.operation === 'history')
+            return route.fulfill({ status: 200, headers, body: JSON.stringify({ items: [] }) })
+          throw new Error(`Unexpected CMS shell operation: ${JSON.stringify(body)}`)
+        }
+        return route.fallback()
+      },
+    ],
+  ])
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html?view=cms-studio`, {
     waitUntil: 'domcontentloaded',
   })
@@ -282,6 +293,7 @@ async function verifyNavigation(page) {
 }
 
 async function verifyDelayedRestore(page) {
+  await page.clock.install()
   await mount(page, 'navigation', 'owner', '/tools/e2e/admin-harness.html?tab=schedule', '22000px')
   await waitForSavedScroll(page, 'schedule', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 5000))
@@ -295,12 +307,17 @@ async function verifyDelayedRestore(page) {
     globalThis.window.scrollTo(0, 0)
   })
   await page.goBack()
-  await page.waitForTimeout(10_100)
+  // Exercise a delayed height change beyond the former 10-second cutoff, inside the real deadline.
+  const elapsed = 10_100
+  assert(elapsed < ADMIN_SCROLL_RESTORE_TIMEOUT_MS)
+  await page.clock.runFor(elapsed)
   await page.evaluate(() => {
     const shell = globalThis.document.querySelector('.knc-admin-shell')
     if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '22000px'
   })
-  await page.waitForFunction(() => Math.round(globalThis.window.scrollY) === 5000)
+  await page.waitForFunction(() => Math.round(globalThis.window.scrollY) === 5000, undefined, {
+    timeout: ADMIN_SCROLL_RESTORE_TIMEOUT_MS - elapsed,
+  })
 }
 
 async function verifyPresentationDraft(page) {
@@ -436,7 +453,7 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
     await page.getByRole('heading', { name: /A$/ }).waitFor()
   }
   // Let the target effect run; the original write is still explicitly held before persistence.
-  await page.waitForTimeout(100)
+  await afterPaint(page)
   const mutable =
     kind === 'services'
       ? page.getByRole('button', { name: 'Save', exact: true })
@@ -663,7 +680,7 @@ async function verifyContactOwnership(page, kind) {
     )
     await phone.fill('0703333333')
     await contactControl(page, 'a')
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     assert((await phone.inputValue()) === '0703333333', 'review auto-fill overwrote typed phone')
   }
 }
@@ -901,7 +918,6 @@ async function verifyCalendarSync(page) {
       1,
       calendarStatusResult({ disconnectPending: true }),
     )
-    await page.waitForTimeout(0)
     await page.evaluate(() => globalThis.window.dispatchEvent(new globalThis.Event('focus')))
     await waitCalendarCalls(page, 'statusCalls', 'a', 3, 'focus did not refresh Calendar')
     await calendarControl(
@@ -979,7 +995,7 @@ async function verifyCalendarSync(page) {
       0,
       calendarStatusResult({ connected: true, googleEmail: 'late@example.test' }),
     )
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(
       (await page.getByTestId('calendar-connected').textContent()) === 'unknown',
       'Late timed-out Calendar response wrote back into state',
@@ -1027,7 +1043,7 @@ async function verifyCalendarSync(page) {
       'hook disconnect acknowledgement read missing',
     )
     await calendarControl(page, 'resolve-status', 'a', 1, calendarStatusResult({ connected: true }))
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(
       (await page.getByTestId('calendar-pending').textContent()) === 'true',
       'Stale read before disconnect overwrote acknowledged pending state',
@@ -1043,7 +1059,7 @@ async function verifyCalendarSync(page) {
     await waitCalendarCalls(page, 'statusCalls', 'a', 4, 'port-race pending read missing')
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'b')
-    await page.waitForTimeout(25)
+    await page.clock.runFor(25)
     await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'port B initial read missing')
     await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
@@ -1053,19 +1069,19 @@ async function verifyCalendarSync(page) {
         'false',
     )
     await calendarControl(page, 'resolve-status', 'a', 3, calendarStatusResult({ connected: true }))
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(
       (await page.getByTestId('calendar-connected').textContent()) === 'false',
       'Late port A Calendar response overwrote port B state',
     )
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'a')
-    await page.waitForTimeout(25)
+    await page.clock.runFor(25)
     await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'a', 5, 'port A remount read missing')
     await calendarControl(page, 'unmount')
     await calendarControl(page, 'resolve-status', 'a', 4, calendarStatusResult({ connected: true }))
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(
       (await page.getByTestId('calendar-harness').count()) === 0,
       'Calendar late response recreated UI after unmount',
@@ -1088,7 +1104,7 @@ async function verifyCalendarSync(page) {
     const beforeSwitch = page.url()
     await page.clock.resume()
     await calendarControl(page, 'switch-port', 'b')
-    await page.waitForTimeout(25)
+    await page.clock.runFor(25)
     await pauseCalendarClock(page)
     await waitCalendarCalls(page, 'statusCalls', 'b', 1, 'connect-race port B read missing')
     await calendarControl(page, 'resolve-status', 'b', 0, calendarStatusResult())
@@ -1096,7 +1112,7 @@ async function verifyCalendarSync(page) {
       ok: true,
       value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=stale',
     })
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(page.url() === beforeSwitch, 'Late port A connect URL navigated after port switch')
 
     await calendarControl(page, 'invoke-connect')
@@ -1106,7 +1122,7 @@ async function verifyCalendarSync(page) {
       ok: true,
       value: 'https://accounts.google.com/o/oauth2/authorize?synthetic=unmounted',
     })
-    await page.waitForTimeout(100)
+    await page.clock.runFor(100)
     assert(page.url() === beforeSwitch, 'Late connect URL navigated after component unmount')
   }
 
@@ -1259,7 +1275,7 @@ async function customerControl(page, action, port = 'a', index = 0, result) {
       ),
     { action, port, index, result },
   )
-  await page.waitForTimeout(0)
+  await afterPaint(page)
   return snapshot
 }
 
@@ -1383,7 +1399,7 @@ async function verifyCustomerEmail(page) {
       'queued email-link request left a submit button available',
     )
     await email.press('Enter')
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     snapshot = await customerSnapshot(page)
     assert(snapshot.requestCalls.a === 1, 'Enter duplicated a completed email-link request')
 
@@ -1519,7 +1535,7 @@ async function verifyCustomerEmail(page) {
     await customerControl(page, 'resolve-cancel', 'a', 0, { ok: true, id: 'customer-booking-a' })
     await waitCustomerCalls(page, 'listCalls', 'a', 3, 'post-cancel reload missing')
     await customerControl(page, 'resolve-list', 'a', 1, customerUpcomingResult())
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     assert(
       (await page.getByRole('button', { name: /Monday 14 September at 10:00/ }).count()) === 0,
       'stale in-flight list response resurrected the cancelled booking',
@@ -1546,7 +1562,7 @@ async function verifyCustomerEmail(page) {
     await customerControl(page, 'resolve-list', 'b', 0, customerVerifiedResult('b@example.test'))
     await page.getByRole('button', { name: t.manage, exact: true }).waitFor()
     await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     assert(
       (await page.getByRole('status').filter({ hasText: t.queued }).count()) === 0,
       'late port A request response wrote into port B UI',
@@ -1561,7 +1577,7 @@ async function verifyCustomerEmail(page) {
     await waitCustomerCalls(page, 'requestCalls', 'a', 1, 'unmount-fence request missing')
     await customerControl(page, 'unmount')
     await customerControl(page, 'resolve-request', 'a', 0, { ok: true, status: 'queued' })
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     assert(
       (await page.getByRole('dialog').count()) === 0,
       'late response recreated an unmounted dialog',
@@ -1576,7 +1592,7 @@ async function verifyCustomerEmail(page) {
     await customerControl(page, 'set-code', 'a', 0, nonceB)
     await page.getByRole('button', { name: t.confirm, exact: true }).waitFor()
     await customerControl(page, 'resolve-confirm', 'a', 0, { ok: true, status: 'waiting' })
-    await page.waitForTimeout(100)
+    await afterPaint(page)
     assert(
       (await page.getByRole('status').filter({ hasText: t.waiting }).count()) === 0,
       'late nonce A response wrote into nonce B UI',
@@ -1681,7 +1697,7 @@ async function verifyCustomerEmail(page) {
       `actual App customer hash flow errored: ${appState.pageErrors.join('; ')}`,
     )
     await page.screenshot({
-      path: '/tmp/knc-ui-2026-09-13/customer-email-app-hash-320.png',
+      path: test.info().outputPath('customer-email-app-hash-320.png'),
       fullPage: false,
     })
   }
@@ -1698,7 +1714,7 @@ async function verifyCustomerEmail(page) {
       scrollWidth: element.scrollWidth,
     }))
     await page.screenshot({
-      path: '/tmp/knc-ui-2026-09-13/customer-email-confirm-320.png',
+      path: test.info().outputPath('customer-email-confirm-320.png'),
       fullPage: false,
     })
     assert(
@@ -1709,6 +1725,7 @@ async function verifyCustomerEmail(page) {
 }
 
 async function verifyDelayedCatalog(page, embedded) {
+  await page.clock.install()
   await page.setViewportSize({ width: 1280, height: 600 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
@@ -1722,7 +1739,7 @@ async function verifyDelayedCatalog(page, embedded) {
   await page.getByTestId('booking-step-barber').waitFor()
   await page.evaluate(() => globalThis.document.fonts.ready)
   // Longer than the former 1200ms geometry deadline. The pending work is catalog data, not JS.
-  await page.waitForTimeout(1600)
+  await page.clock.runFor(1600)
   assert(
     (await page.getByTestId('booking-barber-option').count()) === 0,
     'catalog fixture was not delayed',
@@ -1747,7 +1764,7 @@ async function verifyDelayedCatalog(page, embedded) {
       box.bottom <= (embedded ? host.bottom : globalThis.innerHeight) + 1
     )
   }, embedded)
-  await page.waitForTimeout(200)
+  await afterPaint(page)
   const before = await page.evaluate(
     (embedded) =>
       embedded
@@ -1758,7 +1775,7 @@ async function verifyDelayedCatalog(page, embedded) {
   await page.evaluate(() => {
     globalThis.document.querySelector('[data-testid="fold-booking"]').style.paddingBottom = '500px'
   })
-  await page.waitForTimeout(200)
+  await afterPaint(page)
   const after = await page.evaluate(
     (embedded) =>
       embedded
@@ -1822,6 +1839,7 @@ async function mountRealAdmin(page, tab = 'bookings') {
 async function verifyAdminSession(page, scenario) {
   const queuedWrite = ['queued-write', 'notification-gap'].includes(scenario)
   const holds = { profile: gate(), logout: gate(), presentation: gate(), password: gate() }
+  const finished = { profile: gate(), password: gate() }
   const state = {
     enabled: true,
     mustChangePassword: true,
@@ -1869,123 +1887,131 @@ async function verifyAdminSession(page, scenario) {
   }
   page.on('pageerror', (error) => state.errors.push(error.message))
   // Intercept before importing/mounting anything: no real Auth, DB, provider or production writes.
-  await page.context().route('**/*', async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-    if (url.origin === origin) return route.continue()
-    const reply = (body, status = 200) =>
-      route.fulfill({
-        status,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Headers': '*',
-          'Access-Control-Allow-Methods': '*',
-        },
-        body: status === 204 ? undefined : JSON.stringify(body),
+  await routeApi(page.context(), [
+    [
+      '**/*',
+      async (route, headers) => {
+        const request = route.request()
+        const url = new URL(request.url())
+        if (url.origin === origin) return route.continue()
+        const reply = (body, status = 200) =>
+          route.fulfill({
+            status,
+            headers,
+            body: status === 204 ? undefined : JSON.stringify(body),
+          })
+
+        let body = null
+        try {
+          body = request.postDataJSON()
+        } catch {
+          /* GET has no JSON body. */
+        }
+        let who = null
+        try {
+          who = JSON.parse(
+            Buffer.from(request.headers().authorization.split('.')[1], 'base64url').toString(),
+          ).sub
+        } catch {
+          /* Anonymous requests have no user. */
+        }
+        state.calls.push({ path: url.pathname, method: request.method(), who, body })
+        if (url.pathname === '/auth/v1/logout') {
+          if (scenario === 'slow-signout' || scenario === 'late-reset-logout')
+            await holds.logout.promise
+          return reply(null, 204)
+        }
+        if (url.pathname === '/auth/v1/token') {
+          const held = scenario === 'late-settings-password' && body.email.startsWith('a@')
+          if (held) await holds.password.promise
+          await reply(adminSession(body.email.startsWith('b@') ? AUTH_USER_B : AUTH_USER_A))
+          if (held) finished.password.release()
+          return
+        }
+        if (url.pathname === '/auth/v1/user') {
+          const held = request.method() === 'PUT' && scenario === 'late-password'
+          if (held) await holds.password.promise
+          await reply(adminSession(who ?? AUTH_USER_A).user)
+          if (held) finished.password.release()
+          return
+        }
+        if (url.pathname === '/rest/v1/profiles') {
+          const snapshot = {
+            role: 'owner',
+            barber_id: null,
+            must_change_password:
+              ['late-password', 'password-completes'].includes(scenario) &&
+              state.mustChangePassword,
+            account_enabled: state.enabled,
+          }
+          if (scenario === 'late-profile') await holds.profile.promise
+          if (state.networkFailure) await reply({ message: 'Temporary transport failure' }, 503)
+          else await reply(snapshot)
+          finished.profile.release()
+          return
+        }
+        if (url.pathname === '/rest/v1/barbers')
+          return reply([
+            {
+              id: 'audit-barber',
+              name: 'Audit Barber',
+              ig: '',
+              role_sv: 'Barberare',
+              role_en: 'Barber',
+              bio_sv: '',
+              bio_en: '',
+              active: true,
+              sort_order: 0,
+            },
+          ])
+        if (url.pathname === '/rest/v1/bookings') {
+          if (!who || !state.enabled)
+            return reply({ code: '42501', message: 'Denied by inert authoritative boundary' }, 403)
+          const start = new Date(Date.now() + 3 * 86400_000)
+          return reply([
+            {
+              id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              barber_id: 'audit-barber',
+              service_name: 'Audit service',
+              price: 350,
+              duration_min: 30,
+              start_at: start.toISOString(),
+              end_at: new Date(start.getTime() + 1800_000).toISOString(),
+              customer_name: PRIVATE_CUSTOMER,
+              method: 'email',
+              phone: '0700000055',
+              email: 'customer@audit.invalid',
+              lang: 'sv',
+              status: 'confirmed',
+            },
+          ])
+        }
+        if (url.pathname === '/rest/v1/site_content') return reply([])
+        if (url.pathname === '/rest/v1/rpc/set_own_password_changed') {
+          state.mustChangePassword = false
+          return reply(null)
+        }
+        if (url.pathname === '/rest/v1/site_settings') {
+          if (request.method() === 'GET')
+            return reply([...state.settings].map(([key, value]) => ({ key, value })))
+          if (Array.isArray(body) && queuedWrite) await holds.presentation.promise
+          for (const row of Array.isArray(body) ? body : [body])
+            state.settings.set(row.key, row.value)
+          return reply(body)
+        }
+        if (url.pathname.startsWith('/rest/v1/')) return reply([])
+        state.errors.push(`Unexpected external request: ${url.origin}${url.pathname}`)
+        return route.abort()
+      },
+    ],
+  ])
+  const waitCall = (predicate) =>
+    expect
+      .poll(() => state.calls.some(predicate), {
+        timeout: 10_000,
+        message: `Admin ${scenario}: expected request missing`,
       })
-    if (request.method() === 'OPTIONS') return reply(null, 204)
-    let body = null
-    try {
-      body = request.postDataJSON()
-    } catch {
-      /* GET has no JSON body. */
-    }
-    let who = null
-    try {
-      who = JSON.parse(
-        Buffer.from(request.headers().authorization.split('.')[1], 'base64url').toString(),
-      ).sub
-    } catch {
-      /* Anonymous requests have no user. */
-    }
-    state.calls.push({ path: url.pathname, method: request.method(), who, body })
-    if (url.pathname === '/auth/v1/logout') {
-      if (scenario === 'slow-signout' || scenario === 'late-reset-logout')
-        await holds.logout.promise
-      return reply(null, 204)
-    }
-    if (url.pathname === '/auth/v1/token') {
-      if (scenario === 'late-settings-password' && body.email.startsWith('a@'))
-        await holds.password.promise
-      return reply(adminSession(body.email.startsWith('b@') ? AUTH_USER_B : AUTH_USER_A))
-    }
-    if (url.pathname === '/auth/v1/user') {
-      if (request.method() === 'PUT' && scenario === 'late-password') await holds.password.promise
-      return reply(adminSession(who ?? AUTH_USER_A).user)
-    }
-    if (url.pathname === '/rest/v1/profiles') {
-      const snapshot = {
-        role: 'owner',
-        barber_id: null,
-        must_change_password:
-          ['late-password', 'password-completes'].includes(scenario) && state.mustChangePassword,
-        account_enabled: state.enabled,
-      }
-      if (scenario === 'late-profile') await holds.profile.promise
-      return state.networkFailure
-        ? reply({ message: 'Temporary transport failure' }, 503)
-        : reply(snapshot)
-    }
-    if (url.pathname === '/rest/v1/barbers')
-      return reply([
-        {
-          id: 'audit-barber',
-          name: 'Audit Barber',
-          ig: '',
-          role_sv: 'Barberare',
-          role_en: 'Barber',
-          bio_sv: '',
-          bio_en: '',
-          active: true,
-          sort_order: 0,
-        },
-      ])
-    if (url.pathname === '/rest/v1/bookings') {
-      if (!who || !state.enabled)
-        return reply({ code: '42501', message: 'Denied by inert authoritative boundary' }, 403)
-      const start = new Date(Date.now() + 3 * 86400_000)
-      return reply([
-        {
-          id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-          barber_id: 'audit-barber',
-          service_name: 'Audit service',
-          price: 350,
-          duration_min: 30,
-          start_at: start.toISOString(),
-          end_at: new Date(start.getTime() + 1800_000).toISOString(),
-          customer_name: PRIVATE_CUSTOMER,
-          method: 'email',
-          phone: '0700000055',
-          email: 'customer@audit.invalid',
-          lang: 'sv',
-          status: 'confirmed',
-        },
-      ])
-    }
-    if (url.pathname === '/rest/v1/site_content') return reply([])
-    if (url.pathname === '/rest/v1/rpc/set_own_password_changed') {
-      state.mustChangePassword = false
-      return reply(null)
-    }
-    if (url.pathname === '/rest/v1/site_settings') {
-      if (request.method() === 'GET')
-        return reply([...state.settings].map(([key, value]) => ({ key, value })))
-      if (Array.isArray(body) && queuedWrite) await holds.presentation.promise
-      for (const row of Array.isArray(body) ? body : [body]) state.settings.set(row.key, row.value)
-      return reply(body)
-    }
-    if (url.pathname.startsWith('/rest/v1/')) return reply([])
-    state.errors.push(`Unexpected external request: ${url.origin}${url.pathname}`)
-    return route.abort()
-  })
-  const waitCall = async (predicate) => {
-    const deadline = Date.now() + 10_000
-    while (!state.calls.some(predicate)) {
-      assert(Date.now() < deadline, `Admin ${scenario}: expected request missing`)
-      await new Promise((resolve) => globalThis.setTimeout(resolve, 10))
-    }
-  }
+      .toBe(true)
   const signOut = () =>
     page.evaluate(async () =>
       (await import('/src/admin/adminClient.ts')).getAdminClient().auth.signOut({ scope: 'local' }),
@@ -2056,7 +2082,8 @@ async function verifyAdminSession(page, scenario) {
       await waitCall((call) => call.path === '/rest/v1/profiles')
       await signOut()
       holds.profile.release()
-      await page.waitForTimeout(150)
+      await finished.profile.promise
+      await page.clock.runFor(100)
       assert(
         (await page.locator('.knc-admin-shell').count()) === 0,
         'Stale profile reopened the protected shell after sign-out',
@@ -2080,7 +2107,8 @@ async function verifyAdminSession(page, scenario) {
       } else {
         await signOut()
         holds.password.release()
-        await page.waitForTimeout(150)
+        await finished.password.promise
+        await page.clock.runFor(100)
         assert(
           !state.calls.some((call) => call.path === '/rest/v1/rpc/set_own_password_changed'),
           'Unmounted forced-change form continued with a later session',
@@ -2110,7 +2138,8 @@ async function verifyAdminSession(page, scenario) {
       )
       assert(login.data.user.id === AUTH_USER_B, 'B did not establish a session')
       holds.password.release()
-      await page.waitForTimeout(200)
+      await finished.password.promise
+      await page.clock.runFor(100)
       assert(
         await page.evaluate(
           (id) => JSON.parse(globalThis.localStorage.getItem('knc-admin-auth')).user.id === id,
@@ -2162,11 +2191,7 @@ async function verifyAdminSession(page, scenario) {
             .getByLabel('Företagsnamn', { exact: true })
             .locator('..')
             .getByRole('button', { name: 'Spara', exact: true })
-          const deadline = Date.now() + 10_000
-          while (!(await save.isEnabled())) {
-            assert(Date.now() < deadline, 'Queued intent never settled after the first write')
-            await new Promise((resolve) => globalThis.setTimeout(resolve, 10))
-          }
+          await expect(save, 'Queued intent never settled after the first write').toBeEnabled()
         } finally {
           await other.close()
         }
@@ -2265,51 +2290,54 @@ async function verifyPrivacy(
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.routeWebSocket('**/*', (socket) => socket.close())
-  await page.route('**/*', async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-    const reply = (body, status = 200) =>
-      route.fulfill({
-        status,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': origin,
-          'Access-Control-Allow-Headers': '*',
-          'Access-Control-Allow-Methods': '*',
-        },
-        body: status === 204 ? undefined : JSON.stringify(body),
-      })
-    if (url.origin === origin && url.pathname === '/api/customer-bookings') {
-      if (request.postDataJSON().action === 'forget_device') return reply({ ok: true })
-      assert(request.postDataJSON().action === 'list', 'Privacy test attempted a customer mutation')
-      return reply({ ok: false, error: 'access_denied' })
-    }
-    if (url.origin === origin) return route.continue()
-    if (request.method() === 'OPTIONS') return reply(null, 204)
-    if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
-      return reply({
-        barbers: [
-          {
-            id: 'privacy-barber',
-            name: 'UI Test Barber',
-            ig: '',
-            role_sv: '',
-            role_en: '',
-            bio_sv: '',
-            bio_en: '',
-            active: true,
-            sort_order: 0,
-            photo_path: null,
-          },
-        ],
-        services: [],
-      })
-    if (url.pathname === '/rest/v1/rpc/public_business_discovery')
-      return reply({ settings: {}, barbers: [], services: [], schedules: [] })
-    if (request.method() === 'GET' && url.pathname.startsWith('/rest/v1/')) return reply([])
-    errors.push(`Unexpected privacy request: ${request.method()} ${url.origin}${url.pathname}`)
-    return route.abort()
-  })
+  await routeApi(page, [
+    [
+      '**/*',
+      async (route, headers) => {
+        const request = route.request()
+        const url = new URL(request.url())
+        const reply = (body, status = 200) =>
+          route.fulfill({
+            status,
+            headers,
+            body: status === 204 ? undefined : JSON.stringify(body),
+          })
+        if (url.origin === origin && url.pathname === '/api/customer-bookings') {
+          if (request.postDataJSON().action === 'forget_device') return reply({ ok: true })
+          assert(
+            request.postDataJSON().action === 'list',
+            'Privacy test attempted a customer mutation',
+          )
+          return reply({ ok: false, error: 'access_denied' })
+        }
+        if (url.origin === origin) return route.continue()
+
+        if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+          return reply({
+            barbers: [
+              {
+                id: 'privacy-barber',
+                name: 'UI Test Barber',
+                ig: '',
+                role_sv: '',
+                role_en: '',
+                bio_sv: '',
+                bio_en: '',
+                active: true,
+                sort_order: 0,
+                photo_path: null,
+              },
+            ],
+            services: [],
+          })
+        if (url.pathname === '/rest/v1/rpc/public_business_discovery')
+          return reply({ settings: {}, barbers: [], services: [], schedules: [] })
+        if (request.method() === 'GET' && url.pathname.startsWith('/rest/v1/')) return reply([])
+        errors.push(`Unexpected privacy request: ${request.method()} ${url.origin}${url.pathname}`)
+        return route.abort()
+      },
+    ],
+  ])
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   const strings = await page.evaluate(async (lang) => {
     ;(await import('/tools/e2e/admin-harness.tsx')).mountPrivacyHarness()

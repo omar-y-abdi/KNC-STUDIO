@@ -1,8 +1,10 @@
+import { routeApi } from './route-api.mjs'
+import { barberFixture, documentFixture } from './builders.mjs'
 /* global getComputedStyle */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { emptyDocument, EMAIL_NAMES } from '../../shared/cms.ts'
+import { EMAIL_NAMES } from '../../shared/cms.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
@@ -10,7 +12,7 @@ import { expect, test as baseTest } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 const base = harnessOrigin
 const SOURCE_SHELL = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
-const seed = emptyDocument()
+const seed = documentFixture()
 seed.emails = EMAIL_NAMES.flatMap((template) =>
   ['sv', 'en'].map((lang) => {
     const copy = defaultEmailTemplate(template, lang)
@@ -49,16 +51,12 @@ const test = baseTest.extend({
     page.setDefaultTimeout(15000)
     const backend = await nativeBackend(context, fontFixture ? fontSeed : seed)
     if (catalogFixture) {
-      const cors = {
-        'Access-Control-Allow-Origin': new URL(base).origin,
-        'Access-Control-Allow-Headers': 'authorization,apikey,content-type,x-client-info',
-        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      }
-      await context.route('**/rest/v1/rpc/public_booking_catalog', async (route) => {
-        if (route.request().method() === 'OPTIONS')
-          return route.fulfill({ status: 204, headers: cors })
-        return route.fulfill({ status: 200, headers: cors, json: bookingCatalog })
-      })
+      await routeApi(context, [
+        [
+          '**/rest/v1/rpc/public_booking_catalog',
+          (route, headers) => route.fulfill({ status: 200, headers, json: bookingCatalog }),
+        ],
+      ])
     }
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -112,7 +110,9 @@ const openSector = async (page, name) => {
   if ((await sector.getAttribute('aria-expanded')) !== 'true') await sector.click()
   assert.equal(await sector.getAttribute('aria-expanded'), 'true')
 }
-test.describe.configure({ timeout: 900_000 })
+// 2 × max per-case nearest-rank p95 of passing durations across the supplied full reports.
+// Limiting sample: durations-cms.json:4589 (42607 ms); budget = 42607 × 2.
+test.describe.configure({ timeout: 85_214 })
 
 test.use({
   viewport: { width: 1440, height: 1000 },
@@ -912,7 +912,7 @@ test('3-activate-email-design', async ({ page, studio }) => {
 })
 const bookingCatalog = {
   barbers: [
-    {
+    barberFixture({
       id: 'cms-example',
       name: 'Exempelbarberare',
       ig: 'exempel',
@@ -923,7 +923,7 @@ const bookingCatalog = {
       active: true,
       sort_order: 0,
       photo_path: null,
-    },
+    }),
   ],
   services: Array.from({ length: 5 }, (_, index) => ({
     id: `cms-example-service-${index + 1}`,

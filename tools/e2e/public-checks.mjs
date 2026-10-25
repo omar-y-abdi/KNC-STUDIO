@@ -1,3 +1,5 @@
+import { expect } from './fixtures.mjs'
+import { routeApi } from './route-api.mjs'
 import { readFileSync } from 'node:fs'
 
 import { installPublicBackend } from './public-fixtures.mjs'
@@ -165,20 +167,25 @@ async function waitForFonts(page) {
 // scoped to each browser test context: no database rows or public Storage objects are changed.
 async function installGalleryFixtures(page) {
   const photo = readFileSync(new URL('../../public/og-image.png', import.meta.url))
-  await page.route('**/rest/v1/gallery_images?*', async (route) => {
-    const kind = new URL(route.request().url()).searchParams.get('kind')?.replace('eq.', '')
-    assert(kind === 'salon' || kind === 'cuts', `unexpected gallery kind: ${kind}`)
-    await route.fulfill({
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      json: [0, 1].map((index) => ({
-        id: `smoke-${kind}-${index}`,
-        kind,
-        storage_path: `smoke-fixtures/${kind}-${index}.png`,
-        alt: index === 0 ? '  ' : `Gallery smoke ${kind} photo`,
-        sort_order: index,
-      })),
-    })
-  })
+  await routeApi(page, [
+    [
+      '**/rest/v1/gallery_images?*',
+      async (route, headers) => {
+        const kind = new URL(route.request().url()).searchParams.get('kind')?.replace('eq.', '')
+        assert(kind === 'salon' || kind === 'cuts', `unexpected gallery kind: ${kind}`)
+        await route.fulfill({
+          headers,
+          json: [0, 1].map((index) => ({
+            id: `smoke-${kind}-${index}`,
+            kind,
+            storage_path: `smoke-fixtures/${kind}-${index}.png`,
+            alt: index === 0 ? '  ' : `Gallery smoke ${kind} photo`,
+            sort_order: index,
+          })),
+        })
+      },
+    ],
+  ])
   await page.route('**/storage/v1/object/public/gallery/smoke-fixtures/*.png', (route) =>
     route.fulfill({ contentType: 'image/png', body: photo }),
   )
@@ -253,38 +260,46 @@ async function waitForMarqueeTileState(page, rowIndex, key, state) {
 async function waitForGalleryToSettle(page) {
   let previousSignature = ''
   let stableSamples = 0
-  for (let attempt = 0; attempt < 50 && stableSamples < 3; attempt += 1) {
-    const galleryState = await page.evaluate(() => {
-      const rows = [...globalThis.document.querySelectorAll('[data-testid="marquee-row"]')]
-      return {
-        ready:
-          rows.length >= 2 &&
-          rows.every(
-            (row) =>
-              row.querySelector('[role="button"]') !== null &&
-              row.querySelector('[aria-hidden="true"]') !== null,
-          ),
-        signature: rows
-          .map((row) =>
-            [...row.querySelectorAll('[data-tile-key]')]
-              .map(
-                (tile) =>
-                  `${tile.getAttribute('data-tile-key')}:${tile.getAttribute('role')}:${tile.getAttribute('aria-hidden')}`,
+  await expect
+    .poll(
+      async () => {
+        const galleryState = await page.evaluate(() => {
+          const rows = [...globalThis.document.querySelectorAll('[data-testid="marquee-row"]')]
+          return {
+            ready:
+              rows.length >= 2 &&
+              rows.every(
+                (row) =>
+                  row.querySelector('[role="button"]') !== null &&
+                  row.querySelector('[aria-hidden="true"]') !== null,
+              ),
+            signature: rows
+              .map((row) =>
+                [...row.querySelectorAll('[data-tile-key]')]
+                  .map(
+                    (tile) =>
+                      `${tile.getAttribute('data-tile-key')}:${tile.getAttribute('role')}:${tile.getAttribute('aria-hidden')}`,
+                  )
+                  .join('|'),
               )
-              .join('|'),
-          )
-          .join('||'),
-      }
-    })
-    if (galleryState.ready && galleryState.signature === previousSignature) {
-      stableSamples += 1
-    } else {
-      stableSamples = 0
-    }
-    previousSignature = galleryState.signature
-    if (stableSamples < 3) await page.waitForTimeout(100)
-  }
-  assert(stableSamples >= 3, 'gallery tiles did not settle before interaction checks')
+              .join('||'),
+          }
+        })
+        if (galleryState.ready && galleryState.signature === previousSignature) {
+          stableSamples += 1
+        } else {
+          stableSamples = 0
+        }
+        previousSignature = galleryState.signature
+        return stableSamples
+      },
+      {
+        timeout: 5000,
+        intervals: [100],
+        message: 'gallery tiles did not settle before interaction checks',
+      },
+    )
+    .toBeGreaterThanOrEqual(3)
 }
 
 async function dispatchGalleryPointerSequence(page, rowIndex, sequence) {
@@ -567,7 +582,12 @@ async function verifyPublicPage(page, viewport) {
   await scrollMarqueeRowIntoView(page, 1)
   const cancel = await dispatchGalleryPointerSequence(page, 1, 'cancel')
   assert(cancel.pressed === 'false', 'gallery pointercancel selected a tile')
-  await page.waitForTimeout(50)
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
   assert(
     (await marqueeTileState(page, 1, cancel.key)) === 'false',
     'gallery pointercancel selected a tile after release',
@@ -576,7 +596,12 @@ async function verifyPublicPage(page, viewport) {
   await scrollMarqueeRowIntoView(page, 1)
   const scroll = await dispatchGalleryPointerSequence(page, 1, 'scroll')
   assert(scroll.pressed === 'false', 'gallery scroll selected a tile')
-  await page.waitForTimeout(50)
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
   assert(
     (await marqueeTileState(page, 1, scroll.key)) === 'false',
     'gallery scroll selected a tile after release',
@@ -585,7 +610,12 @@ async function verifyPublicPage(page, viewport) {
   await scrollMarqueeRowIntoView(page, 1)
   const drag = await dispatchGalleryPointerSequence(page, 1, 'drag')
   assert(drag.pressed === 'false', 'gallery drag selected a tile')
-  await page.waitForTimeout(50)
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+      ),
+  )
   assert(
     (await marqueeTileState(page, 1, drag.key)) === 'false',
     'gallery drag selected a tile after release',

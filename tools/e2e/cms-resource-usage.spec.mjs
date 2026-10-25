@@ -1,3 +1,4 @@
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -8,21 +9,20 @@ test('cms-resource-usage', async ({ page }) => {
   page.setDefaultTimeout(5000)
   let attempts = 0
   let testFailure = true
-  await page.route('https://admin-harness.invalid/functions/v1/cms-studio', async (route) => {
-    const headers = {
-      'access-control-allow-origin': new URL(base).origin,
-      'access-control-allow-headers': '*',
-      'access-control-allow-methods': 'POST,OPTIONS',
-    }
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    assert.equal(route.request().postDataJSON().operation, 'asset_usage')
-    if (testFailure && ++attempts === 1)
-      return route.fulfill({ status: 503, headers, json: { message: 'usage-timeout-test' } })
-    return route.fulfill({
-      headers,
-      json: { currentReferences: 0, historyReferences: testFailure ? 3 : 0 },
-    })
-  })
+  await routeApi(page, [
+    [
+      'https://admin-harness.invalid/functions/v1/cms-studio',
+      async (route, headers) => {
+        assert.equal(route.request().postDataJSON().operation, 'asset_usage')
+        if (testFailure && ++attempts === 1)
+          return route.fulfill({ status: 503, headers, json: { message: 'usage-timeout-test' } })
+        return route.fulfill({
+          headers,
+          json: { currentReferences: 0, historyReferences: testFailure ? 3 : 0 },
+        })
+      },
+    ],
+  ])
   await page.route('https://admin-harness.invalid/storage/**', (route) =>
     route.fulfill({
       status: 200,

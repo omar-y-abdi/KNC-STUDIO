@@ -32,9 +32,19 @@ for (const viewport of [
             await page
               .getByRole('button', { name: 'Switch language to Swedish', exact: true })
               .waitFor({ state: 'visible', timeout: 15000 })
-            await page.waitForTimeout(500)
           }
-          await page.waitForTimeout(700)
+          await page.waitForFunction(() =>
+            [...globalThis.document.images].every((image) => image.complete),
+          )
+          await page.waitForFunction(() =>
+            globalThis.document
+              .getAnimations()
+              .every(
+                (animation) =>
+                  animation.effect?.getComputedTiming().iterations === Infinity ||
+                  ['finished', 'idle'].includes(animation.playState),
+              ),
+          )
           await expect(page).toHaveScreenshot(name, {
             // Preserve the existing pixelmatch policy and 2x image dimensions.
             threshold: 0.1,

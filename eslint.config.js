@@ -58,6 +58,15 @@ export default tseslint.config(
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,
   {
+    files: ['tools/e2e/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { property: 'waitForTimeout', message: 'Wait for a condition, not a clock.' },
+      ],
+    },
+  },
+  {
     plugins: { security, 'no-unsanitized': nounsan },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
