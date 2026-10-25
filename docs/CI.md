@@ -112,9 +112,12 @@ every worktree's `node_modules` is one shared install. The customer group keeps 
 the shared local Supabase stack, so it cannot run in parallel.
 
 Each shard records its discovered plan before running. `verify-playwright-report.mjs` compares the
-native JSON report to that plan: every expected case must execute exactly once and pass. Missing,
-duplicate, skipped, flaky, interrupted, failed or retried outcomes fail the gate. A final source
-identity check detects tracked changes by browser tests. JSON/HTML reports, timings, failure traces,
+native JSON report to that plan: every case must execute exactly once with its planned outcome.
+Ordinary cases must pass; the hostile network-guard probes declared with `test.fail()` during
+discovery must fail. The discovery annotations authorise those intentional failures; runtime failure annotations alone
+cannot change the planned outcome. Missing,
+duplicate, skipped, flaky, interrupted, unexpected failures or retried outcomes fail the gate. A final
+source identity check detects tracked changes by browser tests. JSON/HTML reports, timings, failure traces,
 screenshots and domain evidence are retained as per-shard GitHub artifacts. Uploads naming a hidden
 `.ci-*` plan explicitly enable `include-hidden-files` so the discovered plan is retained too.
 

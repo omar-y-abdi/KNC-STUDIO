@@ -121,7 +121,8 @@ describe('refreshPresentation', () => {
 })
 
 describe('committed presentation fixture', () => {
-  const text = gunzipSync(readFileSync(FIXTURE_PATH)).toString()
+  const content = gunzipSync(readFileSync(FIXTURE_PATH))
+  const text = content.toString()
   const fixture = JSON.parse(text)
 
   it('is a public presentation response', () => {
@@ -146,7 +147,10 @@ describe('committed presentation fixture', () => {
     expect(readFileSync(FIXTURE_PATH).length).toBeLessThan(150_000)
   })
 
-  it('is exactly what the refresh script produces from its own content', () => {
-    expect(gzipFixture(sanitisePresentation(fixture).response)).toEqual(readFileSync(FIXTURE_PATH))
+  it('contains exactly the compact JSON the refresh script produces from its own content', () => {
+    const refreshed = gzipFixture(sanitisePresentation(fixture).response)
+    // Compression bytes vary across Node/zlib versions; the document bytes must never vary.
+    expect(gunzipSync(refreshed).equals(content)).toBe(true)
+    expect(refreshed.equals(gzipFixture(sanitisePresentation(fixture).response))).toBe(true)
   })
 })

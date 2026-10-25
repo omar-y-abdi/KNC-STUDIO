@@ -91,7 +91,7 @@ export function sanitisePresentation(response) {
   return { response: sanitised, stats }
 }
 
-/** Deterministic gzip of the compact JSON, so an unchanged presentation yields identical bytes. */
+/** Compact JSON gzip is deterministic for a given Node/zlib encoder. */
 export function gzipFixture(response) {
   return gzipSync(Buffer.from(JSON.stringify(response)), { level: 9 })
 }
