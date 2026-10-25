@@ -87,3 +87,20 @@ the final WIP branch before claiming all known WebKit failures fixed.
   contact copy/labels and the remaining actual-device Safari checks.
 
 No production state or current deployment was checked during this recovery.
+
+## CI recovery receipts
+
+Maintenance PR: [#90](https://github.com/omar-y-abdi/KNC-STUDIO/pull/90).
+Use its current head checks for acceptance; earlier runs do not validate later commits.
+
+The [initial run](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/40225152010)
+exposed three test-infrastructure faults: compressed fixture bytes differed, the report
+verifier rejected intentional network-guard failure probes, and the first-paint fixture
+missed revisioned presentation requests. The fixes preserve the committed fixture,
+exact decompressed document bytes, planned outcomes, and original pixel/hero assertions.
+Both repair diffs received orchestrator and independent read-only review.
+
+The [next run](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/40226246068)
+found a TypeScript error in the repair's Buffer equality call. The follow-up uses
+`node:util.isDeepStrictEqual`, retaining exact byte equality and compact failure output.
+Local verification remains lint/format only; GitHub owns runtime/type verification.
