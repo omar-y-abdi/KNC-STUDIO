@@ -1,7 +1,45 @@
-import { readFileSync } from 'node:fs'
-import { describe, it, expect } from 'vitest'
+import type { VNode } from 'preact'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { BookingFlow } from '../../src/booking/BookingFlow'
 import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
 import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
+
+vi.mock('preact/hooks', () => ({
+  useContext: () => null,
+  useState: (initial: unknown) => {
+    const value: unknown = typeof initial === 'function' ? initial() : initial
+    return [
+      typeof value === 'object' && value !== null && 'barberId' in value
+        ? { ...value, barberId: 'owner-barber' }
+        : value,
+      vi.fn(),
+    ]
+  },
+  useRef: (current: unknown) => ({ current }),
+  useEffect: vi.fn(),
+  useLayoutEffect: vi.fn(),
+}))
+vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../src/cms/NativeSurface', () => ({
+  NativeRegion: () => null,
+  useNativeChild: () => (node: unknown) => node,
+}))
+vi.mock('../../src/booking/useRoster', () => ({
+  useRoster: () => ({ roster: [], loading: false }),
+}))
+vi.mock('../../src/booking/useServices', () => ({
+  useServices: () => ({ services: [], loading: false }),
+}))
+
+function buttons(node: unknown): VNode<Record<string, unknown>>[] {
+  if (Array.isArray(node)) return node.flatMap(buttons)
+  if (typeof node !== 'object' || node === null) return []
+  const vnode = node as VNode<Record<string, unknown>>
+  return [...(vnode.type === 'button' ? [vnode] : []), ...buttons(vnode.props.children)]
+}
+
+afterEach(() => vi.unstubAllEnvs())
 
 describe('helpers', () => {
   it('pad2', () => {
@@ -34,10 +72,20 @@ describe('helpers', () => {
     expect(isSelectableBookingDate(stockholmDay, today)).toBe(true)
   })
 
-  it('normalizes the BookingFlow clock before deriving its calendar day', () => {
-    const source = readFileSync('src/booking/BookingFlow.tsx', 'utf8')
-
-    expect(source).toContain('stockholmWallClockDate(clock())')
+  it('renders the Stockholm month and date availability when the injected UTC clock crosses a DST midnight', () => {
+    vi.stubEnv('TZ', 'UTC')
+    const rendered = buttons(BookingFlow({ clock: () => new Date('2040-03-31T22:30:00.000Z') }))
+    const days = rendered.filter(
+      (node) =>
+        typeof node.props['aria-label'] === 'string' &&
+        String(node.props['aria-label']).includes('april 2040'),
+    )
+    expect(days).toHaveLength(30)
+    const first = days.find((node) => node.props.children === 1)
+    expect(first).toBeDefined()
+    expect(first?.props.disabled).toBe(false)
+    expect(first?.props.onClick).toBeTypeOf('function')
+    expect(days.every((node) => node.props.disabled === false)).toBe(true)
   })
 })
 

@@ -553,10 +553,11 @@ describe('launch page documents', () => {
     }
   })
 
-  it.each(['privacy', 'terms'])(
+  it.each(['privacy', 'terms'] as const)(
     '%s supplies metadata, one h1, internal links and no app bundle',
     (page) => {
-      const html = readFileSync(new URL(`../../public/${page}.html`, import.meta.url), 'utf8')
+      const source = readFileSync(new URL(`../../public/${page}.html`, import.meta.url), 'utf8')
+      const html = renderLegalMetadata(source, `/${page}`, resolveBusinessSettings(new Map()))
       expect(html.match(/<h1[ >]/g)).toHaveLength(1)
       expect(html).toContain('name="description"')
       expect(html).toContain(`https://bladeblendstudio.se/${page}`)

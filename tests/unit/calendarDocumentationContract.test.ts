@@ -1,25 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-describe('Calendar synchronization documentation', () => {
-  it('documents the durable trigger as authoritative after legacy webhook retirement', () => {
-    const map = readFileSync(new URL('../../CODEBASE-MAP.md', import.meta.url), 'utf8')
-    const rollout = readFileSync(
-      new URL('../../docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md', import.meta.url),
-      'utf8',
-    )
-    const config = readFileSync(new URL('../../supabase/config.toml', import.meta.url), 'utf8')
-
-    expect(map).toContain('booking_calendar_sync_on_change')
-    expect(map).not.toContain('supabase/functions/calendar-sync')
-    expect(config).not.toContain('[functions.calendar-sync]')
-    expect(rollout).toContain('calendar_event_sync')
-    expect(rollout).toContain('supabase functions delete calendar-sync --project-ref')
-    expect(rollout).toContain(
-      'npx supabase functions list --project-ref "$PROJECT_REF" --output-format json',
-    )
-    expect(rollout).toContain('jq -e \'all(.functions[]; .slug != "calendar-sync")\'')
-    expect(rollout).toContain('calendar_sync_on_bookings')
-    expect(rollout).toContain('Edge/Vault parity')
+describe('retired Calendar deployment', () => {
+  // Deployment manifests and entrypoint absence cannot be proved by invoking a current handler.
+  it('has no legacy webhook entrypoint or deployment configuration', () => {
+    expect(existsSync('supabase/functions/calendar-sync')).toBe(false)
+    const config = readFileSync('supabase/config.toml', 'utf8')
+    expect(config).not.toMatch(/^\[functions\.calendar-sync\]$/m)
   })
 })

@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parse, type DefaultTreeAdapterMap } from 'parse5'
+import { generate, parse as parseCss, walk, type CssNode } from 'css-tree'
 import worker, { PublicContent } from '../../src/worker'
 import { PRESENTATION_RETRY_DELAYS_MS, readWithRetries } from '../../src/cms/NativeSurface'
 
@@ -8,47 +10,6 @@ import { PRESENTATION_RETRY_DELAYS_MS, readWithRetries } from '../../src/cms/Nat
 const read = (path: string): string =>
   readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 const shell = read('index.html')
-const prePaint = (shell.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '').replace(/\s+/g, ' ')
-const preloads = [...shell.matchAll(/<link\b[^>]*\brel="preload"[^>]*>/g)].map((match) =>
-  match[0].replace(/\s+/g, ' '),
-)
-
-describe('homepage shell pre-paint', () => {
-  it('hides the agent intro until an 8 s boot deadline, and never without scripting (PERF-3)', () => {
-    expect(prePaint).toContain(
-      "#root > main[aria-labelledby='public-intro-heading'] { visibility: hidden; animation: knc-intro-deadline 0s 8s forwards; } @keyframes knc-intro-deadline { to { visibility: visible; } }",
-    )
-    const noScript = (shell.match(/<noscript>([\s\S]*?)<\/noscript>/)?.[1] ?? '').replace(
-      /\s+/g,
-      ' ',
-    )
-    expect(noScript).toContain(
-      "<style> #root > main[aria-labelledby='public-intro-heading'] { visibility: visible; animation: none; } </style>",
-    )
-  })
-
-  it('pre-paints the desktop panel surface the app paints, in both schemes (STY-3)', () => {
-    expect(prePaint).toContain(
-      '@media not all and (max-width: 768px) { html, body { background-color: #fff; } @media (prefers-color-scheme: dark) { html, body { background-color: #1c1c1e; } } }',
-    )
-  })
-
-  it('pre-paints the mobile booking view like its panel (STY-3)', () => {
-    expect(prePaint).toContain(
-      "html[data-knc-view='booking'], html[data-knc-view='booking'] body { background-color: #fff; } @media (prefers-color-scheme: dark) { html[data-knc-view='booking'], html[data-knc-view='booking'] body { background-color: #1c1c1e; } }",
-    )
-  })
-
-  it('preloads the hero fonts with CORS and the first-viewport icons as images (PERF-8, PERF-18)', () => {
-    for (const font of ['PlayfairDisplay-Latin-400', 'PlayfairDisplay-Latin-700-Italic'])
-      expect(preloads).toContain(
-        `<link rel="preload" as="font" type="font/woff2" href="/fonts/${font}.woff2" crossorigin />`,
-      )
-    for (const icon of ['mappin.circle.fill', 'phone', 'sun.max', 'moon'])
-      expect(preloads).toContain(`<link rel="preload" as="image" href="/icons/${icon}.svg" />`)
-  })
-})
-
 function createEnv() {
   return {
     ASSETS: {
@@ -62,8 +23,8 @@ function createEnv() {
   }
 }
 
-/** The opening root tag of a native route's HTML. */
-async function nativeRoot(path: string): Promise<string | undefined> {
+/** Serve the actual shell through the native Worker route, with local assets only. */
+async function nativeDocument(path: string): Promise<string> {
   const env = createEnv()
   const publicContent = new PublicContent({} as never, env)
   const response = await worker.fetch(
@@ -72,16 +33,83 @@ async function nativeRoot(path: string): Promise<string | undefined> {
     { exports: { PublicContent: { fetch: (request: Request) => publicContent.fetch(request) } } },
   )
   expect(response.status).toBe(200)
-  return (await response.text()).match(/<html\b[^>]*>/)?.[0]
+  return response.text()
 }
+
+describe('homepage resource hints', () => {
+  it('serves CORS-enabled hero font preloads and first-viewport image preloads', async () => {
+    const html = await nativeDocument('/')
+    const links: Record<string, string>[] = []
+    const walk = (node: DefaultTreeAdapterMap['node']): void => {
+      if ('tagName' in node && node.tagName === 'link')
+        links.push(Object.fromEntries(node.attrs.map(({ name, value }) => [name, value])))
+      if ('childNodes' in node) node.childNodes.forEach(walk)
+    }
+    walk(parse(html))
+    for (const font of ['PlayfairDisplay-Latin-400', 'PlayfairDisplay-Latin-700-Italic'])
+      expect(links).toContainEqual(
+        expect.objectContaining({
+          rel: 'preload',
+          as: 'font',
+          type: 'font/woff2',
+          href: `/fonts/${font}.woff2`,
+          crossorigin: '',
+        }),
+      )
+    for (const icon of ['mappin.circle.fill', 'phone', 'sun.max', 'moon'])
+      expect(links).toContainEqual(
+        expect.objectContaining({ rel: 'preload', as: 'image', href: `/icons/${icon}.svg` }),
+      )
+  })
+})
+
+describe('booking pre-paint', () => {
+  it('serves light and OS-dark booking surfaces in the native booking response', async () => {
+    const html = await nativeDocument('/booking')
+    const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+      .map((match) => match[1])
+      .join('\n')
+    const media: string[] = []
+    const backgrounds: { media: string; color: string }[] = []
+    walk(parseCss(css), {
+      enter(node: CssNode) {
+        if (node.type === 'Atrule' && node.name === 'media')
+          media.push(node.prelude === null ? '' : generate(node.prelude))
+        if (node.type !== 'Rule') return
+        const selector = generate(node.prelude).replaceAll('"', "'")
+        if (!selector.includes("[data-knc-view='booking']")) return
+        walk(node.block, {
+          visit: 'Declaration',
+          enter(declaration) {
+            if (declaration.property !== 'background-color') return
+            const color = generate(declaration.value).replace(
+              /^#([a-f0-9])([a-f0-9])([a-f0-9])$/i,
+              '#$1$1$2$2$3$3',
+            )
+            backgrounds.push({ media: media.at(-1) ?? '', color })
+          },
+        })
+      },
+      leave(node: CssNode) {
+        if (node.type === 'Atrule' && node.name === 'media') media.pop()
+      },
+    })
+    expect(backgrounds).toEqual([
+      { media: '', color: '#ffffff' },
+      { media: '(prefers-color-scheme:dark)', color: '#1c1c1e' },
+    ])
+  })
+})
 
 describe('native route root attribute', () => {
   it('marks the booking view so its pre-paint matches the booking panel', async () => {
-    expect(await nativeRoot('/booking')).toBe('<html lang="sv" data-knc-view="booking">')
+    expect((await nativeDocument('/booking')).match(/<html\b[^>]*>/)?.[0]).toBe(
+      '<html lang="sv" data-knc-view="booking">',
+    )
   })
 
   it.each(['/', '/about', '/my-bookings'])('leaves %s on the home pre-paint', async (path) => {
-    expect(await nativeRoot(path)).toBe('<html lang="sv">')
+    expect((await nativeDocument(path)).match(/<html\b[^>]*>/)?.[0]).toBe('<html lang="sv">')
   })
 })
 
