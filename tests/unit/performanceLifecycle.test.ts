@@ -1,5 +1,4 @@
 import type * as SharedModule from '../../src/app/shared'
-import type { VNode } from 'preact'
 import { h } from 'preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AboutSection } from '../../src/about/AboutSection'
@@ -10,39 +9,15 @@ import { palette } from '../../src/booking/bookingStyles'
 import { appStrings, bookingStrings } from '../../src/i18n/index'
 import { DEFAULT_BUSINESS } from '../../src/config'
 import { DEFAULT_CHROME } from '../../src/site/siteChrome'
+import { hooks, mount, nodes, ref, render, reset } from './helpers/fakeHooks'
 
-const hooks = vi.hoisted(() => ({
-  values: [] as unknown[],
-  refs: [] as { current: unknown }[],
-  cursor: 0,
-  refCursor: 0,
-  effects: [] as (() => undefined | (() => void))[],
-}))
 const ports = vi.hoisted(() => ({
   overlay: vi.fn(),
   reviews: vi.fn(),
   roster: vi.fn(),
   gallery: vi.fn(),
 }))
-vi.mock('preact/hooks', () => ({
-  useContext: () => null,
-  useState: (initial: unknown) => {
-    const index = hooks.cursor++
-    if (!(index in hooks.values))
-      hooks.values[index] = typeof initial === 'function' ? initial() : initial
-    return [
-      hooks.values[index],
-      (next: unknown) => {
-        hooks.values[index] = typeof next === 'function' ? next(hooks.values[index]) : next
-      },
-    ]
-  },
-  useRef: (current: unknown) => (hooks.refs[hooks.refCursor++] ??= { current }),
-  useEffect: (effect: () => undefined | (() => void)) => {
-    hooks.effects.push(effect)
-  },
-  useLayoutEffect: vi.fn(),
-}))
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 vi.mock('../../src/cms/NativeSurface', () => ({
   useNativeSource: () => false,
@@ -71,33 +46,8 @@ vi.mock('../../src/about/reviews/adapters/index', () => ({
   defaultReviewsPort: { list: ports.reviews },
 }))
 
-function render<T>(component: () => T): T {
-  hooks.cursor = 0
-  hooks.refCursor = 0
-  hooks.effects = []
-  return component()
-}
-function mount(): () => void {
-  const cleanups = hooks.effects.map((effect) => effect())
-  return () => {
-    for (const cleanup of cleanups) if (typeof cleanup === 'function') cleanup()
-  }
-}
-function nodes(node: unknown): VNode<Record<string, unknown>>[] {
-  if (Array.isArray(node)) return node.flatMap(nodes)
-  if (typeof node !== 'object' || node === null) return []
-  const vnode = node as VNode<Record<string, unknown>>
-  return [vnode, ...nodes(vnode.props.children)]
-}
-function ref(index: number, value: unknown): void {
-  const target = hooks.refs[index]
-  if (!target) throw new Error(`Missing component ref ${index}`)
-  target.current = value
-}
-
 beforeEach(() => {
-  hooks.values = []
-  hooks.refs = []
+  reset()
   vi.clearAllMocks()
   ports.overlay.mockResolvedValue({})
   ports.reviews.mockResolvedValue([])
@@ -134,6 +84,7 @@ describe('public performance lifecycles', () => {
       },
     )
     render(() => AboutSection({ mode: 'light', lang: 'sv' }))
+    // The About section element ref.
     ref(0, {})
     const dispose = mount()
     expect(ports.overlay).not.toHaveBeenCalled()
@@ -187,9 +138,9 @@ describe('public performance lifecycles', () => {
       )
       const row = nodes(tree).find((node) => typeof node.type === 'function')
       if (!row || typeof row.type !== 'function') throw new Error('Missing gallery row')
-      hooks.values = []
-      hooks.refs = []
+      reset()
       render(() => (row.type as (props: unknown) => unknown)(row.props))
+      // The gallery row element ref.
       ref(0, {})
       const dispose = mount()
       expect(frame).not.toHaveBeenCalled()
@@ -253,6 +204,7 @@ describe('public performance lifecycles', () => {
       }),
     )
     const root = { scrollTop: 0 }
+    // The mobile scroll root element ref.
     ref(0, root)
     const dispose = mount()
     const host = nodes(tree).find((node) => node.props['data-testid'] === 'mobile-site-scroll')

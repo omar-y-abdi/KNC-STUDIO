@@ -4,38 +4,16 @@ import { useServices } from '../../src/booking/useServices'
 import { mockBarbersAdapter } from '../../src/booking/adapters/mockBarbers'
 import { mockServicesAdapter } from '../../src/booking/adapters/mockServices'
 import { asBarberId } from '../../src/booking/domain'
+import { hooks, render as renderWithHooks, reset } from './helpers/fakeHooks'
 
-const hooks = vi.hoisted(() => ({
-  values: [] as unknown[],
-  cursor: 0,
-  effects: [] as (() => undefined | (() => void))[],
-}))
-vi.mock('preact/hooks', () => ({
-  useState: (initial: unknown) => {
-    const index = hooks.cursor++
-    if (!(index in hooks.values)) hooks.values[index] = initial
-    return [
-      hooks.values[index],
-      (next: unknown) => {
-        hooks.values[index] = next
-      },
-    ]
-  },
-  useEffect: (effect: () => undefined | (() => void)) => {
-    hooks.effects.push(effect)
-  },
-}))
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('../../src/booking/adapters/barbersIndex', () => ({
   defaultBarbersPort: {},
   subscribeBookingCatalog: vi.fn(),
 }))
 vi.mock('../../src/booking/adapters/servicesIndex', () => ({ defaultServicesPort: {} }))
 
-beforeEach(() => {
-  hooks.values = []
-  hooks.cursor = 0
-  hooks.effects = []
-})
+beforeEach(reset)
 afterEach(() => vi.unstubAllGlobals())
 
 describe('database-owned public catalog', () => {
@@ -66,12 +44,12 @@ describe('database-owned public catalog', () => {
             pending.resolve = done
           }),
       )
-      const render = () => {
-        hooks.cursor = 0
-        return kind === 'roster'
-          ? useRoster({ listActive: list })
-          : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list })
-      }
+      const render = () =>
+        renderWithHooks(() =>
+          kind === 'roster'
+            ? useRoster({ listActive: list })
+            : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list }),
+        )
       expect(render()).toMatchObject(kind === 'roster' ? { roster: [] } : { services: [] })
       const cleanup = hooks.effects[0]?.()
       expect(list).toHaveBeenCalledOnce()
@@ -86,12 +64,12 @@ describe('database-owned public catalog', () => {
 
   it.each(['roster', 'services'] as const)('keeps %s empty on a port failure', async (kind) => {
     const list = vi.fn().mockRejectedValue(new Error('offline'))
-    const render = () => {
-      hooks.cursor = 0
-      return kind === 'roster'
-        ? useRoster({ listActive: list })
-        : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list })
-    }
+    const render = () =>
+      renderWithHooks(() =>
+        kind === 'roster'
+          ? useRoster({ listActive: list })
+          : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list }),
+      )
     render()
     hooks.effects[0]?.()
     await Promise.resolve()

@@ -1,18 +1,12 @@
-import type { VNode } from 'preact'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DetailsDialog } from '../../src/booking/DetailsDialog'
 import { AboutSection } from '../../src/about/AboutSection'
 import { MyBookingsDialog } from '../../src/mybookings/MyBookingsDialog'
 import { buildBookingStyles, palette } from '../../src/booking/bookingStyles'
 import { bookingStrings } from '../../src/i18n/index'
+import { nodes, reset } from './helpers/fakeHooks'
 
-vi.mock('preact/hooks', () => ({
-  useContext: () => null,
-  useState: (initial: unknown) => [typeof initial === 'function' ? initial() : initial, vi.fn()],
-  useRef: (current: unknown) => ({ current }),
-  useEffect: vi.fn(),
-  useLayoutEffect: vi.fn(),
-}))
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
 vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 vi.mock('../../src/cms/NativeSurface', () => ({
@@ -30,12 +24,12 @@ vi.mock('../../src/about/useBarberMarquee', () => ({
   }),
 }))
 
-function inputs(node: unknown): Record<string, unknown>[] {
-  if (Array.isArray(node)) return node.flatMap(inputs)
-  if (typeof node !== 'object' || node === null) return []
-  const vnode = node as VNode<Record<string, unknown>>
-  return [...(vnode.type === 'input' ? [vnode.props] : []), ...inputs(vnode.props.children)]
-}
+const inputs = (node: unknown) =>
+  nodes(node)
+    .filter((node) => node.type === 'input')
+    .map((node) => node.props)
+
+beforeEach(reset)
 
 describe('public customer input semantics', () => {
   it('renders native name, telephone and email autofill fields in booking details', () => {

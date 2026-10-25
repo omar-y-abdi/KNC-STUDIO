@@ -1,24 +1,10 @@
-import type { VNode } from 'preact'
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { BookingFlow } from '../../src/booking/BookingFlow'
 import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
 import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
+import { nodes, render, reset } from './helpers/fakeHooks'
 
-vi.mock('preact/hooks', () => ({
-  useContext: () => null,
-  useState: (initial: unknown) => {
-    const value: unknown = typeof initial === 'function' ? initial() : initial
-    return [
-      typeof value === 'object' && value !== null && 'barberId' in value
-        ? { ...value, barberId: 'owner-barber' }
-        : value,
-      vi.fn(),
-    ]
-  },
-  useRef: (current: unknown) => ({ current }),
-  useEffect: vi.fn(),
-  useLayoutEffect: vi.fn(),
-}))
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
 vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 vi.mock('../../src/cms/NativeSurface', () => ({
@@ -26,19 +12,16 @@ vi.mock('../../src/cms/NativeSurface', () => ({
   useNativeChild: () => (node: unknown) => node,
 }))
 vi.mock('../../src/booking/useRoster', () => ({
-  useRoster: () => ({ roster: [], loading: false }),
+  useRoster: () => ({
+    roster: [{ barber: { id: 'owner-barber', name: 'Owner Barber', ig: '' } }],
+    loading: false,
+  }),
 }))
 vi.mock('../../src/booking/useServices', () => ({
   useServices: () => ({ services: [], loading: false }),
 }))
 
-function buttons(node: unknown): VNode<Record<string, unknown>>[] {
-  if (Array.isArray(node)) return node.flatMap(buttons)
-  if (typeof node !== 'object' || node === null) return []
-  const vnode = node as VNode<Record<string, unknown>>
-  return [...(vnode.type === 'button' ? [vnode] : []), ...buttons(vnode.props.children)]
-}
-
+beforeEach(reset)
 afterEach(() => vi.unstubAllEnvs())
 
 describe('helpers', () => {
@@ -74,7 +57,14 @@ describe('helpers', () => {
 
   it('renders the Stockholm month and date availability when the injected UTC clock crosses a DST midnight', () => {
     vi.stubEnv('TZ', 'UTC')
-    const rendered = buttons(BookingFlow({ clock: () => new Date('2040-03-31T22:30:00.000Z') }))
+    const flow = () =>
+      render(() => BookingFlow({ clock: () => new Date('2040-03-31T22:30:00.000Z') }))
+    const barber = nodes(flow()).find(
+      (node) => node.props['data-testid'] === 'booking-barber-option',
+    )
+    if (!barber) throw new Error('Missing barber option')
+    ;(barber.props.onClick as () => void)()
+    const rendered = nodes(flow()).filter((node) => node.type === 'button')
     const days = rendered.filter(
       (node) =>
         typeof node.props['aria-label'] === 'string' &&
