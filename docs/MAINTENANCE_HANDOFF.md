@@ -47,7 +47,10 @@ in `wt/pages`. The main checkout also has two untracked recovery gate scripts. K
 - Review actual diffs and important boundaries. Return concrete findings to the same
   agent. Commit and push accepted changes; require CI green before advancing the chain.
 - Before publishing a later branch, merge the latest predecessor into it and resolve
-  conflicts. Open the next PR against that predecessor so the owner can merge in order.
+  conflicts. Follow-up PRs target `main`, with a predecessor-to-head comparison link for
+  focused review. Merge in order using merge commits: this preserves ancestry, so each
+  later PR's diff narrows after its predecessor lands without a rebase. The repository
+  allows merge commits. Do not squash or rebase-merge this prepared chain.
 
 ## Remaining implementation and known failures
 
@@ -78,6 +81,9 @@ the final WIP branch before claiming all known WebKit failures fixed.
 
 ## Owner-dependent work retained
 
+- PAR-14's key deletion was dropped after its "no readers" premise failed verification:
+  `shared/cms-markup.ts` and `shared/cms-resources.ts` still walk `presentation.regions`.
+  Do not omit those keys as a supposed cleanup without a separately verified migration.
 - E1b part 2 waits for the owner's first CMS publish after rollout.
 - F4 part 2 (migration squash/production history repair) waits for owner approval.
 - B2/E4 and email-log migrations/functions need an explicitly approved deployment order.
@@ -142,3 +148,18 @@ its exception is caught. `rpcSchemas.ts` is also a static dependency of `adminSc
 its `parseWith` re-export, so this configuration precedes admin schema construction too. CSP
 remains unchanged. A regression forces fresh public/admin imports with dynamic code generation
 blocked and global `jitless` explicitly reset to false, then checks valid and invalid parsing.
+
+## First-paint observation clock
+
+[CI run 40228423940](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/40228423940)
+passed static/build, Edge, CMS, public and startup checks. The WebKit customer's
+blocked-script fallback failure also failed the aggregate database/integration gate.
+The trace shows readable intro text before the timeout; a locator poll missed that change
+because the pre-navigation clock had spent most of its observation allowance on the response.
+This is evidence of a fixture timing defect, not a product animation failure.
+
+The check now anchors to a started CSS animation with finite timing values. It retains the
+exact eight-second delay, zero transition duration, early-hidden/final-visible assertions,
+and two-second observation allowance. Expired or non-finite waits fail explicitly. The
+no-JavaScript branch retains its response-commit clock and immediate/no-animation checks.
+No product CSS or pixels changed. GitHub must verify the new fixture on the current head.

@@ -437,15 +437,67 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
       false,
       'Script-enabled visitors never see the agent intro while the bundle is delayed or blocked',
     )
+    const animationClock = await enabled.waitForFunction(
+      (id) => {
+        const main = globalThis.document.getElementById(id)?.parentElement
+        const animation = main
+          ?.getAnimations()
+          .find((candidate) => candidate.animationName === 'knc-intro-deadline')
+        // A pending animation can expose its numeric hold time before its timeline starts.
+        if (
+          !animation ||
+          animation.pending ||
+          typeof animation.startTime !== 'number' ||
+          !Number.isFinite(animation.startTime) ||
+          typeof animation.currentTime !== 'number' ||
+          !Number.isFinite(animation.currentTime) ||
+          animation.currentTime < 0
+        )
+          return false
+        const timing = animation.effect.getTiming()
+        return {
+          elapsedMs: animation.currentTime,
+          delayMs: timing.delay,
+          durationMs: timing.duration,
+        }
+      },
+      INTRO_HEADING_ID,
+      { timeout: TIMEOUT },
+    )
+    const introAnimation = await animationClock.jsonValue()
+    await animationClock.dispose()
+    assert.equal(
+      introAnimation.delayMs,
+      INTRO_DEADLINE_MS,
+      'The boot deadline remains eight seconds',
+    )
+    assert.equal(introAnimation.durationMs, 0, 'The intro appears immediately at the boot deadline')
     releaseScripts()
-    // The shell's boot deadline (index.html, 8 s) shows the readable intro when the app never boots.
+    // The eight seconds belong to the CSS animation clock. Worker/network time before that clock
+    // starts must not consume its deadline or the existing two seconds for observing visibility.
+    const introVisibilityTimeoutMs = INTRO_DEADLINE_MS + 2000 - introAnimation.elapsedMs
+    assert.ok(
+      Number.isFinite(introVisibilityTimeoutMs) && introVisibilityTimeoutMs > 0,
+      'The animation deadline and visibility observation allowance have not expired',
+    )
     await enabled
       .locator(`#${INTRO_HEADING_ID}`)
-      .waitFor({ state: 'visible', timeout: INTRO_DEADLINE_MS + 2000 - (Date.now() - navigatedAt) })
+      .waitFor({ state: 'visible', timeout: introVisibilityTimeoutMs })
     const introShownAfterMs = Date.now() - navigatedAt
     assert.ok(
       introShownAfterMs >= INTRO_DEADLINE_MS - 500,
       `The intro stays hidden until the boot deadline (shown after ${introShownAfterMs} ms)`,
+    )
+    const introAnimationElapsedMs = await enabled
+      .locator(`main[aria-labelledby='${INTRO_HEADING_ID}']`)
+      .evaluate(
+        (main) =>
+          main.getAnimations().find((animation) => animation.animationName === 'knc-intro-deadline')
+            ?.currentTime,
+      )
+    assert.ok(
+      introAnimationElapsedMs >= INTRO_DEADLINE_MS - 500,
+      `The intro stays hidden until the boot deadline (animation elapsed ${introAnimationElapsedMs} ms)`,
     )
 
     const disabled = await disabledContext.newPage()
@@ -455,9 +507,14 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
     // Well before the boot deadline, counted from the response rather than document completion:
     // without scripting the intro and its fallback show at once.
     const intro = disabled.locator(`#${INTRO_HEADING_ID}`)
+    const noScriptVisibilityTimeoutMs = INTRO_DEADLINE_MS / 4 - (Date.now() - committedAt)
+    assert.ok(
+      Number.isFinite(noScriptVisibilityTimeoutMs) && noScriptVisibilityTimeoutMs > 0,
+      'The immediate no-JavaScript visibility allowance has not expired',
+    )
     await intro.waitFor({
       state: 'visible',
-      timeout: INTRO_DEADLINE_MS / 4 - (Date.now() - committedAt),
+      timeout: noScriptVisibilityTimeoutMs,
     })
     assert.equal(await intro.isVisible(), true, 'Visitors without scripting keep the intro text')
     // The noscript style cancels the deadline animation, so an expired deadline cannot pass this.
@@ -476,6 +533,7 @@ async function verifyNoScriptFallback(createContext, workerOrigin) {
     return {
       delayedScripts,
       introShownAfterMs,
+      introAnimationElapsedMs,
       fallbackVisibleWithoutScripting: true,
       introWithoutScripting: true,
     }
