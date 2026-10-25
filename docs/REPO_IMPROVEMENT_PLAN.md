@@ -1,5 +1,8 @@
 # Repository Improvement Plan
 
+Current recovery status and branch/CI policy: `docs/MAINTENANCE_HANDOFF.md`. The audit
+and owner decisions below remain historical scope; they are not completion evidence.
+
 Date: 2026-10-23, revised 2026-10-24. Repository: `barber/project` at HEAD `f15b79b` (production deployment `d5155e4c` from 2026-10-09 runs the same build).
 
 Revision 2026-10-24: an adversarial review (Codex, 9 findings) and the owner's answers to the open questions were applied. Section 9 now records the owner's decisions; they supersede any conflicting text elsewhere in this document. Delivery to the customer is at the end of October 2026; the whole plan is in scope before delivery.
