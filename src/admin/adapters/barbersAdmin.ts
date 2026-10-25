@@ -32,6 +32,8 @@ import type {
 } from '../types'
 import { err, ok } from '../types'
 
+export const BARBER_COLUMNS = 'id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order'
+
 const READ_ERROR = 'Kunde inte läsa barberare.'
 const WRITE_ERROR = 'Kunde inte spara. Försök igen.'
 
@@ -65,7 +67,7 @@ export async function listBarbers(): Promise<AdminResult<readonly AdminBarber[]>
   try {
     const { data, error } = await getAdminClient()
       .from('barbers')
-      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .select(BARBER_COLUMNS)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true })
     if (error !== null || data === null) return err('network', READ_ERROR)
@@ -93,7 +95,7 @@ export async function createBarber(b: NewBarber): Promise<AdminResult<AdminBarbe
         bio_en: b.bioEn,
         sort_order: b.sortOrder,
       })
-      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .select(BARBER_COLUMNS)
       .single()
     if (error !== null || data === null) return mapWriteError(error)
 
@@ -124,7 +126,7 @@ export async function updateBarber(
         sort_order: edit.sortOrder,
       })
       .eq('id', id)
-      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .select(BARBER_COLUMNS)
       .single()
     if (error !== null || data === null) return mapWriteError(error)
 
@@ -146,7 +148,7 @@ export async function setBarberActive(
       .from('barbers')
       .update({ active })
       .eq('id', id)
-      .select('id,name,ig,role_sv,role_en,bio_sv,bio_en,active,sort_order')
+      .select(BARBER_COLUMNS)
       .single()
     if (error !== null || data === null) return mapWriteError(error)
 

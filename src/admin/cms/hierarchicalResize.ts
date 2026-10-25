@@ -30,7 +30,7 @@ const isStrip = (component: Component): boolean => {
 }
 
 /** The cards when the selection is the strip or one of its cards; never for their photos. */
-export function barberStripCards(component: Component): Component[] {
+function barberStripCards(component: Component): Component[] {
   const strip = isStrip(component) ? component : component.parent()
   if (!strip || !isStrip(strip)) return []
   if (strip !== component && !component.getAttributes()['data-knc-source']) return []

@@ -1,12 +1,12 @@
 // CMS homepage replica ports: keep production reads faithful, but deny both public write paths.
 
-import type { DesktopSitePreviewPorts } from '../../app/DesktopSite'
-import { defaultAboutContentPort } from '../../about/content'
-import { defaultGalleryPort } from '../../about/gallery'
-import { defaultReviewsPort } from '../../about/reviews/adapters'
-import { defaultBookingPort } from '../../booking/adapters'
-import { defaultBarbersPort } from '../../booking/adapters/barbersIndex'
-import { defaultServicesPort } from '../../booking/adapters/servicesIndex'
+import type { DesktopSitePreviewPorts } from '../app/DesktopSite'
+import { defaultAboutContentPort } from '../about/content'
+import { defaultGalleryPort } from '../about/gallery'
+import { defaultReviewsPort } from '../about/reviews/adapters'
+import { defaultBookingPort } from '../booking/adapters'
+import { defaultBarbersPort } from '../booking/adapters/barbersIndex'
+import { defaultServicesPort } from '../booking/adapters/servicesIndex'
 
 export function readOnlyHomepagePreviewPorts(
   read: Pick<

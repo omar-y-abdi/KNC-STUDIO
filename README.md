@@ -4,7 +4,7 @@ Production frontend for Blade & Blend Studio (barbershop, Göteborg). A faithful
 original single-file prototype into a real, deployable codebase. One responsive site: an editorial
 desktop layout and a Material-style mobile layout, with an online booking flow.
 
-- **Stack:** Vite + Preact + TypeScript (strict). No CDN — every dependency is pinned and bundled.
+- **Stack:** Vite + Preact + TypeScript (strict). No CDN — dependencies are bundled; resolved versions are recorded in package-lock.json.
 - **Hosting:** Cloudflare Workers Static Assets (`wrangler.jsonc` + `public/_headers`).
 - **Languages:** Swedish (default) + English. **Themes:** follows the device, with a manual toggle.
 
@@ -83,7 +83,7 @@ Production routing and cookie policy are unchanged.
 | `deploy`           | Build, verify matching CMS backend, and deploy to Cloudflare              |
 | `deploy:dry-run`   | Build and validate Cloudflare deployment without publishing               |
 | `cloudflare:dev`   | Build and serve through Wrangler locally                                  |
-| `typecheck`        | `tsc -b` only                                                             |
+| `typecheck`        | App, tools and unit-test TypeScript checks                                |
 | `lint`             | ESLint (strict + security + no-unsanitized)                               |
 | `format`           | Prettier write                                                            |
 | `test`             | Vitest unit suite (pure domain modules)                                   |
@@ -97,37 +97,36 @@ CMS changes span Cloudflare and Supabase. Follow the [CMS release guide](docs/op
 before deploying; a Cloudflare build alone does not update the publication backend.
 
 Effects live at the edges; the domain stays pure and referentially transparent.
-[CODEBASE-MAP.md](CODEBASE-MAP.md) is the complete architectural index of the repo.
+[CODEBASE-MAP.md](CODEBASE-MAP.md) maps areas to entry files, tests and common change routes.
 
-```
+```text
 src/
-  main.tsx              # mount
-  config.ts             # business facts + SITE_URL + injectable Clock (the only env/time reads)
-  app/                  # Root (router) + App (state + responsive switch + theme edge effects),
-                        #   DesktopSite (editorial), MobileSite (M3 folding panel)
-  backend/              # env "configured?" check, lazy Supabase client seam, Zod RPC schemas
-  booking/              # the booking domain:
-    domain.ts           #   ADTs — invalid states unrepresentable
-    calendar.ts         # pure calendar/date functions (no I/O)
-    slotPacking.ts      # pure offline/mock slot packing (live availability is DB-owned)
-    validation.ts       #   Zod + branded types (Name / Phone-SE) → Result
-    ics.ts              #   RFC5545-correct .ics builder (escaped, injection-safe)
-    port.ts             #   BookingPort — the backend seam (interface only)
-    adapters/           #   localCalendarAdapter (offline mock) + lazy Supabase adapter
-    BookingFlow + sub-components, bookingStyles
-  about/                # About section: gallery, DB-driven stylists, reviews (+ ports/adapters)
-  mybookings/           # permanent email-token history/cancel + first-party HttpOnly session
-  admin/                # staff panel: operations + authenticated email/password settings
-  i18n/                 # typed sv/en string tables (missing key = compile error)
-  ui/                   # Dialog (accessible modal), pseudo (hover/focus helper)
-tools/visual/           # pixel-regression harness (capture + compare) + baselines
-supabase/               # migrations (schema, RLS, RPCs), edge functions, pgTAP tests, seed
-public/                 # fonts (self-hosted), icons, robots.txt, sitemap.xml, llms.txt, og image
+  main.tsx              # browser entry and lazy CMS source route
+  config.ts             # site URL and injectable booking clock
+  app/                  # router, shared state, desktop/mobile composition
+  backend/              # public REST/Realtime, RPC schemas, lazy admin Auth client
+  booking/              # domain, calendar, validation, dialogs and booking adapters
+  mybookings/           # email-link access, cookie gateway, history and cancellation
+  about/                # About content, gallery, barber marquee and reviews
+  site/                 # business identity, SEO, consent, logo and public chrome
+  admin/                # staff session, operational views and authenticated adapters
+    cms/                # Studio, GrapesJS editor, resources, history and publication
+  cms/                  # native public projection and read-only preview seams
+  cmsRuntime.tsx        # custom-page runtime mounting
+  i18n/                 # typed Swedish/English string tables
+  ui/                   # shared dialogs, lazy surfaces, logos and global styles
+  worker.ts             # Cloudflare HTML, metadata and same-origin gateway routes
+shared/                 # CMS validation, pages, resources, themes and email rendering
+tests/                  # unit and local-Supabase integration suites
+tools/e2e/              # Playwright contracts and isolated fake/local backends
+tools/visual/           # screenshot utilities and approved pixel baselines
+supabase/               # migrations, Edge Functions, pgTAP tests and seed
+public/                 # self-hosted fonts, icons, discovery files and static assets
 ```
 
 ### The clock is injectable
 
-The booking calendar's "today" comes from a `Clock` (`config.ts`), never a bare `new Date()`:
+The booking calendar's "today" comes from a `Clock` (`src/config.ts`), never a bare `new Date()`:
 
 - **production** → `realClock` (the calendar tracks the real current day).
 - **visual-regression** → `fixedClock` (`2026-06-19`, the original prototype's day) so screenshots
@@ -152,8 +151,8 @@ for server-side security. Current controls:
 - **Restricted third-party runtime:** app code and fonts are self-hosted; CSP allows only Supabase and
   Cloudflare Turnstile endpoints required by booking and authentication, plus Cloudflare's existing
   cookieless Web Analytics on three public paths outside the EU. Private routes are excluded.
-- **Input validation at the boundary:** all contact details pass Zod smart-constructors
-  (`validation.ts`) before a `Booking` is produced. Branded types make a validated value
+- **Input validation at the boundary:** all contact details pass plain validation functions
+  (`src/booking/validation.ts`) before a `Booking` is produced. Branded types make a validated value
   impossible to confuse with a raw string.
 - **Injection-safe output:** the `.ics` builder escapes per RFC5545 (the prototype concatenated
   unescaped commas — fixed); every dynamic URL part is `encodeURIComponent`-ed (no mailto/calendar
@@ -214,8 +213,7 @@ Customers may explicitly connect their own email addresses after fresh verificat
 mailboxes. A verified profile groups their history; sharing a phone number never grants access.
 The profile and device-receipt boundaries are described in [BACKEND.md](BACKEND.md).
 
-Current release order and rollback: [13 September launch release](docs/operations/LAUNCH_RELEASE_2026-09-13.md).
-Earlier device-access rollout: [customer device access](docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md).
+Current deployment boundaries and local verification: [BACKEND.md](BACKEND.md#apply-backend-changes).
 
 ---
 
@@ -225,7 +223,7 @@ Earlier device-access rollout: [customer device access](docs/operations/CUSTOMER
 2. Verify without publishing: `npm run deploy:dry-run`.
 3. Publish: `npm run deploy`.
 4. `wrangler.jsonc` attaches `bladeblendstudio.se` and `www.bladeblendstudio.se` as Custom Domains;
-   canonical metadata points to apex. `_headers` applies CSP/security/cache headers to static assets.
+   canonical metadata points to apex. `public/_headers` applies CSP/security/cache headers to static assets.
 
 > `VITE_SITE_URL` feeds the canonical link, Open Graph/Twitter tags, sitemap and JSON-LD. It is
 > fixed to `https://bladeblendstudio.se` for production.

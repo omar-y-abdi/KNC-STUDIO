@@ -37,4 +37,4 @@ npx supabase secrets set \
 and Vault names, rejects legacy secret aliases, and checks webhook-secret digest parity without
 printing secret material.
 
-Current deploy order and checks: `docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md`.
+Current deploy order and checks: `BACKEND.md` (Apply backend changes).

@@ -32,9 +32,8 @@ not accepted from browser; database derives them from active service row.
 - Turnstile is fail-closed. Missing `TURNSTILE_SECRET`, missing `IP_SALT`, or empty token cannot create
   production booking.
 - IP and phone limits backstop Turnstile.
-- Final contracted state grants `create_booking` only to `service_role`. A short rollout expand
-  window keeps legacy anonymous clients working; follow
-  `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md` and contract immediately after verification.
+- The current contract grants `create_booking` only to `service_role`; browser traffic uses the
+  signed Worker gateway. Follow `BACKEND.md` (Apply backend changes) for deployment boundaries.
 
 Required secrets:
 

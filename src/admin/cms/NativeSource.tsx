@@ -5,7 +5,7 @@ import { App, type SitePreviewSnapshot } from '../../app/App'
 import { NativeSiteProvider } from '../../cms/NativeSurface'
 import { PreviewPorts } from '../../cms/PreviewPorts'
 import { sourceReadSnapshot } from './sourceReadCache'
-import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+import { readOnlyHomepagePreviewPorts } from '../../cms/homepageReplicaPorts'
 import {
   mediaUrl,
   validateDocument,

@@ -5,7 +5,7 @@ import {
   parseScale,
   resolveBusinessSettings,
 } from '../../site/siteChrome'
-import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+import { readOnlyHomepagePreviewPorts } from '../../cms/homepageReplicaPorts'
 import type { sourceReadSnapshot } from './sourceReadCache'
 
 type Snapshot = ReturnType<typeof sourceReadSnapshot>
