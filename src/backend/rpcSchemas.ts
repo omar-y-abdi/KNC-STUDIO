@@ -9,6 +9,10 @@
 import { z } from 'zod'
 import { ISO_TIMESTAMP } from '../../shared/iso-timestamp'
 
+// Browser CSP and the Worker forbid dynamic code generation, including Zod's caught eval probe.
+// adminSchemas evaluates this dependency before constructing its own schemas.
+z.config({ jitless: true })
+
 // --- shared --------------------------------------------------------------------------------------
 
 /** ISO-8601 timestamp WITH offset, exactly how PostgREST serializes `timestamptz`. */

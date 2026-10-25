@@ -135,3 +135,10 @@ embedded tabs/newlines in those URL strings, whereas Zod 3 returned the original
 backend generates canonical URLs, so this difference has no demonstrated product failure; the
 migration does not claim complete byte-preserving parity for arbitrary URL inputs. Uncustomized
 English library error messages also follow Zod 4; application-authored messages remain pinned.
+
+The browser and Worker response schemas configure `z.config({ jitless: true })` before schema
+construction. Zod 4 otherwise probes `new Function`, which reports a CSP violation even when
+its exception is caught. `rpcSchemas.ts` is also a static dependency of `adminSchemas.ts` through
+its `parseWith` re-export, so this configuration precedes admin schema construction too. CSP
+remains unchanged. A regression forces fresh public/admin imports with dynamic code generation
+blocked and global `jitless` explicitly reset to false, then checks valid and invalid parsing.
