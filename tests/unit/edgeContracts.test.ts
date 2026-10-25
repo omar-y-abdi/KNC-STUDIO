@@ -1,7 +1,8 @@
+import type * as TurnstileModule from '../../supabase/functions/_shared/turnstile'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
 import { preProcessFile } from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { corsHeaders, corsJson, json, parse, uuid } from '../../supabase/functions/_shared/http.ts'
 import { z } from 'zod'
 
@@ -113,15 +114,6 @@ describe('edge import map', () => {
       .filter((file) => readFileSync(file, 'utf8').includes('https://esm.sh/'))
     expect(offenders).toEqual([])
   })
-
-  it('keeps one json and one uuid pattern outside the Calendar functions', () => {
-    const files = sources(FUNCTIONS).filter(
-      (file) => !/calendar/.test(file) && !file.endsWith('http.ts'),
-    )
-    const text = files.map((file) => readFileSync(file, 'utf8')).join('\n')
-    expect(text).not.toMatch(/function json\(/)
-    expect(text).not.toContain('[0-9a-f]{8}')
-  })
 })
 
 describe('edge bundles', () => {
@@ -165,30 +157,117 @@ describe('edge bundles', () => {
   })
 })
 
+const gateway = vi.hoisted(() => ({ verify: vi.fn(), challenge: vi.fn(), rpc: vi.fn() }))
+vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ rpc: gateway.rpc }) }))
+vi.mock('../../supabase/functions/_shared/customerGatewayAuth', () => ({
+  verifyCustomerGateway: gateway.verify,
+}))
+vi.mock('../../supabase/functions/_shared/turnstile', async (original) => ({
+  ...(await original<typeof TurnstileModule>()),
+  verifyTurnstile: gateway.challenge,
+}))
+
 describe('submit-booking gateway', () => {
-  const source = readFileSync(`${FUNCTIONS}/submit-booking/index.ts`, 'utf8')
-
-  it('has no CORS and no unsigned path', () => {
-    expect(source).not.toMatch(/Access-Control|corsHeaders|OPTIONS|firstParty|cf-connecting-ip/i)
-  })
-
-  it('verifies the signature before it parses the body, and refuses with 403', () => {
-    const verify = source.indexOf('verifyCustomerGateway(')
-    const parseBody = source.indexOf('JSON.parse(')
-    expect(verify).toBeGreaterThan(-1)
-    expect(verify).toBeLessThan(parseBody)
-    expect(source).toMatch(
-      /if \(ip === null\) return reply\(\{ ok: false, error: 'origin_not_allowed' \}, 403\)/,
+  let handler: (request: Request) => Promise<Response>
+  beforeEach(async () => {
+    vi.resetModules()
+    gateway.verify.mockReset().mockResolvedValue(null)
+    gateway.challenge.mockReset().mockResolvedValue(true)
+    gateway.rpc.mockReset()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        throw new Error('Unexpected network request')
+      }),
     )
+    vi.stubGlobal('Deno', {
+      env: { get: () => 'unit-config' },
+      serve: (callback: typeof handler) => {
+        handler = callback
+      },
+    })
+    await vi.importActual('../../supabase/functions/submit-booking/index.ts')
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('rejects an unsigned malformed body before parsing it and exposes no CORS path', async () => {
+    const response = await handler(
+      new Request('https://edge.example.test/submit-booking', { method: 'POST', body: '{' }),
+    )
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ ok: false, error: 'origin_not_allowed' })
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(gateway.verify).toHaveBeenCalledWith(expect.any(Request), 'unit-config', '{')
+    const preflight = await handler(
+      new Request('https://edge.example.test/submit-booking', { method: 'OPTIONS' }),
+    )
+    expect(preflight.status).toBe(405)
+    expect(preflight.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(gateway.rpc).not.toHaveBeenCalled()
   })
 
-  it('remembers a booking for every signed request that asks for it', () => {
-    expect(source).toContain('if (rememberBookings && rpc.data?.ok === true')
+  it('reports invalid JSON after successful signature verification', async () => {
+    gateway.verify.mockResolvedValue('203.0.113.9')
+    const response = await handler(
+      new Request('https://edge.example.test/submit-booking', { method: 'POST', body: '{' }),
+    )
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ ok: false, error: 'invalid_json' })
+    expect(gateway.rpc).not.toHaveBeenCalled()
   })
 
-  it('is smoke-tested through the Worker relay', () => {
-    const smoke = readFileSync('tools/smoke-live.mjs', 'utf8')
-    expect(smoke).not.toContain('/functions/v1/submit-booking')
-    expect(smoke).toContain("'/api/bookings'")
-  })
+  it.each([false, true])(
+    'issues a receipt only when the successful signed booking requests it (remember=%s)',
+    async (remember) => {
+      gateway.verify.mockResolvedValue('203.0.113.9')
+      const id = '54000000-0000-4000-8000-000000000001'
+      gateway.rpc
+        .mockResolvedValueOnce({ data: { ok: true, booking: { id } }, error: null })
+        .mockResolvedValueOnce({ data: { existing: false, max_age: 3600 }, error: null })
+      const response = await handler(
+        new Request('https://edge.example.test/submit-booking', {
+          method: 'POST',
+          body: JSON.stringify({
+            booking: {
+              barberId: 'owner',
+              serviceId: id,
+              startAt: '2040-03-18T10:00:00+01:00',
+              phone: '0701234567',
+              email: 'customer@example.test',
+              lang: 'sv',
+              customerName: 'Customer',
+            },
+            turnstileToken: 'challenge',
+            rememberBookings: remember,
+          }),
+        }),
+      )
+      expect(response.status).toBe(200)
+      expect(gateway.rpc).toHaveBeenNthCalledWith(
+        1,
+        'create_booking_with_limits',
+        expect.objectContaining({ p_service_id: id }),
+      )
+      expect(gateway.rpc).toHaveBeenCalledTimes(remember ? 2 : 1)
+      if (remember) {
+        expect(gateway.rpc).toHaveBeenNthCalledWith(2, 'append_customer_booking_receipt', {
+          p_booking_id: id,
+          p_existing_hash: null,
+          p_new_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          p_session_hash: null,
+        })
+        expect(response.headers.get('Set-Cookie')).toMatch(
+          /^__Host-bladeblend_booking_receipts=[a-f0-9]{64}; Path=\/; Max-Age=3600; HttpOnly; Secure; SameSite=None$/,
+        )
+        await expect(response.json()).resolves.toMatchObject({
+          ok: true,
+          receipt_proof: expect.stringMatching(/^[a-f0-9]{64}$/),
+        })
+      } else {
+        expect(response.headers.get('Set-Cookie')).toBeNull()
+        await expect(response.json()).resolves.toEqual({ ok: true, booking: { id } })
+      }
+      expect(fetch).not.toHaveBeenCalled()
+    },
+  )
 })

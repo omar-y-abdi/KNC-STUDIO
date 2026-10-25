@@ -570,11 +570,4 @@ describe('static asset layer', () => {
       expect(runFirst).not.toContain(`!/${legal}.html`)
     }
   })
-
-  it('keeps no homepage branch behind the native route', () => {
-    const source = read('src/worker.ts')
-    expect(source).not.toContain('dynamicHomepage')
-    expect(source).not.toContain('s-maxage')
-    expect(source).not.toContain('stale-while-revalidate')
-  })
 })

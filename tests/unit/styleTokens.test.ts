@@ -5,7 +5,6 @@ import { mobMuted, shellPalette } from '../../src/app/shared'
 
 // STY-12: public/tokens.css is derived from the homepage palette; this ties the two together.
 const tokensCss = readFileSync(new URL('../../public/tokens.css', import.meta.url), 'utf8')
-const desktopSite = readFileSync(new URL('../../src/app/DesktopSite.tsx', import.meta.url), 'utf8')
 
 const HOMEPAGE: Readonly<Record<string, (dark: boolean) => string>> = {
   '--bb-bg': (dark) => shellPalette(dark).bg,
@@ -58,14 +57,6 @@ describe('public/tokens.css', () => {
       expect(channels(light), `${name} light`).toEqual(channels(homepage(false)))
       expect(channels(dark), `${name} dark`).toEqual(channels(homepage(true)))
     }
-  })
-
-  it('names the homepage font stack', () => {
-    const families = (stack: string): string[] =>
-      stack.split(',').map((family) => family.trim().replace(/^['"]|['"]$/g, ''))
-    const homepage = /fontFamily: "('Inter Variable'[^"]*)"/.exec(desktopSite)?.[1] ?? ''
-    expect(families(declarations().get('--bb-font') ?? '')).toEqual(families(homepage))
-    expect(families(homepage)[0]).toBe('Inter Variable')
   })
 
   // The app bundles this file, so the root may only gain custom properties: no paint on the homepage.

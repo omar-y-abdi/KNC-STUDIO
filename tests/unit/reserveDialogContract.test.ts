@@ -1,21 +1,98 @@
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ReserveDialog, type ReserveDialogProps } from '../../src/admin/ReserveDialog'
+import { adminText } from '../../src/i18n/adminStrings'
+import { nodes, render as renderWithHooks, reset } from './helpers/fakeHooks'
 
-const reserveDialog = readFileSync('src/admin/ReserveDialog.tsx', 'utf8')
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
+vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
 
-describe('ReserveDialog manual price contract', () => {
-  it('guards invalid non-empty prices before invoking the parent submit', () => {
-    expect(reserveDialog).toContain('validateManualReservationPrice')
-    expect(reserveDialog).toContain('if (!parsedPrice.ok)')
-    expect(reserveDialog).toContain('setPriceError(true)')
-    expect(reserveDialog).toContain('return')
-    expect(reserveDialog).toContain('t.reserveErrPrice')
-    expect(reserveDialog).not.toContain('priceNum ?? 0')
+function dialog(services: ReserveDialogProps['services'] = []) {
+  const onSubmit = vi.fn()
+  const render = () =>
+    nodes(
+      renderWithHooks(() =>
+        ReserveDialog({
+          dark: false,
+          lang: 'sv',
+          timeLabel: 'Monday 12:00',
+          services,
+          busy: false,
+          serverError: null,
+          onSubmit,
+          onClose: vi.fn(),
+        }),
+      ),
+    )
+  const price = () => {
+    const input = render().find(
+      (node) => node.type === 'input' && node.props.inputMode === 'decimal',
+    )
+    if (!input) throw new Error('Missing reservation price input')
+    return input
+  }
+  const edit = (value: string) => {
+    const onInput = price().props.onInput as (event: unknown) => void
+    onInput({ currentTarget: { value } })
+  }
+  const submit = () => {
+    const button = render()
+      .filter((node) => node.type === 'button')
+      .at(-1)
+    if (!button) throw new Error('Missing reservation submit button')
+    ;(button.props.onClick as () => void)()
+  }
+  return { render, price, edit, submit, onSubmit }
+}
+
+describe('manual reservation prices', () => {
+  beforeEach(reset)
+
+  it.each(['abc', '-1', '1.234', 'Infinity'])(
+    'blocks %s before calling the parent and shows the localized price error',
+    (value) => {
+      const ui = dialog()
+      ui.edit(value)
+      ui.submit()
+      expect(ui.onSubmit).not.toHaveBeenCalled()
+      expect(ui.price().props['aria-invalid']).toBe(true)
+      expect(JSON.stringify(ui.render())).toContain(adminText('sv').reserveErrPrice)
+    },
+  )
+
+  it.each([
+    ['', 0],
+    ['0', 0],
+    ['125.50', 125.5],
+  ])('submits valid price %j as %s', (value, expected) => {
+    const ui = dialog()
+    ui.edit(String(value))
+    ui.submit()
+    expect(ui.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ price: expected, durationMin: 45 }),
+    )
+    expect(ui.price().props['aria-invalid']).toBe(false)
   })
 
-  it('clears price validation after a valid edit and service selection', () => {
-    expect(reserveDialog).toContain('setPriceError(false)')
-    expect(reserveDialog).toContain('validateManualReservationPrice(v).ok')
-    expect(reserveDialog).toContain('if (svc !== undefined) setPrice(String(svc.price))')
+  it('clears an invalid price after a valid edit or a service selection and submits the selected service', () => {
+    const ui = dialog([
+      { id: 'cut', name: 'Cut', price: 300, durationMin: 30 },
+      { id: 'beard', name: 'Beard', price: 150.5, durationMin: 15 },
+    ])
+    ui.edit('invalid')
+    ui.submit()
+    ui.edit('123.45')
+    expect(ui.price().props['aria-invalid']).toBe(false)
+    ui.edit('invalid')
+    ui.submit()
+    const select = ui.render().find((node) => node.type === 'select')
+    if (!select) throw new Error('Missing reservation service selector')
+    ;(select.props.onChange as (event: unknown) => void)({ currentTarget: { value: 'beard' } })
+    expect(ui.price().props.value).toBe('150.5')
+    expect(ui.price().props['aria-invalid']).toBe(false)
+    ui.submit()
+    expect(ui.onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ price: 150.5, durationMin: 15, serviceName: 'Beard' }),
+    )
   })
 })

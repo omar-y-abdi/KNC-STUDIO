@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GalleryMarquee, resolvePointerEnd } from '../../src/about/GalleryMarquee'
 import { PlaceholderPhoto } from '../../src/about/PlaceholderPhoto'
 import { palette } from '../../src/booking/bookingStyles'
@@ -7,31 +6,11 @@ import { aboutStrings } from '../../src/i18n/index'
 import { useEffect, useState } from 'preact/hooks'
 import { useGallery } from '../../src/about/gallery/useGallery'
 import { supabaseGalleryAdapter } from '../../src/about/gallery/supabaseGallery'
+import { nodes as elements, reset, type RenderedNode } from './helpers/fakeHooks'
+
+beforeEach(reset)
 
 describe('gallery marquee interaction contract', () => {
-  const source = readFileSync('src/about/GalleryMarquee.tsx', 'utf8')
-
-  it('exposes one keyboard-selectable logical copy and hides loop clones', () => {
-    expect(source).toContain('const accessible = j < itemCount')
-    expect(source).toContain("aria-hidden={accessible ? undefined : 'true'}")
-    expect(source).toContain("role={accessible ? 'button' : undefined}")
-    expect(source).toContain('tabIndex={accessible ? 0 : undefined}')
-  })
-
-  it('keys selection by physical tile instance so loop clones cannot all highlight', () => {
-    expect(source).toContain('const logicalKey =')
-    expect(source).toContain('const key = `${logicalKey}:${j}`')
-    expect(source).toContain('const selected = props.selectedKey === key')
-  })
-
-  it('cancels pointer selection on pointercancel or scrolling and pauses while focused', () => {
-    expect(source).toContain('const onPointerCancel =')
-    expect(source).toContain('onPointerCancel={onPointerCancel}')
-    expect(source).toContain("document.addEventListener('scroll', onScroll")
-    expect(source).toContain('onFocus={onRowFocus}')
-    expect(source).toContain('onBlur={onRowBlur}')
-  })
-
   it('does not select after pointer down, vertical move, then pointer up', () => {
     const startX = 120
     const startY = 80
@@ -47,45 +26,39 @@ describe('gallery marquee interaction contract', () => {
     expect(resolution.shouldSelect).toBe(false)
     expect(resolution.nextDir).toBe(1)
   })
-
-  it('re-anchors the one focusable logical copy when normal motion moved it away', () => {
-    expect(source).toContain('const target = e.target')
-    expect(source).toContain("target.closest<HTMLElement>('[data-tile-key]')")
-    expect(source).toContain("tile.getAttribute('aria-hidden') === 'true'")
-    expect(source).toContain('offset.current = 0')
-    expect(source).toContain('paint()')
-  })
 })
 
 // Inspect rendered photo controls without running browser animation/effects; pointer, scroll,
 // focus and reduced-motion behavior remain covered by the browser harness.
-vi.mock('preact/hooks', () => ({
-  useContext: () => null,
-  useState: vi.fn((initial: unknown) => [
-    typeof initial === 'function' ? initial() : initial,
-    vi.fn(),
-  ]),
-  useRef: (current: unknown) => ({ current }),
-  useEffect: vi.fn(),
-  useLayoutEffect: vi.fn(),
-}))
-
-interface RenderedNode {
-  readonly type?: unknown
-  readonly props?: { readonly children?: unknown; readonly [key: string]: unknown }
-}
-
-function elements(node: unknown): readonly RenderedNode[] {
-  if (Array.isArray(node)) return node.flatMap(elements)
-  if (typeof node !== 'object' || node === null) return []
-  const vnode = node as RenderedNode
-  if (typeof vnode.type === 'function') return elements(vnode.type(vnode.props))
-  return [vnode, ...elements(vnode.props?.children)]
-}
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
 
 describe('published gallery photos', () => {
   it('renders no controls, tiles or images for an empty gallery', () => {
     expect(GalleryMarquee({ photos: [], alt: 'Gallery photo', c: palette(false) })).toBeNull()
+  })
+
+  it('highlights only the selected physical tile, leaving its loop clone unselected', () => {
+    const gallery = GalleryMarquee({
+      photos: [{ id: 'photo', url: '/photo.webp', alt: 'Photo' }],
+      alt: 'Gallery photo',
+      c: palette(false),
+    })
+    if (!gallery) throw new Error('Missing gallery')
+    const rows = gallery.props.children as readonly RenderedNode[]
+    const row = rows[0]
+    if (!row || typeof row.type !== 'function') throw new Error('Missing gallery row')
+    const renderRow = row.type
+    const tiles = (selectedKey: unknown) =>
+      elements(renderRow({ ...row.props, selectedKey }), { expandComponents: true }).filter(
+        (node) => node.props?.['data-tile-key'] !== undefined,
+      )
+    const keys = tiles(null).map((node) => node.props?.['data-tile-key'])
+    expect(keys).toHaveLength(2)
+    expect(new Set(keys).size).toBe(2)
+    expect(tiles(keys[0]).map((node) => node.props?.style)).toEqual([
+      expect.objectContaining({ transform: 'scale(1.08)' }),
+      expect.objectContaining({ transform: 'scale(1)' }),
+    ])
   })
 
   it.each(['sv', 'en'] as const)(
@@ -101,6 +74,7 @@ describe('published gallery photos', () => {
           alt: t.galleryAlt,
           c: palette(false),
         }),
+        { expandComponents: true },
       )
       const buttons = nodes.filter((node) => node.props?.role === 'button')
       expect(buttons).toHaveLength(4) // One logical photo set per counter-scrolling row.
