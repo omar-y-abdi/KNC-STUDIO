@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, normalize } from 'node:path'
+import { preProcessFile } from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { corsHeaders, corsJson, json, parse, uuid } from '../../supabase/functions/_shared/http.ts'
 import { z } from 'zod'
@@ -14,13 +15,24 @@ function sources(dir: string): string[] {
     .map((file) => join(dir, file))
 }
 
-/** Files a module imports through relative specifiers, followed to the end. */
-function reach(entry: string, seen = new Set<string>()): Set<string> {
+/** Follow local imports, validating bare specifiers against the deploying function's map. */
+function reach(
+  entry: string,
+  seen = new Set<string>(),
+  imports?: Readonly<Record<string, string>>,
+): Set<string> {
   if (seen.has(entry)) return seen
   seen.add(entry)
-  const text = readFileSync(entry, 'utf8')
-  for (const [, specifier] of text.matchAll(/from\s+'(\.[^']+)'/g)) {
-    reach(normalize(join(dirname(entry), specifier as string)), seen)
+  const { importedFiles } = preProcessFile(readFileSync(entry, 'utf8'), true, true)
+  for (const { fileName: specifier } of importedFiles) {
+    if (specifier.startsWith('.')) {
+      reach(normalize(join(dirname(entry), specifier)), seen, imports)
+    } else if (imports && !specifier.startsWith('/') && !/^[a-z][a-z\d+.-]*:/i.test(specifier)) {
+      const mapped = Object.keys(imports).some(
+        (key) => key === specifier || (key.endsWith('/') && specifier.startsWith(key)),
+      )
+      if (!mapped) throw new Error(`${entry}: unmapped bare import ${specifier}`)
+    }
   }
   return seen
 }
@@ -113,6 +125,37 @@ describe('edge import map', () => {
 })
 
 describe('edge bundles', () => {
+  it('resolves every reachable bare import from the deploying function map, including shared files', () => {
+    const entries = readdirSync(FUNCTIONS, { withFileTypes: true }).filter(
+      (entry) => entry.isDirectory() && existsSync(join(FUNCTIONS, entry.name, 'index.ts')),
+    )
+    expect(entries.length).toBeGreaterThan(0)
+    for (const { name } of entries) {
+      const config = join(FUNCTIONS, name, 'deno.json')
+      const imports = existsSync(config)
+        ? (JSON.parse(readFileSync(config, 'utf8')) as { imports: Record<string, string> }).imports
+        : {}
+      expect(() => reach(join(FUNCTIONS, name, 'index.ts'), new Set(), imports), name).not.toThrow()
+    }
+  })
+
+  it.each(['@supabase/supabase-js', 'zod', 'parse5', 'css-tree'])(
+    'rejects a missing %s binding even when the CI map supplies it',
+    (specifier) => {
+      const imports = (
+        JSON.parse(readFileSync(`${FUNCTIONS}/cms-studio/deno.json`, 'utf8')) as {
+          imports: Record<string, string>
+        }
+      ).imports
+      const incomplete = Object.fromEntries(
+        Object.entries(imports).filter(([name]) => name !== specifier),
+      )
+      expect(() => reach(`${FUNCTIONS}/cms-studio/index.ts`, new Set(), incomplete)).toThrow(
+        `unmapped bare import ${specifier}`,
+      )
+    },
+  )
+
   it('only cms-studio reaches shared/cms.ts', () => {
     const entries = readdirSync(FUNCTIONS, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
