@@ -1,10 +1,13 @@
+import { assetFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { test, expect } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
-test.describe.configure({ timeout: 900_000 })
+// 2 × max per-case nearest-rank p95 of passing durations across the supplied full reports.
+// Limiting sample: results-cms3-webkit.json:5252 (55867 ms); budget = 55867 × 2.
+test.describe.configure({ timeout: 111_734 })
 
 test.use({
   viewport: { width: 1440, height: 900 },
@@ -17,34 +20,41 @@ test('cms-workspace-edge', async ({ page, context, browserName, evidenceDir }) =
   await mkdir(out, { recursive: true })
   const checks = []
   const failures = []
-  const assets = ['Originalbild', 'Arkiverad bild'].map((name, i) => ({
-    id: `22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}`,
-    bucket: 'cms-library',
-    path: `images/example-${i}.webp`,
-    name,
-    alt: name,
-    mime: 'image/webp',
-    bytes: 1024,
-    width: 1200,
-    height: 630,
-    archived: i === 1,
-    trashed_at: null,
-    version: 1,
-  }))
+  const assets = ['Originalbild', 'Arkiverad bild'].map((name, i) =>
+    assetFixture({
+      id: `22222222-2222-4222-8222-${String(i + 1).padStart(12, '0')}`,
+      bucket: 'cms-library',
+      path: `images/example-${i}.webp`,
+      name,
+      alt: name,
+      mime: 'image/webp',
+      bytes: 1024,
+      width: 1200,
+      height: 630,
+      archived: i === 1,
+      trashed_at: null,
+      version: 1,
+    }),
+  )
   const check = (pass, message, details) => {
     checks.push({ passed: Boolean(pass), message, details })
     if (!pass) failures.push(message)
   }
   context.setDefaultTimeout(12000)
-  const backend = await nativeBackend(context, emptyDocument(), assets)
-  await context.route('**/functions/v1/cms-studio', (route) => {
-    if (route.request().postDataJSON().operation === 'asset_usage')
-      return route.fulfill({
-        headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
-        json: { currentReferences: 0, historyReferences: 0 },
-      })
-    return route.fallback()
-  })
+  const backend = await nativeBackend(context, documentFixture(), assets)
+  await routeApi(context, [
+    [
+      '**/functions/v1/cms-studio',
+      (route, headers) => {
+        if (route.request().postDataJSON().operation === 'asset_usage')
+          return route.fulfill({
+            headers,
+            json: { currentReferences: 0, historyReferences: 0 },
+          })
+        return route.fallback()
+      },
+    ],
+  ])
   await context.route('**/storage/v1/object/public/**', (route) =>
     route.fulfill({ contentType: 'image/png', path: 'public/og-image.png' }),
   )
@@ -263,7 +273,7 @@ test('cms-workspace-edge', async ({ page, context, browserName, evidenceDir }) =
     await page.waitForFunction(() =>
       Boolean(globalThis.document.querySelector('.cms-live-preview iframe')),
     )
-    for (let attempt = 0; !release && attempt < 100; attempt++) await page.waitForTimeout(50)
+    await expect.poll(() => Boolean(release), { timeout: 5000 }).toBe(true)
     assert.ok(release, 'The fixture must intercept the native preview document')
     await release()
     const preview = page.frameLocator('.cms-live-preview iframe')

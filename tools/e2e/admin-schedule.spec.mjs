@@ -1,3 +1,5 @@
+import { barberFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 // Admin schedule regressions on the REAL AdminApp: every backend request is answered here, and any
 // other host is left to the shared network guard in fixtures.mjs. Covers what the unit tests cannot
 // see — keyboard operation of the day grid, the aria-live report of a failed write, the week
@@ -96,102 +98,106 @@ async function installBackend(page, options = {}) {
     (stored) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(stored)),
     session(),
   )
-  await page.context().route('**/*', async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-    if (url.origin === origin) return route.continue()
-    if (url.hostname !== BACKEND) return route.fallback()
-    const headers = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Headers': '*',
-      'Access-Control-Allow-Methods': '*',
-      'Content-Type': 'application/json',
-    }
-    const reply = (body, status = 200) =>
-      route.fulfill({ status, headers, body: status === 204 ? undefined : JSON.stringify(body) })
-    if (request.method() === 'OPTIONS') return reply(null, 204)
-    let body = null
-    try {
-      body = request.postDataJSON()
-    } catch {
-      /* GET/DELETE carry no JSON body. */
-    }
-    const call = { path: url.pathname, method: request.method(), body }
-    calls.push(call)
-    const get = request.method() === 'GET'
-    switch (url.pathname) {
-      case '/auth/v1/user':
-        return reply(session().user)
-      case '/auth/v1/token':
-        return reply(session())
-      case '/auth/v1/logout':
-        return reply(null, 204)
-      case '/rest/v1/profiles':
-        return reply({
-          role: 'owner',
-          barber_id: null,
-          must_change_password: false,
-          account_enabled: true,
-        })
-      case '/rest/v1/barbers':
-        return reply([
-          {
-            id: BARBER,
-            name: 'Schedule Barber',
-            ig: '',
-            role_sv: 'Barberare',
-            role_en: 'Barber',
-            bio_sv: '',
-            bio_en: '',
-            active: true,
-            sort_order: 0,
-          },
-        ])
-      case '/rest/v1/barber_schedules':
-        return reply(weekRows())
-      case '/rest/v1/bookings':
-        return reply(options.bookings ?? [])
-      case '/rest/v1/barber_time_off':
-      case '/rest/v1/barber_recurring_breaks':
-      case '/rest/v1/barber_slot_blocks':
-      case '/rest/v1/services':
-        if (get) return reply([])
-        if (request.method() === 'DELETE') return reply(null, 204)
-        break
-      case '/rest/v1/rpc/admin_save_barber_week':
-        return reply({ ok: true })
-      case '/rest/v1/rpc/admin_add_slot_block':
-        if (options.failSlotBlock) return reply({ message: 'boom', code: 'XX000' }, 500)
-        return reply({
-          ok: true,
-          row: {
-            id: ROW_ID,
-            barber_id: BARBER,
-            block_date: body.p_block_date,
-            start_min: body.p_start_min,
-            end_min: body.p_end_min,
-          },
-        })
-      case '/rest/v1/rpc/admin_add_time_off':
-        // What the database answers: a conflict unless the caller explicitly overrides it.
-        if (options.timeOffConflicts && body.p_allow_existing_bookings !== true)
-          return reply({ ok: false, error: 'booking_conflict', booking_ids: [BOOKING_ID] })
-        return reply({
-          ok: true,
-          row: {
-            id: OFF_ID,
-            barber_id: BARBER,
-            start_date: body.p_start_date,
-            end_date: body.p_end_date,
-            reason: body.p_reason,
-          },
-        })
-      default:
-        break
-    }
-    unexpected.push(`${request.method()} ${url.pathname}`)
-    return reply({ message: 'Unexpected request in schedule spec' }, 500)
-  })
+  await routeApi(page.context(), [
+    [
+      '**/*',
+      async (route, headers) => {
+        const request = route.request()
+        const url = new URL(request.url())
+        if (url.origin === origin) return route.continue()
+        if (url.hostname !== BACKEND) return route.fallback()
+
+        const reply = (body, status = 200) =>
+          route.fulfill({
+            status,
+            headers,
+            body: status === 204 ? undefined : JSON.stringify(body),
+          })
+
+        let body = null
+        try {
+          body = request.postDataJSON()
+        } catch {
+          /* GET/DELETE carry no JSON body. */
+        }
+        const call = { path: url.pathname, method: request.method(), body }
+        calls.push(call)
+        const get = request.method() === 'GET'
+        switch (url.pathname) {
+          case '/auth/v1/user':
+            return reply(session().user)
+          case '/auth/v1/token':
+            return reply(session())
+          case '/auth/v1/logout':
+            return reply(null, 204)
+          case '/rest/v1/profiles':
+            return reply({
+              role: 'owner',
+              barber_id: null,
+              must_change_password: false,
+              account_enabled: true,
+            })
+          case '/rest/v1/barbers':
+            return reply([
+              barberFixture({
+                id: BARBER,
+                name: 'Schedule Barber',
+                ig: '',
+                role_sv: 'Barberare',
+                role_en: 'Barber',
+                bio_sv: '',
+                bio_en: '',
+                active: true,
+                sort_order: 0,
+              }),
+            ])
+          case '/rest/v1/barber_schedules':
+            return reply(weekRows())
+          case '/rest/v1/bookings':
+            return reply(options.bookings ?? [])
+          case '/rest/v1/barber_time_off':
+          case '/rest/v1/barber_recurring_breaks':
+          case '/rest/v1/barber_slot_blocks':
+          case '/rest/v1/services':
+            if (get) return reply([])
+            if (request.method() === 'DELETE') return reply(null, 204)
+            break
+          case '/rest/v1/rpc/admin_save_barber_week':
+            return reply({ ok: true })
+          case '/rest/v1/rpc/admin_add_slot_block':
+            if (options.failSlotBlock) return reply({ message: 'boom', code: 'XX000' }, 500)
+            return reply({
+              ok: true,
+              row: {
+                id: ROW_ID,
+                barber_id: BARBER,
+                block_date: body.p_block_date,
+                start_min: body.p_start_min,
+                end_min: body.p_end_min,
+              },
+            })
+          case '/rest/v1/rpc/admin_add_time_off':
+            // What the database answers: a conflict unless the caller explicitly overrides it.
+            if (options.timeOffConflicts && body.p_allow_existing_bookings !== true)
+              return reply({ ok: false, error: 'booking_conflict', booking_ids: [BOOKING_ID] })
+            return reply({
+              ok: true,
+              row: {
+                id: OFF_ID,
+                barber_id: BARBER,
+                start_date: body.p_start_date,
+                end_date: body.p_end_date,
+                reason: body.p_reason,
+              },
+            })
+          default:
+            break
+        }
+        unexpected.push(`${request.method()} ${url.pathname}`)
+        return reply({ message: 'Unexpected request in schedule spec' }, 500)
+      },
+    ],
+  ])
   return { calls, unexpected, rpc }
 }
 
@@ -313,7 +319,6 @@ test('week autosave: each edit restarts the debounce and one save lands 600 ms a
     }, name)
   const savesSoFar = async () => {
     await page.evaluate(() => Promise.resolve()) // a save request in flight has left the page
-    await page.waitForTimeout(150)
     return backend.rpc('admin_save_barber_week').length
   }
 
@@ -338,7 +343,7 @@ test('week autosave: each edit restarts the debounce and one save lands 600 ms a
   await page.clock.resume()
   await expect(page.getByText('Sparat ✓', { exact: true })).toBeVisible()
   await expect(barberSelect).toBeEnabled()
-  await page.waitForTimeout(SAVE_DEBOUNCE_MS + 100)
+  await page.clock.runFor(SAVE_DEBOUNCE_MS + 100)
   const saves = backend.rpc('admin_save_barber_week')
   expect(saves, 'the burst must coalesce into a single save').toHaveLength(1)
   expect(saves[0].body.p_barber_id).toBe(BARBER)

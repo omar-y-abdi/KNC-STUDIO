@@ -1,7 +1,7 @@
+import { documentFixture } from './builders.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { nativeBackend } from './cms-backend.mjs'
-import { emptyDocument } from '../../shared/cms.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({
@@ -204,7 +204,7 @@ test('cms-public-regression', async ({ page, context, newContext, browserName })
       reducedMotion: 'reduce',
     })
     context.setDefaultTimeout(15000)
-    await nativeBackend(context, emptyDocument())
+    await nativeBackend(context, documentFixture())
     const page = await context.newPage()
     for (const viewport of [
       { width: 1440, height: 900 },
@@ -213,7 +213,7 @@ test('cms-public-regression', async ({ page, context, newContext, browserName })
       await verifyLanguageToggle(page, { viewport, surface: null })
   }
   context.setDefaultTimeout(15000)
-  const seed = emptyDocument()
+  const seed = documentFixture()
   if (process.env.CMS_PRESENTATION_FILE)
     seed.presentation = JSON.parse(
       fs
@@ -306,7 +306,7 @@ test('cms-public-regression', async ({ page, context, newContext, browserName })
     const home = backend.document.presentation.pages.find((p) => p.path === '/')
     const bytes = JSON.stringify(home.content.sv).length
     fs.writeFileSync(
-      `/tmp/cms-public-${name}-${round}.json`,
+      test.info().outputPath(`cms-public-${name}-${round}.json`),
       JSON.stringify(home.content.sv, null, 2),
     )
     firstPublishedBytes ??= bytes

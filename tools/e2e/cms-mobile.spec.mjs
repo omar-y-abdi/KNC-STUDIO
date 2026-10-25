@@ -1,10 +1,13 @@
+import { barberFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
-import { emptyDocument } from '../../shared/cms.ts'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
-test.describe.configure({ timeout: 900_000 })
+// 2 × max per-case nearest-rank p95 of passing durations across the supplied full reports.
+// Limiting sample: results-cms3-webkit.json:2900 (13721 ms); budget = 13721 × 2.
+test.describe.configure({ timeout: 27_442 })
 
 for (const width of [390, 320]) {
   test.describe(String(width), () => {
@@ -24,43 +27,50 @@ for (const width of [390, 320]) {
         results.push({ passed: Boolean(passed), name, detail })
       const height = width === 390 ? 690 : 568
       context.setDefaultTimeout(15000)
-      const seed = emptyDocument()
-      seed.barbers = ['Exempel A', 'Exempel B'].map((label, i) => ({
-        id: `example-${i}`,
-        name: label,
-        ig: '',
-        role_sv: 'Frisör',
-        role_en: 'Barber',
-        bio_sv: 'Presentation av frisören.',
-        bio_en: 'Barber presentation.',
-        sort_order: i,
-      }))
+      const seed = documentFixture()
+      seed.barbers = ['Exempel A', 'Exempel B'].map((label, i) =>
+        barberFixture({
+          id: `example-${i}`,
+          name: label,
+          ig: '',
+          role_sv: 'Frisör',
+          role_en: 'Barber',
+          bio_sv: 'Presentation av frisören.',
+          bio_en: 'Barber presentation.',
+          sort_order: i,
+        }),
+      )
       const backend = await nativeBackend(context, seed)
-      await context.route('https://admin-harness.invalid/**', async (route) => {
-        const request = route.request()
-        const url = new URL(request.url())
-        if (
-          request.method() !== 'OPTIONS' &&
-          [
-            '/rest/v1/rpc/public_business_discovery',
-            '/rest/v1/rpc/public_booking_catalog',
-          ].includes(url.pathname)
-        )
-          return route.fulfill({
-            headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
-            json: {
-              settings: {},
-              barbers: seed.barbers.map((barber) => ({
-                ...barber,
-                active: true,
-                photo_path: null,
-              })),
-              services: [],
-              schedules: [],
-            },
-          })
-        return route.fallback()
-      })
+      await routeApi(context, [
+        [
+          'https://admin-harness.invalid/**',
+          async (route, headers) => {
+            const request = route.request()
+            const url = new URL(request.url())
+            if (
+              request.method() !== 'OPTIONS' &&
+              [
+                '/rest/v1/rpc/public_business_discovery',
+                '/rest/v1/rpc/public_booking_catalog',
+              ].includes(url.pathname)
+            )
+              return route.fulfill({
+                headers,
+                json: {
+                  settings: {},
+                  barbers: seed.barbers.map((barber) => ({
+                    ...barber,
+                    active: true,
+                    photo_path: null,
+                  })),
+                  services: [],
+                  schedules: [],
+                },
+              })
+            return route.fallback()
+          },
+        ],
+      ])
       const errors = []
       page.on('pageerror', (error) => errors.push(error.message))
       const prefix = `${name}-${width}`

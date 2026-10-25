@@ -44,9 +44,16 @@ async function openHomepage(page, context, { blockEngine = false } = {}) {
       return route.fulfill({ response, body })
     })
   const reads = []
-  page.on('response', (response) => {
-    if (response.request().resourceType() !== 'script') return
-    reads.push(response.text().then((text) => (carriesEngine(text) ? response.url() : null)))
+  page.on('request', (request) => {
+    if (request.resourceType() !== 'script') return
+    // Include scripts still in flight when the roster becomes ready, as well as completed reads.
+    reads.push(
+      request
+        .response()
+        .then(async (response) =>
+          response && carriesEngine(await response.text()) ? response.url() : null,
+        ),
+    )
   })
   await page.goto(publicOrigin, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page
@@ -76,7 +83,18 @@ test.describe('carousel engine chunk', () => {
     })
     test('is not requested while browsing the homepage', async ({ page, context }) => {
       const engineScripts = await openHomepage(page, context)
-      await page.waitForTimeout(2500)
+      const roster = page.locator('[data-knc-fold="barber-marquee"]')
+      await expect(roster.getByText('Fixture Barber 2', { exact: true })).toBeVisible()
+      await expect
+        .poll(() => roster.evaluate((node) => globalThis.getComputedStyle(node).display))
+        .toBe('grid')
+      // Let the roster's passive carousel effect run before checking which scripts it requested.
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(resolve)),
+          ),
+      )
       expect(await engineScripts()).toEqual([])
     })
   })

@@ -1,8 +1,10 @@
+import { assetFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { CMS_OWNER_SCENARIOS } from './cms-owner-scenarios.mjs'
 import { nativeBackend } from './cms-backend.mjs'
-import { emptyDocument, EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
+import { EMAIL_NAMES, defaultEmailDesign } from '../../shared/cms.ts'
 import { renderSitePage } from '../../shared/site-page.ts'
 import { defaultEmailTemplate } from '../../supabase/functions/_shared/email.ts'
 import { test } from './fixtures.mjs'
@@ -51,7 +53,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
         if (url.pathname === '/cms-public/source' && !url.searchParams.has('preview'))
           sourceCaptures++
       })
-      const seed = emptyDocument()
+      const seed = documentFixture()
       if (scenario === 'email-preview') {
         seed.emails = EMAIL_NAMES.flatMap((template) =>
           ['sv', 'en'].map((lang) => {
@@ -91,7 +93,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
       }
       const assets = ['logo-replacement', 'resource-lifecycle'].includes(scenario)
         ? [
-            {
+            assetFixture({
               id: '22222222-2222-4222-8222-222222222222',
               bucket: 'gallery',
               path: 'logo/22222222-2222-4222-8222-222222222222.webp',
@@ -103,7 +105,7 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
               height: 200,
               archived: false,
               version: 1,
-            },
+            }),
           ]
         : []
       if (scenario === 'resource-lifecycle')
@@ -115,21 +117,26 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
         })
       const backend = await nativeBackend(context, seed, assets)
       if (scenario === 'resource-lifecycle')
-        await context.route('**/functions/v1/cms-studio', async (route) => {
-          const body = route.request().postDataJSON()
-          if (body.operation !== 'asset_lifecycle') return route.fallback()
-          const index = assets.findIndex((asset) => asset.id === body.id)
-          assert.equal(body.version, assets[index].version)
-          assets[index] = {
-            ...assets[index],
-            archived: body.action === 'archive',
-            version: assets[index].version + 1,
-          }
-          return route.fulfill({
-            json: { asset: assets[index] },
-            headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
-          })
-        })
+        await routeApi(context, [
+          [
+            '**/functions/v1/cms-studio',
+            async (route, headers) => {
+              const body = route.request().postDataJSON()
+              if (body.operation !== 'asset_lifecycle') return route.fallback()
+              const index = assets.findIndex((asset) => asset.id === body.id)
+              assert.equal(body.version, assets[index].version)
+              assets[index] = {
+                ...assets[index],
+                archived: body.action === 'archive',
+                version: assets[index].version + 1,
+              }
+              return route.fulfill({
+                json: { asset: assets[index] },
+                headers,
+              })
+            },
+          ],
+        ])
       if (assets.length)
         await context.route('**/storage/v1/object/public/**', (route) =>
           route.fulfill({
@@ -260,7 +267,9 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           )
           await mail.getByText('350 kr', { exact: true }).waitFor()
           await modal.getByRole('button', { name: 'Mobil', exact: true }).click()
-          await page.screenshot({ path: `/tmp/cms-native-${name}-email-real-preview.png` })
+          await page.screenshot({
+            path: test.info().outputPath(`cms-native-${name}-email-real-preview.png`),
+          })
           await modal.getByRole('button', { name: 'Tillbaka till sidan', exact: false }).click()
           await publish()
           const captured = sourceCaptures
@@ -395,7 +404,9 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             [],
             'Preview must never publish, book, send email, or submit a review',
           )
-          await page.screenshot({ path: `/tmp/cms-native-${name}-live-mobile-preview.png` })
+          await page.screenshot({
+            path: test.info().outputPath(`cms-native-${name}-live-mobile-preview.png`),
+          })
         } else if (scenario === 'logo-replacement') {
           // Use the full-sized hero logo for replacement. Small corner lettering is covered by
           // the logos scenario; its subpixel glyph hit area varies with Linux/macOS fonts.
@@ -646,7 +657,11 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
                 'Workspace navigation must not open a modal',
               )
               await page.screenshot({
-                path: `/tmp/cms-native-${name}-workspace-${trigger.replace(/[^a-z]/gi, '')}-${width}.png`,
+                path: test
+                  .info()
+                  .outputPath(
+                    `cms-native-${name}-workspace-${trigger.replace(/[^a-z]/gi, '')}-${width}.png`,
+                  ),
               })
               await page.keyboard.press('Escape')
               await surface.waitFor({ state: 'detached' })
@@ -1052,13 +1067,17 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
           await live.goto(base)
           await live.getByText(text, { exact: true }).waitFor()
         }
-        await page.screenshot({ path: `/tmp/cms-native-${name}-owner-${scenario}.png` })
+        await page.screenshot({
+          path: test.info().outputPath(`cms-native-${name}-owner-${scenario}.png`),
+        })
         passed = true
         console.log(`PASS owner ${name}: ${scenario}`)
       } catch (error) {
         console.error(`FAIL owner ${name}: ${scenario}`, error)
         console.error('OWNER_EDITOR', (await page.locator('body').innerText()).slice(0, 3000))
-        await page.screenshot({ path: `/tmp/cms-native-${name}-owner-${scenario}-failure.png` })
+        await page.screenshot({
+          path: test.info().outputPath(`cms-native-${name}-owner-${scenario}-failure.png`),
+        })
         throw error
       } finally {
         if (traceReload) {

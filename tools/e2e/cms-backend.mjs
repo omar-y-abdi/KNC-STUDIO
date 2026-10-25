@@ -1,3 +1,4 @@
+import { routeApi } from './route-api.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   CmsValidationError,
@@ -301,34 +302,35 @@ export async function nativeBackend(
       json: { revision, presentation: document.presentation },
     }),
   )
-  await context.route(`${STORAGE_ORIGIN}/**`, async (route) => {
-    const request = route.request()
-    const path = new URL(request.url()).pathname
-    const headers = {
-      'Access-Control-Allow-Origin': new URL(base).origin,
-      'Access-Control-Allow-Headers': 'authorization,apikey,content-type,x-client-info',
-      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    }
-    const reply = ({ status = 200, value }) => route.fulfill({ status, headers, json: value })
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    if (path === '/functions/v1/cms-studio') return reply(await studio(request.postDataJSON()))
-    if (path === '/functions/v1/upload-image') return reply(await upload(request))
-    if (path.startsWith('/storage/v1/object/public/'))
-      return route.fulfill({ status: 404, headers, body: '' })
-    if (path === '/rest/v1/rpc/public_business_discovery')
-      return reply({
-        value: { settings: document.settings, barbers: [], services: [], schedules: [] },
-      })
-    if (path === '/rest/v1/rpc/public_booking_catalog')
-      return reply({ value: { barbers: [], services: [] } })
-    if (path === '/rest/v1/site_content') {
-      const lang = new URL(request.url()).searchParams.get('lang')?.slice(3) ?? 'sv'
-      return reply({ value: [{ key: 'kicker', lang, value: `KNC source ${lang}` }] })
-    }
-    if (path.startsWith('/rest/v1/')) return reply({ value: [] })
-    writes.push(path)
-    return reply({ status: 403, value: { error: 'not_available_in_preview' } })
-  })
+  await routeApi(context, [
+    [
+      `${STORAGE_ORIGIN}/**`,
+      async (route, headers) => {
+        const request = route.request()
+        const path = new URL(request.url()).pathname
+
+        const reply = ({ status = 200, value }) => route.fulfill({ status, headers, json: value })
+
+        if (path === '/functions/v1/cms-studio') return reply(await studio(request.postDataJSON()))
+        if (path === '/functions/v1/upload-image') return reply(await upload(request))
+        if (path.startsWith('/storage/v1/object/public/'))
+          return route.fulfill({ status: 404, headers, body: '' })
+        if (path === '/rest/v1/rpc/public_business_discovery')
+          return reply({
+            value: { settings: document.settings, barbers: [], services: [], schedules: [] },
+          })
+        if (path === '/rest/v1/rpc/public_booking_catalog')
+          return reply({ value: { barbers: [], services: [] } })
+        if (path === '/rest/v1/site_content') {
+          const lang = new URL(request.url()).searchParams.get('lang')?.slice(3) ?? 'sv'
+          return reply({ value: [{ key: 'kicker', lang, value: `KNC source ${lang}` }] })
+        }
+        if (path.startsWith('/rest/v1/')) return reply({ value: [] })
+        writes.push(path)
+        return reply({ status: 403, value: { error: 'not_available_in_preview' } })
+      },
+    ],
+  ])
   return {
     writes,
     requests,

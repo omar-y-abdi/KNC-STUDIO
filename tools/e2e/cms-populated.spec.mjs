@@ -1,5 +1,6 @@
+import { barberFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
-import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
@@ -12,18 +13,20 @@ test('cms-populated', async ({ page, context, browserName }) => {
   const name = browserName
   const base = harnessOrigin
   const id = (number) => `11111111-1111-4111-8111-${String(number).padStart(12, '0')}`
-  const seed = emptyDocument()
+  const seed = documentFixture()
   seed.settings.homepage_logo_path = `logo/${id(30)}.webp`
-  seed.barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) => ({
-    id: `fixture-barber-${index + 1}`,
-    name,
-    ig: '',
-    role_sv: 'Frisör',
-    role_en: 'Barber',
-    bio_sv: 'Frisörens befintliga presentation.',
-    bio_en: 'The existing barber presentation.',
-    sort_order: index,
-  }))
+  seed.barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) =>
+    barberFixture({
+      id: `fixture-barber-${index + 1}`,
+      name,
+      ig: '',
+      role_sv: 'Frisör',
+      role_en: 'Barber',
+      bio_sv: 'Frisörens befintliga presentation.',
+      bio_en: 'The existing barber presentation.',
+      sort_order: index,
+    }),
+  )
   seed.photos = Object.fromEntries(
     seed.barbers.map((barber) => [barber.id, `${barber.id}/${id(3)}.webp`]),
   )
@@ -49,37 +52,42 @@ test('cms-populated', async ({ page, context, browserName }) => {
   const failures = []
   context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context, seed)
-  await context.route('https://admin-harness.invalid/**', async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-    const document = backend.document
-    const headers = { 'Access-Control-Allow-Origin': new URL(base).origin }
-    const reply = (json) => route.fulfill({ headers, json })
-    if (request.method() === 'OPTIONS') return route.fallback()
-    if (url.pathname.startsWith('/storage/v1/object/public/'))
-      return route.fulfill({ headers, contentType: 'image/png', path: 'public/og-image.png' })
-    if (url.pathname === '/rest/v1/rpc/public_business_discovery')
-      return reply({
-        settings: document.settings,
-        barbers: document.barbers.map(({ id, name }) => ({ id, name })),
-        services,
-        schedules: [],
-      })
-    if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
-      return reply({
-        barbers: document.barbers.map((barber) => ({
-          ...barber,
-          active: true,
-          photo_path: document.photos[barber.id],
-        })),
-        services,
-      })
-    if (url.pathname === '/rest/v1/gallery_images') {
-      const kind = url.searchParams.get('kind')?.slice(3)
-      return reply(document.gallery.filter((photo) => !kind || photo.kind === kind))
-    }
-    return route.fallback()
-  })
+  await routeApi(context, [
+    [
+      'https://admin-harness.invalid/**',
+      async (route, headers) => {
+        const request = route.request()
+        const url = new URL(request.url())
+        const document = backend.document
+
+        const reply = (json) => route.fulfill({ headers, json })
+
+        if (url.pathname.startsWith('/storage/v1/object/public/'))
+          return route.fulfill({ headers, contentType: 'image/png', path: 'public/og-image.png' })
+        if (url.pathname === '/rest/v1/rpc/public_business_discovery')
+          return reply({
+            settings: document.settings,
+            barbers: document.barbers.map(({ id, name }) => ({ id, name })),
+            services,
+            schedules: [],
+          })
+        if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+          return reply({
+            barbers: document.barbers.map((barber) => ({
+              ...barber,
+              active: true,
+              photo_path: document.photos[barber.id],
+            })),
+            services,
+          })
+        if (url.pathname === '/rest/v1/gallery_images') {
+          const kind = url.searchParams.get('kind')?.slice(3)
+          return reply(document.gallery.filter((photo) => !kind || photo.kind === kind))
+        }
+        return route.fallback()
+      },
+    ],
+  ])
   const frame = page.frameLocator('.gjs-frame').first()
   const inspector = page.locator('#cms-inspector')
   try {
@@ -105,7 +113,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
       .getByAltText('Fixture salon photo 1', { exact: true })
       .first()
       .scrollIntoViewIfNeeded()
-    await page.screenshot({ path: `/tmp/cms-native-${name}-populated-about.png` })
+    await page.screenshot({
+      path: test.info().outputPath(`cms-native-${name}-populated-about.png`),
+    })
     await library.getByRole('button', { name: 'Startsida', exact: true }).click()
     await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
     const galleryImage = page
@@ -118,7 +128,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
       originalTileWidth,
       'Locked home preview must retain gallery tile sizing instead of expanding original images',
     )
-    await page.screenshot({ path: `/tmp/cms-native-${name}-locked-home-scroll.png` })
+    await page.screenshot({
+      path: test.info().outputPath(`cms-native-${name}-locked-home-scroll.png`),
+    })
     await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
     const copy = frame.getByText('KNC source sv', { exact: true }).first()
     await copy.click()
@@ -158,7 +170,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
     )
     await live.reload({ waitUntil: 'domcontentloaded' })
     await live.getByAltText('Owner logo description', { exact: true }).waitFor()
-    await page.screenshot({ path: `/tmp/cms-native-${name}-populated-image.png` })
+    await page.screenshot({
+      path: test.info().outputPath(`cms-native-${name}-populated-image.png`),
+    })
     console.log(`PASS populated ${name}: original image edit survives publication and reload`)
     await live.goto(`${base}/?lang=en&mode=dark`)
     await live.getByText('KNC source en', { exact: true }).waitFor()
@@ -179,7 +193,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
         .getAttribute('src'),
       '/icons/moon.svg',
     )
-    await live.screenshot({ path: `/tmp/cms-native-${name}-english-dark-reload.png` })
+    await live.screenshot({
+      path: test.info().outputPath(`cms-native-${name}-english-dark-reload.png`),
+    })
     console.log(`PASS populated ${name}: direct English/dark URL survives fresh public reload`)
     for (const viewport of [
       { width: 1440, height: 900 },
@@ -196,7 +212,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
       await live.waitForFunction(aboutAtTop)
       await live.getByText('Fixture barber A', { exact: true }).waitFor()
       await live.getByAltText('Fixture salon photo 1', { exact: true }).first().waitFor()
-      await live.screenshot({ path: `/tmp/cms-native-${name}-about-${viewport.width}-reload.png` })
+      await live.screenshot({
+        path: test.info().outputPath(`cms-native-${name}-about-${viewport.width}-reload.png`),
+      })
     }
     console.log(
       `PASS populated ${name}: direct About opens its existing section on desktop/mobile reload`,
@@ -205,7 +223,9 @@ test('cms-populated', async ({ page, context, browserName }) => {
     failures.push(`${name}: ${error.message}`)
     console.error('POPULATED_OWNER_ERROR', error)
     console.error('POPULATED_OWNER_BODY', (await page.locator('body').innerText()).slice(0, 4000))
-    await page.screenshot({ path: `/tmp/cms-native-${name}-populated-failure.png` })
+    await page.screenshot({
+      path: test.info().outputPath(`cms-native-${name}-populated-failure.png`),
+    })
   }
   assert.deepEqual(failures, [], 'The owner editor must work with populated public content')
 })
