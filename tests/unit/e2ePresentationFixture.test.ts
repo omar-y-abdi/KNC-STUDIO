@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { gunzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -150,7 +151,10 @@ describe('committed presentation fixture', () => {
   it('contains exactly the compact JSON the refresh script produces from its own content', () => {
     const refreshed = gzipFixture(sanitisePresentation(fixture).response)
     // Compression bytes vary across Node/zlib versions; the document bytes must never vary.
-    expect(gunzipSync(refreshed).equals(content)).toBe(true)
-    expect(refreshed.equals(gzipFixture(sanitisePresentation(fixture).response))).toBe(true)
+    // Boolean comparisons keep failure output compact.
+    expect(isDeepStrictEqual(gunzipSync(refreshed), content)).toBe(true)
+    expect(isDeepStrictEqual(refreshed, gzipFixture(sanitisePresentation(fixture).response))).toBe(
+      true,
+    )
   })
 })
