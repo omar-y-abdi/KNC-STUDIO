@@ -23,8 +23,12 @@ const SECOND_RETRY_GAP_MS = 1300
 const TIMEOUT = 15000
 const NO_STORE = { 'cache-control': 'no-store' }
 
+// C1 shells name their revision in ?rev=N. Match the endpoint, including those reads, without
+// intercepting sibling paths such as /api/cms/presentation-preview.
+const isPresentationUrl = (url) => url.pathname === PRESENTATION_PATH
+
 function isPresentationRequest(request) {
-  return request.method() === 'GET' && new URL(request.url()).pathname === PRESENTATION_PATH
+  return request.method() === 'GET' && isPresentationUrl(new URL(request.url()))
 }
 
 function firstPaintPresentation() {
@@ -52,11 +56,13 @@ function firstPaintPresentation() {
 /** Plain Vite preview has no Worker-backed CMS endpoint; give it an authoritative empty document. */
 export async function installEmptyCmsPresentation(context) {
   const presentation = emptyDocument().presentation
-  await context.route('**/api/cms/presentation', (route) =>
-    route.fulfill({
-      headers: { 'content-type': 'application/json', ...NO_STORE },
-      json: { revision: 0, presentation },
-    }),
+  await context.route(isPresentationUrl, (route) =>
+    route.request().method() !== 'GET'
+      ? route.continue()
+      : route.fulfill({
+          headers: { 'content-type': 'application/json', ...NO_STORE },
+          json: { revision: 0, presentation },
+        }),
   )
 }
 
@@ -94,7 +100,7 @@ async function installPresentationPlan(context) {
   const planned = []
   const served = []
   const unplanned = []
-  await context.route('**/api/cms/presentation', async (route) => {
+  await context.route(isPresentationUrl, async (route) => {
     if (route.request().method() !== 'GET') return route.continue()
     const answer = planned.shift()
     served.push(Date.now())
@@ -319,7 +325,17 @@ async function verifyHeldLoad(page, presentations, presentation, label, load) {
   presentations.plan(held.answer)
   const request = page.waitForRequest(isPresentationRequest, { timeout: TIMEOUT })
   const checked = request
-    .then(() => assertBackgroundOnly(page, label))
+    .then(async () => {
+      // A request event alone does not prove our response is held: an unmatched revision URL
+      // could reach the real Worker and render before the pixel assertions.
+      await expect
+        .poll(() => presentations.served.length - before, {
+          message: `${label}: the planned fixture holds the presentation request`,
+          timeout: TIMEOUT,
+        })
+        .toBe(1)
+      return assertBackgroundOnly(page, label)
+    })
     .finally(() => held.release())
   // Both settle before this returns, so a failed check never leaves the navigation unobserved.
   const [pending] = await Promise.all([checked, load()])
