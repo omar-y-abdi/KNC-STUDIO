@@ -7,14 +7,15 @@
 // turn them into `Date`s. No effects here — pure schemas + Result-shaped parse helpers.
 
 import { z } from 'zod'
+import { ISO_TIMESTAMP } from '../../shared/iso-timestamp'
 
 // --- shared --------------------------------------------------------------------------------------
 
 /** ISO-8601 timestamp WITH offset, exactly how PostgREST serializes `timestamptz`. */
-const isoTimestamp = z.string().datetime({ offset: true })
+const isoTimestamp = z.string().regex(ISO_TIMESTAMP, 'Invalid datetime')
 const bookingDurationMin = z.number().finite().int().min(1).max(600)
 const serviceDurationMin = z.number().finite().int().min(5).max(600)
-const sortOrder = z.number().finite().int().min(0)
+const sortOrder = z.number().finite().refine(Number.isInteger).min(0)
 
 /**
  * A 1..5 rating. Modeled as a literal union so the INFERRED type is exactly `1 | 2 | 3 | 4 | 5`,
@@ -86,7 +87,7 @@ const customerSessionProof = z.string().regex(/^[0-9a-f]{64}$/)
 /** Optional post-booking access is parsed separately so its failure never undoes booking success. */
 export const bookingReceiptResponse = z.object({
   receipt_proof: customerSessionProof,
-  booking: z.object({ id: z.string().uuid() }),
+  booking: z.object({ id: z.guid() }),
 })
 const customerAccessExchangeOk = z.object({
   ok: z.literal(true),
@@ -235,7 +236,7 @@ export const siteContentRow = z.object({
 })
 
 export const publicBusinessDiscoveryResponse = z.object({
-  settings: z.record(z.string()),
+  settings: z.record(z.string(), z.string()),
   barbers: z.array(z.object({ id: z.string(), name: z.string() })),
   services: z.array(
     z.object({

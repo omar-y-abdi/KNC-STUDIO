@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { parseReview } from '../../src/about/reviewValidation'
 import {
   normalizePhone,
@@ -11,7 +11,8 @@ import {
 
 // The public form checks used to be zod schemas. The schemas below are those schemas, verbatim,
 // kept only as the oracle: the plain functions must accept, reject, normalise and word every
-// input exactly as they did. (zod itself stays installed for the RPC and admin schemas.)
+// input exactly as they did. The explicitly historical v3 oracle is test-only; production
+// boundaries use the patched v4 API. Upgrading this oracle would redefine the old form contract.
 const nameSchema = z
   .string()
   .transform((s) => s.trim())

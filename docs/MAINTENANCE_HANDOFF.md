@@ -104,3 +104,34 @@ The [next run](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/4022624606
 found a TypeScript error in the repair's Buffer equality call. The follow-up uses
 `node:util.isDeepStrictEqual`, retaining exact byte equality and compact failure output.
 Local verification remains lint/format only; GitHub owns runtime/type verification.
+
+## Zod security migration — pending GitHub verification
+
+The maintenance audit reached [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
+whose patched version is 4.6.6. The root npm dependency, every function import map and scoped Deno
+frozen lock now pin that version. npm metadata resolution changed only the Zod lock entries;
+shared `node_modules` was not installed or changed. GitHub must verify the production audit,
+TypeScript, Deno checks, tests and browser paths on this combined tree.
+
+The [official Zod 4 migration guide](https://zod.dev/v4/changelog) changes several boundary APIs.
+The migration preserves the existing UUID shape with `z.guid()`, string-valued discovery settings
+with an explicit record key schema, CMS custom/Swedish errors and absent unconstrained fields.
+`shared/iso-timestamp.ts` preserves the old Gregorian date/time pattern, including minute-only
+times and basic offsets; Zod 4's native datetime schema narrows those accepted forms. Unbounded
+response integer fields use `Number.isInteger` to preserve their prior range; CMS revision/version
+fields retain their safe-integer restriction. Zod 4 rejects infinite plain numbers, which cannot
+arrive through these JSON wire boundaries. The default email pattern was checked against the
+4.6.6 release source; its rewritten expression preserves the existing ASCII email language.
+
+The old public-form parity oracle intentionally imports `zod/v3` in its test file only: it
+compares plain validators against the removed implementation, including its original messages.
+Production imports use the patched v4 API. New boundary regressions cover UUID, timestamp, record,
+integer, absent-field and strict-error behavior. They have not been executed locally under the
+recovery policy.
+
+Residual library behavior is explicit: the three upload-response `publicUrl` schemas in
+`src/admin/adminSchemas.ts` retain `.url()`. Zod 4 normalizes leading/trailing whitespace and
+embedded tabs/newlines in those URL strings, whereas Zod 3 returned the original strings. The
+backend generates canonical URLs, so this difference has no demonstrated product failure; the
+migration does not claim complete byte-preserving parity for arbitrary URL inputs. Uncustomized
+English library error messages also follow Zod 4; application-authored messages remain pinned.

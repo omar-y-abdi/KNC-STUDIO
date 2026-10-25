@@ -23,14 +23,14 @@ export function corsJson(body: unknown, status = 200): Response {
   return json(body, status, corsHeaders)
 }
 
-/** Every identity the functions accept is a database-generated UUID. */
-export const uuid = z.string().uuid()
+/** Keep the established 8-4-4-4-12 UUID shape; v4 uuid() additionally restricts version/variant bits. */
+export const uuid = z.guid()
 
 export type Parsed<T> =
   { readonly ok: true; readonly data: T } | { readonly ok: false; readonly detail: string }
 
 /** Unknown keys outrank field errors: the caller speaks another contract. */
-export function parse<S extends z.ZodTypeAny>(schema: S, raw: unknown): Parsed<z.output<S>> {
+export function parse<S extends z.ZodType>(schema: S, raw: unknown): Parsed<z.output<S>> {
   const result = schema.safeParse(raw)
   if (result.success) return { ok: true, data: result.data }
   const issues = result.error.issues

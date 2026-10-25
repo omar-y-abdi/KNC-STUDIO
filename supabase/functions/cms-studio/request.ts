@@ -13,7 +13,9 @@ const FINGERPRINT = z.string().regex(/^[0-9a-f]{32}$/)
 const integer = (field: string) =>
   reported(z.number().int().nonnegative().safe(), `${field}: Expected a positive integer`)
 const strict = <S extends z.ZodRawShape>(shape: S, message = UNSUPPORTED) =>
-  z.object(shape).strict(message)
+  z.strictObject(shape, {
+    error: (issue) => (issue.code === 'unrecognized_keys' ? message : undefined),
+  })
 
 export const requestSchema = z.discriminatedUnion(
   'operation',
@@ -27,7 +29,7 @@ export const requestSchema = z.discriminatedUnion(
         id: reported(uuid, COPY_INVALID),
         version: reported(z.number().int().nonnegative().safe(), COPY_INVALID),
         purpose: reported(z.enum(['salon', 'cuts', 'logo', 'profile']), COPY_INVALID),
-        barberId: z.unknown(),
+        barberId: z.unknown().optional(),
       },
       COPY_INVALID,
     ),
@@ -55,16 +57,16 @@ export const requestSchema = z.discriminatedUnion(
       archived: reported(z.boolean(), 'asset: Invalid asset metadata'),
       version: integer('version'),
     }),
-    strict({ operation: z.literal('validate'), document: z.unknown() }),
+    strict({ operation: z.literal('validate'), document: z.unknown().optional() }),
     strict({
       operation: z.literal('publish'),
-      document: z.unknown(),
+      document: z.unknown().optional(),
       baseFingerprint: reported(FINGERPRINT, 'publication: Invalid publication identity'),
       requestId: reported(uuid, 'publication: Invalid publication identity'),
       baseRevision: integer('baseRevision'),
     }),
   ],
-  { errorMap: () => ({ message: 'operation: Unknown operation' }) },
+  { error: 'operation: Unknown operation' },
 )
 
 export type CmsRequest = z.output<typeof requestSchema>

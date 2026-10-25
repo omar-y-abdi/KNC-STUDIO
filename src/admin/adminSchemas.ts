@@ -8,17 +8,18 @@
 // there is a single parse helper across the app.
 
 import { z } from 'zod'
+import { ISO_TIMESTAMP } from '../../shared/iso-timestamp'
 
 export { parseWith } from '../backend/rpcSchemas'
 
 /** ISO-8601 timestamp WITH offset (how PostgREST serializes `timestamptz`). */
-const isoTimestamp = z.string().datetime({ offset: true })
+const isoTimestamp = z.string().regex(ISO_TIMESTAMP, 'Invalid datetime')
 
 /** `YYYY-MM-DD` date (PostgREST serializes a `date` column as this). */
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
 const bookingDurationMin = z.number().finite().int().min(1).max(600)
 const serviceDurationMin = z.number().finite().int().min(5).max(600)
-const sortOrder = z.number().finite().int().min(0)
+const sortOrder = z.number().finite().refine(Number.isInteger).min(0)
 
 const lang = z.enum(['sv', 'en'])
 const weekday = z.union([
@@ -88,7 +89,7 @@ export const scheduleRows = z.array(scheduleRow)
 const availabilityMutationConflict = z.object({
   ok: z.literal(false),
   error: z.literal('booking_conflict'),
-  booking_ids: z.array(z.string().uuid()),
+  booking_ids: z.array(z.guid()),
 })
 const availabilityMutationDenied = z.object({
   ok: z.literal(false),
@@ -229,10 +230,10 @@ const emailTemplateRow = z.object({
 export const emailTemplateRows = z.array(emailTemplateRow)
 
 export const failedBookingEmailDeliveryRow = z.object({
-  id: z.string().uuid(),
-  booking_id: z.string().uuid(),
+  id: z.guid(),
+  booking_id: z.guid(),
   event: z.enum(['booking_confirmed', 'booking_cancelled']),
-  attempt_count: z.number().int().nonnegative(),
+  attempt_count: z.number().refine(Number.isInteger).nonnegative(),
   last_error_code: z
     .enum([
       'not_configured',
@@ -383,15 +384,15 @@ export const adminCancelResponse = z.discriminatedUnion('ok', [cancelOk, cancelE
 // | {ok:false, error:'forbidden'|'not_found'}
 const deleteBarberOk = z.object({
   ok: z.literal(true),
-  deleted_bookings: z.number().int().nonnegative(),
+  deleted_bookings: z.number().refine(Number.isInteger).nonnegative(),
   auth_cleanup_pending: z.boolean(),
 })
 const deleteBarberHasBookings = z.object({
   ok: z.literal(false),
   error: z.literal('has_bookings'),
-  count: z.number().int().nonnegative(),
-  past: z.number().int().nonnegative(),
-  upcoming: z.number().int().nonnegative(),
+  count: z.number().refine(Number.isInteger).nonnegative(),
+  past: z.number().refine(Number.isInteger).nonnegative(),
+  upcoming: z.number().refine(Number.isInteger).nonnegative(),
 })
 const deleteBarberDenied = z.object({
   ok: z.literal(false),
@@ -400,14 +401,14 @@ const deleteBarberDenied = z.object({
 const deleteBarberHasUpcoming = z.object({
   ok: z.literal(false),
   error: z.literal('has_upcoming'),
-  count: z.number().int().nonnegative(),
-  past: z.number().int().nonnegative(),
-  upcoming: z.number().int().positive(),
+  count: z.number().refine(Number.isInteger).nonnegative(),
+  past: z.number().refine(Number.isInteger).nonnegative(),
+  upcoming: z.number().refine(Number.isInteger).positive(),
 })
 const deleteBarberExternalCleanup = z.object({
   ok: z.literal(false),
   error: z.literal('external_cleanup_pending'),
-  calendar_events: z.number().int().nonnegative(),
+  calendar_events: z.number().refine(Number.isInteger).nonnegative(),
 })
 const deleteBarberDeliveryPending = z.object({
   ok: z.literal(false),
@@ -429,7 +430,7 @@ export const adminDeleteBarberResponse = z.union([
 // {ok:true, count:n} | {ok:false, error:'empty'|'forbidden'|'has_upcoming'|'delivery_pending'}
 const deleteBookingsOk = z.object({
   ok: z.literal(true),
-  count: z.number().int().nonnegative(),
+  count: z.number().refine(Number.isInteger).nonnegative(),
 })
 const deleteBookingsErr = z.object({
   ok: z.literal(false),
@@ -445,7 +446,7 @@ export const adminDeleteBookingsResponse = z.discriminatedUnion('ok', [
 // {ok:true, count:n} | {ok:false, error:'forbidden'|'delivery_pending'}
 const purgeHistoryOk = z.object({
   ok: z.literal(true),
-  count: z.number().int().nonnegative(),
+  count: z.number().refine(Number.isInteger).nonnegative(),
 })
 const purgeHistoryErr = z.object({
   ok: z.literal(false),

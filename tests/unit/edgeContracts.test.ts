@@ -100,8 +100,30 @@ describe('edge import map', () => {
     for (const name of functions) {
       const imports = read(`${FUNCTIONS}/${name}/deno.json`)
       expect(imports['@supabase/supabase-js'], name).toBe(ESM_SUPABASE)
-      expect(imports['zod'], name).toBe('npm:zod@3.25.76')
+      expect(imports['zod'], name).toBe('npm:zod@4.6.6')
     }
+  })
+
+  it('locks the same patched Zod package in npm and the frozen Deno dependency graph', () => {
+    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      dependencies: Record<string, string>
+    }
+    const npmLock = JSON.parse(readFileSync('package-lock.json', 'utf8')) as {
+      packages: Record<string, { version?: string; integrity?: string }>
+    }
+    const denoLock = JSON.parse(readFileSync(`${FUNCTIONS}/deno.lock`, 'utf8')) as {
+      specifiers: Record<string, string>
+      npm: Record<string, { integrity: string }>
+      workspace: { dependencies: string[] }
+    }
+    expect(manifest.dependencies['zod']).toBe('4.6.6')
+    expect(npmLock.packages['node_modules/zod']?.version).toBe('4.6.6')
+    expect(read(`${FUNCTIONS}/deno.json`)['zod']).toBe('npm:zod@4.6.6')
+    expect(denoLock.specifiers['npm:zod@4.6.6']).toBe('4.6.6')
+    expect(denoLock.workspace.dependencies).toContain('npm:zod@4.6.6')
+    expect(denoLock.npm['zod@4.6.6']?.integrity).toBe(
+      npmLock.packages['node_modules/zod']?.integrity,
+    )
   })
 
   it('has no shared fallback map that the runtime would not resolve', () => {

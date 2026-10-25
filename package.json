@@ -35,7 +35,7 @@
     "@supabase/supabase-js": "2.112.2",
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
-    "zod": "^3.25.76",
+    "zod": "4.6.6",
     "grapesjs": "0.23.6",
     "parse5": "8.0.1",
     "css-tree": "3.2.1",
