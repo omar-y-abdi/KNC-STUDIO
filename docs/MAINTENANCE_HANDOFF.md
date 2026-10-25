@@ -12,11 +12,12 @@ Those two local files are excluded by `.git/info/exclude`, so this handoff is co
   `batch/e2e-cleanup` (`2adb2b7`) and `batch/docs-map` (`db3e554`).
 - The independently completed SQL cleanup `cc844e6` is cherry-picked with its source
   commit recorded. Merging `batch/squash` would also import unfinished delivery-log work.
-- These completed batches still require a fresh GitHub CI result on their combined tree.
-  Local historical passes are evidence about their original commits, not this new branch.
+- [CI run 40229977736](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/40229977736)
+  passed the combined maintenance pipeline. Separate CodeQL analysis reported three alerts;
+  the repairs below still require GitHub verification. Remaining feature WIP stays paused.
 - `int/wave-d` (`5884d5b`) preserves the remaining CMS/admin work and integration fixes.
   It is not accepted as finished: its last full local gate was red.
-- Leave both PRs unmerged for the owner. Do not deploy, apply production migrations,
+- Leave recovery PRs unmerged for the owner. Do not deploy, apply production migrations,
   publish CMS data, delete old worktrees or rewrite existing history.
 
 ## Git audit
@@ -41,7 +42,8 @@ in `wt/pages`. The main checkout also has two untracked recovery gate scripts. K
 - Local checks are ESLint and Prettier. Regenerate the CMS release stamp when its
   source files change; this only writes compatibility metadata and runs no tests.
 - GitHub Actions executes the test/build/database/browser pipeline. Fix red CI on
-  `maintenance` before starting remaining WIP implementation.
+  `maintenance`. After all baseline checks pass, go idle and await owner direction before
+  starting the preserved feature WIP.
 - Use at most four GPT-6.1 Sol agents, medium reasoning, for remaining work. They work
   on separate branches/worktrees based on the latest accepted predecessor.
 - Review actual diffs and important boundaries. Return concrete findings to the same
@@ -111,13 +113,14 @@ found a TypeScript error in the repair's Buffer equality call. The follow-up use
 `node:util.isDeepStrictEqual`, retaining exact byte equality and compact failure output.
 Local verification remains lint/format only; GitHub owns runtime/type verification.
 
-## Zod security migration — pending GitHub verification
+## Zod security migration
 
 The maintenance audit reached [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
 whose patched version is 4.6.6. The root npm dependency, every function import map and scoped Deno
 frozen lock now pin that version. npm metadata resolution changed only the Zod lock entries;
-shared `node_modules` was not installed or changed. GitHub must verify the production audit,
-TypeScript, Deno checks, tests and browser paths on this combined tree.
+shared `node_modules` was not installed or changed. CI run 40229977736 passed the production
+audit, TypeScript, Deno checks, tests and selected browser matrix. Later changes still require
+their own current-head checks.
 
 The [official Zod 4 migration guide](https://zod.dev/v4/changelog) changes several boundary APIs.
 The migration preserves the existing UUID shape with `z.guid()`, string-valued discovery settings
@@ -162,4 +165,22 @@ The check now anchors to a started CSS animation with finite timing values. It r
 exact eight-second delay, zero transition duration, early-hidden/final-visible assertions,
 and two-second observation allowance. Expired or non-finite waits fail explicitly. The
 no-JavaScript branch retains its response-commit clock and immediate/no-animation checks.
-No product CSS or pixels changed. GitHub must verify the new fixture on the current head.
+No product CSS or pixels changed. CI run 40229977736 passed the repaired fixture in all three
+customer engines. Later changes still require current-head checks.
+
+## CodeQL baseline repairs — pending GitHub verification
+
+The Worker now parses the trusted build shell to identify module scripts, modulepreload links
+and unused Playfair preloads. Source-offset slicing preserves all other bytes, including classic
+scripts, JSON-LD and theme logic; removed tags retain their previous trailing-whitespace behavior.
+A single-shell offset cache bounds retained memory and avoids parsing expanded CMS markup on
+every page. Native pages and runtime islands retain their boot assets. CMS validation remains the
+authoritative content boundary; this shell optimization is not an arbitrary HTML sanitizer.
+
+The boot-budget tool also parses tags/attributes and rel tokens, preserving the 115 kB limit and
+missing-file failures. The Edge import-map guard now reads TypeScript import specifiers and
+compares the parsed hostname with `esm.sh`, rather than matching a URL substring in source text.
+Regressions cover structural HTML edge cases, exact trusted-shell output and import-host cases.
+Local verification remains ESLint/Prettier only; GitHub must verify tests and CodeQL outcomes.
+After the maintenance baseline is globally green, stop and await owner direction; do not start
+the paused CMS feature WIP automatically.

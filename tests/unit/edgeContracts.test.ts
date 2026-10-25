@@ -16,6 +16,19 @@ function sources(dir: string): string[] {
     .map((file) => join(dir, file))
 }
 
+/** TypeScript resolves actual import specifiers, excluding comments and unrelated URL strings. */
+function directEsmImports(source: string): string[] {
+  return preProcessFile(source, true, true)
+    .importedFiles.map(({ fileName }) => fileName)
+    .filter((specifier) => {
+      try {
+        return new URL(specifier).hostname === 'esm.sh'
+      } catch {
+        return false
+      }
+    })
+}
+
 /** Follow local imports, validating bare specifiers against the deploying function's map. */
 function reach(
   entry: string,
@@ -130,10 +143,32 @@ describe('edge import map', () => {
     expect(existsSync(`${FUNCTIONS}/import_map.json`)).toBe(false)
   })
 
+  it.each([
+    "import { x } from 'https://esm.sh/pkg'",
+    "export { x } from 'https://ESM.SH/pkg'",
+    "const x = import('https://esm.sh:443/pkg')",
+    "import type { X } from 'https://esm.sh/pkg'",
+    "import { x } from 'https://esm.sh'",
+    "import { x } from 'https://user:password@esm.sh/pkg'",
+  ])('detects a direct esm.sh import: %s', (source) => {
+    expect(directEsmImports(source)).toHaveLength(1)
+  })
+
+  it.each([
+    "// import { x } from 'https://esm.sh/pkg'",
+    "const documentation = 'https://esm.sh/pkg'",
+    "import { x } from 'https://esm.sh.example.test/pkg'",
+    "import { x } from 'https://esm.sh@other.example.test/pkg'",
+    "import { x } from './local.ts'",
+    "import { x } from 'zod'",
+  ])('does not mistake other text or hosts for esm.sh imports: %s', (source) => {
+    expect(directEsmImports(source)).toEqual([])
+  })
+
   it('leaves no direct esm.sh import outside the Calendar functions', () => {
     const offenders = sources(FUNCTIONS)
       .filter((file) => !/calendar/.test(file))
-      .filter((file) => readFileSync(file, 'utf8').includes('https://esm.sh/'))
+      .filter((file) => directEsmImports(readFileSync(file, 'utf8')).length > 0)
     expect(offenders).toEqual([])
   })
 })

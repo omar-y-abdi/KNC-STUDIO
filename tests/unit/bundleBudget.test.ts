@@ -61,6 +61,34 @@ describe('public boot budget', () => {
     expect(result.out).toMatch(/in 1 files/)
   })
 
+  it('counts parsed uppercase tags, quoted delimiters, unquoted attributes and rel tokens', () => {
+    const html = `<ScRiPt data-note="a > b" TYPE=MoDuLe SRC='/assets/entry.js'></sCrIpT>
+      <LINK HREF=/assets/a.js REL='prefetch\tMODULEPRELOAD'>
+      <script TYPE=module src=//example.test/remote.js></script>`
+    const result = budget(build(html, { 'entry.js': 3000, 'a.js': 2000 }), 10)
+    expect(result.code).toBe(0)
+    expect(result.out).toMatch(/public boot JS: 5\.\d kB gzip in 2 files/)
+  })
+
+  it('ignores script-looking text in comments, raw script content and inert templates', () => {
+    const html = `${entry}
+      <!-- <script type="module" src="/missing-comment.js"></script> -->
+      <script>window.label = '<link rel="modulepreload" href="/missing-text.js">';</script>
+      <template><script type="module" src="/missing-template.js"></script></template>`
+    const result = budget(build(html, { 'entry.js': 1000 }), 2)
+    expect(result.code).toBe(0)
+    expect(result.out).toMatch(/in 1 files/)
+  })
+
+  it('retains the missing-file guard for parsed uppercase modulepreload links', () => {
+    const result = budget(
+      build(`${entry}<LINK REL=MODULEPRELOAD HREF=/assets/gone.js>`, { 'entry.js': 100 }),
+      10,
+    )
+    expect(result.code).toBe(1)
+    expect(result.err).toMatch(/gone\.js is referenced by index\.html but missing/)
+  })
+
   it('fails when index.html has no entry script', () => {
     const result = budget(build(preload('a.js'), { 'a.js': 100 }), 10)
     expect(result.code).toBe(1)

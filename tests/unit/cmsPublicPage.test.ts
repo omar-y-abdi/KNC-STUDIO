@@ -141,6 +141,46 @@ describe('authored pages follow the visitor colour scheme', () => {
     },
   )
 
+  it('removes only parsed shell boot assets and their trailing whitespace, preserving other bytes', () => {
+    const retained = [
+      '<!-- <script type="module" src="/comment-only.js"></script> -->',
+      '<script type="application/ld+json">{"example":"<script type=module>"}</script>',
+      '<script nonce="keep">window.label = "<link rel=modulepreload href=/text-only.js>";</script>',
+      '<link rel="stylesheet" data-note="a > b" href="/assets/keep.css">',
+      '<link rel="prefetch" href="/fonts/PlayfairDisplay-Latin-700.woff2">',
+      '<template><script type="module" src="/inert-template.js"></script></template>',
+    ].join('\n  ')
+    const removed = [
+      '<ScRiPt data-note="a > b" TYPE=MoDuLe src="/assets/remove.js"></sCrIpT>',
+      "<LINK HREF='/assets/remove-chunk.js' REL='prefetch MODULEPRELOAD'>",
+      '<link href=/fonts/PlayfairDisplay-Latin-700.woff2 REL=PRELOAD>',
+    ]
+      .map((tag) => `${tag}\n \t`)
+      .join('')
+    const expectedShell = shell.replace('</head>', `${retained}</head>`)
+    const actualShell = shell.replace('</head>', `${retained}${removed}</head>`)
+    const actual = renderCmsPage(actualShell, terms, 'sv', null, canonical)
+    const expected = renderCmsPage(expectedShell, terms, 'sv', null, canonical)
+    expect(actual).toBe(expected)
+    for (const snippet of retained.split('\n  ')) expect(actual).toContain(snippet)
+    expect(actual).not.toContain('/assets/remove')
+  })
+
+  it('matches the existing trusted Vite-shell byte output for an explicitly stripped shell', () => {
+    let stripped = builtShell
+      .replace('<script type="module" crossorigin src="/assets/entry.js"></script>', '')
+      .replace('<link rel="modulepreload" crossorigin href="/assets/chunk.js">', '')
+    for (const weight of ['700', '400', '700-Italic']) {
+      const font = `<link\n      rel="preload"\n      as="font"\n      type="font/woff2"\n      href="/fonts/PlayfairDisplay-Latin-${weight}.woff2"\n      crossorigin\n    />\n    `
+      // Literal source slices include each old match's trailing whitespace. No parser oracle.
+      expect(stripped).toContain(font)
+      stripped = stripped.replace(font, '')
+    }
+    expect(renderCmsPage(builtShell, terms, 'sv', null, canonical)).toBe(
+      renderCmsPage(stripped, terms, 'sv', null, canonical),
+    )
+  })
+
   it('keeps the Playfair preload when the page CSS uses Playfair', () => {
     const styled = structuredClone(terms)
     styled.content.sv.css.light += 'h1{font-family:"Playfair Display",serif}'

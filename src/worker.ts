@@ -15,7 +15,7 @@ import {
   renderIndependentSitePage,
   renderSitePage,
 } from '../shared/site-page'
-import { parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
+import { parse as parseHtml, parseFragment, serialize, type DefaultTreeAdapterMap } from 'parse5'
 import {
   isPagePath,
   validatePresentation,
@@ -412,10 +412,6 @@ type CmsRender =
 const COLOR_SCHEMES: readonly CmsMode[] = ['light', 'dark']
 const CMS_RESET = '<style id="cms-reset">html,body{background:none}</style>'
 const RUNTIME_ISLAND = /\bid="knc-(?:about|booking|my-bookings)-runtime"/
-const MODULE_SCRIPT = /<script\b[^>]*\btype="module"[^>]*>[\s\S]*?<\/script>\s*/gi
-const MODULE_PRELOAD = /<link\b[^>]*\brel="modulepreload"[^>]*>\s*/gi
-const PLAYFAIR_PRELOAD =
-  /<link\b(?=[^>]*\brel="preload")(?=[^>]*\bhref="\/fonts\/PlayfairDisplay-)[^>]*>\s*/gi
 const COLOR_SCHEME_META = /(<meta\b[^>]*\bname="color-scheme"[^>]*\bcontent=")[^"]*(")/i
 
 function planCmsRender(
@@ -478,13 +474,63 @@ function beforeBodyEnd(html: string, snippet: string): string {
   return end < 0 ? `${html}${snippet}` : `${html.slice(0, end)}${snippet}${html.slice(end)}`
 }
 
-/** Authored pages carry their own theme logic. Without a runtime island they use nothing from the
- * app bundle, so its entry and preloads go, and the Playfair preload unless their CSS uses it. */
-function authoredDocument(html: string, mode: RenderedMode, markup: string, css: string): string {
-  const themed = beforeBodyEnd(withColorScheme(html, mode), `<script>${CMS_THEME_SCRIPT}</script>`)
-  if (RUNTIME_ISLAND.test(markup)) return themed
-  const bundleFree = themed.replace(MODULE_SCRIPT, '').replace(MODULE_PRELOAD, '')
-  return /Playfair/i.test(css) ? bundleFree : bundleFree.replace(PLAYFAIR_PRELOAD, '')
+interface ShellAssetRange {
+  readonly start: number
+  readonly end: number
+  readonly playfairOnly: boolean
+}
+
+// Cache only offsets for the last trusted build shell, never expanded CMS markup or a parse tree.
+let shellAssetPlan:
+  { readonly html: string; readonly ranges: readonly ShellAssetRange[] } | undefined
+
+/** Remove boot assets from the trusted shell, retaining every other source byte. This is not a
+ * sanitizer: authored content still passes the independent CMS validation boundary. */
+function withoutShellBootAssets(html: string, keepPlayfair: boolean): string {
+  if (shellAssetPlan?.html !== html) {
+    const ranges: ShellAssetRange[] = []
+    const visit = (node: DefaultTreeAdapterMap['node']): void => {
+      if ('tagName' in node && node.namespaceURI === 'http://www.w3.org/1999/xhtml') {
+        const attr = (name: string): string =>
+          node.attrs.find((item) => item.name === name)?.value ?? ''
+        const rel = attr('rel')
+          .toLowerCase()
+          .split(/[\t\n\f\r ]+/)
+        const moduleScript = node.tagName === 'script' && attr('type').toLowerCase() === 'module'
+        const modulePreload = node.tagName === 'link' && rel.includes('modulepreload')
+        const playfairPreload =
+          node.tagName === 'link' &&
+          rel.includes('preload') &&
+          attr('href').toLowerCase().startsWith('/fonts/playfairdisplay-')
+        const location = node.sourceCodeLocation
+        if ((moduleScript || modulePreload || playfairPreload) && location) {
+          let end = location.endOffset
+          // Match the existing Vite-shell behavior: removed tags own following whitespace.
+          while (end < html.length && /\s/.test(html.charAt(end))) end++
+          ranges.push({
+            start: location.startOffset,
+            end,
+            playfairOnly: !moduleScript && !modulePreload,
+          })
+        }
+      }
+      if ('childNodes' in node) node.childNodes.forEach(visit)
+    }
+    visit(parseHtml(html, { sourceCodeLocationInfo: true }))
+    ranges.sort((left, right) => right.start - left.start)
+    shellAssetPlan = { html, ranges }
+  }
+  let result = html
+  for (const { start, end, playfairOnly } of shellAssetPlan.ranges) {
+    if (playfairOnly && keepPlayfair) continue
+    result = result.slice(0, start) + result.slice(end)
+  }
+  return result
+}
+
+/** Authored pages carry their own theme logic, whether or not they include a runtime island. */
+function authoredDocument(html: string, mode: RenderedMode): string {
+  return beforeBodyEnd(withColorScheme(html, mode), `<script>${CMS_THEME_SCRIPT}</script>`)
 }
 
 export function renderCmsPage(
@@ -499,7 +545,18 @@ export function renderCmsPage(
 ): string {
   const plan = planCmsRender(page, lang, requested, presentation)
   const variant = plan.variant
-  let rendered = html.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
+  const styles =
+    `<style id="cms-fonts">${fontCss}</style>` +
+    (baseCss ? `<style id="cms-base">${baseCss}</style>` : '') +
+    pageSheets(variant, plan.mode) +
+    themeSheets(plan.mode, presentation)
+  // Select from the original shell before injecting page-dependent styles or markup, so the
+  // parser work is bounded by the build shell and reused across authored pages/modes.
+  const shell =
+    plan.markup === 'authored' && !RUNTIME_ISLAND.test(variant.html)
+      ? withoutShellBootAssets(html, /Playfair/i.test(styles))
+      : html
+  let rendered = shell.replace(/<html\b[^>]*lang=(['"])[^'"]*\1/i, `<html lang="${lang}"`)
   rendered = replaceElementText(rendered, 'business-title', page.title[lang])
   rendered = replaceMetaContent(rendered, 'business-og-title', page.title[lang])
   rendered = replaceMetaContent(rendered, 'business-twitter-title', page.title[lang])
@@ -516,11 +573,6 @@ export function renderCmsPage(
     /(<link\b[^>]*rel="canonical"[^>]*href=")[^"]*(")/i,
     `$1${escapeAttribute(canonicalUrl)}$2`,
   )
-  const styles =
-    `<style id="cms-fonts">${fontCss}</style>` +
-    (baseCss ? `<style id="cms-base">${baseCss}</style>` : '') +
-    pageSheets(variant, plan.mode) +
-    themeSheets(plan.mode, presentation)
   // The shell's pre-paint grey must not survive under authored CSS (the two-tone /terms page).
   rendered = rendered.replace(
     '</head>',
@@ -594,7 +646,7 @@ export function renderCmsPage(
     )
     rendered = `${rendered.slice(0, bounds.start)}${marked}${rendered.slice(bounds.end + 1)}`
   }
-  return plan.markup === 'native' ? rendered : authoredDocument(rendered, plan.mode, markup, styles)
+  return plan.markup === 'native' ? rendered : authoredDocument(rendered, plan.mode)
 }
 
 export function renderHomepageMetadata(
