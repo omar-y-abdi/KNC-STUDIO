@@ -15,16 +15,37 @@ const legacyDocument = async () => ({
   ).presentation,
 })
 
-async function openStudio(page) {
-  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
-  await page.evaluate(async () =>
-    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
-  )
+async function mountStudio(page) {
+  await page.evaluate(async () => {
+    const { h, render } = await import('/tools/e2e/admin-harness.tsx')
+    const { CmsStudio } = await import('/src/admin/cms/Studio.tsx')
+    const root = globalThis.document.querySelector('#root')
+    render(h(CmsStudio, { onExit: () => render(null, root) }), root)
+  })
   await page
     .frameLocator('.gjs-frame')
     .first()
     .locator('[data-knc-surface="desktop-home"]')
     .waitFor({ timeout: 90000 })
+}
+
+async function openStudio(page) {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await mountStudio(page)
+}
+
+async function reopenStudio(page) {
+  const timeOrigin = await page.evaluate(() => globalThis.performance.timeOrigin)
+  if (await page.getByRole('dialog', { name: 'Utkast & backup', exact: true }).count())
+    await closeBackup(page)
+  await page.getByTitle('Tillbaka till Admin', { exact: true }).click()
+  await expect(page.locator('.knc-cms-studio')).toHaveCount(0)
+  await mountStudio(page)
+  assert.equal(
+    await page.evaluate(() => globalThis.performance.timeOrigin),
+    timeOrigin,
+    'Exit/reopen must retain the same document and module lifetime',
+  )
 }
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
@@ -284,9 +305,7 @@ test('cms-restore-adoption flushes a trusted pending canvas edit when opening th
   }
 })
 
-test('cms-restore-adoption a migration-only autosave stays eligible after reloading Studio', async ({
-  context,
-}) => {
+async function checkAutosaveRecovery(context, reopen) {
   const backend = await nativeBackend(context)
   const setup = await context.newPage()
   await openStudio(setup)
@@ -313,11 +332,11 @@ test('cms-restore-adoption a migration-only autosave stays eligible after reload
       return needsCorePageSource((await session.own()).document)
     }),
     false,
-    'The persisted automatic source upgrade must be complete before reload',
+    'The persisted automatic source upgrade must be complete before reopening',
   )
   await recipient.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   await expect(continueHere(recipient)).toBeEnabled()
-  await openStudio(recipient)
+  await reopen(recipient)
   await waitForSourceUpgrade(recipient)
   await recipient.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   await expect(continueHere(recipient)).toBeEnabled()
@@ -326,7 +345,7 @@ test('cms-restore-adoption a migration-only autosave stays eligible after reload
   const editedName = 'Egen ändring som överlever omladdning'
   await nameField(recipient).fill(editedName)
   assert.equal((await ownBackup(recipient)).document.presentation.pages[0].name.sv, editedName)
-  await openStudio(recipient)
+  await reopen(recipient)
   await waitForSourceUpgrade(recipient)
   await recipient.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   await expect(continueHere(recipient)).toBeDisabled()
@@ -340,4 +359,15 @@ test('cms-restore-adoption a migration-only autosave stays eligible after reload
   await expect(recipient.locator('.cms-status')).toHaveText('Opublicerade ändringar')
   assert.deepEqual(backend.document, initial)
   assert.equal(backend.requests.filter((request) => request.operation === 'publish').length, 1)
-})
+}
+
+for (const [method, reopen] of [
+  ['reloading Studio', openStudio],
+  ['exiting and reopening Studio in the same page', reopenStudio],
+]) {
+  test(`cms-restore-adoption a migration-only autosave stays eligible after ${method}`, async ({
+    context,
+  }) => {
+    await checkAutosaveRecovery(context, reopen)
+  })
+}

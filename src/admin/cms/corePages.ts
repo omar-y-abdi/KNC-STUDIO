@@ -30,7 +30,7 @@ export function hasCorePageLayouts(document: CmsDocument): boolean {
 }
 
 let sourcePages: readonly CmsPage[] = []
-let loading: Promise<void> | undefined
+let loading: Promise<CmsPage[]> | undefined
 
 /** A published complete document already contains the source layout. Capture only missing/legacy
  * templates instead of replaying every live scene on each visit to Studio. */
@@ -91,14 +91,15 @@ export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
   }
   loading ??= import('./nativePages')
     .then(({ readCorePageSource }) => readCorePageSource())
-    .then((pages) => {
-      sourcePages = pages
-    })
     .catch((error: unknown) => {
       loading = undefined
       throw error
     })
-  return loading
+  return loading.then((pages) => {
+    // A later Studio mount may retain an older published layout. Reuse the captured source,
+    // not that retained layout, whenever another snapshot still needs the automatic upgrade.
+    sourcePages = pages
+  })
 }
 
 export function isInventedSite(document: CmsDocument): boolean {
