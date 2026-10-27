@@ -533,17 +533,6 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       setConflict(null)
     } else {
       draft.revert()
-      // The first authoritative publication may be empty. Restore its source-derived
-      // editing scaffold without pretending those templates have already been published.
-      draft.migrate(
-        (document) =>
-          upgradeLegacyLegalPages(
-            normalizeMarqueeZoom(
-              needsCorePageSource(document) ? ensureCorePages(document) : document,
-            ),
-          ),
-        (previous, migrated) => layouts.current.follow(previous, migrated, draft.base),
-      )
     }
     setVersion((v) => v + 1)
   }

@@ -147,9 +147,9 @@ export class CmsDraft {
   revert(): void {
     if (!this.dirty) return
     this.undoStack.push(this.document)
-    this.document = structuredClone(this.base)
-    this.editingBase = this.base
-    this.editingBaseSource = this.base
+    // Reset author edits to the prepared server snapshot. The raw publication stays the base,
+    // and automatic source upgrades already migrated the retained history when they arrived.
+    this.document = structuredClone(this.uneditedDocument)
     this.redoStack = []
     this.pending = null
     this.lastGroup = ''

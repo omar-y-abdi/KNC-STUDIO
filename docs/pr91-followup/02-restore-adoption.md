@@ -103,3 +103,36 @@ The fresh independent combined review at `3c314c81ac4d460a9de45a6fa437328fd67515
 - `npm run typecheck`, scoped Studio ESLint, Prettier and `git diff --check` passed. The only product diff is the guarded Studio callback; no test/assertion, fixture, cache, draft-model or dependency changes belong to this follow-up commit.
 - This green result confirms unnecessary source preparation of complete snapshots caused the regression. No legal-content normalization or relaxed equality was introduced.
 - Coordinator integration with the separately committed source-cache fix, the fresh independent combined matrix, and final exact-head CI remain outstanding outside this author branch.
+
+## Final-CI follow-up — bounded reset work
+
+### Scope and plan
+
+Final-head CI `40576738699` at `9ba00fdd990209d110104a93c7e0680e1f1c9aa9` failed the existing `cms-context-latency` reset parse-count assertion in both engines. Resume on isolated branch `review/pr91-adoption-reset-cost`, preserving previous author branches. The unchanged assertion requires fewer than 24 DOM parses for a complete reset; Chromium recorded 41, while history restore used 10. This is an operation-count failure, not an elapsed-time timeout.
+
+- [x] Reproduce the unchanged existing Chromium test on the exact published product.
+- [x] Trace reset work and make the smallest repair that preserves automatic migrations, publication dirtiness, author-edit protection and Undo/Redo.
+- [x] Verify the unchanged context test plus bounded reset/adoption/Undo controls in Chromium and WebKit; run relevant unit and static checks.
+- [x] Obtain independent source review, record actual red/green receipts, and prepare only scoped author changes for commit.
+
+The coordinator owns integration and final exact-head CI. No assertion/threshold/retry relaxation, new cache, dependency, fixture-content or screenshot change is authorized.
+
+### Diagnosis and repair
+
+- Local unchanged red command: `E2E_PORT_OFFSET=300 E2E_ARTIFACTS_ROOT=/tmp/knc-audit/pr91-adoption-reset-red npx playwright test tools/e2e/cms-context-latency.spec.mjs --project=cms-chromium` on `9ba00fdd990209d110104a93c7e0680e1f1c9aa9`.
+- The test failed at its existing line 324 assertion. Local reset cost was **41 parses**, zero component creations, one export, zero CSS parses, 302 ms; history restore used 10 parses. Receipt: `/tmp/knc-audit/pr91-adoption-reset-red/test-results/results.json` and the case's `evidence/context-cost.json`.
+- `revertDraft` first reset to the raw publication, then called `draft.migrate` across the independent editing baseline, retained Undo/Redo history and current snapshot. `needsCorePageSource` parses all eight non-legal language variants for each complete snapshot. The extra work grew with retained history although no new migration had arrived. The existing test measures operation counts rather than using elapsed time as a threshold.
+- Normal reset now clones `uneditedDocument`, the independently prepared server snapshot. It keeps the raw publication base and migration dirtiness, clears pending publication and Redo as before, and retains the previous authored document for Undo. The clone prevents later current-document mutation from redefining the baseline.
+- Studio no longer invokes a second migration for normal reset. The source-arrival effect still migrates baseline/current/all retained history when an upgrade arrives; the conflict reset branch remains unchanged. No source-readiness cache or new abstraction was added.
+- Two existing draft tests were strengthened to require migrated reset state without manually rerunning migration. They failed **2/9** before the product patch and pass afterward. Added assertions cover pending-save invalidation, raw base preservation, reset/Undo/Redo migration state and author-edit protection. The existing owner browser case now also checks that Undo after Reset restores the owner's edit and blocks adoption, while Redo restores eligibility without publication.
+- Fresh independent source review found no blocker in the exact patch. The reset clone's layout provenance can safely inherit the current raw base's resource key because the automatic migrations change presentation only. Undo retains the authored snapshot and its existing provenance. Source-arrival and conflict behavior are untouched.
+
+### Bounded verification
+
+- `npx vitest run tests/unit/cmsDraft.test.ts tests/unit/cmsLayoutProvenance.test.ts`: **17 tests passed**.
+- Green command: `E2E_PORT_OFFSET=300 E2E_ARTIFACTS_ROOT=/tmp/knc-audit/pr91-adoption-reset-green npx playwright test tools/e2e/cms-context-latency.spec.mjs tools/e2e/cms-restore-adoption.spec.mjs --grep 'cms-context-latency|preserves owner edits across source migration|reset remains eligible|a migration-only autosave' --project=cms-chromium --project=cms-webkit`.
+- Result: **10 passed, 0 failed, 0 skipped, 0 flaky**, 265.4 seconds, exactly one passing attempt each. The matrix covers the unchanged context-cost case, owner edit/source/Export/reset/Undo/Redo adoption, reset before source completion, and reset after both full reload and same-page own-backup reopen in Chromium and WebKit. The strengthened owner-edit case passed both engines without a navigation workaround.
+- Both engines recorded **one reset DOM parse**, zero component creations, one export and zero CSS parses. The independent baseline replaces the unnecessary full-history scan; no operation-count assertion or timing limit changed. This receipt verifies bounded work, not a wall-clock benchmark.
+- Native report: `/tmp/knc-audit/pr91-adoption-reset-green/test-results/results.json`; per-engine context evidence is under its case's `evidence/context-cost.json`. The discovered-versus-executed verifier passed: `/tmp/knc-audit/pr91-adoption-reset-expected.json` and `/tmp/knc-audit/pr91-adoption-reset-verifier.log`.
+- `npm run typecheck`, scoped ESLint for both product and both test files, Prettier for all five changed files, and `git diff --check` passed. The coordinator also independently reviewed and accepted the exact source direction and strengthened tests.
+- Product scope is limited to ordinary reset in `Studio.tsx` and `draft.ts`; the two existing test files are strengthened and this existing plan holds the receipts. Conflict reset, `corePages.ts`, source-effect migration, fixture content and performance assertions are unchanged. Coordinator integration, fresh combined independent execution and the next full exact-head CI remain required.

@@ -138,11 +138,22 @@ describe('CMS draft recovery eligibility', () => {
     expect(draft.redo()).toBe(true)
     expect(draft.hasEdits).toBe(true)
 
+    draft.beginSave()
     draft.revert()
-    draft.migrate((document) => source(migrate(document)), follow)
     expect(draft.hasEdits).toBe(false)
     expect(draft.dirty).toBe(true)
+    expect(draft.document.settings).toEqual({
+      tagline: 'Migrated source',
+      business_city: 'Source addition',
+    })
     expect(draft.base).toEqual(raw)
+    expect(draft.pending).toBe(null)
+    expect(draft.undo()).toBe(true)
+    expect(draft.document.settings.business_name).toBe('Owner edit')
+    expect(draft.hasEdits).toBe(true)
+    expect(draft.redo()).toBe(true)
+    expect(draft.hasEdits).toBe(false)
+    expect(draft.dirty).toBe(true)
     const request = draft.beginSave()
     draft.acknowledge(request.document, 2, 'published')
     expect(draft.dirty).toBe(false)
@@ -157,7 +168,6 @@ describe('CMS draft recovery eligibility', () => {
     draft.migrate(migrate, follow)
     expect(draft.hasEdits).toBe(true)
     draft.revert()
-    draft.migrate(migrate, follow)
     expect(draft.hasEdits).toBe(false)
     expect(draft.document.settings.business_name).toBe('New server content')
     expect(draft.dirty).toBe(true)
