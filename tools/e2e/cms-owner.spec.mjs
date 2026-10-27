@@ -526,6 +526,9 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             await live.setViewportSize({ width: device === 'Dator' ? 1440 : 390, height: 900 })
             await live.goto(`${base}${title === 'Bokning' ? '/booking' : '/'}`)
             await live.locator(`[id="${id}"]`).filter({ hasText: replacement }).waitFor()
+            // Finish the Vite module/font waterfall before triggering a second full navigation.
+            // This preserves the actual reload and its post-reload style/content assertions.
+            await live.waitForLoadState('networkidle')
             await live.reload({ waitUntil: 'domcontentloaded' })
             const lettering = live.locator(`[id="${id}"]`).filter({ hasText: replacement })
             await lettering.waitFor()
