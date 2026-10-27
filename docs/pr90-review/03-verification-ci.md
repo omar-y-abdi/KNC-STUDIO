@@ -301,3 +301,71 @@
 - Reviewer 06 owns final closure for cms-adversarial and cms-engineering; reviewer 04 already closed lifecycle/marquee geometry+zoom/reported/admin-schedule; root closed public-checks/public-first-paint/public-smoke and fixture generator. Earlier partial/pending rows outside the 11 above are historical owner-local limits, not claims that team review remains incomplete; use report 06 and the root coverage map for the reconciled team result.
 - The 800px English overflow candidate was reproduced by reviewer 04 (846 light/825 dark, no network or page errors), then rejected as a new regression based on reviewer 05's historical owner-authored geometry evidence. It remains a visible pre-existing limitation; no new baseline was substituted.
 - Source closure used read-only commands only; no additional browser run or repository mutation by this reviewer. CI-01 remains the accepted priority repair; the ID diagnostic fix and pre-existing bounded dev-toolchain patches remain the agreed follow-up.
+
+## Authorized isolated implementation plan
+
+- Request type: bounded EDIT, scope explicitly approved by the coordinator after all 447 changed paths received team review. Worktree `/tmp/knc-pr90-ci`, branch `review/pr90-ci`, initial replacement `49f0fbd8c24403dc2f1717c58d3212ac9202b509`.
+- Only this report plus `.github/workflows/ci.yml`, `tools/ci/test-playwright-runner.mjs`, `tools/e2e/id-coverage.spec.mjs`, `docs/CI.md`, `package.json`, and `package-lock.json` are writable for this assignment. No staging, commits, remote actions, deployments, or changes to shared repair dependencies.
+- [x] CI-01: remove PR-specific CMS WebKit grep; prove native full selections are assigned exactly once across four shards for Chromium and WebKit; update CI documentation.
+- [x] CI-02: use raw.error for unreadable ID coverage; reproduce the original failure and show the intended diagnostic after repair.
+- [x] DEP-01: verify and lock Vite 8.1.6, Vitest/coverage 4.1.12, Wrangler 4.153.0; confirm patched Undici graph and audit scope without major upgrades.
+- [x] Verification: clean npm ci, CI orchestration/native discovery, unit tests, typecheck, lint, build, bundle budget, Worker dry-run, dependency audits, owned-file format and diff check.
+- [x] Handoff: list exact modified files, runnable results and remaining integration gates; include this initially untracked report explicitly. Root integrates and commits exact patch and runs full current-head CI.
+- No new decisions require clarification. Preserve all domain assertions, timeout budgets, retry policy, screenshot tolerances and exclusions. Complete real implementations and verification; no stubs or abstractions.
+
+### Dependency resolution checkpoint
+
+- Public npm metadata confirms Vite 8.1.6, Vitest/coverage-v8 4.1.12 and Wrangler 4.153.0; their Node engine ranges accept local Node 24.22.1. Wrangler now selects Miniflare 5.20261023.0-beta.
+- Initial strict lock resolution rejected the old Cloudflare types pin: Wrangler 4.153.0 requires optional peer @cloudflare/workers-types ^5.20261023.1, versus the current 5.20261006.1. Coordinator explicitly accepted minimum compatible 5.20261023.1 as part of this bounded patch. No force or legacy-peer-deps bypass.
+- Coordinator receipt: complete frozen-head WebKit baseline passed all 125 cases in 38.9 minutes. This validates restored selection on the old code but is not a substitute for final merged-head CI.
+
+### CI-02 executable branch evidence
+
+- Evaluated the actual registered ID-coverage callback with its real comparison module and a page adapter returning one unreadable raw surface followed by valid source/slot trees. The original single-line expression raises ReferenceError after 1 surface; the repaired callback visits all 48 surfaces, then fails with AssertionError containing `desktop-home (Desktop home sv light): surface desktop-home is not rendered`. This is diagnostic-branch evidence, not a substitute browser run. Failure remains mandatory.
+- Lock resolution initially followed Vite's caret into 8.3.5. Discarded that lock and pinned Vite exactly to approved 8.1.6, then re-resolved from the initial replacement lock. The reviewed final graph must contain only approved direct versions and their compatible development dependencies.
+
+### Required contract-test follow-up
+
+- First orchestration run: 24/25 pass, including the repaired full native partition proof. The documentation contract in tools/ci/test-gate-and-artifact.mjs still required the former split PR/main wording; coordinator authorized this eighth owned file. Updated that assertion to require full Chromium and WebKit coverage on PRs/main/manual runs with four shards each. This preserves and strengthens the documented selection requirement.
+- Clean isolated npm ci succeeded (350 installed packages); npm ls resolves Vite 8.1.6, Vitest/coverage/mocker 4.1.12, Wrangler 4.153.0, minimum compatible workers-types 5.20261023.1, Miniflare 5.20261023.0-beta and Undici 7.30.1 without invalid peers. No production dependency version changed.
+- Both full npm audit --json and production-only npm audit --omit=dev --audit-level=high --json return zero advisories at all severities.
+- Unit suite passed 1715 tests in 155 files under Vitest 4.1.12; typecheck, ESLint, production build and release-stamp check passed. Native discovery lists 126 Chromium CMS cases and 125 WebKit CMS cases.
+
+## Completed isolated repair handoff
+
+### Exact changed files
+
+- `.github/workflows/ci.yml`: remove event-specific grep; both discovery and execution use complete project selections on all events.
+- `tools/ci/test-playwright-runner.mjs`: native full Chromium/WebKit selection and four-shard equality/uniqueness proof, with no subset branch.
+- `tools/ci/test-gate-and-artifact.mjs`: existing documentation assertion now requires the full matrix on PR/main/manual events; coordinator explicitly added ownership after the stale wording failure.
+- `tools/e2e/id-coverage.spec.mjs`: one-line raw.error diagnostic correction.
+- `docs/CI.md`: full matrix documentation.
+- `package.json`, `package-lock.json`: Vite 8.1.6, Vitest/coverage 4.1.12, Wrangler 4.153.0 plus minimum compatible workers-types 5.20261023.1. The installed Wrangler graph contains Miniflare 5.20261023.0-beta and Undici 7.30.1. Vite is pinned exactly to avoid a newer minor during resolution. No production dependency changed; no new dependency or major upgrade was introduced.
+- `docs/pr90-review/03-verification-ci.md`: this complete review and implementation report. **This file was untracked in the isolated baseline and must be copied explicitly; it is absent from ordinary git diff output.**
+
+### Final executable verification
+
+| Check                       | Command / evidence                                                                                                | Result                                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Frozen installation         | `npm ci --audit=false --fund=false`                                                                               | PASS, 350 installed packages, no invalid peers                                                           |
+| Dependency graph            | `npm ls vite vitest @vitest/coverage-v8 @vitest/mocker wrangler miniflare undici @cloudflare/workers-types --all` | PASS, approved exact installed versions                                                                  |
+| Full dependency audit       | `npm audit --json`                                                                                                | PASS, zero advisories at every severity                                                                  |
+| Production dependency audit | `npm audit --omit=dev --audit-level=high --json`                                                                  | PASS, zero advisories, 46 production dependencies                                                        |
+| CI orchestration            | `node --test tools/ci/test-*.mjs`                                                                                 | PASS, 25/25, zero failed/skipped; final run 16.98 seconds                                                |
+| Native CMS partition        | Included in orchestration; actual Playwright discovery per engine and each of four shards                         | PASS, 126 Chromium and 125 WebKit cases, each assigned exactly once                                      |
+| Unit tests                  | `npm test`                                                                                                        | PASS, 1715 tests in 155 files, Vitest 4.1.12                                                             |
+| Static types                | `npm run typecheck`                                                                                               | PASS                                                                                                     |
+| Lint                        | `npm run lint`                                                                                                    | PASS                                                                                                     |
+| Production build            | `npm run build`                                                                                                   | PASS, Vite 8.1.6; existing large-chunk/dynamic-import warnings remain informational                      |
+| Public boot budget          | `npm run bundle-budget`                                                                                           | PASS, 110.9 kB gzip across 13 files versus 115 kB budget                                                 |
+| Worker package              | `CLOUDFLARE_SEND_METRICS=false node node_modules/wrangler/bin/wrangler.js deploy --dry-run`                       | PASS, local dry-run exits without deployment; 119 assets, Worker 1525.96 KiB / 280.15 KiB gzip           |
+| Release stamp               | `node tools/release/cms-release.mjs check`                                                                        | PASS                                                                                                     |
+| ID diagnostic               | Actual registered callback with one unreadable raw surface                                                        | Original ReferenceError after 1 read; repaired AssertionError reports missing surface after all 48 reads |
+| Formatting                  | Prettier check for all eight owned files                                                                          | PASS                                                                                                     |
+| Diff hygiene                | `git diff --check`                                                                                                | PASS                                                                                                     |
+
+- Lockfile SHA-256: `39bade56235ff7c556c007b522467d84e3cfb5ab0aa8089948518e9ada0e6e5b`.
+- Final tracked diff before root integration: 7 files, 217 insertions and 284 deletions, plus this initially untracked report. Git index is empty; no staging or commits occurred.
+- All test failure, skip, retry, timeout, snapshot and tolerance policies remain unchanged. Current full selections now run on PRs instead of waiting for a main push.
+- Local browser execution is coordinator-owned. Coordinator's old frozen-head full WebKit receipt is 125/125 passed in 38.9 minutes; the replacement branch must still pass its own complete final-head CI after root integrates this batch and the remaining product repairs. No remote action or production request/deployment was performed by this implementer.
+- Status: COMPLETE for the authorized isolated repair batch; root integration, replacement PR and current-head remote CI remain coordinator tasks.
