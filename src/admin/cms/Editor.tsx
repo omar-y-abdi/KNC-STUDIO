@@ -55,6 +55,8 @@ import { isSitePage, renderSitePage, createSitePage } from '../../../shared/site
 
 export interface EditorHandle {
   flush: () => void
+  /** A canvas edit still waiting for its debounced handoff; safe to read during beforeunload. */
+  pending: () => boolean
   /** The fitted zoom; undefined while the canvas has no frame yet. */
   fit: () => number | undefined
 }
@@ -561,11 +563,15 @@ export function CmsEditor(props: Props): JSX.Element {
     resize.observe(host.current)
     props.onReady({
       flush,
+      pending: () => timer.current !== null,
       fit: () => fitEditor(editor),
     })
 
     return () => {
+      // Destruction mutates components too; it must not queue a capture against a dead editor.
+      editor.off('updateBefore', schedule)
       if (timer.current !== null) window.clearTimeout(timer.current)
+      timer.current = null
       props.onReady(null)
       resize.disconnect()
       releaseAccessibility?.()

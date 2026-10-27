@@ -170,3 +170,50 @@ Additional runtime trace included the existing `src/about/AboutSection.tsx`, `sr
 ## Review checkpoint
 
 Reviewer04 mapping complete:54 assigned changed product/document paths,22 supporting changed unit paths (16 full-current and6 complete-diff reviews),10 browser/harness paths (full-current plus change review), and independent L1/F1/F2/V1 runtime investigations. Read-only comparison archives and temporary probes only; no product changes or remote/production actions. Frozen checkout was clean at the final mapping checkpoint. Coordinator keeps the temporary frontend dev server at4488 available for independent F2 reproduction and later repair verification.
+
+## Independent repair review — first pass
+
+Reviewed the actual uncommitted repair diff in `/tmp/knc-pr90-repair` against its HEAD, including `src/admin/cms/Editor.tsx`, `src/admin/cms/Studio.tsx`, `tools/e2e/cms-lifecycle.spec.mjs`, `src/admin/cms/nativePages.ts` and `tools/e2e/legal-mode.spec.mjs`. No product edits made by reviewer04. Coordinator's focused lifecycle receipt `/tmp/knc-audit/repair-lifecycle-green.log` shows12 passing cases across Chromium/WebKit; this is corroborating execution evidence, not a claim that this reviewer independently reran that full set.
+
+- **F1 repair approved at source/test review:** the unload handler only reads pending flags and returns promptly. It no longer exports a full canvas or starts backup serialization before returning the close decision. The browser regression now performs real close in both engines, dismisses the warning, proves normal backup durability, verifies a quiet later close and restores the closed-tab draft. Its comment correctly limits preservation after an explicit Leave. Existing reload and hidden persistence tests remain and passed in the coordinator's focused run.
+- **Editor teardown repair approved at source/test review:** removes the `updateBefore` listener before Grapes destruction and clears/nulls its timer; otherwise destruction itself could schedule a delayed export against the dead editor. Recovery now explicitly asserts no page errors.
+- **L1 repair approved at source/test review:** shipped raw templates replace the ambiguous public HTTP source without weakening the stylesheet allowlist or replacing authored legal variants. Tests independently execute the real Worker redirect/canonical built shell, feed the exact final response to the browser boundary, run actual native iframe capture, and assert owner HTML/CSS preservation, static body/page-CSS equality, absent generated shell and no public legal fetch. Reviewer01's six-engine-case/build/budget receipts were read; I did not rerun that suite. The observed Vite dev raw-import advisory is recorded by reviewer01, while actual dev capture and production compilation succeed.
+- **F2 repair not yet approved:** the intended receiving-editor overwrite is blocked and the failed refresh keeps the adopted record behind a retry screen, but an already-running optional source upgrade can still migrate the old draft while adoption is pending. The effect depends on draft/sourceAttempt only, so the restoring screen does not cancel its old-draft commit.
+
+### F2 follow-on reproduction: background source migration during adoption
+
+Temporary probe `/tmp/knc-audit/04-restore-source-race.spec.mjs` runs against an isolated archive with the exact proposed frontend repairs at localhost4788. It captures/publishes a fresh head, retains a closed-tab draft named `Closed tab source race`, removes the server booking-flow marker to require optional source upgrade, and holds that native source request while the clean recipient opens. It wraps the real backup session's adopt method to delay completion **after the real record move**, creating a deterministic adoption boundary without changing source capture, migration or IndexedDB persistence. While Studio displays `Återställer utkast…`, the test releases the actual source capture and flushes any scheduled backup. The recipient's own record becomes `Startsida`; after adoption completes, the UI also restores `Startsida`, losing the offered edit.
+
+Observed failure: `/tmp/knc-audit/restore-source-race.log` (`during: Startsida`, final expected `Closed tab source race`, received `Startsida`); trace in `/tmp/knc-audit/restore-source-race-results/`. This proves the old source effect remains able to write during the protected transition. The deliberate adoption delay is a race-control fixture, not a claim that the browser was observed to stall at exactly that boundary naturally.
+
+Required boundary: synchronously mark the recovery transition before awaiting adoption; prevent the optional source effect from committing to the old draft while that marker is active. Also cancel/restart its effect as appropriate so a stale/failed adoption still permits a later legitimate source upgrade. A state dependency alone may leave a gap before effect cleanup; verify the commit guard with this probe. Final F2 approval remains pending that change and focused regression evidence.
+
+### Second pass — source-upgrade race repair
+
+Re-read the revised actual diff after the coordinator added `restoreInProgress`. It is set synchronously before the adoption await and used both as the duplicate-entry guard and the optional-source commit/error guard. The optional-source effect now depends on `restoring`, cancels its former effect and restarts if the old draft still needs source after a stale/failed adoption, and clears obsolete source loading/failure state when restoration or a complete draft makes the effect unnecessary. This closes the reproduced old-draft write path by source trace; no additional source concern was found in that revision.
+
+The new repository regression `tools/e2e/cms-lifecycle.spec.mjs` (test `cms-lifecycle a pending source upgrade cannot overwrite a recovered draft`) keeps the actual capture, Web Lock/version check and IndexedDB move, gates only asynchronous completion, checks the durable record before releasing adoption, then verifies restored content and absence of a stale source spinner. It releases its gates/routes in finally. Execution of this newly added case remains pending at this checkpoint.
+
+The defensive canvas flush before restore entry is accepted by source trace: both normal `Visa utkast` and `Utkast & backup` openers already synchronously flush before the native modal opens, and the modal prevents subsequent normal canvas interaction. No separate browser test of programmatic canvas mutation behind that modal is claimed or required.
+
+Independently parsed the earlier machine-readable receipts: lifecycle green has expected12, unexpected0, flaky0, skipped0, errors0; L1 green has expected6, unexpected0, flaky0, skipped0, errors0. Those earlier lifecycle results predate the additional source-upgrade guard/regression and are not relabeled as its execution evidence. Final F2 approval awaits the current focused green receipt.
+
+### Final independent repair disposition — approved with verification scope recorded
+
+**F1, F2 (including the source-upgrade follow-on), editor teardown, and L1 are approved within this review scope. No unresolved blocker remains from reviewer04.**
+
+Re-read the final Editor/Studio product diff and independently parsed `/tmp/knc-audit/repair-source-race-green/test-results/results.json`: expected4, unexpected0, flaky0, skipped0, errors0;99.9seconds. The two cases ran in Chromium and WebKit: closed-tab recovery with the held503/retry boundary, and the pending-source-upgrade/adoption boundary. The coordinator ran these on the refreshed dependencies; installed package versions were independently read as Vite8.1.6 and Vitest4.1.12. The formerly failing source-race now preserves the adopted record and restores its content, with no obsolete source-loading message.
+
+Verification limits remain explicit: the earlier12 lifecycle checks (actual close/Cancel/quiet close/recovery, immediate reload and hidden persistence) passed before the dependency update, on Vite8.1.3. The six L1 cases/build/budget also predate that update. Those are valid focused receipts for their code changes, but do not substitute for final CI on all combined code and refreshed dependencies. Coordinator reports combined1717 unit tests across155 files, typecheck and lint passing; final latest-head CI remains its responsibility. This review makes no merge, deployment or production claim.
+
+Reviewed file content identities at approval:
+
+| Path                               | Git blob identity                          |
+| ---------------------------------- | ------------------------------------------ |
+| `src/admin/cms/Editor.tsx`         | `3d843f0e44542ab09ba842a108280de79d139492` |
+| `src/admin/cms/Studio.tsx`         | `b0afbe5dcbf846f68628321dfa16eabf5e5daf27` |
+| `src/admin/cms/nativePages.ts`     | `76b9bfe465a17ed5452f9fc2a6e0e504ada58943` |
+| `tools/e2e/cms-lifecycle.spec.mjs` | `bb78a341484bb77439606ed8cbde29d3a05998f1` |
+| `tools/e2e/legal-mode.spec.mjs`    | `48812b5af0550e22a44a2c61373841e6aac06f6a` |
+
+Only this reviewer04 review document was changed by this reviewer in the repair repository. Temporary race probes and the isolated snapshot remained outside it; the isolated review server was stopped before dependency refresh. No optional test expansion is requested.

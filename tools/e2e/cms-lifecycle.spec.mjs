@@ -138,10 +138,48 @@ test('cms-lifecycle closed tabs keep their drafts until the owner acts', async (
   await offers.getByRole('listitem').first().getByRole('button', { name: 'Kasta' }).click()
   await expect(offers.getByRole('listitem')).toHaveCount(1)
   assert.deepEqual(await storedDrafts(third), ['Utkast från flik ett'])
-  await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+  // Recovery replaces the receiving document. Keep it non-interactive while the server state
+  // is in flight, so an edit accepted during that wait cannot disappear when recovery completes.
+  const recoveryErrors = []
+  third.on('pageerror', (error) => recoveryErrors.push(error.message))
+  const started = gate()
+  const done = gate()
+  const holdState = async (route) => {
+    if (route.request().postDataJSON()?.operation === 'state') {
+      started.release()
+      await done.promise
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Återställningens serverläsning avbröts.' }),
+      })
+      return
+    }
+    await route.fallback()
+  }
+  const studioRoute = '**/functions/v1/cms-studio'
+  await context.route(studioRoute, holdState)
+  try {
+    await offers.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+    await started.promise
+    await expect(third.getByRole('heading', { name: 'Återställer utkast…' })).toBeVisible()
+    await expect(nameField(third)).toHaveCount(0)
+    await expect(third.getByRole('button', { name: 'Tillbaka till Admin' })).toBeDisabled()
+  } finally {
+    done.release()
+    await context.unroute(studioRoute, holdState)
+  }
+  // Adoption already moved the offered record. A failed refresh must keep that record safe
+  // behind the retry screen, instead of reopening the old editor which could overwrite it.
+  await expect(third.getByRole('alert')).toContainText('Återställningens serverläsning avbröts.')
+  await expect(nameField(third)).toHaveCount(0)
+  assert.deepEqual(await storedDrafts(third), ['Utkast från flik ett'])
+  await third.getByRole('button', { name: 'Försök igen', exact: true }).click()
   await expect(nameField(third)).toHaveValue('Utkast från flik ett')
+  await expect(nameField(third)).toBeEditable()
   await expect(offers).toHaveCount(0)
   await expect.poll(() => storedDrafts(third)).toEqual(['Utkast från flik ett'])
+  assert.deepEqual(recoveryErrors, [], 'restoring and retrying must not use a destroyed editor')
   await third.reload()
   await openStudio(third)
   await expect(nameField(third)).toHaveValue('Utkast från flik ett')
@@ -379,59 +417,48 @@ test('cms-lifecycle Publicera captures again after a removal whose capture faile
   assert.deepEqual(backend.document.gallery, [])
 })
 
-// A desktop tab closed right after an edit ends before IndexedDB commits, and its journal goes with
-// it. The leave prompt holds the page while the write commits. The clock is paused, so only the
-// beforeunload handler can save the canvas edit.
-test('cms-lifecycle closing a tab with an unsaved edit asks first and keeps the edit', async ({
+// The close decision must return before WebKit's deadline, even when a production-size canvas
+// export is still pending. Cancel keeps the live edit; normal backup then makes a later close safe.
+// Choosing Leave before that write is durable explicitly risks discarding the unsaved edit.
+test('cms-lifecycle actual close warns, Cancel keeps the edit, and a saved draft closes quietly', async ({
   page,
   context,
-  browserName,
 }) => {
   await nativeBackend(context, await productionDocument())
   await page.clock.install()
   await openStudio(page)
   await publishAdopted(page)
+  // Open the read-only probe before editing: opening it afterwards could hide the editor and
+  // exercise the background handler instead of the immediate-close boundary.
+  const probe = await context.newPage()
+  await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await page.bringToFront()
   // A real click: browsers show the leave prompt only after a user gesture on the page.
   await nameField(page).click()
   await pauseClock(page)
   const text = 'Ändrad i canvas precis före stängning'
   await editCanvas(page, text)
-  // Reads IndexedDB while the prompt is open; it opens no studio and holds no tab lock.
-  const probe = await context.newPage()
-  await probe.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
-  if (browserName === 'webkit') {
-    // WebKit closes the page without a prompt when the beforeunload handler does not answer
-    // within 50 ms (tryCloseTimeoutDelay, Source/WebKit/UIProcess/WebPageProxy.cpp; the gate logged
-    // WebPageProxy::tryCloseTimedOut), and handing over a production-size canvas edit takes longer.
-    // The handler still asks for the prompt and starts the write: dispatch it on the open page.
-    const asked = await page.evaluate(() => {
-      const leaving = new Event('beforeunload', { cancelable: true })
-      globalThis.dispatchEvent(leaving)
-      return leaving.defaultPrevented
-    })
-    assert.equal(asked, true)
-    await expect.poll(() => draftHolds(probe, text)).toBe(true)
-    await page.close()
-  } else {
-    const prompted = new Promise((resolve, reject) => {
-      page.once('dialog', async (dialog) => {
-        try {
-          await expect.poll(() => draftHolds(probe, text)).toBe(true)
-          resolve(dialog.type())
-          await dialog.accept()
-        } catch (reason) {
-          reject(reason)
-        }
-      })
-    })
-    // With runBeforeUnload, close() does not wait for the page to close.
-    const closed = page.waitForEvent('close')
-    await page.close({ runBeforeUnload: true })
-    assert.equal(await prompted, 'beforeunload')
-    await closed
-  }
-  await probe.close()
+  const [dialog] = await Promise.all([
+    page.waitForEvent('dialog'),
+    page.close({ runBeforeUnload: true }),
+  ])
+  assert.equal(dialog.type(), 'beforeunload')
+  await dialog.dismiss()
+  assert.equal(page.isClosed(), false)
   await context.clock.resume()
+  await expect.poll(() => draftHolds(probe, text)).toBe(true)
+
+  // A durable local draft can close without another warning, even though it is unpublished.
+  let warnedAgain = false
+  page.on('dialog', async (unexpected) => {
+    warnedAgain = true
+    await unexpected.accept()
+  })
+  const closed = page.waitForEvent('close')
+  await page.close({ runBeforeUnload: true })
+  await closed
+  assert.equal(warnedAgain, false)
+  await probe.close()
 
   const next = await context.newPage()
   await openStudio(next)
@@ -450,6 +477,78 @@ const gate = () => {
   })
   return { promise, release }
 }
+
+test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft', async ({
+  context,
+}) => {
+  const backend = await nativeBackend(context)
+  const first = await context.newPage()
+  await openStudio(first)
+  await publishAdopted(first)
+  const recoveredName = 'Utkastet överlever en äldre källuppdatering'
+  await nameField(first).fill(recoveredName)
+  await expect.poll(() => storedDrafts(first)).toEqual([recoveredName])
+  await first.close()
+
+  // The receiving tab opens a valid older layout which needs an optional source upgrade.
+  for (const page of backend.document.presentation.pages)
+    if (page.path === '/booking')
+      for (const lang of ['sv', 'en'])
+        page.content[lang].html = page.content[lang].html.replaceAll(
+          ' data-knc-fold="booking-flow"',
+          '',
+        )
+  const started = gate()
+  const source = gate()
+  const recipient = await context.newPage()
+  const sourceRoute = '**/cms-public/source'
+  const holdSource = async (route) => {
+    started.release()
+    await source.promise
+    await route.fallback()
+  }
+  await recipient.route(sourceRoute, holdSource)
+  await recipient.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await recipient.evaluate(async () => {
+    const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+    const adopt = session.adopt.bind(session)
+    const ready = new Promise((resolve) => {
+      globalThis.__releaseCmsAdoption = resolve
+    })
+    // Gate only completion: the actual lock, version check and IndexedDB record move all run.
+    session.adopt = async (offer) => {
+      const outcome = await adopt(offer)
+      globalThis.__cmsAdopted = true
+      await ready
+      return outcome
+    }
+    ;(await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness()
+  })
+  try {
+    await started.promise
+    await expect(recipient.locator('.cms-status')).toHaveText(/^Publicerad/)
+    await recipient.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+    await recipient.getByRole('button', { name: 'Fortsätt här', exact: true }).click()
+    await recipient.waitForFunction(() => globalThis.__cmsAdopted)
+    await expect(recipient.getByRole('heading', { name: 'Återställer utkast…' })).toBeVisible()
+    source.release()
+    await recipient
+      .locator('iframe[title="Läser den befintliga webbplatsen"]')
+      .waitFor({ state: 'detached', timeout: 90000 })
+    // Complete any write the old source effect scheduled, without relying on a fixed delay.
+    await recipient.evaluate(async () =>
+      (await (await import('/src/admin/cms/backup.ts')).cmsBackups()).flush(),
+    )
+    assert.deepEqual(await storedDrafts(recipient), [recoveredName])
+  } finally {
+    source.release()
+    await recipient.unroute(sourceRoute, holdSource)
+    if (!recipient.isClosed()) await recipient.evaluate(() => globalThis.__releaseCmsAdoption?.())
+  }
+  await expect(nameField(recipient)).toHaveValue(recoveredName)
+  await expect(recipient.getByText('Förbereder fler redigeringsvyer…')).toHaveCount(0)
+  await expect.poll(() => storedDrafts(recipient)).toEqual([recoveredName])
+})
 
 // Publicera captured the layouts for a new display name; during the request the name goes back to
 // the published one and the server moves on. The 409 merge keeps the captured layouts while its

@@ -94,6 +94,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [requestBusy, setBusy] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const restoreInProgress = useRef(false)
   const [resourceBusy, setResourceBusy] = useState(false)
   const resourceCapture = useRef<AbortController | null>(null)
   const busy = requestBusy || resourceBusy
@@ -218,7 +220,11 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (!draft || !needsCorePageSource(draft.document)) return
+    if (restoring || !draft || !needsCorePageSource(draft.document)) {
+      setSourceLoading(false)
+      setSourceFailure(null)
+      return
+    }
     let stopped = false
     setSourceLoading(true)
     setSourceFailure(null)
@@ -226,7 +232,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     // Never replace that work with the document which started this request.
     void prepareCorePageSource(draft.document)
       .then(() => {
-        if (stopped || currentDraft.current !== draft) return
+        if (stopped || restoreInProgress.current || currentDraft.current !== draft) return
         editor.current?.flush()
         // Recaptured strip markers make legacy zoom convertible only now. The upgrade is a
         // migration of every retained snapshot, never an undoable step back to the old markup.
@@ -237,7 +243,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         setVersion((value) => value + 1)
       })
       .catch((reason: unknown) => {
-        if (!stopped)
+        if (!stopped && !restoreInProgress.current)
           setSourceFailure(
             reason instanceof Error ? reason.message : 'Nya redigeringsvyer kunde inte förberedas.',
           )
@@ -248,7 +254,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     return () => {
       stopped = true
     }
-  }, [draft, sourceAttempt])
+  }, [draft, sourceAttempt, restoring])
 
   const reportBackup = (reason: unknown): void =>
     setError(reason instanceof JournalFull ? JOURNAL_FULL : BACKUP_FAILED)
@@ -297,15 +303,16 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const hidden = (): void => {
       if (window.document.visibilityState === 'hidden') persist()
     }
-    // A desktop tab closed right after an edit ends before IndexedDB commits, and its journal goes
-    // with it. While a write is unsaved, start it now and ask the browser for its leave prompt; the
-    // write commits while the prompt is open. Without unsaved work there is no prompt.
+    // WebKit can close without showing a prompt if this handler takes too long. Decide from cheap
+    // pending flags, never by exporting a production-size canvas or starting backup work here.
+    // Cancel lets normal capture/backup finish; Leave may discard the latest unsaved work.
     const leaving = (event: BeforeUnloadEvent): void => {
-      editor.current?.flush()
-      scheduleBackup()
       const session = backups.current
-      if (!session?.unsaved()) return
-      void session.flush().catch(reportBackup)
+      if (
+        !editor.current?.pending() &&
+        !(session ? session.unsaved() : currentDraft.current?.dirty)
+      )
+        return
       event.preventDefault()
       // Some engines prompt only for a non-empty value; none shows this text.
       event.returnValue = 'unsaved'
@@ -562,19 +569,35 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   // Another tab's draft replaces this tab's draft only while this one has nothing unpublished.
   const restoreOffer = async (offer: TabBackup): Promise<void> => {
     const session = backups.current
-    if (!session || currentDraft.current?.dirty) return
+    if (!session || busy || restoreInProgress.current) return
+    editor.current?.flush()
+    if (currentDraft.current?.dirty) return
+    // Adoption moves the offered record before refresh reads it. Keep the receiving document
+    // non-interactive throughout both steps, so accepted edits cannot be replaced by that read.
+    // Block background source adoption synchronously, before any IndexedDB/Web Lock await.
+    restoreInProgress.current = true
+    setRestoring(true)
+    setBusy(true)
+    setError(null)
+    setNotice(null)
     try {
       if ((await session.adopt(offer)) === 'stale') {
         setNotice(OFFER_CHANGED)
         setOffers(await session.offers())
         return
       }
+      // The adopted record is now this tab's only recovery copy. If loading fails, keep the
+      // retry screen instead of an old editor whose next edit would overwrite that record.
+      setDraft(null)
+      setDialog(null)
+      await refresh()
     } catch {
       setError('Utkastet kunde inte hämtas till den här fliken. Det finns kvar i listan.')
-      return
+    } finally {
+      restoreInProgress.current = false
+      setRestoring(false)
+      setBusy(false)
     }
-    setDialog(null)
-    await refresh()
   }
   const settleOffer = async (offer: TabBackup, exported: boolean): Promise<void> => {
     const session = backups.current
@@ -589,16 +612,24 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }
 
-  if (!draft)
+  if (!draft || restoring)
     return (
       <div class="knc-cms-studio">
         <div class="cms-loading" aria-busy={busy}>
           <span class="cms-brand-mark">BNB</span>
-          <h1>{error ? 'Studion kunde inte öppnas' : 'Laddar Studio…'}</h1>
-          <p role={error ? 'alert' : 'status'}>
-            {error ?? 'Hämtar ditt utkast och förbereder webbplatsen för redigering.'}
+          <h1>
+            {restoring
+              ? 'Återställer utkast…'
+              : error
+                ? 'Studion kunde inte öppnas'
+                : 'Laddar Studio…'}
+          </h1>
+          <p role={error && !restoring ? 'alert' : 'status'}>
+            {restoring
+              ? 'Hämtar utkastet. Redigeringen öppnas igen när återställningen är klar.'
+              : (error ?? 'Hämtar ditt utkast och förbereder webbplatsen för redigering.')}
           </p>
-          {error && (
+          {error && !restoring && (
             <button
               class="cms-primary"
               type="button"
@@ -608,7 +639,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               Försök igen
             </button>
           )}
-          <button type="button" onClick={onExit}>
+          <button type="button" disabled={restoring} onClick={onExit}>
             Tillbaka till Admin
           </button>
         </div>
