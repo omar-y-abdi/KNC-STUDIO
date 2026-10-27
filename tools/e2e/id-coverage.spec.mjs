@@ -171,7 +171,7 @@ test('every stored data-knc-source id exists live with its tag', async ({ page, 
       const html = pages.get(path).content[capture.lang].html
       const raw = await page.evaluate(readSurface, { html, surface })
       if (raw.error !== undefined) {
-        unreadable.push(`${describeWhere(capture, surface)}: ${read.error}`)
+        unreadable.push(`${describeWhere(capture, surface)}: ${raw.error}`)
         continue
       }
       const read = { stored: sourceTree(raw.stored), live: sourceTree(raw.live) }
