@@ -52,7 +52,7 @@ Continue the authorized PR91 repair at frozen head `d800bad059271da7624bf0ae98e7
 - Correct-behavior red receipt: `/tmp/knc-audit/pr91-adoption-red-reload-complete/test-results/results.json` and associated screenshot/trace. This is additional F2 lifecycle coverage, not a separate original report finding.
 - The effect now considers `uneditedDocument` readiness as well as the recovered document. Migration still transforms each independently. The effect keeps its existing draft/source-attempt/restoring dependencies; it does not use the perpetually raw publication base as an effect trigger.
 
-### Final author verification
+### Initial scoped author verification
 
 - `npx vitest run tests/unit/cmsDraft.test.ts`: 9 tests passed, including migration versus author-edit state, late source migration, undo/redo/reset, changed base, publication acknowledgement and cached comparisons.
 - Initial ten-case Chromium/WebKit run passed, but it is not the final acceptance receipt: a Home-only loading-label observation did not establish source completion, and the first pending-canvas control mutated a model behind the modal. Both observations were corrected before acceptance.
@@ -70,3 +70,36 @@ Continue the authorized PR91 repair at frozen head `d800bad059271da7624bf0ae98e7
 - The coordinator must pass `next.base` and `draft.base` at the two new reset `layouts.current.follow` callbacks when combining the separately authored provenance signature change. The existing source migration callback is covered by that author's hunk.
 - These tests use actual Studio, GrapesJS, browser storage and local routed test APIs; they do not exercise production SQL/auth/publication. The only publication in the reload test establishes its local native-layout fixture; no adoption path publishes.
 - Fresh combined independent review and final exact-head CI are still required before overall acceptance.
+
+## Combined-review follow-up — preserve complete snapshots
+
+### Scope and plan
+
+The fresh independent combined review at `3c314c81ac4d460a9de45a6fa437328fd6751562` found an exact-byte regression in the existing legal conflict/Undo/Redo browser test. Resume this narrow repair on `review/pr91-adoption-preserve-complete`, preserving the earlier author branch.
+
+- [x] Read the independent failure and decoded trace; inspect source preparation, conflict and snapshot migration paths.
+- [x] Reproduce the unchanged existing legal conflict assertion on the combined commit.
+- [x] Correct only the Studio source-effect migration so complete snapshots retain authored bytes while incomplete snapshots and marquee zoom still migrate.
+- [x] Run the unchanged failing legal-conflict case and source-zoom/Undo control in Chromium and WebKit, plus type/lint checks. The coordinator assigned the broader combined matrix to the independent reviewer.
+- [x] Obtain independent source review and prepare the verified Studio/doc changes for local commit.
+
+### Diagnosis
+
+- Independent trace: initial raw publication base has zero pages; the current editable document has six. A 409 conflict retains the former raw base, so `uneditedDocument` falls back to it and triggers source preparation.
+- The source callback currently calls `ensureCorePages` for every snapshot through `draft.migrate`, including already-complete current/history documents. `ensureCorePages` parses and serializes their legal HTML, removing leading whitespace before the main element.
+- The failed comparison covers all four legal language variants; CSS remains equal and the HTML equals the original after removing only leading whitespace. No test assertion or fixture change is authorized.
+- Ranked alternatives checked against the call sites: (1) unnecessary source reserialization of complete snapshots; (2) legal upgrading itself, whose wrapper replacement preserves captured whitespace; (3) a pending editor flush, although the active page is Home rather than either legal page. The per-snapshot source guard will be validated against the original exact-byte test.
+- The coordinator separately owns the same-page source-cache repair in `corePages.ts`; this workstream will not modify that file.
+
+### Follow-up receipts and decision
+
+- Local red: `E2E_PORT_OFFSET=300 E2E_ARTIFACTS_ROOT=/tmp/knc-audit/pr91-adoption-legal-red npx playwright test tools/e2e/cms-reported.spec.mjs --grep 'legal upgrade survives conflict resolution' --project=cms-chromium` on exact product `3c314c81ac4d460a9de45a6fa437328fd6751562`. The unchanged test failed at line 468, `the resolved draft`, with only leading HTML whitespace removed in all four legal variants.
+- Repair: the source-effect `draft.migrate` callback now applies `ensureCorePages` only to snapshots for which `needsCorePageSource` is true. `normalizeMarqueeZoom` still runs for every snapshot. The existing migration/provenance callback and cancellation/restoration guards remain unchanged.
+- Fresh independent source review found no blocker: readiness is evaluated separately for the editing baseline, current document and retained Undo/Redo snapshots. Complete authored snapshots avoid DOM reserialization; incomplete snapshots still upgrade.
+- An initially scheduled twenty-case run was deliberately interrupted at the coordinator's request to avoid duplicating the independent combined matrix. It is not an acceptance receipt. The focused author matrix is the unchanged legal-conflict and source-zoom/Undo tests in both engines.
+
+- Focused green command: `E2E_PORT_OFFSET=300 E2E_ARTIFACTS_ROOT=/tmp/knc-audit/pr91-adoption-legal-focused-green npx playwright test tools/e2e/cms-reported.spec.mjs tools/e2e/cms-marquee-zoom.spec.mjs --grep 'legal upgrade survives conflict resolution|legacy zoom is converted once' --project=cms-chromium --project=cms-webkit`.
+- Focused green result: **4 passed, 0 failed, 0 skipped, 0 flaky** in 1.4 minutes. Both engines pass the unchanged legal conflict/resolution/Undo/Redo exact-byte assertions and the existing source-upgrade zoom/Undo control. Receipt: `/tmp/knc-audit/pr91-adoption-legal-focused-green/test-results/results.json`.
+- `npm run typecheck`, scoped Studio ESLint, Prettier and `git diff --check` passed. The only product diff is the guarded Studio callback; no test/assertion, fixture, cache, draft-model or dependency changes belong to this follow-up commit.
+- This green result confirms unnecessary source preparation of complete snapshots caused the regression. No legal-content normalization or relaxed equality was introduced.
+- Coordinator integration with the separately committed source-cache fix, the fresh independent combined matrix, and final exact-head CI remain outstanding outside this author branch.

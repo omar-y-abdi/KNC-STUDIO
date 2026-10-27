@@ -243,8 +243,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         editor.current?.flush()
         // Recaptured strip markers make legacy zoom convertible only now. The upgrade is a
         // migration of every retained snapshot, never an undoable step back to the old markup.
+        // Preparing only the baseline must not reserialize already-complete authored snapshots.
         draft.migrate(
-          (document) => normalizeMarqueeZoom(ensureCorePages(document)),
+          (document) =>
+            normalizeMarqueeZoom(
+              needsCorePageSource(document) ? ensureCorePages(document) : document,
+            ),
           (previous, next) => layouts.current.follow(previous, next, draft.base),
         )
         setVersion((value) => value + 1)
