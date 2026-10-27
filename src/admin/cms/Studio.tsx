@@ -153,9 +153,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       const seeded = JSON.stringify(document) !== JSON.stringify(loaded.document)
       const backup = session ? await session.own() : null
-      const next = new CmsDraft(document, loaded.revision, loaded.fingerprint)
+      const next = new CmsDraft(document, loaded.revision, loaded.fingerprint, loaded.document)
       setConflict(null)
-      if (seeded) next.base = structuredClone(loaded.document)
       if (backup && session && isInventedSite(backup.document)) {
         await session.setAside()
         setNotice('Det äldre mallutkastet har bevarats lokalt men används inte som din webbplats.')
@@ -220,7 +219,15 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (restoring || !draft || !needsCorePageSource(draft.document)) {
+    // A recovered backup may already have complete scenes while its unedited server baseline
+    // still needs the same migration. Compare it only after preparing that baseline too.
+    const source =
+      !restoring && draft
+        ? needsCorePageSource(draft.uneditedDocument)
+          ? draft.uneditedDocument
+          : draft.document
+        : null
+    if (!draft || !source || !needsCorePageSource(source)) {
       setSourceLoading(false)
       setSourceFailure(null)
       return
@@ -230,7 +237,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setSourceFailure(null)
     // The owner can edit the existing page while optional source scenes load.
     // Never replace that work with the document which started this request.
-    void prepareCorePageSource(draft.document)
+    void prepareCorePageSource(source)
       .then(() => {
         if (stopped || restoreInProgress.current || currentDraft.current !== draft) return
         editor.current?.flush()
@@ -462,19 +469,21 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         try {
           const remote = await cmsApi.state()
           editor.current?.flush()
-          const merged = mergeCmsDocuments(
-            draft.base,
-            draft.document,
-            ensureCorePages(remote.document),
-          )
+          const remoteDocument = ensureCorePages(remote.document)
+          const merged = mergeCmsDocuments(draft.base, draft.document, remoteDocument)
           const adopted = upgradeLegacyLegalPages(normalizeMarqueeZoom(merged.document))
-          const next = new CmsDraft(adopted, remote.revision, remote.fingerprint)
-          // The constructor clones: the provenance belongs to the draft's own document.
+          const next = new CmsDraft(
+            upgradeLegacyLegalPages(normalizeMarqueeZoom(remoteDocument)),
+            remote.revision,
+            remote.fingerprint,
+            remote.document,
+          )
+          next.amend(adopted)
+          // The provenance belongs to the replacement snapshot with the merged author edits.
           layouts.current.merged(next.document, [
             { document: draft.document, stale: layoutsStale(draft) },
             { document: remote.document, stale: false },
           ])
-          next.base = structuredClone(remote.document)
           if (merged.conflicts.length) {
             next.base = structuredClone(draft.base)
             next.revision = draft.revision
@@ -507,16 +516,30 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         conflict.remote.revision,
         conflict.remote.fingerprint,
       )
-      if (needsCorePageSource(next.document)) next.document = ensureCorePages(next.document)
-      next.document = upgradeLegacyLegalPages(normalizeMarqueeZoom(next.document))
+      next.migrate(
+        (document) =>
+          upgradeLegacyLegalPages(
+            normalizeMarqueeZoom(
+              needsCorePageSource(document) ? ensureCorePages(document) : document,
+            ),
+          ),
+        (previous, migrated) => layouts.current.follow(previous, migrated),
+      )
       setDraft(next)
       setConflict(null)
     } else {
       draft.revert()
       // The first authoritative publication may be empty. Restore its source-derived
       // editing scaffold without pretending those templates have already been published.
-      if (needsCorePageSource(draft.document)) draft.document = ensureCorePages(draft.document)
-      draft.document = upgradeLegacyLegalPages(normalizeMarqueeZoom(draft.document))
+      draft.migrate(
+        (document) =>
+          upgradeLegacyLegalPages(
+            normalizeMarqueeZoom(
+              needsCorePageSource(document) ? ensureCorePages(document) : document,
+            ),
+          ),
+        (previous, migrated) => layouts.current.follow(previous, migrated),
+      )
     }
     setVersion((v) => v + 1)
   }
@@ -542,8 +565,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       upgradeLegacyLegalPages(normalizeMarqueeZoom(remote)),
       conflict.remote.revision,
       conflict.remote.fingerprint,
+      conflict.remote.document,
     )
-    next.base = structuredClone(conflict.remote.document)
     next.change(resolved)
     setDraft(next)
     setConflict(null)
@@ -566,12 +589,12 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     }
   }
 
-  // Another tab's draft replaces this tab's draft only while this one has nothing unpublished.
+  // Automatic migrations can be recreated; author edits must be resolved before replacement.
   const restoreOffer = async (offer: TabBackup): Promise<void> => {
     const session = backups.current
     if (!session || busy || restoreInProgress.current) return
     editor.current?.flush()
-    if (currentDraft.current?.dirty) return
+    if (currentDraft.current?.hasEdits || currentConflict.current) return
     // Adoption moves the offered record before refresh reads it. Keep the receiving document
     // non-interactive throughout both steps, so accepted edits cannot be replaced by that read.
     // Block background source adoption synchronously, before any IndexedDB/Web Lock await.
@@ -1549,10 +1572,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               {offers.length > 0 && (
                 <section class="cms-backup-offers" aria-label="Utkast från stängda flikar">
                   <h3>Utkast från stängda flikar</h3>
-                  {draft.dirty && (
+                  {(draft.hasEdits || conflict) && (
                     <p>
-                      Publicera, återställ eller exportera utkastet i den här fliken innan du
-                      fortsätter med ett annat.
+                      Publicera eller återställ ändringarna i den här fliken innan du fortsätter med
+                      ett annat utkast. Vill du behålla en kopia, välj Export och sedan Återställ.
                     </p>
                   )}
                   <ul>
@@ -1565,7 +1588,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
                           {!template && (
                             <button
                               type="button"
-                              disabled={busy || draft.dirty}
+                              disabled={busy || draft.hasEdits || Boolean(conflict)}
                               onClick={() => void restoreOffer(offer)}
                             >
                               Fortsätt här

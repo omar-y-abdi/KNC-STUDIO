@@ -37,6 +37,7 @@ describe('CMS draft', () => {
     draft.acknowledge(pending.document, 2, 'abcdef0123456789abcdef0123456789')
     expect(draft.document.settings.business_name).toBe('Newer')
     expect(draft.dirty).toBe(true)
+    expect(draft.hasEdits).toBe(true)
     expect(draft.revision).toBe(2)
   })
 })
@@ -49,7 +50,10 @@ describe('CMS draft interaction cost', () => {
     draft.change(next)
     const stringify = vi.spyOn(JSON, 'stringify')
     try {
-      for (let render = 0; render < 20; render++) expect(draft.dirty).toBe(true)
+      for (let render = 0; render < 20; render++) {
+        expect(draft.dirty).toBe(true)
+        expect(draft.hasEdits).toBe(true)
+      }
       const reads = stringify.mock.calls.filter(
         ([value]) => value === draft.document || value === draft.base,
       )
@@ -102,6 +106,61 @@ describe('CMS draft interaction cost', () => {
     expect(draft.undo()).toBe(true)
     expect(draft.dirty).toBe(false)
     expect(draft.undo()).toBe(false)
+  })
+})
+
+describe('CMS draft recovery eligibility', () => {
+  const migrate = (document: ReturnType<typeof emptyDocument>) => ({
+    ...document,
+    settings: { ...document.settings, tagline: 'Migrated source' },
+  })
+  const follow = () => undefined
+
+  it('keeps migrations unpublished without treating them as author edits', () => {
+    const raw = emptyDocument()
+    const draft = new CmsDraft(migrate(raw), 1, 'head', raw)
+    expect(draft.dirty).toBe(true)
+    expect(draft.hasEdits).toBe(false)
+    draft.change({
+      ...draft.document,
+      settings: { ...draft.document.settings, business_name: 'Owner edit' },
+    })
+    // A source response after editing must migrate the independent unedited snapshot as well.
+    const source = (document: ReturnType<typeof emptyDocument>) => ({
+      ...document,
+      settings: { ...document.settings, business_city: 'Source addition' },
+    })
+    draft.migrate(source, follow)
+    expect(draft.hasEdits).toBe(true)
+    expect(draft.undo()).toBe(true)
+    expect(draft.hasEdits).toBe(false)
+    expect(draft.dirty).toBe(true)
+    expect(draft.redo()).toBe(true)
+    expect(draft.hasEdits).toBe(true)
+
+    draft.revert()
+    draft.migrate((document) => source(migrate(document)), follow)
+    expect(draft.hasEdits).toBe(false)
+    expect(draft.dirty).toBe(true)
+    expect(draft.base).toEqual(raw)
+    const request = draft.beginSave()
+    draft.acknowledge(request.document, 2, 'published')
+    expect(draft.dirty).toBe(false)
+    expect(draft.hasEdits).toBe(false)
+  })
+
+  it('does not reuse an editing baseline after the authoritative base changes', () => {
+    const raw = emptyDocument()
+    const draft = new CmsDraft(migrate(raw), 1, 'head', raw)
+    draft.base = { ...raw, settings: { business_name: 'New server content' } }
+    expect(draft.hasEdits).toBe(true)
+    draft.migrate(migrate, follow)
+    expect(draft.hasEdits).toBe(true)
+    draft.revert()
+    draft.migrate(migrate, follow)
+    expect(draft.hasEdits).toBe(false)
+    expect(draft.document.settings.business_name).toBe('New server content')
+    expect(draft.dirty).toBe(true)
   })
 })
 

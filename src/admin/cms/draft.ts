@@ -26,10 +26,22 @@ export class CmsDraft {
   private lastChange = 0
   private dirtyComparison: { document: CmsDocument; base: CmsDocument; dirty: boolean } | null =
     null
+  private editingBase: CmsDocument
+  private editingBaseSource: CmsDocument
+  private editComparison: { document: CmsDocument; base: CmsDocument; edited: boolean } | null =
+    null
 
-  constructor(document: CmsDocument, revision: number, fingerprint: string) {
+  constructor(
+    document: CmsDocument,
+    revision: number,
+    fingerprint: string,
+    base: CmsDocument = document,
+  ) {
     this.document = structuredClone(document)
-    this.base = structuredClone(document)
+    this.base = structuredClone(base)
+    // The editable server snapshot can include automatic migrations which are not yet published.
+    this.editingBase = this.document
+    this.editingBaseSource = this.base
     this.revision = revision
     this.fingerprint = fingerprint
   }
@@ -48,6 +60,24 @@ export class CmsDraft {
       }
     }
     return this.dirtyComparison.dirty
+  }
+
+  /** The server snapshot with automatic migrations, never edits from this tab or a backup. */
+  get uneditedDocument(): CmsDocument {
+    return this.editingBaseSource === this.base ? this.editingBase : this.base
+  }
+
+  /** Author changes which adopting another draft would replace; migrations alone stay dirty
+   * for publication but do not prevent recovery. A replaced base is conservative until migrated. */
+  get hasEdits(): boolean {
+    const base = this.uneditedDocument
+    if (this.editComparison?.document !== this.document || this.editComparison.base !== base)
+      this.editComparison = {
+        document: this.document,
+        base,
+        edited: serialize(this.document) !== serialize(base),
+      }
+    return this.editComparison.edited
   }
 
   change(next: CmsDocument, group = ''): void {
@@ -77,6 +107,9 @@ export class CmsDraft {
     update: (document: CmsDocument) => CmsDocument,
     adopted: (previous: CmsDocument, next: CmsDocument) => void,
   ): void {
+    // Migrate the unedited server snapshot independently, never copy a possibly edited document.
+    this.editingBase = update(this.uneditedDocument)
+    this.editingBaseSource = this.base
     const apply = (document: CmsDocument): CmsDocument => {
       const next = update(document)
       if (serialize(next) === serialize(document)) return document
@@ -115,6 +148,8 @@ export class CmsDraft {
     if (!this.dirty) return
     this.undoStack.push(this.document)
     this.document = structuredClone(this.base)
+    this.editingBase = this.base
+    this.editingBaseSource = this.base
     this.redoStack = []
     this.pending = null
     this.lastGroup = ''
@@ -135,6 +170,8 @@ export class CmsDraft {
   acknowledge(document: CmsDocument, revision: number, fingerprint: string): void {
     this.document = mergeCmsDocuments(this.submitted ?? document, this.document, document).document
     this.base = structuredClone(document)
+    this.editingBase = this.base
+    this.editingBaseSource = this.base
     this.revision = revision
     this.fingerprint = fingerprint
     this.pending = null
