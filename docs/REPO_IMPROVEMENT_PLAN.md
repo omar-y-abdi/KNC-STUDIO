@@ -1,7 +1,9 @@
 # Repository Improvement Plan
 
-Current recovery status and branch/CI policy: `docs/MAINTENANCE_HANDOFF.md`. The audit
-and owner decisions below remain historical scope; they are not completion evidence.
+Current recovery status and branch/CI policy: [PR #90 review and repair map](pr90-review/README.md).
+The [25 October maintenance handoff](MAINTENANCE_HANDOFF.md) is archived session history. The audit
+and owner decisions below remain historical scope; they are not completion evidence or current
+execution instructions.
 
 Date: 2026-10-23, revised 2026-10-24. Repository: `barber/project` at HEAD `f15b79b` (production deployment `d5155e4c` from 2026-10-09 runs the same build).
 

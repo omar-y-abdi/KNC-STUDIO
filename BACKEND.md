@@ -87,6 +87,28 @@ release; repository source alone does not prove a hosted environment matches it.
 Follow `docs/operations/CMS_RELEASE.md` for backend/frontend compatibility, publication checks
 and recovery. Follow `docs/operations/BACKUP_RESTORE.md` before database changes.
 
+### Recovery compatibility
+
+- Preserve the existing `PUBLIC_ACTION_HASH_SALT` when updating an environment. It also derives
+  the encryption key for permanent customer tokens; rotation requires a deliberate token
+  repair/migration plan. The secret-setting example below is not a rotation instruction.
+- Check compatibility at each rollout step. Stricter request validation may require compatible
+  callers to be released first. Roll back only to compatible Worker/frontend and Edge artifacts,
+  retaining gateway signatures, session proofs, token-generation checks and separate allowlisted
+  `Set-Cookie` headers. Correct configuration without bypassing those checks.
+- Keep additive device-receipt tables and grants until their credentials expire. Do not drop or
+  split verified customer profile mappings to repair a deployment; use a reviewed, data-preserving
+  forward migration that retains the identity rules above.
+- Inspect delivery and provider evidence before retrying work. Do not force jobs to completed or
+  resend them in bulk. The [booking-email recovery contract](supabase/functions/send-confirmation/README.md)
+  owns generation-safe token repair and retries that preserve acknowledged recipients.
+
+The dated customer-access, device-access, launch and gateway runbooks in `docs/operations/` are
+archived receipts. Their recorded migrations, deployments and password rotation must not be replayed
+as a current release procedure.
+
+### Runtime configuration
+
 Required Edge Function secrets:
 
 ```bash
@@ -122,7 +144,9 @@ printf '%s' '<public-anon-key>' | npx wrangler secret put SUPABASE_ANON_KEY
 
 The Worker customer proxy also needs the same high-entropy `CUSTOMER_GATEWAY_SECRET` value that the
 `public-booking-actions` Edge Function uses. Missing or mismatched values fail closed; deploy both
-values with the Worker/Edge change.
+values with the Worker/Edge change. A secret-name inventory alone does not prove these values match:
+verify that a signed same-origin gateway request reaches the expected application response while
+customer responses remain `no-store`.
 
 ## Resend
 

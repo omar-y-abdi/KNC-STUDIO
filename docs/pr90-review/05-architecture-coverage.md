@@ -3,7 +3,7 @@
 ## Fixed review boundary
 
 - Repository `/tmp/knc-pr90`; base `f15b79b5131848d43e888e9841d14a7d71d50177`; maintenance `aadb123dcd19d412a357a8e83ffc7603f3d55b0c`.
-- Read-only mapping phase: product tree untouched; this living report and temporary evidence only.
+- The completed mapping phase was read-only. Implementation below uses `/tmp/knc-pr90-repair`; `/tmp/knc-pr90` remains frozen.
 - Own all 41 architecture paths in `00-path-coverage.md` (7 modified, 2 added, 32 deleted); independent deletion/move checks; remaining 83 PNG pixel review transferred from reviewer 03. Pixel review now covers all 86 PNGs, including the three previously inspected.
 - Other owners certify functional source and test semantics. Passing gates do not substitute for path review. Historical receipts are evidence of prior work, not fresh production verification.
 
@@ -16,7 +16,7 @@
 - [x] **86/86 PNGs visually inspected**, 43 filename pairs; individual paths and dimensions in `evidence/png-review-ledger.json`.
 - [x] Exact 41-path ledger below. No remaining unread owned path. Product source remains unchanged by this reviewer.
 
-**Completion is mapping/review, not repair acceptance.** DOC-01/02/03 and COV-01 remain proposed changes awaiting the coordinator's implementation phase. Functional source outside this scope is owned by the other reviewers. The English 800px visual overflow is visible; regression attribution remains with reviewer 04.
+**Mapping completion is separate from repair acceptance.** DOC-01/02/03 and COV-01 are implemented below; independent cross-review and coordinator integration acceptance remain pending. Functional source outside this scope is owned by the other reviewers. Reviewer 04 has since reproduced the English 800px overflow on exact main with the same stored fixture; it is pre-existing owner-authored geometry.
 
 ## Confirmed findings and dispositions
 
@@ -76,7 +76,7 @@ All **86 changed PNGs**, 43 names in each of `tools/visual/baseline-linux` and `
 | About gallery/barber variants     |             11 |     22 | Desktop/mobile, light/dark/language and reduced-motion captures, intentionally clipped loop rows |
 | **Total**                         |         **43** | **86** | **All inspected**                                                                                |
 
-No empty/loading/error captures or unexpected broken-image glyphs observed. The 800px English captures are 825px (dark) and 846px (light) wide, with the review form exceeding the viewport. This is a real visible overflow candidate, **not yet attributed as a PR regression**. Historical `REPO_IMPROVEMENT_PLAN.md` records the existing English 769–845px authored-content overflow and an owner-dependent content edit (PAR-16). Reviewer 04 owns the live comparison. Do not hide it by changing baselines.
+No empty/loading/error captures or unexpected broken-image glyphs observed. The 800px English captures are 825px (dark) and 846px (light) wide, with the review form exceeding the viewport. This is visible **pre-existing owner-authored overflow**, reproduced with identical dimensions on exact main by reviewer 04. Historical `REPO_IMPROVEMENT_PLAN.md` records the existing English 769–845px authored-content overflow and an owner-dependent content edit (PAR-16). The review form’s stored translation produces the same bounds on both trees. Do not hide it by changing baselines or clipping content.
 
 Correctness limits: image URLs are deliberately replaced by local `public/og-image.png`; absent portrait placeholders are fixture choices. These captures do not certify actual production photographs, production content, live Worker responses, motion, all contrast, functional interactions, or universal layout correctness. Platform-specific text antialiasing/weight differences are visible and do not alone establish a defect. Contact-sheet review is a complete overview of changed image contents, not pixel-diff acceptance of every fine detail.
 
@@ -150,10 +150,53 @@ Status **reviewed** means full document content and applicable delta read; it do
 | D   | `docs/superpowers/plans/cms-unified-resources-briefs/E2-brief.md` | Reviewed — keep deletion              | Completed task-local hierarchical resize brief; current feature contract and test remain.                                                                                                    |
 | D   | `docs/superpowers/plans/cms-unified-resources-briefs/E3-brief.md` | Reviewed — keep deletion              | Completed task-local mobile header brief; current feature contract and test remain.                                                                                                          |
 
-## Final limitations and implementation handoff
+## Mapping limitations and implementation handoff
 
 - No unread or unclassified assigned documentation or changed PNG path remains. All 40 deleted paths and the sole detected move have a disposition. The scoped Deno lock semantics remain reviewer 03's certification, not this review's.
-- No product edit, deployment, remote write, provider send, production access, or fresh functional-suite run was performed by reviewer 05. The only command-failure reproduction used Playwright's list path and stopped at CLI parsing. Parent owns fresh aggregate test results.
+- During mapping, no product edit, deployment, remote write, provider send, production access, or fresh functional-suite run was performed by reviewer 05. The only command-failure reproduction used Playwright's list path and stopped at CLI parsing. Parent owns fresh aggregate test results.
 - Proposed implementation is deliberately bounded: active backend recovery paragraph plus selected historical operation archives; clear archived handoff; correct CMS test instructions; meaningful served-artifact/advertised-route regression assertions in the existing public representation suite. No new architecture framework, generic process document, or duplicate E2E restoration.
-- Pixel coverage does not certify production content or every interaction; the English 800px overflow remains explicitly visible and assigned to reviewer 04 for attribution. Do not equate green image comparison with a correct source baseline.
+- Pixel coverage does not certify production content or every interaction; the English 800px overflow remains explicitly visible and is confirmed by reviewer 04 to match exact main. Do not equate green image comparison with a correct source baseline.
 - Historical snapshots are under `evidence/base`, current snapshots under `head`, all from the pinned Git objects. Supporting machine-readable ledgers: `moved-spec-assertions.json`, `active-doc-references.json`, `png-review-ledger.json`, and `documentation-review-ledger.json`.
+
+## Implementation — 27 October 2026
+
+Authorized scope: DOC-01, DOC-02, DOC-03 and COV-01 only. Worktree: `/tmp/knc-pr90-repair`, branch `fix/pr90-reviewed-maintenance`. Coordinator owns integration, commits, remote publication and full verification. Other agents own CI, legal importing, editor recovery and backend migrations.
+
+- [x] Restore the four operation runbooks byte-for-byte from frozen main, preceded by dated archive banners and links to active guidance.
+- [x] Add only the missing concrete recovery rules to `BACKEND.md`, preserving its existing anonymous-RPC denial and forward-recovery guidance.
+- [x] Label the obsolete maintenance handoff historical; correct the improvement plan's current-entry pointer.
+- [x] Correct CMS release verification commands, current suite paths and obsolete watchdog claims.
+- [x] Extend `agentReadiness.test.ts` using the existing actual Worker and checked-in asset harness: terms sitemap/route, truthful sitemap dates, absent unsupported ACP advertisement, and staff Calendar disclosure/privacy/noindex.
+- [x] Run the focused public representation and documentation checks, check archive fidelity and changed-file formatting, and record exact outcomes.
+- [ ] Independent cross-review and coordinator integration acceptance.
+
+Frontend overflow attribution receipt: reviewer 04's isolated exact-main run at 800px produces the same widths as maintenance: 846px light and 825px dark. Source `#knc-about-0-i0-i11` has natural left 24px and outer width 558px; stored English translations of 264px/243px yield those right edges. Swedish translation 211px stays at 793px. Carousel clipping is not the cause. No visual asset or authored-layout change is part of this repair.
+
+### Implementation receipts
+
+- DOC-01: added the missing salt/encryption, mixed-version rollout, cookie/session/signature, receipt/profile retention and ledger-based recovery rules to `BACKEND.md`. Existing no-anonymous-RPC and forward-recovery rules are unchanged. Restored exactly four runbook bodies from frozen main; dated banners identify historical commands, explain historical links, and point to current backend, CMS, backup and rescue guidance.
+- DOC-02: archived the maintenance handoff's authority and redirected the improvement plan to `docs/pr90-review/README.md`. Historical receipts and original owner decisions remain intact.
+- DOC-03: replaced the unsupported customer flag with `npm run test:e2e:customer`, linked the local stack setup, replaced removed runner timing claims with the actual Playwright config/fixture authority, and corrected CMS suite paths to `.spec.mjs`.
+- COV-01: the existing Worker/real-assets harness now checks `/terms` as a substantive served trust page and sitemap member; the served sitemap cannot invent last-modified dates; the actual ACP path must remain noindex/404; served and generated llms guidance cannot advertise unsupported ACP; and the served staff Calendar page retains a single primary heading, its synchronization/access disclosure, working privacy navigation and noindex. Customer-home navigation does not advertise the staff OAuth page. No new harness or dependency was added.
+
+Focused verification on the repair worktree, 27 October 2026:
+
+| Check                                                                                        | Result                                                                                                                       |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `npx vitest run tests/unit/agentReadiness.test.ts tests/unit/documentationContracts.test.ts` | PASS — 22 tests, 2 files; actual Worker plus checked-in public assets, no network/provider calls                             |
+| `npx eslint tests/unit/agentReadiness.test.ts`                                               | PASS                                                                                                                         |
+| `npm run test:e2e:customer -- --list`                                                        | PASS — three native projects discovered: Chromium, Firefox, WebKit; no browser or database started                           |
+| Scoped Prettier write/check                                                                  | PASS — active edits formatted; all four archived bodies already conform without modification                                 |
+| Scoped `git diff --check`                                                                    | PASS                                                                                                                         |
+| Archive fidelity                                                                             | PASS — each restored document ends with the exact original frozen-main bytes; all current-guide banner links resolve locally |
+
+Archive body SHA-256 receipts:
+
+| Original path under `docs/operations/` | Body SHA-256                                                       |
+| -------------------------------------- | ------------------------------------------------------------------ |
+| `CUSTOMER_ACCESS_REPAIR_2026-09-10.md` | `c125bd247648b8c140feb24d67567d79d6690a98e69b6e07e3db030b595dc912` |
+| `CUSTOMER_DEVICE_ACCESS_2026-09-11.md` | `ed7984a9e53e661b96790b2aba80a8fbd15c9ddf3ff8184cff034ff6bca323f6` |
+| `LAUNCH_RELEASE_2026-09-13.md`         | `863021420e899b384b76d632a165275a6c6803352ddd1cbe14db4e1e6f662fdd` |
+| `PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`    | `599efc22c7d45fd907b39eba037cd2e1022280f0b41eb173e03fcef4eff94098` |
+
+No product runtime, CI configuration, migration, dependency, baseline image, or other review owner's file was edited. No staging, commit or remote action was performed. These focused checks do not replace the coordinator's integrated full gates. Independent cross-review remains pending.

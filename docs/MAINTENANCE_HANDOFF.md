@@ -1,7 +1,14 @@
 # Maintenance recovery — 2026-10-25
 
-This is the current recovery entry point. `docs/REPO_IMPROVEMENT_PLAN.md` records the
-original scope and owner decisions. The old local `PLAN.md` has stale batch statuses;
+> **Historical handoff — 25 October 2026; archived 27 October 2026.**
+> The branch, agent, verification and stop instructions below belong to that earlier session.
+> They do not govern the current PR #90 replacement, whose entry point is
+> [the review and repair map](pr90-review/README.md). The current authorization includes local
+> verification and a clean replacement branch; the earlier no-local-tests and branch-chain rules
+> are superseded. Retain the history below as evidence, not as current execution instructions.
+
+This was the recovery entry point for the session below. `docs/REPO_IMPROVEMENT_PLAN.md` records
+its original scope and owner decisions. The old local `PLAN.md` has stale batch statuses;
 `.claude/runtime/handoff.md` contains the chronological session history and failure evidence.
 Those two local files are excluded by `.git/info/exclude`, so this handoff is committed.
 
