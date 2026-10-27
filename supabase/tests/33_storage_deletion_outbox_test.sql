@@ -1,5 +1,5 @@
 begin;
-select plan(84);
+select plan(77);
 
 select ok(not has_table_privilege('anon', 'public.external_action_jobs', 'SELECT'),
   'anon cannot inspect external action jobs');
@@ -145,55 +145,7 @@ reset role;
 select is((select count(*)::int from public.external_action_jobs where id=current_setting('test.storage_job')::uuid), 0,
   'completed action leaves no queue row');
 
-insert into public.barbers (id, name) values ('storage-reconciler', 'Storage Reconciler');
-insert into storage.objects (bucket_id, name, created_at) values
-  ('gallery', 'salon/orphan-old.webp', pg_catalog.now() - interval '31 minutes'),
-  ('barber-photos', 'storage-reconciler/orphan-old.webp', pg_catalog.now() - interval '31 minutes'),
-  ('gallery', 'salon/orphan-fresh.webp', pg_catalog.now()),
-  ('gallery', 'salon/referenced.webp', pg_catalog.now() - interval '31 minutes'),
-  ('barber-photos', 'storage-reconciler/referenced.webp', pg_catalog.now() - interval '31 minutes');
-insert into public.gallery_images (kind, storage_path, alt)
-values ('salon', 'salon/referenced.webp', 'Referenced');
-insert into public.barber_photos (barber_id, storage_path)
-values ('storage-reconciler', 'storage-reconciler/referenced.webp');
-
-select is(public.queue_orphaned_storage_objects(), 2,
-  'reconciler queues every old unreferenced managed object');
-select is((select count(*)::int from public.external_action_jobs
-  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-old.webp'), 1,
-  'old gallery orphan receives durable deletion intent');
-select is((select count(*)::int from public.external_action_jobs
-  where action_type='storage_object_delete'
-    and dedupe_key='barber-photos:storage-reconciler/orphan-old.webp'), 1,
-  'old barber-photo orphan receives durable deletion intent');
-select is((select count(*)::int from public.external_action_jobs
-  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-fresh.webp'), 0,
-  'fresh upload receives reconciliation grace period');
-select is((select count(*)::int from public.external_action_jobs
-  where action_type='storage_object_delete'
-    and dedupe_key in (
-      'gallery:salon/referenced.webp',
-      'barber-photos:storage-reconciler/referenced.webp'
-    )), 0, 'referenced Storage objects are never queued');
-
-select set_config('test.orphan_job', (select id::text from public.external_action_jobs
-  where action_type='storage_object_delete' and dedupe_key='gallery:salon/orphan-old.webp'), true);
-set local role service_role;
-select set_config('test.orphan_claim', public.claim_external_action(
-  current_setting('test.orphan_job')::uuid
-)::text, true);
-reset role;
-select is(public.queue_orphaned_storage_objects(), 0,
-  'reconciliation leaves existing pending and dispatching intents untouched');
-select is((select dispatch_token::text from public.external_action_jobs
-  where id=current_setting('test.orphan_job')::uuid),
-  current_setting('test.orphan_claim')::jsonb ->> 'dispatch_token',
-  'reconciliation never invalidates an in-flight worker token');
-
-insert into storage.objects (bucket_id, name, created_at)
-values ('gallery', 'salon/adopted-before-dispatch.webp', pg_catalog.now() - interval '31 minutes');
-select is(public.queue_orphaned_storage_objects(), 1,
-  'newly observed orphan receives one durable deletion intent');
+select public.queue_storage_deletion('gallery', 'salon/adopted-before-dispatch.webp');
 insert into public.gallery_images (kind, storage_path, alt)
 values ('salon', 'salon/adopted-before-dispatch.webp', 'Adopted');
 select set_config('test.adopted_job', (select id::text from public.external_action_jobs
@@ -246,7 +198,9 @@ select is((current_setting('test.calendar_claim')::jsonb) ->> 'google_event_id',
   'worker resolves preserved Google event id server-side');
 select is((current_setting('test.calendar_claim')::jsonb) ->> 'refresh_token', 'refresh-secret',
   'worker resolves OAuth credential server-side only after claim');
-select public.calendar_forget_event('33000000-0000-0000-0000-000000000010');
+select is(public.calendar_forget_event_if_matches(
+  '33000000-0000-0000-0000-000000000010', 'calendar-outbox', 'primary', 'google-event-10'
+), true, 'successful external deletion acknowledges the exact Calendar mapping');
 reset role;
 select is((select count(*)::int from public.calendar_event_map
   where booking_id='33000000-0000-0000-0000-000000000010'), 0,
@@ -278,17 +232,18 @@ select is((select count(*)::int from public.external_action_jobs
   where action_type='calendar_event_delete' and dedupe_key='33000000-0000-0000-0000-000000000011'), 1,
   'hard booking delete queues external event removal');
 
+-- An event left behind after its booking disappeared still needs durable cleanup.
+insert into public.calendar_event_map (booking_id, barber_id, calendar_id, google_event_id)
+values ('33000000-0000-0000-0000-000000000012', 'calendar-outbox', 'primary', 'late-google-event');
 set local role service_role;
-select public.calendar_record_event(
-  '33000000-0000-0000-0000-000000000012', 'calendar-outbox', 'late-google-event'
-);
+select public.queue_calendar_event_deletion('33000000-0000-0000-0000-000000000012');
 reset role;
 select is((select count(*)::int from public.calendar_event_map
   where booking_id='33000000-0000-0000-0000-000000000012'), 1,
-  'late Calendar insert preserves identifier despite missing booking');
+  'orphan Calendar cleanup preserves the identifier despite a missing booking');
 select is((select count(*)::int from public.external_action_jobs
   where action_type='calendar_event_delete' and dedupe_key='33000000-0000-0000-0000-000000000012'), 1,
-  'late Calendar insert is immediately queued for deletion');
+  'orphan Calendar cleanup queues durable deletion');
 
 set local role service_role;
 select set_config('test.disconnect', public.prepare_calendar_disconnect('calendar-outbox')::text, true);

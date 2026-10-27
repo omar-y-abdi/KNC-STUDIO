@@ -64,7 +64,7 @@ describe('mergeAbout', () => {
 
 describe('stylistCopyFor', () => {
   function entry(id: string, copy: RosterBarber['copy']): RosterBarber {
-    return { barber: { id: asBarberId(id), name: id, ig: id }, copy }
+    return { barber: { id: asBarberId(id), name: id, ig: id }, copy, photoUrl: null }
   }
 
   it('uses DB copy when present, mapped to the active language', () => {

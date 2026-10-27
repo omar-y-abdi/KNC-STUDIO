@@ -206,6 +206,56 @@ describe('new pages extend the published website', () => {
     expect(renderSitePage(document.presentation, page, 'sv', 'dark').html).toContain('Updated logo')
     expect(page.content.sv.html).not.toContain('logo')
   })
+  it('keeps an independent page on the OS scheme: the language link omits mode, the theme link pins one', () => {
+    const { document, home, page } = fixture()
+    home.content.sv.html = home.content.sv.html.replace(
+      '<button>EN</button>',
+      '<button aria-label="Byt språk till engelska" aria-pressed="false"><span>SV</span><span>EN</span></button><button aria-label="Växla ljust/mörkt">Theme</button>',
+    )
+    const created = createSitePage(document.presentation, page)
+    document.presentation.pages = document.presentation.pages.map((item) =>
+      item.id === created.id ? created : item,
+    )
+    const shell = '<html lang="sv"><head></head><body><div id="root"></div></body></html>'
+    const html = renderCmsPage(
+      shell,
+      created,
+      'sv',
+      null,
+      'https://bladeblendstudio.se/extra',
+      '',
+      document.presentation,
+    )
+    expect(html).toContain('data-cms-mode="auto"')
+    expect(actionHref(html, 'language').searchParams.get('lang')).toBe('en')
+    expect(actionHref(html, 'language').searchParams.has('mode')).toBe(false)
+    expect(actionHref(html, 'theme').searchParams.get('mode')).toBe('dark')
+    const light = html.match(
+      /<style id="cms-page-light" media="\(prefers-color-scheme: light\)">([^<]*)</,
+    )
+    const dark = html.match(
+      /<style id="cms-page-dark" media="\(prefers-color-scheme: dark\)">([^<]*)</,
+    )
+    expect(light?.[1]).toContain('background:var(--knc-background,#fff)')
+    expect(dark?.[1]).toMatch(/\[id="cms-site-shell"\]\{color:#eee;background:#111/)
+    expect(html.match(/<div id="cms-site-shell"/g)).toHaveLength(1)
+  })
+  it('renders a derived legacy layout in light when no mode is requested', () => {
+    const { document, page } = fixture()
+    const shell = '<html lang="sv"><head></head><body><div id="root"></div></body></html>'
+    const html = renderCmsPage(
+      shell,
+      page,
+      'sv',
+      null,
+      'https://bladeblendstudio.se/extra',
+      '',
+      document.presentation,
+    )
+    expect(html).toContain('data-cms-mode="light"')
+    expect(html).toContain(renderSitePage(document.presentation, page, 'sv', 'light').html)
+    expect(html.match(/<style id="cms-page-/g)).toHaveLength(1)
+  })
   it('does not resurrect chrome after the owner deletes the full seeded layout', () => {
     const { document, page } = fixture()
     const created = createSitePage(document.presentation, page)

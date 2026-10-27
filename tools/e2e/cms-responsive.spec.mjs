@@ -1,14 +1,15 @@
 import { parse, walk, generate } from 'css-tree'
 import assert from 'node:assert/strict'
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { test, expect } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 900 },
   contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-responsive', async ({ page, context, browserName }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   context.setDefaultTimeout(15000)
   const backend = await nativeBackend(context)
   const frame = page.frameLocator('.gjs-frame').first()
@@ -78,7 +79,14 @@ test('cms-responsive', async ({ page, context, browserName }) => {
   const canvas = await page.locator('.gjs-frame').boundingBox()
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + Math.min(260, canvas.height / 2))
   for (let i = 0; i < 7; i++) await page.mouse.wheel(0, 450)
-  await page.waitForTimeout(500)
+  await expect
+    .poll(() =>
+      homeReviews.evaluate((node) => {
+        const rect = node.getBoundingClientRect()
+        return rect.top < globalThis.innerHeight && rect.bottom > 0
+      }),
+    )
+    .toBe(true)
   assert.ok(
     await homeReviews.evaluate((n) => {
       const r = n.getBoundingClientRect()
@@ -138,7 +146,7 @@ test('cms-responsive', async ({ page, context, browserName }) => {
         .backgroundColor === 'rgb(240, 228, 212)'
     )
   })
-  await page.screenshot({ path: `/tmp/cms-theme-${name}.png` })
+  await page.screenshot({ path: test.info().outputPath(`cms-theme-${name}.png`) })
   await publish()
   assert.equal(backend.document.presentation.themes.light.background, '#f0e4d4')
   for (const mode of ['light', 'dark']) {

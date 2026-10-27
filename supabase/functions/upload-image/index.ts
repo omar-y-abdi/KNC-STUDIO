@@ -1,6 +1,6 @@
 import { retainCmsObject } from '../_shared/cmsRetention.ts'
 import { handleCmsUpload, CmsMediaUnavailable } from './cmsUpload.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import { initializeImageMagick } from 'npm:@imagemagick/magick-wasm@0.0.42'
 import { ImageValidationError, processImage } from './processImage.ts'
 import {
@@ -9,9 +9,10 @@ import {
   parseExternalAction,
   type ExternalActionService,
 } from '../_shared/externalActions.ts'
+import { corsHeaders, corsJson as json } from '../_shared/http.ts'
+import { deleteSchema, formFields, uploadSchema } from './request.ts'
 
 const MAX_INPUT_BYTES = 5 * 1024 * 1024
-const BARBER_ID = /^[a-z0-9-]{1,32}$/
 let imageMagickReady: Promise<void> | null = null
 
 function ensureImageMagickReady(): Promise<void> {
@@ -19,178 +20,6 @@ function ensureImageMagickReady(): Promise<void> {
     initializeImageMagick(wasm),
   )
   return imageMagickReady
-}
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-type UploadRequest =
-  | {
-      readonly kind: 'gallery'
-      readonly file: File
-      readonly galleryKind: 'salon' | 'cuts'
-      readonly alt: string
-      readonly sortOrder: number
-    }
-  | {
-      readonly kind: 'barber_photo'
-      readonly file: File
-      readonly barberId: string
-    }
-  | {
-      readonly kind: 'site_logo'
-      readonly file: File
-      readonly expectedPath: string
-    }
-
-type DeleteRequest =
-  | {
-      readonly action: 'delete'
-      readonly kind: 'gallery'
-      readonly id: string
-      readonly storagePath: string
-    }
-  | {
-      readonly action: 'delete'
-      readonly kind: 'barber_photo'
-      readonly barberId: string
-      readonly storagePath: string
-    }
-  | {
-      readonly action: 'delete'
-      readonly kind: 'site_logo'
-      readonly storagePath: string
-    }
-
-const LOGO_PATH =
-  /^logo\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
-
-function textField(form: FormData, name: string): string | null {
-  const values = form.getAll(name)
-  return values.length === 1 && typeof values[0] === 'string' ? values[0] : null
-}
-
-function fileField(form: FormData): File | null {
-  const values = form.getAll('file')
-  return values.length === 1 && values[0] instanceof File ? values[0] : null
-}
-
-function hasOnlyFields(form: FormData, allowed: readonly string[]): boolean {
-  const allowedFields = new Set(allowed)
-  for (const [name] of form.entries()) {
-    if (!allowedFields.has(name)) return false
-  }
-  return true
-}
-
-function parseInteger(value: string): number | null {
-  if (!/^-?(?:0|[1-9][0-9]*)$/.test(value)) return null
-  const parsed = Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed < -2147483648 || parsed > 2147483647) return null
-  return parsed
-}
-
-function parseUpload(form: FormData): UploadRequest | null {
-  const kind = textField(form, 'kind')
-  const file = fileField(form)
-  if (kind === null || file === null || file.size === 0) return null
-
-  if (kind === 'gallery') {
-    if (!hasOnlyFields(form, ['kind', 'file', 'galleryKind', 'alt', 'sortOrder'])) return null
-    const galleryKind = textField(form, 'galleryKind')
-    const alt = textField(form, 'alt')
-    const sortOrder = textField(form, 'sortOrder')
-    const parsedSortOrder = sortOrder === null ? null : parseInteger(sortOrder)
-
-    if (
-      (galleryKind !== 'salon' && galleryKind !== 'cuts') ||
-      alt === null ||
-      alt.length > 2000 ||
-      parsedSortOrder === null
-    ) {
-      return null
-    }
-
-    return {
-      kind,
-      file,
-      galleryKind,
-      alt: alt.trim(),
-      sortOrder: parsedSortOrder,
-    }
-  }
-
-  if (kind === 'barber_photo') {
-    if (!hasOnlyFields(form, ['kind', 'file', 'barberId'])) return null
-    const barberId = textField(form, 'barberId')
-    if (barberId === null || !BARBER_ID.test(barberId)) return null
-    return { kind, file, barberId }
-  }
-
-  if (kind === 'site_logo') {
-    if (!hasOnlyFields(form, ['kind', 'file', 'expectedPath'])) return null
-    const expectedPath = textField(form, 'expectedPath')
-    if (expectedPath === null || (expectedPath !== '' && !LOGO_PATH.test(expectedPath))) return null
-    return { kind, file, expectedPath }
-  }
-
-  return null
-}
-
-function parseDelete(value: unknown): DeleteRequest | null {
-  if (typeof value !== 'object' || value === null) return null
-
-  const body = value as Record<string, unknown>
-
-  if (body.action !== 'delete' || typeof body.storagePath !== 'string') return null
-  if (body.storagePath.length < 1 || body.storagePath.length > 300) return null
-
-  if (
-    body.kind === 'gallery' &&
-    typeof body.id === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)
-  ) {
-    return {
-      action: body.action,
-      kind: body.kind,
-      id: body.id,
-      storagePath: body.storagePath,
-    }
-  }
-
-  if (body.kind === 'site_logo' && LOGO_PATH.test(body.storagePath)) {
-    return {
-      action: body.action,
-      kind: body.kind,
-      storagePath: body.storagePath,
-    }
-  }
-
-  if (
-    body.kind === 'barber_photo' &&
-    typeof body.barberId === 'string' &&
-    BARBER_ID.test(body.barberId) &&
-    body.storagePath.startsWith(`${body.barberId}/`)
-  ) {
-    return {
-      action: body.action,
-      kind: body.kind,
-      barberId: body.barberId,
-      storagePath: body.storagePath,
-    }
-  }
-
-  return null
 }
 
 function isGalleryRow(value: unknown): value is {
@@ -402,19 +231,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const contentType = req.headers.get('content-type')?.toLowerCase() ?? ''
 
   if (contentType.startsWith('application/json')) {
-    let rawDelete: unknown
+    const request = deleteSchema.safeParse(await req.json().catch(() => null))
 
-    try {
-      rawDelete = await req.json()
-    } catch {
+    if (!request.success) {
       return json({ ok: false, error: 'invalid_payload' }, 400)
     }
 
-    const deletion = parseDelete(rawDelete)
-
-    if (deletion === null) {
-      return json({ ok: false, error: 'invalid_payload' }, 400)
-    }
+    const deletion = request.data
 
     if (
       (deletion.kind === 'gallery' || deletion.kind === 'site_logo') &&
@@ -500,11 +323,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     )
   }
 
-  const upload = parseUpload(form)
+  const request = uploadSchema.safeParse(formFields(form))
 
-  if (upload === null) {
+  if (!request.success) {
     return json({ ok: false, error: 'invalid_payload' }, 400)
   }
+
+  const upload = request.data
 
   if (upload.file.size > MAX_INPUT_BYTES) {
     return json({ ok: false, error: 'file_too_large' }, 413)
@@ -575,6 +400,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const stored = await service.storage.from(bucket).upload(path, processed, {
     contentType: 'image/webp',
     upsert: false,
+    cacheControl: '31536000',
   })
 
   if (stored.error !== null) {

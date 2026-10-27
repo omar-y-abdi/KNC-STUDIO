@@ -1,11 +1,10 @@
 import { copyCmsAsset } from './copyAsset.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import {
   CmsValidationError,
   validateCompleteDocument,
   validateDocumentMedia,
   documentMedia,
-  documentMediaPlacements,
   mediaKey,
   type CmsDocument,
   type CmsState,
@@ -13,9 +12,10 @@ import {
 import { validateDocumentMarkupPlacements } from '../../../shared/cms-markup.ts'
 import { CMS_BUILT_ASSETS } from '../../../shared/cms-built-assets.ts'
 import { CMS_RELEASE } from '../../../shared/cms-release.ts'
+import { parse } from '../_shared/http.ts'
+import { requestSchema } from './request.ts'
 
 const MAX_BODY = 2 * 1024 * 1024 + 4096
-const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))
@@ -36,7 +36,10 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 
       if (size > MAX_BODY) {
         await reader.cancel()
-        throw new CmsValidationError('request', 'Request exceeds 2 MiB')
+        throw new CmsValidationError(
+          'request',
+          'Utkastet är större än 2 MiB. Ta bort innehåll som inte behövs.',
+        )
       }
 
       chunks.push(part.value)
@@ -117,58 +120,35 @@ Deno.serve(async (request) => {
     // No extra table/column privileges are needed by the service credential.
     const authorization = await service.rpc('internal_cms_assert_owner', { p_actor: actor })
     if (authorization.error) throw authorization.error
-    const body = await readBody(request)
+    const parsed = parse(requestSchema, await readBody(request))
+    if (!parsed.ok)
+      return json({ error: 'invalid_content', message: parsed.detail, requestId }, 422)
+    const body = parsed.data
     const invoke = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
       const result = await service.rpc(name, { p_actor: actor, ...args })
       if (result.error) throw result.error
       return result.data
     }
-    const only = (...names: string[]): void => {
-      if (Object.keys(body).some((key) => !['operation', ...names].includes(key)))
-        throw new CmsValidationError('request', 'Unsupported field')
-    }
-    const readInteger = (key: string, fallback?: number): number => {
-      const value = body[key] ?? fallback
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
-        throw new CmsValidationError(key, 'Expected a positive integer')
-      return value
-    }
     if (body.operation === 'state') {
-      only()
       return json(await invoke('internal_cms_state', {}))
     }
     if (body.operation === 'history') {
-      only('before')
       return json(
-        await invoke('internal_cms_history', {
-          p_before: readInteger('before', Number.MAX_SAFE_INTEGER),
-        }),
+        await invoke('internal_cms_history', { p_before: body.before ?? Number.MAX_SAFE_INTEGER }),
       )
     }
     if (body.operation === 'revision') {
-      only('revision')
-      const result = await invoke('internal_cms_revision', { p_revision: readInteger('revision') })
+      const result = await invoke('internal_cms_revision', { p_revision: body.revision })
       return result ? json(result) : json({ error: 'not_found', requestId }, 404)
     }
     if (body.operation === 'asset_copy') return json(await copyCmsAsset(body, service))
     if (body.operation === 'asset_usage') {
-      only('id')
-      if (typeof body.id !== 'string' || !UUID.test(body.id))
-        throw new CmsValidationError('asset', 'Invalid asset identity')
       return json(await invoke('internal_cms_asset_usage', { p_id: body.id }))
     }
     if (body.operation === 'asset_lifecycle') {
-      only('id', 'version', 'action')
-      if (
-        typeof body.id !== 'string' ||
-        !UUID.test(body.id) ||
-        typeof body.action !== 'string' ||
-        !['archive', 'restore', 'trash', 'delete'].includes(body.action)
-      )
-        throw new CmsValidationError('asset', 'Invalid asset lifecycle action')
       const result = await invoke('internal_cms_asset_transition', {
         p_id: body.id,
-        p_version: readInteger('version'),
+        p_version: body.version,
         p_action: body.action,
       })
       if (body.action !== 'delete') return json(result)
@@ -202,34 +182,16 @@ Deno.serve(async (request) => {
       return json({ deleted: true, id: body.id, usage: transition['usage'] })
     }
     if (body.operation === 'asset') {
-      only('id', 'version', 'name', 'alt', 'archived')
-      if (
-        typeof body.id !== 'string' ||
-        !UUID.test(body.id) ||
-        typeof body.name !== 'string' ||
-        !body.name.trim() ||
-        body.name.length > 160 ||
-        typeof body.alt !== 'string' ||
-        body.alt.length > 2000 ||
-        typeof body.archived !== 'boolean'
-      )
-        throw new CmsValidationError('asset', 'Invalid asset metadata')
       return json(
         await invoke('internal_cms_asset_update', {
           p_id: body.id,
-          p_version: readInteger('version'),
+          p_version: body.version,
           p_name: body.name.trim(),
           p_alt: body.alt,
           p_archived: body.archived,
         }),
       )
     }
-    if (body.operation !== 'validate' && body.operation !== 'publish')
-      throw new CmsValidationError('operation', 'Unknown operation')
-    only(
-      'document',
-      ...(body.operation === 'publish' ? ['baseRevision', 'baseFingerprint', 'requestId'] : []),
-    )
     const validationState = (await invoke('internal_cms_state', {})) as CmsState
     const authoritative = validationState.document
     validateCompleteDocument(body.document, authoritative)
@@ -239,14 +201,8 @@ Deno.serve(async (request) => {
       storageOrigin: new URL(publicStorage).origin,
       builtAssets: CMS_BUILT_ASSETS,
     }
-    const authoritativeDocument: CmsDocument = structuredClone(authoritative)
-    const authoritativeMarkup = validateDocumentMarkupPlacements(authoritativeDocument, policy)
-    const currentPlacements = [
-      ...documentMediaPlacements(authoritativeDocument),
-      ...authoritativeMarkup,
-    ]
     const authoredMarkup = validateDocumentMarkupPlacements(document, policy)
-    validateDocumentMedia(document, validationState.assets, authoredMarkup, currentPlacements)
+    validateDocumentMedia(document, validationState.assets, authoredMarkup)
     const references = [...documentMedia(document), ...authoredMarkup.map(({ ref }) => ref)]
     const referenceKeys = [...new Set(references.map(mediaKey))]
     const inventory = await service.rpc('internal_cms_missing_media', {
@@ -264,17 +220,14 @@ Deno.serve(async (request) => {
         'En refererad fil saknas eller är inte registrerad. Välj filen på nytt i biblioteket.',
       )
     validateCompleteDocument(document, authoritative)
-    if (body.operation === 'validate') return json({ document })
-    if (
-      typeof body.baseFingerprint !== 'string' ||
-      !/^[0-9a-f]{32}$/.test(body.baseFingerprint) ||
-      typeof body.requestId !== 'string' ||
-      !UUID.test(body.requestId)
-    )
-      throw new CmsValidationError('publication', 'Invalid publication identity')
+    if (body.operation === 'validate') {
+      // Publication applies the archived-media rule under its lock; validation asks the same rule.
+      await invoke('internal_cms_check_media', { p_document: document })
+      return json({ document })
+    }
     const result = await invoke('internal_cms_publish', {
       p_document: document,
-      p_base_revision: readInteger('baseRevision'),
+      p_base_revision: body.baseRevision,
       p_base_fingerprint: body.baseFingerprint,
       p_request_id: body.requestId,
     })
@@ -283,7 +236,7 @@ Deno.serve(async (request) => {
     if (error instanceof CmsValidationError)
       return json({ error: 'invalid_content', message: error.message, requestId }, 422)
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-    if (code === '40001')
+    if (code === 'PT409')
       return json(
         {
           error: 'conflict',
@@ -293,16 +246,15 @@ Deno.serve(async (request) => {
         409,
       )
     if (code === '42501') return json({ error: 'forbidden', requestId }, 403)
-    if (code === 'P4090') {
-      const message =
-        error &&
-        typeof error === 'object' &&
-        'message' in error &&
-        typeof error.message === 'string'
-          ? error.message
-          : 'Resursens livscykel ändrades. Läs in biblioteket igen.'
-      return json({ error: 'asset_lifecycle_conflict', message, requestId }, 409)
-    }
+    // PT422 messages are written in Swedish for the owner by the database rule that raised them.
+    if (
+      code === 'PT422' &&
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof error.message === 'string'
+    )
+      return json({ error: 'invalid_content', message: error.message, requestId }, 422)
     if (['22023', '23514', '23502', '23503', '23505'].includes(code))
       return json(
         {

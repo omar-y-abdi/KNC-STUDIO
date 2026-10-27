@@ -19,9 +19,7 @@ export {
   formatBusinessAddress,
   parseCancellationPolicyHours,
   resolveBusinessSettings,
-  type BusinessDiscoveryFacts,
   type BusinessSettings,
-  type SeoSettings,
 } from './business'
 
 /** The four allowed font-size presets, smallest → largest. */
@@ -83,7 +81,7 @@ export const BOOKING_CONFIRMATION_TEXT_KEYS = [
   'confirmSent',
   'addToCal',
 ] as const satisfies readonly (keyof BookingStrings)[]
-export const BOOKING_POPUP_TEXT_KEYS = [
+const BOOKING_POPUP_TEXT_KEYS = [
   ...BOOKING_DETAILS_TEXT_KEYS,
   ...BOOKING_CONFIRMATION_TEXT_KEYS,
 ] as const

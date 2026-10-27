@@ -1,5 +1,6 @@
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
-import { validateEmailDesign, type EmailDesign } from '../../../shared/cms.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { validateEmailDesign, type EmailDesign } from '../../../shared/email-design.ts'
+import { uuid } from './http.ts'
 
 import type {
   EmailLanguage,
@@ -371,7 +372,7 @@ export async function sendViaResend(
       typeof accepted === 'object' && accepted !== null
         ? (accepted as Record<string, unknown>)['id']
         : null
-    if (typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+    if (!uuid.safeParse(id).success) {
       throw new ResendDeliveryError(
         'transient',
         response.status,

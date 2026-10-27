@@ -8,11 +8,14 @@ describe('mockReviewsAdapter', () => {
   })
 
   it('never fabricates a successful customer review', async () => {
-    const result = await mockReviewsAdapter.submit({
-      phone: '0701234567' as Phone,
-      rating: 5,
-      text: 'Top fade.',
-    })
+    const result = await mockReviewsAdapter.submit(
+      {
+        phone: '0701234567' as Phone,
+        rating: 5,
+        text: 'Top fade.',
+      },
+      'challenge-token',
+    )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error.kind).toBe('unavailable')
   })

@@ -1,6 +1,6 @@
 begin;
 
-select plan(19);
+select plan(28);
 
 insert into public.barbers (id, name) values ('recurring-availability', 'Recurring Availability');
 insert into public.barber_schedules (barber_id, weekday, working, start_min, end_min)
@@ -171,6 +171,88 @@ select is(
   'invalid', 'schedule RPC rejects a non-15-minute weekly schedule value'
 );
 reset role;
+
+-- A recurring break over a confirmed booking is a booking_conflict until the owner overrides it. The
+-- bookings use fixed dates because a break must lie inside 09:00-18:00, which a realistic "in
+-- progress" booking cannot do at every time of day. This block pins the weekday/overlap logic and
+-- that a booking that ended long ago is not reported; the end_at-vs-start_at boundary of the
+-- predicate is pinned at the end of this file with a booking that spans past to future, and for week
+-- save, time off and slot block in 32_transactional_availability_test.sql.
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, lang, status)
+values
+  ('36000000-0000-0000-0000-000000000021', 'recurring-availability', 'h', 'Hår', 350, 45,
+   (date '2099-01-12' + time '14:00') at time zone 'Europe/Stockholm',
+   (date '2099-01-12' + time '14:45') at time zone 'Europe/Stockholm',
+   'Upcoming Kund', 'phone', '0703600021', 'sv', 'confirmed'),
+  ('36000000-0000-0000-0000-000000000022', 'recurring-availability', 'h', 'Hår', 350, 45,
+   (date '2020-01-06' + time '14:00') at time zone 'Europe/Stockholm',
+   (date '2020-01-06' + time '14:45') at time zone 'Europe/Stockholm',
+   'Finished Kund', 'phone', '0703600022', 'sv', 'confirmed');
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '36000000-0000-0000-0000-000000000010')::text,
+  true
+);
+select set_config('test.break_conflict', public.admin_add_recurring_break(
+  'recurring-availability', 1, 840, 900
+)::text, true);
+select is((current_setting('test.break_conflict')::jsonb) ->> 'error', 'booking_conflict',
+  'recurring break over a confirmed upcoming booking is a booking_conflict');
+select ok((current_setting('test.break_conflict')::jsonb -> 'booking_ids') ? '36000000-0000-0000-0000-000000000021',
+  'recurring-break conflict identifies the upcoming booking');
+select ok(not ((current_setting('test.break_conflict')::jsonb -> 'booking_ids') ? '36000000-0000-0000-0000-000000000022'),
+  'recurring-break conflict does not report a booking that ended long ago');
+select is(public.admin_add_recurring_break(
+  'recurring-availability', 1, 840, 900, null
+) ->> 'error', 'booking_conflict', 'null recurring-break override cannot bypass booking conflict');
+select is(public.admin_add_recurring_break(
+  'recurring-availability', 1, 840, 900, true
+) ->> 'ok', 'true', 'explicit override adds the recurring break');
+reset role;
+
+select is(
+  (select count(*)::integer from public.barber_recurring_breaks
+   where barber_id = 'recurring-availability' and weekday = 1 and start_min = 840 and end_min = 900),
+  1, 'the conflicting call inserted nothing and the override inserted exactly one break'
+);
+
+-- A booking that started in the past and ends in the future is in progress at EVERY time of day, so
+-- it pins end_at > now() (not start_at >= now()) without depending on when the suite runs. Direct
+-- inserts do not tie end_at to duration_min, so the artificial span is accepted; the break overlaps
+-- its local 10:00-10:45 time-of-day window on the booking's start weekday (Tuesday).
+insert into public.bookings
+  (id, barber_id, service_id, service_name, price, duration_min, start_at, end_at,
+   customer_name, method, phone, lang, status)
+values
+  ('36000000-0000-0000-0000-000000000023', 'recurring-availability', 'h', 'Hår', 350, 45,
+   (date '2020-01-14' + time '10:00') at time zone 'Europe/Stockholm',
+   (date '2098-12-30' + time '10:45') at time zone 'Europe/Stockholm',
+   'In Progress Kund', 'phone', '0703600023', 'sv', 'confirmed');
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  json_build_object('sub', '36000000-0000-0000-0000-000000000010')::text,
+  true
+);
+select set_config('test.break_in_progress', public.admin_add_recurring_break(
+  'recurring-availability', 2, 600, 660
+)::text, true);
+select is((current_setting('test.break_in_progress')::jsonb) ->> 'error', 'booking_conflict',
+  'recurring break over a confirmed in-progress booking is a booking_conflict');
+select ok((current_setting('test.break_in_progress')::jsonb -> 'booking_ids') ? '36000000-0000-0000-0000-000000000023',
+  'recurring-break conflict identifies the in-progress booking');
+reset role;
+
+select is(
+  (select count(*)::integer from public.barber_recurring_breaks
+   where barber_id = 'recurring-availability' and weekday = 2 and start_min = 600 and end_min = 660),
+  0, 'the in-progress conflict inserted no break'
+);
 
 select * from finish();
 rollback;

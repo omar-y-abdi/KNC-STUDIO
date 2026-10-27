@@ -32,13 +32,6 @@ export interface ServiceItem {
   readonly dur: number
 }
 
-/** A titled group of services with an optional note. */
-export interface ServiceGroup {
-  readonly title: string
-  readonly note: string
-  readonly items: readonly ServiceItem[]
-}
-
 /** Customer-entered contact form (raw, unvalidated). Phone is operational contact data; email
  * receives transactional confirmation and permanent self-service access. */
 export interface ContactForm {

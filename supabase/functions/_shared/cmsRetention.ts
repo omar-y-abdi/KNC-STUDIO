@@ -14,11 +14,9 @@ export async function retainCmsObject(
     p_bucket: bucket,
     p_path: path,
   })
-  if (result.error) {
-    // Functions deployed before the additive migration must still perform legacy cleanup.
-    if (result.error.code === 'PGRST202' || result.error.code === '42883') return false
-    throw new Error('CMS media retention lookup failed')
-  }
+  // Every lookup error fails closed, a missing function included: an unanswered retention check
+  // must never be read as "not retained", because the caller deletes unretained bytes.
+  if (result.error) throw new Error('CMS media retention lookup failed')
   if (typeof result.data !== 'boolean') throw new Error('Invalid CMS media retention response')
   return result.data
 }

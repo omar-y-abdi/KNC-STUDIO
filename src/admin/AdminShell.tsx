@@ -35,6 +35,7 @@ import {
   withAdminNavigationHistoryState,
 } from './navigationState'
 import type { AdminBarberId, AdminProfile } from './types'
+import './AdminShell.css'
 
 const BookingsView = lazy(() =>
   import('./views/BookingsView').then((module) => ({ default: module.BookingsView })),

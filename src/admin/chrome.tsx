@@ -127,18 +127,20 @@ export function LangSwitch(props: LangSwitchProps): JSX.Element {
         type="button"
         onClick={() => props.setLang(target)}
         aria-pressed={on}
+        // The inactive language takes the shared muted token (public/tokens.css).
+        class={on ? undefined : 'bb-muted'}
         style={{
           border: 'none',
           cursor: 'pointer',
-          fontFamily: 'inherit',
+          // Explicit: the /reset and /auth/confirm overlays sit outside any Inter ancestor.
+          fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
           fontSize: '11px',
           fontWeight: 700,
           letterSpacing: '.3px',
           padding: '5px 10px',
           borderRadius: '999px',
           background: on ? c.accent : 'transparent',
-          color: on ? c.accentText : c.text,
-          opacity: on ? 1 : 0.6,
+          ...(on ? { color: c.accentText } : {}),
         }}
       >
         {target.toUpperCase()}
@@ -148,6 +150,8 @@ export function LangSwitch(props: LangSwitchProps): JSX.Element {
   return (
     <div
       style={{
+        // The muted token follows this switch's own mode, also inside a differently themed preview.
+        colorScheme: props.dark ? 'dark' : 'light',
         display: 'flex',
         background: props.dark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)',
         borderRadius: '999px',

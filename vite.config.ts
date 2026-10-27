@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 import preact from '@preact/preset-vite'
+import { Features } from 'lightningcss'
 
 function loopbackOrigin(value: string, name: string): string {
   const target = new URL(value)
@@ -83,8 +84,14 @@ export default defineConfig(({ command, mode }) => {
   }
   return {
     plugins: [preact()],
+    // Every worktree's node_modules is a symlink to one shared install, so the default cache
+    // (node_modules/.vite) would be shared too: parallel dev servers race on the dependency optimizer.
+    cacheDir: '.vite-cache',
     server: { proxy, https },
     preview: { proxy, https },
+    // Keep light-dark() (public/tokens.css) as written. Lowered for older targets it becomes variables
+    // switched only by prefers-color-scheme, which ignores a scheme a page pins (?mode, staff toggle).
+    css: { lightningcss: { exclude: Features.LightDark } },
     build: {
       target: 'es2022',
       sourcemap: false,

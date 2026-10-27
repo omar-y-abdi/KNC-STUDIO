@@ -1,5 +1,5 @@
 name: Prepare the tested source and Node tools
-description: Replay the same formatted tree, install frozen npm dependencies, prepare concise logs.
+description: Replay the same formatted tree and install frozen npm dependencies.
 inputs:
   formatted:
     description: Download and verify the source artifact from the format job.
@@ -10,6 +10,18 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Verify container write access
+      if: ${{ job.container.id != '' }}
+      shell: bash
+      run: |
+        test "$(id -u)" = 1001
+        export NPM_CONFIG_CACHE="$RUNNER_TEMP/npm-cache"
+        echo "NPM_CONFIG_CACHE=$NPM_CONFIG_CACHE" >> "$GITHUB_ENV"
+        mkdir -p "$NPM_CONFIG_CACHE" .ci-source .ci-build node_modules test-results playwright-report
+        for directory in "$HOME" "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "$NPM_CONFIG_CACHE" .ci-source .ci-build node_modules test-results playwright-report "${TMPDIR:-/tmp}"; do
+          test -w "$directory"
+          printf 'Verified uid 1001 write access: %s\n' "$directory"
+        done
     - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
       with:
         node-version: 22
@@ -19,16 +31,13 @@ runs:
       if: inputs.formatted == 'true'
       with:
         name: ci-source-${{ github.run_id }}
-        path: ${{ runner.temp }}/ci-source
+        path: .ci-source
     - name: Apply and verify the formatted source
       if: inputs.formatted == 'true'
       shell: bash
       run: |
-        git apply --allow-empty "$RUNNER_TEMP/ci-source/format.patch"
-        node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+        git apply --allow-empty .ci-source/format.patch
+        node tools/ci/build-artifact.mjs verify-source .ci-source
     - name: Install frozen dependencies
       shell: bash
       run: npm ci
-    - name: Prepare concise logs
-      shell: bash
-      run: bash tools/ci/setup-furl.sh

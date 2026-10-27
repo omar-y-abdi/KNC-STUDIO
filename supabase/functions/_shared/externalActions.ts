@@ -1,5 +1,6 @@
 import { retainCmsObject } from './cmsRetention.ts'
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { uuid } from './http.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   buildEvent,
   deleteEvent,
@@ -133,20 +134,6 @@ export interface ExternalActionRuntime {
   readonly customerAccessHashSalt?: string | undefined
 }
 
-/** The only safe reason for a new Edge worker to use the pre-migration generic dispatcher. */
-export function isMissingCalendarDispatcherError(
-  error: { readonly code?: string; readonly message?: string } | null,
-): boolean {
-  if (error === null) return false
-  return (
-    error.code === 'PGRST202' ||
-    error.code === '42883' ||
-    /calendar_external_action_for_dispatch.*(does not exist|not found|could not find)/i.test(
-      error.message ?? '',
-    )
-  )
-}
-
 export class ExternalActionError extends Error {
   readonly code: string
   readonly retryable: boolean
@@ -164,10 +151,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isUuid(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
-  )
+  return uuid.safeParse(value).success
 }
 
 function nonEmpty(value: unknown): value is string {
@@ -879,4 +863,60 @@ export async function executeExternalAction(
       }
     }
   }
+}
+
+/** How the outbox recorded one dispatched job after its side effect was attempted. */
+export type ExternalActionSettlement =
+  | { readonly status: 'completed' }
+  | { readonly status: 'failed'; readonly code: string }
+  | { readonly status: 'database_failed' }
+
+/**
+ * Runs one dispatched job and records the outcome under its dispatch token. A job completes only
+ * after its side effect succeeded; any thrown error schedules a retry, or blocks the job when the
+ * error is not retryable.
+ */
+export async function settleExternalAction(
+  action: ExternalAction,
+  service: ExternalActionService,
+  runtime: ExternalActionRuntime,
+): Promise<ExternalActionSettlement> {
+  try {
+    await executeExternalAction(action, service, runtime)
+  } catch (error) {
+    return recordExternalActionFailure(action, service, error)
+  }
+
+  const completed = await service.rpc('complete_external_action', {
+    p_id: action.id,
+    p_dispatch_token: action.dispatch_token,
+  })
+  if (completed.error !== null || completed.data !== true) {
+    console.error('external-cleanup: completion update failed', completed.error?.code)
+    return { status: 'database_failed' }
+  }
+  return { status: 'completed' }
+}
+
+async function recordExternalActionFailure(
+  action: ExternalAction,
+  service: ExternalActionService,
+  error: unknown,
+): Promise<ExternalActionSettlement> {
+  const code = error instanceof ExternalActionError ? error.code : 'external_action_failed'
+  console.error(
+    `external-cleanup: ${action.action_type} failed`,
+    error instanceof Error ? error.message : 'unknown',
+  )
+  const resolutionRpc =
+    error instanceof ExternalActionError && !error.retryable
+      ? 'block_external_action'
+      : 'fail_external_action'
+  const failed = await service.rpc(resolutionRpc, {
+    p_id: action.id,
+    p_dispatch_token: action.dispatch_token,
+    p_error_code: code,
+  })
+  if (failed.error !== null || failed.data !== true) return { status: 'database_failed' }
+  return { status: 'failed', code }
 }

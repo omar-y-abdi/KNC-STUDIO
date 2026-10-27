@@ -6,9 +6,9 @@ export interface StoragePreferences {
   readonly functional: boolean
 }
 
-export const STORAGE_PREFERENCES_COOKIE = 'bladeblend_storage_preferences'
-export const FUNCTIONAL_PREFERENCES_VALUE = 'functional'
-export const ESSENTIAL_ONLY_PREFERENCES_VALUE = 'essential'
+const STORAGE_PREFERENCES_COOKIE = 'bladeblend_storage_preferences'
+const FUNCTIONAL_PREFERENCES_VALUE = 'functional'
+const ESSENTIAL_ONLY_PREFERENCES_VALUE = 'essential'
 let sessionChoice: StoragePreferences | undefined
 let cookieAtChoice: string | null = null
 const listeners = new Set<() => void>()
@@ -31,7 +31,7 @@ function secureAttribute(): string {
 }
 
 /** Null means no optional-storage choice has been recorded yet. */
-export function parseStoragePreferences(cookie: string): StoragePreferences | null {
+function parseStoragePreferences(cookie: string): StoragePreferences | null {
   const value = cookieValue(cookie, STORAGE_PREFERENCES_COOKIE)
   if (value === FUNCTIONAL_PREFERENCES_VALUE) return { functional: true }
   if (value === ESSENTIAL_ONLY_PREFERENCES_VALUE) return { functional: false }

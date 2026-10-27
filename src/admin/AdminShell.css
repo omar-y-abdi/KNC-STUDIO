@@ -1,0 +1,96 @@
+/* ---------------------------------------------------------------------------------------------
+   Admin panel responsiveness. These rules ONLY target `.knc-admin-*` elements (the admin shell),
+   so the public marketing site — which uses none of these classes — is completely unaffected.
+   On phones the fixed left sidebar becomes a compact top header. Its down-chevron opens a small,
+   vertical tab menu so every admin view stays reachable without a horizontal scrolling strip.
+   --------------------------------------------------------------------------------------------- */
+.knc-admin-signout-top {
+  display: none;
+}
+
+.knc-admin-mobile-menu-toggle {
+  display: none;
+}
+
+/* Native <input type="date"> on iOS Safari carries an intrinsic shadow-DOM width
+   (::-webkit-date-and-time-value) that ignores the host's width/min-width, so on a narrow phone the
+   Ledighet (time-off) date fields bleed past the card border. appearance:none + a left-aligned value
+   drops that platform-intrinsic width, so the input honors its width:100% / border-box. Desktop is
+   unaffected (the fields already fit); scoped to the admin shell only. */
+.knc-admin-shell input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.knc-admin-shell input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
+/* NOTE: the shell/sidebar/navlist carry INLINE layout styles (display/width/flex-direction), which
+   beat plain class selectors. The mobile overrides below therefore need `!important` to win — that is
+   the only way a media-query class rule can override an inline style. Scoped to `.knc-admin-*`, so the
+   public site is untouched. */
+@media (max-width: 760px) {
+  .knc-admin-shell {
+    display: block !important;
+  }
+  .knc-admin-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+    overflow: visible !important;
+    /* Safe-area aware: on notched phones the header starts below the notch, like the public site. */
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px !important;
+  }
+  .knc-admin-mobile-menu-toggle {
+    display: inline-flex !important;
+    order: 2;
+    margin-left: auto;
+  }
+  /* The brand label shrinks beside the menu toggle. */
+  .knc-admin-brand {
+    order: 1;
+    padding: 0 8px 0 2px !important;
+    font-size: 15px !important;
+    white-space: nowrap;
+    flex: none !important;
+  }
+  .knc-admin-navlist {
+    display: none !important;
+    position: absolute;
+    top: 100%;
+    right: 12px;
+    width: min(256px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    padding: 4px !important;
+    gap: 2px !important;
+    box-sizing: border-box;
+    background: inherit;
+    border: 0.5px solid color-mix(in srgb, currentColor 14%, transparent);
+    border-radius: 12px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+    z-index: 1;
+  }
+  .knc-admin-navlist-open {
+    display: flex !important;
+  }
+  .knc-admin-navlist > button {
+    width: 100%;
+  }
+  /* The bottom sign-out belongs in the top bar on mobile (it is not part of the tab menu). */
+  .knc-admin-signout-bottom {
+    display: none !important;
+  }
+  .knc-admin-signout-top {
+    display: inline-flex !important;
+  }
+  /* The header above is sticky at top:0, so the mobile topbar scrolls normally below it. */
+  .knc-admin-topbar {
+    position: static !important;
+  }
+}

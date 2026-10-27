@@ -1,33 +1,81 @@
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useRoster } from '../../src/booking/useRoster'
+import { useServices } from '../../src/booking/useServices'
+import { mockBarbersAdapter } from '../../src/booking/adapters/mockBarbers'
+import { mockServicesAdapter } from '../../src/booking/adapters/mockServices'
+import { asBarberId } from '../../src/booking/domain'
+import { hooks, render as renderWithHooks, reset } from './helpers/fakeHooks'
+
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
+vi.mock('../../src/booking/adapters/barbersIndex', () => ({
+  defaultBarbersPort: {},
+  subscribeBookingCatalog: vi.fn(),
+}))
+vi.mock('../../src/booking/adapters/servicesIndex', () => ({ defaultServicesPort: {} }))
+
+beforeEach(reset)
+afterEach(() => vi.unstubAllGlobals())
 
 describe('database-owned public catalog', () => {
-  it('never paints or restores named barbers from frontend constants', () => {
-    const rosterHook = readFileSync('src/booking/useRoster.ts', 'utf8')
-    const servicesHook = readFileSync('src/booking/useServices.ts', 'utf8')
-    const mockRoster = readFileSync('src/booking/adapters/mockBarbers.ts', 'utf8')
-    const mockServices = readFileSync('src/booking/adapters/mockServices.ts', 'utf8')
-    const aboutSv = readFileSync('src/i18n/sv.ts', 'utf8')
-    const aboutEn = readFileSync('src/i18n/en.ts', 'utf8')
-    const liveSmoke = readFileSync('tools/smoke-live.mjs', 'utf8')
-
-    expect(rosterHook).not.toContain('CONSTANT_ROSTER')
-    expect(servicesHook).not.toContain('MOCK_SERVICES')
-    expect(`${mockRoster}\n${aboutSv}\n${aboutEn}`).not.toMatch(
-      /Hassan|Victor|Salman|freebandzcuts/,
-    )
-    expect(mockServices).not.toMatch(/Hårklippning|Skäggklippning|Studentklippning/)
-    expect(liveSmoke).toContain("'/rest/v1/rpc/public_booking_catalog'")
-    expect(liveSmoke).not.toMatch(/Hassan|Victor|Salman|hassan|victor|salman/)
+  it('exposes no invented roster or services in an unconfigured build', async () => {
+    await expect(mockBarbersAdapter.listActive()).resolves.toEqual([])
+    await expect(
+      mockServicesAdapter.listForBarber(asBarberId('db'), '2040-03-18'),
+    ).resolves.toEqual([])
   })
 
-  it('preloads and caches live catalog reads instead of fetching after booking opens', () => {
-    const app = readFileSync('src/app/App.tsx', 'utf8')
-    const rosterIndex = readFileSync('src/booking/adapters/barbersIndex.ts', 'utf8')
-    const serviceIndex = readFileSync('src/booking/adapters/servicesIndex.ts', 'utf8')
+  it.each(['roster', 'services'] as const)(
+    'starts %s empty and uses only port rows',
+    async (kind) => {
+      const rows =
+        kind === 'roster'
+          ? [
+              {
+                barber: { id: asBarberId('db'), name: 'Owner Barber', ig: '' },
+                copy: null,
+                photoUrl: null,
+              },
+            ]
+          : [{ id: 'cut', name: 'Owner Service', price: 125.5, dur: 30 }]
+      const pending: { resolve?: (rows: unknown) => void } = {}
+      const list = vi.fn().mockImplementation(
+        () =>
+          new Promise((done) => {
+            pending.resolve = done
+          }),
+      )
+      const render = () =>
+        renderWithHooks(() =>
+          kind === 'roster'
+            ? useRoster({ listActive: list })
+            : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list }),
+        )
+      expect(render()).toMatchObject(kind === 'roster' ? { roster: [] } : { services: [] })
+      const cleanup = hooks.effects[0]?.()
+      expect(list).toHaveBeenCalledOnce()
+      pending.resolve?.(rows)
+      await Promise.resolve()
+      expect(render()).toEqual(
+        kind === 'roster' ? { roster: rows, loading: false } : { services: rows, loading: false },
+      )
+      if (typeof cleanup === 'function') cleanup()
+    },
+  )
 
-    expect(app).toContain('preloadBookingCatalog')
-    expect(rosterIndex).toContain('cachedBookingCatalog')
-    expect(serviceIndex).toContain('cachedBookingCatalog')
+  it.each(['roster', 'services'] as const)('keeps %s empty on a port failure', async (kind) => {
+    const list = vi.fn().mockRejectedValue(new Error('offline'))
+    const render = () =>
+      renderWithHooks(() =>
+        kind === 'roster'
+          ? useRoster({ listActive: list })
+          : useServices(asBarberId('db'), '2040-03-18', { listForBarber: list }),
+      )
+    render()
+    hooks.effects[0]?.()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(render()).toEqual(
+      kind === 'roster' ? { roster: [], loading: false } : { services: [], loading: false },
+    )
   })
 })

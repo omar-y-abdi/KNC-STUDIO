@@ -35,6 +35,8 @@ const week = (over: Partial<Record<Weekday, Partial<DaySchedule>>> = {}): WeekSc
   WD.map((wd) => ({ weekday: wd, working: true, startMin: 540, endMin: 1080, ...(over[wd] ?? {}) }))
 
 const tue12 = at('2026-07-21T12:00:00+02:00') // Tuesday 12:00 salon-local
+/** A `now` before every booking in the date/range/week fixtures below, so only their own logic is tested. */
+const early = at('2026-07-01T00:00:00+02:00')
 
 describe('allowedUnder', () => {
   it('accepts an appointment inside a working weekday window', () => {
@@ -67,15 +69,15 @@ describe('allowedUnder', () => {
 
 describe('orphansOnDate (trigger A — block a whole day)', () => {
   it('includes a confirmed booking on the salon-local date', () => {
-    expect(orphansOnDate([bk({ startAt: tue12 })], '2026-07-21')).toHaveLength(1)
+    expect(orphansOnDate([bk({ startAt: tue12 })], '2026-07-21', early)).toHaveLength(1)
   })
   it('excludes bookings on other dates', () => {
-    expect(orphansOnDate([bk({ startAt: tue12 })], '2026-07-22')).toHaveLength(0)
+    expect(orphansOnDate([bk({ startAt: tue12 })], '2026-07-22', early)).toHaveLength(0)
   })
   it('excludes already-cancelled bookings', () => {
-    expect(orphansOnDate([bk({ startAt: tue12, status: 'cancelled' })], '2026-07-21')).toHaveLength(
-      0,
-    )
+    expect(
+      orphansOnDate([bk({ startAt: tue12, status: 'cancelled' })], '2026-07-21', early),
+    ).toHaveLength(0)
   })
 })
 
@@ -87,18 +89,20 @@ describe('orphansInRange (trigger C — Ledighet range, inclusive)', () => {
   const all = [sat18, tue21, sat25, aug1]
 
   it('includes bookings within the range, inclusive of both bounds', () => {
-    const ids = orphansInRange(all, '2026-07-18', '2026-07-25').map((b) => b.id)
+    const ids = orphansInRange(all, '2026-07-18', '2026-07-25', early).map((b) => b.id)
     expect(ids).toEqual(['a', 'b', 'c'])
   })
   it('excludes bookings outside the range', () => {
-    expect(orphansInRange(all, '2026-07-18', '2026-07-25').some((b) => b.id === 'd')).toBe(false)
+    expect(orphansInRange(all, '2026-07-18', '2026-07-25', early).some((b) => b.id === 'd')).toBe(
+      false,
+    )
   })
   it('handles reversed bounds', () => {
-    expect(orphansInRange(all, '2026-07-25', '2026-07-18')).toHaveLength(3)
+    expect(orphansInRange(all, '2026-07-25', '2026-07-18', early)).toHaveLength(3)
   })
   it('excludes cancelled bookings', () => {
     const cancelled = [bk({ startAt: tue12, status: 'cancelled' })]
-    expect(orphansInRange(cancelled, '2026-07-01', '2026-07-31')).toHaveLength(0)
+    expect(orphansInRange(cancelled, '2026-07-01', '2026-07-31', early)).toHaveLength(0)
   })
 })
 
@@ -125,6 +129,49 @@ describe('orphansUnderWeek (trigger B — veckoschema change)', () => {
   it('ignores cancelled bookings', () => {
     const cancelled = bk({ startAt: tue12, status: 'cancelled' })
     expect(orphansUnderWeek([cancelled], week({ 2: { working: false } }), now)).toHaveLength(0)
+  })
+})
+
+// The database flags a confirmed booking as a conflict while `end_at > now()` (admin_save_barber_week,
+// admin_add_time_off, admin_add_slot_block, admin_add_recurring_break). Each client pre-check must
+// agree, or the barber is warned differently from what the server enforces: an in-progress booking
+// warns, a finished one does not, and one that ends exactly now is finished.
+describe('conflict window: confirmed && endAt > now, for every pre-check', () => {
+  const now = at('2026-07-21T10:00:00+02:00') // Tuesday 10:00 salon-local
+  const tue = (hhmm: string): Date => at(`2026-07-21T${hhmm}:00+02:00`)
+  const finished = bk({ id: 'finished', startAt: tue('08:00') }) // 08:00–08:45
+  const endsNow = bk({ id: 'ends-now', startAt: tue('09:15') }) // 09:15–10:00, endAt === now
+  const inProgress = bk({ id: 'in-progress', startAt: tue('09:30') }) // 09:30–10:15
+  const upcoming = bk({ id: 'upcoming', startAt: tue('12:00') }) // 12:00–12:45
+  const all = [finished, endsNow, inProgress, upcoming]
+
+  type PreCheck = (bookings: readonly AdminBooking[]) => readonly AdminBooking[]
+  // Each scenario makes every Tuesday booking a candidate orphan, so only the time window decides.
+  const preChecks: readonly (readonly [string, PreCheck])[] = [
+    ['orphansOnDate', (b) => orphansOnDate(b, '2026-07-21', now)],
+    ['orphansInRange', (b) => orphansInRange(b, '2026-07-20', '2026-07-22', now)],
+    ['orphansUnderWeek', (b) => orphansUnderWeek(b, week({ 2: { working: false } }), now)],
+  ]
+
+  describe.each(preChecks)('%s', (_name, preCheck) => {
+    it('counts in-progress and upcoming bookings, not finished ones', () => {
+      expect(preCheck(all).map((b) => b.id)).toEqual(['in-progress', 'upcoming'])
+    })
+    it('counts an in-progress booking (started, not yet ended)', () => {
+      expect(preCheck([inProgress]).map((b) => b.id)).toEqual(['in-progress'])
+    })
+    it('does not count a booking that ended before now', () => {
+      expect(preCheck([finished])).toHaveLength(0)
+    })
+    it('treats a booking whose end is exactly now as finished', () => {
+      expect(preCheck([endsNow])).toHaveLength(0)
+    })
+    it('counts an upcoming booking', () => {
+      expect(preCheck([upcoming]).map((b) => b.id)).toEqual(['upcoming'])
+    })
+    it('ignores a cancelled in-progress booking', () => {
+      expect(preCheck([bk({ ...inProgress, status: 'cancelled' })])).toHaveLength(0)
+    })
   })
 })
 

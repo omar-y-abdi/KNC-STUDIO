@@ -1,12 +1,14 @@
+import { assetFixture, documentFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 /* global window, document, location */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { test, devices } from './fixtures.mjs'
-const base = process.env.CMS_STARTUP_URL ?? 'http://127.0.0.1:4189'
+import { expect, test, devices } from './fixtures.mjs'
+import { startupOrigin } from './origins.mjs'
+const base = startupOrigin
 function storedDocument() {
-  const doc = emptyDocument()
+  const doc = documentFixture()
   doc.presentation.pages = ['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].map(
     (path, index) => {
       const html =
@@ -52,15 +54,21 @@ async function ownerSession(context) {
       token_type: 'bearer',
     },
   )
-  await context.route('https://admin-harness.invalid/rest/v1/profiles*', (route) =>
-    route.fulfill({
-      headers: {
-        'access-control-allow-origin': new URL(base).origin,
-        'access-control-allow-headers': '*',
-      },
-      json: { role: 'owner', barber_id: null, must_change_password: false, account_enabled: true },
-    }),
-  )
+  await routeApi(context, [
+    [
+      'https://admin-harness.invalid/rest/v1/profiles*',
+      (route, headers) =>
+        route.fulfill({
+          headers,
+          json: {
+            role: 'owner',
+            barber_id: null,
+            must_change_password: false,
+            account_enabled: true,
+          },
+        }),
+    ],
+  ])
 }
 const headerFile = await readFile(new URL('../../public/_headers', import.meta.url), 'utf8')
 const policy = headerFile.match(/Content-Security-Policy:\s*([^\n]+)/)?.[1]
@@ -210,7 +218,7 @@ test('legacy-backup-without-pages-keeps-authoritative-layouts', async ({
   const metrics = await (async (page, context) => {
     const backend = await nativeBackend(context, storedDocument(), undefined, base)
     await ownerSession(context)
-    const backup = emptyDocument()
+    const backup = documentFixture()
     backup.settings.business_name = 'Unsaved owner business name'
     await context.addInitScript((draft) => {
       if (window !== window.top) return
@@ -231,11 +239,32 @@ test('legacy-backup-without-pages-keeps-authoritative-layouts', async ({
     )
     await page.goto(`${base}/admin/cms/`, { waitUntil: 'domcontentloaded' })
     await page.locator('.gjs-frame').first().waitFor()
-    const saved = await page.evaluate(() =>
-      JSON.parse(window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+    // The legacy localStorage draft moved to IndexedDB, and this tab recovered it as its own.
+    const recovered = () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const opening = window.indexedDB.open('knc-cms-drafts', 1)
+            opening.onerror = () => reject(opening.error)
+            opening.onsuccess = () => {
+              const request = opening.result
+                .transaction('records')
+                .objectStore('records')
+                .get('startup-recovery')
+              request.onerror = () => reject(request.error)
+              request.onsuccess = () => {
+                opening.result.close()
+                const draft = request.result && JSON.parse(request.result.document)
+                resolve(draft && [draft.settings.business_name, draft.presentation.pages.length])
+              }
+            }
+          }),
+      )
+    await expect.poll(recovered).toEqual(['Unsaved owner business name', 6])
+    assert.equal(
+      await page.evaluate(() => window.localStorage.getItem('knc-cms-draft:startup-recovery')),
+      null,
     )
-    assert.equal(saved.document.settings.business_name, 'Unsaved owner business name')
-    assert.equal(saved.document.presentation.pages.length, 6)
     const canvas = await page.locator('.cms-canvas-shell').boundingBox()
     assert.ok(
       canvas && canvas.height >= 240 && canvas.y + canvas.height <= page.viewportSize().height,
@@ -305,7 +334,7 @@ test('resource-worker-under-production-policy', async ({ page, context }, testIn
     ))
       for (const variant of Object.values(entry.content))
         variant.html = '<main><h1>Legal page</h1></main>'
-    const asset = {
+    const asset = assetFixture({
       id: '77777777-7777-4777-8777-000000000001',
       bucket: 'cms-library',
       path: 'images/unused.webp',
@@ -317,7 +346,7 @@ test('resource-worker-under-production-policy', async ({ page, context }, testIn
       height: 40,
       archived: true,
       version: 1,
-    }
+    })
     const backend = await nativeBackend(context, doc, [asset], base)
     await ownerSession(context)
     await context.route('**/cms-public/source', (route) =>

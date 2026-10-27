@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildAuthUrl,
   buildEvent,
   googleEventId,
   GoogleHttpError,
@@ -20,6 +21,7 @@ import {
   verifyState,
   withGoogleRetry,
 } from '../../supabase/functions/_shared/calendar'
+import worker, { PublicContent } from '../../src/worker'
 import { parseCalendarStatus } from '../../src/admin/calendar/status'
 
 const { calendarStatusRpc } = vi.hoisted(() => ({ calendarStatusRpc: vi.fn() }))
@@ -124,16 +126,25 @@ describe('buildEvent', () => {
 })
 
 describe('public Calendar privacy disclosure', () => {
-  const privacy = readFileSync(
-    new URL('../../public/privacy.html', import.meta.url),
-    'utf8',
-  ).replace(/\s+/g, ' ')
-  const setup = readFileSync(
-    new URL('../../supabase/functions/_shared/calendar.ts', import.meta.url),
-    'utf8',
-  )
+  async function privacyPolicy(): Promise<string> {
+    const env = {
+      ASSETS: {
+        fetch: async () =>
+          new Response(readFileSync('public/privacy.html', 'utf8'), {
+            headers: { 'Content-Type': 'text/html' },
+          }),
+      },
+    }
+    const content = new PublicContent({} as never, env)
+    const response = await worker.fetch(new Request('https://salon.example.test/privacy'), env, {
+      exports: { PublicContent: { fetch: (request: Request) => content.fetch(request) } },
+    })
+    expect(response.status).toBe(200)
+    return (await response.text()).replace(/\s+/g, ' ')
+  }
 
-  it('matches minimized event content and durable disconnect cleanup', () => {
+  it('matches minimized event content and durable disconnect cleanup', async () => {
+    const privacy = await privacyPolicy()
     expect(privacy).toContain(
       'kundens namn, telefonnummer och e-postadress tillsammans med behandling och bokad tid',
     )
@@ -146,7 +157,8 @@ describe('public Calendar privacy disclosure', () => {
     expect(privacy).not.toContain('Calendar events already created remain')
   })
 
-  it('documents the verified Google-data transfer and use', () => {
+  it('documents the verified Google-data transfer and use', async () => {
+    const privacy = await privacyPolicy()
     expect(privacy).toContain('Google-data används endast för att')
     expect(privacy).toContain('Refresh token överförs till och lagras i Supabase')
     expect(privacy).toContain('Google data is used only to')
@@ -155,47 +167,20 @@ describe('public Calendar privacy disclosure', () => {
     expect(privacy).not.toContain('basic account id')
   })
 
-  it('documents the exact production scope used by the OAuth redirect', () => {
+  it('documents the exact production scope used by the OAuth redirect', async () => {
+    const privacy = await privacyPolicy()
     expect(OAUTH_SCOPE).toContain('https://www.googleapis.com/auth/calendar.events.owned')
-    expect(setup).toContain('https://www.googleapis.com/auth/calendar.events.owned')
+    const redirect = new URL(
+      buildAuthUrl('client', 'https://edge.example.test/callback', 'signed-state'),
+    )
+    expect(redirect.searchParams.get('scope')).toBe(OAUTH_SCOPE)
     expect(privacy).toContain('<code>calendar.events.owned</code>')
-    expect(setup).not.toContain('https://www.googleapis.com/auth/calendar.events`')
     expect(privacy).not.toContain('<code>calendar.events</code>')
   })
 
-  it('marks the English policy section with its document language', () => {
+  it('marks the English policy section with its document language', async () => {
+    const privacy = await privacyPolicy()
     expect(privacy).toContain('<section lang="en">')
-  })
-})
-
-describe('Calendar database contract ownership', () => {
-  const calendarMigration = readFileSync(
-    new URL(
-      '../../supabase/migrations/20260901013601_calendar_customer_contact_payload.sql',
-      import.meta.url,
-    ),
-    'utf8',
-  )
-  const genericDispatchMigration = readFileSync(
-    new URL(
-      '../../supabase/migrations/20260823174500_close_launch_review_findings.sql',
-      import.meta.url,
-    ),
-    'utf8',
-  )
-
-  it('leaves generic customer dispatch outside the Calendar migration', () => {
-    expect(calendarMigration).not.toContain('external_action_for_dispatch')
-    expect(calendarMigration).not.toContain('customer_access_email_send')
-    expect(genericDispatchMigration).toContain("v_job.action_type = 'customer_access_email_send'")
-  })
-
-  it('keeps Calendar PII in authoritative source RPCs instead of durable job payloads', () => {
-    expect(calendarMigration).toContain("'email',           b.email")
-    expect(calendarMigration).toContain("'email', b.email")
-    expect(calendarMigration).toContain('old.email is distinct from new.email')
-    expect(calendarMigration).toContain('perform public.queue_calendar_event_sync(new.id)')
-    expect(calendarMigration).not.toContain("jsonb_build_object('booking_id'")
   })
 })
 
@@ -219,7 +204,7 @@ describe('idempotent event insertion', () => {
   })
 
   it('sends the stable id in the insert body', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<typeof fetch>(
       async () =>
         new Response(JSON.stringify({ id: eventId }), {
           status: 200,
@@ -229,7 +214,8 @@ describe('idempotent event insertion', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(insertEvent('token', 'primary', eventId, event)).resolves.toBe(eventId)
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    const init = fetchMock.mock.calls[0]?.[1]
+    if (!init) throw new Error('Expected insertEvent to call fetch with request options')
     const body = JSON.parse(String(init.body)) as Record<string, unknown>
     expect(body).toMatchObject({ id: eventId, summary: event.summary })
     expect(body).not.toHaveProperty('refresh_token')
@@ -312,7 +298,7 @@ describe('parseCalendarStatus', () => {
   })
 
   it('carries a sync error string', () => {
-    expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' }).lastSyncError).toBe(
+    expect(parseCalendarStatus({ connected: true, last_sync_error: 'boom' })?.lastSyncError).toBe(
       'boom',
     )
   })

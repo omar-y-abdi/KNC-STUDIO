@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-reload']) {
@@ -12,27 +11,8 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
       const name = browserName
       const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
       context.setDefaultTimeout(10000)
-      const backend = await nativeBackend(context)
-      await context.route('**/functions/v1/cms-studio', async (route) => {
-        const request = route.request()
-        if (request.method() !== 'POST') return route.fallback()
-        const body = request.postDataJSON()
-        const revision = 1 + backend.writes.filter((value) => value === 'publish').length
-        const fingerprint = createHash('md5').update(JSON.stringify(backend.document)).digest('hex')
-        if (
-          body.operation === 'publish' &&
-          (body.baseRevision !== revision || body.baseFingerprint !== fingerprint)
-        )
-          return route.fulfill({
-            status: 409,
-            headers: { 'Access-Control-Allow-Origin': new URL(base).origin },
-            json: {
-              error: 'conflict',
-              message: 'Innehållet har ändrats. Jämför med den senaste versionen.',
-            },
-          })
-        return route.fallback()
-      })
+      // The fake answers a stale base with 409 exactly like cms-studio.
+      await nativeBackend(context)
       const first = await context.newPage()
       const second = await context.newPage()
       const canvas = (page) => page.frameLocator('.gjs-frame').first()
@@ -107,12 +87,14 @@ for (const scenario of ['keep-local', 'keep-server', 'stale-backup', 'conflict-r
           await live.reload()
           await live.getByText('Local owner change', { exact: true }).waitFor()
         }
-        await second.screenshot({ path: `/tmp/cms-native-${name}-revision-${scenario}.png` })
+        await second.screenshot({
+          path: test.info().outputPath(`cms-native-${name}-revision-${scenario}.png`),
+        })
         console.log(`PASS revision ${name}: ${scenario}`)
       } catch (error) {
         console.error(`FAIL revision ${name}: ${scenario}`, error)
         await second.screenshot({
-          path: `/tmp/cms-native-${name}-revision-${scenario}-failure.png`,
+          path: test.info().outputPath(`cms-native-${name}-revision-${scenario}-failure.png`),
         })
         throw error
       }

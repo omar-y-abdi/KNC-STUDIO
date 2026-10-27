@@ -293,36 +293,44 @@ export function CmsResources(props: Props): JSX.Element {
   const uploadFiles = (files: File[], destination: ResourceDestination): Promise<void> =>
     perform(async () => {
       setUploadError('')
+      const stored: CmsAsset[] = []
+      const failures: unknown[] = []
       try {
-        const stored: CmsAsset[] = []
-        try {
-          for (const file of files) stored.push(await storeAsset(file, destination))
-        } finally {
-          // Each document transaction recaptures all responsive/theme variants.
-          // Refresh once per selection, including files saved before a later upload fails.
-          if (stored.length) {
-            await latest.current.onDocument((current) =>
-              stored.reduce(
-                (document, asset) =>
-                  assignResource(
-                    document,
-                    asset,
-                    asset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
-                  ),
-                current,
-              ),
-            )
-            const first = stored[0]
-            if (first) setSelectedId((current) => (current === selectedId ? first.id : current))
-          }
-        }
+        for (const file of files) stored.push(await storeAsset(file, destination))
       } catch (reason) {
-        setUploadError(
-          reason instanceof Error
-            ? reason.message
-            : 'Uppladdningen avbröts. Filer som redan sparats finns kvar.',
-        )
-        throw reason
+        failures.push(reason)
+      }
+      // Each document transaction recaptures all responsive/theme variants.
+      // Refresh once per selection, including files saved before a later upload fails.
+      if (stored.length)
+        try {
+          await latest.current.onDocument((current) =>
+            stored.reduce(
+              (document, asset) =>
+                assignResource(
+                  document,
+                  asset,
+                  asset.mime === 'font/woff2' ? { purpose: 'fonts' } : destination,
+                ),
+              current,
+            ),
+          )
+          const first = stored[0]
+          if (first) setSelectedId((current) => (current === selectedId ? first.id : current))
+        } catch (reason) {
+          failures.push(reason)
+        }
+      if (failures.length) {
+        // The upload error comes first; a failed assignment of the saved files must not hide it.
+        const message = failures
+          .map((reason) =>
+            reason instanceof Error
+              ? reason.message
+              : 'Uppladdningen avbröts. Filer som redan sparats finns kvar.',
+          )
+          .join(' ')
+        setUploadError(message)
+        throw failures.length === 1 ? failures[0] : new Error(message)
       }
       setPurpose(destination.purpose)
       if (destination.purpose === 'profile') setBarberId(destination.barberId)
@@ -375,6 +383,23 @@ export function CmsResources(props: Props): JSX.Element {
     places: references?.index && asset ? (references.index.get(mediaKey(asset)) ?? []) : null,
     error: references?.error ?? null,
   }
+  const hideFromPage =
+    asset &&
+    assignment.purpose !== 'fonts' &&
+    resourceAssigned(props.document, asset, assignment) ? (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() =>
+          void perform(
+            () => useAsset(currentAsset(asset.id), assignment, false),
+            'Tilldelningen kunde inte tas bort.',
+          )
+        }
+      >
+        Dölj från sidan
+      </button>
+    ) : null
   const navigation = (
     <nav class="cms-resource-navigation cms-segment" aria-label="Resurstyp">
       <button
@@ -655,21 +680,14 @@ export function CmsResources(props: Props): JSX.Element {
                 >
                   Använd i utkastet
                 </button>
-                {resourceAssigned(props.document, asset, assignment) &&
-                  assignment.purpose !== 'fonts' && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void perform(
-                          () => useAsset(currentAsset(asset.id), assignment, false),
-                          'Tilldelningen kunde inte tas bort.',
-                        )
-                      }
-                    >
-                      Dölj från sidan
-                    </button>
-                  )}
+                {hideFromPage}
+                {assignmentNote && <p role="status">{assignmentNote}</p>}
+              </section>
+            )}
+            {stateOf(asset) === 'archived' && hideFromPage && (
+              // An archived file may stay where it is placed; the owner can still remove it there.
+              <section class="cms-resource-use" aria-label="Använd resurs">
+                {hideFromPage}
                 {assignmentNote && <p role="status">{assignmentNote}</p>}
               </section>
             )}

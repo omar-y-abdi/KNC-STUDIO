@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 1000 } })
 test('cms-context-latency', async ({ page, context, evidenceDir }) => {
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4199'
+  await page.clock.install()
+  const base = harnessOrigin
   assert.equal(new URL(base).hostname, '127.0.0.1')
   const out = evidenceDir
   await mkdir(out, { recursive: true })
@@ -27,7 +29,7 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
     const start = Date.now()
     await action()
     // Include deferred dirty-counter callbacks; assertions use counts, not wall time.
-    await page.waitForTimeout(250)
+    await page.clock.runFor(250)
     const result = {
       label,
       elapsedMs: Date.now() - start,
