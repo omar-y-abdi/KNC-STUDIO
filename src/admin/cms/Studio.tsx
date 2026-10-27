@@ -245,7 +245,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         // migration of every retained snapshot, never an undoable step back to the old markup.
         draft.migrate(
           (document) => normalizeMarqueeZoom(ensureCorePages(document)),
-          (previous, next) => layouts.current.follow(previous, next),
+          (previous, next) => layouts.current.follow(previous, next, draft.base),
         )
         setVersion((value) => value + 1)
       })
@@ -349,7 +349,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     const next = typeof update === 'function' ? update(previous) : update
     active.change(next, group)
     // The layouts stay those of the previous document until a capture replaces them.
-    layouts.current.follow(previous, active.document)
+    layouts.current.follow(previous, active.document, active.base)
     setVersion((value) => value + 1)
   }
   // The Worker serves the stored Home/About snapshot as first paint: it must match the data.

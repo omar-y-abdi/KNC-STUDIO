@@ -6,14 +6,24 @@ const UNKNOWN = ''
 
 /** Which resource data each draft document's Home/About layouts were captured for. The Worker
  * serves the stored layouts as first paint, so Publicera captures them again while they are stale.
- * A document recorded nowhere has its base's layouts, as a document loaded from the server has. */
+ * A document first encountered inherits its then-current base's layouts; that source must stay
+ * fixed when publication advances the base and Undo returns an older document. */
 export class LayoutProvenance {
   private readonly source = new WeakMap<CmsDocument, string>()
 
+  private sourceKey(document: CmsDocument, base: CmsDocument): string {
+    let key = this.source.get(document)
+    if (key === undefined) {
+      key = layoutResourceKey(base)
+      this.source.set(document, key)
+    }
+    return key
+  }
+
   /** `next` keeps the layouts of `previous`: an edit, or resource data whose capture failed. */
-  follow(previous: CmsDocument, next: CmsDocument): void {
-    const source = this.source.get(previous)
-    if (source !== undefined && next !== previous) this.source.set(next, source)
+  follow(previous: CmsDocument, next: CmsDocument, base: CmsDocument): void {
+    // Record the previous snapshot too: Undo can return it after the base has changed.
+    this.source.set(next, this.sourceKey(previous, base))
   }
 
   /** `document`'s layouts were captured for the resource data of `resources`. */
@@ -32,9 +42,10 @@ export class LayoutProvenance {
     const key = layoutResourceKey(document)
     if (sides.some((side) => side.stale || layoutResourceKey(side.document) !== key))
       this.unknown(document)
+    else this.captured(document)
   }
 
   stale(document: CmsDocument, base: CmsDocument): boolean {
-    return (this.source.get(document) ?? layoutResourceKey(base)) !== layoutResourceKey(document)
+    return this.sourceKey(document, base) !== layoutResourceKey(document)
   }
 }

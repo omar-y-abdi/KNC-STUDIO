@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, type CmsDocument } from '../../shared/cms'
 import { resourceLayoutsChanged } from '../../src/admin/cms/captureResourceLayouts'
-import { CmsDraft } from '../../src/admin/cms/draft'
+import { CmsDraft, restoreRevision } from '../../src/admin/cms/draft'
 import { LayoutProvenance } from '../../src/admin/cms/layoutProvenance'
 
 const salonImage = {
@@ -29,10 +29,55 @@ function capture(draft: CmsDraft, layouts: LayoutProvenance, html: string): void
 function commit(draft: CmsDraft, layouts: LayoutProvenance, next: CmsDocument): void {
   const previous = draft.document
   draft.change(next)
-  layouts.follow(previous, draft.document)
+  layouts.follow(previous, draft.document, draft.base)
 }
 
 describe('Home/About layout provenance', () => {
+  it('keeps an uncaptured undo snapshot tied to the base before publication', () => {
+    const layouts = new LayoutProvenance()
+    const draft = new CmsDraft(emptyDocument(), 1, 'published')
+    commit(draft, layouts, withGallery(draft.document, [salonImage]))
+    // Assignment capture fails; a separate ordinary edit retains the old layouts in history.
+    commit(draft, layouts, { ...draft.document, settings: { ...draft.document.settings, x: '1' } })
+    capture(draft, layouts, 'with the salon image')
+    const request = draft.beginSave()
+    const local = { document: draft.document, stale: layouts.stale(draft.document, draft.base) }
+    draft.acknowledge(request.document, 2, 'new publication')
+    layouts.merged(draft.document, [local, { document: request.document, stale: false }])
+    expect(layouts.stale(draft.document, draft.base)).toBe(false)
+
+    expect(draft.undo()).toBe(true)
+    expect(draft.document.gallery).toEqual([salonImage])
+    expect(draft.document.settings['captured_layout']).toBeUndefined()
+    expect(layouts.stale(draft.document, draft.base)).toBe(true)
+    expect(draft.undo()).toBe(true)
+    expect(draft.document.gallery).toEqual([])
+    expect(layouts.stale(draft.document, draft.base)).toBe(false)
+  })
+
+  it('invalidates historical staff layouts when portrait-free membership is reconciled', () => {
+    const old = emptyDocument()
+    const current = emptyDocument()
+    const person = {
+      name: 'Former',
+      ig: '',
+      role_sv: '',
+      role_en: '',
+      bio_sv: '',
+      bio_en: '',
+      sort_order: 0,
+    }
+    old.barbers = [{ ...person, id: 'former' }]
+    current.barbers = [{ ...person, id: 'current', name: 'Current' }]
+    const restored = restoreRevision(old, current)
+    expect(restored.reconciled).toBe(true)
+    expect(restored.document.barbers).toEqual(current.barbers)
+    expect(restored.document.photos).toEqual(old.photos)
+    const layouts = new LayoutProvenance()
+    layouts.captured(restored.document, old)
+    expect(layouts.stale(restored.document, current)).toBe(true)
+  })
+
   it('keeps layouts stale after a removal whose capture failed, back at the published data', () => {
     const layouts = new LayoutProvenance()
     const draft = new CmsDraft(emptyDocument(), 1, 'published')
