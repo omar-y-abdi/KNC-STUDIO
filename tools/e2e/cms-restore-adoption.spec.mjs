@@ -176,10 +176,12 @@ test('cms-restore-adoption preserves owner edits across source migration, export
   const recoveredName = 'Stängda flikens bevarade utkast'
   await closedDraft(context, recoveredName)
   const recipient = await context.newPage()
+  // Load the harness before intercepting the Studio-only background source request.
+  await recipient.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   const source = holdSource(recipient)
   await source.install()
   try {
-    await openStudio(recipient)
+    await mountStudio(recipient)
     await source.started.promise
     const editedName = 'Egen ändring under källuppdateringen'
     await nameField(recipient).fill(editedName)
@@ -240,10 +242,12 @@ test('cms-restore-adoption reset remains eligible when a pending source upgrade 
   const recoveredName = 'Återställning efter väntande källuppdatering'
   await closedDraft(context, recoveredName)
   const recipient = await context.newPage()
+  // Load the harness before intercepting the Studio-only background source request.
+  await recipient.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
   const source = holdSource(recipient)
   await source.install()
   try {
-    await openStudio(recipient)
+    await mountStudio(recipient)
     await source.started.promise
     await nameField(recipient).fill('Den här ändringen återställs')
     await recipient.locator('button.cms-revert').click()
