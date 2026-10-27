@@ -1,0 +1,197 @@
+{
+  "files": [
+    "BACKEND.md",
+    "CODEBASE-MAP.md",
+    "README.md",
+    "docs/CI.md",
+    "docs/CMS_PARITY.md",
+    "docs/operations/CMS_RELEASE.md"
+  ],
+  "missing_literal_paths": [
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 113,
+      "reference": "src/cms/store.mjs"
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 117,
+      "reference": "src/cms/client/editor.mjs"
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 136,
+      "reference": "UX-CONTRACT.md"
+    }
+  ],
+  "script_mentions": [
+    {
+      "doc": "BACKEND.md",
+      "line": 154,
+      "command": "typecheck",
+      "exists": true
+    },
+    {
+      "doc": "BACKEND.md",
+      "line": 155,
+      "command": "lint",
+      "exists": true
+    },
+    {
+      "doc": "BACKEND.md",
+      "line": 157,
+      "command": "deploy:dry-run",
+      "exists": true
+    },
+    {
+      "doc": "BACKEND.md",
+      "line": 168,
+      "command": "test:integration",
+      "exists": true
+    },
+    {
+      "doc": "BACKEND.md",
+      "line": 185,
+      "command": "test:e2e:customer",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 17,
+      "command": "dev",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 18,
+      "command": "build",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 19,
+      "command": "preview",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 43,
+      "command": "test:e2e:customer",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 65,
+      "command": "cloudflare:dev",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 66,
+      "command": "dev",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 66,
+      "command": "build",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 174,
+      "command": "build",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 223,
+      "command": "deploy:dry-run",
+      "exists": true
+    },
+    {
+      "doc": "README.md",
+      "line": 224,
+      "command": "deploy",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 90,
+      "command": "test:e2e:cms",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 92,
+      "command": "build",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 93,
+      "command": "test:e2e",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 94,
+      "command": "test:e2e:admin",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 95,
+      "command": "test:e2e:startup",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 96,
+      "command": "test:e2e:customer",
+      "exists": true
+    },
+    {
+      "doc": "docs/CI.md",
+      "line": 104,
+      "command": "test:e2e:cms",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 11,
+      "command": "cms:stamp",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 21,
+      "command": "verify:cms-backend",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 24,
+      "command": "deploy",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 24,
+      "command": "build",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 25,
+      "command": "deploy:frontend",
+      "exists": true
+    },
+    {
+      "doc": "docs/operations/CMS_RELEASE.md",
+      "line": 150,
+      "command": "test:e2e",
+      "exists": true
+    }
+  ]
+}
