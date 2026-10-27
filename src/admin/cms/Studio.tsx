@@ -523,7 +523,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               needsCorePageSource(document) ? ensureCorePages(document) : document,
             ),
           ),
-        (previous, migrated) => layouts.current.follow(previous, migrated),
+        (previous, migrated) => layouts.current.follow(previous, migrated, next.base),
       )
       setDraft(next)
       setConflict(null)
@@ -538,7 +538,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               needsCorePageSource(document) ? ensureCorePages(document) : document,
             ),
           ),
-        (previous, migrated) => layouts.current.follow(previous, migrated),
+        (previous, migrated) => layouts.current.follow(previous, migrated, draft.base),
       )
     }
     setVersion((v) => v + 1)
