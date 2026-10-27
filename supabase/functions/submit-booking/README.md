@@ -16,12 +16,15 @@ it posts to the Worker's `/api/bookings`, which signs the relayed request.
     "lang": "sv",
     "customerName": "Test Kund"
   },
-  "turnstileToken": "<single-use-token>"
+  "turnstileToken": "<single-use-token>",
+  "rememberBookings": false
 }
 ```
 
 `startAt` must come from `localWallClockToStockholmIso(...)`. Service name, price, and duration are
 not accepted from browser; database derives them from active service row.
+
+`rememberBookings` is optional and defaults to `false` when omitted.
 
 ## Security
 

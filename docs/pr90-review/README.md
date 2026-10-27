@@ -33,4 +33,11 @@ No production migration, deployment, CMS publication or merge is part of this re
 
 ## Repair review closure and final CI receipt
 
-Implementation and independent review are complete for the accepted findings. The execution plan records the author/reviewer matrix and combined local checks. The final release gate is the **exact combined head** of [replacement PR #91](https://github.com/omar-y-abdi/KNC-STUDIO/pull/91): its body records the final workflow receipt and its checks show current status. Earlier head checks are not substituted for later repairs. Keeping that receipt on the PR avoids changing the source commit merely to name its own completed CI run. The branch is not merged by this work.
+### Follow-up review reopened
+
+The owner's subsequent adversarial review of PR91 at `d800bad` identified additional CMS
+backup/adoption and layout-provenance scenarios. The earlier source review and green CI below
+remain historical evidence, not a claim that those scenarios are correct. Current work and
+acceptance are tracked in the [PR91 follow-up plan](../pr91-followup/task_plan.md).
+
+At the `d800bad` checkpoint, implementation and independent review were complete for that checkpoint's accepted findings. The execution plan records the author/reviewer matrix and combined local checks. The final release gate is the **exact combined head** of [replacement PR #91](https://github.com/omar-y-abdi/KNC-STUDIO/pull/91): its body records the final workflow receipt and its checks show current status. Earlier head checks are not substituted for later repairs. Keeping that receipt on the PR avoids changing the source commit merely to name its own completed CI run. The branch is not merged by this work.

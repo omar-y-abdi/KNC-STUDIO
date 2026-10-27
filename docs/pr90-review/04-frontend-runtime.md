@@ -14,13 +14,20 @@ Legal reviewer report `01-legal-privacy.md` holds the executable real-Worker rep
 
 **Required regression:** actual Worker plus built shell plus published legal fixture, source upgrade of fixture About lacking gallery markers, and a missing native core layout. Assert preparation succeeds, authored legal body/style overrides survive, inline scripts/shell wrappers do not enter captured legal content, and no-publication/static-template behavior works. Existing `cmsSourceCss` reads static files directly and never covers the Worker redirects; `cms-reported` mocks backend/source independently.
 
-### V1 — existing stored English tablet overflow, reproduced identically on main and PR90
+### V1 — English fixture overflow, identical with main and PR90 source
 
 At viewport 800x900 the stored revision-56 fixture produces document widths 846 in light and 825 in dark, with no page errors. Exact source: review form `#knc-about-0-i0-i11`, natural left24 and outer width558; authored desktop `translate:264px 5px!important` (EN light) and `translate:243px 0px!important` (EN dark) move its right edge to846/825. Swedish uses211px and fits at793. The carousel's offscreen tiles are separately clipped and do not cause this document overflow.
 
 Evidence: `repro-frontend-overflow.mjs`, `overflow-800-en.json`, `overflow-800-light-en.png`, `overflow-800-dark-en.png`. Network guard passed. The historical improvement plan explicitly identifies EN769–845px overflow and says untouched owner geometry must be preserved; this is an existing authored-layout defect, not proof that the new baseline is universally responsive. An independently built archive of main with the identical fixture produces exactly the same 846px light and 825px dark document widths. Main evidence: `overflow-main-800-en.json` and corresponding screenshots; this is not introduced by PR90.
 
 **Bounded options:** adjust only the stored review-form translate on narrow desktop, or introduce a specific opt-in layout repair that clamps its translation to available container space while retaining wide-screen placement. This requires a conscious owner-content/layout decision. Do not hide page overflow or rewrite all stored native geometry: that clips controls or changes unrelated authored work. No product/content mutation performed.
+
+**Fixture provenance clarification after PR91 feedback:** `tools/e2e/fixtures/presentation.json.gz`
+is added by the PR and is absent from frozen main. Both source versions were exercised with that
+same PR fixture. The comparison isolates rendering-code behavior for identical content; it does
+not establish that main contained this snapshot or that historical/current production content
+has the measured overflow. The retained limit is fixture content, with no demonstrated rendering
+regression.
 
 ### F1 — real WebKit close loses a pending production-size canvas edit; synthetic test misses it (P2)
 
