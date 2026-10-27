@@ -30,3 +30,7 @@ Each document remains its owner's working plan during repair. A finding marked r
 Start with the accepted-finding ledger in the execution plan. Review the scoped repair commits against their owner documents, then use the changed-path map to inspect the retained maintenance changes. The first snapshot commit preserves the reviewed baseline; subsequent commits explain each correction.
 
 No production migration, deployment, CMS publication or merge is part of this repair. Existing authored English tablet overflow and operational legal facts are explicitly documented limits, not represented as newly introduced defects or silently rewritten content.
+
+## Repair review closure and final CI receipt
+
+Implementation and independent review are complete for the accepted findings. The execution plan records the author/reviewer matrix and combined local checks. The final release gate is the **exact combined head** of [replacement PR #91](https://github.com/omar-y-abdi/KNC-STUDIO/pull/91): its body records the final workflow receipt and its checks show current status. Earlier head checks are not substituted for later repairs. Keeping that receipt on the PR avoids changing the source commit merely to name its own completed CI run. The branch is not merged by this work.
