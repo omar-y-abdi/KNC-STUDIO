@@ -62,9 +62,11 @@ function pagePorts(
     },
     locks: {
       claim: async (name) => {
-        if (held.has(name)) return false
+        if (held.has(name)) return null
         held.add(name)
-        return true
+        return async () => {
+          held.delete(name)
+        }
       },
       held: async () => new Set(held),
       hold: async (name, work) => {
@@ -110,6 +112,42 @@ afterEach(() => {
 })
 
 describe('CMS draft backup in IndexedDB', () => {
+  it.each([1, 2])(
+    'keeps the original draft recoverable after initialization read %i fails',
+    async (failedRead) => {
+      const original = record('original', 'Before the failed open', '2026-10-24T11:00:00.000Z')
+      const { ports, held } = memory({ tab: 'original', records: [original] })
+      const all = ports.records.all
+      let reads = 0
+      vi.spyOn(ports.records, 'all').mockImplementation(async () => {
+        if (++reads === failedRead) throw new Error('IndexedDB read aborted')
+        return all()
+      })
+      await expect(openBackupSession(ports)).rejects.toThrow('IndexedDB read aborted')
+
+      const retried = await openBackupSession(ports)
+      expect(retried.tab).toBe('original')
+      expect((await retried.own())?.document).toEqual(named('Before the failed open'))
+      expect(await retried.offers()).toEqual([])
+      expect([...held]).toEqual(['knc-cms-tab:original'])
+    },
+  )
+
+  it('keeps the original identity recoverable after sessionStorage refuses initialization', async () => {
+    const { ports, held } = memory({
+      tab: 'original',
+      records: [record('original', 'Before the failed open', '2026-10-24T11:00:00.000Z')],
+    })
+    vi.mocked(ports.tabs.setItem).mockImplementationOnce(() => {
+      throw new DOMException('Storage refused', 'QuotaExceededError')
+    })
+    await expect(openBackupSession(ports)).rejects.toThrow('Storage refused')
+    const retried = await openBackupSession(ports)
+    expect(retried.tab).toBe('original')
+    expect((await retried.own())?.document).toEqual(named('Before the failed open'))
+    expect([...held]).toEqual(['knc-cms-tab:original'])
+  })
+
   it('round-trips a draft with the base the three-way merge needs', async () => {
     const { ports } = memory()
     const session = await openBackupSession(ports)

@@ -107,6 +107,158 @@ const productionDocument = async () => ({
   ).presentation,
 })
 
+// Exit must really unmount Studio. The ordinary editor harness deliberately keeps it mounted.
+const mountExitableStudio = async (page) => {
+  await page.evaluate(async () => {
+    const { h, render } = await import('/tools/e2e/admin-harness.tsx')
+    const { CmsStudio } = await import('/src/admin/cms/Studio.tsx')
+    const root = globalThis.document.querySelector('#root')
+    render(h(CmsStudio, { onExit: () => render(null, root) }), root)
+  })
+  await page
+    .frameLocator('.gjs-frame')
+    .first()
+    .locator('[data-knc-surface="desktop-home"]')
+    .waitFor({ timeout: 90000 })
+}
+
+test('cms-lifecycle retries a failed backup initialization without hiding its original draft', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context)
+  const setup = await context.newPage()
+  await openStudio(setup)
+  await publishAdopted(setup)
+  await expect.poll(() => storedDrafts(setup)).toEqual([])
+  await setup.close()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  const recoveredName = 'Utkast före misslyckad backupstart'
+  await page.evaluate(async (name) => {
+    const { cmsApi } = await import('/src/admin/cms/api.ts')
+    const { openKeyedStore } = await import('/src/admin/cms/indexedDb.ts')
+    const loaded = await cmsApi.state()
+    const document = globalThis.structuredClone(loaded.document)
+    document.presentation.pages[0].name.sv = name
+    globalThis.sessionStorage.setItem('knc-cms-tab', 'failed-initialization')
+    const records = await openKeyedStore('knc-cms-drafts', 'tab')
+    await records.put({
+      tab: 'failed-initialization',
+      document: JSON.stringify(document),
+      base: JSON.stringify(loaded.document),
+      revision: loaded.revision,
+      fingerprint: loaded.fingerprint,
+      savedAt: new Date().toISOString(),
+    })
+    const getAll = globalThis.IDBObjectStore.prototype.getAll
+    globalThis.IDBObjectStore.prototype.getAll = function (...args) {
+      const request = getAll.apply(this, args)
+      if (this.transaction.db.name === 'knc-cms-drafts') {
+        // Abort the real read transaction asynchronously, after its request succeeds but before
+        // commit. Restore immediately so the same store and Web Locks can serve the retry.
+        globalThis.IDBObjectStore.prototype.getAll = getAll
+        request.addEventListener('success', () => {
+          this.transaction.abort()
+          globalThis.__backupInitializationAborted = true
+        })
+      }
+      return request
+    }
+  }, recoveredName)
+  await mountExitableStudio(page)
+  await expect(page.getByRole('alert')).toContainText('Lokal backup kunde inte sparas.')
+  assert.equal(await page.evaluate(() => globalThis.__backupInitializationAborted), true)
+  assert.deepEqual(
+    await storedDrafts(page),
+    [recoveredName],
+    'the failed read must leave the original record intact',
+  )
+  await page.getByTitle('Tillbaka till Admin', { exact: true }).click()
+  await expect(page.locator('.knc-cms-studio')).toHaveCount(0)
+  await mountExitableStudio(page)
+  await expect(nameField(page)).toHaveValue(recoveredName)
+  const identity = await page.evaluate(async () => ({
+    tab: globalThis.sessionStorage.getItem('knc-cms-tab'),
+    locks: (await globalThis.navigator.locks.query()).held
+      .map((lock) => lock.name)
+      .filter((name) => name.startsWith('knc-cms-tab:')),
+  }))
+  assert.equal(identity.tab, 'failed-initialization')
+  assert.deepEqual(identity.locks, ['knc-cms-tab:failed-initialization'])
+  assert.deepEqual(await storedDrafts(page), [recoveredName])
+})
+
+test('cms-lifecycle an immediate Studio exit preserves a trusted pending canvas edit', async ({
+  page,
+  context,
+}) => {
+  await nativeBackend(context, await productionDocument())
+  await page.clock.install()
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html?view=cms-studio`)
+  await mountExitableStudio(page)
+  await publishAdopted(page)
+  await expect.poll(() => storedDrafts(page)).toEqual([])
+  await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const element = [...editor.Canvas.getDocument().querySelectorAll('[data-knc-source]')].find(
+      (node) =>
+        node.children.length === 0 &&
+        node.textContent.trim().length > 3 &&
+        node.id &&
+        !node.closest('svg, a, button, [data-knc-slot]'),
+    )
+    if (!element) throw new Error('Editable source text missing')
+    const component = editor.getWrapper().find(`#${globalThis.CSS.escape(element.id)}`)[0]
+    if (!component) throw new Error('Source component missing')
+    editor.select(component)
+    globalThis.__studioExitEvents = []
+    globalThis.document.addEventListener(
+      'input',
+      (event) => {
+        if (event.target.matches('.cms-inspector textarea'))
+          globalThis.__studioExitEvents.push({
+            type: 'input',
+            trusted: event.isTrusted,
+          })
+      },
+      { capture: true },
+    )
+    globalThis.document.querySelector('.cms-brand').addEventListener(
+      'click',
+      (event) => {
+        globalThis.__studioExitEvents.push({
+          type: 'exit',
+          trusted: event.isTrusted,
+          text: component.getEl()?.textContent,
+        })
+      },
+      { capture: true },
+    )
+  })
+  const text = 'Den sista canvasändringen före Studio-exit'
+  // Hold the editor's 180 ms debounce, not the input or exit handler. Native trusted actions and
+  // real IndexedDB still run; the regression does not depend on CI completing clicks in 180 ms.
+  await pauseClock(page)
+  await page.getByRole('textbox', { name: 'Text', exact: true }).fill(text)
+  await page.getByTitle('Tillbaka till Admin', { exact: true }).click({ force: true })
+  const events = await page.evaluate(() => globalThis.__studioExitEvents)
+  assert.equal(events.length, 2, 'record the input and actual exit click')
+  assert.deepEqual(
+    events.map(({ type, trusted }) => ({ type, trusted })),
+    [
+      { type: 'input', trusted: true },
+      { type: 'exit', trusted: true },
+    ],
+  )
+  assert.equal(events[1].text, text, 'the trusted input reached the actual canvas before exit')
+  await expect(page.locator('.knc-cms-studio')).toHaveCount(0)
+  await expect.poll(() => draftHolds(page, text)).toBe(true)
+  await page.clock.resume()
+  await mountExitableStudio(page)
+  await page.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
+})
+
 test('cms-lifecycle closed tabs keep their drafts until the owner acts', async ({ context }) => {
   await nativeBackend(context)
   // Publish the seeded site first, so every tab starts from a clean draft.

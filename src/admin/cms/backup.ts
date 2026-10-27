@@ -32,7 +32,8 @@ export interface BackupRecords {
 }
 /** Web Locks: an open tab holds the lock named after its id until the tab is closed. */
 export interface TabLocks {
-  claim(name: string): Promise<boolean>
+  /** Returns this claim's release function, or null while another page holds the lock. */
+  claim(name: string): Promise<(() => Promise<void>) | null>
   held(): Promise<ReadonlySet<string>>
   /** Runs `work` while holding the lock; false, without running it, while a page holds it. */
   hold(name: string, work: () => Promise<void>): Promise<boolean>
@@ -244,17 +245,33 @@ async function migrateLegacy(ports: BackupPorts): Promise<void> {
 }
 
 /** A duplicated tab copies sessionStorage; the original's lock tells the copy to pick a new id. */
-async function claimTab(ports: BackupPorts): Promise<string> {
+async function claimTab(
+  ports: BackupPorts,
+): Promise<{ tab: string; release: () => Promise<void> }> {
   let tab = ports.tabs.getItem(TAB_KEY) ?? ports.newId()
-  while (!(await ports.locks.claim(lockName(tab)))) tab = ports.newId()
-  ports.tabs.setItem(TAB_KEY, tab)
-  return tab
+  for (;;) {
+    const release = await ports.locks.claim(lockName(tab))
+    if (release) return { tab, release }
+    tab = ports.newId()
+  }
 }
 
 export async function openBackupSession(ports: BackupPorts): Promise<BackupSession> {
-  const tab = await claimTab(ports)
-  await replayJournal(ports, tab)
-  await migrateLegacy(ports)
+  const { tab, release } = await claimTab(ports)
+  const own = async (): Promise<TabBackup | null> =>
+    (await readAll(ports.records)).find((record) => record.tab === tab) ?? null
+  let latest: string
+  try {
+    ports.tabs.setItem(TAB_KEY, tab)
+    await replayJournal(ports, tab)
+    await migrateLegacy(ports)
+    latest = (await own())?.savedAt ?? ''
+  } catch (reason) {
+    // Retrying in this page must reclaim its identity, not mistake this failed attempt for
+    // another live tab and hide the original backup behind a stranded lock.
+    await release()
+    throw reason
+  }
   let pending: { draft: BackupDraft | null; report: (reason: unknown) => void } | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   // Writes stay in call order, so an older draft never lands after a newer one.
@@ -264,11 +281,8 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
   // The last write IndexedDB refused. While it is still the newest write, flush issues it again.
   let failed: Write | null = null
 
-  const own = async (): Promise<TabBackup | null> =>
-    (await readAll(ports.records)).find((record) => record.tab === tab) ?? null
   // A tab's savedAt only grows, even when the clock goes back, so the journal's newer-than check
   // orders this tab's writes like a sequence.
-  let latest = (await own())?.savedAt ?? ''
   const stamp = (): string => {
     const now = ports.now()
     latest = now > latest ? now : new Date(Date.parse(latest) + 1).toISOString()
@@ -397,13 +411,21 @@ export async function openBackupSession(ports: BackupPorts): Promise<BackupSessi
 const browserLocks: TabLocks = {
   claim: (name) =>
     new Promise((resolve, reject) => {
-      navigator.locks
-        .request(name, { ifAvailable: true }, (lock) => {
-          resolve(lock !== null)
-          // Held until the page is destroyed; the browser then releases the lock.
-          return lock ? new Promise<never>(() => undefined) : undefined
+      const held = navigator.locks.request(name, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          resolve(null)
+          return
+        }
+        // Successful sessions hold this until the page ends. Failed initialization releases
+        // early and waits for the native request to finish before a same-page retry can claim.
+        return new Promise<void>((release) => {
+          resolve(() => {
+            release()
+            return held
+          })
         })
-        .catch(reject)
+      })
+      void held.catch(reject)
     }),
   held: async () =>
     new Set(((await navigator.locks.query()).held ?? []).flatMap((lock) => lock.name ?? [])),

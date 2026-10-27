@@ -812,6 +812,8 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
           title="Tillbaka till Admin"
           onClick={() => {
             editor.current?.flush()
+            // Exit can unmount before the next layout effect sees this final canvas edit.
+            scheduleBackup()
             onExit()
           }}
         >
