@@ -1,15 +1,14 @@
 # CI architecture and verification
 
 The definitive workflow is `.github/workflows/ci.yml`. Every pull request and every push to `main`
-runs all jobs. Pull requests run the full Chromium CMS matrix and select the whole `cms-owner`,
-`cms-mobile`, `cms-new-page-mobile` and `cms-barber-marquee` files for WebKit. Pushes to `main` and
-manual runs use the full WebKit CMS matrix. The public group still runs Chromium, Firefox and
-WebKit on both events. There are no path filters, scheduled substitutes, retries,
+runs all jobs. Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit
+CMS matrices, each split across four shards. The public group runs Chromium, Firefox and WebKit
+on every event. There are no path filters, scheduled substitutes, retries,
 `continue-on-error` gates, or paid runner requirements.
 
 The protected contexts keep their existing names: **Frontend and browser**, **Edge Functions**,
 and **Database and integration**. The frontend context now also requires every CMS and production
-startup shard selected for the event. The database context requires both current-schema acceptance
+startup shard. The database context requires both current-schema acceptance
 and historical rollout compatibility. Gate executables reject missing, skipped, cancelled and failed
 dependencies.
 
@@ -64,7 +63,7 @@ runtime. Only Studio, metadata tooling and the pooler are omitted there.
 | Static        | ESLint, TypeScript (including Playwright config), all unit tests, production dependency audit, CMS release stamp                                          |
 | Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
 | Public/admin  | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
-| CMS           | Full Chromium matrix; owner/mobile WebKit selection on PRs and full WebKit matrix on main pushes and manual runs, as listed above                         |
+| CMS           | Full Chromium and WebKit matrices on pull requests, main pushes and manual runs; four shards per engine                                                   |
 | Startup       | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
 | Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
 | Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |

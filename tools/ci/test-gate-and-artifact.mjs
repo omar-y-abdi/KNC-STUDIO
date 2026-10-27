@@ -132,8 +132,11 @@ test('the YAML parser is a direct exact dependency matching the existing install
 test('CI documentation describes event coverage and the actual preparation owners', () => {
   const docs = readFileSync('docs/CI.md', 'utf8').replace(/\s+/g, ' ')
   assert.doesNotMatch(docs, /runs the complete graph|source identity verification and Furl setup/)
-  assert.ok(docs.includes('Pull requests run the full Chromium CMS matrix'))
-  assert.ok(docs.includes('Pushes to `main` and manual runs use the full WebKit CMS matrix'))
+  assert.ok(
+    docs.includes(
+      'Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit CMS matrices, each split across four shards',
+    ),
+  )
   assert.ok(docs.includes('Furl setup and regression tests belong to the quality job'))
   assert.ok(docs.includes(workflow.jobs.cms.container.image))
   assert.ok(docs.includes('UID 1001'))

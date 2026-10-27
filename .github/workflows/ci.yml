@@ -168,9 +168,6 @@ jobs:
     env:
       E2E_GROUP: cms
       AXE_PATH: node_modules/axe-core/axe.min.js
-      # Owner scenarios mix desktop and mobile assertions; keep the whole file on Safari.
-      # An empty grep preserves the full matrix on main pushes and manual runs.
-      CMS_GREP: ${{ matrix.engine == 'webkit' && github.event_name == 'pull_request' && 'cms-(owner|mobile|new-page-mobile|barber-marquee)\.spec\.mjs' || '' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -179,9 +176,9 @@ jobs:
         with:
           cache: ${{ env.CI_CACHE }}
       - name: Discover every assigned CMS case
-        run: npx playwright test --project=cms-${{ matrix.engine }} --grep="$CMS_GREP" --shard=${{ matrix.shard }}/4 --list --reporter=json > .ci-expected.json
+        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4 --list --reporter=json > .ci-expected.json
       - name: Exercise the unchanged CMS domain contracts
-        run: npx playwright test --project=cms-${{ matrix.engine }} --grep="$CMS_GREP" --shard=${{ matrix.shard }}/4
+        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
           node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json

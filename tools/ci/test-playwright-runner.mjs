@@ -49,7 +49,7 @@ test('native runner makes fixture failure, timeout, focused tests and empty sele
   assert.match(focused.stdout + focused.stderr, /forbidOnly/)
 })
 
-test('native CMS PR and main shards cover the selected cases exactly once', () => {
+test('native CMS shards cover every case exactly once for all events', () => {
   // `specs` collects each listed case's project, file (relative to testDir) and spec identity.
   const list = (args, specs = []) => {
     const result = spawnSync(
@@ -92,52 +92,31 @@ test('native CMS PR and main shards cover the selected cases exactly once', () =
   const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
   const cms = workflow.jobs.cms
   assert.deepEqual(cms.strategy.matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4] })
-  const selector = cms.env.CMS_GREP.match(
-    /^\$\{\{ matrix.engine == 'webkit' && github.event_name == 'pull_request' && '([^']+)' \|\| '' \}\}$/,
-  )
-  assert.ok(selector, 'Only PR WebKit may narrow the CMS matrix')
-  const mobileFiles = new Set([
-    'cms-owner.spec.mjs',
-    'cms-mobile.spec.mjs',
-    'cms-new-page-mobile.spec.mjs',
-    'cms-barber-marquee.spec.mjs',
-  ])
   const steps = cms.steps.filter((step) => step.run?.startsWith('npx playwright test '))
   assert.equal(steps.length, 2)
   const args =
-    'npx playwright test --project=cms-${{ matrix.engine }} --grep="$CMS_GREP" --shard=${{ matrix.shard }}/4'
+    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4'
   assert.equal(steps[0].name, 'Discover every assigned CMS case')
   assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
   assert.equal(steps[1].name, 'Exercise the unchanged CMS domain contracts')
   assert.equal(steps[1].run, args)
-  // These are the three distinct selections: Chromium is identical for every event, while
-  // WebKit has a PR subset and a full push/manual selection. Discover each selection once.
-  for (const { engine, mobileOnly } of [
-    { engine: 'chromium', mobileOnly: false },
-    { engine: 'webkit', mobileOnly: false },
-    { engine: 'webkit', mobileOnly: true },
-  ]) {
+  // The workflow uses the full native selection for both engines on every event.
+  for (const engine of cms.strategy.matrix.engine) {
     const project = `cms-${engine}`
-    const grep = mobileOnly ? selector[1] : ''
     const selected = specs
-      .filter((spec) => spec.project === project && (!mobileOnly || mobileFiles.has(spec.file)))
+      .filter((spec) => spec.project === project)
       .map((spec) => `${project}:${spec.key}`)
       .sort()
     assert.ok(selected.length > 0)
     const assignedSpecs = []
     const assigned = cms.strategy.matrix.shard.flatMap((shard) =>
-      list([`--project=${project}`, `--grep=${grep}`, `--shard=${shard}/4`], assignedSpecs),
+      list([`--project=${project}`, `--shard=${shard}/4`], assignedSpecs),
     )
-    assert.equal(
-      new Set(assigned).size,
-      assigned.length,
-      `${project}/${mobileOnly}: duplicate cases`,
-    )
+    assert.equal(new Set(assigned).size, assigned.length, `${project}: duplicate cases`)
     assert.deepEqual(
       assignedSpecs.map((spec) => `${spec.project}:${spec.key}`).sort(),
       selected,
-      `${project}/${mobileOnly}: missing or unexpected cases`,
+      `${project}: missing or unexpected cases`,
     )
-    if (mobileOnly) assert.deepEqual(new Set(assignedSpecs.map((spec) => spec.file)), mobileFiles)
   }
 })
