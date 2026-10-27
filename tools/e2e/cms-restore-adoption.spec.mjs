@@ -67,6 +67,9 @@ async function closedDraft(context, name) {
   await expect
     .poll(async () => (await ownBackup(tab))?.document.presentation.pages[0]?.name.sv)
     .toBe(name)
+  // Let the donor finish its background source imports before closing its WebKit page.
+  // The receiving Studio is still mounted only after this donor tab is closed.
+  await waitForSourceUpgrade(tab)
   await tab.close()
 }
 
