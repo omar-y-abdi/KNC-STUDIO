@@ -8,10 +8,10 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { gunzipSync } from 'node:zlib'
 import { createSitePage } from '../../shared/site-page.ts'
-import { loadWorker, routeWorkerDocuments } from './cms-render.mjs'
+import { loadWorker, renderPublicDocument, routeWorkerDocuments } from './cms-render.mjs'
 import { expect, test } from './fixtures.mjs'
-import { publicOrigin } from './origins.mjs'
-import { installPublicBackend } from './public-fixtures.mjs'
+import { harnessOrigin, publicOrigin } from './origins.mjs'
+import { installPublicBackend, installStoredBackend } from './public-fixtures.mjs'
 
 const AXE_SOURCE = readFileSync(
   createRequire(import.meta.url).resolve('axe-core/axe.min.js'),
@@ -393,4 +393,161 @@ test.describe('owner CSS on html and body', () => {
     await expectBody(page, DESKTOP)
     await expectNoFaults(opened)
   })
+})
+
+// Source capture must read the shipped legal templates, even when the public legal aliases point
+// at an already published CMS page. In production those aliases redirect and the destination is
+// rendered inside the built app shell, whose asset stylesheet is not a legal source stylesheet.
+test.describe('legal source preparation', () => {
+  const templates = Object.fromEntries(
+    ['privacy', 'terms'].map((kind) => [
+      `/${kind}`,
+      readFileSync(new URL(`../../public/${kind}.html`, import.meta.url), 'utf8'),
+    ]),
+  )
+
+  for (const missingLayouts of [false, true]) {
+    test(
+      missingLayouts
+        ? 'recovers missing native and legal layouts from the shipped sources'
+        : 'prepares a legacy source while preserving owner legal text and CSS',
+      async ({ page, context }) => {
+        await installStoredBackend(context)
+        const stylesheet = shell.match(/<link[^>]+href="(\/assets\/[^" ]+\.css)"/)?.[1]
+        expect(stylesheet, 'the real Worker must receive the production build shell').toBeTruthy()
+        const responses = new Map()
+        for (const kind of ['privacy', 'terms']) {
+          const alias = `/${kind}.html`
+          const redirect = await renderPublicDocument(rendering.worker, {
+            url: `${harnessOrigin}${alias}`,
+            presentation: fixture,
+            shell,
+          })
+          expect(redirect.status).toBe(308)
+          expect(new URL(redirect.headers.location).pathname).toBe(`/${kind}`)
+          const document = await renderPublicDocument(rendering.worker, {
+            url: redirect.headers.location,
+            presentation: fixture,
+            shell,
+          })
+          expect(document.status).toBe(200)
+          expect(document.body).toContain(`href="${stylesheet}"`)
+          expect(document.body).toContain('data-cms-public="1"')
+          // Playwright routes only the first request of a redirect. Supply the actual final
+          // Worker response that fetch receives after the independently verified redirect.
+          responses.set(alias, document)
+          responses.set(`/${kind}`, document)
+        }
+        const legalRequests = []
+        await page.route(
+          (url) => url.origin === harnessOrigin && responses.has(url.pathname),
+          async (route) => {
+            const path = new URL(route.request().url()).pathname
+            legalRequests.push(path)
+            await route.fulfill(responses.get(path))
+          },
+        )
+        const captures = []
+        page.on('request', (request) => {
+          if (new URL(request.url()).pathname === '/cms-public/source') captures.push(request.url())
+        })
+        await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+        const result = await page.evaluate(
+          async ({ presentation, templates, missingLayouts }) => {
+            const { emptyDocument } = await import('/shared/cms.ts')
+            const {
+              ensureCorePages,
+              hasCorePageLayouts,
+              needsCorePageSource,
+              prepareCorePageSource,
+            } = await import('/src/admin/cms/corePages.ts')
+            const document = emptyDocument()
+            document.presentation = presentation
+            const legal = (pages) => pages.filter(({ path }) => path in templates)
+            const body = (html) => new globalThis.DOMParser().parseFromString(html, 'text/html')
+            for (const page of legal(document.presentation.pages))
+              for (const lang of ['sv', 'en']) {
+                page.content[lang].html +=
+                  `<p data-owner-legal="${lang}">Owner policy ${page.path} ${lang}</p>`
+                for (const mode of ['light', 'dark'])
+                  page.content[lang].css[mode] +=
+                    `\n[data-owner-legal="${lang}"]{--owner-${mode}:1}`
+              }
+            if (missingLayouts)
+              document.presentation.pages = document.presentation.pages.filter(
+                ({ path }) => !['/about', '/privacy', '/terms'].includes(path),
+              )
+            const originalLegal = globalThis.structuredClone(legal(document.presentation.pages))
+            const before = {
+              hasLayouts: hasCorePageLayouts(document),
+              needsSource: needsCorePageSource(document),
+            }
+            await prepareCorePageSource(document)
+            const recovered = ensureCorePages(document)
+            const fresh = ensureCorePages(emptyDocument())
+            return {
+              before,
+              recoveredHasLayouts: hasCorePageLayouts(recovered),
+              sourceHasLayouts: hasCorePageLayouts(fresh),
+              sourceNeedsUpgrade: needsCorePageSource(fresh),
+              ownerPoliciesUnchanged: originalLegal.every((original) => {
+                const next = recovered.presentation.pages.find(({ path }) => path === original.path)
+                return ['sv', 'en'].every(
+                  (lang) =>
+                    next.content[lang].html === body(original.content[lang].html).body.innerHTML &&
+                    JSON.stringify(next.content[lang].css) ===
+                      JSON.stringify(original.content[lang].css),
+                )
+              }),
+              legalSources: legal(fresh.presentation.pages).map((page) => {
+                const template = body(templates[page.path])
+                const css = [...template.querySelectorAll('style')]
+                  .map((style) => style.textContent ?? '')
+                  .join('\n')
+                for (const script of template.querySelectorAll('script')) script.remove()
+                return {
+                  path: page.path,
+                  matchesShippedBody: ['sv', 'en'].every(
+                    (lang) => page.content[lang].html === template.body.innerHTML,
+                  ),
+                  matchesPageCss: ['sv', 'en'].every((lang) =>
+                    ['light', 'dark'].every((mode) => page.content[lang].css[mode] === css),
+                  ),
+                  includesGeneratedShell: Object.values(page.content).some((variant) =>
+                    /data-cms-public|cms-page-light|cms-page-dark|\/assets\/|<script|id="root"/.test(
+                      variant.html + variant.css.light + variant.css.dark,
+                    ),
+                  ),
+                }
+              }),
+            }
+          },
+          { presentation: globalThis.structuredClone(fixture), templates, missingLayouts },
+        )
+        expect(result.before).toEqual({ hasLayouts: !missingLayouts, needsSource: true })
+        expect(
+          captures,
+          'exercise the actual native iframe capture, not a supplied page array',
+        ).toHaveLength(1)
+        expect(legalRequests, 'source preparation must not fetch published legal aliases').toEqual(
+          [],
+        )
+        expect(result.recoveredHasLayouts).toBe(true)
+        expect(result.sourceHasLayouts).toBe(true)
+        expect(result.sourceNeedsUpgrade).toBe(false)
+        expect(
+          result.ownerPoliciesUnchanged,
+          'source upgrades preserve authored legal variants',
+        ).toBe(true)
+        expect(result.legalSources).toEqual(
+          ['/privacy', '/terms'].map((path) => ({
+            path,
+            matchesShippedBody: true,
+            matchesPageCss: true,
+            includesGeneratedShell: false,
+          })),
+        )
+      },
+    )
+  }
 })
