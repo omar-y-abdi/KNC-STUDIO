@@ -248,3 +248,122 @@ Baseline supporting locations: `shared/cms-markup.ts:177–181` decodes the CSS 
 - **Remaining required verification:** full Supabase migration reset + pgTAP, real Edge import/build/check, patched B-01 regression pass, and independent review of the conservative compatibility guard. Minimal PostgreSQL fixture is sufficient for this specific bug but does not validate all platform extensions, service privileges, realtime or migration rollout.
 - **Recommended fix scope:** create a new additive migration with `supabase migration new` (do not edit already-applied historical migrations), then fail closed on legacy escaped rendered markup/CSS in the prune; retain normal multiline CSS/HTML-quoted pruning; do not build a second CSS parser or rewrite existing content silently. Keep old encoded-head fixture as the regression test and verify pruning resumes once the owner publishes canonical content.
 - No product file, branch, deployment, production DB, remote comment or external message was changed. Repository `git status --short` remained clean at handoff.
+
+## Implementation contract — B-01 and B-02
+
+Authorized after the 447-path review map closed. Worktree `/tmp/knc-pr90-repair`, branch `fix/pr90-reviewed-maintenance`, initial commit `49f0fbd8c24403dc2f1717c58d3212ac9202b509`. Only this document remains the backend workstream's living plan. QDD/Ralph/minimal-change skills applied; scope and acceptance were explicitly settled by the coordinator, so no repeated approval gate or separate plan is needed.
+
+### Acceptance and tasks
+
+- [x] Add focused pgTAP retention cases: prior supported CSS escapes and raw/percent-encoded dot segments in prefix/path retain historical pins; all page language/mode variants and regions covered; canonical quoted/multiline markup and unrelated prose still prune; harmless authored CSS escapes conservatively pause pruning without a promise that automatic republication removes them.
+- [x] Add deterministic integration tests for three owner revocations while publication waits on a real table or site-row lock; observe the wait before revoking; reject with 42501 before replay/writes; cleanup all sessions/transactions in finally.
+- [x] Create one new forward migration with Supabase CLI. Replace prune with a conservative guard over actual JSON-extracted rendered markup/CSS strings while retaining old percent/entity checks; restore the post-lock owner assertion after content-table and cms_site-row locks; preserve single-pass snapshot/replay behavior and grants.
+- [x] Run red/green verification with actual PostgreSQL routines, targeted pgTAP, TypeScript/lint and the new concurrency test. Record minimal-fixture limits; full Supabase CI remains the platform gate.
+- [x] Refresh the backend release stamp if its documented content inputs require it, verify exact changed files, and hand off to coordinator without staging/committing.
+
+### Design decisions
+
+- B-01: conservative detection rather than an additional CSS parser. Inspect rendered page/region source string values, never all JSON serialization or unrelated prose. Backslashes and dot-segment spellings can hide literal SQL references. Existing percent/entity checks remain. Stored authored content/history is not rewritten.
+- B-02: repeat the existing authority helper once immediately after the final lock wait, before request replay or any mutations. Keep both existing lock order and document-build count.
+- Test connection target is a disposable local PostgreSQL/Supabase database only. Product code and SQL will not call production or a linked project during this work.
+- Supabase CLI help required a local config-directory write; elevated help succeeded without connecting to a project. `migration new` is the documented file creation command. No migration has been applied to a shared production database.
+
+## Implementation evidence and handoff
+
+B-01 and independently verified B-02 are repaired in a **new forward migration**:
+`supabase/migrations/20261027173553_restore_cms_retention_and_owner_guards.sql`.
+Supabase CLI `migration new restore_cms_retention_and_owner_guards` created that filename after
+`supabase --help`, `supabase migration --help` and `supabase migration new --help`. No applied
+historical migration was edited. No production/linked database, remote write or deployment was used.
+
+### What changed
+
+- **B-01:** `prune_cms_revisions()` extracts each page language variant and each region language
+  variant using JSON paths, then reads HTML and light/dark CSS string values. An actual source
+  backslash or raw/percent-encoded one/two-dot URL segment pauses pruning. This handles CSS escapes,
+  line continuations and normalized URL segments before or inside the storage prefix/path without
+  building another CSS parser. Ordinary JSON quote/newline escaping and unrelated prose are outside
+  that new guard. The earlier conservative percent/entity/prefix checks remain unchanged.
+- **B-02:** `internal_cms_publish()` repeats `internal_cms_assert_owner(p_actor)` immediately after
+  both the content-table locks and `cms_site` row lock, before exact replay or writes. The initial
+  owner check remains. A programmatic body comparison confirms that only this assertion and its
+  explanatory comment differ from maintenance; lock order and all other publication logic match.
+- The migration is transactional and replaces functions with the same signatures, ownership,
+  security-definer/search-path settings, grants, return contracts and existing cron entry point.
+  It changes no tables or authored data, so existing frontend/Edge callers remain compatible.
+- Conservative tradeoff: harmless authored CSS escapes and dot-segment-looking source content can
+  also pause expiry. Republishing unchanged source **does not necessarily resume pruning**. Actual
+  unambiguous source must be published before the guard releases old history; nothing silently
+  rewrites source or deletes assets.
+
+### Test deliverables (ready for coordinator commit)
+
+- `supabase/tests/69_cms_retention_compatibility_test.sql`: 66 assertions. The causal asset-deletion
+  oracle uses the actual publisher, placement/index routines, usage lookup and transition; it proves
+  hard deletion stays refused before and after pruning. Matrix probes cover two pages, both
+  languages, both CSS modes and HTML, all four supported regions, CSS escape forms, raw/percent/mixed
+  dot segments in prefix/path, old percent/entity guards and harmless CSS escape conservatism.
+  Canonical quoted HTML, multiline CSS and unrelated prose prune successfully without rewriting
+  the head. Matrix heads are explicit persisted-data fixtures because today's publication checks
+  reject some older/noncanonical forms; their real revision-index trigger still runs. The main CSS
+  escape exploit is published end to end through the real publisher.
+- `tests/integration/cmsPublishAuthorization.test.ts`: **12 deterministic tests**: disabled account,
+  password reset required and owner demotion, crossed with a content-table or site-row lock, for
+  both fresh publication and exact request replay. Each test observes the actual PostgreSQL blocker
+  using `pg_blocking_pids`, commits revocation on a third session, then releases the holder and
+  requires SQLSTATE 42501 / `CMS owner required`. Publication runs with `service_role` inside a
+  transaction that always rolls back. Fixtures and replay rows are removed in `finally`; every
+  connection closes. Replay rows are committed request-history fixtures, without changing the site
+  head. The suite accepts only a local database target.
+
+### Verification executed
+
+All database execution used isolated `knc_backend_review`, PostgreSQL 16 on the coordinator's
+Unix socket `/tmp/knc-pgsocket:55432`. No Storage/network deletion was performed.
+
+| Check                                                       | Before repair                                                                 | After repair                                                                                                             |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| New retention pgTAP, 66 assertions                          | 13 pass, **53 expected failures**; causal last-pin/delete assertions fail     | **66/66 pass**, no pgTAP failures                                                                                        |
+| Real publisher concurrency, 12 cases                        | **12/12 fail** because revoked owners receive success, including exact replay | **12/12 pass**, all reject 42501 after the observed wait                                                                 |
+| Existing pgTAP 66 assertions 1–14                           | Existing contract retained as safety oracle                                   | **14/14 pass**: grants/comment, same lock order, 2 document builds fresh / 0 replay, identity, stale/archived precedence |
+| Focused TypeScript check including the new integration file | Normal repository test config covers unit files only                          | **Pass**, strict `tsc` through temporary extending config                                                                |
+| New integration file ESLint + Prettier                      | —                                                                             | **Pass**                                                                                                                 |
+| `node tools/release/cms-release.mjs check`                  | —                                                                             | **Pass**; no stamp update required                                                                                       |
+
+The focused TypeScript check caught and corrected an overloaded `pg.Client.query` ReturnType
+inference issue that ordinary unit-only typechecking would miss. The test now explicitly uses
+`Promise<QueryResult<...>>`.
+
+Replay red/green validation temporarily installed the verbatim maintenance publisher only in the
+isolated fixture database, then restored the new forward migration in a `finally` block. Tests
+completed with the repaired routines installed and no fixture actors/history left behind.
+
+The existing 14-assertion subset is copied from test 66 into a temporary file, changing only its
+plan count and omitting an unused outbox helper whose unrelated table is absent from the minimal
+fixture. It is not a replacement for the full existing test 66 on Supabase.
+
+Reproduction/evidence files remain in `/tmp/knc-backend-repro/`:
+`retention-repair-red.log`, `retention-repair-green.log`, `owner-repair-red.log`,
+`owner-repair-green.log`, `single-pass-subset.sql`, `single-pass-subset-green.log`,
+`vitest-cms-repair.config.mjs`, `tsconfig-cms-repair.json`, and the earlier actual-routine fixture.
+The pgTAP log parser checked planned/passing/failing assertion counts; psql exit 0 alone was never
+used as evidence that assertions passed.
+
+The release stamp covers the cms-studio Edge dependency files listed in `tools/release/cms-release.mjs`;
+SQL migrations/tests are not stamp inputs. No source input changed in this backend repair, so the
+existing stamp stays correct. Only offline `check` ran; remote `verify` was not invoked.
+
+### Remaining platform gate / limitations
+
+- Run the full Supabase reset/migration/pgTAP and integration suites in CI with the real extensions,
+  auth triggers, service role grants, Storage, PostgREST and Edge runtime. The local fixture uses real
+  CMS routines and tables but skeletal unrelated operational/auth tables; it cannot certify those
+  platform services. The new migration itself applied successfully, including ACL statements.
+- The coordinator will run the final full frontend/unit/lint/build gates after installing its newly
+  patched dependency lockfile. These focused runs used the installed baseline dependency set, as
+  requested to avoid an in-flight dependency replacement.
+- Independent reviewer 06 should challenge the source guard/false-positive boundary and the location
+  of the owner assertion. No staging, commit, branch change or remote action was taken by this agent.
+
+**Backend handoff files:** this plan, the new forward migration, the new pgTAP spec and the new
+integration spec. No other backend product file is changed.
