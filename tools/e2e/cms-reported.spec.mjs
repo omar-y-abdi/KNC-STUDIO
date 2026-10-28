@@ -790,22 +790,6 @@ const legalContents = async (studio, expected) =>
       .map((page) => [page.path, page.content]),
   )
 
-// Import runs ensureCorePages, which writes each core page's html back as DOMParser body.innerHTML:
-// the whitespace before the first element is dropped and nothing else may change. Complete server
-// heads use withCorePages instead and retain that whitespace.
-const adoptedContents = (contents) =>
-  Object.fromEntries(
-    Object.entries(contents).map(([path, content]) => [
-      path,
-      Object.fromEntries(
-        Object.entries(content).map(([lang, variant]) => [
-          lang,
-          { ...variant, html: variant.html.replace(/^\s+/, '') },
-        ]),
-      ),
-    ]),
-  )
-
 // A local draft saved before the legal upgrade at the server's own revision is restored without a
 // merge; the recovered draft still gets the upgrade and keeps the owner's other edits.
 test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }) => {
@@ -840,7 +824,6 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
 // An exported JSON draft from before the legal upgrade imports with the upgrade applied.
 test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, studio }) => {
   const { draft, expected } = preUpgradeDraft((await savedBackup(page)).document)
-  const imported = adoptedContents(expected)
   await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
   await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
     name: 'pre-upgrade.json',
@@ -850,7 +833,7 @@ test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, st
   await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
   await expect
     .poll(() => legalContents(studio, expected), { message: 'the imported legal pages' })
-    .toEqual(imported)
+    .toEqual(expected)
 })
 
 // A server head still holding the legacy legal pages reaches the draft through a publish conflict.
