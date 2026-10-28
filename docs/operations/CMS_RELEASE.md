@@ -38,6 +38,34 @@ this live check, so PR builds can validate an undeployed backend change.
 Keep JWT verification enabled. The preflight exposes only a source digest; state, validation,
 publication, history and resources still require a verified owner.
 
+## Content write authority
+
+Apply `20261028185110_cms_single_writer_authority.sql` after
+`20261028182853_retire_legacy_owner_media_writers.sql`. The earlier retirement requires the updated
+`upload-image` gateway first; its README records that deployment order and the old media requests
+that now return HTTP 400. These migrations require their own reviewed rollout.
+
+Authenticated browser sessions, including the owner, cannot insert, update, delete or upsert
+`site_content`, `about_content` or `email_templates` directly. Their content is published through
+the validated `cms-studio` gateway and the existing service-role-only `internal_cms_publish`
+function, which enforces the owner, expected revision and content fingerprint. Existing public
+site/About reads and owner email-template reads remain available. Native Auth delivery and the
+email delivery log are separate from template publication.
+
+Direct owner writes to `site_settings` are limited to `cancellation_policy_hours`, used by the
+retained Settings form. This operational rule is excluded from the reversible CMS document, so
+changing it neither changes the CMS fingerprint nor advances a revision. Both old and proposed
+keys are checked for updates; renaming a setting or using an upsert cannot cross this boundary.
+The existing value validator still requires 1–168 whole hours. CMS business, appearance, logo and
+SEO settings are written through publication. Read policies and existing service-role capabilities
+are unchanged; staff, profile, photo, schedule, service and booking operations keep their existing
+boundaries.
+
+Old cached editors that issue direct content writes receive permission errors. An update or delete
+of a CMS setting can instead affect zero rows under RLS; a successful HTTP response alone does not
+establish that a write occurred. Use the current Studio, publish, and verify the persisted revision
+and public result. Do not restore legacy table write grants to make an old editor work.
+
 ## Incident: 21 September 2026
 
 PR #67 shipped an updated frontend while production `cms-studio` v3 still contained old shared

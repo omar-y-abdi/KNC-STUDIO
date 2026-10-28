@@ -29,6 +29,9 @@ insert into auth.users (id, email)
 values ('39000000-0000-4000-8000-000000000001', 'owner@homepage-logo.test');
 insert into public.profiles (id, role, barber_id)
 values ('39000000-0000-4000-8000-000000000001', 'owner', null);
+select set_config('test.contacts_before',(select jsonb_object_agg(key,value)::text
+ from public.site_settings
+ where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])),true);
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -39,10 +42,10 @@ update public.site_settings
 set value = ''
 where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href']);
 select is(
-  (select count(*)::integer from public.site_settings
-   where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])
-     and value = ''),
-  3, 'owner CMS may remove phone and maps contacts'
+  (select jsonb_object_agg(key,value) from public.site_settings
+   where key = any (array['business_phone_display', 'business_phone_tel', 'business_maps_href'])),
+  current_setting('test.contacts_before')::jsonb,
+  'owner REST cannot bypass CMS publication to change phone and maps contacts'
 );
 update public.site_settings
 set value = 'logo/223e4567-e89b-42d3-a456-426614174000.webp'
@@ -54,11 +57,13 @@ select is(
 reset role;
 select is(
   (select value from public.site_settings where key = 'business_phone_tel'),
-  '', 'blank phone link persists as an omitted contact method'
+  current_setting('test.contacts_before')::jsonb->>'business_phone_tel',
+  'the denied REST update preserves the public phone link'
 );
 select is(
   (select value from public.site_settings where key = 'business_maps_href'),
-  '', 'blank maps link persists as an omitted contact method'
+  current_setting('test.contacts_before')::jsonb->>'business_maps_href',
+  'the denied REST update preserves the public maps link'
 );
 -- Seed the canonical public read model as the publisher does, without restoring a retired writer.
 update public.site_settings

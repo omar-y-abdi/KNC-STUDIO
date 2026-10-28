@@ -1,6 +1,6 @@
-// Site-settings admin adapter (owner-only writes). Reads and upserts rows of `site_settings` (PK
-// key) that are not part of the reversible CMS document, such as the cancellation window. Anon can
-// read; only the owner may write (site_*_owner RLS).
+// Site-settings adapter for the retained cancellation form. Reads every public setting; database
+// RLS permits direct owner writes only to cancellation_policy_hours, outside the CMS document.
+// Content settings are written through CMS publication.
 //
 // Boundary discipline: rows Zod-parsed; failure -> AdminError; never throws to the UI.
 
@@ -27,7 +27,7 @@ export async function listSiteSettings(): Promise<AdminResult<ReadonlyMap<string
   }
 }
 
-/** Upsert one site setting (owner-only). */
+/** Upsert the operational cancellation setting; database RLS rejects every CMS key. */
 export async function saveSiteSetting(key: string, value: string): Promise<AdminResult<string>> {
   try {
     const { data, error } = await getAdminClient()
