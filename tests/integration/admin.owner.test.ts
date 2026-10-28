@@ -11,6 +11,7 @@
 // seeded tables are restored after each test. Registered CMS media stays in the library.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { getAdminClient } from '../../src/admin/adminClient'
 import {
   createBarber,
@@ -68,7 +69,14 @@ async function publishCms(base: CmsState, document: CmsDocument): Promise<void> 
       document,
     },
   })
-  expect(result.error).toBeNull()
+  const detail =
+    result.error instanceof FunctionsHttpError
+      ? JSON.stringify({
+          status: result.error.context.status,
+          body: await result.error.context.clone().json(),
+        })
+      : result.error?.message
+  expect(result.error, detail).toBeNull()
 }
 
 /** Delete a barber row directly (superuser) — for cleaning up a created test barber. */
@@ -203,8 +211,11 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
       expect(operational.revision).toBe(base.revision)
       expect(operational.document.settings).not.toHaveProperty('cancellation_policy_hours')
       const document = structuredClone(operational.document)
-      document.site.kicker = { sv: marker, en: document.site.kicker?.en ?? 'CMS authority' }
-      document.about.intro = { sv: marker, en: document.about.intro?.en ?? 'CMS authority' }
+      // Edit an existing override: a newly added key becomes required by complete-document
+      // validation and cannot be removed by publishing the original document during cleanup.
+      expect(document.site.confirmSent?.sv).toBeTypeOf('string')
+      document.site.confirmSent = { ...document.site.confirmSent, sv: marker }
+      document.about.intro = { ...document.about.intro, sv: marker }
       document.settings.business_name = marker
       document.emails = document.emails.map((email) =>
         email.template === 'customer_confirmation' && email.lang === 'sv'
@@ -217,7 +228,7 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
       const site = await client
         .from('site_content')
         .select('value')
-        .eq('key', 'kicker')
+        .eq('key', 'confirmSent')
         .eq('lang', 'sv')
         .single()
       const about = await client
@@ -253,7 +264,10 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
       )
     } finally {
       const latest = await readCmsState()
-      if (latest.fingerprint !== base.fingerprint) await publishCms(latest, base.document)
+      if (latest.fingerprint !== base.fingerprint) {
+        await publishCms(latest, base.document)
+        expect((await readCmsState()).fingerprint).toBe(base.fingerprint)
+      }
       if (cancellation.data) {
         const restored = await saveSiteSetting('cancellation_policy_hours', cancellation.data.value)
         expect(restored.ok).toBe(true)

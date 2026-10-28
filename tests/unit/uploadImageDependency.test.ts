@@ -196,6 +196,8 @@ describe('upload-image HTTP paths', () => {
       expect(media.storedBucket).toBe(kind === 'cms_asset' ? 'gallery' : 'barber-photos')
       const body = await response.json()
       if (kind === 'cms_asset') {
+        if (typeof body !== 'object' || body === null || Array.isArray(body) || !('asset' in body))
+          throw new Error('CMS upload must return a JSON object containing its asset')
         expect(body.asset).toMatchObject({ id: 'asset', bucket: 'gallery', path: media.storedPath })
         expect(media.rpc.mock.calls.map(([name]) => name)).toEqual(['internal_cms_assert_owner'])
       } else {
