@@ -144,25 +144,29 @@ not fix stale validators, panel stacking or discarded styles.
 
 These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mjs` and `app.mjs`:
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
-Booking/auth components remain native to Blade & Blend. `shared/site-page.ts` follows O-Y-A's
-layout wrapper for legacy custom pages: when a page has no independent layout, the editor, locked
-preview and public Worker derive its header/logo, contact strip and About footer from the site's
-current pages. On first edit, that chrome is materialized into a page-owned layout in both
-languages and themes. New independent pages persist the complete authored HTML and CSS, including
-header, menu, content and footer; public rendering returns that saved layout instead of
-recomposing it from Home and About. Older records without the layout flag remain supported and
-continue using the derived renderer until materialized.
+Booking/auth components remain native to Blade & Blend. Current created pages persist only their
+authored body and CSS. `shared/site-page.ts` renders the live homepage logo, current business
+contact links, language/theme controls and page menu around that body in the editor, locked preview
+and public Worker. The header is locked in a created page's canvas; it is not materialized into
+another page-owned copy. Menus use the current draft in Studio and the published presentation in
+public responses.
 
-The independent layout flag is part of the validated CMS document. Update `shared/cms-release.ts`
-with the shared validator and deploy the matching `cms-studio` Function before deploying a
-frontend that publishes this field. Do not treat the frontend release stamp or fixture publication
-as proof that the production Function has been updated. Derived menu links use metadata from the
-current presentation: the editor uses its draft, while the public Worker uses the published
-presentation. A materialized page owns its menu markup and styles.
+Legacy pages with `layout: 'independent'` or an actual frozen shell remain readable. Studio drops
+their frozen chrome on load, restore and import while preserving body content and its styles;
+publication is explicit. The Worker serves still-frozen publications as stored and does not perform
+that migration. Comments and quoted attribute values naming the old shell do not mark a live page
+as frozen. Existing owner Contact bodies remain supported. New managed Contact templates opt into
+their required slots with `data-business-contact-page="1"`; information pages use the token/layout
+base, not created-page chrome.
+
+Update `shared/cms-release.ts` with shared validator changes and deploy the matching `cms-studio`
+Function before the frontend. A source stamp or fixture publication does not prove that the
+production Function or database has been updated. The recovered feature and migration ledger is
+`docs/WIP_IMPLEMENTATION.md`.
 
 The editor's screenshot-driven visual contract lives in `src/admin/cms/DESIGN.md` and
-`UX-CONTRACT.md`. Chrome stays light when editing a dark website. Page settings appear in the
-right inspector when nothing is selected; fit considers viewport height as well as width.
+`UX-CONTRACT.md`. Chrome stays light when editing a dark website. Sidinställningar clears selection
+and opens page metadata in the right inspector; fit considers viewport height as well as width.
 
 Email preview imports `shared/email-render.ts`, the same pure renderer re-exported by
 `supabase/functions/_shared/email.ts`. It expands sample variables and shows actual booking rows,

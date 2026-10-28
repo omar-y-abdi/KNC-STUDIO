@@ -124,6 +124,21 @@ supabase/               # migrations, Edge Functions, pgTAP tests and seed
 public/                 # self-hosted fonts, icons, discovery files and static assets
 ```
 
+### Owner content and operations
+
+The owner edits pages, site/About copy, business and appearance settings, gallery/logo assignments
+and email templates in `/admin/cms`. Publication uses the validated, revision-checked `cms-studio`
+gateway. The new database authority migration removes authenticated REST writes to the content
+tables and reserves direct owner setting writes for `cancellation_policy_hours`. That operational
+setting remains under admin Inställningar and outside reversible CMS history. Apply the migrations
+in the [release order](docs/operations/CMS_RELEASE.md); source code does not establish their hosted state.
+
+Created pages store their body and use the current homepage header/menu in the editor, preview
+and public response. Contact is a protected information route alongside Privacy and Terms;
+existing owner-authored Contact bodies remain supported. Mejl includes template editing and
+owner-only delivery status. See the [implementation ledger](docs/WIP_IMPLEMENTATION.md) for the
+recovered feature scope, test anchors, deployment dependencies and deferred owner actions.
+
 ### The clock is injectable
 
 The booking calendar's "today" comes from a `Clock` (`src/config.ts`), never a bare `new Date()`:
