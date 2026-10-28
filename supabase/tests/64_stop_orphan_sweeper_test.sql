@@ -44,18 +44,14 @@ select is((select count(*)::int from public.external_action_jobs
   where action_type = 'storage_object_delete'), 0,
   'the per-minute dispatcher queues no Storage deletion');
 
--- An explicit owner deletion still runs end to end through the scheduled dispatcher.
+-- A gallery cleanup intent still runs through the dispatcher after legacy producers are retired.
 select vault.create_secret('http://127.0.0.1:9/external-cleanup', 'external_cleanup_url');
 select vault.create_secret('sweeper-test-secret', 'booking_webhook_secret');
 insert into storage.objects (bucket_id, name, created_at)
 values ('gallery', 'salon/owner-deleted.webp', pg_catalog.now() - interval '2 days');
-insert into public.gallery_images (id, kind, storage_path, alt, sort_order)
-values ('64000000-0000-4000-8000-000000000001', 'salon', 'salon/owner-deleted.webp', 'Deleted', 0);
-
 set local role service_role;
-select is(public.internal_delete_gallery_image(
-  '64000000-0000-4000-8000-000000000001', 'salon/owner-deleted.webp'
-) ->> 'ok', 'true', 'owner gallery deletion commits its Storage deletion intent');
+select ok(public.internal_queue_storage_deletion('gallery', 'salon/owner-deleted.webp') is not null,
+  'the retained generic queue commits a gallery Storage deletion intent');
 reset role;
 select is((select status from public.external_action_jobs
   where action_type = 'storage_object_delete' and dedupe_key = 'gallery:salon/owner-deleted.webp'),
