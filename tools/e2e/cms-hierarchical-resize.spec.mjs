@@ -45,6 +45,66 @@ const measure = (frame) =>
       next: rect(group.nextElementSibling),
     }
   })
+const inspectGeometry = (page) =>
+  page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const group = editor.getWrapper().find(selector)[0]?.getEl()
+    const card = group?.firstElementChild
+    const photo =
+      card?.querySelector('img') ??
+      card?.querySelector('[data-knc-surface]') ??
+      card?.firstElementChild
+    const properties = [
+      'display',
+      'width',
+      'height',
+      'min-width',
+      'min-height',
+      'max-width',
+      'max-height',
+      'box-sizing',
+      'aspect-ratio',
+      'zoom',
+      'flex',
+      'align-self',
+      'align-items',
+      'gap',
+      'padding',
+      'border-width',
+      'grid-template-columns',
+      'grid-template-rows',
+    ]
+    const nodes = [group, card, photo, photo?.firstElementChild].filter(Boolean)
+    return {
+      device: editor.getDevice(),
+      mediaCondition: editor.getConfig().mediaCondition,
+      nodes: nodes.map((node) => {
+        const view = node.ownerDocument.defaultView
+        const style = view.getComputedStyle(node)
+        const rect = node.getBoundingClientRect()
+        const rules = editor.Css.getAll().filter((rule) =>
+          rule.getSelectors().some((item) => item.get('name') === node.id),
+        )
+        return {
+          tag: node.localName,
+          id: node.id,
+          slot: node.getAttribute('data-knc-slot'),
+          inline: node.getAttribute('style'),
+          rect: { width: rect.width, height: rect.height },
+          offset: { width: node.offsetWidth, height: node.offsetHeight },
+          computed: Object.fromEntries(
+            properties.map((property) => [property, style.getPropertyValue(property)]),
+          ),
+          rules: rules.slice(-8).map((rule) => ({
+            selector: rule.selectorsToString(),
+            media: rule.get('mediaText'),
+            style: rule.get('style'),
+          })),
+        }
+      }),
+    }
+  }, groupSelector)
 const height = async (page, value) => {
   const input = page.locator('#cms-inspector .gjs-sm-property__height input').first()
   await input.fill(String(Math.round(value)))
@@ -306,9 +366,18 @@ test('cms-hierarchical-resize: narrow Desktop saves the Desktop rule and no view
   await viewport(820)
   assert.equal(await narrow.getAttribute('aria-pressed'), 'true')
   const before = await measure(frame)
+  const beforeDetails = await inspectGeometry(page)
   await select(page, groupSelector)
   await height(page, before.group.height * 0.8)
   const after = await measure(frame)
+  await test.info().attach('narrow-desktop-geometry', {
+    body: JSON.stringify(
+      { before, after, beforeDetails, afterDetails: await inspectGeometry(page) },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  })
   assert.ok(
     Math.abs(after.cards[0].photo.height / before.cards[0].photo.height - 0.8) < 0.05,
     `Narrow Desktop portrait scale: ${JSON.stringify({ before, after })}`,
