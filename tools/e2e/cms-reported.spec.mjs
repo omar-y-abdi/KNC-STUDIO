@@ -275,7 +275,7 @@ test('locked information previews match the editor and Worker layout, fonts and 
         await expect
           .poll(() => paint(publicMain), { message: `public ${path} in ${mode}` })
           .toEqual(reference)
-        await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+        await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
       }
     }
     expect(studio.backend.writes).toEqual([])
