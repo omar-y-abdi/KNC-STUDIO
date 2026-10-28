@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib'
 import { parse, parseFragment, serializeOuter, type DefaultTreeAdapterMap } from 'parse5'
 import { describe, expect, it } from 'vitest'
 import { emptyDocument, type CmsPage, type CmsPresentation } from '../../shared/cms'
+import { validateMarkup } from '../../shared/cms-markup'
 import {
   SITE_PAGE_CSS,
   createSitePage,
@@ -301,7 +302,7 @@ describe('the Worker response of created and legal pages', () => {
 })
 
 describe('the Worker never migrates a frozen page', () => {
-  it('classifies a frozen page as served as stored, without a parse', () => {
+  it('classifies a frozen page as served as stored without migrating it', () => {
     const frozen = frozenPage(ownerBody)
     const unflagged: CmsPage = { ...frozen }
     delete unflagged.layout
@@ -532,6 +533,33 @@ describe('which created pages the Worker treats as frozen', () => {
     const shell = live('<main></main>', '<div id="cms-site-shell"><main></main></div>')
     expect(isFrozenSitePage(shell)).toBe(true)
     expect(isFrozenSitePage(frozenPage(ownerBody))).toBe(true)
+  })
+
+  it.each([
+    '<main><!-- <div id="cms-site-shell"> --><p>Owner text</p></main>',
+    '<main title=\' id="cms-site-shell"\'><p>Owner text</p></main>',
+  ])('keeps accepted shell lookalikes live and unchanged in either language: %s', (html) => {
+    expect(() =>
+      validateMarkup(html, '', {
+        siteOrigin: 'https://bladeblendstudio.se',
+        storageOrigin: 'https://fixture.supabase.co',
+      }),
+    ).not.toThrow()
+    for (const lang of ['sv', 'en'] as const) {
+      const page = live('<main><p>Owner text</p></main>')
+      page.content[lang].html = html
+      page.content[lang].css = {
+        light: '#cms-site-header{color:#123456}',
+        dark: '#cms-site-header{color:#abcdef}',
+      }
+      expect(isFrozenSitePage(page)).toBe(false)
+      expect(isLiveSitePage(page)).toBe(true)
+      expect(dropFrozenChrome(page)).toBe(page)
+      const document = emptyDocument()
+      document.presentation.pages = [page]
+      expect(normalizeDocument(document)).toBe(document)
+      expect(page.content[lang].html).toBe(html)
+    }
   })
 })
 
