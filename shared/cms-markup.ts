@@ -440,6 +440,7 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
   let hasBusinessCity = false
   let hasBusinessContact = false
   let hasBusinessController = false
+  let managedContact = false
 
   const visit = (node: HtmlNode): void => {
     if ('tagName' in node) {
@@ -448,6 +449,7 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
         if (attr.name === 'data-business-name') hasBusinessName = true
         if (attr.name === 'data-business-city') hasBusinessCity = true
         if (attr.name === 'data-business-contact') hasBusinessContact = true
+        if (attr.name === 'data-business-contact-page' && attr.value === '1') managedContact = true
         if (attr.name === 'data-business-controller' && attr.value === lang)
           hasBusinessController = true
       }
@@ -455,6 +457,11 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
     if ('childNodes' in node) for (const child of node.childNodes) visit(child)
   }
   visit(fragment)
+
+  // Contact was an owner-authored route before this managed template existed. Unmarked bodies,
+  // including those using only some historical business slots, keep that publication contract.
+  // The marker versions the template's required content; it grants no authority or validation bypass.
+  if (path === '/contact' && !managedContact) return
 
   const missing: string[] = []
   if (path === '/contact') {

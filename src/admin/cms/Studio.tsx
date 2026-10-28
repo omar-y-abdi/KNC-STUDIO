@@ -247,9 +247,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
         // Preparing only the baseline must not reserialize already-complete authored snapshots.
         draft.migrate(
           (document) =>
-            normalizeDocument(
-              needsCorePageSource(document) ? ensureCorePages(document) : document,
-            ),
+            normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
           (previous, next) => layouts.current.follow(previous, next, draft.base),
         )
         setVersion((value) => value + 1)
@@ -539,9 +537,7 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
       )
       next.migrate(
         (document) =>
-          normalizeDocument(
-            needsCorePageSource(document) ? ensureCorePages(document) : document,
-          ),
+          normalizeDocument(needsCorePageSource(document) ? ensureCorePages(document) : document),
         (previous, migrated) => layouts.current.follow(previous, migrated, next.base),
       )
       setDraft(next)
@@ -728,11 +724,22 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
     setDialog(null)
     setMobilePanel(null)
   }
-  const editMeta = (key: 'name' | 'title' | 'description', value: string): void => {
-    const next = structuredClone(page)
-    next[key][lang] = value
+  const editPageMetadata = (update: (page: CmsPage) => void): void => {
+    editor.current?.flush()
+    // The flush can replace this render's page with the latest canvas body. Metadata and header
+    // changes must build on that snapshot, including when a new menu shape reloads the canvas.
+    const current = currentDraft.current?.document.presentation.pages.find(
+      (item) => item.id === page.id,
+    )
+    if (!current) return
+    const next = structuredClone(current)
+    update(next)
     replacePage(next)
   }
+  const editMeta = (key: 'name' | 'title' | 'description', value: string): void =>
+    editPageMetadata((next) => {
+      next[key][lang] = value
+    })
 
   const pageSettings = (
     <div class="cms-page-meta" inert={locked}>
@@ -761,9 +768,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
             type="checkbox"
             checked={page.inMenu}
             onChange={(e) => {
-              const next = structuredClone(page)
-              next.inMenu = e.currentTarget.checked
-              replacePage(next)
+              const checked = e.currentTarget.checked
+              editPageMetadata((next) => {
+                next.inMenu = checked
+              })
             }}
           />{' '}
           Visa i meny
@@ -779,10 +787,10 @@ export function CmsStudio({ onExit }: { onExit: () => void }): JSX.Element {
               if (!current) return
               const copy = structuredClone(current)
               copy.id = crypto.randomUUID()
-              copy.path = `${page.path}-kopia`
+              copy.path = `${current.path}-kopia`
               while (draft.document.presentation.pages.some((item) => item.path === copy.path))
                 copy.path += '-kopia'
-              copy.name = { sv: `${page.name.sv} kopia`, en: `${page.name.en} copy` }
+              copy.name = { sv: `${current.name.sv} kopia`, en: `${current.name.en} copy` }
               const next = structuredClone(draft.document)
               next.presentation.pages.push(copy)
               commitDraft(next)
