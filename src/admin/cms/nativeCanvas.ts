@@ -57,7 +57,7 @@ function canvasRuleCss(rule: CssRule): string {
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
     return canvasStyleCss(rule.toJSON().style ?? {})
-  return rule.toCSS({ important: rule.get('important'), ...canvasStyleOptions })
+  return rule.toCSS({ important: rule.get('important') ?? false, ...canvasStyleOptions })
 }
 
 /** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
@@ -79,7 +79,7 @@ export function connectCanvasStyles(editor: Editor): () => void {
       return
     }
     const current = new Set<HTMLElement>()
-    let next: ChildNode | null = null
+    let next: Node | null = null
     for (const element of [...elements].reverse()) {
       if (!element) continue
       current.add(element)
@@ -341,14 +341,19 @@ function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasSt
 function appendLayerOrder(style: CanvasStyle, node: Atrule): void {
   const list = node.prelude?.type === 'AtrulePrelude' ? node.prelude.children.first : null
   // css-tree's installed runtime supports LayerList/Layer; its type package is older.
-  if (!list || String(list.type) !== 'LayerList' || !('children' in list))
+  if (!list || String(list.type) !== 'LayerList' || !('children' in list) || !list.children)
     throw new Error('Ordningen på sidans CSS-lager kunde inte bevaras.')
   list.children.forEach((layer) => {
     appendCanvasStyle(style, `@layer ${generate(layer)}`, Object.create(null))
   })
 }
 
-function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): CanvasStyle {
+function canvasNestedStyle(
+  block: Block,
+  withinRule = true,
+  keyframes = false,
+  envelope = false,
+): CanvasStyle {
   const style: CanvasStyle = Object.create(null)
   block.children.forEach((node) => {
     if (node.type === 'Declaration') {
@@ -357,7 +362,11 @@ function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): 
         node.property,
         generate(node.value) + (node.important ? ' !important' : ''),
       )
-    } else if (node.type === 'Atrule' && node.name === 'layer' && !node.block) {
+    } else if (
+      node.type === 'Atrule' &&
+      ident.decode(node.name).toLowerCase() === 'layer' &&
+      !node.block
+    ) {
       // Ordered empty named blocks establish exactly the same layer ordering.
       appendLayerOrder(style, node)
     } else if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) {
@@ -367,7 +376,7 @@ function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): 
           : `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`
       // GrapesJS recognizes nested style keys by punctuation. An explicit nesting
       // selector preserves the descendant meaning of a bare type selector as well.
-      if (node.type === 'Rule' && !keyframes && !/^[&.#:[>+~*]/.test(key)) {
+      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key)) {
         if (withinRule) key = `& ${key}`
         else if (node.prelude.type === 'SelectorList')
           key = node.prelude.children
@@ -376,6 +385,9 @@ function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): 
             .join(',')
         else throw new Error('En CSS-selektor i ett lager kunde inte bevaras.')
       }
+      // GJS copies style objects into ordinary objects. These selector names must
+      // remain own data keys rather than special prototype/constructor properties.
+      if (envelope && ['__proto__', 'constructor', 'prototype'].includes(key)) key += ' '
       if (
         node.type === 'Atrule' &&
         ![
@@ -386,7 +398,7 @@ function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): 
           'font-face',
           'keyframes',
           '-webkit-keyframes',
-        ].includes(node.name)
+        ].includes(ident.decode(node.name).toLowerCase())
       )
         throw new Error(`Kan inte bevara nästlad @${node.name} i sidans CSS.`)
       appendCanvasStyle(
@@ -395,7 +407,9 @@ function canvasNestedStyle(block: Block, withinRule = true, keyframes = false): 
         canvasNestedStyle(
           node.block!,
           node.type === 'Rule' || withinRule,
-          node.type === 'Atrule' && ['keyframes', '-webkit-keyframes'].includes(node.name),
+          node.type === 'Atrule' &&
+            ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()),
+          envelope,
         ),
       )
     } else throw new Error('Sidans CSS innehåller ett block som inte kan bevaras.')
@@ -414,15 +428,24 @@ export function parseCanvasCss(
   const layerRoots = new Map<string, CanvasStyle>()
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
+  walk(tree, (node) => {
+    if (node.type === 'Raw')
+      throw new Error('Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.')
+  })
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {
       let hasLayer = false
+      let groups = 0
       walk(node, (child) => {
-        if (child.type === 'Atrule' && child.name === 'layer') hasLayer = true
+        if (child.type !== 'Atrule') return
+        groups++
+        if (ident.decode(child.name).toLowerCase() === 'layer') hasLayer = true
       })
       if (
         node.type !== 'Atrule' ||
-        (!hasLayer && !['keyframes', '-webkit-keyframes'].includes(node.name))
+        (!hasLayer &&
+          groups < 2 &&
+          !['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()))
       )
         return
       const key = `--cms-internal-layer-${layerRoots.size}`
@@ -431,6 +454,8 @@ export function parseCanvasCss(
         canvasNestedStyle(
           { type: 'Block', children: new List<CssNode>().fromArray([node]) },
           false,
+          false,
+          true,
         ),
       )
       tree.children.replace(

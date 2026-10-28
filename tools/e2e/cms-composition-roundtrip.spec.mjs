@@ -15,6 +15,7 @@ test('canvas CSS trees survive import and startup yields return control to the b
     const { connectCanvasStyles, parseCanvasSheet, parseCanvasCss, yieldCanvasTask } =
       await import('/src/admin/cms/nativeCanvas.ts')
     const { bindCmsRootStyles } = await import('/src/admin/cms/cmsRootStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -34,7 +35,11 @@ test('canvas CSS trees survive import and startup yields return control to the b
       const fromText = parseCanvasCss(bindCmsRootStyles(css, 'editor-root'), editor)
       const repeated = parseCanvasCss(bound, editor)
       const nestedCss =
-        '#safe{width:10px;@layer{width:20px}@layer{width:30px}width:40px;@media(min-width:769px){@supports(display:grid){@container(min-width:100px){:is(&){width:56%!important}}}}__proto__{color:red}constructor{color:blue}}'
+        '#safe{width:10px;@layer{&{width:20px}}@layer{&{width:30px}}width:40px;@media(min-width:769px){@supports(display:grid){@container(min-width:100px){&{width:56%!important}}}}& __proto__{color:red}& constructor{color:blue}}'
+      validateMarkup('', nestedCss, {
+        siteOrigin: globalThis.location.origin,
+        storageOrigin: 'https://storage.example.test',
+      })
       const nestedTree = parseCanvasSheet(nestedCss)
       const nested = parseCanvasCss(nestedTree, editor)
       const nestedRepeated = parseCanvasCss(nestedTree, editor)
@@ -46,11 +51,18 @@ test('canvas CSS trees survive import and startup yields return control to the b
         !Object.hasOwn(ownStyle, 'constructor') &&
         !Object.hasOwn(Object.prototype, 'width')
       const beforeFailedImport = JSON.stringify(editor.getProjectData())
-      let rejectedLoss = false
-      try {
-        parseCanvasCss('p:--unsupported-cms-selector{width:12px}', editor)
-      } catch {
-        rejectedLoss = true
+      const rejectedLoss = []
+      for (const unsupported of [
+        'p:--unsupported-cms-selector{width:12px}',
+        '#safe{@layer{width:20px}}',
+        '#safe{:where(&){width:20px}}',
+      ]) {
+        try {
+          parseCanvasCss(unsupported, editor)
+          rejectedLoss.push(false)
+        } catch {
+          rejectedLoss.push(true)
+        }
       }
       const failureUnchanged = beforeFailedImport === JSON.stringify(editor.getProjectData())
       let schedulerCalls = 0
@@ -109,20 +121,20 @@ test('canvas CSS trees survive import and startup yields return control to the b
     '& __proto__',
     '& constructor',
   ])
-  assert.equal(result.nested[0].style['@layer'].width, '20px')
-  assert.equal(result.nested[0].style['@layer '].width, '30px')
+  assert.equal(result.nested[0].style['@layer']['&'].width, '20px')
+  assert.equal(result.nested[0].style['@layer ']['&'].width, '30px')
   assert.equal(result.nested[0].style['width '], '40px')
   assert.equal(
     result.nested[0].style['@media (min-width:769px)']['@supports (display:grid)'][
       '@container (min-width:100px)'
-    ][':is(&)'].width,
+    ]['&'].width,
     '56% !important',
   )
   assert.equal(result.safePrototype, true)
-  assert.equal(
+  assert.deepEqual(
     result.rejectedLoss,
-    true,
-    'Unexpected parser loss must fail before importing models',
+    [true, true, true],
+    'Unsupported syntax must fail before importing models',
   )
   assert.equal(result.failureUnchanged, true)
   assert.equal(result.schedulerCalls, 1, 'Use scheduler.yield when available')
@@ -187,6 +199,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, parseCanvasCss, parseCanvasSheet, readCanvasCss } =
       await import('/src/admin/cms/nativeCanvas.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -197,36 +210,55 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
+        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
     })
     const releaseStyles = connectCanvasStyles(editor)
     await new Promise((resolve) => editor.on('load', resolve))
     const doc = editor.Canvas.getDocument()
     const view = doc.defaultView
     const css =
-      '#holder{width:800px}' +
+      '#holder{width:800px;container-type:inline-size}' +
       '@layer overrides,base;' +
       '@layer base{#card{width:70%}#important{width:70%!important}}' +
       '@layer overrides{#card{width:40%}#important{width:40%!important}}' +
       '@layer{#anonymous{width:70%!important}}@layer{#anonymous{width:40%!important}}' +
       '@supports(display:block){@layer{#conditioned{width:70%!important}}@layer{#conditioned{width:40%!important}}}' +
-      '#nested{@layer ordered.overrides,ordered.base;@layer ordered.base{width:70%}@layer ordered.overrides{width:40%}}' +
+      '#nested{@layer ordered.overrides,ordered.base;@layer ordered.base{&{width:70%}}@layer ordered.overrides{&{width:40%}}}' +
       '@media(min-width:1000px){#mixed{width:70%}}@media(min-width:769px){@layer mixed.base;#mixed{width:50%}}' +
+      '@LAYER caps{@MEDIA(min-width:769px){#uppercase{width:25%}}}' +
+      '@MEDIA(min-width:769px){@SUPPORTS(display:grid){#nested-conditions{width:35%}}}' +
+      '@media(min-width:769px){@supports(display:cms-unsupported-layout){#nested-conditions{width:95%}}}' +
+      '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
+      '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
+      '@media(min-width:1000px){#editable{width:25%}}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
-      '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}}' +
-      '@keyframes owner-motion{from{opacity:.2}50%{opacity:.5}to{opacity:.8}}' +
+      '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
+      '@KEYFRAMES owner-motion{from{opacity:.2}50%{opacity:.5}to{opacity:.8}}' +
       '@-webkit-keyframes owner-prefixed{0%{opacity:.1}100%{opacity:.9}}' +
       '#animated{animation:owner-motion 10s linear paused;animation-delay:-5s}' +
       '#prefixed{animation:owner-prefixed 10s linear paused;animation-delay:-5s}' +
       '#unused-owner{width:123px}'
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    validateMarkup('', css, policy)
     const tree = parseCanvasSheet(css)
     const parsed = parseCanvasCss(tree, editor)
     const snapshot = () => {
       const widths = Object.fromEntries(
-        ['card', 'important', 'anonymous', 'conditioned', 'nested', 'mixed'].map((id) => [
-          id,
-          doc.getElementById(id).getBoundingClientRect().width,
-        ]),
+        [
+          'card',
+          'important',
+          'anonymous',
+          'conditioned',
+          'nested',
+          'mixed',
+          'uppercase',
+          'nested-conditions',
+          'container-case',
+          'editable',
+        ].map((id) => [id, doc.getElementById(id).getBoundingClientRect().width]),
       )
       const margin = view.getComputedStyle(doc.getElementById('margin'))
       return {
@@ -237,6 +269,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
           .getPropertyValue('--owner-layer-root')
           .trim(),
         bodyPadding: view.getComputedStyle(doc.body).paddingLeft,
+        pseudoContent: view.getComputedStyle(doc.body, '::before').content,
         opacity: ['animated', 'prefixed'].map((id) =>
           Number(view.getComputedStyle(doc.getElementById(id)).opacity),
         ),
@@ -256,10 +289,19 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       await new Promise((resolve) => view.requestAnimationFrame(resolve))
       const before = snapshot()
       const serialized = readCanvasCss(editor)
+      validateMarkup('', serialized, policy)
       const restored = parseCanvasCss(serialized, editor)
       editor.Css.getAll().reset(restored)
       await new Promise((resolve) => view.requestAnimationFrame(resolve))
       const after = snapshot()
+      const editable = editor.Css.getAll().models.find(
+        (rule) => rule.selectorsToString() === '#editable' && rule.get('atRuleType') === 'media',
+      )
+      editable.addStyle({ width: '32%' })
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const editedWidth = doc.getElementById('editable').getBoundingClientRect().width
+      editable.addStyle({ width: '25%' })
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
       const exported = readCanvasCss(editor)
       const styleElements = editor.Css.getAll()
         .models.filter((rule) => !rule.isNested())
@@ -294,6 +336,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
         after,
         serialized,
         passive,
+        editedWidth,
         stableExport: exported === readCanvasCss(editor),
         stableTree: JSON.stringify(parseCanvasCss(tree, editor)) === JSON.stringify(parsed),
       }
@@ -317,10 +360,15 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       conditioned: 560,
       nested: 560,
       mixed: 400,
+      uppercase: 200,
+      'nested-conditions': 280,
+      'container-case': 360,
+      editable: 200,
     },
     margins: ['2px', '2px', '2px', '3px'],
     root: 'present',
     bodyPadding: '17px',
+    pseudoContent: '"owner"',
     opacity: [0.5, 0.5],
     frames: {
       'owner-motion': ['0%', '50%', '100%'],
@@ -331,6 +379,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   assert.deepEqual(result.after, expected)
   assert.equal(result.stableExport, true, 'Selecting an empty style target must not change export')
   assert.equal(result.stableTree, true)
+  assert.equal(result.editedWidth, 256, 'Ordinary media rules retain their editing model')
   assert.deepEqual(result.passive, {
     moved: [],
     model: true,
@@ -353,6 +402,7 @@ test('resize cascade primitive resolves variables and layers without exporting p
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
     const { connectCanvasStyles, readCanvasCss, parseCanvasCss } =
       await import('/src/admin/cms/nativeCanvas.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
     const editor = cmsGrapes.init({
@@ -484,14 +534,18 @@ test('resize cascade primitive resolves variables and layers without exporting p
       )
       source.setStyle({
         ...source.toJSON().style,
-        ':where(&):is(#probe-card):where(#probe-card)': {
+        '&:where(#probe-card)': {
           '@media(min-width:769px)': {
-            ':is(&)': { width: '56%!important' },
+            '&': { width: '56%!important' },
           },
         },
       })
       const beforeReload = card.getBoundingClientRect().width
       const serialized = readCanvasCss(editor)
+      validateMarkup('', serialized, {
+        siteOrigin: globalThis.location.origin,
+        storageOrigin: 'https://storage.example.test',
+      })
       const parserEvents = []
       let parserInput = 'raw'
       const recordParse = ({ input, output, error }) => {
