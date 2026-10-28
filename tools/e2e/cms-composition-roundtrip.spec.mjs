@@ -67,6 +67,277 @@ test('canvas CSS trees survive import and startup yields return control to the b
   assert.equal(result.inputRan, true, 'The fallback must yield a task, not only a microtask')
 })
 
+test('information-page comparison uses the editing canvas base and selected theme', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await nativeBackend(context)
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+  )
+  await page
+    .locator('.cms-editor-canvas[data-cms-canvas-ready="true"][aria-busy="false"]:not([inert])')
+    .waitFor({ timeout: 90000 })
+  await page.getByRole('button', { name: 'Jämför', exact: true }).click()
+  const comparison = page.frameLocator('iframe[title="Jämförelsevy"]')
+  const base = (selector) =>
+    page.evaluate((selector) => {
+      const doc = globalThis.document.querySelector(selector)?.contentDocument
+      if (!doc) return null
+      const loaded = [...doc.styleSheets].flatMap((sheet) =>
+        sheet.href ? [new URL(sheet.href).pathname] : [],
+      )
+      return {
+        scheme: doc.documentElement.style.colorScheme,
+        styles: ['/tokens.css', '/info.css'].filter((path) => loaded.includes(path)),
+      }
+    }, selector)
+  for (const [name, selector, title] of [
+    ['Integritetspolicy', 'main h1', 'Integritetspolicy'],
+    ['Bokningsvillkor', 'main h1', 'Bokningsvillkor'],
+    ['Kontakt', '#contact-title', /^Kontakta /],
+  ]) {
+    await page.locator('#cms-library').getByRole('button', { name, exact: true }).click()
+    await expect(comparison.locator(selector)).toHaveText(title)
+    for (const mode of ['light', 'dark']) {
+      await page
+        .getByRole('group', { name: 'Tema', exact: true })
+        .getByRole('button', { name: mode === 'light' ? 'Ljus' : 'Mörk', exact: true })
+        .click()
+      const expected = { scheme: mode, styles: ['/tokens.css', '/info.css'] }
+      await expect.poll(() => base('.gjs-frame')).toEqual(expected)
+      await expect.poll(() => base('iframe[title="Jämförelsevy"]')).toEqual(expected)
+    }
+  }
+})
+
+test('resize cascade primitive resolves variables and layers without exporting probes', async ({
+  page,
+}) => {
+  const pageErrors = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { readCanvasCss, parseCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      // Native nested rules require both export and live mount to opt in. This primitive
+      // proves those integration seams before the resize implementation depends on them.
+      optsCss: { withNested: true },
+      components:
+        '<div id="holder"><div id="probe-card" class="probe-card">Card</div><div id="inherited">Inherited</div></div>',
+      style:
+        '#holder{width:800px}.probe-card{height:100px}@layer base,overrides;@layer base{.probe-card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%)}}@layer overrides{#probe-card{width:revert-layer}}#inherited{width:inherit}@media(min-width:1000px){#probe-card{width:var(--owner-card-width,60%)!important}}',
+      deviceManager: {
+        devices: [
+          { id: 'Wide', width: '1440px' },
+          { id: 'Narrow', width: '820px' },
+        ],
+      },
+    })
+    await new Promise((resolve) => editor.on('load', resolve))
+    editor.on('css:mount:before', (mount) => {
+      mount.css = mount.rule.toCSS({ important: mount.rule.get('important'), withNested: true })
+    })
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const card = doc.getElementById('probe-card')
+    const inherited = doc.getElementById('inherited')
+    const settleViewport = async (device, width) => {
+      editor.setDevice(device)
+      const deadline = globalThis.performance.now() + 5000
+      let stableFrames = 0
+      while (stableFrames < 2) {
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        const frameWidth = editor.Canvas.getFrameEl().getBoundingClientRect().width
+        stableFrames =
+          view.innerWidth === width && Math.abs(frameWidth - width) < 0.01 ? stableFrames + 1 : 0
+        if (globalThis.performance.now() > deadline) {
+          throw new Error(
+            `Device ${device} did not settle at ${width}px: viewport=${view.innerWidth}, frame=${frameWidth}`,
+          )
+        }
+      }
+    }
+    const probe = () => {
+      const names = [
+        '--cms-internal-prototype-width',
+        '--cms-internal-prototype-source',
+        '--cms-internal-prototype-branch',
+      ]
+      const temporary = doc.createElement('style')
+      temporary.textContent = names
+        .map(
+          (name, index) =>
+            `@property ${name}{syntax:"*";inherits:false;initial-value:${index ? 'none' : 'auto'}}`,
+        )
+        .join('')
+      const cleanup = []
+      const sources = new Map()
+      const models = new Map(
+        editor.Css.getAll().models.map((model) => [model.getView()?.el?.sheet, model]),
+      )
+      const walk = (parent, model) => {
+        for (const rule of [...parent.cssRules]) {
+          if (rule.style?.getPropertyValue('width')) {
+            const style = rule.style
+            const previous = style.cssText
+            cleanup.push(() => {
+              style.cssText = previous
+            })
+            const value = style.getPropertyValue('width')
+            const priority = style.getPropertyPriority('width') ? '!important' : ''
+            const key = `r${sources.size}`
+            sources.set(key, { model, selector: rule.selectorText })
+            const marker = ['revert', 'revert-layer'].includes(value) ? value : key
+            style.cssText += `;${names[0]}:${value}${priority};${names[1]}:${marker}${priority}`
+          }
+          if (rule.cssRules) walk(rule, model)
+        }
+      }
+      try {
+        doc.head.append(temporary)
+        for (const sheet of [...doc.styleSheets]) walk(sheet, models.get(sheet))
+        const style = view.getComputedStyle(card)
+        const source = sources.get(style.getPropertyValue(names[1]).trim())
+        // This fixture's selector list has two simple branches, including an unmatched ID.
+        temporary.textContent += source.selector
+          .split(',')
+          .map((branch, index) => `${branch}:where(#probe-card){${names[2]}:b${index}}`)
+          .join('')
+        const child = view.getComputedStyle(inherited)
+        return {
+          width: style.getPropertyValue(names[0]).trim(),
+          usedWidth: parseFloat(style.width),
+          branch: view.getComputedStyle(card).getPropertyValue(names[2]).trim(),
+          selector: source.selector,
+          media: source.model.get('mediaText'),
+          type: source.model.get('atRuleType'),
+          inherited: child.getPropertyValue(names[0]).trim(),
+          inheritSelector: sources.get(child.getPropertyValue(names[1]).trim()).selector,
+        }
+      } finally {
+        for (const restore of cleanup.reverse()) restore()
+        temporary.remove()
+      }
+    }
+    const samples = []
+    try {
+      for (const [device, width] of [
+        ['Wide', 1440],
+        ['Narrow', 820],
+      ]) {
+        // GJS animates the frame width for 350ms; two RAFs can still leave Wide media active.
+        await settleViewport(device, width)
+        editor.clearDirtyCount()
+        const before = JSON.stringify(editor.getProjectData())
+        const exported = readCanvasCss(editor)
+        samples.push({
+          device,
+          viewportWidth: view.innerWidth,
+          frameWidth: editor.Canvas.getFrameEl().getBoundingClientRect().width,
+          wideMedia: view.matchMedia('(min-width: 1000px)').matches,
+          ...probe(),
+          unchanged:
+            before === JSON.stringify(editor.getProjectData()) &&
+            exported === readCanvasCss(editor),
+          dirty: editor.getDirtyCount(),
+        })
+      }
+      await settleViewport('Wide', 1440)
+      const source = editor.Css.getAll().models.find((rule) =>
+        rule.get('mediaText')?.includes('1000px'),
+      )
+      source.setStyle({
+        ...source.toJSON().style,
+        ':where(&):is(#probe-card):where(#probe-card)': {
+          '@media(min-width:769px)': {
+            ':is(&)': { width: '56%!important' },
+          },
+        },
+      })
+      const beforeReload = card.getBoundingClientRect().width
+      const serialized = readCanvasCss(editor)
+      editor.Css.getAll().reset(parseCanvasCss(serialized, editor))
+      const afterReload = card.getBoundingClientRect().width
+      return { samples, beforeReload, afterReload, serialized }
+    } finally {
+      // ClassTagsView debounces style/device updates by one task. Let that work finish
+      // before destroy removes its selected-component model.
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('resize-cascade-primitive', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  await page.evaluate(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
+  assert.deepEqual(pageErrors, [], 'Primitive teardown must not leave queued editor errors')
+  assert.deepEqual(
+    result.samples.map(({ viewportWidth, wideMedia }) => ({ viewportWidth, wideMedia })),
+    [
+      { viewportWidth: 1440, wideMedia: true },
+      { viewportWidth: 820, wideMedia: false },
+    ],
+  )
+  assert.deepEqual(
+    result.samples.map(({ width, usedWidth, inherited, inheritSelector, unchanged, dirty }) => ({
+      width,
+      usedWidth,
+      inherited,
+      inheritSelector,
+      unchanged,
+      dirty,
+    })),
+    [
+      {
+        width: '70%',
+        usedWidth: 560,
+        inherited: '800px',
+        inheritSelector: '#inherited',
+        unchanged: true,
+        dirty: 0,
+      },
+      {
+        width: '70%',
+        usedWidth: 560,
+        inherited: '800px',
+        inheritSelector: '#inherited',
+        unchanged: true,
+        dirty: 0,
+      },
+    ],
+  )
+  assert.equal(result.samples[0].type, 'media')
+  assert.ok(result.samples[0].media.includes('1000px'))
+  assert.equal(result.samples[1].type, 'layer')
+  assert.equal(result.samples[1].media, 'base')
+  assert.equal(
+    result.samples[1].branch,
+    'b0',
+    'The unmatched ID branch must not determine specificity',
+  )
+  assert.equal(result.beforeReload, 448)
+  assert.equal(
+    result.afterReload,
+    result.beforeReload,
+    'GrapesJS CSS import must retain the nested conditional override',
+  )
+  assert.ok(!result.serialized.includes('--cms-internal-prototype'), 'No probe may be exported')
+})
+
 // Freeze idle work without freezing input, animation frames or the editor's export timers.
 async function holdAboutIdle(page) {
   await page.addInitScript(() => {
