@@ -502,18 +502,25 @@ export function mountDeliveryStatusHarness(): void {
     barberName: 'Hassan',
     barberEmail: 'hassan@example.com',
   })
-  const entry = (id: string, subject: string, createdAt: string) => ({
+  const entry = (id: string, subject: string, createdAt: string, failed = false) => ({
     id,
     createdAt,
     kind: 'auth_recovery' as const,
     recipient: 'ada@example.com',
     subject,
-    outcome: { status: 'sent' as const },
+    outcome: failed
+      ? { status: 'failed' as const, errorCode: 'send_failed_transient' as const }
+      : { status: 'sent' as const },
     attemptCount: 1,
   })
   const firstPage = [
     entry('55555555-5555-4555-8555-555555555551', 'Mejl ett', '2096-01-03T10:00:00.000003+00:00'),
-    entry('55555555-5555-4555-8555-555555555552', 'Mejl två', '2096-01-03T09:00:00.000002+00:00'),
+    entry(
+      '55555555-5555-4555-8555-555555555552',
+      'Mejl två',
+      '2096-01-03T09:00:00.000002+00:00',
+      true,
+    ),
   ]
   const port: DeliveryStatusPort = {
     listFailed: () =>

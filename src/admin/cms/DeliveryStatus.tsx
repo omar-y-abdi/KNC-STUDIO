@@ -1,6 +1,7 @@
 // Leveransstatus (Studio → Mejl): failed booking emails that need the owner, then every email the
-// system sent in the last 30 days. A booking with a failed delivery cannot be deleted, purged or
-// removed with its barber until the owner retries it or marks it handled here.
+// app logged attempting to send. Rows older than 30 days are purged daily. A booking with an
+// unresolved delivery cannot be deleted, purged or removed with its barber until delivery finishes
+// or the owner marks it handled here.
 import type { JSX } from 'preact'
 import { useEffect, useState } from 'preact/hooks'
 import type { EmailSendKind, EmailSendOutcome } from '../../../shared/email-send-log'
@@ -58,7 +59,7 @@ const EVENT_LABEL: Readonly<Record<FailedBookingEmailDelivery['event'], string>>
 }
 
 const REASON: Readonly<Record<NonNullable<FailedBookingEmailDelivery['errorCode']>, string>> = {
-  send_failed_transient: 'Mejltjänsten svarade inte efter flera försök',
+  send_failed_transient: 'Tillfälligt fel hos mejltjänsten eller anslutningen',
   send_failed_permanent: 'Mejltjänsten avvisade mejlet, till exempel en ogiltig adress',
   send_failed: 'Mejlet kunde inte skickas',
   not_configured: 'Mejltjänsten är inte konfigurerad',
@@ -216,7 +217,7 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
         <h2 id="cms-delivery-failed-heading">Misslyckade bokningsmejl</h2>
         <p>
           Mejl stoppas efter fem tillfälliga fel eller direkt vid permanenta fel. Bokningen kan inte
-          raderas förrän mejlet skickats om eller markerats som hanterat.
+          raderas förrän leveransen har slutförts eller markerats som hanterad.
         </p>
         {failed.state === 'loading' && <p role="status">Hämtar misslyckade mejl …</p>}
         {failed.state === 'error' && (
@@ -274,12 +275,14 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
         )}
       </section>
       <section class="cms-delivery-section" aria-labelledby="cms-delivery-log-heading">
-        <h2 id="cms-delivery-log-heading">Skickade mejl</h2>
+        <h2 id="cms-delivery-log-heading">Mejllogg</h2>
         <p>
-          Alla mejl de senaste 30 dagarna. Länkar som ger inloggning eller tillgång sparas aldrig
-          och visas som [dold länk].
+          Appens loggade sändningsförsök. Mejl som skickas direkt av kontotjänsten eller inte kunde
+          loggas saknas här. Skickat betyder att mejltjänsten har tagit emot mejlet. Poster äldre än
+          30 dagar rensas dagligen. Länkar som ger inloggning eller tillgång sparas aldrig och visas
+          som [dold länk].
         </p>
-        {log.state === 'loading' && <p role="status">Hämtar skickade mejl …</p>}
+        {log.state === 'loading' && <p role="status">Hämtar mejllogg …</p>}
         {log.state === 'error' && (
           <p class="cms-notice" role="alert">
             <span>{log.message}</span>
@@ -289,10 +292,10 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
           </p>
         )}
         {log.state === 'ready' && log.value.entries.length === 0 && (
-          <p role="status">Inga mejl skickade de senaste 30 dagarna.</p>
+          <p role="status">Inga loggade sändningsförsök.</p>
         )}
         {log.state === 'ready' && log.value.entries.length > 0 && (
-          <ul class="cms-delivery-list" aria-label="Skickade mejl">
+          <ul class="cms-delivery-list" aria-label="Mejllogg">
             {log.value.entries.map((entry) => (
               <li class="cms-delivery-row" key={entry.id}>
                 <span>
@@ -357,8 +360,8 @@ export function DeliveryStatus({ port = defaultPort }: { port?: DeliveryStatusPo
         >
           <p>
             {EVENT_LABEL[discardTarget.event]} till {discardTarget.customerName} (
-            {stockholmTime(discardTarget.bookingStartAt)}) skickas inte igen. Bokningen kan därefter
-            raderas.
+            {stockholmTime(discardTarget.bookingStartAt)}) skickas inte igen. Den här leveransen
+            blockerar därefter inte radering av bokningen.
           </p>
         </CmsModal>
       )}

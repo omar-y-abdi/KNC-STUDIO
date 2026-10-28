@@ -225,7 +225,7 @@ export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolea
 /** One `admin_list_email_send_log` entry; a failed row always carries its reason. */
 export const emailSendLogEntryRow = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     created_at: isoTimestamp,
     last_attempt_at: isoTimestamp,
     kind: z.enum(EMAIL_SEND_KINDS),
@@ -233,7 +233,7 @@ export const emailSendLogEntryRow = z
     subject: z.string().min(1),
     status: z.enum(['sent', 'failed']),
     error_code: z.enum(EMAIL_SEND_FAILURE_CODES).nullable(),
-    booking_id: z.string().uuid().nullable(),
+    booking_id: z.guid().nullable(),
     attempt_count: z.number().int().positive(),
   })
   .refine((row) => (row.status === 'failed') === (row.error_code !== null))
@@ -244,7 +244,7 @@ export const emailSendLogPage = z.object({
 /** `admin_get_email_send_log_entry`: null once the 30-day purge removed the copy. */
 export const emailSendLogCopy = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     subject: z.string(),
     html: z.string(),
     text_body: z.string(),

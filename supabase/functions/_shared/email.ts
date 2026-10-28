@@ -382,8 +382,8 @@ export async function sendViaResend(
 const EMAIL_SEND_LOG_TIMEOUT_MS = 3_000
 
 /**
- * A log write failure is reported without recipients, subjects or bodies, then dropped. A write
- * still pending after the timeout is dropped the same way, with the code `timeout`.
+ * A log write failure is reported without recipients, subjects or bodies. After the timeout the
+ * sender stops waiting and reports `timeout`; the outstanding RPC may still complete later.
  */
 async function recordEmailSend(
   log: EmailSendLogClient,

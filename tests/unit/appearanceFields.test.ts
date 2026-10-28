@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDocument, SETTING_KEYS, validateDocument } from '../../shared/cms'
+import { emptyDocument, validateDocument } from '../../shared/cms'
 import { APPEARANCE_FIELDS } from '../../src/admin/cms/appearanceFields'
 import {
   HOMEPAGE_LOGO_SCALE_KEY,
@@ -21,12 +21,11 @@ describe('Studio appearance presets', () => {
   })
 
   it.each(APPEARANCE_FIELDS)('$key is a CMS setting and every option publishes', (field) => {
-    expect(SETTING_KEYS).toContain(field.key)
     expect(field.options.map((option) => option.value)).toContain(field.fallback)
     for (const option of field.options) {
       const document = emptyDocument()
       document.settings[field.key] = option.value
-      expect(() => validateDocument(document)).not.toThrow()
+      expect(validateDocument(document).settings[field.key]).toBe(option.value)
     }
   })
 

@@ -453,9 +453,15 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
     await editorGrid.scrollIntoViewIfNeeded()
     await upgradePage.screenshot({ path: `${out}/cms-native-${name}-barber-editor.png` })
-    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="mobile-home"]'))
-    await upgradePage.locator('#cms-library').getByRole('button', { name: 'Startsida' }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await editableAbout.getByText('Owner-styled A', { exact: true }).click()
     await upgradePage
       .locator('#cms-inspector')
@@ -467,7 +473,10 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     assert.ok(upgradedBackend.writes.includes('publish'), 'Legacy mobile edit was not published')
     await mountUpgrade()
-    await upgradePage.getByRole('button', { name: 'Startsida', exact: true }).click()
+    await upgradePage
+      .locator('#cms-library')
+      .getByRole('button', { name: 'Barberartestets källa', exact: true })
+      .click()
     await upgradePage.getByRole('button', { name: 'Mobil', exact: true }).click()
     await assertMobileEditor(upgradeFrame.locator('[data-knc-surface="about"]'))
     await editableAbout.getByText('Owner published A', { exact: true }).waitFor()

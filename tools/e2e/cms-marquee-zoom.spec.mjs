@@ -190,8 +190,50 @@ test.describe('stored marquee', () => {
     // GrapesJS's own dirty count, which rises at once; Studio shows a change 180 ms later.
     const policyProbe = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
       const steps = []
+      const changes = []
+      let step = 'start'
+      let droppedEvents = 0
+      const rules = editor.Css.getAll()
+      const read = () => ({ html: editor.getHtml({ cleanId: false }), css: readCanvasCss(editor) })
+      const before = read()
+      const changed = (event, model, property, options = {}) => {
+        if (changes.length >= 64) {
+          droppedEvents++
+          return
+        }
+        changes.push({
+          step,
+          event,
+          id: model.get('attributes')?.id,
+          selector: model.selectorsToString?.(),
+          media: model.get('mediaText'),
+          property,
+          style: model.get('style'),
+          previousStyle: model.previous('style'),
+          noCount: options.noCount,
+          avoidStore: options.avoidStore,
+        })
+      }
+      const onStyle = (model, property, options) =>
+        changed('styleable:change', model, property, options)
+      const onRule = (model, collection, options) => changed('rule:add', model, undefined, options)
+      editor.on('styleable:change', onStyle)
+      rules.on('add', onRule)
+      const difference = (previous, next) => {
+        if (previous === next) return null
+        let offset = 0
+        while (offset < previous.length && previous[offset] === next[offset]) offset++
+        return {
+          offset,
+          beforeLength: previous.length,
+          afterLength: next.length,
+          before: previous.slice(Math.max(0, offset - 160), offset + 320),
+          after: next.slice(Math.max(0, offset - 160), offset + 320),
+        }
+      }
       const record = (step) =>
         steps.push({
           step,
@@ -202,6 +244,7 @@ test.describe('stored marquee', () => {
       const offered = async (selector, sector, property) => {
         const target = editor.getWrapper().find(selector)[0]
         if (!target) throw new Error(`Missing ${selector}`)
+        step = `select ${selector}`
         editor.select(target)
         // The Style Manager applies a new selection on its next tick.
         await tick(50)
@@ -210,23 +253,50 @@ test.describe('stored marquee', () => {
         record(`read ${sector} ${property}`)
         return visible
       }
-      record('start')
-      const policy = {
-        trackTransform: await offered('[data-knc-fold="gallery-track"]', 'position', 'transform'),
-        tileWidth: await offered('[data-knc-fold="gallery-tile"]', 'layout', 'width'),
-        stripOverflow: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'overflow'),
-        stripWidth: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'width'),
-        stripHeight: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'height'),
-        textColor: await offered('[data-knc-fold="gallery-tile"]', 'typography', 'color'),
+      try {
+        record('start')
+        const policy = {
+          trackTransform: await offered('[data-knc-fold="gallery-track"]', 'position', 'transform'),
+          tileWidth: await offered('[data-knc-fold="gallery-tile"]', 'layout', 'width'),
+          stripOverflow: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'overflow'),
+          stripWidth: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'width'),
+          stripHeight: await offered('[data-knc-fold="barber-marquee"]', 'layout', 'height'),
+          textColor: await offered('[data-knc-fold="gallery-tile"]', 'typography', 'color'),
+        }
+        // Past Studio's change debounce, so a change any step made has reached the status.
+        await tick(400)
+        record('settled')
+        const after = read()
+        return {
+          policy,
+          steps,
+          changes,
+          droppedEvents,
+          differences: {
+            html: difference(before.html, after.html),
+            css: difference(before.css, after.css),
+          },
+        }
+      } finally {
+        editor.off('styleable:change', onStyle)
+        rules.off('add', onRule)
       }
-      // Past Studio's change debounce, so a change any step made has reached the status.
-      await tick(400)
-      record('settled')
-      return { policy, steps }
     })
     // Every run keeps the steps, so a draft that turns dirty only sometimes leaves its trail.
     await test.info().attach('policy-probe-steps', {
       body: JSON.stringify(policyProbe.steps, null, 2),
+      contentType: 'application/json',
+    })
+    await test.info().attach('policy-probe-model-changes', {
+      body: JSON.stringify(
+        {
+          changes: policyProbe.changes,
+          droppedEvents: policyProbe.droppedEvents,
+          differences: policyProbe.differences,
+        },
+        null,
+        2,
+      ),
       contentType: 'application/json',
     })
     assert.equal(
