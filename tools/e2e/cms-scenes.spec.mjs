@@ -1,17 +1,18 @@
+import { documentFixture } from './builders.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
-import { test } from './fixtures.mjs'
+import { test, expect } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test.use({
   viewport: { width: 1440, height: 1000 },
   contextOptions: { reducedMotion: 'reduce' },
 })
 test('cms-scenes', async ({ page, context, browserName }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   context.setDefaultTimeout(15000)
-  const seed = emptyDocument()
+  const seed = documentFixture()
   if (process.env.CMS_PRESENTATION_FILE)
     seed.presentation = JSON.parse(
       fs
@@ -51,7 +52,13 @@ test('cms-scenes', async ({ page, context, browserName }) => {
           .waitFor({ state: 'visible' })
       if (scene === 'booking-options') {
         await page.getByRole('button', { name: 'Mörk', exact: true }).click()
-        await page.waitForTimeout(300)
+        await expect
+          .poll(() =>
+            frame
+              .locator('[data-knc-surface="booking-options"]')
+              .evaluate((node) => globalThis.getComputedStyle(node).backgroundColor),
+          )
+          .toBe('rgb(28, 28, 30)')
         const colors = await frame
           .locator('[data-knc-surface="booking-options"]')
           .evaluate((n) => ({
@@ -62,7 +69,9 @@ test('cms-scenes', async ({ page, context, browserName }) => {
         assert.equal(colors.background, 'rgb(28, 28, 30)')
         assert.equal(colors.color, 'rgb(245, 245, 247)')
         assert.ok(colors.font.includes('Inter'))
-        await page.screenshot({ path: `/tmp/cms-scenes-${name}-dark-options.png` })
+        await page.screenshot({
+          path: test.info().outputPath(`cms-scenes-${name}-dark-options.png`),
+        })
         await page.getByRole('button', { name: 'Ljus', exact: true }).click()
       }
       await text.click()
@@ -113,7 +122,12 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     const rect = await page.locator('.gjs-frame').boundingBox()
     await page.mouse.move(rect.x + rect.width / 2, rect.y + Math.min(200, rect.height / 2))
     for (let n = 0; n < 4; n++) await page.mouse.wheel(0, 400)
-    await page.waitForTimeout(700)
+    await expect
+      .poll(() => panel.evaluate((node) => Math.abs(node.getBoundingClientRect().height - 112) < 2))
+      .toBe(true)
+    await expect
+      .poll(() => mark.evaluate((node) => globalThis.getComputedStyle(node).opacity))
+      .toBe('1')
     assert.equal(await mark.evaluate((n) => globalThis.getComputedStyle(n).opacity), '1')
     assert.ok(
       await panel.evaluate((n) => Math.abs(n.getBoundingClientRect().height - 112) < 2),
@@ -251,7 +265,7 @@ test('cms-scenes', async ({ page, context, browserName }) => {
     )
   } catch (error) {
     console.error((await page.locator('body').innerText()).slice(-3500))
-    await page.screenshot({ path: `/tmp/cms-scenes-${name}-failure.png` })
+    await page.screenshot({ path: test.info().outputPath(`cms-scenes-${name}-failure.png`) })
     throw error
   }
 })

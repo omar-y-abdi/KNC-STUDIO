@@ -5,7 +5,7 @@
 -- or booking PII.
 
 begin;
-select plan(70);
+select plan(66);
 
 select ok(
   (select a.attnotnull
@@ -140,43 +140,6 @@ select is(
   (select google_event_id from public.calendar_event_map
    where booking_id='49000000-0000-0000-0000-000000000001'),
   'old-event-a', 'a failed exact forget preserves the newer mapping winner'
-);
-
--- Simulate an old worker writing the stable booking-derived destination event after Expand.  The
--- compatibility function must preserve the old map and requeue the booking for the new worker.
-select set_config('test.sync_job', (select id::text from public.external_action_jobs
-  where action_type='calendar_event_sync'
-    and dedupe_key='49000000-0000-0000-0000-000000000001'), true);
-select set_config('test.sync_claim', public.claim_external_action(
-  current_setting('test.sync_job')::uuid
-)::text, true);
-select public.calendar_record_event(
-  '49000000-0000-0000-0000-000000000001',
-  'calendar-reassign-b',
-  'bbs490000000000000000000000000001'
-);
-select is(
-  (select barber_id from public.calendar_event_map
-   where booking_id='49000000-0000-0000-0000-000000000001'),
-  'calendar-reassign-a', 'old-worker compatibility write preserves old cleanup identity'
-);
-select is(
-  (select count(*)::int from public.external_action_jobs
-   where action_type='calendar_event_sync'
-     and dedupe_key='49000000-0000-0000-0000-000000000001'),
-  1, 'old-worker compatibility write requeues one sync action'
-);
-select is(
-  (select status from public.external_action_jobs
-   where action_type='calendar_event_sync'
-     and dedupe_key='49000000-0000-0000-0000-000000000001'),
-  'pending', 'compatibility requeue clears the stale dispatch state'
-);
-select is(
-  (select dispatch_token from public.external_action_jobs
-   where action_type='calendar_event_sync'
-     and dedupe_key='49000000-0000-0000-0000-000000000001'),
-  null, 'compatibility requeue invalidates the old worker dispatch token'
 );
 
 select set_config('test.identity_job', public.calendar_queue_event_deletion_for_identity(

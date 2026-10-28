@@ -30,7 +30,7 @@ export function hasCorePageLayouts(document: CmsDocument): boolean {
 }
 
 let sourcePages: readonly CmsPage[] = []
-let loading: Promise<void> | undefined
+let loading: Promise<CmsPage[]> | undefined
 
 /** A published complete document already contains the source layout. Capture only missing/legacy
  * templates instead of replaying every live scene on each visit to Studio. */
@@ -51,6 +51,13 @@ export function needsCorePageSource(document: CmsDocument): boolean {
       )
         return true
       if (path === '/about' && !tree.querySelector('[data-knc-fold="barber-marquee"]')) return true
+      // Gallery tiles captured before their markers existed cannot be locked in the editor.
+      if (
+        path === '/about' &&
+        tree.querySelector('[role="button"][aria-pressed]') &&
+        !tree.querySelector('[data-knc-fold="gallery-tile"]')
+      )
+        return true
       if (
         pageScenes(path).some(
           ({ id }) => id !== 'default' && !tree.querySelector(`[data-knc-surface="${id}"]`),
@@ -84,14 +91,15 @@ export function prepareCorePageSource(existing?: CmsDocument): Promise<void> {
   }
   loading ??= import('./nativePages')
     .then(({ readCorePageSource }) => readCorePageSource())
-    .then((pages) => {
-      sourcePages = pages
-    })
     .catch((error: unknown) => {
       loading = undefined
       throw error
     })
-  return loading
+  return loading.then((pages) => {
+    // A later Studio mount may retain an older published layout. Reuse the captured source,
+    // not that retained layout, whenever another snapshot still needs the automatic upgrade.
+    sourcePages = pages
+  })
 }
 
 export function isInventedSite(document: CmsDocument): boolean {
@@ -200,7 +208,10 @@ export function ensureCorePages(
           }
           for (const node of fresh.querySelectorAll('[data-knc-fold]')) {
             const fold = node.getAttribute('data-knc-fold')
-            const bySource = fold === 'booking-flow' || fold === 'barber-marquee'
+            const bySource =
+              fold === 'booking-flow' ||
+              fold === 'barber-marquee' ||
+              Boolean(fold?.startsWith('gallery-'))
             const sourceId = node.getAttribute('data-knc-source')
             const target = bySource
               ? sourceId

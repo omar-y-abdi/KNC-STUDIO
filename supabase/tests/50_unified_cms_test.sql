@@ -59,13 +59,13 @@ select is((select value->'document' from cms_test_result),public.internal_cms_do
 select is((select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',r.document,0,s.value->>'fingerprint','99000000-0000-4000-8000-000000000010') from cms_test_request r,cms_test_state s),(select value from cms_test_result),'An exact request replay returns the original acknowledgement');
 select is((select count(*)::int from public.cms_revisions),2,'Replay does not create another revision');
 select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',jsonb_set(r.document,'{site,kicker,sv}','"Changed payload"'),0,s.value->>'fingerprint','99000000-0000-4000-8000-000000000010') from cms_test_request r,cms_test_state s$$,'22023',null,'Request-ID reuse with different content is rejected');
-select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',r.document,0,s.value->>'fingerprint','99000000-0000-4000-8000-000000000011') from cms_test_request r,cms_test_state s$$,'40001',null,'A stale tab cannot overwrite a newer publication');
+select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',r.document,0,s.value->>'fingerprint','99000000-0000-4000-8000-000000000011') from cms_test_request r,cms_test_state s$$,'PT409',null,'A stale tab cannot overwrite a newer publication');
 
 update cms_test_state set value=public.internal_cms_state('99000000-0000-4000-8000-000000000001');
 update public.site_content set value='Changed outside the studio' where key='hours' and lang='sv';
-select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',s.value->'document',1,s.value->>'fingerprint','99000000-0000-4000-8000-000000000012') from cms_test_state s$$,'40001',null,'Edits through old management tools invalidate the content fingerprint');
+select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',s.value->'document',1,s.value->>'fingerprint','99000000-0000-4000-8000-000000000012') from cms_test_state s$$,'PT409',null,'Edits through old management tools invalidate the content fingerprint');
 update cms_test_state set value=public.internal_cms_state('99000000-0000-4000-8000-000000000001');
-select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',jsonb_set(s.value->'document','{barbers}','[]'),1,s.value->>'fingerprint','99000000-0000-4000-8000-000000000013') from cms_test_state s$$,'40001',null,'Publication cannot remove or resurrect a staff account');
+select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',jsonb_set(s.value->'document','{barbers}','[]'),1,s.value->>'fingerprint','99000000-0000-4000-8000-000000000013') from cms_test_state s$$,'PT409',null,'Publication cannot remove or resurrect a staff account');
 -- Violate an existing content constraint after earlier writes have begun; all writes must roll back.
 select throws_ok($$select public.internal_cms_publish('99000000-0000-4000-8000-000000000001',jsonb_set(jsonb_set(s.value->'document','{site,kicker,sv}','"Must roll back"'),'{barbers,0,name}','""'),1,s.value->>'fingerprint','99000000-0000-4000-8000-000000000014') from cms_test_state s$$,null,null,'A late content constraint aborts the whole transaction');
 select is((select value from public.site_content where key='kicker' and lang='sv'),'Publicerat på svenska','Earlier copy writes rolled back with the failed transaction');
@@ -144,7 +144,7 @@ rollback to savepoint cms_operational_boundary;
 
 insert into public.cms_assets(id,bucket,path,name,mime) values('99000000-0000-4000-8000-000000000020','cms-library','test/photo.webp','Photo','image/webp');
 select is(public.internal_cms_asset_update('99000000-0000-4000-8000-000000000001','99000000-0000-4000-8000-000000000020',0,'New name','Useful alt',true)->>'version','1','Asset metadata uses a real version counter');
-select throws_ok($$select public.internal_cms_asset_update('99000000-0000-4000-8000-000000000001','99000000-0000-4000-8000-000000000020',0,'Stale','',false)$$,'40001',null,'A stale metadata editor cannot undo another tab archive');
+select throws_ok($$select public.internal_cms_asset_update('99000000-0000-4000-8000-000000000001','99000000-0000-4000-8000-000000000020',0,'Stale','',false)$$,'PT409',null,'A stale metadata editor cannot undo another tab archive');
 select ok((select archived from public.cms_assets where id='99000000-0000-4000-8000-000000000020'),'Archive state survives a stale update');
 select is(public.public_cms_presentation()->>'revision','1','Public projection exposes the committed head');
 select ok(not public.public_cms_presentation() ? 'assets' and not public.public_cms_presentation() ? 'actor_id' and not public.public_cms_presentation() ? 'emails','Public projection does not disclose private editor state');

@@ -14,19 +14,24 @@ const SITE = 'https://bladeblendstudio.se'
 const read = (path: string): string =>
   readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 
-function visibleText(html: string): { text: string; headings: string[] } {
+function visibleText(html: string): { text: string; headings: string[]; links: string[] } {
   const document = parse(html)
   const headings: string[] = []
   const text: string[] = []
+  const links: string[] = []
   const walk = (node: HtmlNode, excluded = false): void => {
     const tag = 'tagName' in node ? node.tagName : ''
     const hidden = excluded || ['head', 'script', 'style', 'noscript', 'template'].includes(tag)
     if (!hidden && /^h[1-6]$/.test(tag)) headings.push(tag)
     if (!hidden && node.nodeName === '#text' && 'value' in node) text.push(node.value)
+    if (!hidden && tag === 'a' && 'attrs' in node) {
+      const href = node.attrs.find((attribute) => attribute.name === 'href')?.value
+      if (href) links.push(href)
+    }
     if ('childNodes' in node) node.childNodes.forEach((child) => walk(child, hidden))
   }
   walk(document)
-  return { text: text.join(' ').replace(/\s+/g, ' ').trim(), headings }
+  return { text: text.join(' ').replace(/\s+/g, ' ').trim(), headings, links }
 }
 
 function createEnv() {
@@ -177,8 +182,8 @@ describe('agent-ready public representations', () => {
     expect(body).toContain('/sitemap.xml')
   })
 
-  it('provides genuine About, Contact and Privacy trust pages', async () => {
-    for (const path of ['/about', '/contact', '/privacy']) {
+  it('provides genuine About, Contact, Privacy and Terms pages', async () => {
+    for (const path of ['/about', '/contact', '/privacy', '/terms']) {
       const response = await get(path)
       expect(response.status).toBe(200)
       const body = await response.text()
@@ -192,8 +197,11 @@ describe('agent-ready public representations', () => {
     expect(redirect.headers.get('Location')).toBe(`${SITE}/contact`)
   })
 
-  it('publishes a compliant llms.txt file with specific when-to-use guidance', () => {
-    const fallback = read('public/llms.txt')
+  it('publishes llms.txt guidance without advertising unsupported ACP access', async () => {
+    const response = await get('/llms.txt', 'text/plain')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('text/plain')
+    const fallback = await response.text()
     const generated = renderLlmsText({ business: DEFAULT_BUSINESS, facts: EMPTY_BUSINESS_FACTS })
     for (const value of [fallback, generated]) {
       expect(value).toMatch(/^# Blade & Blend Studio\n\n> /)
@@ -201,7 +209,35 @@ describe('agent-ready public representations', () => {
       expect(value).toContain(`[Kontakt](${SITE}/contact)`)
       expect(value).toContain(`[Om salongen](${SITE}/about)`)
       expect(value).toContain(`[Integritetspolicy](${SITE}/privacy)`)
+      expect(value).not.toMatch(/\.well-known\/acp\.json|ACP discovery|Agentic Commerce Protocol/i)
     }
+  })
+
+  it('does not serve an unsupported ACP manifest from the checked-in assets', async () => {
+    const response = await get('/.well-known/acp.json')
+    expect(response.status).toBe(404)
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+  })
+
+  it('serves the staff Calendar disclosure with privacy access and noindex', async () => {
+    const response = await get('/google-calendar')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow')
+    const { text, headings, links } = visibleText(await response.text())
+    expect(headings[0]).toBe('h1')
+    expect(headings.filter((heading) => heading === 'h1')).toHaveLength(1)
+    expect(text).toMatch(/confirmed salon bookings synchronized to that barber's Google Calendar/i)
+    expect(text).toMatch(
+      /create, update, and delete only calendar events generated from the barber's/i,
+    )
+    expect(text).toMatch(
+      /Google access is optional, used only for this staff-facing synchronization/i,
+    )
+    expect(links).toContain('/privacy')
+    expect((await get('/privacy')).status).toBe(200)
+    const homepage = visibleText(await (await get('/')).text())
+    expect(homepage.links).not.toContain('/google-calendar')
+    expect(homepage.links).not.toContain('/google-calendar.html')
   })
 
   it('identifies each listed barber as a structured Person working for the HairSalon', () => {
@@ -228,9 +264,14 @@ describe('agent-ready public representations', () => {
     ).toBeGreaterThan(30)
   })
 
-  it('lists all trust anchors in the canonical sitemap', () => {
-    const sitemap = read('public/sitemap.xml')
-    for (const path of ['/', '/about', '/contact', '/privacy'])
+  it('serves the canonical trust-page sitemap without unverified modification dates', async () => {
+    const response = await get('/sitemap.xml', 'application/xml')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toContain('application/xml')
+    const sitemap = await response.text()
+    for (const path of ['/', '/about', '/contact', '/privacy', '/terms'])
       expect(sitemap).toContain(`<loc>${SITE}${path}</loc>`)
+    // This static artifact has no authoritative per-page modification-date source.
+    expect(sitemap).not.toMatch(/<lastmod(?:\s|>)/i)
   })
 })

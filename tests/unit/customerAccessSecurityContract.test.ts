@@ -1,11 +1,24 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
-import { createServer as createViteServer } from 'vite'
+import { createServer as createViteServer, type UserConfig, type UserConfigFn } from 'vite'
 import { consumeBookingAccessLink } from '../../src/mybookings/accessLink'
 import { customerGateway } from '../../src/mybookings/customerGateway'
+import {
+  customerCookie,
+  customerCookieHeader,
+  CUSTOMER_SESSION_COOKIE,
+} from '../../supabase/functions/_shared/customerCookies'
+import { encryptCustomerAccessToken } from '../../supabase/functions/_shared/customerAccess'
+import {
+  executeExternalAction,
+  type ExternalActionService,
+} from '../../supabase/functions/_shared/externalActions'
+
+const confirmationDb = vi.hoisted(() => ({ rpc: vi.fn() }))
+vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ rpc: confirmationDb.rpc }) }))
 
 describe('customer booking access links', () => {
   it('consumes permanent random root-path links as direct access tokens', () => {
@@ -90,60 +103,246 @@ describe('customer booking access links', () => {
     })
   })
 
-  it('sends permanent root links through the durable external-action worker', () => {
-    const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
-    const worker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
-    const outboxMigrationName = readdirSync('supabase/migrations').find((name) =>
-      name.endsWith('_customer_access_outbox_ciphertext.sql'),
-    )
-    expect(outboxMigrationName).toBeDefined()
-    const migration = readFileSync(`supabase/migrations/${outboxMigrationName}`, 'utf8')
-
-    expect(worker).toContain('decryptCustomerAccessToken')
-    expect(worker).toContain('customerAccessUrl(accessCode)')
-    expect(worker).not.toContain('customerAccessUrl(action.access_code)')
-    expect(worker).not.toContain('#booking_access=${action.access_code}')
-    expect(gateway).toContain("service.rpc('rotate_customer_booking_access_token'")
-    expect(gateway).toContain('p_access_code: code')
-    expect(gateway).not.toContain('edgeRuntime.waitUntil(')
-    expect(gateway).not.toContain('sendAccessEmail(')
-    expect(migration).toContain("'customer_access_email_send'")
-    expect(migration).toContain('customer_booking_access_tokens')
-    expect(migration).toContain('payload = pg_catalog.jsonb_build_object(')
-    expect(migration).toContain("'challenge_id', payload->'challenge_id'")
-    expect(migration).toContain("'lang', payload->'lang'")
+  it('queues access-link delivery through rotation without sending provider email in the request', async () => {
+    const secret = 'unit-customer-access-encryption-secret'
+    const config: Record<string, string> = {
+      SUPABASE_URL: 'https://db.example.test',
+      SUPABASE_SERVICE_ROLE_KEY: 'unit-service',
+      PUBLIC_SITE_ORIGINS: 'https://salon.example.test',
+      TURNSTILE_SECRET: 'unit-turnstile',
+      PUBLIC_ACTION_HASH_SALT: secret,
+      RESEND_API_KEY: 'unit-resend',
+    }
+    confirmationDb.rpc.mockReset().mockImplementation(async (name: string) => {
+      if (name === 'consume_public_action_attempt') return { data: true, error: null }
+      if (name === 'rotate_customer_booking_access_token')
+        return { data: { ok: true }, error: null }
+      throw new Error(`Unexpected access request RPC ${name}`)
+    })
+    const network = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input) !== 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+        throw new Error('Unexpected provider email request')
+      return Response.json({
+        success: true,
+        hostname: 'salon.example.test',
+        action: 'customer_access',
+      })
+    })
+    let handler: ((request: Request) => Promise<Response>) | undefined
+    vi.stubGlobal('Deno', {
+      env: { get: (key: string) => config[key] },
+      serve: (callback: typeof handler) => {
+        handler = callback
+      },
+    })
+    vi.stubGlobal('fetch', network)
+    const waitUntil = vi.fn()
+    vi.stubGlobal('EdgeRuntime', { waitUntil })
+    try {
+      await vi.importActual('../../supabase/functions/public-booking-actions/index.ts')
+      if (!handler) throw new Error('Missing customer action handler')
+      const response = await handler(
+        new Request('https://edge.example.test/customer-bookings', {
+          method: 'POST',
+          headers: { origin: 'https://salon.example.test' },
+          body: JSON.stringify({
+            action: 'request_access',
+            email: 'customer@example.test',
+            lang: 'en',
+            turnstileToken: 'challenge',
+          }),
+        }),
+      )
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ ok: true })
+      expect(confirmationDb.rpc).toHaveBeenCalledTimes(2)
+      expect(confirmationDb.rpc).toHaveBeenLastCalledWith('rotate_customer_booking_access_token', {
+        p_email: 'customer@example.test',
+        p_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        p_token_ciphertext: expect.stringMatching(/^v1\./),
+        p_access_code: expect.stringMatching(/^[a-f0-9]{64}$/),
+        p_lang: 'en',
+      })
+      expect(network).toHaveBeenCalledOnce()
+      expect(waitUntil).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
-  it('uses an opaque HttpOnly session cookie rather than browser storage for return visits', () => {
-    const gateway = readFileSync('supabase/functions/public-booking-actions/index.ts', 'utf8')
-    const cookies = readFileSync('supabase/functions/_shared/customerCookies.ts', 'utf8')
-    const adapter = readFileSync('src/mybookings/adapters/supabaseMyBookings.ts', 'utf8')
-    const client = readFileSync('src/backend/supabaseClient.ts', 'utf8')
-    const actionClient = readFileSync('src/backend/publicBookingActions.ts', 'utf8')
-    expect(cookies).toContain('__Host-bladeblend_customer_session')
-    expect(cookies).toContain('HttpOnly; Secure; SameSite=None')
-    expect(gateway).toContain('customerCookie(req, CUSTOMER_SESSION_COOKIE)')
-    expect(gateway).not.toContain('customer_email=')
-    expect(gateway).not.toContain('body.customer_email')
-    expect(gateway).not.toContain('customer_email:')
-    expect(adapter).not.toContain('sessionStorage')
-    expect(client).not.toContain("credentials: 'include'")
-    expect(client).not.toContain("credentials: 'same-origin'")
-    expect(actionClient).toContain("credentials: 'same-origin'")
-    expect(gateway).toContain('establish_customer_booking_session')
-    expect(gateway).not.toContain('Set-Cookie: ${CUSTOMER_SESSION_COOKIE}=${accessToken}')
+  it('sends a decrypted permanent root link through the durable external-action worker', async () => {
+    const token = 'a'.repeat(64)
+    const secret = 'unit-customer-access-encryption-secret'
+    const id = '54000000-0000-4000-8000-000000000001'
+    const rpc = vi.fn(async (name: string) => ({
+      data:
+        name === 'public_business_discovery'
+          ? {
+              settings: {
+                business_name: 'Owner Salon',
+                business_email: 'owner@example.test',
+                business_street: 'Street 1',
+                business_postal_code: '12345',
+                business_city: 'City',
+                cancellation_policy_hours: '24',
+              },
+            }
+          : name === 'consume_customer_access_email_challenge'
+            ? true
+            : null,
+      error: null,
+    }))
+    const service: ExternalActionService = {
+      rpc,
+      storage: { from: () => ({ remove: vi.fn() }) },
+      auth: { admin: { updateUserById: vi.fn(), deleteUser: vi.fn() } },
+    }
+    const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id }))
+    vi.stubGlobal('fetch', send)
+    try {
+      const ciphertext = await encryptCustomerAccessToken(token, secret)
+      await executeExternalAction(
+        {
+          id,
+          dispatch_token: id,
+          action_type: 'customer_access_email_send',
+          challenge_id: id,
+          email: 'customer@example.test',
+          lang: 'en',
+          token_ciphertext: ciphertext,
+        },
+        service,
+        {
+          googleClientId: undefined,
+          googleClientSecret: undefined,
+          resendApiKey: 'unit-resend',
+          customerAccessHashSalt: secret,
+        },
+      )
+      expect(send).toHaveBeenCalledOnce()
+      const request = send.mock.calls[0]
+      expect(request?.[0]).toBe('https://api.resend.com/emails')
+      const message = JSON.parse(String(request?.[1]?.body)) as { html: string; text: string }
+      expect(message.html).toContain(`href="https://bladeblendstudio.se/${token}"`)
+      expect(message.text).toContain(`https://bladeblendstudio.se/${token}`)
+      expect(message.html).not.toContain(ciphertext)
+      expect(rpc).toHaveBeenLastCalledWith('consume_customer_access_email_challenge', {
+        p_challenge_id: id,
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
-  it('uses permanent root links in access and booking-confirmation email paths', () => {
-    const accessWorker = readFileSync('supabase/functions/_shared/externalActions.ts', 'utf8')
-    const confirmationWorker = readFileSync('supabase/functions/send-confirmation/index.ts', 'utf8')
+  it('reuses the stored permanent root link in a booking-confirmation email', async () => {
+    const id = '54000000-0000-4000-8000-000000000001'
+    const token = 'c'.repeat(64)
+    const secret = 'unit-customer-access-encryption-secret'
+    const ciphertext = await encryptCustomerAccessToken(token, secret)
+    const config: Record<string, string> = {
+      WEBHOOK_SECRET: 'unit-webhook',
+      SUPABASE_URL: 'https://db.example.test',
+      SUPABASE_SERVICE_ROLE_KEY: 'unit-service',
+      PUBLIC_ACTION_HASH_SALT: secret,
+      RESEND_API_KEY: 'unit-resend',
+    }
+    confirmationDb.rpc.mockReset().mockImplementation(async (name: string) => {
+      if (name === 'booking_confirmation_details')
+        return {
+          data: {
+            id,
+            email: 'customer@example.test',
+            phone: '0701234567',
+            customer_name: 'Customer',
+            start_at: '2040-03-18T12:00:00Z',
+            service_name: 'Cut',
+            price: 300,
+            duration_min: 30,
+            barber_name: 'Barber',
+            barber_email: null,
+            lang: 'en',
+            status: 'confirmed',
+          },
+          error: null,
+        }
+      if (name === 'public_business_discovery')
+        return {
+          data: {
+            settings: {
+              business_name: 'Owner Salon',
+              business_email: 'owner@example.test',
+              business_street: 'Street 1',
+              business_postal_code: '12345',
+              business_city: 'City',
+              cancellation_policy_hours: '24',
+            },
+          },
+          error: null,
+        }
+      if (name === 'ensure_customer_booking_access_token')
+        return { data: { token_ciphertext: ciphertext, generation: 1 }, error: null }
+      if (name === 'email_template_for_delivery') return { data: null, error: null }
+      throw new Error(`Unexpected confirmation RPC ${name}`)
+    })
+    const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ id }))
+    let handler: ((request: Request) => Promise<Response>) | undefined
+    vi.stubGlobal('Deno', {
+      env: { get: (key: string) => config[key] },
+      serve: (callback: typeof handler) => {
+        handler = callback
+      },
+    })
+    vi.stubGlobal('fetch', send)
+    try {
+      await vi.importActual('../../supabase/functions/send-confirmation/index.ts')
+      if (!handler) throw new Error('Missing confirmation handler')
+      const response = await handler(
+        new Request('https://edge.example.test/confirmation', {
+          method: 'POST',
+          headers: { 'x-webhook-secret': 'unit-webhook' },
+          body: JSON.stringify({ id }),
+        }),
+      )
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({ ok: true, sent: ['customer'] })
+      expect(send).toHaveBeenCalledOnce()
+      const message = JSON.parse(String(send.mock.calls[0]?.[1]?.body)) as {
+        html: string
+        text: string
+      }
+      expect(message.html).toContain(`href="https://bladeblendstudio.se/${token}"`)
+      expect(message.text).toContain(`https://bladeblendstudio.se/${token}`)
+      expect(message.html).not.toContain(ciphertext)
+      expect(confirmationDb.rpc).not.toHaveBeenCalledWith(
+        'replace_customer_booking_access_token',
+        expect.anything(),
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 
-    expect(accessWorker).toContain('customerAccessUrl(accessCode)')
-    expect(confirmationWorker).toContain("'customer_confirmation'")
-    expect(confirmationWorker).toContain('customerAccessUrl')
-    expect(confirmationWorker).not.toContain(
-      "ctaHref: adminLink ? 'https://bladeblendstudio.se/admin' : 'https://bladeblendstudio.se'",
+  it('serializes an opaque host-only HttpOnly session and accepts only well-formed cookie tokens', () => {
+    const token = 'b'.repeat(64)
+    const header = customerCookieHeader(CUSTOMER_SESSION_COOKIE, token, 3600)
+    expect(header).toBe(
+      `__Host-bladeblend_customer_session=${token}; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=None`,
     )
+    const request = (value: string) =>
+      new Request('https://salon.example.test', { headers: { Cookie: value } })
+    expect(
+      customerCookie(
+        request(`other=value; ${CUSTOMER_SESSION_COOKIE}=${token}`),
+        CUSTOMER_SESSION_COOKIE,
+      ),
+    ).toBe(token)
+    expect(
+      customerCookie(
+        request(`${CUSTOMER_SESSION_COOKIE}=customer@example.test`),
+        CUSTOMER_SESSION_COOKIE,
+      ),
+    ).toBeNull()
+    expect(customerCookie(request('other=value'), CUSTOMER_SESSION_COOKIE)).toBeNull()
   })
 })
 
@@ -190,8 +389,10 @@ describe('production customer response cookies', () => {
   )
 })
 
-async function localTransportConfig() {
-  const config = (await import('../../vite.config')).default
+async function localTransportConfig(): Promise<UserConfig> {
+  // vite.config.ts is type-checked by tsconfig.node.json. A literal import would also check it under
+  // the stricter options of tsconfig.tests.json, so load it by path and declare what it exports.
+  const { default: config } = await vi.importActual<{ default: UserConfigFn }>('../../vite.config')
   if (typeof config !== 'function') throw new Error('Expected Vite config factory')
   return config({ command: 'serve', mode: 'test' })
 }
@@ -267,14 +468,15 @@ describe('local first-party transport boundaries', () => {
       vi.stubEnv('LOCAL_SUPABASE_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('CUSTOMER_GATEWAY_PROXY_URL', `http://127.0.0.1:${address.port}`)
       vi.stubEnv('LOCAL_WORKER_DOCUMENTS', '1')
-      const config = await localTransportConfig()
+      const proxy = (await localTransportConfig()).server?.proxy
+      if (!proxy) throw new Error('Expected the dev server proxy routes')
       vite = await createViteServer({
         configFile: false,
         cacheDir,
         appType: 'custom',
         optimizeDeps: { noDiscovery: true, include: [] },
         logLevel: 'silent',
-        server: { proxy: config.server?.proxy, host: '127.0.0.1', port: 0, strictPort: true },
+        server: { proxy, host: '127.0.0.1', port: 0, strictPort: true },
       })
       await vite.listen()
       const server = vite.httpServer?.address()

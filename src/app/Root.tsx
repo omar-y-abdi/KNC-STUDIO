@@ -28,23 +28,9 @@ import { NotFound } from './NotFound'
 // One dynamic import for the whole admin surface (login + panel share this chunk).
 const AdminEntry = lazy(() => import('../admin/index'))
 
-/** Lightweight fallback while the admin chunk loads (no admin code; plain neutral text). */
+/** Lightweight fallback while the admin chunk loads (no admin code; the shared status look). */
 function AdminFallback(): JSX.Element {
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: "'Inter Variable',-apple-system,system-ui,sans-serif",
-        fontSize: '14px',
-        opacity: 0.6,
-      }}
-    >
-      Laddar …
-    </div>
-  )
+  return <div class="bb-status bb-muted">Laddar …</div>
 }
 
 export function Root(): JSX.Element {

@@ -6,6 +6,9 @@
     "module": "esnext",
     "types": ["node"],
     "skipLibCheck": true,
+    // playwright.config.ts imports tools/e2e/origins.mjs; infer its types instead of failing with
+    // TS7016. checkJs stays off: JavaScript is read for its exports, not type-checked.
+    "allowJs": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",

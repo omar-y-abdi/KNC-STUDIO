@@ -2,6 +2,10 @@
 // A booking is an "orphan" if, after the change, it would sit on a day/time the barber is no longer
 // available for. All timezone reasoning is salon-local (Europe/Stockholm) via stockholmWallClockDate,
 // exactly how the day grid + available_slots decide slot membership. No effects — unit-testable.
+//
+// Which bookings can be orphaned at all follows the database, not a client guess: the admin_* RPCs
+// treat a confirmed booking as a conflict while `end_at > now()`. Every pre-check below shares that
+// window (`isOrphanCandidate`), so the warning the barber sees matches what the server enforces.
 
 import { stockholmWallClockDate } from '../booking/stockholmTime'
 import { toDateIso } from './time'
@@ -9,6 +13,15 @@ import type { AdminBooking, WeekSchedule } from './types'
 
 /** Salon-local wall clock for a booking's start instant. */
 const wallOf = (b: AdminBooking): Date => stockholmWallClockDate(b.startAt)
+
+/**
+ * Can this booking still be stranded at `now`? Mirrors the database predicate
+ * `status = 'confirmed' AND end_at > now()` (admin_save_barber_week, admin_add_time_off,
+ * admin_add_slot_block, admin_add_recurring_break): an in-progress booking counts, a finished one —
+ * including one whose end is exactly `now` — does not.
+ */
+const isOrphanCandidate = (b: AdminBooking, now: Date): boolean =>
+  b.status === 'confirmed' && b.endAt.getTime() > now.getTime()
 
 /** Minutes-from-midnight of a salon-local Date. */
 const minuteOfDay = (wall: Date): number => wall.getHours() * 60 + wall.getMinutes()
@@ -25,36 +38,41 @@ export function allowedUnder(week: WeekSchedule, wall: Date, durationMin: number
   return start >= day.startMin && start + durationMin <= day.endMin
 }
 
-/** Confirmed bookings whose salon-local date equals `dateIso` (trigger A — block a whole day). */
+/**
+ * Unfinished confirmed bookings (see `isOrphanCandidate`) whose salon-local date equals `dateIso`
+ * (trigger A — block a whole day).
+ */
 export function orphansOnDate(
   bookings: readonly AdminBooking[],
   dateIso: string,
+  now: Date,
 ): readonly AdminBooking[] {
-  return bookings.filter((b) => b.status === 'confirmed' && toDateIso(wallOf(b)) === dateIso)
+  return bookings.filter((b) => isOrphanCandidate(b, now) && toDateIso(wallOf(b)) === dateIso)
 }
 
 /**
- * Confirmed bookings whose salon-local date is within [startIso, endIso] inclusive
- * (trigger C — a Ledighet range; matches `timeOffCovering` semantics). Bounds are swapped if the
- * caller passes them reversed.
+ * Unfinished confirmed bookings (see `isOrphanCandidate`) whose salon-local date is within
+ * [startIso, endIso] inclusive (trigger C — a Ledighet range; matches `timeOffCovering`
+ * semantics). Bounds are swapped if the caller passes them reversed.
  */
 export function orphansInRange(
   bookings: readonly AdminBooking[],
   startIso: string,
   endIso: string,
+  now: Date,
 ): readonly AdminBooking[] {
   const [lo, hi] = startIso <= endIso ? [startIso, endIso] : [endIso, startIso]
   return bookings.filter((b) => {
-    if (b.status !== 'confirmed') return false
+    if (!isOrphanCandidate(b, now)) return false
     const iso = toDateIso(wallOf(b))
     return iso >= lo && iso <= hi
   })
 }
 
 /**
- * Future confirmed bookings that would no longer fit `nextWeek` (trigger B — a veckoschema change:
- * a weekday turned off, hours narrowed, or same-time-all-days applied). Only bookings at/after `now`
- * matter; a past appointment can't be stranded.
+ * Unfinished confirmed bookings (see `isOrphanCandidate`) that would no longer fit `nextWeek`
+ * (trigger B — a veckoschema change: a weekday turned off, hours narrowed, or same-time-all-days
+ * applied). An in-progress appointment can still be stranded; a finished one can't.
  */
 export function orphansUnderWeek(
   bookings: readonly AdminBooking[],
@@ -62,10 +80,7 @@ export function orphansUnderWeek(
   now: Date,
 ): readonly AdminBooking[] {
   return bookings.filter(
-    (b) =>
-      b.status === 'confirmed' &&
-      b.startAt.getTime() >= now.getTime() &&
-      !allowedUnder(nextWeek, wallOf(b), b.durationMin),
+    (b) => isOrphanCandidate(b, now) && !allowedUnder(nextWeek, wallOf(b), b.durationMin),
   )
 }
 

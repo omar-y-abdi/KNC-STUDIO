@@ -7,7 +7,7 @@
 // Boundary discipline: every row is Zod-parsed (the `key` is guarded into the closed set), never
 // trusted raw.
 
-import { getSupabase } from '../../backend/supabaseClient'
+import { getPublicRest } from '../../backend/publicRest'
 import { aboutContentRow, parseWith } from '../../backend/rpcSchemas'
 import type { Lang } from '../../i18n/index'
 import type { AboutContentPort, AboutOverlay } from './port'
@@ -15,7 +15,7 @@ import type { AboutContentPort, AboutOverlay } from './port'
 export const supabaseAboutContentAdapter: AboutContentPort = {
   async overlay(lang: Lang): Promise<AboutOverlay> {
     try {
-      const { data, error } = await getSupabase()
+      const { data, error } = await getPublicRest()
         .from('about_content')
         .select('key,lang,value')
         .eq('lang', lang)

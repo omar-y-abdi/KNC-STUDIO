@@ -7,14 +7,19 @@
 // turn them into `Date`s. No effects here — pure schemas + Result-shaped parse helpers.
 
 import { z } from 'zod'
+import { ISO_TIMESTAMP } from '../../shared/iso-timestamp'
+
+// Browser CSP and the Worker forbid dynamic code generation, including Zod's caught eval probe.
+// adminSchemas evaluates this dependency before constructing its own schemas.
+z.config({ jitless: true })
 
 // --- shared --------------------------------------------------------------------------------------
 
 /** ISO-8601 timestamp WITH offset, exactly how PostgREST serializes `timestamptz`. */
-const isoTimestamp = z.string().datetime({ offset: true })
+const isoTimestamp = z.string().regex(ISO_TIMESTAMP, 'Invalid datetime')
 const bookingDurationMin = z.number().finite().int().min(1).max(600)
 const serviceDurationMin = z.number().finite().int().min(5).max(600)
-const sortOrder = z.number().finite().int().min(0)
+const sortOrder = z.number().finite().refine(Number.isInteger).min(0)
 
 /**
  * A 1..5 rating. Modeled as a literal union so the INFERRED type is exactly `1 | 2 | 3 | 4 | 5`,
@@ -66,7 +71,6 @@ const createBookingErr = z.object({
 })
 
 export const createBookingResponse = z.discriminatedUnion('ok', [createBookingOk, createBookingErr])
-export type CreateBookingResponse = z.infer<typeof createBookingResponse>
 
 // --- customer booking access ---------------------------------------------------------------------
 // Customer history and cancellation require possession of a short-lived, one-time email link. The
@@ -87,7 +91,7 @@ const customerSessionProof = z.string().regex(/^[0-9a-f]{64}$/)
 /** Optional post-booking access is parsed separately so its failure never undoes booking success. */
 export const bookingReceiptResponse = z.object({
   receipt_proof: customerSessionProof,
-  booking: z.object({ id: z.string().uuid() }),
+  booking: z.object({ id: z.guid() }),
 })
 const customerAccessExchangeOk = z.object({
   ok: z.literal(true),
@@ -139,7 +143,6 @@ export const listCustomerBookingsResponse = z.union([
   listDeviceBookingsOk,
   listCustomerBookingsErr,
 ])
-export type ListCustomerBookingsResponse = z.infer<typeof listCustomerBookingsResponse>
 
 export const customerEmailLinkResponse = z.discriminatedUnion('ok', [
   z.object({
@@ -181,7 +184,6 @@ const createReviewErr = z.object({
 })
 
 export const createReviewResponse = z.discriminatedUnion('ok', [createReviewOk, createReviewErr])
-export type CreateReviewResponse = z.infer<typeof createReviewResponse>
 
 // --- reviews list row (direct table select) ------------------------------------------------------
 // A single published review row; rating guarded into 1..5 (malformed rows are dropped by the caller).
@@ -192,12 +194,11 @@ export const reviewRow = z.object({
   rating: ratingInt,
   text: z.string(),
 })
-export type ReviewRow = z.infer<typeof reviewRow>
 
 // --- public booking catalog rows -----------------------------------------------------------------
 // Server-filtered active barber/service rows returned by `public_booking_catalog()`.
 
-export const publicBarberRow = z.object({
+const publicBarberRow = z.object({
   id: z.string(),
   name: z.string(),
   ig: z.string(),
@@ -228,7 +229,6 @@ export const publicBookingCatalogResponse = z.object({
   barbers: z.array(publicBarberRow.extend({ photo_path: z.string().nullable() })),
   services: z.array(publicServiceRow),
 })
-export type PublicBookingCatalogResponse = z.infer<typeof publicBookingCatalogResponse>
 
 // --- public site_content and business discovery (Task 2 §2) ----------------------------------------
 // Editable homepage text is read directly; business settings, photos, and catalog use public RPCs.
@@ -238,10 +238,9 @@ export const siteContentRow = z.object({
   lang: z.enum(['sv', 'en']),
   value: z.string(),
 })
-export type SiteContentRow = z.infer<typeof siteContentRow>
 
 export const publicBusinessDiscoveryResponse = z.object({
-  settings: z.record(z.string()),
+  settings: z.record(z.string(), z.string()),
   barbers: z.array(z.object({ id: z.string(), name: z.string() })),
   services: z.array(
     z.object({
@@ -259,7 +258,6 @@ export const publicBusinessDiscoveryResponse = z.object({
     }),
   ),
 })
-export type PublicBusinessDiscoveryResponse = z.infer<typeof publicBusinessDiscoveryResponse>
 
 // --- public about_content row (direct table select) ----------------------------------------------
 // One editable (key,lang) copy cell. `key` is the closed set the public About binds; `lang` is sv/en.
@@ -296,7 +294,6 @@ export type GalleryImageRow = z.infer<typeof galleryImageRow>
 // `setof text` -> PostgREST returns an array of `HH:MM` strings (the AVAILABLE slots, schedule-aware).
 
 export const availableSlotsResponse = z.array(z.string())
-export type AvailableSlotsResponse = z.infer<typeof availableSlotsResponse>
 
 // --- parse helper --------------------------------------------------------------------------------
 

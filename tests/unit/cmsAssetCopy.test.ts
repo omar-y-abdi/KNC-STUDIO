@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { copyCmsAsset } from '../../supabase/functions/cms-studio/copyAsset'
+import { requestSchema, type CopyRequest } from '../../supabase/functions/cms-studio/request'
 
 const asset = {
   id: '22222222-2222-4222-8222-222222222222',
@@ -73,7 +74,13 @@ function fixture(source = asset) {
   }
   return { service: service as unknown as Parameters<typeof copyCmsAsset>[1], copy, rows }
 }
-const request = { operation: 'asset_copy', id: asset.id, version: 1, purpose: 'cuts' }
+const rawRequest = { operation: 'asset_copy', id: asset.id, version: 1, purpose: 'cuts' }
+function copyRequest(raw: unknown): CopyRequest {
+  const parsed = requestSchema.parse(raw)
+  if (parsed.operation !== 'asset_copy') throw new Error('Expected an asset_copy request')
+  return parsed
+}
+const request = copyRequest(rawRequest)
 describe('owner resource copy', () => {
   it('copies an already-processed immutable object into the destination scope, then reuses it', async () => {
     const { service, copy } = fixture()
@@ -96,13 +103,26 @@ describe('owner resource copy', () => {
     await expect(copyCmsAsset(request, service)).rejects.toThrow()
     expect(copy).not.toHaveBeenCalled()
   })
-  it('rejects path injection and unknown destination persons', async () => {
+  it('reports a stale source as a PT409 conflict', async () => {
+    const { service } = fixture({ ...asset, version: 2 })
+    await expect(copyCmsAsset(request, service)).rejects.toMatchObject({ code: 'PT409' })
+  })
+  it('rejects path injection at the request boundary, before any storage work', () => {
+    const { copy } = fixture()
+    const injected = requestSchema.safeParse({
+      ...rawRequest,
+      sourceUrl: 'https://external.invalid/x',
+    })
+    expect(injected.success).toBe(false)
+    expect(copy).not.toHaveBeenCalled()
+  })
+  it('rejects unknown destination persons before storage', async () => {
     const { service, copy } = fixture()
     await expect(
-      copyCmsAsset({ ...request, sourceUrl: 'https://external.invalid/x' }, service),
-    ).rejects.toThrow()
-    await expect(
-      copyCmsAsset({ ...request, purpose: 'profile', barberId: 'missing' }, service),
+      copyCmsAsset(
+        copyRequest({ ...rawRequest, purpose: 'profile', barberId: 'missing' }),
+        service,
+      ),
     ).rejects.toThrow()
     expect(copy).not.toHaveBeenCalled()
   })

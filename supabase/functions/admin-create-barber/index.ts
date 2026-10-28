@@ -18,76 +18,20 @@
 // validates the JWT at the gateway before this function runs.
 //
 // CORS: the admin panel is served from Cloudflare (different origin); CORS headers + OPTIONS preflight
-// handling are required for browser-originated requests.
+// handling (from _shared/http.ts) are required for browser-originated requests.
 //
 // Invocation: admin panel -> supabase.functions.invoke('admin-create-barber', { body, headers })
 // Run locally: npx supabase functions serve admin-create-barber --env-file supabase/functions/.env
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
+import { createClient } from '@supabase/supabase-js'
 import {
   buildEmailMessage,
   loadEmailBusiness,
   loadEmailTemplate,
   sendViaResend,
 } from '../_shared/email.ts'
-
-// --- CORS -------------------------------------------------------------------------------------
-// The admin panel (Cloudflare) and this function (Supabase) are different origins. The Authorization
-// header must be listed explicitly so browsers permit it in the preflight response.
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-// --- Types ------------------------------------------------------------------------------------
-
-interface CreateBarberBody {
-  readonly email: string
-  readonly barber_id: string
-  readonly lang: 'sv' | 'en'
-}
-
-type ParseResult =
-  | { readonly ok: true; readonly body: CreateBarberBody }
-  | { readonly ok: false; readonly error: string }
-
-// --- Validation (boundary; never trust the request body) -------------------------------------
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === 'string' && v.length > 0
-}
-
-function looksLikeEmail(v: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= 254
-}
-
-function parseBody(raw: unknown): ParseResult {
-  if (typeof raw !== 'object' || raw === null) {
-    return { ok: false, error: 'body must be a JSON object' }
-  }
-  const r = raw as Record<string, unknown>
-  if (!isNonEmptyString(r.email)) return { ok: false, error: 'email is required' }
-  if (!looksLikeEmail(r.email)) return { ok: false, error: 'email is invalid' }
-  if (!isNonEmptyString(r.barber_id)) return { ok: false, error: 'barber_id is required' }
-  return {
-    ok: true,
-    body: {
-      email: r.email.trim().toLowerCase(),
-      barber_id: r.barber_id,
-      lang: r.lang === 'en' ? 'en' : 'sv',
-    },
-  }
-}
-
-// --- Helper -----------------------------------------------------------------------------------
-
-function json(body: unknown, status: number): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'content-type': 'application/json' },
-  })
-}
+import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
+import { requestSchema } from './request.ts'
 
 // --- HTTP handler -----------------------------------------------------------------------------
 
@@ -148,11 +92,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'invalid_json' }, 400)
   }
 
-  const parsed = parseBody(raw)
+  const parsed = parse(requestSchema, raw)
   if (!parsed.ok) {
-    return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
+    return json({ ok: false, error: 'invalid_payload', detail: parsed.detail }, 400)
   }
-  const { email, barber_id, lang } = parsed.body
+  const { email, barber_id, lang } = parsed.data
 
   // Confirm barber_id references a real row in public.barbers (owner can only link real barbers).
   const { data: barberData, error: barberError } = await service

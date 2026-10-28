@@ -1,16 +1,87 @@
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DetailsDialog } from '../../src/booking/DetailsDialog'
+import { AboutSection } from '../../src/about/AboutSection'
+import { MyBookingsDialog } from '../../src/mybookings/MyBookingsDialog'
+import { buildBookingStyles, palette } from '../../src/booking/bookingStyles'
+import { bookingStrings } from '../../src/i18n/index'
+import { nodes, reset } from './helpers/fakeHooks'
+
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
+vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../src/cms/NativeSurface', () => ({
+  NativeRegion: () => null,
+  useNativeSource: () => false,
+  useNativeSurface: (node: unknown) => node,
+  useNativeChild: () => (node: unknown) => node,
+}))
+vi.mock('../../src/about/useBarberMarquee', () => ({
+  useBarberMarquee: () => ({
+    selected: null,
+    toggle: vi.fn(),
+    reducedMotion: true,
+    animate: false,
+  }),
+}))
+
+const inputs = (node: unknown) =>
+  nodes(node)
+    .filter((node) => node.type === 'input')
+    .map((node) => node.props)
+
+beforeEach(reset)
 
 describe('public customer input semantics', () => {
-  it('identifies name, phone, and email fields for native autofill', () => {
-    const details = readFileSync('src/booking/DetailsDialog.tsx', 'utf8')
-    const about = readFileSync('src/about/AboutSection.tsx', 'utf8')
-    const myBookings = readFileSync('src/mybookings/MyBookingsDialog.tsx', 'utf8')
+  it('renders native name, telephone and email autofill fields in booking details', () => {
+    const noop = vi.fn()
+    const fields = inputs(
+      DetailsDialog({
+        t: bookingStrings('sv'),
+        s: buildBookingStyles(palette(false), false, false),
+        closeLabel: 'Close',
+        sumBarber: '',
+        sumWhen: '',
+        sumService: '',
+        sumPrice: '',
+        nameValue: '',
+        phoneValue: '',
+        emailValue: '',
+        bookDisabled: false,
+        fieldErrors: { name: false, phone: false, email: false },
+        submitError: null,
+        onName: noop,
+        onPhone: noop,
+        onEmail: noop,
+        onBook: noop,
+        onClose: noop,
+        onBackdropClick: noop,
+        turnstile: null,
+      }),
+    )
+    expect(
+      fields.map(({ type, autoComplete, inputMode }) => ({ type, autoComplete, inputMode })),
+    ).toEqual([
+      { type: 'text', autoComplete: 'name', inputMode: undefined },
+      { type: 'tel', autoComplete: 'tel', inputMode: 'tel' },
+      { type: 'email', autoComplete: 'email', inputMode: 'email' },
+    ])
+  })
 
-    expect(details).toContain('type={inputType}')
-    expect(details).toContain("autoComplete={inputType === 'text' ? 'name' : inputType}")
-    expect(about).toContain('type="tel"')
-    expect(about).toContain('autoComplete="tel"')
-    expect(myBookings).toContain('autoComplete={type}')
+  it('renders telephone autofill in reviews and email autofill in My Bookings', () => {
+    const review = inputs(AboutSection({ mode: 'light', lang: 'sv' }))
+    expect(review).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'tel', autoComplete: 'tel' })]),
+    )
+    const dialog = MyBookingsDialog({
+      mode: 'light',
+      lang: 'sv',
+      accessError: 'invalid',
+      onClose: vi.fn(),
+    })
+    if (typeof dialog.type !== 'function') throw new Error('Missing My Bookings session')
+    const bookings = inputs((dialog.type as (props: unknown) => unknown)(dialog.props))
+    expect(bookings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'email', autoComplete: 'email' })]),
+    )
   })
 })

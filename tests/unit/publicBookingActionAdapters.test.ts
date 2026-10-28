@@ -8,12 +8,13 @@ vi.mock('../../src/backend/publicBookingActions', () => ({
   invokePublicBookingAction,
 }))
 
+import { asBarberId } from '../../src/booking/domain'
 import { supabaseMyBookingsAdapter } from '../../src/mybookings/adapters/supabaseMyBookings'
 import type { MyBooking } from '../../src/mybookings/domain'
 
 const myBooking: MyBooking = {
   id: '4d3f88f7-5e08-4d03-abfa-9604816f5614',
-  barber: { id: 'hassan', name: 'Hassan', ig: '' },
+  barber: { id: asBarberId('hassan'), name: 'Hassan', ig: '' },
   serviceName: 'Klippning',
   price: 350,
   durationMin: 45,
@@ -27,11 +28,13 @@ describe('public booking action adapter errors', () => {
 
   it('confirms the HttpOnly session without persisting the direct token in browser storage', async () => {
     const values = new Map<string, string>()
-    vi.stubGlobal('sessionStorage', {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-      removeItem: (key: string) => values.delete(key),
-    })
+    const storage = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+    }
+    vi.stubGlobal('sessionStorage', storage)
+    vi.stubGlobal('localStorage', storage)
     const token = 'a'.repeat(64)
     invokePublicBookingAction.mockResolvedValue({
       data: {
@@ -54,6 +57,9 @@ describe('public booking action adapter errors', () => {
     expect(invokePublicBookingAction).toHaveBeenCalledTimes(2)
     expect(invokePublicBookingAction).toHaveBeenLastCalledWith({ action: 'list' })
     expect(values.size).toBe(0)
+    expect(storage.getItem).not.toHaveBeenCalled()
+    expect(storage.setItem).not.toHaveBeenCalled()
+    expect(storage.removeItem).not.toHaveBeenCalled()
   })
 
   it('keeps a device receipt separate from verified profile and autofill', async () => {

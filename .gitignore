@@ -34,6 +34,7 @@ coverage
 .thumbnail
 .vercel
 .wrangler
+.vite-cache
 .playwright-cli
 
 # Local Worker bindings/secrets

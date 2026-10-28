@@ -3,6 +3,8 @@
 // Realtime remains an opt-in dynamic import, started by useSiteChrome during idle time.
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../../backend/config'
+import { publicApiHeaders, publicObjectUrl } from '../../backend/publicApi'
+import { getPublicRealtime } from '../../backend/publicRealtime'
 import {
   parseWith,
   publicBusinessDiscoveryResponse,
@@ -30,12 +32,7 @@ const TEXT_KEYS: ReadonlySet<string> = new Set(SITE_TEXT_KEYS)
 
 function apiHeaders(json = false): Headers | null {
   if (SUPABASE_ANON_KEY === undefined) return null
-  const headers = new Headers({ apikey: SUPABASE_ANON_KEY })
-  // Legacy anon keys are JWTs. PostgREST applies RLS from Authorization, not the apikey header.
-  // New publishable keys are opaque and must not be sent as bearer tokens.
-  if (SUPABASE_ANON_KEY.split('.').length === 3) {
-    headers.set('Authorization', `Bearer ${SUPABASE_ANON_KEY}`)
-  }
+  const headers = new Headers(publicApiHeaders(SUPABASE_ANON_KEY))
   if (json) headers.set('Content-Type', 'application/json')
   return headers
 }
@@ -46,14 +43,6 @@ async function publicJson(url: URL, init?: RequestInit): Promise<unknown | null>
   const response = await fetch(url, { ...init, headers })
   if (!response.ok) return null
   return response.json()
-}
-
-function publicObjectUrl(bucket: string, path: string): string | null {
-  if (SUPABASE_URL === undefined) return null
-  return new URL(
-    `storage/v1/object/public/${bucket}/${path}`,
-    `${SUPABASE_URL.replace(/\/$/, '')}/`,
-  ).toString()
 }
 
 async function loadSiteChrome(lang: Lang): Promise<SiteChrome | null> {
@@ -124,58 +113,57 @@ export const supabaseSiteChromeAdapter: SiteChromePort = {
     let closed = false
     let stop = (): void => undefined
 
-    void import('../../backend/supabaseClient')
-      .then(({ getSupabase }) => {
-        if (closed) return
-        const supabase = getSupabase()
-        let reloadRequested = false
-        let reloadPromise: Promise<void> | null = null
-        const reload = (): void => {
-          reloadRequested = true
-          if (reloadPromise !== null) return
+    // A Realtime client that fails to load is left to surface as an unhandled rejection; swallowing
+    // it would turn live updates off with no trace. The page works without them.
+    void getPublicRealtime().then((realtime) => {
+      if (closed) return
+      let reloadRequested = false
+      let reloadPromise: Promise<void> | null = null
+      const reload = (): void => {
+        reloadRequested = true
+        if (reloadPromise !== null) return
 
-          reloadPromise = (async () => {
-            let latest: SiteChrome | null = null
-            while (reloadRequested && !closed) {
-              reloadRequested = false
-              latest = await loadSiteChrome(lang)
-            }
-            if (!closed && !reloadRequested && latest !== null) onChange(latest)
-          })().finally(() => {
-            reloadPromise = null
-            if (reloadRequested && !closed) reload()
-          })
-        }
+        reloadPromise = (async () => {
+          let latest: SiteChrome | null = null
+          while (reloadRequested && !closed) {
+            reloadRequested = false
+            latest = await loadSiteChrome(lang)
+          }
+          if (!closed && !reloadRequested && latest !== null) onChange(latest)
+        })().finally(() => {
+          reloadPromise = null
+          if (reloadRequested && !closed) reload()
+        })
+      }
 
-        let awaitingPostgresReady = true
-        const changed = (): void => {
+      let awaitingPostgresReady = true
+      const changed = (): void => {
+        awaitingPostgresReady = false
+        reload()
+      }
+      const channel = realtime
+        .channel(`site-chrome:${lang}`)
+        .on('system', {}, (payload) => {
+          if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
           awaitingPostgresReady = false
           reload()
-        }
-        const channel = supabase
-          .channel(`site-chrome:${lang}`)
-          .on('system', {}, (payload) => {
-            if (!awaitingPostgresReady || !isPostgresChangesReady(payload)) return
-            awaitingPostgresReady = false
-            reload()
-          })
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
-            changed,
-          )
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') awaitingPostgresReady = true
-          })
+        })
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'site_content', filter: `lang=eq.${lang}` },
+          changed,
+        )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, changed)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers' }, changed)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, changed)
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') awaitingPostgresReady = true
+        })
 
-        stop = (): void => {
-          void supabase.removeChannel(channel)
-        }
-      })
-      .catch(() => undefined)
+      stop = (): void => {
+        void realtime.removeChannel(channel)
+      }
+    })
 
     return () => {
       closed = true

@@ -30,10 +30,26 @@ export function verifyReport(expected, actual) {
     'Missing or unexpected browser results',
   )
   assert.deepEqual(actual.errors ?? [], [], 'Browser runner errors')
+  const plannedById = new Map(planned.map(({ id, test }) => [id, test]))
   for (const { id, test } of completed) {
+    const plannedTest = plannedById.get(id)
+    assert.ok(
+      plannedTest.expectedStatus === 'passed' || plannedTest.expectedStatus === 'failed',
+      `${id}: unsupported planned status ${plannedTest.expectedStatus}`,
+    )
+    assert.ok(
+      !(plannedTest.annotations ?? []).some(({ type }) => type === 'skip' || type === 'fixme'),
+      `${id}: planned case is disabled`,
+    )
+    // --list records describe-level test.fail() as an annotation before the runner applies it
+    // to expectedStatus. Only the discovery plan may authorise an intentional failed execution.
+    const expectedStatus = (plannedTest.annotations ?? []).some(({ type }) => type === 'fail')
+      ? 'failed'
+      : plannedTest.expectedStatus
+    assert.equal(test.expectedStatus, expectedStatus, `${id}: expected status changed`)
     assert.equal(test.status, 'expected', `${id}: ${test.status}`)
     assert.equal(test.results.length, 1, `${id}: expected exactly one execution`)
-    assert.equal(test.results[0].status, 'passed', `${id}: ${test.results[0].status}`)
+    assert.equal(test.results[0].status, expectedStatus, `${id}: ${test.results[0].status}`)
   }
   assert.equal(actual.stats.expected, planned.length)
   for (const field of ['skipped', 'unexpected', 'flaky'])

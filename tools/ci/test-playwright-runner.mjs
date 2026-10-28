@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { readdirSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -47,8 +49,9 @@ test('native runner makes fixture failure, timeout, focused tests and empty sele
   assert.match(focused.stdout + focused.stderr, /forbidOnly/)
 })
 
-test('native CMS shards cover each case exactly once, with both required engines', () => {
-  const list = (args) => {
+test('native CMS shards cover every case exactly once for all events', () => {
+  // `specs` collects each listed case's project, file (relative to testDir) and spec identity.
+  const list = (args, specs = []) => {
     const result = spawnSync(
       process.execPath,
       [cli, 'test', '--list', '--reporter=json', ...args],
@@ -59,17 +62,61 @@ test('native CMS shards cover each case exactly once, with both required engines
     const cases = []
     const visit = (suite) => {
       for (const spec of suite.specs ?? [])
-        for (const row of spec.tests ?? []) cases.push(`${spec.id}/${row.projectName}`)
+        for (const row of spec.tests ?? []) {
+          cases.push(`${spec.id}/${row.projectName}`)
+          // A test id includes its project, so the engines share only location and title.
+          const key = `${spec.file}:${spec.line}:${spec.column}:${spec.title}`
+          specs.push({ project: row.projectName, file: spec.file, key })
+        }
       for (const child of suite.suites ?? []) visit(child)
     }
     for (const suite of report.suites) visit(suite)
     return cases.sort()
   }
-  const expected = list([])
-  assert.equal(expected.length, 162)
-  assert.equal(expected.filter((id) => id.endsWith('/cms-chromium')).length, 81)
-  assert.equal(expected.filter((id) => id.endsWith('/cms-webkit')).length, 81)
-  const shards = [1, 2, 3, 4].flatMap((index) => list([`--shard=${index}/4`]))
-  assert.equal(new Set(shards).size, shards.length)
-  assert.deepEqual(shards.sort(), expected)
+  const specs = []
+  list([], specs)
+  const chromium = specs.filter((spec) => spec.project === 'cms-chromium')
+  // No spec file leaves the group unnoticed through a testMatch or testIgnore change.
+  assert.deepEqual(
+    [...new Set(chromium.map((spec) => spec.file))].sort(),
+    readdirSync('tools/e2e')
+      .filter((name) => /^cms-.*\.spec\.mjs$/.test(name) && name !== 'cms-startup.spec.mjs')
+      .sort(),
+  )
+  // WebKit lists every Chromium case except those of *.chromium.spec.mjs files.
+  const webkit = specs.filter((spec) => spec.project === 'cms-webkit')
+  const shared = chromium.filter((spec) => !spec.file.endsWith('.chromium.spec.mjs'))
+  assert.deepEqual(webkit.map((spec) => spec.key).sort(), shared.map((spec) => spec.key).sort())
+  // Check the actual workflow selector against independently chosen files and native shard IDs.
+  const { load } = createRequire(import.meta.url)('js-yaml')
+  const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
+  const cms = workflow.jobs.cms
+  assert.deepEqual(cms.strategy.matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4] })
+  const steps = cms.steps.filter((step) => step.run?.startsWith('npx playwright test '))
+  assert.equal(steps.length, 2)
+  const args =
+    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4'
+  assert.equal(steps[0].name, 'Discover every assigned CMS case')
+  assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
+  assert.equal(steps[1].name, 'Exercise the unchanged CMS domain contracts')
+  assert.equal(steps[1].run, args)
+  // The workflow uses the full native selection for both engines on every event.
+  for (const engine of cms.strategy.matrix.engine) {
+    const project = `cms-${engine}`
+    const selected = specs
+      .filter((spec) => spec.project === project)
+      .map((spec) => `${project}:${spec.key}`)
+      .sort()
+    assert.ok(selected.length > 0)
+    const assignedSpecs = []
+    const assigned = cms.strategy.matrix.shard.flatMap((shard) =>
+      list([`--project=${project}`, `--shard=${shard}/4`], assignedSpecs),
+    )
+    assert.equal(new Set(assigned).size, assigned.length, `${project}: duplicate cases`)
+    assert.deepEqual(
+      assignedSpecs.map((spec) => `${spec.project}:${spec.key}`).sort(),
+      selected,
+      `${project}: missing or unexpected cases`,
+    )
+  }
 })

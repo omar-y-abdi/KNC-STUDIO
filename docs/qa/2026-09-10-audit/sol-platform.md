@@ -19,13 +19,10 @@ Datum: 2026-09-10. Branch: `codex/fix-unnoticed-issues`.
 
 ## Lästa docs
 
-- PASS: `AGENTS.md`, `README.md`, `CODEBASE-MAP.md`, `BACKEND.md`, `LAUNCH_READINESS_PLAN.md`.
-- PASS: `docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md`, `docs/operations/BACKUP_RESTORE.md`.
-- PASS: hela `docs/qa/2026-08-31-github-issues-review.md`; användarbeslut styr.
-- PASS: `docs/qa/2026-09-10-audit/pm.md`.
-- PASS: inventerat alla filer under `docs/`; läst båda notifieringsplanerna och
-  `docs/qa/2026-08-27-production-real-life-test.md` som historik.
-- PASS: README nära `send-confirmation`, `submit-booking`, Calendar och backup.
+Detta är en historisk audit från 2026-09-10, inte aktuell produktionsstatus.
+Daterade auditloggar och genomförda rollout-checklistor har rensats bort.
+Aktuella ingångar: `README.md`, `CODEBASE-MAP.md`, `BACKEND.md` och
+`docs/operations/BACKUP_RESTORE.md`.
 
 ## Produktionsgräns
 

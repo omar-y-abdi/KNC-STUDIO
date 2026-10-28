@@ -1,23 +1,39 @@
 # CI architecture and verification
 
 The definitive workflow is `.github/workflows/ci.yml`. Every pull request and every push to `main`
-runs the complete graph. There are no path filters, scheduled substitutes, skipped suites, retries,
+runs all jobs. Pull requests, pushes to `main`, and manual runs use the full Chromium and WebKit
+CMS matrices, each split across four shards. The public group runs Chromium, Firefox and WebKit
+on every event. There are no path filters, scheduled substitutes, retries,
 `continue-on-error` gates, or paid runner requirements.
 
 The protected contexts keep their existing names: **Frontend and browser**, **Edge Functions**,
 and **Database and integration**. The frontend context now also requires every CMS and production
-startup shard. The database context requires both current-schema acceptance and historical rollout
-compatibility. Gate executables reject missing, skipped, cancelled and failed dependencies.
+startup shard. The database context requires both current-schema acceptance
+and historical rollout compatibility. Gate executables reject missing, skipped, cancelled and failed
+dependencies.
 
 ## Modules and seams
 
-The source preparation module (`.github/actions/ci-node`) owns frozen npm installation, the shared
-format patch, source identity verification and Furl setup. Its interface is the checked-in composite
-action; consumers receive the same tested source. The browser preparation adapter caches downloads
-by the exact pinned Playwright version, OS, architecture and requested engines. System libraries are
-always installed. It prioritizes Ubuntu's official HTTPS mirrors instead of the hosted image's
-Azure HTTP mirror, which stalled the first migrated public shard for 15 minutes. Repository
-signatures and package requirements remain enforced. Cache misses execute the same checks.
+The source preparation module (`.github/actions/ci-node`) owns frozen npm installation, replay of the
+shared format patch and source identity verification. Container preparation checks UID 1001 and
+write access before caches, artifact downloads and `npm ci`; npm cache paths come from shell
+variables inside the container. Furl setup and regression tests belong to the quality job. Workflow
+commands use plain Bash. The format job produces a patch that consumers replay, so formatting does
+not block pushes.
+
+The `public-browsers`, `cms` and `startup` jobs use
+`mcr.microsoft.com/playwright:v1.61.1-noble` with UID 1001 and `--ipc=host`. The image supplies browsers
+and their system libraries; these jobs still run `npm ci` but do not install browsers. Bump the
+image tag with `playwright` and `@playwright/test` in the same Dependabot PR. The `database-current`
+job stays on the host runner for Docker and uses `.github/actions/ci-browsers` to cache browser
+binaries by pinned Playwright version, OS, architecture and engines. That adapter installs system
+libraries even on a cache hit and uses Ubuntu's official HTTPS mirrors.
+
+The Edge job runs from `supabase/functions`, using its own `deno.json` and frozen `deno.lock` with
+`nodeModulesDir: none`. Deno resolves npm packages from its cache using locked versions and
+integrities, independently of the root npm tree. Every entrypoint must pass and an empty selection
+fails. Supabase serve/deploy instead resolve bare imports through each function's own `deno.json`;
+the Edge contract checks every reachable local module, including `shared/`, against that map.
 
 `@playwright/test` owns projects, browser reuse, isolated contexts/pages, fixture teardown, test
 scheduling, timeouts, server readiness/shutdown, failure screenshots and traces. Product behavior
@@ -28,7 +44,9 @@ their final teardown.
 
 The build module produces one production build for public/visual checks and one fixture build for
 production CSP checks. Different environment contracts require those two builds. Consumers verify
-both source identity and every artifact file hash. Worker dry-run packages the production build
+both source identity and every artifact file hash. Source identity combines the commit with a Git
+tree of tracked working content, using a temporary index; it does not hash patch text or include
+untracked downloads such as `.ci-source` and `.ci-build`. Worker dry-run packages the production build
 without invoking a second frontend build. Artifacts use stable per-run names, so failed consumer
 jobs can be re-run without rerunning successful producers.
 
@@ -39,21 +57,21 @@ runtime. Only Studio, metadata tooling and the pooler are omitted there.
 
 ## Preserved coverage
 
-| Gate          | Native coverage / checks                                                                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Source        | Auto-format, format check, patch replay and exact source verification                                                                                                                                        |
-| Static        | ESLint, TypeScript (including Playwright config), all unit tests, production dependency audit, CMS release stamp                                                                                             |
-| Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                                                                     |
-| Public/admin  | 73 cases: Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; eight approved visual views; unchanged image CPU budget                                      |
-| CMS           | 162 cases across Chromium/WebKit, including all 19 owner scenarios, populated content, projection, conflicts, responsive layout, resources, scenes, latency, workspace, accessibility and adversarial checks |
-| Startup       | 12 cases against actual compiled routes under the existing production CSP policy                                                                                                                             |
-| Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                                                                                  |
-| Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows                                                            |
-| Historical DB | Original expand and contract migration compatibility checks                                                                                                                                                  |
+| Gate          | Native coverage / checks                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source        | Auto-format, format check, patch replay and exact source verification                                                                                     |
+| Static        | ESLint, TypeScript (including Playwright config), all unit tests, production dependency audit, CMS release stamp                                          |
+| Build         | Production compile/minification, real Worker dry-run, font license/artifact rejection, CSP fixture build                                                  |
+| Public/admin  | Chromium domain/race/session flows; privacy, CMS shell and delayed verification in all three engines; approved visual views and existing image CPU budget |
+| CMS           | Full Chromium and WebKit matrices on pull requests, main pushes and manual runs; four shards per engine                                                   |
+| Startup       | Chromium and WebKit against actual compiled routes under the existing production CSP policy                                                               |
+| Edge          | Every entrypoint checked by Deno 2.9.5 with the frozen lock                                                                                               |
+| Current DB    | All current migrations and pgTAP; serial adapter integration; actual Edge/Storage asset reuse; three real Worker/Edge/HTTPS customer engine flows         |
+| Historical DB | Original expand and contract migration compatibility checks                                                                                               |
 
 Identical duplicate executions from the former standalone CMS workflows are consolidated. Owner
-logos remain among the 19 owner cases; public CMS regression still runs in both engines; admin CMS
-shell still runs in Chromium, Firefox and WebKit. Customer engines now publish independent real CMS
+logos remain in the owner cases; public CMS regression still runs in both engines; admin CMS
+shell still runs in Chromium, Firefox and WebKit. Customer engines publish independent real CMS
 fixtures before their acceptance flows, avoiding shared state between native projects.
 
 `admin-harness.tsx` and its controllable mutation, hydration and authentication gates are unchanged.
@@ -69,10 +87,10 @@ and social-card utilities still use the pinned low-level `playwright` library.
 npm ci
 npx playwright install --with-deps chromium firefox webkit
 npm run test:e2e:cms
-npm run test:e2e                # requires npm run build; public/admin/visual projects
-npm run test:e2e:admin
 VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key \
-  npm run build -- --outDir dist-startup --emptyOutDir
+  npm run build -- --outDir dist-startup --emptyOutDir   # harness build: never embeds production
+E2E_PUBLIC_DIST=dist-startup npm run test:e2e   # public/admin/visual projects
+E2E_PUBLIC_DIST=dist-startup npm run test:e2e:admin
 npm run test:e2e:startup
 npm run test:e2e:customer       # requires dedicated local Supabase + documented Function env
 ```
@@ -81,11 +99,26 @@ Use native `--project`, `--grep`, and `--shard` options for scoped diagnosis. CI
 per engine and two public shards. Each runner uses one browser worker so latency/CPU assertions do
 not compete with another local test. Failure in one matrix member does not cancel unrelated members.
 
+Several worktrees can run Playwright at the same time if each one has its own `E2E_PORT_OFFSET`, for
+example `E2E_PORT_OFFSET=100 npm run test:e2e:cms`. The harness dev server, the public preview and
+the startup preview then listen on 4188, 4173 and 4189 plus the offset (an integer from 0 to 1000,
+default 0; CI sets none and is unchanged). Keep concurrent offsets at least 20 apart, such as 0, 100
+and 200: offsets 1, 15 or 16 apart make one run's port another run's port. Locally
+`reuseExistingServer` is on, so two runs with the same offset do not fail; the second silently tests
+the first worktree's code. `BASE_URL`, `PUBLIC_BASE_URL` and `CMS_STARTUP_URL` still override the
+origins the tests visit. Vite's dependency cache lives in `.vite-cache` inside each worktree because
+every worktree's `node_modules` is one shared install. The customer group keeps its own ports and
+the shared local Supabase stack, so it cannot run in parallel.
+
 Each shard records its discovered plan before running. `verify-playwright-report.mjs` compares the
-native JSON report to that plan: every expected case must execute exactly once and pass. Missing,
-duplicate, skipped, flaky, interrupted, failed or retried outcomes fail the gate. A final source
-identity check detects tracked changes by browser tests. JSON/HTML reports, timings, failure traces,
-screenshots and domain evidence are retained as per-shard GitHub artifacts.
+native JSON report to that plan: every case must execute exactly once with its planned outcome.
+Ordinary cases must pass; the hostile network-guard probes declared with `test.fail()` during
+discovery must fail. The discovery annotations authorise those intentional failures; runtime failure annotations alone
+cannot change the planned outcome. Missing,
+duplicate, skipped, flaky, interrupted, unexpected failures or retried outcomes fail the gate. A final
+source identity check detects tracked changes by browser tests. JSON/HTML reports, timings, failure traces,
+screenshots and domain evidence are retained as per-shard GitHub artifacts. Uploads naming a hidden
+`.ci-*` plan explicitly enable `include-hidden-files` so the discovered plan is retained too.
 
 `tools/ci/test-*.mjs` exercises actual formatter replay/errors, the protected gate executable,
 artifact corruption/staleness, native fixture failure/timeout/focused tests/empty selection, shard
@@ -93,7 +126,10 @@ completeness and report omission/failure/retry rejection. Python Furl safety che
 The browser matrix and screenshot tolerance are part of these acceptance contracts, not tunable
 shortcuts to passing CI.
 
-## Measured performance and acceptance evidence
+## Historical performance and acceptance evidence
+
+The following measurements describe the earlier native-runner migration, before F2's containers
+and event-specific WebKit selection. They are historical receipts, not measurements of this workflow.
 
 Baseline docs PR #82 at `6ea74a0bac5a631a4ca1334613bba69b71de2161`:
 [CI run 37750744863](https://github.com/omar-y-abdi/KNC-STUDIO/actions/runs/37750744863).

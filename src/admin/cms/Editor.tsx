@@ -21,7 +21,14 @@ import type {
 } from '../../../shared/cms'
 import { mediaUrl } from '../../../shared/cms'
 import { SUPABASE_URL } from '../../backend/config'
-import { configureComponent, isProtected, isReadOnlyPreview, styleSectors } from './editorPolicy'
+import {
+  configureComponent,
+  deniedProperty,
+  isProtected,
+  isReadOnlyPreview,
+  runtimeOwnedRole,
+  styleSectors,
+} from './editorPolicy'
 import { siteThemeCss } from '../../../shared/site-theme'
 import {
   composedCanvas,
@@ -35,7 +42,7 @@ import { syncLayout } from './responsiveStyles'
 import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
-import { exportNativeCanvas, parseCanvasCss, readCanvasCss } from './nativeCanvas'
+import { exportNativeCanvas, legalCanvasBase, parseCanvasCss, readCanvasCss } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
 import { CmsIcon } from './Icon'
@@ -48,7 +55,10 @@ import { isSitePage, renderSitePage, createSitePage } from '../../../shared/site
 
 export interface EditorHandle {
   flush: () => void
-  fit: () => number
+  /** A canvas edit still waiting for its debounced handoff; safe to read during beforeunload. */
+  pending: () => boolean
+  /** The fitted zoom; undefined while the canvas has no frame yet. */
+  fit: () => number | undefined
 }
 
 interface Props {
@@ -134,7 +144,10 @@ function label(component: Component | null): string {
   return `${tag}${id ? ` · #${id}` : ''}`
 }
 
-function fitEditor(editor: Editor): number {
+/** Fits the canvas and returns its zoom; undefined before GrapesJS has created the frame. */
+function fitEditor(editor: Editor): number | undefined {
+  // GrapesJS creates the frame when it loads the project, in a later task; fitViewport reads it.
+  if (!editor.Canvas.getBody()) return undefined
   // Device dimensions describe the page, not the space around the editor.
   // Fit changes only scale; changing height also changes vh units and breakpoints.
   editor.Canvas.fitViewport({
@@ -522,8 +535,9 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.on('updateBefore', schedule)
     editor.Commands.add('tlb-clone', { run: () => duplicate() })
     const fit = (): void => {
-      if (!editor.Canvas.getBody()) return
-      latest.current.onZoom(fitEditor(editor))
+      const zoom = fitEditor(editor)
+      if (zoom === undefined) return
+      latest.current.onZoom(zoom)
       const device = editor.Devices.getSelected()
       const frame = editor.Canvas.getWindow()
       if (
@@ -549,11 +563,15 @@ export function CmsEditor(props: Props): JSX.Element {
     resize.observe(host.current)
     props.onReady({
       flush,
+      pending: () => timer.current !== null,
       fit: () => fitEditor(editor),
     })
 
     return () => {
+      // Destruction mutates components too; it must not queue a capture against a dead editor.
+      editor.off('updateBefore', schedule)
       if (timer.current !== null) window.clearTimeout(timer.current)
+      timer.current = null
       props.onReady(null)
       resize.disconnect()
       releaseAccessibility?.()
@@ -725,16 +743,54 @@ export function CmsEditor(props: Props): JSX.Element {
   useEffect(() => {
     const editor = instance.current
     if (!editor || !props.active) return
-    const frame = editor.Canvas.getDocument()
-    if (!frame) return
-    let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
-    if (!style) {
-      style = frame.createElement('style')
-      style.id = 'cms-uploaded-fonts'
-      frame.head.appendChild(style)
+    const css = props.fontCss + siteThemeCss(props.presentation, props.mode)
+    // A frame load replaces the document, so the sheet is written again into each new head.
+    const apply = (): void => {
+      const frame = editor.Canvas.getDocument()
+      if (!frame) return
+      let style = frame.getElementById('cms-uploaded-fonts') as HTMLStyleElement | null
+      if (!style) {
+        style = frame.createElement('style')
+        style.id = 'cms-uploaded-fonts'
+        frame.head.appendChild(style)
+      }
+      style.textContent = css
     }
-    style.textContent = props.fontCss + siteThemeCss(props.presentation, props.mode)
+    apply()
+    editor.on('canvas:frame:load:head', apply)
+    return () => {
+      editor.off('canvas:frame:load:head', apply)
+    }
   }, [props.active, props.fontCss, props.presentation.themes, props.mode])
+
+  useEffect(() => {
+    const editor = instance.current
+    if (!editor || !props.active) return
+    const base = legalCanvasBase(props.page.path, props.mode)
+    // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
+    // head directly. Every frame load replaces the document, not only the editor's first one, so the
+    // base is applied again once GrapesJS has rendered the new head (before `load:head` it is empty).
+    const apply = (): void => {
+      const frame = editor.Canvas.getDocument()
+      if (!frame) return
+      frame.documentElement.style.colorScheme = base.scheme
+      const linked = [...frame.querySelectorAll('link[data-cms-legal-base]')]
+      if (linked.map((link) => link.getAttribute('href')).join() === base.styles.join()) return
+      linked.forEach((link) => link.remove())
+      for (const href of base.styles) {
+        const link = frame.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = href
+        link.dataset['cmsLegalBase'] = ''
+        frame.head.appendChild(link)
+      }
+    }
+    apply()
+    editor.on('canvas:frame:load:head', apply)
+    return () => {
+      editor.off('canvas:frame:load:head', apply)
+    }
+  }, [props.active, props.page.path, props.mode])
 
   useEffect(() => {
     const editor = instance.current
@@ -753,7 +809,9 @@ export function CmsEditor(props: Props): JSX.Element {
     editor.getConfig().mediaCondition = props.device === 'Desktop' ? 'min-width' : 'max-width'
     changingDevice.current ||= editor.getDevice() !== props.device
     editor.setDevice(props.device)
-    latest.current.onZoom(fitEditor(editor))
+    // Before the frame exists, the editor's load handler fits it.
+    const zoom = fitEditor(editor)
+    if (zoom !== undefined) latest.current.onZoom(zoom)
   }, [props.active, props.device])
 
   useEffect(() => {
@@ -1214,6 +1272,20 @@ export function CmsEditor(props: Props): JSX.Element {
                     (value && !CSS.supports(property, value))
                   )
                     return props.onError('CSS-egenskapen eller värdet stöds inte av webbläsaren.')
+                  // Shorthands such as flex or all expand into the longhands the marquee owns.
+                  const expanded = document.createElement('span').style
+                  expanded.setProperty(property, value)
+                  const role = runtimeOwnedRole(
+                    selected.getAttributes(),
+                    selected.parent()?.getAttributes(),
+                  )
+                  const denied = value
+                    ? deniedProperty([property, ...Array.from(expanded)], role)
+                    : undefined
+                  if (denied)
+                    return props.onError(
+                      `CSS-egenskapen ${denied} styrs av den rörliga karusellen och kan inte ändras här.`,
+                    )
                   if (value) selected.addStyle({ [property]: value })
                   else selected.removeStyle(property)
                 }}

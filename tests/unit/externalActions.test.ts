@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   executeExternalAction,
-  isMissingCalendarDispatcherError,
   parseExternalAction,
   type ExternalActionService,
 } from '../../supabase/functions/_shared/externalActions'
@@ -50,23 +49,6 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('external action contract', () => {
-  it('allows generic dispatch fallback only for an explicitly missing Calendar dispatcher', () => {
-    expect(isMissingCalendarDispatcherError({ code: 'PGRST202' })).toBe(true)
-    expect(isMissingCalendarDispatcherError({ code: '42883' })).toBe(true)
-    expect(
-      isMissingCalendarDispatcherError({
-        message: 'function calendar_external_action_for_dispatch does not exist',
-      }),
-    ).toBe(true)
-    expect(isMissingCalendarDispatcherError({ code: '42501', message: 'permission denied' })).toBe(
-      false,
-    )
-    expect(
-      isMissingCalendarDispatcherError({ code: 'PGRST500', message: 'database unavailable' }),
-    ).toBe(false)
-    expect(isMissingCalendarDispatcherError(null)).toBe(false)
-  })
-
   it('rejects a Calendar delete context that omits server-resolved credentials', () => {
     expect(
       parseExternalAction({
@@ -651,10 +633,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_orphan_cleanup_failed',
       retryable: true,
-    })
+    } satisfies Partial<ExternalActionError>)
 
     expect(queuePayloads).toEqual([
       {
@@ -899,10 +881,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_delete_failed',
       retryable: true,
-    })
+    } satisfies Partial<ExternalActionError>)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -933,10 +915,10 @@ describe('external action contract', () => {
         service,
         { googleClientId: 'client', googleClientSecret: 'secret' },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({
+    ).rejects.toMatchObject({
       code: 'calendar_authorization_required',
       retryable: false,
-    })
+    } satisfies Partial<ExternalActionError>)
     expect(rpc).not.toHaveBeenCalled()
   })
 
@@ -977,7 +959,9 @@ describe('external action contract', () => {
         service,
         { googleClientId: undefined, googleClientSecret: undefined },
       ),
-    ).rejects.toMatchObject<Partial<ExternalActionError>>({ code: 'calendar_events_pending' })
+    ).rejects.toMatchObject({
+      code: 'calendar_events_pending',
+    } satisfies Partial<ExternalActionError>)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(rpc).not.toHaveBeenCalled()
   })

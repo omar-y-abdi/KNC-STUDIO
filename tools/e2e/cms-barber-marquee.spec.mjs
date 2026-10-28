@@ -1,23 +1,28 @@
+import { barberFixture } from './builders.mjs'
+import { routeApi } from './route-api.mjs'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
+import { harnessOrigin } from './origins.mjs'
 test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
   const name = browserName
-  const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+  const base = harnessOrigin
   const out = evidenceDir
-  const barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) => ({
-    id: `fixture-barber-${index + 1}`,
-    name,
-    ig: `fixture${index + 1}`,
-    role_sv: 'Frisör',
-    role_en: 'Barber',
-    bio_sv: `Publicerad presentation ${index + 1}.`,
-    bio_en: `Published profile ${index + 1}.`,
-    active: true,
-    sort_order: index,
-    photo_path: `${index + 1}/portrait.png`,
-  }))
+  const barbers = ['Fixture barber A', 'Fixture barber B'].map((name, index) =>
+    barberFixture({
+      id: `fixture-barber-${index + 1}`,
+      name,
+      ig: `fixture${index + 1}`,
+      role_sv: 'Frisör',
+      role_en: 'Barber',
+      bio_sv: `Publicerad presentation ${index + 1}.`,
+      bio_en: `Published profile ${index + 1}.`,
+      active: true,
+      sort_order: index,
+      photo_path: `${index + 1}/portrait.png`,
+    }),
+  )
   const gallery = ['salon', 'cuts'].flatMap((kind) =>
     [1, 2, 3].map((number) => ({
       id: `${kind}-${number}`,
@@ -28,20 +33,27 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     })),
   )
   async function fixtureRoutes(context, activeBarbers) {
-    await context.route('https://admin-harness.invalid/**', (route) => {
-      const url = new URL(route.request().url())
-      const headers = { 'Access-Control-Allow-Origin': new URL(base).origin }
-      if (route.request().method() === 'OPTIONS') return route.fallback()
-      if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
-        return route.fulfill({ headers, json: { barbers: activeBarbers.current, services: [] } })
-      if (url.pathname === '/rest/v1/gallery_images') {
-        const kind = url.searchParams.get('kind')?.slice(3)
-        return route.fulfill({ headers, json: gallery.filter((item) => item.kind === kind) })
-      }
-      if (url.pathname.startsWith('/storage/v1/object/public/'))
-        return route.fulfill({ headers, contentType: 'image/png', path: 'public/og-image.png' })
-      return route.fallback()
-    })
+    await routeApi(context, [
+      [
+        'https://admin-harness.invalid/**',
+        (route, headers) => {
+          const url = new URL(route.request().url())
+
+          if (url.pathname === '/rest/v1/rpc/public_booking_catalog')
+            return route.fulfill({
+              headers,
+              json: { barbers: activeBarbers.current, services: [] },
+            })
+          if (url.pathname === '/rest/v1/gallery_images') {
+            const kind = url.searchParams.get('kind')?.slice(3)
+            return route.fulfill({ headers, json: gallery.filter((item) => item.kind === kind) })
+          }
+          if (url.pathname.startsWith('/storage/v1/object/public/'))
+            return route.fulfill({ headers, contentType: 'image/png', path: 'public/og-image.png' })
+          return route.fallback()
+        },
+      ],
+    ])
   }
   async function transformX(locator) {
     return locator.evaluate((node) => {
@@ -51,7 +63,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
   }
   async function velocity(page, locator) {
     const start = await transformX(locator)
-    await page.waitForTimeout(1100)
+    await page.clock.runFor(1100)
     return Math.abs((await transformX(locator)) - start) / 1.1
   }
   async function centeredBarber(page) {
@@ -159,7 +171,9 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     await editor.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const owned = await editor.evaluate(async () => {
-      const backup = (await import('/src/admin/cms/backup.ts')).loadBackup()
+      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
+      await session.flush()
+      const backup = await session.own()
       if (!backup) throw new Error('The actual CMS source was not captured')
       const document = globalThis.structuredClone(backup.document)
       const about = document.presentation.pages.find((page) => page.path === '/about')
@@ -231,6 +245,65 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
         !upgradedCss.slice(0, ownerRuleAt).includes(`#${globalThis.CSS.escape(ownerCardId)}{`)
       )
         throw new Error('Mobile CSS did not remap IDs ahead of owner overrides')
+      // Snapshots stored before the gallery markers existed are recaptured and gain them in place.
+      const { needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
+      const aboutTree = (source, lang) =>
+        new globalThis.DOMParser().parseFromString(
+          source.presentation.pages.find((page) => page.path === '/about').content[lang].html,
+          'text/html',
+        )
+      const galleryMarkers = (source, lang) =>
+        [...aboutTree(source, lang).querySelectorAll('[data-knc-fold^="gallery-"]')].map(
+          (node) => `${node.getAttribute('data-knc-source')}=${node.getAttribute('data-knc-fold')}`,
+        )
+      const captured = aboutTree(backup.document, 'sv')
+      const tiles = captured.querySelectorAll('[role="button"][aria-pressed]')
+      if (
+        !tiles.length ||
+        [...tiles].some((tile) => tile.getAttribute('data-knc-fold') !== 'gallery-tile') ||
+        captured.querySelectorAll('[data-knc-fold="gallery-track"]').length !== 4 ||
+        captured.querySelectorAll('[data-knc-fold="gallery-row"]').length !== 4
+      )
+        throw new Error('The captured galleries lack their row, track or tile markers')
+      if (needsCorePageSource(backup.document))
+        throw new Error('A captured document with gallery markers asks for another capture')
+      const unmarked = globalThis.structuredClone(backup.document)
+      const ownerTile = tiles[0].id
+      for (const lang of ['sv', 'en']) {
+        const variant = unmarked.presentation.pages.find((page) => page.path === '/about')?.content[
+          lang
+        ]
+        const tree = aboutTree(unmarked, lang)
+        for (const node of tree.querySelectorAll('[data-knc-fold^="gallery-"]'))
+          node.removeAttribute('data-knc-fold')
+        variant.html = tree.body.innerHTML
+        for (const mode of ['light', 'dark'])
+          variant.css[mode] += `\n#${globalThis.CSS.escape(ownerTile)}{outline:2px solid #123456}`
+      }
+      if (!needsCorePageSource(unmarked))
+        throw new Error('A stored gallery without markers is not recaptured')
+      const remarked = ensureCorePages(unmarked, backup.document.presentation.pages)
+      for (const lang of ['sv', 'en']) {
+        if (
+          JSON.stringify(galleryMarkers(remarked, lang)) !==
+          JSON.stringify(galleryMarkers(backup.document, lang))
+        )
+          throw new Error(`Recapture did not restore every ${lang} gallery marker`)
+        if (
+          !remarked.presentation.pages
+            .find((page) => page.path === '/about')
+            .content[lang].css.light.endsWith(
+              `#${globalThis.CSS.escape(ownerTile)}{outline:2px solid #123456}`,
+            )
+        )
+          throw new Error('Recapturing gallery markers changed the owner CSS')
+      }
+      if (
+        needsCorePageSource(remarked) ||
+        JSON.stringify(ensureCorePages(remarked, backup.document.presentation.pages)) !==
+          JSON.stringify(remarked)
+      )
+        throw new Error('The gallery marker upgrade is not idempotent')
       return { document, cardId, upgraded, gridId, ownerCardId }
     })
     const source = await captureContext.newPage()
@@ -434,6 +507,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await nativeBackend(liveContext, owned.document)
     await fixtureRoutes(liveContext, activeBarbers)
     live = await liveContext.newPage()
+    await live.clock.install()
     const errors = []
     live.on('pageerror', (error) => errors.push(error.message))
     await live.goto(`${base}/about`)
@@ -469,7 +543,7 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     const galleryRate = await velocity(live, galleryTrack)
     await track.evaluate((node) => node.scrollIntoView({ block: 'center', inline: 'nearest' }))
-    await live.waitForTimeout(900)
+    await live.clock.runFor(900)
     const barberRate = await velocity(live, track)
     assert.ok(barberRate > 2, `Barber marquee did not move (${barberRate.toFixed(2)} px/s)`)
     assert.ok(galleryRate > barberRate * 1.5, 'Barber marquee must move slower than the galleries')
@@ -479,9 +553,9 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     assert.equal(await cards.nth(1).getAttribute('aria-expanded'), 'false')
     assert.equal(await cards.first().locator('p').first().getAttribute('aria-hidden'), 'false')
     assert.equal(await cards.nth(1).locator('p').first().getAttribute('aria-hidden'), 'true')
-    await live.waitForTimeout(250)
+    await live.clock.runFor(250)
     const paused = await transformX(track)
-    await live.waitForTimeout(900)
+    await live.clock.runFor(900)
     assert.ok(Math.abs((await transformX(track)) - paused) < 1, 'Selection did not pause motion')
     await live.screenshot({ path: `${out}/cms-native-${name}-barber-expanded.png` })
     const scale = await cards.first().evaluate((node) => globalThis.getComputedStyle(node).scale)
@@ -493,9 +567,9 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     )
     await dragLeft(live, track, 0.18)
     await live.setViewportSize({ width: 400, height: 844 })
-    await live.waitForTimeout(300)
+    await live.clock.runFor(300)
     const afterResize = await transformX(track)
-    await live.waitForTimeout(900)
+    await live.clock.runFor(900)
     assert.ok(
       Math.abs((await transformX(track)) - afterResize) < 1,
       'Resize resumed an expanded card',
@@ -503,14 +577,14 @@ test('cms-barber-marquee', async ({ browserName, evidenceDir, newContext }) => {
     await live.setViewportSize({ width: 390, height: 844 })
     await clickVisibleCard(live, cards.first())
     assert.equal(await cards.first().getAttribute('aria-expanded'), 'false')
-    await live.waitForTimeout(250)
+    await live.clock.runFor(250)
     const resumed = await transformX(track)
-    await live.waitForTimeout(900)
+    await live.clock.runFor(900)
     assert.ok(Math.abs((await transformX(track)) - resumed) > 2, 'Closing did not resume motion')
     await cards.first().focus()
-    await live.waitForTimeout(250)
+    await live.clock.runFor(250)
     const focused = await transformX(track)
-    await live.waitForTimeout(900)
+    await live.clock.runFor(900)
     assert.ok(
       Math.abs((await transformX(track)) - focused) < 1,
       'Keyboard focus did not pause motion',

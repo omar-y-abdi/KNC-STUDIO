@@ -1,0 +1,19 @@
+{
+  // Type-checks tests/unit and the sources they import under the app's strict options.
+  // `tsc -b` (tsconfig.json) does not reach tests; `npm run typecheck` runs both.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    // Tests use Node APIs (node:fs, node:path, ...) that the app config leaves out.
+    "types": ["vite/client", "@cloudflare/workers-types", "node"],
+    // Tests import tools/release/*.mjs; infer their types instead of failing with TS7016.
+    // checkJs stays off: JavaScript is read for its exports, not type-checked.
+    "allowJs": true,
+    // Tests and the Edge Function sources they import read string-keyed records with dot access.
+    "noPropertyAccessFromIndexSignature": false,
+    "paths": {
+      "react": ["./node_modules/preact/compat/"],
+      "react-dom": ["./node_modules/preact/compat/"]
+    }
+  },
+  "include": ["tests/unit"]
+}

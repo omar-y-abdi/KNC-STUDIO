@@ -26,6 +26,8 @@ const SVG_TEXT_ATTRIBUTES = new Set([
   'letter-spacing',
 ])
 const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href'])
+// SVG presentation attributes that browsers parse as CSS and that can load a resource via url().
+const CSS_URL_ATTRIBUTES = new Set(['fill', 'stroke', 'clip-path', 'mask'])
 const BAD_ATTRIBUTES = new Set([
   'srcdoc',
   'srcset',
@@ -113,9 +115,19 @@ export function resourceReference(raw: string, policy: MarkupPolicy): MediaRef |
   }
   const ref = { bucket, path }
   if (!validMediaRef(ref)) reject('resource', 'Invalid storage reference')
-  return ref as MediaRef
+  // The database finds stored references by their literal spelling only (archived-media rule,
+  // usage and retention), so percent-encoding, dot segments or a different host spelling would
+  // hide the reference from it.
+  const media = ref as MediaRef
+  if (value !== storageUrl(media, policy)) reject('resource', NON_CANONICAL_RESOURCE)
+  return media
 }
-export function safeLink(value: string, base: string): boolean {
+const NON_CANONICAL_RESOURCE =
+  'Bildadressen måste vara bibliotekets egen adress. Välj filen på nytt under Resurser.'
+function storageUrl(ref: MediaRef, policy: MarkupPolicy): string {
+  return `${policy.storageOrigin}/storage/v1/object/public/${ref.bucket}/${ref.path}`
+}
+function safeLink(value: string, base: string): boolean {
   if (!value || hasControlOrSpace(value) || value.startsWith('//')) return false
   if (value.startsWith('#')) return /^#[a-zA-Z0-9_.:-]*$/.test(value)
   if (/^mailto:[^<>"'\s@]+@[^<>"'\s@]+$/i.test(value)) return true
@@ -162,7 +174,9 @@ function checkCss(css: string, policy: MarkupPolicy, inline: boolean): MediaRef[
       reject('css', `Unsupported @${node.name}`)
     if (
       node.type === 'Function' &&
-      ['expression', 'image-set', '-webkit-image-set', 'attr'].includes(
+      // A plain url( is always a Url node; a Function named url, src or image is an escaped or
+      // string-based resource load that neither this walk nor the database would see.
+      ['expression', 'image-set', '-webkit-image-set', 'attr', 'url', 'src', 'image'].includes(
         decodeCss(node.name).toLowerCase(),
       )
     )
@@ -200,6 +214,16 @@ export function validateMarkup(
   const refs = checkCss(css, policy, false),
     ids = new Set<string>(),
     anchors: string[] = []
+  // A link to a library file is a reference like an image: registration, archived media, usage.
+  const storageLink = (value: string): MediaRef | null => {
+    let origin: string
+    try {
+      origin = new URL(value, policy.siteOrigin).origin
+    } catch {
+      return null
+    }
+    return origin === policy.storageOrigin ? resourceReference(value, policy) : null
+  }
   const fragment = parseFragment(html, {
     onParseError: (error) => {
       if (error.code === 'duplicate-attribute')
@@ -309,8 +333,12 @@ export function validateMarkup(
                 typeof item !== 'string'
               )
                 reject('html', 'Invalid native metadata field')
-              if (key === 'href' && !safeLink(item as string, policy.siteOrigin))
-                reject('html', 'Unsafe native link')
+              if (key === 'href') {
+                if (!safeLink(item as string, policy.siteOrigin))
+                  reject('html', 'Unsafe native link')
+                const ref = storageLink(item as string)
+                if (ref) refs.push(ref)
+              }
               if (key === 'src') {
                 const ref = resourceReference(item as string, policy)
                 if (ref) refs.push(ref)
@@ -325,10 +353,13 @@ export function validateMarkup(
           ids.add(value)
         }
         if (name === 'style') refs.push(...checkCss(value, policy, true))
+        if (CSS_URL_ATTRIBUTES.has(name)) refs.push(...checkCss(`${name}:${value}`, policy, true))
         if (URL_ATTRIBUTES.has(name)) {
           if (tag === 'a' && name === 'href') {
             if (!safeLink(value, policy.siteOrigin)) reject('href', 'Unsupported link')
             if (value.length > 1 && value[0] === '#') anchors.push(value.slice(1))
+            const ref = storageLink(value)
+            if (ref) refs.push(ref)
           } else if (tag === 'use' && name === 'href') {
             if (!/^#[a-zA-Z][\w:.-]*$/.test(value))
               reject('svg', 'SVG use must reference this document')
@@ -355,7 +386,25 @@ export function validateMarkup(
   }
   visit(fragment, 0)
   for (const anchor of anchors) if (!ids.has(anchor)) reject('href', `Missing anchor #${anchor}`)
-  return { html: serialize(fragment), refs }
+  const stored = serialize(fragment)
+  const visible = new Set([...databaseReferenceKeys(stored), ...databaseReferenceKeys(css)])
+  // Safety needs accepted ⊆ visible: a file Edge accepted but SQL cannot see would escape the
+  // archived-media rule, usage and retention, whatever the encoding that hid it. SQL seeing more
+  // (a URL in text, alt or a comment) only keeps that file alive or applies the archived rule to
+  // it, so inert mentions are allowed. The SQL rules are set-based, so a set check suffices.
+  if (refs.some(({ bucket, path }) => !visible.has(`${bucket}/${path}`)))
+    reject('resource', NON_CANONICAL_RESOURCE)
+  return { html: stored, refs }
+}
+
+// Mirror of the markup branch of internal_cms_document_media_placements: the archived-media rule,
+// usage and retention see exactly these references in the stored HTML and CSS text.
+const DATABASE_REFERENCE =
+  /\/storage\/v1\/object\/public\/(gallery|barber-photos|cms-library)\/([a-zA-Z0-9][a-zA-Z0-9_./-]{0,239})/g
+function databaseReferenceKeys(text: string): string[] {
+  return [...text.matchAll(DATABASE_REFERENCE)]
+    .map(([, bucket, path]) => `${bucket}/${path}`)
+    .filter((key) => !key.includes('..') && !key.includes('//'))
 }
 const RUNTIME_SLOTS: Readonly<Record<string, string>> = {
   '/about': 'knc-about-runtime',

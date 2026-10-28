@@ -1,7 +1,12 @@
 import type { CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
+import privacyTemplate from '../../../public/privacy.html?raw'
+import termsTemplate from '../../../public/terms.html?raw'
 import { CORE_PAGE_IDS } from './corePages'
 
 const attrs = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label', 'placeholder']
+const legalTemplates = { privacy: privacyTemplate, terms: termsTemplate }
+/** Base sheets the Worker inlines before a legal page's stored CSS (src/worker.ts). */
+const legalBaseSheets = ['/tokens.css', '/info.css']
 const responsive =
   '@media(max-width:768px){[data-knc-surface^="desktop-"]{display:none!important}}@media(min-width:769px){[data-knc-surface^="mobile-"]{display:none!important}}'
 
@@ -324,22 +329,18 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
       content,
     })
   }
-  for (const [index, kind] of ['privacy', 'terms'].entries()) {
-    const response = await fetch(`/${kind}.html`, { cache: 'no-store' })
-    if (!response.ok) throw new Error('Den befintliga juridiska sidan kunde inte läsas.')
-    const doc = new DOMParser().parseFromString(await response.text(), 'text/html')
-    const styles: string[] = []
-    for (const style of doc.querySelectorAll('style,link[rel="stylesheet"]')) {
-      if (style.tagName === 'STYLE') styles.push(style.textContent ?? '')
-      else {
-        const url = new URL(style.getAttribute('href') ?? '', location.origin)
-        if (url.origin !== location.origin) throw new Error('Extern källstil stöds inte.')
-        const stylesheet = await fetch(url, { cache: 'no-store' })
-        if (!stylesheet.ok) throw new Error('Den befintliga sidans stil kunde inte läsas.')
-        styles.push(await stylesheet.text())
-      }
-    }
-    const css = styles.join('\n')
+  for (const [index, kind] of (['privacy', 'terms'] as const).entries()) {
+    // Public aliases redirect to owner-published pages inside the generated app shell. Source
+    // capture uses the shipped templates; ensureCorePages preserves existing authored content.
+    const doc = new DOMParser().parseFromString(legalTemplates[kind], 'text/html')
+    // The Worker inlines the base sheets; the page stores only its own rules (STY-7). Its token
+    // class sits on an element inside <body>, so body.innerHTML keeps it.
+    for (const link of doc.querySelectorAll('link[rel="stylesheet"]'))
+      if (!legalBaseSheets.includes(link.getAttribute('href') ?? ''))
+        throw new Error('Den juridiska sidan länkar en okänd stil.')
+    const css = [...doc.querySelectorAll('style')]
+      .map((style) => style.textContent ?? '')
+      .join('\n')
     for (const script of doc.querySelectorAll('script')) script.remove()
     const name = names[index + 4]
     const id = CORE_PAGE_IDS[index + 4]
@@ -348,7 +349,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     pages.push({
       id,
       path: `/${kind}`,
-      kind: kind as 'privacy' | 'terms',
+      kind,
       name: { sv: name[0], en: name[1] },
       title: { sv: name[0], en: name[1] },
       description: { sv: '', en: '' },

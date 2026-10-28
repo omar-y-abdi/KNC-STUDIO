@@ -33,6 +33,110 @@ const protectedIds = new Set([
   'cancellation-policy-en',
 ])
 
+// The marquee code moves these nodes or measures them; the individual transform
+// properties are transforms too. The gallery loop math also owns its tile sizes.
+// `all` resets every one of them, and Chromium keeps it as one CSSOM entry instead of longhands.
+const marqueeMotion = [
+  'all',
+  'transform',
+  'translate',
+  'rotate',
+  'scale',
+  'zoom',
+  'overflow',
+  'overflow-x',
+  'overflow-y',
+  'display',
+]
+const gallerySize = [
+  'width',
+  'height',
+  'min-width',
+  'min-height',
+  'max-width',
+  'max-height',
+  'flex-basis',
+  'inline-size',
+  'block-size',
+  'min-inline-size',
+  'min-block-size',
+  'max-inline-size',
+  'max-block-size',
+]
+
+export interface RuntimeOwnedRole {
+  readonly denied: readonly string[]
+  readonly resizable: boolean
+}
+
+// The strip loops at its gapless floor only while its cards sit in one row and its width does not
+// follow them (gaplessLoopFloor in src/about/useBarberMarquee.ts).
+const stripGeometry = [
+  // max-content, fit-content and their kin size the strip by its cards.
+  'width',
+  'inline-size',
+  'min-width',
+  'min-inline-size',
+  'max-width',
+  'max-inline-size',
+  // A float, or an absolute or fixed box, shrinks to fit its cards.
+  'float',
+  'position',
+  // A column, a wrapped row or a vertical writing mode stacks cards that then overlap horizontally.
+  'flex-direction',
+  'flex-wrap',
+  'flex-flow',
+  'writing-mode',
+]
+// A card must neither overlap its neighbours nor end on a negative margin, and a min-width
+// transition would hold back the inline floor while Embla measures it.
+const cardGeometry = [
+  'margin',
+  'margin-left',
+  'margin-right',
+  'margin-inline',
+  'margin-inline-start',
+  'margin-inline-end',
+  'position',
+  'transition',
+  'transition-property',
+]
+
+const stripRole: RuntimeOwnedRole = {
+  denied: [...marqueeMotion, ...stripGeometry],
+  resizable: true,
+}
+const cardRole: RuntimeOwnedRole = { denied: [...marqueeMotion, ...cardGeometry], resizable: true }
+const galleryRole: RuntimeOwnedRole = {
+  denied: [...marqueeMotion, ...gallerySize],
+  resizable: false,
+}
+const runtimeOwnedFolds = new Map<string, RuntimeOwnedRole>([
+  ['barber-marquee', stripRole],
+  ['gallery-row', galleryRole],
+  ['gallery-track', galleryRole],
+  ['gallery-tile', galleryRole],
+])
+
+type Attributes = Readonly<Record<string, unknown>>
+
+/** Runtime-owned properties of a marquee node; a barber card is a source child of the strip. */
+export function runtimeOwnedRole(attrs: Attributes, parent?: Attributes): RuntimeOwnedRole | null {
+  const role = runtimeOwnedFolds.get(String(attrs['data-knc-fold'] ?? ''))
+  if (role) return role
+  return parent?.['data-knc-fold'] === 'barber-marquee' && attrs['data-knc-source']
+    ? cardRole
+    : null
+}
+
+/** The first runtime-owned name among a declaration's property and its expanded longhands. */
+export function deniedProperty(
+  properties: readonly string[],
+  role: RuntimeOwnedRole | null,
+): string | undefined {
+  return role ? properties.find((property) => role.denied.includes(property)) : undefined
+}
+
 export const styleSectors = [
   {
     id: 'layout',
@@ -140,6 +244,7 @@ export function configureComponent(component: Component, options: { silent?: boo
     Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
   const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
+  const role = runtimeOwnedRole(attrs, component.parent()?.getAttributes())
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
     const attributes = child.getAttributes()
@@ -151,7 +256,9 @@ export function configureComponent(component: Component, options: { silent?: boo
   })
   component.set(
     {
+      // An unstylable array overrides stylable:false in GrapesJS; never set it on previews.
       ...(readOnly ? { editable: false, stylable: false } : {}),
+      ...(!readOnly && role ? { unstylable: [...role.denied] } : {}),
       // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
       ...(!readOnly && component.is('svg-in')
         ? { selectable: true, hoverable: true, layerable: true, highlightable: true }
@@ -166,6 +273,7 @@ export function configureComponent(component: Component, options: { silent?: boo
           (!protectedComponent || (Boolean(attrs['data-knc-surface']) && containers.has(tag)))),
       resizable:
         !readOnly &&
+        role?.resizable !== false &&
         (!protectedComponent ||
           tag === 'svg' ||
           tag === 'img' ||

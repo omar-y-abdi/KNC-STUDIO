@@ -168,11 +168,27 @@ function replaceBarberBaseline(css: string, baseline: string): string {
   return generate(tree) + '\n' + baseline
 }
 
+/** The resource data that Home/About layouts project; equal keys need the same layouts. */
+export function layoutResourceKey(document: CmsDocument): string {
+  return JSON.stringify([
+    document.gallery,
+    document.photos,
+    // draftReadSnapshot projects these labels onto the current roster, even without portraits.
+    document.barbers.map(({ id, name, ig, role_sv, role_en, bio_sv, bio_en }) => [
+      id,
+      name,
+      ig,
+      role_sv,
+      role_en,
+      bio_sv,
+      bio_en,
+    ]),
+    visualSettings(document),
+  ])
+}
+
 export function resourceLayoutsChanged(before: CmsDocument, after: CmsDocument): boolean {
-  return (
-    JSON.stringify([before.gallery, before.photos, visualSettings(before)]) !==
-    JSON.stringify([after.gallery, after.photos, visualSettings(after)])
-  )
+  return layoutResourceKey(before) !== layoutResourceKey(after)
 }
 
 function visualSettings(document: CmsDocument): [string, string][] {

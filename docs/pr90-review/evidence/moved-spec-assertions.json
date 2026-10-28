@@ -1,0 +1,38 @@
+[
+  {
+    "from": "cms-contextual-resources",
+    "to": "cms-draft-resources",
+    "oldAssert": 11,
+    "newAssert": 10,
+    "missing": ["assert . equal ( new URL ( base ) . hostname , '127.0.0.1' )"],
+    "added": [],
+    "stepsMissing": []
+  },
+  {
+    "from": "cms-graphic-projection",
+    "to": "cms-resource-projection",
+    "oldAssert": 5,
+    "newAssert": 5,
+    "missing": [],
+    "added": [],
+    "stepsMissing": []
+  },
+  {
+    "from": "cms-site-resources",
+    "to": "cms-resource-workflow",
+    "oldAssert": 12,
+    "newAssert": 11,
+    "missing": ["assert . equal ( new URL ( base ) . hostname , '127.0.0.1' )"],
+    "added": [],
+    "stepsMissing": []
+  },
+  {
+    "from": "cms-unified-home",
+    "to": "cms-new-page-mobile",
+    "oldAssert": 6,
+    "newAssert": 6,
+    "missing": [],
+    "added": [],
+    "stepsMissing": []
+  }
+]

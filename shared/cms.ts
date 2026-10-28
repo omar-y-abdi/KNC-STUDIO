@@ -1,16 +1,29 @@
 // Shared wire contract: no browser globals, credentials, HTML execution or persistence.
-export type CmsLang = 'sv' | 'en'
-export type CmsMode = 'light' | 'dark'
+import {
+  CmsValidationError,
+  fail,
+  integer,
+  keys,
+  list,
+  object,
+  validMediaRef,
+  type CmsLang,
+  type CmsMode,
+  type MediaRef,
+} from './cms-primitives.ts'
+import { validateEmailDesign, type EmailDesign } from './email-design.ts'
+
+// The editor, the tests and the Edge Functions keep importing these from here.
+export { CmsValidationError, validMediaRef } from './cms-primitives.ts'
+export type { CmsLang, CmsMode, MediaRef } from './cms-primitives.ts'
+export { defaultEmailDesign, EMAIL_DESIGN_LIMITS, validateEmailDesign } from './email-design.ts'
+export type { EmailDesign } from './email-design.ts'
+
 export const CMS_HTML_LIMIT = 100_000
 // Native captures include bounded identities and light/dark source styles.
 // The complete document remains limited to 2 MiB.
 export const CMS_NATIVE_HTML_LIMIT = 500_000
 export type Localized = Record<CmsLang, string>
-export type MediaBucket = 'gallery' | 'barber-photos' | 'cms-library'
-export interface MediaRef {
-  bucket: MediaBucket
-  path: string
-}
 export interface MediaPlacement {
   placement: string
   ref: MediaRef
@@ -97,29 +110,6 @@ function emailVariables(value: string): Set<string> {
       .filter((variable): variable is string => variable !== undefined),
   )
 }
-export const EMAIL_PARTS = ['title', 'intro', 'details', 'note', 'cta', 'contact'] as const
-export type EmailPart = (typeof EMAIL_PARTS)[number]
-export interface EmailPalette {
-  background: string
-  surface: string
-  text: string
-  muted: string
-  border: string
-  button: string
-  buttonText: string
-}
-export interface EmailDesign {
-  palettes: Record<CmsMode, EmailPalette>
-  font: 'system' | 'serif' | 'sans'
-  width: number
-  radius: number
-  padding: number
-  titleSize: number
-  textSize: number
-  defaultMode: CmsMode
-  order: EmailPart[]
-  logo: MediaRef | null
-}
 export interface CmsEmail {
   template: CmsEmailName
   lang: CmsLang
@@ -151,9 +141,9 @@ export interface CmsPage {
   /** New authored pages own their complete layout, including a freely editable header/footer. */
   layout?: 'independent'
 }
-export const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
+const REGION_NAMES = ['home-before', 'home-after', 'about-before', 'about-after'] as const
 export type CmsRegion = (typeof REGION_NAMES)[number]
-export const COPY_GROUPS = [
+const COPY_GROUPS = [
   'app',
   'booking',
   'about',
@@ -207,15 +197,7 @@ export interface CmsPublication {
   document: CmsDocument
 }
 
-export class CmsValidationError extends Error {
-  readonly path: string
-  constructor(path: string, message: string) {
-    super(`${path}: ${message}`)
-    this.name = 'CmsValidationError'
-    this.path = path
-  }
-}
-export const SITE_KEYS = [
+const SITE_KEYS = [
   'kicker',
   'hours',
   'yourDetails',
@@ -233,7 +215,7 @@ export const SITE_KEYS = [
   'confirmSent',
   'addToCal',
 ] as const
-export const ABOUT_KEYS = [
+const ABOUT_KEYS = [
   'eyebrow',
   'heading',
   'intro',
@@ -242,7 +224,7 @@ export const ABOUT_KEYS = [
   'stylistsTitle',
   'reviewsTitle',
 ] as const
-export const SETTING_KEYS = [
+const SETTING_KEYS = [
   'homepage_scale',
   'about_scale',
   'homepage_logo_path',
@@ -263,7 +245,7 @@ export const SETTING_KEYS = [
   'seo_title_en',
   'seo_description_en',
 ] as const
-export const STYLE_KEYS = [
+const STYLE_KEYS = [
   'display',
   'width',
   'height',
@@ -314,7 +296,7 @@ export const STYLE_KEYS = [
   'transform',
   'objectFit',
 ] as const
-export const THEME_KEYS = [
+const THEME_KEYS = [
   'background',
   'surface',
   'text',
@@ -329,26 +311,9 @@ const NODE_ID = /^[a-zA-Z][a-zA-Z0-9_.:-]{0,127}$/
 const RESERVED =
   /^(?:admin|api|auth|login|reset|invite|assets|icons|fonts|storage|cms-media|cms-public|google-calendar|cdn-cgi)(?:\/|$)/i
 
-function fail(path: string, message: string): never {
-  throw new CmsValidationError(path, message)
-}
-function object(value: unknown, path: string): Record<string, unknown> {
-  if (
-    value === null ||
-    typeof value !== 'object' ||
-    Array.isArray(value) ||
-    (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-  )
-    fail(path, 'Expected an object')
-  return value as Record<string, unknown>
-}
-function keys(value: Record<string, unknown>, allowed: readonly string[], path: string): void {
-  for (const key of Object.keys(value))
-    if (!allowed.includes(key)) fail(`${path}.${key}`, 'Unsupported field')
-}
 function text(value: unknown, path: string, max = 2000, min = 0): string {
   if (typeof value !== 'string' || value.length < min || value.length > max || value.includes('\0'))
-    fail(path, `Expected ${min}–${max} characters`)
+    fail(path, min === 0 ? `Ange högst ${max} tecken.` : `Ange ${min}–${max} tecken.`)
   return value
 }
 function sqlBtrim(value: string): string {
@@ -380,7 +345,7 @@ function validateSetting(key: string, value: unknown): void {
     case 'business_name':
     case 'business_street':
     case 'business_city':
-      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Expected 1–160 characters')
+      if (normalized.length < 1 || normalized.length > 160) fail(path, 'Ange 1–160 tecken.')
       return
     case 'business_legal_name':
       if (
@@ -390,50 +355,43 @@ function validateSetting(key: string, value: unknown): void {
           return code <= 0x1f || (code >= 0x7f && code <= 0x9f)
         })
       )
-        fail(path, 'Invalid legal business name')
+        fail(path, 'Ange ett juridiskt namn på högst 160 tecken utan radbrytningar.')
       return
     case 'business_org_number':
       if (normalized && !/^[0-9]{6}-?[0-9]{4}$/.test(normalized))
-        fail(path, 'Invalid business registration number')
+        fail(path, 'Ange organisationsnumret med tio siffror, till exempel 556677-8899.')
       return
     case 'business_email':
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.toLowerCase()))
-        fail(path, 'Invalid business email')
+        fail(path, 'Ange en giltig e-postadress.')
       return
     case 'business_phone_display':
-      if (normalized.length > 80) fail(path, 'Expected at most 80 characters')
+      if (normalized.length > 80) fail(path, 'Ange högst 80 tecken.')
       return
     case 'business_phone_tel': {
       const phone = normalized.replace(/[\s().-]/g, '')
-      if (phone && !/^\+?[0-9]{3,20}$/.test(phone)) fail(path, 'Invalid business phone')
+      if (phone && !/^\+?[0-9]{3,20}$/.test(phone))
+        fail(path, 'Ange telefonlänken med 3–20 siffror, gärna med +46 först.')
       return
     }
     case 'business_postal_code': {
       const postalCode = normalized.replace(/\s/g, '')
-      if (!/^[0-9]{5}$/.test(postalCode)) fail(path, 'Invalid business postal code')
+      if (!/^[0-9]{5}$/.test(postalCode)) fail(path, 'Ange postnumret med fem siffror.')
       return
     }
     case 'business_maps_href':
       if (normalized && !/^https:\/\/[^\s]+$/.test(normalized))
-        fail(path, 'Invalid business maps URL')
+        fail(path, 'Ange kartlänken som en https://-adress utan mellanslag.')
       return
     case 'seo_title_sv':
     case 'seo_title_en':
-      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Expected 1–120 characters')
+      if (normalized.length < 1 || normalized.length > 120) fail(path, 'Ange 1–120 tecken.')
       return
     case 'seo_description_sv':
     case 'seo_description_en':
-      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Expected 1–500 characters')
+      if (normalized.length < 1 || normalized.length > 500) fail(path, 'Ange 1–500 tecken.')
       return
   }
-}
-function integer(value: unknown, path: string, min: number, max: number): void {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
-    fail(path, `Expected an integer between ${min} and ${max}`)
-}
-function list(value: unknown, path: string, max: number): unknown[] {
-  if (!Array.isArray(value) || value.length > max) fail(path, `Expected at most ${max} items`)
-  return value
 }
 function localized(value: unknown, path: string, max: number, partial = false): void {
   const record = object(value, path)
@@ -458,18 +416,6 @@ function walk(value: unknown, path = 'document', depth = 0, budget = { nodes: 0 
     walk(item, `${path}.${key}`, depth + 1, budget)
   }
 }
-export function validMediaRef(value: unknown): value is MediaRef {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const ref = value as Record<string, unknown>
-  return (
-    Object.keys(ref).every((key) => key === 'bucket' || key === 'path') &&
-    ['gallery', 'barber-photos', 'cms-library'].includes(String(ref['bucket'])) &&
-    typeof ref['path'] === 'string' &&
-    /^[a-zA-Z0-9][a-zA-Z0-9_./-]{0,239}$/.test(ref['path']) &&
-    !ref['path'].includes('..') &&
-    !ref['path'].includes('//')
-  )
-}
 export function isPagePath(path: string): boolean {
   if (path === '/') return true
   return (
@@ -484,7 +430,7 @@ export function isPagePath(path: string): boolean {
     !['/privacy', '/terms', '/404', '/index'].includes(path)
   )
 }
-export function validCssValue(value: string): boolean {
+function validCssValue(value: string): boolean {
   return (
     value.length <= 160 &&
     /^[a-zA-Z0-9#.,%() +\-/_]*$/.test(value) &&
@@ -513,98 +459,6 @@ export function emptyDocument(): CmsDocument {
     emails: [],
     presentation: emptyPresentation(),
   }
-}
-/** Shared editor and server bounds; neither side may silently drift. */
-export const EMAIL_DESIGN_LIMITS = {
-  width: [320, 800],
-  radius: [0, 40],
-  padding: [12, 60],
-  titleSize: [20, 48],
-  textSize: [12, 24],
-} as const
-
-export function defaultEmailDesign(): EmailDesign {
-  return {
-    palettes: {
-      light: {
-        background: '#f4f3f0',
-        surface: '#ffffff',
-        text: '#202124',
-        muted: '#62646b',
-        border: '#dededb',
-        button: '#202124',
-        buttonText: '#ffffff',
-      },
-      dark: {
-        background: '#151517',
-        surface: '#1f1f21',
-        text: '#f5f5f7',
-        muted: '#b5b5ba',
-        border: '#39393c',
-        button: '#f5f5f7',
-        buttonText: '#171719',
-      },
-    },
-    font: 'system',
-    width: 600,
-    radius: 28,
-    padding: 34,
-    titleSize: 32,
-    textSize: 16,
-    defaultMode: 'dark',
-    order: [...EMAIL_PARTS],
-    logo: null,
-  }
-}
-export function validateEmailDesign(
-  value: unknown,
-  path = 'email.design',
-): asserts value is EmailDesign {
-  const design = object(value, path)
-  keys(
-    design,
-    [
-      'palettes',
-      'font',
-      'width',
-      'radius',
-      'padding',
-      'titleSize',
-      'textSize',
-      'defaultMode',
-      'order',
-      'logo',
-    ],
-    path,
-  )
-  const palettes = object(design['palettes'], path)
-  keys(palettes, ['light', 'dark'], path)
-  for (const mode of ['light', 'dark']) {
-    const palette = object(palettes[mode], `${path}.${mode}`)
-    keys(
-      palette,
-      ['background', 'surface', 'text', 'muted', 'border', 'button', 'buttonText'],
-      path,
-    )
-    for (const key of ['background', 'surface', 'text', 'muted', 'border', 'button', 'buttonText'])
-      if (!/^#[0-9a-f]{6}$/i.test(String(palette[key]))) fail(path, 'Expected six-digit colors')
-  }
-  if (
-    !['system', 'serif', 'sans'].includes(String(design['font'])) ||
-    !['light', 'dark'].includes(String(design['defaultMode']))
-  )
-    fail(path, 'Unsupported font or mode')
-  for (const [key, [min, max]] of Object.entries(EMAIL_DESIGN_LIMITS))
-    integer(design[key], path, min, max)
-  const order = list(design['order'], path, EMAIL_PARTS.length)
-  if (
-    order.length !== EMAIL_PARTS.length ||
-    new Set(order).size !== order.length ||
-    order.some((part) => !EMAIL_PARTS.includes(part as EmailPart))
-  )
-    fail(path, 'Every email section must occur exactly once')
-  if (design['logo'] !== null && !validMediaRef(design['logo']))
-    fail(path, 'Invalid logo reference')
 }
 export function validatePresentation(value: unknown): asserts value is CmsPresentation {
   walk(value)
@@ -750,7 +604,7 @@ function localizedStyles(raw: unknown, path: string): void {
 export function validateDocument(value: unknown): asserts value is CmsDocument {
   walk(value)
   if (new TextEncoder().encode(JSON.stringify(value)).length > 2 * 1024 * 1024)
-    fail('document', 'Maximum document size is 2 MiB')
+    fail('document', 'Utkastet är större än 2 MiB. Ta bort innehåll som inte behövs.')
   const d = object(value, 'document')
   keys(
     d,
@@ -869,7 +723,7 @@ export function validateDocument(value: unknown): asserts value is CmsDocument {
       if (typeof value !== 'string') continue
       for (const variable of emailVariables(value))
         if (!EMAIL_VARIABLES[template].has(variable))
-          fail(`email.${template}.${key}`, `Unknown placeholder {${variable}}`)
+          fail(`email.${template}.${key}`, `Okänd platshållare {${variable}}.`)
     }
     if (email['design'] !== null) validateEmailDesign(email['design'])
   }
@@ -925,7 +779,7 @@ export function validateCompleteDocument(
       const present = typeof after === 'string' ? emailVariables(after) : new Set<string>()
       for (const variable of required)
         if (!present.has(variable))
-          fail(`${path}.${field}`, `Required placeholder {${variable}} is missing`)
+          fail(`${path}.${field}`, `Platshållaren {${variable}} måste finnas kvar.`)
     }
   }
 }
@@ -936,9 +790,6 @@ export function mediaUrl(ref: MediaRef, supabaseUrl: string): string {
 }
 export function mediaKey(ref: MediaRef): string {
   return `${ref.bucket}/${ref.path}`
-}
-export function mediaPlacementKey(value: MediaPlacement): string {
-  return JSON.stringify([value.placement, value.ref.bucket, value.ref.path])
 }
 export function documentMediaPlacements(document: CmsDocument): MediaPlacement[] {
   const placements: MediaPlacement[] = []
@@ -982,7 +833,6 @@ export function validateDocumentMedia(
   document: CmsDocument,
   assets: readonly CmsAsset[],
   authoredPlacements: readonly MediaPlacement[] = [],
-  currentPlacements: readonly MediaPlacement[] = [],
 ): void {
   const inventory = new Map(assets.map((asset) => [mediaKey(asset), asset]))
   const requireAsset = (
@@ -1018,10 +868,6 @@ export function validateDocumentMedia(
     if (email.design?.logo)
       requireAsset(email.design.logo, `emails.${email.template}.${email.lang}.logo`, 'image')
   authoredPlacements.forEach(({ ref, placement }) => requireAsset(ref, placement, 'image'))
-
-  const currentKeys = new Set(currentPlacements.map(mediaPlacementKey))
-  for (const media of [...documentMediaPlacements(document), ...authoredPlacements]) {
-    if (inventory.get(mediaKey(media.ref))?.archived && !currentKeys.has(mediaPlacementKey(media)))
-      fail('media', 'Archived media cannot be newly referenced in a new placement')
-  }
+  // Archived media is governed by internal_cms_assert_media_publishable, which compares against
+  // the authoritative head under the publication lock.
 }

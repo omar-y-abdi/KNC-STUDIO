@@ -18,7 +18,7 @@ env:
   CI_CACHE: ${{ !inputs.cold-cache }}
 defaults:
   run:
-    shell: python3 tools/ci/furl_ci.py {0}
+    shell: bash
 jobs:
   format:
     name: Auto-format
@@ -58,6 +58,8 @@ jobs:
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
+      - name: Prepare Furl regression dependencies
+        run: bash tools/ci/setup-furl.sh
       - name: Verify CI orchestration and failure paths
         run: |
           node --test tools/ci/test-*.mjs
@@ -81,18 +83,21 @@ jobs:
         with:
           cache: ${{ env.CI_CACHE }}
       - run: npm run build
+      - run: npm run bundle-budget
       - name: Package actual Worker without rebuilding assets
         run: npx wrangler deploy --dry-run
       - name: Reject unlicensed legacy font artifacts
         run: |
           test -z "$(find public -type f \( -name 'SF-Pro*' -o -name '*San-Francisco*' \) -print)"
           ! grep -aERn 'Apple Inc\.|SF Pro|SF-Pro' dist
-      - name: Preserve public build and build the CSP fixture once
+      - name: Build the harness test build once for the public and startup browsers
+        # Browser tests must never reach production: both groups run against a bundle that embeds
+        # the fake Supabase origin, never the production URL from .env (see network-guard.mjs).
         run: |
           mkdir -p "$RUNNER_TEMP/ci-build"
-          cp -a dist "$RUNNER_TEMP/ci-build/public"
           VITE_SUPABASE_URL=https://admin-harness.invalid VITE_SUPABASE_ANON_KEY=e2e-public-anon-key \
             npm run build -- --outDir "$RUNNER_TEMP/ci-build/startup" --emptyOutDir
+          cp -a "$RUNNER_TEMP/ci-build/startup" "$RUNNER_TEMP/ci-build/public"
           node tools/ci/build-artifact.mjs record "$RUNNER_TEMP/ci-build"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -105,6 +110,9 @@ jobs:
     needs: [format, build]
     name: Public, admin and visual browsers (${{ matrix.shard }}/2)
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+      options: --user 1001 --ipc=host
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -112,6 +120,7 @@ jobs:
         shard: [1, 2]
     env:
       E2E_GROUP: public
+      E2E_PUBLIC_DIST: .ci-build/public
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -119,37 +128,37 @@ jobs:
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - uses: ./.github/actions/ci-browsers
-        with:
-          engines: chromium firefox webkit
-          cache: ${{ env.CI_CACHE }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ci-build-${{ github.run_id }}
-          path: ${{ runner.temp }}/ci-build
+          path: .ci-build
       - name: Verify build and discover every assigned browser case
         run: |
-          node tools/ci/build-artifact.mjs verify "$RUNNER_TEMP/ci-build"
-          npx playwright test --shard=${{ matrix.shard }}/2 --list --reporter=json > "$RUNNER_TEMP/expected.json"
+          node tools/ci/build-artifact.mjs verify .ci-build
+          npx playwright test --shard=${{ matrix.shard }}/2 --list --reporter=json > .ci-expected.json
       - name: Exercise every public, admin and visual contract
         run: npx playwright test --shard=${{ matrix.shard }}/2
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
-          node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
-          node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+          node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
+          node tools/ci/build-artifact.mjs verify-source .ci-source
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-browsers-${{ matrix.shard }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
-            ${{ runner.temp }}/expected.json
+            .ci-expected.json
           retention-days: 14
   cms:
     needs: format
     name: CMS contracts (${{ matrix.engine }}, ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+      options: --user 1001 --ipc=host
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -158,7 +167,7 @@ jobs:
         shard: [1, 2, 3, 4]
     env:
       E2E_GROUP: cms
-      AXE_PATH: ${{ github.workspace }}/node_modules/axe-core/axe.min.js
+      AXE_PATH: node_modules/axe-core/axe.min.js
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -166,26 +175,23 @@ jobs:
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - uses: ./.github/actions/ci-browsers
-        with:
-          engines: ${{ matrix.engine }}
-          cache: ${{ env.CI_CACHE }}
       - name: Discover every assigned CMS case
-        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4 --list --reporter=json > "$RUNNER_TEMP/expected.json"
+        run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4 --list --reporter=json > .ci-expected.json
       - name: Exercise the unchanged CMS domain contracts
         run: npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
-          node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
-          node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+          node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
+          node tools/ci/build-artifact.mjs verify-source .ci-source
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: cms-${{ matrix.engine }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
-            ${{ runner.temp }}/expected.json
+            .ci-expected.json
             /tmp/cms-native-*
             /tmp/cms-projection-*
             /tmp/cms-responsive-*
@@ -196,6 +202,9 @@ jobs:
     needs: [format, build]
     name: Production startup (${{ matrix.engine }})
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+      options: --user 1001 --ipc=host
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -203,6 +212,7 @@ jobs:
         engine: [chromium, webkit]
     env:
       E2E_GROUP: startup
+      E2E_STARTUP_DIST: .ci-build/startup
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -210,32 +220,29 @@ jobs:
       - uses: ./.github/actions/ci-node
         with:
           cache: ${{ env.CI_CACHE }}
-      - uses: ./.github/actions/ci-browsers
-        with:
-          engines: ${{ matrix.engine }}
-          cache: ${{ env.CI_CACHE }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ci-build-${{ github.run_id }}
-          path: ${{ runner.temp }}/ci-build
+          path: .ci-build
       - name: Verify build and discover every production startup case
         run: |
-          node tools/ci/build-artifact.mjs verify "$RUNNER_TEMP/ci-build"
-          npx playwright test --project=startup-${{ matrix.engine }} --list --reporter=json > "$RUNNER_TEMP/expected.json"
+          node tools/ci/build-artifact.mjs verify .ci-build
+          npx playwright test --project=startup-${{ matrix.engine }} --list --reporter=json > .ci-expected.json
       - name: Exercise actual production builds under CSP
         run: npx playwright test --project=startup-${{ matrix.engine }}
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
-          node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
-          node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+          node tools/ci/verify-playwright-report.mjs .ci-expected.json test-results/results.json
+          node tools/ci/build-artifact.mjs verify-source .ci-source
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: startup-${{ matrix.engine }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
             test-results
             playwright-report
-            ${{ runner.temp }}/expected.json
+            .ci-expected.json
           retention-days: 14
   edge-functions:
     needs: format
@@ -253,10 +260,15 @@ jobs:
         with:
           deno-version: v2.9.5
       - name: Type-check every Edge Function entrypoint
+        working-directory: supabase/functions
         run: |
+          checked=0
           while IFS= read -r file; do
-            deno check --frozen --node-modules-dir=manual "$file"
-          done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+            deno check --config deno.json --frozen "$file"
+            checked=$((checked + 1))
+            printf 'PASS %s\n' "$file"
+          done < <(find . -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+          test "$checked" -gt 0
   database-current:
     needs: format
     name: Current schema, integration and customer browsers
@@ -303,7 +315,7 @@ jobs:
       - name: Reject missing, skipped or retried outcomes and source drift
         run: |
           node tools/ci/verify-playwright-report.mjs "$RUNNER_TEMP/expected.json" test-results/results.json
-          node tools/ci/build-artifact.mjs verify-source "$RUNNER_TEMP/ci-source"
+          node tools/ci/build-artifact.mjs verify-source .ci-source
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

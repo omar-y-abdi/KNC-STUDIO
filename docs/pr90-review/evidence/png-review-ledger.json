@@ -1,0 +1,523 @@
+{
+  "base": "f15b79b5131848d43e888e9841d14a7d71d50177",
+  "head": "aadb123dcd19d412a357a8e83ffc7603f3d55b0c",
+  "count": 86,
+  "files": [
+    {
+      "path": "tools/visual/baseline-linux/stored-1280-dark-en.png",
+      "width": 1280,
+      "height": 3481,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-1280-dark-sv.png",
+      "width": 1280,
+      "height": 3464,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-1280-light-en.png",
+      "width": 1280,
+      "height": 3481,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-1280-light-sv.png",
+      "width": 1280,
+      "height": 3449,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-en.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-dark-sv.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-en.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-390-light-sv.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-800-dark-en.png",
+      "width": 825,
+      "height": 3914,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-800-dark-sv.png",
+      "width": 800,
+      "height": 3877,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-800-light-en.png",
+      "width": 846,
+      "height": 3914,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-800-light-sv.png",
+      "width": 800,
+      "height": 3860,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-1280-light-sv.png",
+      "width": 1032,
+      "height": 411,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-390-dark-en.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-390-dark-sv.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-390-light-en.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-390-light-sv-reduced-motion.png",
+      "width": 390,
+      "height": 425,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-barbers-390-light-sv.png",
+      "width": 378,
+      "height": 425,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-gallery-1280-light-sv.png",
+      "width": 1280,
+      "height": 378,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-gallery-390-dark-en.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-gallery-390-dark-sv.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-gallery-390-light-en.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline-linux/stored-about-gallery-390-light-sv.png",
+      "width": 390,
+      "height": 378,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-1280-dark-en.png",
+      "width": 1280,
+      "height": 3481,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-1280-dark-sv.png",
+      "width": 1280,
+      "height": 3464,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-1280-light-en.png",
+      "width": 1280,
+      "height": 3481,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-1280-light-sv.png",
+      "width": 1280,
+      "height": 3449,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-en.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-dark-sv.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-en.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv-step-0.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv-step-1.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv-step-2.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv-step-3.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv-step-4.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-390-light-sv.png",
+      "width": 390,
+      "height": 844,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-800-dark-en.png",
+      "width": 825,
+      "height": 3914,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-800-dark-sv.png",
+      "width": 800,
+      "height": 3877,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-800-light-en.png",
+      "width": 846,
+      "height": 3914,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-800-light-sv.png",
+      "width": 800,
+      "height": 3860,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-1280-light-sv.png",
+      "width": 1032,
+      "height": 411,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-390-dark-en.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-390-dark-sv.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-390-light-en.png",
+      "width": 378,
+      "height": 427,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-390-light-sv-reduced-motion.png",
+      "width": 390,
+      "height": 425,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-barbers-390-light-sv.png",
+      "width": 378,
+      "height": 425,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-gallery-1280-light-sv.png",
+      "width": 1280,
+      "height": 378,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-gallery-390-dark-en.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-gallery-390-dark-sv.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-gallery-390-light-en.png",
+      "width": 390,
+      "height": 382,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    },
+    {
+      "path": "tools/visual/baseline/stored-about-gallery-390-light-sv.png",
+      "width": 390,
+      "height": 378,
+      "review": "pixel overview inspected in paired contact sheets; see report for fixture and scaling limits"
+    }
+  ]
+}

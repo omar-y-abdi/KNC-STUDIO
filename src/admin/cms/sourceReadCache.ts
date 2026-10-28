@@ -1,7 +1,7 @@
 import type { DesktopSitePreviewPorts } from '../../app/DesktopSite'
 import type { SiteChromePort } from '../../site/port'
 import { defaultSiteChromePort } from '../../site/adapters'
-import { readOnlyHomepagePreviewPorts } from '../views/homepageReplicaPorts'
+import { readOnlyHomepagePreviewPorts } from '../../cms/homepageReplicaPorts'
 
 /** A capture's language/theme/device passes read one consistent public snapshot.
  * This cache is owned by the source frame, never shared with the live site. */

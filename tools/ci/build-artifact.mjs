@@ -1,15 +1,27 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const digest = (value) => createHash('sha256').update(value).digest('hex')
-export function sourceIdentity() {
-  return {
-    commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-    patch: digest(execFileSync('git', ['diff', 'HEAD', '--binary', '--no-ext-diff', '--no-color'])),
+export function sourceIdentity(cwd = process.cwd()) {
+  const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd,
+    encoding: 'utf8',
+  }).trim()
+  const directory = mkdtempSync(join(tmpdir(), 'knc-source-index-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(directory, 'index') }
+  const git = (args) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8' }).trim()
+  try {
+    git(['read-tree', 'HEAD'])
+    git(['add', '-u'])
+    return { commit: git(['rev-parse', 'HEAD']), tree: git(['write-tree']) }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 }
 

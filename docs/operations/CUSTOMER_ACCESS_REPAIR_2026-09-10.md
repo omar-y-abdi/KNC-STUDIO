@@ -1,3 +1,14 @@
+> **Archived operational receipt — preserved 27 October 2026.**
+> This is the original [frozen-main snapshot](https://github.com/omar-y-abdi/KNC-STUDIO/blob/f15b79b5131848d43e888e9841d14a7d71d50177/docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md).
+> Its plans, commands, links and verification results describe that historical state, not current
+> deployment status or authorization. Do not replay its migrations, deployments or password changes.
+> Follow historical cross-links in the frozen-main snapshot; their targets may be retired here.
+> Current guidance: [backend recovery](../../BACKEND.md#apply-backend-changes),
+> [CMS compatibility](CMS_RELEASE.md), [backup and restore](BACKUP_RESTORE.md), and
+> [the PR #90 review and repair map](../pr90-review/README.md).
+
+---
+
 # Customer-access repair — 2026-09-10
 
 Status: prepared locally; **not deployed**. Production changes require explicit action-time approval.

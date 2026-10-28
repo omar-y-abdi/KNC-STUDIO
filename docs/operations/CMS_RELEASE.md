@@ -82,6 +82,16 @@ If the separate metadata entrypoint throws or returns a server error, the outer 
 app shell directly; the browser still loads the current published CMS. This also protects native
 routes from transient renderer CPU exhaustion while retaining error visibility in Worker logs.
 
+The presentation is versioned. A native shell carries the revision from `public_cms_page_metadata`
+as `data-cms-revision` on `<html>`, and the app reads `/api/cms/presentation?rev=N`. For that exact
+form the Worker reads the RPC response once, without parsing it, and sets
+`Cloudflare-CDN-Cache-Control: max-age=86400, must-revalidate` only when the complete document opens with revision
+N. A different current revision, a missing or malformed `rev`, or a failed read answers
+`Cache-Control: no-store` (the current document, or 503); browsers never store it and HTML shells
+stay `no-store`. Only `?rev=<digits>` reaches the cached `PublicContent` export. A revision is
+unique within one database's lifetime: after a database restore, purge `/api/cms/presentation*` at
+Cloudflare, or revision N can be served with the content it had before the restore.
+
 Native routes keep the app root visually gated until `/api/cms/presentation` has been fetched and
 validated. While it loads, the application shows its loading state instead of briefly exposing the
 default native hero; a failed fetch exposes retry behavior. With JavaScript disabled, the Worker
@@ -137,16 +147,20 @@ or legacy templates.
 
 ## Verification boundaries
 
-`npm run test:e2e -- --customer` builds the local frontend, publishes through the real local
+`npm run test:e2e:customer` builds the local frontend, publishes through the real local
 Worker/Edge/database stack, and runs customer flows serially in Chromium, Firefox and WebKit.
-Its whole-suite watchdog is ten minutes; the ordinary public smoke retains three minutes.
-Individual action waits remain 15 seconds and browser shutdown remains bounded at 45 seconds.
+It requires a dedicated local Supabase stack and the Function environment described in
+[README.md](../../README.md#local-customer-links-and-cookies). Playwright projects and fixtures own
+test deadlines, browser contexts and server cleanup; `playwright.config.ts` and
+`tools/e2e/customer-fixtures.mjs` define those limits. See [CI.md](../CI.md) for the current commands
+and complete browser matrix.
 
-`cms-owner.mjs` covers desktop/mobile panels, SVG text/color, logo replacement, privacy appearance
+`npm run test:e2e:cms` runs the CMS fixture suites. `tools/e2e/cms-owner.spec.mjs` covers
+desktop/mobile panels, SVG text/color, logo replacement, privacy appearance
 and callback, custom-page styles, legacy-preview repair, additions, duplication, undo/redo,
-selection, comparison and editing during publication in Chromium/WebKit. `cms-populated.mjs`
-checks locked home scrolling with gallery tiles and public reload with a roster. `cms-native.mjs`,
-`cms-projection.mjs` and `cms-conflict.mjs` cover native appearance, live callbacks and conflict
+selection, comparison and editing during publication in Chromium/WebKit. `tools/e2e/cms-populated.spec.mjs`
+checks locked home scrolling with gallery tiles and public reload with a roster. `tools/e2e/cms-native.spec.mjs`,
+`tools/e2e/cms-projection.spec.mjs` and `tools/e2e/cms-conflict.spec.mjs` cover native appearance, live callbacks and conflict
 recovery. These suites use fixtures; live owner checks are a separate release step.
 
 Lock view uses the real native app with the validated unpublished presentation in a separate

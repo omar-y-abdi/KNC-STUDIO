@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
-test.describe.configure({ timeout: 900_000 })
+import { harnessOrigin } from './origins.mjs'
+// 2 × max per-case nearest-rank p95 of passing durations across the supplied full reports.
+// Limiting sample: durations-cms.json:5398 (25698 ms); budget = 25698 × 2.
+test.describe.configure({ timeout: 51_396 })
 
 for (const width of [1440, 390, 320]) {
   test.describe(String(width), () => {
@@ -13,7 +16,7 @@ for (const width of [1440, 390, 320]) {
     })
     test('cms-workspace', async ({ page, context, browserName, evidenceDir }) => {
       const name = browserName
-      const base = process.env.BASE_URL ?? 'http://127.0.0.1:4188'
+      const base = harnessOrigin
       const out = evidenceDir
       await mkdir(out, { recursive: true })
       const failures = []

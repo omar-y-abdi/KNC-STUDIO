@@ -13,7 +13,7 @@ describe('full WOFF2 decoding', () => {
     const metadata = inspectWoff2(bytes)
     expect(metadata.name.length).toBeGreaterThan(0)
     expect(metadata.glyphs).toBeGreaterThan(10)
-    expect(bytes.equals(before)).toBe(true)
+    expect(bytes).toEqual(before)
   })
   it('rejects truncation, header-only input and intact headers with corrupt compressed data', () => {
     const good = readFileSync('public/fonts/InterVariable-Latin.woff2')

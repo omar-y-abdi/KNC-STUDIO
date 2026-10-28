@@ -1,0 +1,252 @@
+{
+  "count": 41,
+  "coverage": "full content read; applicable changes inspected",
+  "files": [
+    {
+      "git": "M",
+      "path": "BACKEND.md",
+      "status": "Reviewed \u2014 DOC-01 addition",
+      "reason": "Current authority retains deny/forward recovery and identity boundaries; add the missing salt and rollback compatibility rules."
+    },
+    {
+      "git": "M",
+      "path": "CODEBASE-MAP.md",
+      "status": "Reviewed \u2014 keep concise successor",
+      "reason": "Both complete versions read; remove duplicated stale inventories. Retain missing salt caution in BACKEND, not the old 1,135-line map."
+    },
+    {
+      "git": "M",
+      "path": "README.md",
+      "status": "Reviewed \u2014 keep change",
+      "reason": "Current local transport, CI command, source-tree and feature boundaries retained. No independent behavior loss from docs delta."
+    },
+    {
+      "git": "M",
+      "path": "docs/CI.md",
+      "status": "Reviewed \u2014 reconcile with CI-01 owner",
+      "reason": "Current command/project descriptions inspected; workflow coverage correctness belongs to reviewer 03. Historical timings explicitly labeled."
+    },
+    {
+      "git": "M",
+      "path": "docs/CMS_PARITY.md",
+      "status": "Reviewed \u2014 keep path correction",
+      "reason": "Only changed source pointer fixed. Existing broad shared-header language must not be read as newly implemented live propagation; independent saved page layout is documented in CMS_RELEASE."
+    },
+    {
+      "git": "D",
+      "path": "docs/CMS_REDESIGN_PLAN.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Already superseded by CMS_PARITY, CMS UX/DESIGN and release guide."
+    },
+    {
+      "git": "A",
+      "path": "docs/MAINTENANCE_HANDOFF.md",
+      "status": "Reviewed \u2014 DOC-02 archive framing",
+      "reason": "New active-entry claim exposes obsolete session instructions; preserve receipts, label historical, point to current rescue plans."
+    },
+    {
+      "git": "D",
+      "path": "docs/PERFORMANCE_AUDIT.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical August measurements and prior implementation state; source/CI/performance contracts remain. No current performance guarantee inferred."
+    },
+    {
+      "git": "A",
+      "path": "docs/REPO_IMPROVEMENT_PLAN.md",
+      "status": "Reviewed \u2014 keep historical evidence",
+      "reason": "579 lines fully read, including large decision tables. Retains owner decisions, deferred content changes and rejected proposals; clarify historical handoff link."
+    },
+    {
+      "git": "D",
+      "path": "docs/handoffs/cms-five-issues.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Completed PR75 checkpoint with old commands; active CMS feature/release/preview contracts remain."
+    },
+    {
+      "git": "D",
+      "path": "docs/handoffs/cms-unified-resources-checkpoint.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Superseded PR78 work-in-progress instructions; committed behavior and acceptance scenarios remain in source/tests."
+    },
+    {
+      "git": "M",
+      "path": "docs/operations/CMS_RELEASE.md",
+      "status": "Reviewed \u2014 DOC-03 command correction",
+      "reason": "New cache restore/purge guidance reviewed; stale pre-existing customer CLI and suite/watchdog prose need precise correction."
+    },
+    {
+      "git": "D",
+      "path": "docs/operations/CUSTOMER_ACCESS_REPAIR_2026-09-10.md",
+      "status": "Reviewed \u2014 archive under DOC-01",
+      "reason": "Keep repair baseline and compatible recovery evidence; active salt/parity/fail-closed caution summarized in BACKEND."
+    },
+    {
+      "git": "D",
+      "path": "docs/operations/CUSTOMER_DEVICE_ACCESS_2026-09-11.md",
+      "status": "Reviewed \u2014 archive under DOC-01",
+      "reason": "Keep cookie/action rollout evidence and additive credential-grant retention rule; never replay old deploy sequence."
+    },
+    {
+      "git": "D",
+      "path": "docs/operations/LAUNCH_RELEASE_2026-09-13.md",
+      "status": "Reviewed \u2014 archive under DOC-01",
+      "reason": "Keep exact verified backup/migration/provider receipt and data-preserving recovery constraints; no current deployment assertion."
+    },
+    {
+      "git": "D",
+      "path": "docs/operations/PUBLIC_BOOKING_GATEWAY_ROLLOUT.md",
+      "status": "Reviewed \u2014 archive under DOC-01",
+      "reason": "Already historical; preserves verified baseline and staged expand/contract recovery provenance. Core denial/forward rules already active in BACKEND."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-08-27-production-real-life-test.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical live snapshot with obsolete ACP and old blocked backup state; current safeguards/backup runbook supersede it."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-audit/luna-hygiene.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical hygiene findings with final PM disposition; avoids reviving optional process and owner-decision gates."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-audit/luna-ui.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical UI repairs and explicitly withdrawn autofill claims; durable interaction gates remain owned by frontend/CI reviewers."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-audit/pm.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "PR58 chronology, corrected races/test evidence and superseded transport instructions; active backend/local setup remains."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-audit/sol-admin.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical target/draft/auth/media findings; no unique current operational recovery requirement found."
+    },
+    {
+      "git": "M",
+      "path": "docs/qa/2026-09-10-audit/sol-platform.md",
+      "status": "Reviewed \u2014 keep historical correction",
+      "reason": "Changed text disambiguates historical evidence and removes stale external references; no active permission or runtime claim introduced."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-launch-completion/partner.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Prior auth/device/privacy/Calendar design review and partially superseded identity proposal; current contracts and tests are authoritative."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-launch-completion/pm.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical release/backup/test-recipient log; useful recovery specifics retained in selected operation archives and active guidance."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-10-launch-issues.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Old unresolved issue/feedback form; later implementation and current authority supersede the status."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-11-launch-issues.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Earlier release/user-decision summary; identity and privacy boundaries remain in active backend and CMS contracts."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/backend-high.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical backend race, cookie, lifetime and test corrections; current tests and selected launch receipt retain actionable contracts."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/cms-high.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Optional legal identity defaults and no invented business facts retained in current CMS/Worker contract."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/customer-identity-plan.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Completed identity design; dual proofs, exact source, generations/whole-group atomicity and private grants have active authority/tests."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/gallery-high.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical gallery empty/error/alt/decorative portrait acceptance; frontend owns current implementation."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/issues.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Superseded launch status summary; no unique active guard found."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/luna-cms-visual.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical live receipt with test-person/contact details; no fresh production proof or need to reintroduce personal details."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/luna-root-tests.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical root/browser/HTTP execution log and corrections; retained tests carry current contract."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/partner.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Old hero/privacy/identity/Calendar implementation review; current functional owners certify those boundaries."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/pm.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical production/backup and late CI correction chronology; exact launch operational receipt preserved separately."
+    },
+    {
+      "git": "D",
+      "path": "docs/qa/2026-09-13-launch/ponytail-audit.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Completed dead-code/complexity audit notes; no additional abstraction or rewrite justified."
+    },
+    {
+      "git": "D",
+      "path": "docs/superpowers/plans/2026-09-24-cms-unified-resources.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Full 246-line evolving PR78 plan read through final committed gate; obsolete incomplete checkpoints must not direct current work."
+    },
+    {
+      "git": "D",
+      "path": "docs/superpowers/plans/2026-09-27-cms-latency.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical PR79 fixture-scoped latency experiment/implementation record; no proof of production timings implied."
+    },
+    {
+      "git": "D",
+      "path": "docs/superpowers/plans/2026-09-28-cms-context-latency.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Historical PR80 completion/repro notes; current browser contracts retained, old pending CI no longer authoritative."
+    },
+    {
+      "git": "D",
+      "path": "docs/superpowers/plans/cms-unified-resources-briefs/E2-brief.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Completed task-local hierarchical resize brief; current feature contract and test remain."
+    },
+    {
+      "git": "D",
+      "path": "docs/superpowers/plans/cms-unified-resources-briefs/E3-brief.md",
+      "status": "Reviewed \u2014 keep deletion",
+      "reason": "Completed task-local mobile header brief; current feature contract and test remain."
+    }
+  ]
+}

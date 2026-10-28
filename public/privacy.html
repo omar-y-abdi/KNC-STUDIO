@@ -19,92 +19,39 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://bladeblendstudio.se/privacy" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/info.css" />
     <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #ffffff;
-        --fg: #16181c;
-        --muted: #5b616e;
-        --line: #e6e8ec;
-        --accent: #0a7a5a;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0f1115;
-          --fg: #e9eaee;
-          --muted: #a2a8b4;
-          --line: #262a31;
-          --accent: #33c39a;
-        }
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--fg);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        line-height: 1.6;
-        -webkit-font-smoothing: antialiased;
-      }
-      main {
-        max-width: 46rem;
-        margin: 0 auto;
-        padding: 3rem 1.4rem 5rem;
-      }
-      h1 {
-        font-size: 1.7rem;
-        margin: 0 0 0.3rem;
-        letter-spacing: -0.01em;
-      }
-      h2 {
-        font-size: 1.15rem;
-        margin: 2.2rem 0 0.5rem;
-        letter-spacing: -0.01em;
-      }
-      p,
-      li {
-        color: var(--fg);
-      }
+      .lang,
       .updated {
-        color: var(--muted);
-        font-size: 0.9rem;
-        margin: 0 0 1.5rem;
-      }
-      a {
-        color: var(--accent);
-      }
-      code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.88em;
-        background: color-mix(in srgb, var(--fg) 8%, transparent);
-        padding: 0.1em 0.35em;
-        border-radius: 5px;
-      }
-      dt {
-        font-weight: 600;
-      }
-      dd {
-        margin: 0 0 0.75rem;
-        overflow-wrap: anywhere;
-      }
-      hr {
-        border: none;
-        border-top: 1px solid var(--line);
-        margin: 3rem 0;
+        color: var(--bb-muted);
       }
       .lang {
-        color: var(--muted);
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
         margin: 0 0 0.4rem;
+        font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .updated {
+        margin: 0 0 1.5rem;
+        font-size: 0.9rem;
+      }
+      code {
+        padding: 0.1em 0.35em;
+        border-radius: 5px;
+        background: var(--bb-surface);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.88em;
+      }
+      hr {
+        margin: 3rem 0;
+        border: none;
+        border-top: 1px solid var(--bb-line);
       }
     </style>
   </head>
   <body>
-    <main>
+    <main class="bb-doc">
       <nav aria-label="Brödsmulor">
         <a href="/">Hem</a> / <span aria-current="page">Integritet</span>
       </nav>

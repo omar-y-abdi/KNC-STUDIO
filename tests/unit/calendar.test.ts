@@ -1,7 +1,28 @@
-import { readFileSync } from 'node:fs'
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { BookingFlow } from '../../src/booking/BookingFlow'
 import { pad2, cap, iso, buildWeeks, isSelectableBookingDate } from '../../src/booking/calendar'
 import { stockholmWallClockDate } from '../../src/booking/stockholmTime'
+import { nodes, render, reset } from './helpers/fakeHooks'
+
+vi.mock('preact/hooks', () => import('./helpers/fakeHooks'))
+vi.mock('../../src/ui/Dialog', () => ({ Dialog: () => null }))
+vi.mock('../../src/ui/pseudo', () => ({ FOCUS_CLS: '', pseudoClass: () => '' }))
+vi.mock('../../src/cms/NativeSurface', () => ({
+  NativeRegion: () => null,
+  useNativeChild: () => (node: unknown) => node,
+}))
+vi.mock('../../src/booking/useRoster', () => ({
+  useRoster: () => ({
+    roster: [{ barber: { id: 'owner-barber', name: 'Owner Barber', ig: '' } }],
+    loading: false,
+  }),
+}))
+vi.mock('../../src/booking/useServices', () => ({
+  useServices: () => ({ services: [], loading: false }),
+}))
+
+beforeEach(reset)
+afterEach(() => vi.unstubAllEnvs())
 
 describe('helpers', () => {
   it('pad2', () => {
@@ -34,10 +55,27 @@ describe('helpers', () => {
     expect(isSelectableBookingDate(stockholmDay, today)).toBe(true)
   })
 
-  it('normalizes the BookingFlow clock before deriving its calendar day', () => {
-    const source = readFileSync('src/booking/BookingFlow.tsx', 'utf8')
-
-    expect(source).toContain('stockholmWallClockDate(clock())')
+  it('renders the Stockholm month and date availability when the injected UTC clock crosses a DST midnight', () => {
+    vi.stubEnv('TZ', 'UTC')
+    const flow = () =>
+      render(() => BookingFlow({ clock: () => new Date('2040-03-31T22:30:00.000Z') }))
+    const barber = nodes(flow()).find(
+      (node) => node.props['data-testid'] === 'booking-barber-option',
+    )
+    if (!barber) throw new Error('Missing barber option')
+    ;(barber.props.onClick as () => void)()
+    const rendered = nodes(flow()).filter((node) => node.type === 'button')
+    const days = rendered.filter(
+      (node) =>
+        typeof node.props['aria-label'] === 'string' &&
+        String(node.props['aria-label']).includes('april 2040'),
+    )
+    expect(days).toHaveLength(30)
+    const first = days.find((node) => node.props.children === 1)
+    expect(first).toBeDefined()
+    expect(first?.props.disabled).toBe(false)
+    expect(first?.props.onClick).toBeTypeOf('function')
+    expect(days.every((node) => node.props.disabled === false)).toBe(true)
   })
 })
 

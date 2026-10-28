@@ -5,7 +5,7 @@ import type { ResourceDestination } from '../../../shared/cms-resource-assignmen
 import { resourceTarget } from '../../../shared/cms-resource-target'
 
 /** A click on an SVG path/text selects the complete replaceable graphic. */
-export function resourceGraphic(component: Component): Component | undefined {
+function resourceGraphic(component: Component): Component | undefined {
   let current: Component | undefined = component
   while (current) {
     if (['img', 'svg'].includes(String(current.get('tagName')).toLowerCase())) return current
@@ -26,7 +26,7 @@ export function canReplaceResourceGraphic(component: Component): boolean {
 
 /** Resolve native repeated records by the same stable key algorithm as nativeTree.
  * Names, positions and image filenames must never decide which person is edited. */
-export function contextualDestination(
+function contextualDestination(
   graphic: Component,
   document: CmsDocument,
 ): ResourceDestination | undefined {

@@ -14,7 +14,12 @@ import {
   type CmsPresentation,
   type CmsPage,
 } from '../../shared/cms'
-import { isNativePublicPath } from '../site/routeMetadata'
+import {
+  CMS_REVISION_ATTRIBUTE,
+  isNativePublicPath,
+  parseCmsRevision,
+  presentationPath,
+} from '../site/routeMetadata'
 
 const NativeContext = createContext<{
   presentation: CmsPresentation | null
@@ -65,6 +70,69 @@ function readInlinePresentation(): CmsPresentation | null {
   }
 }
 
+/** Pauses before the automatic re-reads of the published presentation. A slow database answers one
+ * read with 503; the error state follows only the read after the last pause (PERF-5). */
+export const PRESENTATION_RETRY_DELAYS_MS: readonly number[] = [500, 1500]
+
+function pauseFor(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+/** One read, then one more after each pause while reads fail; rejects with the last failure. An
+ * aborted signal ends the sequence: no further read starts. */
+export async function readWithRetries<T>(
+  read: () => Promise<T>,
+  delays: readonly number[],
+  signal: AbortSignal,
+  pause: (ms: number, signal: AbortSignal) => Promise<void> = pauseFor,
+): Promise<T> {
+  for (const ms of delays) {
+    try {
+      return await read()
+    } catch (error) {
+      if (signal.aborted) throw error
+    }
+    await pause(ms, signal)
+  }
+  return read()
+}
+
+async function fetchPublishedPresentation(signal: AbortSignal): Promise<CmsPresentation> {
+  // The Worker names the revision it rendered this shell from; that revision comes from the edge.
+  const revision = parseCmsRevision(document.documentElement.getAttribute(CMS_REVISION_ATTRIBUTE))
+  const response = await fetch(presentationPath(revision), { signal })
+  if (!response.ok) throw new Error('CMS presentation unavailable')
+  const value: unknown = await response.json()
+  if (!value || typeof value !== 'object' || !('presentation' in value))
+    throw new Error('Invalid CMS presentation')
+  validatePresentation(value.presentation)
+  return value.presentation
+}
+
+const VISUALLY_HIDDEN: JSX.CSSProperties = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  margin: '-1px',
+  padding: 0,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+}
+
+/** While the presentation is read, the page is its pre-painted background (R12); only assistive
+ * technology hears the status. A failure after the last retry stays visible with a manual retry. */
 function PublicPresentationGate({
   error,
   onRetry,
@@ -72,11 +140,16 @@ function PublicPresentationGate({
   error: boolean
   onRetry: () => void
 }): JSX.Element {
+  if (!error)
+    return (
+      <main aria-busy="true">
+        <div role="status" aria-live="polite" style={VISUALLY_HIDDEN}>
+          Laddar webbplatsen…
+        </div>
+      </main>
+    )
   return (
     <main
-      role={error ? 'alert' : 'status'}
-      aria-live="polite"
-      aria-busy={!error}
       style={{
         minHeight: '100vh',
         boxSizing: 'border-box',
@@ -89,16 +162,12 @@ function PublicPresentationGate({
         textAlign: 'center',
       }}
     >
-      {error ? (
-        <div>
-          <p>Webbplatsen kunde inte laddas just nu.</p>
-          <button type="button" onClick={onRetry}>
-            Försök igen
-          </button>
-        </div>
-      ) : (
-        <p>Laddar webbplatsen…</p>
-      )}
+      <div role="alert" aria-live="polite">
+        <p>Webbplatsen kunde inte laddas just nu.</p>
+        <button type="button" onClick={onRetry}>
+          Försök igen
+        </button>
+      </div>
     </main>
   )
 }
@@ -163,26 +232,23 @@ export function NativeSiteProvider({
   useEffect(() => {
     if (source || presentation !== undefined || !publicNativeRoute || published !== null) return
     const controller = new AbortController()
-    let active = true
+    const { signal } = controller
     setPublishedState('loading')
-    void fetch('/api/cms/presentation', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('CMS presentation unavailable')
-        const value: unknown = await response.json()
-        if (!value || typeof value !== 'object' || !('presentation' in value))
-          throw new Error('Invalid CMS presentation')
-        validatePresentation(value.presentation)
-        if (!active) return
-        setPublished(value.presentation)
+    void readWithRetries(
+      () => fetchPublishedPresentation(signal),
+      PRESENTATION_RETRY_DELAYS_MS,
+      signal,
+    ).then(
+      (value) => {
+        if (signal.aborted) return
+        setPublished(value)
         setPublishedState('ready')
-      })
-      .catch(() => {
-        if (active) setPublishedState('error')
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
+      },
+      () => {
+        if (!signal.aborted) setPublishedState('error')
+      },
+    )
+    return () => controller.abort()
   }, [presentation, source, publicNativeRoute, published, retryCount])
   const current = presentation === undefined ? published : presentation
   const fonts = Object.entries(current?.fonts ?? {})
