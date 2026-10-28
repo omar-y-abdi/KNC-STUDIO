@@ -267,9 +267,40 @@ test('resize cascade primitive resolves variables and layers without exporting p
       })
       const beforeReload = card.getBoundingClientRect().width
       const serialized = readCanvasCss(editor)
-      editor.Css.getAll().reset(parseCanvasCss(serialized, editor))
+      const parsed = parseCanvasCss(serialized, editor)
+      editor.Css.getAll().reset(structuredClone(parsed))
       const afterReload = card.getBoundingClientRect().width
-      return { samples, beforeReload, afterReload, serialized }
+      const inspectReload = () => ({
+        css: readCanvasCss(editor),
+        holderWidth: doc.getElementById('holder')?.getBoundingClientRect().width,
+        cardWidth: doc.getElementById('probe-card')?.getBoundingClientRect().width,
+        rules: editor.Css.getAll().toJSON(),
+        mounted: [...doc.styleSheets].map((sheet) =>
+          [...sheet.cssRules].map((rule) => rule.cssText).join(''),
+        ),
+      })
+      const immediate = inspectReload()
+      await new Promise((resolve) =>
+        view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)),
+      )
+      const settled = inspectReload()
+      // Match the editor's structural import order as a separate diagnostic. A CSS-only
+      // collection reset above must still retain the same declarations and geometry.
+      const html = editor.getHtml()
+      editor.setComponents('')
+      editor.Css.getAll().reset(structuredClone(parsed))
+      editor.setComponents(html)
+      const structural = inspectReload()
+      return {
+        samples,
+        beforeReload,
+        afterReload,
+        serialized,
+        parsed,
+        immediate,
+        settled,
+        structural,
+      }
     } finally {
       // ClassTagsView debounces style/device updates by one task. Let that work finish
       // before destroy removes its selected-component model.
@@ -335,6 +366,8 @@ test('resize cascade primitive resolves variables and layers without exporting p
     result.beforeReload,
     'GrapesJS CSS import must retain the nested conditional override',
   )
+  assert.equal(result.settled.cardWidth, 448)
+  assert.equal(result.structural.cardWidth, 448)
   assert.ok(!result.serialized.includes('--cms-internal-prototype'), 'No probe may be exported')
 })
 
