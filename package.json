@@ -58,7 +58,7 @@
     "js-yaml": "4.3.2",
     "pg": "^8.22.0",
     "playwright": "1.61.1",
-    "prettier": "^3.8.4",
+    "prettier": "^3.9.10",
     "supabase": "2.114.0",
     "terser": "^5.48.0",
     "typescript": "~6.0.2",
