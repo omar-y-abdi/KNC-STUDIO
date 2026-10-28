@@ -1,10 +1,10 @@
 # Email delivery
 
-The owner sees every transactional email in the CMS Studio under **Mejl → Leveransstatus**: failed booking emails first, then the log of sent and failed emails. Only the owner can open the Studio, and the database functions behind the view check `is_owner()` again. Barbers and customers have no access.
+The owner sees failed booking deliveries and the app's recorded email attempts in the CMS Studio under **Mejl → Leveransstatus**. Only the owner can open the Studio, and the database functions behind the view check `is_owner()` again. Barbers and customers have no access.
 
 ## Delivery log
 
-`public.email_send_log` holds one row per email the Edge Functions hand to Resend:
+The Edge Functions attempt to write one `public.email_send_log` row per message sent through Resend. Logging is best effort; a missing row does not prove that an email was not sent. These app email kinds are covered:
 
 | Kind                                             | Sent by                                   |
 | ------------------------------------------------ | ----------------------------------------- |
@@ -16,13 +16,13 @@ The owner sees every transactional email in the CMS Studio under **Mejl → Leve
 | `auth_invite`                                    | `admin-create-barber`                     |
 | `customer_booking_access`, `customer_email_link` | `external-cleanup` (customer link outbox) |
 
-Each row stores the time, kind, recipient address, subject, status (`sent` or `failed` with `send_failed_transient` or `send_failed_permanent`), the booking when there is one, and a copy of the email as sent (subject, HTML and text part).
+Each row stores the time, kind, recipient address, subject, status (`sent` or `failed` with `send_failed_transient` or `send_failed_permanent`), the booking when there is one, and the attempted message's subject, HTML and text part. `sent` means Resend accepted the message and returned a valid message ID; it does not confirm inbox delivery. A transport error or an invalid provider response is recorded as a transient failure even when provider acceptance is uncertain.
 
-- **Credential links are never stored.** Password recovery, email change, invite, Mina bokningar (booking confirmation, reminder, access email) and the customer email-link proof all carry a working login or access key in their button link. The stored copy is rendered by the same renderer with that link replaced by `[dold länk]`; everything else is identical to what the recipient got. The message's idempotency key is stored only as its SHA-256 (`dedupe_key`), because auth keys embed part of the token.
-- **One row per email.** Retries of the same email update its row (latest status, `attempt_count`, `last_attempt_at`). A row that reached `sent` stays `sent`.
-- **What is not in the log.** Emails that never reached Resend (missing configuration, a message that could not be built) have no row. For booking emails they appear in the failed list below. Emails Supabase Auth sends itself are not logged either: Auth delivers them over its own SMTP settings (`[auth.email.smtp]` in `supabase/config.toml`) with no send-email hook, so a recovery or email-change email triggered outside the app, from the Supabase dashboard or by a direct call to the Auth API such as `/auth/v1/recover`, never passes the Edge Functions (the app's own recovery, email-change and invite flows use `generateLink` and are logged).
-- **Retention.** The daily cron job `email-send-log-purge` (03:29 UTC) deletes rows older than 30 days. Deleting a booking keeps its rows until then, with `booking_id` cleared; an email whose booking was deleted while it was being sent is recorded without a booking.
-- **Logging.** A failed log write is reported in the Edge Function log as `email send log write failed` with the kind and a database error code only; a write still pending after 3 seconds is dropped and reported with the code `timeout`. It never fails the email, and holds up the send for at most those 3 seconds. Console logs never contain recipients, subjects or bodies.
+- **Credential links are never stored.** Password recovery, email change, invite, Mina bokningar (booking confirmation, reminder, access email) and the customer email-link proof all carry a working login or access key in their button link. The stored copy is rendered by the same renderer with that link replaced by `[dold länk]`; everything else is identical to the outgoing message. The message's idempotency key is stored only as its SHA-256 (`dedupe_key`), because auth keys embed part of the token.
+- **One row per email.** While the row is `failed`, a recorded retry replaces the attempted message and outcome, increments `attempt_count`, and updates `last_attempt_at`. `created_at` remains the first recorded attempt. Once a recorded attempt reaches `sent`, the entire row is final: later attempts change neither its copy nor its status, counters or timestamps. Attempts whose log write failed are not counted.
+- **What is not in the log.** Failures before the provider call (missing configuration or a message that could not be built) have no row. Terminal booking delivery jobs appear in the failed list below. A failed log write may also leave a provider attempt absent. Emails Supabase Auth sends itself are excluded: Auth delivers them over its own SMTP settings (`[auth.email.smtp]` in `supabase/config.toml`) with no send-email hook, so a recovery or email-change email triggered outside the app, from the Supabase dashboard or by a direct call to the Auth API such as `/auth/v1/recover`, never passes the Edge Functions. The app's own recovery, email-change and invite flows use `generateLink` and the logged sender.
+- **Retention.** The daily cron job `email-send-log-purge` (03:29 UTC) deletes rows strictly older than 30 days from their first recorded attempt. A row exactly at the cutoff remains until a later run; the daily cadence can leave an expired row visible until the next purge. Deleting a booking keeps its rows until then, with `booking_id` cleared; an email whose booking was deleted while it was being sent is recorded without a booking.
+- **Logging.** A failed log write is reported as `email send log write failed` with the email kind and a database error code or caught exception name. The sender waits up to 3 seconds for the log RPC, then reports `timeout` and continues; the outstanding RPC may still complete later. A logging failure never changes the provider outcome or prevents the booking dispatch from persisting a reached recipient. The log helper never prints recipients, subjects, bodies or credential links.
 
 Read the log in the SQL editor:
 
@@ -37,7 +37,7 @@ The owner RPCs are `admin_list_email_send_log(p_before, p_limit, p_before_id)` (
 
 ## Failed booking emails
 
-`booking_email_delivery_jobs` stays the source of truth for booking emails and their retries; the log only records what was sent. Leveransstatus lists failed deliveries with the customer, the booking time and the recipients, and offers retry and mark handled.
+`booking_email_delivery_jobs` stays the source of truth for booking emails and their retries; the log is a record of provider attempts. Leveransstatus lists failed deliveries with the customer, the booking time and the recipients still owed the message, and offers retry and mark handled. Retrying queues another attempt; deletion stays blocked until all unresolved deliveries have completed or been marked handled.
 
 A booking with a `failed`, `pending` or `dispatching` row in `booking_email_delivery_jobs` cannot be deleted, purged or removed with its barber (trigger `bookings_prevent_unresolved_email_delete`).
 
@@ -69,6 +69,6 @@ where id = '<delivery id>' and status = 'failed';
 
 ## Rollout order
 
-1. Migrations `20261025090000_email_send_log.sql` and `20261025091000_email_send_log_deleted_booking.sql`. `admin_list_failed_booking_email_deliveries` only gains keys (`customer_name`, `customer_email`, `customer_phone`, `booking_start_at`, `barber_name`, `barber_email`, `sent_kinds`); the deployed frontend ignores unknown keys.
-2. Edge Functions `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber` and `external-cleanup`. They call `internal_record_email_send`, so the migration must be applied first; before it is, every send still succeeds and logs `email send log write failed`.
+1. Migrations `20261028100000_email_send_log.sql` and `20261028101000_email_send_log_deleted_booking.sql`, ordered after the shipped `20261027173553` migration. `admin_list_failed_booking_email_deliveries` only gains keys (`customer_name`, `customer_email`, `customer_phone`, `booking_start_at`, `barber_name`, `barber_email`, `sent_kinds`); the deployed frontend ignores unknown keys.
+2. Edge Functions `send-confirmation`, `send-recovery-email`, `send-email-change`, `admin-create-barber` and `external-cleanup`. They call `internal_record_email_send`, so the migrations must be applied first. Before that, sends retain their provider outcome but each attempted log write reports `email send log write failed`.
 3. The frontend with Leveransstatus.

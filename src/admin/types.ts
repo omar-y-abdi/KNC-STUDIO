@@ -177,12 +177,6 @@ export interface AdminBooking {
   readonly status: 'confirmed' | 'cancelled'
 }
 
-/** One non-localized owner-editable public setting, matching `site_settings`. */
-export interface AdminSiteSetting {
-  readonly key: string
-  readonly value: string
-}
-
 // --- Result (no throws to the UI) ----------------------------------------------------------------
 
 /** A small typed error: a stable `kind` for branching + a human message for the UI. */

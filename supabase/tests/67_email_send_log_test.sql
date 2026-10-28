@@ -172,18 +172,26 @@ select is((select e->>'barber_name' || '|' || (e->>'barber_email')
 select is(current_setting('test.failed_row')::jsonb->'sent_kinds', '["barber"]'::jsonb,
   'the failed list shows which recipients were already reached');
 
--- 30-day retention.
+-- 30-day retention is strict: keep the exact cutoff and the row one microsecond newer.
 insert into public.email_send_log
   (dedupe_key, kind, recipient, subject, html, text_body, status, created_at)
 values
   (md5('31') || md5('31'), 'auth_invite', 'barber@email-log.local', 'S-31', '<p></p>', '', 'sent',
    pg_catalog.now() - interval '31 days'),
   (md5('29') || md5('29'), 'auth_invite', 'barber@email-log.local', 'S-29', '<p></p>', '', 'sent',
-   pg_catalog.now() - interval '29 days');
-select is(public.internal_purge_email_send_log(), 1, 'the purge deletes exactly the expired row');
-select is((select pg_catalog.array_agg(subject) from public.email_send_log
-  where subject in ('S-31', 'S-29')),
-  array['S-29'], 'a 31-day-old row is purged and a 29-day-old row is kept');
+   pg_catalog.now() - interval '29 days'),
+  (md5('30-exact') || md5('30-exact'), 'auth_invite', 'barber@email-log.local', 'S-30-exact',
+   '<p></p>', '', 'sent', pg_catalog.now() - interval '30 days'),
+  (md5('30-older') || md5('30-older'), 'auth_invite', 'barber@email-log.local', 'S-30-older',
+   '<p></p>', '', 'sent', pg_catalog.now() - interval '30 days' - interval '1 microsecond'),
+  (md5('30-newer') || md5('30-newer'), 'auth_invite', 'barber@email-log.local', 'S-30-newer',
+   '<p></p>', '', 'sent', pg_catalog.now() - interval '30 days' + interval '1 microsecond');
+select is(public.internal_purge_email_send_log(), 2,
+  'the purge deletes the 31-day row and the row one microsecond beyond 30 days');
+select is((select pg_catalog.array_agg(subject order by subject) from public.email_send_log
+  where subject in ('S-31', 'S-29', 'S-30-exact', 'S-30-older', 'S-30-newer')),
+  array['S-29', 'S-30-exact', 'S-30-newer'],
+  'the exact 30-day cutoff and all newer rows remain');
 
 -- A hard-deleted booking keeps its log rows, unlinked.
 insert into public.email_send_log
