@@ -1,15 +1,16 @@
-import { themeDeclarations } from '../../../shared/site-theme'
+import { themeDeclarations } from '../../../shared/site-theme-declarations'
 import { modeCss } from '../../../shared/cms-mode-css'
 import { repairDesktopCss } from '../../../shared/cms-device-css'
-import { generate, ident, parse, walk } from 'css-tree'
+import { clone, generate, ident, List, parse, walk, type CssNode, type StyleSheet } from 'css-tree'
 import type { Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
+import { INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 
-/** /terms and /privacy render on the base sheets the Worker inlines (STY-7). The canvas links the
+/** /terms, /privacy and /contact render on the base sheets the Worker inlines. The canvas links the
  * same files and pins the edited mode, as `?mode` does publicly, so the owner edits what visitors
  * see. Other pages get neither. Linked sheets sit outside the editor's CSS, so nothing is exported. */
 export function legalCanvasBase(path: string, mode: CmsMode): { styles: string[]; scheme: string } {
-  return path === '/terms' || path === '/privacy'
+  return INFORMATION_PAGE_PATHS.includes(path)
     ? { styles: ['/tokens.css', '/info.css'], scheme: mode }
     : { styles: [], scheme: '' }
 }
@@ -53,6 +54,25 @@ function readBaseline(element: Element, mode: CmsMode): Record<string, string> {
 interface NativeStyle {
   css: string
   style: CSSStyleDeclaration
+  declarations?: CssNode
+}
+
+export interface CanvasTree {
+  html: string
+  sheet: StyleSheet
+}
+
+/** A microtask alone does not let the browser dispatch input or paint. */
+export function yieldCanvasTask(): Promise<void> {
+  const scheduler = (
+    globalThis as typeof globalThis & { scheduler?: { yield?: () => Promise<void> } }
+  ).scheduler
+  return scheduler?.yield ? scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Parse stored sheets once; subsequent canvas passes operate on this tree. */
+export function parseCanvasSheet(css: string): StyleSheet {
+  return parse(css, { parseCustomProperty: true }) as StyleSheet
 }
 
 function nativeStyle(
@@ -73,11 +93,10 @@ function nativeStyle(
 }
 
 function normalizeNativeCss(
-  css: string,
+  stylesheet: StyleSheet,
   originals: ReadonlyMap<string, CSSStyleDeclaration>,
   removeUnchanged: boolean,
-): string {
-  const stylesheet = parse(css)
+): StyleSheet {
   const normalized = document.createElement('span').style
   const values = new Map<string, string>()
   const normalizeValue = (value: string): string => {
@@ -113,19 +132,18 @@ function normalizeNativeCss(
       })
     },
   })
-  return generate(stylesheet)
+  return stylesheet
 }
 
-export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: string; css: string } {
-  if (!variant.html.includes('data-knc-native="1"'))
-    return {
-      html: variant.html,
-      css:
-        'body{background-color:inherit;color:inherit}' +
-        modeCss(repairDesktopCss(variant.css[mode]), mode),
-    }
+export function nativeCanvasTree(variant: PageVariant, mode: CmsMode): CanvasTree {
+  const stored = repairDesktopCss(parseCanvasSheet(variant.css[mode]))
+  if (!variant.html.includes('data-knc-native="1"')) {
+    const sheet = parseCanvasSheet('body{background-color:inherit;color:inherit}')
+    sheet.children.appendList(modeCss(stored, mode).children)
+    return { html: variant.html, sheet }
+  }
   const doc = new DOMParser().parseFromString(variant.html, 'text/html')
-  const rules: string[] = []
+  const sheet: StyleSheet = { type: 'StyleSheet', children: new List() }
   const originalStyles = new Map<string, CSSStyleDeclaration>()
   // Scoped to this conversion: no retained owner documents or stale cross-theme values.
   const styles = new Map<string, NativeStyle>()
@@ -141,16 +159,38 @@ export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: strin
       element.getAttribute(`data-knc-${mode}`) ?? element.getAttribute('data-knc-light') ?? ''
     const native = nativeStyle(element, mode, styles)
     if (element.id) originalStyles.set(element.id, native.style)
-    if (style && element.id) rules.push(`#${CSS.escape(element.id)}{${native.css}}`)
+    if (style && element.id) {
+      native.declarations ??= parse(native.css, {
+        context: 'declarationList',
+        parseCustomProperty: true,
+      })
+      const declarations = clone(native.declarations)
+      if (declarations.type !== 'DeclarationList') throw new Error('Invalid native declarations')
+      sheet.children.appendData({
+        type: 'Rule',
+        prelude: {
+          type: 'SelectorList',
+          children: new List<CssNode>().fromArray([
+            {
+              type: 'Selector',
+              children: new List<CssNode>().fromArray([
+                { type: 'IdSelector', name: ident.encode(element.id) },
+              ]),
+            },
+          ]),
+        },
+        block: { type: 'Block', children: declarations.children },
+      })
+    }
     element.removeAttribute('style')
   }
-  return {
-    html: doc.body.innerHTML,
-    css:
-      rules.join('\n') +
-      '\n' +
-      normalizeNativeCss(repairDesktopCss(variant.css[mode]), originalStyles, false),
-  }
+  sheet.children.appendList(normalizeNativeCss(stored, originalStyles, false).children)
+  return { html: doc.body.innerHTML, sheet }
+}
+
+export function nativeCanvas(variant: PageVariant, mode: CmsMode): { html: string; css: string } {
+  const canvas = nativeCanvasTree(variant, mode)
+  return { html: canvas.html, css: generate(canvas.sheet) }
 }
 
 /** Only owner changes override inline runtime styling; snapshots never freeze live layout state. */
@@ -176,16 +216,20 @@ export function exportNativeCanvas(
     }
     element.removeAttribute('style')
   }
-  return { html: doc.body.innerHTML, css: normalizeNativeCss(css, originalStyles, true) }
+  return {
+    html: doc.body.innerHTML,
+    css: generate(normalizeNativeCss(parse(css) as StyleSheet, originalStyles, true)),
+  }
 }
 
 /** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands). */
 export function parseCanvasCss(
-  css: string,
+  css: string | CssNode,
   editor: Editor,
 ): ReturnType<Editor['Parser']['parseCss']> {
   const declarations = new Map<string, { property: string; value: string }>()
-  const tree = parse(css, { parseCustomProperty: true })
+  // Masking declaration names is destructive; retain the prepared tree for deferred previews.
+  const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
   walk(tree, {
     visit: 'Block',
     enter(block) {

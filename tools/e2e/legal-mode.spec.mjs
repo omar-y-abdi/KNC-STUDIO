@@ -22,43 +22,31 @@ const fixture = JSON.parse(
 ).presentation
 
 // What the Studio's "Skapa ny sida" dialog creates with its defaults (src/admin/cms/Studio.tsx,
-// createPage): the same starter markup, materialised by createSitePage over the presentation.
-function studioCreatedPage(presentation) {
-  const starter = (language) =>
-    `<main style="max-width:1120px;min-height:55vh;margin:0 auto;padding:64px 32px"><h1 style="font-size:40px;line-height:1.15;letter-spacing:-1px;margin:0 0 24px">Ny sida</h1><p style="font-size:17px;line-height:1.7">${language === 'sv' ? 'Skriv din text här.' : 'Write your page here.'}</p></main>`
-  return createSitePage(presentation, {
+// createPage): only the body template of createSitePage; the Worker adds the live header.
+function studioCreatedPage() {
+  return createSitePage({
     id: '20000000-0000-4000-8000-000000000001',
-    kind: 'page',
     path: '/hemsida',
-    inMenu: true,
     name: { sv: 'Ny sida', en: 'New page' },
-    title: { sv: 'Ny sida', en: 'New page' },
-    description: { sv: '', en: '' },
-    content: {
-      sv: { html: starter('sv'), css: { light: '', dark: '' } },
-      en: { html: starter('en'), css: { light: '', dark: '' } },
-    },
   })
 }
 
 const published = globalThis.structuredClone(fixture)
-published.pages.push(studioCreatedPage(published))
+published.pages.push(studioCreatedPage())
 
 // The element that paints each page and its colour per scheme, from the fixture CSS and the site
-// theme: /terms colours :root, /privacy colours body, a created page colours its site shell.
-// A created page's header is the published home header, copied by createSitePage with its own
-// colours: its phone link and language label measure 4.28:1 and 3.76:1 in light (the same CSS and
-// markup as before this change), and its wordmark is SVG text that axe cannot measure. The contrast
-// check covers the rest of that page.
+// theme: /terms colours :root, /privacy colours body, a created page's base sheet colours :root
+// from the homepage tokens. Its live header uses the same tokens, so axe measures it too; the
+// wordmark is SVG text that axe cannot measure.
 const PAGES = [
   { path: '/terms', surface: 'html', light: 'rgb(244, 243, 240)', dark: 'rgb(28, 28, 30)' },
   { path: '/privacy', surface: 'body', light: 'rgb(255, 255, 255)', dark: 'rgb(15, 17, 21)' },
   {
     path: '/hemsida',
-    surface: '#cms-site-shell',
+    surface: 'html',
     light: 'rgb(255, 255, 255)',
     dark: 'rgb(28, 28, 30)',
-    unmeasured: ['#cms-site-header'],
+    unmeasured: ['#cms-site-header .cms-site-brand svg'],
   },
 ]
 const PATHS = PAGES.map(({ path }) => path)

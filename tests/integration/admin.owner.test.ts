@@ -19,8 +19,6 @@ import {
   setBarberActive,
   updateBarber,
 } from '../../src/admin/adapters/barbersAdmin'
-import { listAbout, saveAbout } from '../../src/admin/adapters/aboutAdmin'
-import { deleteImage, listGallery, uploadImage } from '../../src/admin/adapters/galleryAdmin'
 import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
 import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
@@ -134,44 +132,62 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     expect(found?.active).toBe(false)
   })
 
-  it('edits about_content (upsert + read back)', async () => {
+  it('edits about_content (owner upsert + read back)', async () => {
     const marker = `IT intro ${Date.now()}`
-    const saved = await saveAbout('intro', 'sv', marker)
-    expect(saved.ok).toBe(true)
+    const saved = await getAdminClient()
+      .from('about_content')
+      .upsert({ key: 'intro', lang: 'sv', value: marker }, { onConflict: 'key,lang' })
+    expect(saved.error).toBeNull()
 
-    const all = await listAbout()
-    expect(all.ok).toBe(true)
-    if (!all.ok) return
-    const cell = all.value.find((r) => r.key === 'intro' && r.lang === 'sv')
-    expect(cell?.value).toBe(marker)
+    const read = await getAdminClient()
+      .from('about_content')
+      .select('value')
+      .eq('key', 'intro')
+      .eq('lang', 'sv')
+      .single()
+    expect(read.error).toBeNull()
+    expect(read.data?.value).toBe(marker)
   })
 
   it('uploads and removes a gallery placement while retaining CMS media bytes', async () => {
-    const alt = `IT salon ${Date.now()}`
-    const uploaded = await uploadImage('salon', pngFile('it.png'), alt, 0)
-    expect(uploaded.ok).toBe(true)
-    if (!uploaded.ok) return
-    expect(uploaded.value.kind).toBe('salon')
-    expect(uploaded.value.url).toContain('/storage/v1/object/public/gallery/')
+    const form = new FormData()
+    form.set('kind', 'gallery')
+    form.set('galleryKind', 'salon')
+    form.set('alt', `IT salon ${Date.now()}`)
+    form.set('sortOrder', '0')
+    form.set('file', pngFile('it.png'))
+    const uploadedResponse = await getAdminClient().functions.invoke('upload-image', { body: form })
+    expect(uploadedResponse.error).toBeNull()
+    const uploaded = uploadedResponse.data as {
+      row: { id: string; kind: string; storage_path: string }
+      publicUrl: string
+    }
+    expect(uploaded.row.kind).toBe('salon')
+    expect(uploaded.publicUrl).toContain('/storage/v1/object/public/gallery/')
 
     // The public URL actually serves the object (public-read bucket).
-    const head = await fetch(uploaded.value.url, { method: 'GET' })
+    const head = await fetch(uploaded.publicUrl, { method: 'GET' })
     expect(head.ok).toBe(true)
 
-    // It appears in the listing.
-    const listed = await listGallery('salon')
-    expect(listed.ok).toBe(true)
-    if (!listed.ok) return
-    expect(listed.value.some((i) => i.id === uploaded.value.id)).toBe(true)
+    const galleryIds = async (): Promise<readonly string[]> => {
+      const listed = await getAdminClient().from('gallery_images').select('id').eq('kind', 'salon')
+      expect(listed.error).toBeNull()
+      return (listed.data ?? []).map((row) => row.id)
+    }
+    expect(await galleryIds()).toContain(uploaded.row.id)
 
     // Delete removes the gallery placement; CMS media bytes stay in the immutable asset registry.
-    const removed = await deleteImage(uploaded.value)
-    expect(removed.ok).toBe(true)
-    const after = await listGallery('salon')
-    expect(after.ok).toBe(true)
-    if (!after.ok) return
-    expect(after.value.some((i) => i.id === uploaded.value.id)).toBe(false)
-    const retained = await fetch(uploaded.value.url, { method: 'GET' })
+    const removed = await getAdminClient().functions.invoke('upload-image', {
+      body: {
+        action: 'delete',
+        kind: 'gallery',
+        id: uploaded.row.id,
+        storagePath: uploaded.row.storage_path,
+      },
+    })
+    expect(removed.error).toBeNull()
+    expect(await galleryIds()).not.toContain(uploaded.row.id)
+    const retained = await fetch(uploaded.publicUrl, { method: 'GET' })
     expect(retained.ok).toBe(true)
   })
 

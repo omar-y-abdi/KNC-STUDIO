@@ -3,8 +3,37 @@ import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
 import { nativeCanvas } from './nativeCanvas'
-import { isSitePage, renderSitePage } from '../../../shared/site-page'
+import {
+  SITE_PAGE_CSS,
+  dropFrozenChrome,
+  isFrozenSitePage,
+  isSitePage,
+  renderSitePage,
+  type ServedMode,
+  type SiteContact,
+  type SitePageRender,
+} from '../../../shared/site-page'
+import { resolveBusinessSettings } from '../../site/business'
 import type { CmsScene } from '../../cms/Scene'
+import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
+
+/** A created page as the preview shows it. A frozen page (history review of an old revision) is
+ * migrated here, in the browser, so it shows one live header; the Worker never migrates. */
+export function previewSitePage(
+  presentation: CmsPresentation,
+  page: CmsPage,
+  lang: CmsLang,
+  mode: ServedMode,
+  contact: SiteContact,
+): SitePageRender {
+  return renderSitePage(
+    presentation,
+    isFrozenSitePage(page) ? dropFrozenChrome(page) : page,
+    lang,
+    mode,
+    contact,
+  )
+}
 
 /** Isolated, read-only native runtime, using the same validated draft as publication. */
 export function LivePreview({
@@ -39,7 +68,7 @@ export function LivePreview({
   const [scale, setScale] = useState(1)
   const width = device === 'Desktop' ? 1440 : 390
   const height = device === 'Desktop' ? 900 : 844
-  const native = ['/', '/about', '/booking', '/my-bookings'].includes(page.path)
+  const native = NATIVE_PUBLIC_PATHS.includes(page.path)
   useLayoutEffect(() => {
     const target = host.current
     if (!target) return
@@ -120,11 +149,23 @@ export function LivePreview({
       )
     return () => clearTimeout(deadline.current)
   }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
+  const sitePage = isSitePage(page)
+  const site = sitePage
+    ? previewSitePage(
+        presentation,
+        page,
+        lang,
+        mode,
+        resolveBusinessSettings(new Map(Object.entries(draft?.settings ?? {}))),
+      )
+    : null
   const content = native
     ? null
-    : isSitePage(page)
-      ? renderSitePage(presentation, page, lang, mode)
+    : site
+      ? { html: site.html, css: `${SITE_PAGE_CSS}\n${site.css[mode]}` }
       : nativeCanvas(page.content[lang], mode)
+  // A created page sits on the token base the Worker inlines, in the previewed scheme.
+  const siteBase = sitePage ? '<link rel="stylesheet" href="/tokens.css">' : ''
   return (
     <div ref={host} class="cms-live-preview" aria-busy={native && status === 'loading'}>
       <div
@@ -176,7 +217,7 @@ export function LivePreview({
           }}
           {...(content
             ? {
-                srcDoc: `<!doctype html><html lang="${lang}"><head><style>${fontCss}${siteThemeCss(presentation, mode)}${content.css}</style></head><body>${content.html}</body></html>`,
+                srcDoc: `<!doctype html><html lang="${lang}"${sitePage ? ` style="color-scheme:${mode}"` : ''}><head>${siteBase}<style>${fontCss}${siteThemeCss(presentation, mode)}${content.css}</style></head><body>${content.html}</body></html>`,
               }
             : { src: '/cms-public/source?preview=1' })}
         />

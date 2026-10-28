@@ -4,18 +4,18 @@ Scope: salon owner's `/admin/cms`. Swedish controls, separate SV/EN content, dat
 
 ## Canonical owners
 
-| Capability                   | Owner/source                                                                    | Behavior                                                                                     | Verification                        |
-| ---------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Permissions and publication  | `supabase/functions/cms-studio/index.ts`, `shared/cms.ts`                       | Owner authorization, validation, revision conflict checks remain server-side                 | Edge tests, real publication smoke  |
-| Draft lifecycle              | `src/admin/cms/draft.ts`, `src/admin/cms/backup.ts`, `src/admin/cms/Studio.tsx` | Local edits, undo/redo, recoverable backup, explicit publication                             | owner/conflict browser suites       |
-| Workspace navigation         | `src/admin/cms/WorkspaceView.tsx`, `src/admin/cms/Studio.tsx`                   | Pages/resources/history/business/email/style retain editor state; active destination visible | desktop/mobile browser suite        |
-| Dialog and focus             | `src/admin/cms/Modal.tsx`                                                       | Native modal, Escape, focus restoration; only focused tasks use dialogs                      | image picker/new-page browser tests |
-| Resource selection/lifecycle | `src/admin/cms/Resources.tsx`, `src/admin/cms/api.ts`                           | Native checkboxes/selects; archive/trash reversible; server reference guards for deletion    | API/resource tests                  |
-| Form fields                  | Native input/textarea/select in CMS components                                  | Persistent labels, native keyboard/IME, errors retain draft                                  | owner browser tests                 |
-| Page rendering               | `shared/site-page.ts`, `src/cms/NativeSurface.tsx`                              | New pages share real header/footer; native booking behavior remains authoritative            | unit + public reload tests          |
-| Email rendering              | `shared/email-render.ts`, `src/admin/cms/emailPreview.ts`                       | Same renderer as delivery, sample values clearly labeled, no send action in preview          | renderer parity + browser tests     |
-| Loading/status/errors        | `src/admin/cms/Studio.tsx`                                                      | Header live status; persistent alert; no silent save failures                                | save/conflict tests                 |
-| Scrollbars                   | `src/admin/cms/studio.css`                                                      | Global CMS baseline, native scrolling, forced-colors fallback                                | workspace overflow checks           |
+| Capability                   | Owner/source                                                                    | Behavior                                                                                                           | Verification                        |
+| ---------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| Permissions and publication  | `supabase/functions/cms-studio/index.ts`, `shared/cms.ts`                       | Owner authorization, validation, revision conflict checks remain server-side                                       | Edge tests, real publication smoke  |
+| Draft lifecycle              | `src/admin/cms/draft.ts`, `src/admin/cms/backup.ts`, `src/admin/cms/Studio.tsx` | Local edits, undo/redo, recoverable backup, explicit publication                                                   | owner/conflict browser suites       |
+| Workspace navigation         | `src/admin/cms/WorkspaceView.tsx`, `src/admin/cms/Studio.tsx`                   | Pages/resources/history/business/email/style retain editor state; active destination visible                       | desktop/mobile browser suite        |
+| Dialog and focus             | `src/admin/cms/Modal.tsx`                                                       | Native modal, Escape, focus restoration; only focused tasks use dialogs                                            | image picker/new-page browser tests |
+| Resource selection/lifecycle | `src/admin/cms/Resources.tsx`, `src/admin/cms/api.ts`                           | Native checkboxes/selects; archive/trash reversible; server reference guards for deletion                          | API/resource tests                  |
+| Form fields                  | Native input/textarea/select in CMS components                                  | Persistent labels, native keyboard/IME, errors retain draft                                                        | owner browser tests                 |
+| Page rendering               | `shared/site-page.ts`, `src/cms/NativeSurface.tsx`                              | New pages store only their body; the Worker, preview and canvas render the live homepage header and menu around it | unit + public reload tests          |
+| Email rendering              | `shared/email-render.ts`, `src/admin/cms/emailPreview.ts`                       | Same renderer as delivery, sample values clearly labeled, no send action in preview                                | renderer parity + browser tests     |
+| Loading/status/errors        | `src/admin/cms/Studio.tsx`                                                      | Header live status; persistent alert; no silent save failures                                                      | save/conflict tests                 |
+| Scrollbars                   | `src/admin/cms/studio.css`                                                      | Global CMS baseline, native scrolling, forced-colors fallback                                                      | workspace overflow checks           |
 
 ## Visual contract
 
@@ -24,12 +24,15 @@ Scope: salon owner's `/admin/cms`. Swedish controls, separate SV/EN content, dat
 ## Flow rules
 
 - Typing changes a draft. Publicera validates and publishes; errors preserve edits. Newer edits during a pending save remain unpublished.
+- Studio keeps the raw server head for publication and a normalized pristine snapshot for owner edits. Load-time normalization remains publishable but creates no backup, leave prompt or enabled Återställ control. Source upgrades migrate pristine and undo/redo together. Återställ returns to pristine; resolving a conflict adopts the normalized server head before applying the resolution.
+- Owner edits receive a local backup. The leave prompt uses cheap pending-edit and unsaved-backup flags; `beforeunload` does not export the canvas or start backup work. Cancel lets normal capture and backup finish; leaving can discard the latest unsaved work. `pagehide` and hidden-page handling flush and journal pending work for reload recovery. A closed tab's draft can replace this tab's draft only when this tab has no owner edits or unresolved conflict; normalization alone does not block Fortsätt här.
 - Changing page or workspace flushes canvas edits. Returning preserves selection and scroll. Opening a preview never publishes.
 - History review is read-only and follows the selected device. Restore copies a revision into the draft; Publicera creates a new revision.
-- New pages inherit current site chrome in editor, preview and public output; only authored body content is stored on the page. Shared chrome edits originate on their source pages.
+- Created pages expose Sidinställningar on desktop as well as mobile. New pages get the live homepage header (logo, contact, language, theme, page menu) in editor, preview and public output; only the authored body is stored. The header is locked in the page canvas and edited on the homepage. Pages saved with a frozen header copy are normalised on every load, restore and import. Deleting a page (Sidinställningar → Ta bort, confirmed) removes it from every page menu without republishing other pages.
+- `/contact` is a core information page alongside `/privacy` and `/terms`. Its body is editable; its address is fixed, and it cannot be deleted or duplicated. Core-page adoption preserves an existing contact body.
 - Resource uploads and metadata save directly to the resource library. Page references publish with the document. Historical references protect older files from deletion.
-- Delivery status opens the existing mail operations tab. Previewing templates never sends email.
-- Business settings and barber presentation are editable; operational booking constraints remain outside reversible CMS history.
+- Mejl has two views: Mallar (template editing) and Leveransstatus. Leveransstatus lists failed booking emails first (customer, booking time, owed recipients, reason; Försök igen, Markera hanterad with a confirm dialog that closes before any error is shown), then the log of sent and failed emails from the last 30 days with Visa fler paging; Visa opens the stored copy in a sandboxed iframe with credential links shown as [dold länk]. Previewing templates never sends email.
+- Business settings and barber presentation are editable; operational booking constraints (the cancellation window) remain outside reversible CMS history and are edited under Inställningar in the admin.
 
 ## Source boundaries
 
@@ -40,17 +43,17 @@ Native select/listbox ownership is explicit: browser select is canonical for sma
 ## Responsive and site styling contract
 
 - Desktop geometry applies above 768px, including screens wider than the editor canvas. Mobile geometry applies through 768px. Nudge, style manager and resizing use the same selected device scope.
-- Geometry changes synchronize between light/dark. Colors and effects remain theme-specific. Editing text on a shared component affects both responsive views.
+- Geometry edits synchronize between light/dark and between corresponding Swedish/English elements. Matching uses identical IDs or the language-independent part of authored `cms-body-<page UUID>-sv/en` and `cms-page-<page UUID>-sv/en-<index>` IDs. Text containers retain auto height so longer translations fit; text and colors stay independent across languages. Existing stored layout differences remain until the owner edits that geometry. Editing text on a shared component affects both responsive views.
 - Matching original text bindings in the separate desktop/mobile shell trees synchronize text without copying geometry or replacing adjacent icons. Ambiguous repeated captions and SVG lettering remain independent.
 - Home composes the current About draft instead of preserving a stale embedded preview. Shared content links directly to its editing page.
 - Mobile editing retains the original scroll container and shared folding geometry; its temporary motion stylesheet never enters the saved component model. Locked preview runs the actual read-only public runtime.
 - Website style edits the existing `presentation.themes` contract. Original component values remain CSS-variable fallbacks; explicit owner element CSS wins. Reset removes theme overrides for the selected mode. Theme changes participate in normal draft/history/conflict/publication handling.
-- `tools/e2e/cms-responsive.spec.mjs` verifies inspector nudges, shared text, publication/reload, themes and actual public rendering at 390, 1440 and 1920px, plus unlocked mobile scrolling and palette publication/reset in Chromium and WebKit.
+- `tools/e2e/cms-responsive.spec.mjs` verifies inspector nudges, shared text, publication/reload, themes and actual public rendering at 390, 1440 and 1920px, plus unlocked mobile scrolling, palette publication/reset and unchanged computed muted colors with empty themes. `tools/e2e/cms-new-page-mobile.spec.mjs` covers language geometry and independent text in both schemes and devices.
 
 ## Compact workspace and readiness
 
 - Editor chrome becomes compact at 900px, independently of the public site’s 768px breakpoint. The operator can still select either canvas device.
-- The editing device stays 390 × 844 (Mobile) or 1440 × 900 (Desktop). Fit and zoom change scale, never device dimensions or saved content. Mobile device frames have rounded presentation corners without clipping external selection handles.
+- The editing device is 390 × 844 (Mobile) or 1440 × 900 (Desktop). The Desktop-only “Smal dator” toggle previews 820 × 900 with the same Desktop rules; switching to Mobile clears it. Preview width is never saved. Fit and zoom change scale, never device dimensions or saved content. Mobile device frames have rounded presentation corners without clipping external selection handles.
 - Compact chrome reserves most of the viewport for the canvas. All seven editing commands remain reachable in a single-row dock; the compact Design button opens Egenskaper.
 - Compact panels use the visual viewport, including the keyboard-reduced height, rather than the clipped canvas. Pinch zoom remains browser-controlled. Resize/scroll listeners and CSS overrides are removed on desktop transition or unmount.
 - Only one compact drawer is active. It has dialog semantics, a close control, focus containment and an inert background. Escape returns focus to the actual opener or its visible compact equivalent.

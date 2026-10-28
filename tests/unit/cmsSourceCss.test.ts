@@ -1,6 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
-import { validateMarkup } from '../../shared/cms-markup'
+import {
+  CORE_PAGE_PATHS,
+  INFORMATION_PAGE_PATHS,
+  emptyDocument,
+  isCreatedPagePath,
+  isPagePath,
+  validateCompleteDocument,
+  validatePresentation,
+  type CmsPage,
+} from '../../shared/cms'
+import { isSitePage } from '../../shared/site-page'
+import { validateDocumentMarkupPlacements, validateMarkup } from '../../shared/cms-markup'
+import { legalCanvasBase } from '../../src/admin/cms/nativeCanvas'
 
 const policy = {
   siteOrigin: 'https://bladeblendstudio.se',
@@ -14,6 +26,89 @@ it.each(['privacy', 'terms'])('accepts the CSS the importer stores for %s', (pag
   expect(links).toEqual(['/tokens.css', '/info.css'])
   const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1]).join('\n')
   expect(() => validateMarkup('', css, policy)).not.toThrow()
+})
+
+it('keeps contact on the public information base in the canvas, outside authored page chrome', () => {
+  const page = contactDocument().presentation.pages[0]
+  if (!page) throw new Error('Missing contact page')
+  expect(isSitePage(page)).toBe(false)
+  for (const mode of ['light', 'dark'] as const)
+    expect(legalCanvasBase('/contact', mode)).toEqual({
+      styles: ['/tokens.css', '/info.css'],
+      scheme: mode,
+    })
+  page.layout = 'independent'
+  // An existing authored contact can already carry this metadata; keep its document readable.
+  expect(() => validatePresentation(contactDocument(page).presentation)).not.toThrow()
+})
+
+it('shares the core and information paths while reserving contact only from new page creation', () => {
+  expect(INFORMATION_PAGE_PATHS).toEqual(['/privacy', '/terms', '/contact'])
+  expect(CORE_PAGE_PATHS).toEqual([
+    '/',
+    '/about',
+    '/booking',
+    '/my-bookings',
+    ...INFORMATION_PAGE_PATHS,
+  ])
+  for (const path of CORE_PAGE_PATHS) expect(isCreatedPagePath(path)).toBe(false)
+  expect(isCreatedPagePath('/owner-page')).toBe(true)
+  expect(isCreatedPagePath('/owner-page/summer')).toBe(true)
+  expect(isCreatedPagePath('/assets/file')).toBe(false)
+  expect(isPagePath('/contact')).toBe(true)
+})
+
+it('validates the contact page with the client schema and both cms-studio Edge validators', () => {
+  for (const independent of [false, true]) {
+    const document = contactDocument()
+    const page = document.presentation.pages[0]
+    if (!page) throw new Error('Missing contact page')
+    if (independent) page.layout = 'independent'
+    expect(() => validatePresentation(document.presentation)).not.toThrow()
+    expect(() => validateCompleteDocument(document, emptyDocument())).not.toThrow()
+    expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+  }
+})
+
+function contactDocument(page?: CmsPage) {
+  const document = emptyDocument()
+  const source = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
+  const html = source.slice(source.indexOf('<body>') + '<body>'.length, source.indexOf('</body>'))
+  const variant = { html, css: { light: '', dark: '' } }
+  document.presentation.pages = [
+    page ?? {
+      id: '10000000-0000-4000-8000-000000000007',
+      path: '/contact',
+      kind: 'page',
+      inMenu: false,
+      name: { sv: 'Kontakt', en: 'Contact' },
+      title: { sv: 'Kontakt', en: 'Contact' },
+      description: { sv: '', en: '' },
+      content: { sv: structuredClone(variant), en: structuredClone(variant) },
+    },
+  ]
+  return document
+}
+
+it('accepts the imported contact body and rejects deletion of its live business slots', () => {
+  const document = contactDocument()
+  expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+  // Each pattern removes the whole attribute, whether serialized bare or with an empty value.
+  for (const [attribute, slot] of [
+    [/ id="contact-details"/g, '#contact-details'],
+    [/ id="contact-hours"/g, '#contact-hours'],
+    [/ data-business-name(?:="")?/g, '[data-business-name]'],
+    [/ data-business-city(?:="")?/g, '[data-business-city]'],
+  ] as const) {
+    const broken = structuredClone(document)
+    const page = broken.presentation.pages[0]
+    if (!page) throw new Error('Missing contact page')
+    page.content.sv.html = page.content.sv.html.replace(attribute, '')
+    expect(() => validateMarkup(page.content.sv.html, '', policy)).not.toThrow()
+    expect(() => validateDocumentMarkupPlacements(broken, policy)).toThrow(
+      `Contact page is missing required server-owned slot(s): ${slot}`,
+    )
+  }
 })
 
 it('parses safe custom properties and nested variable fallbacks', () => {

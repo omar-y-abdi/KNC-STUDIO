@@ -225,11 +225,11 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         await newPage.getByLabel('Sidnamn', { exact: true }).fill(pageName)
         await newPage.getByLabel('Adress', { exact: true }).fill(pagePath)
         await newPage.getByRole('button', { name: 'Skapa sida', exact: true }).click()
-        await frame.locator('#cms-site-header > div').waitFor({ state: 'visible' })
+        await frame.locator('#cms-site-header').waitFor({ state: 'visible' })
         await frame.getByRole('heading', { name: pageName, exact: true }).waitFor()
 
-        const setHeaderStyle = async (color) => {
-          await frame.locator('#cms-site-header > div').click({ position: { x: 8, y: 8 } })
+        const setBodyStyle = async (color) => {
+          await frame.locator('#cms-site-content main').click({ position: { x: 8, y: 8 } })
           await openStyleSector('Yta & kanter')
           const background = page.getByRole('textbox', {
             name: 'Bakgrundsfärg',
@@ -247,24 +247,24 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
           await padding.getByLabel('Ovanför', { exact: true }).fill('33')
           await padding.getByLabel('Ovanför', { exact: true }).press('Enter')
         }
-        await setHeaderStyle('#123456')
+        await setBodyStyle('#123456')
 
-        const ownerHeader = frame.locator('#cms-site-header > div')
-        const expectedHeader = { background: 'rgb(18, 52, 86)', padding: '33px' }
+        const ownerBody = frame.locator('#cms-site-content main')
+        const expectedBody = { background: 'rgb(18, 52, 86)', padding: '33px' }
         await page.waitForFunction(() => {
           const frame = globalThis.document.querySelector('.gjs-frame')
-          const header = frame?.contentDocument?.querySelector('#cms-site-header > div')
+          const header = frame?.contentDocument?.querySelector('#cms-site-content main')
           if (!header) return false
           const style = globalThis.getComputedStyle(header)
           return style.backgroundColor === 'rgb(18, 52, 86)' && style.paddingTop === '33px'
         })
         assert.deepEqual(
-          await ownerHeader.evaluate((node) => ({
+          await ownerBody.evaluate((node) => ({
             background: globalThis.getComputedStyle(node).backgroundColor,
             padding: globalThis.getComputedStyle(node).paddingTop,
           })),
-          expectedHeader,
-          'The independent page header should reflect owner color and spacing edits before publish',
+          expectedBody,
+          'The created page body should reflect owner color and spacing edits before publish',
         )
 
         await frame.locator('#cms-site-content h1').click()
@@ -303,7 +303,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         await page.getByRole('button', { name: 'EN', exact: true }).click()
         await page.getByRole('button', { name: 'Ljus', exact: true }).click()
         await frame.getByRole('heading', { name: pageName, exact: true }).waitFor()
-        await setHeaderStyle('#234567')
+        await setBodyStyle('#234567')
         await frame.locator('#cms-site-content h1').click()
         await page
           .locator('#cms-inspector')
@@ -341,7 +341,11 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
         assert.ok(home?.content.sv.html.includes(copy.desktop))
         assert.ok(home?.content.sv.html.includes(copy.mobile))
         const authoredPage = stored.presentation.pages.find((item) => item.path === pagePath)
-        assert.equal(authoredPage?.layout, 'independent')
+        assert.equal(authoredPage?.layout, undefined)
+        assert.ok(
+          !authoredPage?.content.sv.html.includes('cms-site-header'),
+          'Only the body is stored',
+        )
         assert.ok(authoredPage?.content.sv.html.includes(pageCopy.svHeading))
         assert.ok(authoredPage?.content.sv.html.includes(pageCopy.svBlock))
         assert.ok(authoredPage?.content.en.html.includes(pageCopy.enHeading))
@@ -389,13 +393,13 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
           )
           await visitor.getByRole('heading', { name: heading, exact: true }).waitFor()
           await visitor.getByText(block, { exact: true }).waitFor()
-          const publicHeader = visitor.locator('#cms-site-header > div')
-          const readHeaderPixels = () =>
-            publicHeader.evaluate((node) => ({
+          const publicBody = visitor.locator('#cms-site-content main')
+          const readBodyPixels = () =>
+            publicBody.evaluate((node) => ({
               background: globalThis.getComputedStyle(node).backgroundColor,
               padding: globalThis.getComputedStyle(node).paddingTop,
             }))
-          assert.deepEqual(await readHeaderPixels(), expected, 'Worker response styles the header')
+          assert.deepEqual(await readBodyPixels(), expected, 'Worker response styles the page body')
           const reloaded = await visitor.reload({ waitUntil: 'domcontentloaded' })
           assert.equal(reloaded?.status(), 200, 'The Worker reloads the authored CMS route')
           const reloadedHtml = await reloaded.text()
@@ -403,11 +407,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
           assert.ok(reloadedHtml.includes(heading))
           await visitor.getByRole('heading', { name: heading, exact: true }).waitFor()
           await visitor.getByText(block, { exact: true }).waitFor()
-          assert.deepEqual(
-            await readHeaderPixels(),
-            expected,
-            'Header pixels survive a fresh reload',
-          )
+          assert.deepEqual(await readBodyPixels(), expected, 'Body pixels survive a fresh reload')
           if (lang === 'sv') {
             const movedOffset = await visitor
               .getByText(block, { exact: true })
@@ -428,7 +428,7 @@ export async function customerCmsFixture({ db, stack, origin, workerOrigin, work
           mode: 'dark',
           heading: pageCopy.svHeading,
           block: pageCopy.svBlock,
-          expected: expectedHeader,
+          expected: expectedBody,
           viewport: { width: 390, height: 844 },
         })
         await checkPublicPage({

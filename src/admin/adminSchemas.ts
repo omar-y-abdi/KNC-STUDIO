@@ -9,6 +9,7 @@
 
 import { z } from 'zod'
 import { ISO_TIMESTAMP } from '../../shared/iso-timestamp'
+import { EMAIL_SEND_FAILURE_CODES, EMAIL_SEND_KINDS } from '../../shared/email-send-log'
 
 export { parseWith } from '../backend/rpcSchemas'
 
@@ -186,48 +187,13 @@ export const reorderServiceResponse = z.union([
   serviceMutationError,
 ])
 
-// --- site_content / site_settings (Task 2 §2) ----------------------------------------------------
-
-const siteContentRow = z.object({
-  key: z.string(),
-  lang,
-  value: z.string(),
-})
-export const siteContentRows = z.array(siteContentRow)
+// --- site_settings (Task 2 §2) ----------------------------------------------------
 
 const siteSettingRow = z.object({
   key: z.string().min(1).max(40),
   value: z.string().max(500),
 })
 export const siteSettingRows = z.array(siteSettingRow)
-
-// --- email_templates -----------------------------------------------------------------------------
-
-const emailTemplateName = z.enum([
-  'customer_confirmation',
-  'barber_confirmation',
-  'customer_cancellation',
-  'barber_cancellation',
-  'customer_reminder',
-  'customer_booking_access',
-  'auth_recovery',
-  'auth_email_change',
-  'auth_invite',
-])
-
-const emailTemplateRow = z.object({
-  template: emailTemplateName,
-  lang,
-  subject: z.string(),
-  preheader: z.string(),
-  title: z.string(),
-  intro: z.string(),
-  section_title: z.string().nullable(),
-  note: z.string(),
-  cta_label: z.string(),
-  contact_lead: z.string().nullable(),
-})
-export const emailTemplateRows = z.array(emailTemplateRow)
 
 export const failedBookingEmailDeliveryRow = z.object({
   id: z.guid(),
@@ -244,10 +210,46 @@ export const failedBookingEmailDeliveryRow = z.object({
     ])
     .nullable(),
   failed_at: isoTimestamp.nullable(),
+  sent_kinds: z.array(z.enum(['customer', 'barber'])),
+  customer_name: z.string().min(1),
+  customer_email: z.string().nullable(),
+  customer_phone: z.string().nullable(),
+  booking_start_at: isoTimestamp,
+  barber_name: z.string().min(1),
+  barber_email: z.string().nullable(),
 })
 export const failedBookingEmailDeliveryRows = z.array(failedBookingEmailDeliveryRow)
 export const retryFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
 export const discardFailedBookingEmailDeliveryResponse = z.object({ ok: z.boolean() })
+
+/** One `admin_list_email_send_log` entry; a failed row always carries its reason. */
+export const emailSendLogEntryRow = z
+  .object({
+    id: z.string().uuid(),
+    created_at: isoTimestamp,
+    last_attempt_at: isoTimestamp,
+    kind: z.enum(EMAIL_SEND_KINDS),
+    recipient: z.string().min(1),
+    subject: z.string().min(1),
+    status: z.enum(['sent', 'failed']),
+    error_code: z.enum(EMAIL_SEND_FAILURE_CODES).nullable(),
+    booking_id: z.string().uuid().nullable(),
+    attempt_count: z.number().int().positive(),
+  })
+  .refine((row) => (row.status === 'failed') === (row.error_code !== null))
+export const emailSendLogPage = z.object({
+  entries: z.array(emailSendLogEntryRow),
+  has_more: z.boolean(),
+})
+/** `admin_get_email_send_log_entry`: null once the 30-day purge removed the copy. */
+export const emailSendLogCopy = z
+  .object({
+    id: z.string().uuid(),
+    subject: z.string(),
+    html: z.string(),
+    text_body: z.string(),
+  })
+  .nullable()
 
 // --- barber_photos (Task 2 §3) -------------------------------------------------------------------
 
@@ -266,59 +268,10 @@ export const uploadBarberPhotoResponse = z
   })
   .refine((response) => response.path === response.row.storage_path)
 
-// --- about_content -------------------------------------------------------------------------------
-
-export const aboutRow = z.object({
-  key: z.enum([
-    'eyebrow',
-    'heading',
-    'intro',
-    'galleryTitle',
-    'cutsTitle',
-    'stylistsTitle',
-    'reviewsTitle',
-  ]),
-  lang,
-  value: z.string(),
-})
-export type AboutContentRow = z.infer<typeof aboutRow>
-export const aboutRows = z.array(aboutRow)
-
-// --- gallery_images ------------------------------------------------------------------------------
-
-const galleryRow = z.object({
-  id: z.string(),
-  kind: z.enum(['salon', 'cuts']),
-  storage_path: z.string(),
-  alt: z.string(),
-  sort_order: z.number(),
-})
-export const galleryRows = z.array(galleryRow)
-
-export const uploadGalleryImageResponse = z
-  .object({
-    ok: z.literal(true),
-    kind: z.literal('gallery'),
-    row: galleryRow,
-    path: z.string().min(1),
-    publicUrl: z.string().url(),
-  })
-  .refine((response) => response.path === response.row.storage_path)
-
 export const imageDeleteResponse = z.object({
   ok: z.literal(true),
   pending: z.boolean(),
 })
-
-export const uploadHomepageLogoResponse = z
-  .object({
-    ok: z.literal(true),
-    kind: z.literal('site_logo'),
-    path: z.string().regex(/^logo\/[0-9a-f-]{36}\.webp$/),
-    publicUrl: z.string().url(),
-    cleanupPending: z.boolean(),
-  })
-  .refine((response) => response.publicUrl.includes(`/gallery/${response.path}`))
 
 // --- bookings (admin read) -----------------------------------------------------------------------
 // The full RLS-readable booking row (owner=all, barber=own). Contact is real PII the panel shows to

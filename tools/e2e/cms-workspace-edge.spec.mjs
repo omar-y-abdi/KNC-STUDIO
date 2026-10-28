@@ -371,7 +371,14 @@ test('cms-workspace-edge', async ({ page, context, browserName, evidenceDir }) =
       0,
       'This is a genuinely unpublished first-run fixture',
     )
+    // Source adoption is pristine. Revert discards an owner edit and retains that scaffold.
+    await page.getByRole('button', { name: 'Sidinställningar', exact: true }).click()
+    const pageName = page.getByRole('textbox', { name: 'Namn', exact: true })
+    const originalName = await pageName.inputValue()
+    await expect(page.getByRole('button', { name: 'Återställ', exact: true })).toBeDisabled()
+    await pageName.fill('Ägarens första sidnamn')
     await page.getByRole('button', { name: 'Återställ', exact: true }).click()
+    await expect(pageName).toHaveValue(originalName)
     check(
       await page.locator('.cms-canvas-shell').isVisible(),
       `${name}: reverting an unpublished first draft keeps the real website editable`,

@@ -328,7 +328,6 @@
   letter-spacing: -0.02em;
 }
 .knc-cms-studio .cms-panel-close,
-.cms-inspector-heading,
 .cms-mobile-tools,
 .knc-cms-studio .cms-mobile-revert {
   display: none;
@@ -422,8 +421,7 @@
   padding: 16px 2px;
   margin-top: 18px;
 }
-.cms-sidebar-bottom > button,
-.cms-sidebar-link {
+.cms-sidebar-bottom > button {
   color: var(--muted);
   font-size: 12px;
   padding: 10px 8px;
@@ -433,17 +431,6 @@
   background: var(--field);
   color: var(--ink);
   margin-bottom: 8px;
-}
-.cms-sidebar-link {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border-radius: var(--radius);
-  text-decoration: none;
-}
-.cms-sidebar-link:hover {
-  color: var(--accent);
-  background: var(--selected);
 }
 .cms-search-empty {
   display: grid;
@@ -565,6 +552,14 @@
   overflow: hidden;
   background: var(--panel);
   border-left: 1px solid var(--line);
+}
+.cms-inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--line);
 }
 .cms-panel-tabs {
   display: grid;
@@ -1355,6 +1350,115 @@
 .cms-theme-mobile-toolbar {
   display: none;
 }
+/* Mejl: Mallar or Leveransstatus above the active view, which keeps its own scrolling. */
+.cms-email-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.cms-email-switch {
+  justify-self: start;
+}
+.cms-delivery-status {
+  display: grid;
+  align-content: start;
+  gap: 28px;
+  max-width: 1080px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.cms-delivery-section {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.cms-delivery-section h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.cms-delivery-section > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 70ch;
+}
+.cms-delivery-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cms-delivery-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.cms-delivery-row > span {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+}
+.cms-delivery-row strong {
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.cms-delivery-row small {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cms-delivery-row .cms-delivery-sent {
+  color: var(--ink);
+}
+.cms-delivery-row .cms-delivery-failed {
+  color: #773514;
+  font-weight: 600;
+}
+.cms-delivery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cms-delivery-more {
+  justify-self: start;
+}
+.cms-delivery-envelope {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cms-delivery-frame {
+  display: block;
+  width: 100%;
+  height: min(70vh, 760px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.cms-delivery-text summary {
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 650;
+}
+.cms-delivery-text pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
 .cms-history-list {
   max-width: 1080px;
 }
@@ -1781,8 +1885,7 @@
   .cms-library h2 {
     font-size: 17px;
   }
-  .cms-library button,
-  .cms-sidebar-link {
+  .cms-library button {
     min-height: 44px;
   }
   .cms-library .cms-panel-close {
@@ -1857,6 +1960,8 @@
   }
   .cms-device-controls {
     gap: 2px;
+    min-width: 0;
+    flex-wrap: wrap;
   }
   .cms-device-controls .cms-segment {
     padding: 2px;
@@ -2084,6 +2189,32 @@
   }
   .cms-email-workspace > aside {
     display: none;
+  }
+  .cms-email-panel {
+    height: auto;
+    grid-template-rows: auto;
+  }
+  .cms-email-switch {
+    justify-self: stretch;
+  }
+  .cms-email-switch button {
+    flex: 1;
+    min-height: 40px;
+  }
+  .cms-delivery-status {
+    overflow: visible;
+  }
+  .cms-delivery-section {
+    padding: 16px;
+  }
+  .cms-delivery-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .cms-delivery-actions button,
+  .cms-delivery-more {
+    min-height: 44px;
   }
   .cms-email-mobile-toolbar {
     display: grid;

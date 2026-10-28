@@ -14,10 +14,10 @@ import {
   revokeToken,
 } from './calendar.ts'
 import {
-  buildEmailMessage,
   defaultEmailTemplate,
   loadEmailBusiness,
   loadEmailTemplate,
+  prepareEmail,
   resendDeliveryFailureCode,
   sendViaResend,
 } from './email.ts'
@@ -783,7 +783,12 @@ export async function executeExternalAction(
         lang: action.lang,
       })
       try {
-        await sendViaResend(message, runtime.resendApiKey, `customer-email-link/${action.id}`)
+        await sendViaResend(
+          message,
+          runtime.resendApiKey,
+          `customer-email-link/${action.id}`,
+          service,
+        )
       } catch (error) {
         const failureCode = resendDeliveryFailureCode(error)
         throw new ExternalActionError(
@@ -813,14 +818,23 @@ export async function executeExternalAction(
             false,
           )
         }
-        const message = buildEmailMessage({
-          to: action.email,
-          lang: action.lang,
-          copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
-          ctaHref: customerAccessUrl(accessCode),
-          business,
-        })
-        await sendViaResend(message, runtime.resendApiKey, `customer-booking-access/${action.id}`)
+        const message = prepareEmail(
+          'customer_booking_access',
+          {
+            to: action.email,
+            lang: action.lang,
+            copy: copy ?? defaultEmailTemplate('customer_booking_access', action.lang),
+            ctaHref: customerAccessUrl(accessCode),
+            business,
+          },
+          null,
+        )
+        await sendViaResend(
+          message,
+          runtime.resendApiKey,
+          `customer-booking-access/${action.id}`,
+          service,
+        )
         const consumed = await service.rpc('consume_customer_access_email_challenge', {
           p_challenge_id: action.challenge_id,
         })

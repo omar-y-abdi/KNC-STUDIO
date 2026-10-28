@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { emptyDocument, type CmsPage } from '../../shared/cms'
-import worker from '../../src/worker'
+import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
+import worker, { renderContactMetadata } from '../../src/worker'
 
 // TST-2: /terms rendered by the Worker itself, not the static fallback file. The built shell shape
 // (entry script, preload, stylesheet in <head>) is derived from the real index.html.
@@ -109,5 +110,228 @@ describe('Worker /terms colour scheme', () => {
     expect(html).not.toContain('cms-page-light')
     expect(sheet(html, 'cms-page-dark')).toMatch(/:root\{color:#f5f5f7;background:#1c1c1e\}$/)
     expect(html).toContain('<meta name="color-scheme" content="dark" />')
+  })
+})
+
+const contactSource = publicFile('/contact.html')
+const contactBody = contactSource
+  .slice(contactSource.indexOf('<body>') + '<body>'.length, contactSource.indexOf('</body>'))
+  .replace('data-business-name', 'id="owner-name" data-business-name="" class="owner"')
+  .replace('<div id="contact-details">', '<div id="contact-details"><div>Stale nested detail</div>')
+const contact: CmsPage = {
+  ...terms,
+  id: '10000000-0000-4000-8000-000000000007',
+  kind: 'page',
+  path: '/contact',
+  layout: 'independent',
+  title: { sv: 'Ägarens kontaktsida', en: 'Owner contact page' },
+  content: Object.fromEntries(
+    ['sv', 'en'].map((lang) => [
+      lang,
+      {
+        html: contactBody + '<p>Ägarens redigerbara kontakttext</p>',
+        css: { light: '.owner-copy{margin:1rem}', dark: '.owner-copy{margin:2rem}' },
+      },
+    ]),
+  ) as CmsPage['content'],
+}
+const contactDiscovery = {
+  settings: {
+    business_name: 'Aktuell & Salong',
+    business_street: 'Ny & Gata 12',
+    business_postal_code: '123 45',
+    business_city: 'Malmö',
+    business_phone_display: '040-123 45 67',
+    business_phone_tel: '+46401234567',
+    business_email: 'current@example.test',
+  },
+  barbers: [{ id: '20000000-0000-4000-8000-000000000001', name: 'Aktuell barberare' }],
+  services: [],
+  schedules: [
+    { barber_id: '20000000-0000-4000-8000-000000000001', weekday: 1, start_min: 600, end_min: 720 },
+    {
+      barber_id: '20000000-0000-4000-8000-000000000001',
+      weekday: 1,
+      start_min: 840,
+      end_min: 1080,
+    },
+  ],
+}
+
+describe('Worker CMS contact and static fallback', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const contactAssets = {
+    ...env,
+    ASSETS: {
+      fetch: async (input: Request | URL | string): Promise<Response> =>
+        new URL(input instanceof Request ? input.url : input).pathname === '/contact.html'
+          ? new Response(contactSource, { headers: { 'Content-Type': 'text/html' } })
+          : env.ASSETS.fetch(input),
+    },
+  }
+  const requestContact = (method = 'GET') =>
+    worker.fetch(
+      new Request('https://bladeblendstudio.se/contact', { method }),
+      contactAssets,
+      noPublicContent,
+    )
+  const expectLiveFacts = (html: string) => {
+    expect(html).toContain('Ny &amp; Gata 12, 123 45 Malmö')
+    expect(html).toContain('tel:+46401234567')
+    expect(html).toContain('040-123 45 67')
+    expect(html).toContain('mailto:current@example.test')
+    expect(html).toContain('Måndag')
+    expect(html).toContain('10:00–12:00')
+    expect(html).toContain('14:00–18:00')
+    expect(html).not.toContain('Geijersgatan 10')
+    expect(html).not.toContain('tel:0793043671')
+    expect(html).not.toContain('Stale nested detail')
+  }
+
+  it('renders the editable CMS contact with current phone, address, hours and token base', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } })
+        : Response.json(contactDiscovery),
+    )
+    const response = await requestContact()
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('Ägarens redigerbara kontakttext')
+    expect(html).toContain('Ägarens kontaktsida')
+    expect(html).toContain('data-cms-public="1"')
+    expect(sheet(html, 'cms-base')).toBe(`${publicFile('/tokens.css')}\n${publicFile('/info.css')}`)
+    expect(html).toContain('class="bb-page bb-doc"')
+    expectLiveFacts(html)
+    expect(html).toContain(
+      'id="owner-name" data-business-name="" class="owner">Aktuell &amp; Salong</span>',
+    )
+    expect(html).not.toMatch(/<script\b[^>]*type="module"/)
+  })
+
+  it('fills the CMS fragment without reserialising any shell bytes compared with terms', async () => {
+    const opaque = '<meta NAME = "opaque" content=\'a &amp; b\' >'
+    const markedShell = shell
+      .replace('</head>', `${opaque}\r\n</head>`)
+      .replace('<div id="root"></div>', '<!--page-start--><div id="root"></div><!--page-end-->')
+      .replace('</body>', "<p DATA-opaque='tail'>Outside the page</p>\r\n</body>")
+    const reference = structuredClone(contact)
+    reference.kind = 'terms'
+    reference.path = '/terms'
+    delete reference.layout
+    let published = reference
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      String(input).endsWith('/rpc/public_cms_presentation')
+        ? Response.json({ revision: 7, presentation: { ...presentation, pages: [published] } })
+        : Response.json(contactDiscovery),
+    )
+    const markedEnv = {
+      ...env,
+      ASSETS: {
+        fetch: async (input: Request | URL | string): Promise<Response> =>
+          new URL(input instanceof Request ? input.url : input).pathname === '/index.html'
+            ? new Response(markedShell)
+            : env.ASSETS.fetch(input),
+      },
+    }
+    const outsidePage = (html: string): string =>
+      html
+        .replace(/<!--page-start-->[\s\S]*?<!--page-end-->/, '<!--page-->')
+        .replaceAll('https://bladeblendstudio.se/terms', 'https://bladeblendstudio.se/contact')
+    const termsResponse = await worker.fetch(
+      new Request('https://bladeblendstudio.se/terms'),
+      markedEnv,
+      noPublicContent,
+    )
+    published = contact
+    const contactResponse = await worker.fetch(
+      new Request('https://bladeblendstudio.se/contact'),
+      markedEnv,
+      noPublicContent,
+    )
+    expect(contactResponse.status).toBe(200)
+    const html = await contactResponse.text()
+    expectLiveFacts(html)
+    expect(html).toContain(opaque)
+    expect(outsidePage(html)).toBe(outsidePage(await termsResponse.text()))
+    expect(published.content.sv.html).toContain('Stale nested detail')
+  })
+
+  it('keeps fallback head and outer bytes intact while filling only its body', () => {
+    const prefix =
+      "<!doctype html>\r\n<html><head><meta NAME = \"opaque\" content='a &amp; b' ></head><body class='contact'>"
+    const suffix = '</body>\r\n</html><!--opaque-tail-->'
+    const html = renderContactMetadata(prefix + contactBody + suffix, DEFAULT_BUSINESS)
+    expect(html.startsWith(prefix)).toBe(true)
+    expect(html.endsWith(suffix)).toBe(true)
+    expect(html).not.toContain('Stale nested detail')
+    expect(html).toContain('tel:0793043671')
+  })
+
+  it('types every opening day as the schema weekday union and renders every Swedish label', () => {
+    expectTypeOf<BusinessOpeningHours['dayOfWeek'][number]>().toEqualTypeOf<
+      'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
+    >()
+    const html = renderContactMetadata(contactSource, DEFAULT_BUSINESS, {
+      barbers: [{ id: 'active', name: 'Active' }],
+      services: [],
+      schedules: SCHEMA_DAYS.map((_day, weekday) => ({
+        barberId: 'active',
+        weekday,
+        startMin: 600,
+        endMin: 720,
+      })),
+    })
+    for (const day of ['Söndag', 'Måndag', 'Tisdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lördag'])
+      expect(html).toContain(day)
+    expect(html).not.toContain('undefined')
+  })
+
+  it.each(['missing', 'stalled'] as const)(
+    'serves the tokenised static contact with live facts when the CMS lookup is %s',
+    async (failure) => {
+      const realTimeout = AbortSignal.timeout.bind(AbortSignal)
+      const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(1))
+      const rpcs: string[] = []
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const rpc = String(input).split('/').at(-1) ?? ''
+        rpcs.push(rpc)
+        if (rpc === 'public_business_discovery') return Response.json(contactDiscovery)
+        if (failure === 'missing') return Response.json({ revision: 7, presentation })
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal
+          if (!signal) throw new Error('CMS lookup has no timeout')
+          if (signal.aborted) reject(signal.reason)
+          else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      })
+      const response = await requestContact()
+      expect(response.status).toBe(200)
+      const html = await response.text()
+      expect(html).not.toContain('data-cms-public="1"')
+      expect(html).toContain('href="/tokens.css"')
+      expect(html).toContain('href="/info.css"')
+      expectLiveFacts(html)
+      expect(rpcs.sort()).toEqual(['public_business_discovery', 'public_cms_presentation'])
+      if (failure === 'stalled') expect(timeout).toHaveBeenCalledWith(1800)
+    },
+  )
+
+  it('keeps contact HEAD bodyless without reading discovery or the base sheets', async () => {
+    const assets = vi.spyOn(env.ASSETS, 'fetch')
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        Response.json({ revision: 7, presentation: { ...presentation, pages: [contact] } }),
+      )
+    const response = await requestContact('HEAD')
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('')
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('/rpc/public_cms_presentation')
+    expect(assets).toHaveBeenCalledOnce()
+    const input = assets.mock.calls[0]?.[0]
+    expect(input instanceof Request ? new URL(input.url).pathname : '').toBe('/index.html')
   })
 })

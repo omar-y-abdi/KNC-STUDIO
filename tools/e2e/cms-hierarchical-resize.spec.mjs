@@ -272,3 +272,87 @@ test('cms-hierarchical-resize: two barbers keep their loop width', async ({
     )
   assert.equal(backend.writes.length, 0, 'Geometry inspection does not publish')
 })
+
+test('cms-hierarchical-resize: narrow Desktop saves the Desktop rule and no viewport state', async ({
+  page,
+  context,
+}) => {
+  const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+  const viewport = (width) =>
+    page.waitForFunction(
+      (width) =>
+        globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+      width,
+    )
+  const exportBytes = async () => {
+    await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+    const downloaded = page.waitForEvent('download')
+    await page
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Export', exact: true })
+      .click()
+    const stream = await (await downloaded).createReadStream()
+    assert.ok(stream, 'The backup must be readable')
+    const chunks = []
+    for await (const chunk of stream) chunks.push(chunk)
+    await page
+      .getByRole('dialog', { name: 'Utkast & backup' })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+    return Buffer.concat(chunks).toString('utf8')
+  }
+  const narrow = page.getByRole('button', { name: 'Smal dator', exact: true })
+  await narrow.click()
+  await viewport(820)
+  assert.equal(await narrow.getAttribute('aria-pressed'), 'true')
+  const before = await measure(frame)
+  await select(page, groupSelector)
+  await height(page, before.group.height * 0.8)
+  const after = await measure(frame)
+  assert.ok(
+    Math.abs(after.cards[0].photo.height / before.cards[0].photo.height - 0.8) < 0.05,
+    `Narrow Desktop portrait scale: ${JSON.stringify({ before, after })}`,
+  )
+  const saved = await exportBytes()
+  await narrow.click()
+  await viewport(1440)
+  assert.equal(await exportBytes(), saved, 'Leaving narrow preview cannot change saved bytes')
+  await narrow.click()
+  await viewport(820)
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await viewport(390)
+  assert.equal(await narrow.count(), 0, 'Narrow Desktop is unreachable in Mobile mode')
+  assert.equal(await exportBytes(), saved, 'Mobile preview cannot change saved bytes')
+  await page.getByRole('button', { name: 'Dator', exact: true }).click()
+  await viewport(1440)
+  assert.equal(await narrow.getAttribute('aria-pressed'), 'false')
+  await narrow.click()
+  await viewport(820)
+  assert.equal(await exportBytes(), saved)
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+  const about = backend.document.presentation.pages.find((item) => item.path === '/about')
+  for (const mode of ['light', 'dark']) {
+    let desktopZoom = false
+    walk(parse(about.content.sv.css[mode]), {
+      visit: 'Rule',
+      enter(rule) {
+        if (generate(rule.prelude) !== `#${after.cards[0].id}`) return
+        for (const declaration of rule.block.children)
+          if (declaration.type === 'Declaration' && declaration.property === 'zoom') {
+            assert.equal(generate(this.atrule.prelude), '(min-width:769px)')
+            desktopZoom = true
+          }
+      },
+    })
+    assert.ok(desktopZoom, `${mode}: resizing at 820px must save Desktop geometry`)
+  }
+  await page.setViewportSize({ width: 320, height: 844 })
+  assert.ok(await narrow.isVisible(), 'Narrow Desktop remains reachable in a compact workspace')
+  assert.ok(
+    await page
+      .locator('.cms-canvas-toolbar')
+      .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    'The extra preview control must fit the compact toolbar',
+  )
+})

@@ -177,40 +177,10 @@ export interface AdminBooking {
   readonly status: 'confirmed' | 'cancelled'
 }
 
-/** One editable About-copy cell (a (key,lang) pair from `about_content`). */
-export type AboutKey =
-  'eyebrow' | 'heading' | 'intro' | 'galleryTitle' | 'cutsTitle' | 'stylistsTitle' | 'reviewsTitle'
-
-export interface AboutRow {
-  readonly key: AboutKey
-  readonly lang: Lang
-  readonly value: string
-}
-
-/** One owner-editable public copy cell, matching `site_content`'s composite key. */
-export interface AdminSiteContentCell {
-  readonly key: string
-  readonly lang: Lang
-  readonly value: string
-}
-
 /** One non-localized owner-editable public setting, matching `site_settings`. */
 export interface AdminSiteSetting {
   readonly key: string
   readonly value: string
-}
-
-/** A gallery image row + its resolved public URL (for previews). */
-export type GalleryKind = 'salon' | 'cuts'
-
-export interface GalleryImage {
-  readonly id: string
-  readonly kind: GalleryKind
-  readonly storagePath: string
-  readonly alt: string
-  readonly sortOrder: number
-  /** Resolved public Storage URL (built from the path). */
-  readonly url: string
 }
 
 // --- Result (no throws to the UI) ----------------------------------------------------------------

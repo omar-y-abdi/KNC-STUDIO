@@ -287,7 +287,7 @@ Goal: one body per function, one outbox, one writer, fewer custom scripts; prod 
 | CI plumbing                                     | furl as the default shell (5.2-7.0 s in each of 18 jobs)                                                                                              | plain bash; report verifier and format replay kept (owner decisions 9, 27, 28) |
 | submit-booking                                  | unsigned CORS `*` path used only by a smoke test                                                                                                      | gateway-signed only (about -25 LoC)                                            |
 | Google Calendar                                 | about 4.4k LoC for 1 token and 0 synced bookings                                                                                                      | kept as is (owner decision 23)                                                 |
-| deno.lock                                       | mirrors root package.json; npm bumps fail the Edge job                                                                                                | scoped to `supabase/functions`                                                 |
+| supabase/functions/deno.lock                    | mirrors root package.json; npm bumps fail the Edge job                                                                                                | scoped to `supabase/functions`                                                 |
 
 Changes (ladder rung, evidence):
 
@@ -304,7 +304,7 @@ Changes (ladder rung, evidence):
 
 Risks and guards: a baseline missing grants, policies or cron jobs diverges from prod (`supabase db diff` must be empty first); container jobs need node and `npm ci` inside the image; `CUSTOMER_GATEWAY_SECRET` must exist everywhere `submit-booking` runs.
 
-Verification: `supabase db diff` empty after the baseline, full pgTAP green, `get_advisors` no longer reports `current_role()`, CI timings vs run 37885145116; Edge unit tests per parser (unknown keys rejected) and bundle sizes before/after; a test PR bumping one npm devDependency passes the Edge job without touching `deno.lock`; signed and unsigned `submit-booking` requests (unsigned now 403).
+Verification: `supabase db diff` empty after the baseline, full pgTAP green, `get_advisors` no longer reports `current_role()`, CI timings vs run 37885145116; Edge unit tests per parser (unknown keys rejected) and bundle sizes before/after; a test PR bumping one npm devDependency passes the Edge job without touching `supabase/functions/deno.lock`; signed and unsigned `submit-booking` requests (unsigned now 403).
 
 ### 5.7 Tests, structure, map and docs (R4, R5)
 
@@ -577,5 +577,5 @@ Unverified items and coverage gaps:
 | TST-23  | Route-mock CORS boilerplate copied into 19 e2e files                                                       | simplify                         | low      | reproduced                   | tools/e2e                                                                          |
 | TST-24  | 7 e2e files raise the test timeout to 900 s                                                                | tests                            | low      | traced                       | tools/e2e                                                                          |
 | TST-25  | Public and visual e2e gates read production Supabase through .env                                          | tests                            | medium   | reproduced                   | .env                                                                               |
-| TST-26  | Root deno.lock mirrors package.json; npm bumps fail the Edge job                                           | bug                              | medium   | traced                       | deno.lock                                                                          |
+| TST-26  | Root deno.lock mirrors package.json; npm bumps fail the Edge job                                           | bug                              | medium   | traced                       | supabase/functions/deno.lock                                                       |
 | TST-27  | 20 hard-coded /tmp artifact paths in 8 e2e files                                                           | tests                            | low      | traced                       | tools/e2e                                                                          |

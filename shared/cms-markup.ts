@@ -5,6 +5,7 @@ import {
   CmsValidationError,
   CMS_HTML_LIMIT,
   CMS_NATIVE_HTML_LIMIT,
+  INFORMATION_PAGE_PATHS,
   validMediaRef,
   type CmsDocument,
   type MediaPlacement,
@@ -431,11 +432,12 @@ function validateRuntimeSlot(path: string, lang: 'sv' | 'en', html: string): voi
 }
 
 function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void {
-  if (path !== '/privacy' && path !== '/terms') return
+  if (!INFORMATION_PAGE_PATHS.includes(path)) return
 
   const fragment = parseFragment(html)
   const ids = new Set<string>()
   let hasBusinessName = false
+  let hasBusinessCity = false
   let hasBusinessContact = false
   let hasBusinessController = false
 
@@ -444,6 +446,7 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
       for (const attr of node.attrs) {
         if (attr.name === 'id') ids.add(attr.value)
         if (attr.name === 'data-business-name') hasBusinessName = true
+        if (attr.name === 'data-business-city') hasBusinessCity = true
         if (attr.name === 'data-business-contact') hasBusinessContact = true
         if (attr.name === 'data-business-controller' && attr.value === lang)
           hasBusinessController = true
@@ -454,7 +457,12 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
   visit(fragment)
 
   const missing: string[] = []
-  if (!ids.has(`legal-business-details-${lang}`)) missing.push(`#legal-business-details-${lang}`)
+  if (path === '/contact') {
+    for (const id of ['contact-details', 'contact-hours']) if (!ids.has(id)) missing.push(`#${id}`)
+    if (!hasBusinessName) missing.push('[data-business-name]')
+    if (!hasBusinessCity) missing.push('[data-business-city]')
+  } else if (!ids.has(`legal-business-details-${lang}`))
+    missing.push(`#legal-business-details-${lang}`)
   if (path === '/terms' && !ids.has(`cancellation-policy-${lang}`))
     missing.push(`#cancellation-policy-${lang}`)
   if (path === '/privacy') {
@@ -466,7 +474,7 @@ function validateLegalSlots(path: string, lang: 'sv' | 'en', html: string): void
   if (missing.length > 0)
     reject(
       `presentation.${path}.${lang}`,
-      `Legal page is missing required server-owned slot(s): ${missing.join(', ')}`,
+      `${path === '/contact' ? 'Contact' : 'Legal'} page is missing required server-owned slot(s): ${missing.join(', ')}`,
     )
 }
 

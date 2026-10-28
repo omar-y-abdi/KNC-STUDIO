@@ -47,6 +47,10 @@ async function mountStudio(page) {
     (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
   )
   await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+  // These probes inspect the model directly, including the deferred inactive About copy.
+  await page
+    .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+    .waitFor({ timeout: 90000 })
 }
 
 async function publish(page, revision) {
@@ -140,6 +144,8 @@ test.describe('stored marquee', () => {
     await fixtureRoutes(captureContext, barbers)
     const capturePage = await captureContext.newPage()
     await mountStudio(capturePage)
+    // Only owner edits create backups; the captured source alone is pristine.
+    await capturePage.getByRole('textbox', { name: 'Namn', exact: true }).fill('Zoomtestets källa')
     const { captured, ids } = await capturePage.evaluate(async () => {
       const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
       await session.flush()

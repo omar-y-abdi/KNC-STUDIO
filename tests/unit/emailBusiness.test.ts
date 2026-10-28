@@ -8,6 +8,7 @@ import {
   ResendDeliveryError,
   resendDeliveryFailureCode,
   sendViaResend,
+  type PreparedEmail,
 } from '../../supabase/functions/_shared/email'
 
 function discoveryClient(settings: Record<string, string>) {
@@ -151,6 +152,13 @@ describe('Resend delivery failure classification', () => {
     text: 'Booking confirmation',
     html: '<p>Booking confirmation</p>',
   }
+  const email: PreparedEmail = {
+    kind: 'customer_confirmation',
+    bookingId: null,
+    message,
+    stored: { subject: message.subject, html: message.html, text: message.text },
+  }
+  const sendLog = { rpc: async () => ({ error: null }) }
 
   async function failure(status: number, name?: string): Promise<unknown> {
     vi.stubGlobal(
@@ -161,7 +169,7 @@ describe('Resend delivery failure classification', () => {
       ),
     )
     try {
-      await sendViaResend(message, 're_test', 'booking-confirmation/customer/test')
+      await sendViaResend(email, 're_test', 'booking-confirmation/customer/test', sendLog)
       throw new Error('expected Resend request to fail')
     } catch (error) {
       return error
@@ -178,7 +186,7 @@ describe('Resend delivery failure classification', () => {
 
     try {
       await expect(
-        sendViaResend(message, 're_test', 'booking-confirmation/customer/test'),
+        sendViaResend(email, 're_test', 'booking-confirmation/customer/test', sendLog),
       ).resolves.toBeUndefined()
       expect(info).toHaveBeenCalledWith('email provider accepted', { id: providerId })
       const log = JSON.stringify(info.mock.calls)
@@ -215,7 +223,7 @@ describe('Resend delivery failure classification', () => {
 
   async function failureFromSend(): Promise<unknown> {
     try {
-      await sendViaResend(message, 're_test', 'booking-confirmation/customer/test')
+      await sendViaResend(email, 're_test', 'booking-confirmation/customer/test', sendLog)
       throw new Error('expected Resend request to fail')
     } catch (error) {
       return error
@@ -249,7 +257,7 @@ describe('Resend delivery failure classification', () => {
     )
 
     await expect(
-      sendViaResend(message, 're_test', 'booking-confirmation/customer/test'),
+      sendViaResend(email, 're_test', 'booking-confirmation/customer/test', sendLog),
     ).rejects.toBe(transportError)
     expect(resendDeliveryFailureCode(transportError)).toBe('send_failed_transient')
   })

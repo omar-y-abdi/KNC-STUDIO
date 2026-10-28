@@ -38,7 +38,7 @@ being terminated by the Edge CPU watchdog. The lower-effort encoder trades compr
 for bounded CPU work; it is not a promise that every accepted input size can fit the output cap.
 CMS uploads distinguish decoded/output-size rejection from corrupted or unsupported image data.
 
-`node tools/e2e/upload-budget.mjs` profiles the real WASM processor on deterministic camera-sized
+`tools/e2e/upload-budget.spec.mjs` profiles the real WASM processor on deterministic camera-sized
 JPEGs and a difficult high-entropy image, checks decodable output, and preserves JSON measurements.
 It runs in the existing frontend CI job. The 1,800 ms regression budget is measured on the CI runner,
 not a substitute for checking the deployed Edge CPU logs. The fixtures are generated test data,

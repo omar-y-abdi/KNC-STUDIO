@@ -99,10 +99,12 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     }
     const rect = element.getBoundingClientRect()
     const view = element.ownerDocument.defaultView
-    const rawZoom = view?.getComputedStyle(element).zoom ?? '1'
-    const zoom = (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1)
     const cards = barberStripCards(component)
     const card = cards.includes(component) ? component : cards[0]
+    // Desktop group edits scale its cards, so repeated edits start from their current zoom.
+    const zoomElement = editor.getDevice() !== 'Mobile' && card ? card.getEl() : element
+    const rawZoom = view?.getComputedStyle(zoomElement ?? element).zoom ?? '1'
+    const zoom = (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1)
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
@@ -135,16 +137,16 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       remember()
       return
     }
-    const cards = editor.getDevice() === 'Mobile' ? barberStripCards(before.component) : []
+    const cards = barberStripCards(before.component)
+    const mobile = editor.getDevice() === 'Mobile'
     const requestedScale = scaledZoom(
-      cards.length ? before.cardScale : before.zoom,
+      cards.length && mobile ? before.cardScale : before.zoom,
       before[property],
       requested,
     )
     // A short roster keeps its cards wide enough to loop; a frozen strip is never a valid size.
-    const scale = cards.length
-      ? Math.max(minLoopScale(cards.length), requestedScale)
-      : requestedScale
+    const scale =
+      cards.length && mobile ? Math.max(minLoopScale(cards.length), requestedScale) : requestedScale
     if (!Number.isFinite(scale) || before[property] <= 0) return
     updating = true
     try {
@@ -156,7 +158,22 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       }
       before.model.setStyle(style)
       if (cards.length)
-        for (const card of cards) card.setStyle(marqueeCardStyle(card.getStyle(), scale))
+        for (const card of cards)
+          card.setStyle(
+            mobile
+              ? marqueeCardStyle(card.getStyle(), scale)
+              : {
+                  ...card.getStyle(),
+                  // Zooming the auto-fit grid reflows it; auto/percentage widths do not zoom.
+                  // Scale each card within its existing track without saving a viewport width.
+                  width: `${Number((scale * 100).toFixed(6))}%`,
+                  'box-sizing': 'border-box',
+                  // Let the flex column's square portrait determine its height. Stretching a
+                  // zoomed grid item can give WebKit a row-height override and shrink the photo.
+                  'align-self': 'start',
+                  zoom: String(scale),
+                },
+          )
       else
         for (const peer of barberScalePeers(before.component))
           peer.addStyle({ zoom: String(scale) })

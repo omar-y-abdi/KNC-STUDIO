@@ -22,7 +22,6 @@ async function mount(page, name, argument, path, shellMinHeight = '0px') {
     async ({ name: exportName, argument: value }) => {
       const harness = await import('/tools/e2e/admin-harness.tsx')
       if (exportName === 'navigation') harness.mountAdminNavigationHarness(value)
-      else harness.mountSiteViewHarness()
     },
     { name, argument },
   )
@@ -241,11 +240,11 @@ async function verifyNavigation(page) {
   await waitForSavedScroll(page, 'schedule', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 875))
   await waitForSavedScroll(page, 'schedule', 875)
-  await page.getByRole('button', { name: 'Mail', exact: true }).click()
-  await waitForScroll(page, 0, 'Mail did not start at top')
-  await waitForSavedScroll(page, 'mail', 0)
+  await page.getByRole('button', { name: 'Barbers', exact: true }).click()
+  await waitForScroll(page, 0, 'Barbers did not start at top')
+  await waitForSavedScroll(page, 'barbers', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 425))
-  await waitForSavedScroll(page, 'mail', 425)
+  await waitForSavedScroll(page, 'barbers', 425)
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.evaluate(async () => {
     const harness = await import('/tools/e2e/admin-harness.tsx')
@@ -254,11 +253,12 @@ async function verifyNavigation(page) {
     if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '22000px'
   })
   assert(
-    (await page.getByRole('button', { name: 'Mail', exact: true }).getAttribute('aria-current')) ===
-      'page',
-    'Reload did not restore Mail tab',
+    (await page
+      .getByRole('button', { name: 'Barbers', exact: true })
+      .getAttribute('aria-current')) === 'page',
+    'Reload did not restore Barbers tab',
   )
-  await waitForScroll(page, 425, 'Reload did not restore Mail scroll')
+  await waitForScroll(page, 425, 'Reload did not restore Barbers scroll')
   await page.goBack()
   assert(
     (await page
@@ -271,18 +271,19 @@ async function verifyNavigation(page) {
   assert(backScroll === 875, `Back lost schedule scroll: ${backScroll}`)
   await page.goForward()
   assert(
-    (await page.getByRole('button', { name: 'Mail', exact: true }).getAttribute('aria-current')) ===
-      'page',
-    'Forward did not restore Mail tab',
+    (await page
+      .getByRole('button', { name: 'Barbers', exact: true })
+      .getAttribute('aria-current')) === 'page',
+    'Forward did not restore Barbers tab',
   )
-  await waitForScroll(page, 425, 'Forward did not restore mail scroll')
+  await waitForScroll(page, 425, 'Forward did not restore Barbers scroll')
   const forwardScroll = await page.evaluate(() => Math.round(globalThis.window.scrollY))
-  assert(forwardScroll === 425, `Forward lost mail scroll: ${forwardScroll}`)
+  assert(forwardScroll === 425, `Forward lost Barbers scroll: ${forwardScroll}`)
 
-  await mount(page, 'navigation', 'barber', '/tools/e2e/admin-harness.html?tab=mail')
+  await mount(page, 'navigation', 'barber', '/tools/e2e/admin-harness.html?tab=barbers')
   assert(
-    (await page.getByRole('button', { name: 'Mail', exact: true }).count()) === 0,
-    'barber restored hidden Mail tab',
+    (await page.getByRole('button', { name: 'Barbers', exact: true }).count()) === 0,
+    'barber restored hidden Barbers tab',
   )
   assert(
     (await page
@@ -298,9 +299,9 @@ async function verifyDelayedRestore(page) {
   await waitForSavedScroll(page, 'schedule', 0)
   await page.evaluate(() => globalThis.window.scrollTo(0, 5000))
   await waitForSavedScroll(page, 'schedule', 5000)
-  await page.getByRole('button', { name: 'Mail', exact: true }).click()
-  await waitForScroll(page, 0, 'Mail did not start at top before delayed restore')
-  await waitForSavedScroll(page, 'mail', 0)
+  await page.getByRole('button', { name: 'Barbers', exact: true }).click()
+  await waitForScroll(page, 0, 'Barbers did not start at top before delayed restore')
+  await waitForSavedScroll(page, 'barbers', 0)
   await page.evaluate(() => {
     const shell = globalThis.document.querySelector('.knc-admin-shell')
     if (shell instanceof globalThis.HTMLElement) shell.style.minHeight = '0px'
@@ -318,94 +319,6 @@ async function verifyDelayedRestore(page) {
   await page.waitForFunction(() => Math.round(globalThis.window.scrollY) === 5000, undefined, {
     timeout: ADMIN_SCROLL_RESTORE_TIMEOUT_MS - elapsed,
   })
-}
-
-async function verifyPresentationDraft(page) {
-  await mount(page, 'site', undefined, '/tools/e2e/admin-harness.html?view=site')
-  await page.getByLabel('Logo scale').waitFor()
-  assert(
-    (await page.locator('script[src*="challenges.cloudflare.com"]').count()) === 0,
-    'read-only CMS replica loaded external Turnstile challenge',
-  )
-  await page.getByLabel('Logo scale').selectOption('xl')
-  await page.getByLabel('Image style').selectOption('monochrome')
-  assert(
-    (await page.evaluate(() => globalThis.window.__adminHarnessWrites?.length ?? -1)) === 0,
-    'draft scale wrote before publish',
-  )
-  const focusedSvg = page.getByTestId('homepage-logo-focused-preview').locator('svg')
-  assert((await focusedSvg.count()) === 1, 'focused logo preview did not render one SVG')
-  assert((await focusedSvg.getAttribute('height')) === '188', 'draft scale did not reach preview')
-  assert(
-    (await focusedSvg.evaluate((element) => globalThis.getComputedStyle(element).filter)).includes(
-      'grayscale(1)',
-    ),
-    'draft monochrome style did not reach focused preview',
-  )
-  const replica = page.getByTestId('homepage-replica-preview')
-  assert(
-    (await replica.getByText('BARBERSHOP · GOTHENBURG', { exact: true }).count()) === 1,
-    'English preview copy missing',
-  )
-  const previewToolbar = page.getByRole('toolbar', { name: 'Preview controls' })
-  await previewToolbar.getByRole('button', { name: 'SV', exact: true }).click()
-  assert(
-    (await replica.getByText('BARBERSHOP · GÖTEBORG', { exact: true }).count()) === 1,
-    'preview language toggle kept wrong-language CMS copy',
-  )
-  const swedishPreviewToolbar = page.getByRole('toolbar', { name: 'Förhandsvisningskontroller' })
-  const replicaScroll = page.getByTestId('homepage-replica-scroll')
-  const replicaPanel = replica.getByTestId('desktop-top-panel')
-  await swedishPreviewToolbar.getByRole('button', { name: 'Om oss', exact: true }).click()
-  await page.waitForFunction(() => {
-    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
-    const about = host?.querySelector('#om-oss')
-    if (!(host instanceof globalThis.HTMLElement) || !(about instanceof globalThis.HTMLElement))
-      return false
-    return Math.abs(about.getBoundingClientRect().top - host.getBoundingClientRect().top - 61) <= 1
-  })
-  await page.waitForFunction(() => {
-    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
-    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
-    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
-      return false
-    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
-  })
-  const [aboutHostBox, aboutPanelBox] = await Promise.all([
-    replicaScroll.boundingBox(),
-    replicaPanel.boundingBox(),
-  ])
-  assert(aboutHostBox !== null && aboutPanelBox !== null, 'replica scroll geometry unavailable')
-  assert(
-    Math.abs(aboutPanelBox.y - aboutHostBox.y) <= 1,
-    `replica panel escaped embedded scroll viewport: ${JSON.stringify({ aboutHostBox, aboutPanelBox })}`,
-  )
-  await swedishPreviewToolbar.getByRole('button', { name: 'Bokning', exact: true }).click()
-  await replica.getByTestId('booking-step-barber').waitFor()
-  await page.waitForFunction(() => {
-    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
-    const booking = host?.querySelector('[data-testid="fold-booking"]')
-    if (!(host instanceof globalThis.HTMLElement) || !(booking instanceof globalThis.HTMLElement))
-      return false
-    const hostRect = host.getBoundingClientRect()
-    const bookingRect = booking.getBoundingClientRect()
-    return bookingRect.top < hostRect.bottom && bookingRect.bottom > hostRect.top + 61
-  })
-  await page.waitForFunction(() => {
-    const host = globalThis.document.querySelector('[data-testid="homepage-replica-scroll"]')
-    const panel = host?.querySelector('[data-testid="desktop-top-panel"]')
-    if (!(host instanceof globalThis.HTMLElement) || !(panel instanceof globalThis.HTMLElement))
-      return false
-    return Math.abs(panel.getBoundingClientRect().top - host.getBoundingClientRect().top) <= 1
-  })
-  await page.getByRole('button', { name: 'Publish presentation', exact: true }).click()
-  const writes = await page.evaluate(
-    () => globalThis.window.__adminHarnessWrites?.map((entry) => Object.fromEntries(entry)) ?? [],
-  )
-  assert(writes.length === 1, 'publish did not write exactly once')
-  assert(writes[0]?.homepage_logo_scale === 'xl', 'published logo scale missing')
-  assert(writes[0]?.homepage_scale === 'md', 'published homepage scale missing')
-  assert(writes[0]?.homepage_logo_style === 'monochrome', 'published logo style missing')
 }
 
 async function mutationControl(page, action, target) {
@@ -515,87 +428,214 @@ async function verifyMutationReentry(page, kind, reentry = 'target', failFirst =
   await readMutation.dispose()
 }
 
-async function hydrationControl(page, action) {
+async function verifyDeliveryStatus(page) {
+  await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).mountDeliveryStatusHarness(),
+  )
+  const failed = page.getByRole('list', { name: 'Misslyckade bokningsmejl', exact: true })
+  await failed.waitFor()
+  const ada = failed.getByRole('listitem').filter({ hasText: 'Ada Kund' })
+  await ada.getByText('Ada Kund · Bokningsbekräftelse', { exact: true }).waitFor()
+  await ada.getByText(/^Bokad tid .*2096.*10:00 hos Hassan$/).waitFor()
+  await ada.getByText('Mottagare: ada@example.com (kund)', { exact: true }).waitFor()
+  await ada.getByText('Kundens telefon: 0701234567', { exact: true }).waitFor()
+  const retries = failed.getByRole('button', { name: 'Försök igen', exact: true })
+  assert((await retries.count()) === 2, 'both failed deliveries listed')
+  await ada.getByRole('button', { name: 'Försök igen', exact: true }).click()
+  await ada.waitFor({ state: 'detached' })
+  assert((await retries.count()) === 1, 'a retried delivery leaves the list')
+
+  await failed.getByRole('button', { name: 'Markera hanterad', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: 'Markera mejlet som hanterat?', exact: true })
+  await confirm.getByRole('button', { name: 'Markera hanterad', exact: true }).click()
+  await confirm.waitFor({ state: 'detached' })
+  await page
+    .getByRole('alert')
+    .getByText('Kunde inte uppdatera mejlleveransen.', { exact: true })
+    .waitFor()
+  assert(
+    (await failed.getByRole('listitem').filter({ hasText: 'Bea Kund' }).count()) === 1,
+    'a failed discard keeps its delivery listed',
+  )
+
+  const sent = page.getByRole('list', { name: 'Skickade mejl', exact: true })
+  await sent.getByText('Mejl två', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Visa fler', exact: true }).click()
+  await sent.getByText('Mejl tre', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Visa fler', exact: true }).waitFor({ state: 'detached' })
+  const cursors = await page.evaluate(async () =>
+    (await import('/tools/e2e/admin-harness.tsx')).deliveryStatusCursors(),
+  )
+  assert(
+    JSON.stringify(cursors) === JSON.stringify([null, '2096-01-03T09:00:00.000002+00:00']),
+    `log pages continue from the last entry's exact timestamp: ${JSON.stringify(cursors)}`,
+  )
+
+  await page
+    .getByRole('button', { name: 'Visa Mejl ett till ada@example.com', exact: true })
+    .click()
+  const copy = page.getByRole('dialog', { name: 'Mejl ett', exact: true })
+  const frame = copy.locator('iframe.cms-delivery-frame')
+  await frame.waitFor()
+  assert((await frame.getAttribute('sandbox')) === '', 'the stored copy runs fully sandboxed')
+  const srcdoc = (await frame.getAttribute('srcdoc')) ?? ''
+  assert(
+    srcdoc.includes('<p id="stored-copy">Kopian som skickades</p>') &&
+      srcdoc.includes('href="[dold länk]"') &&
+      srcdoc.includes('<base target="_blank">'),
+    'the iframe shows the stored copy with inert links',
+  )
+  const body = copy.frameLocator('iframe.cms-delivery-frame')
+  await body.getByText('Kopian som skickades', { exact: true }).waitFor()
+  const content = await (await frame.elementHandle())?.contentFrame()
+  assert(content?.url() === 'about:srcdoc', 'the stored copy renders from srcdoc')
+  const navigations = []
+  const popups = []
+  const onNavigated = (navigated) => {
+    if (navigated === content) navigations.push(navigated.url())
+  }
+  const onPopup = (popup) => popups.push(popup.url())
+  page.on('framenavigated', onNavigated)
+  page.context().on('page', onPopup)
+  await body.getByRole('link', { name: 'Välj nytt lösenord', exact: true }).click()
+  await body.getByRole('link', { name: 'Visa bokningen', exact: true }).click()
+  // Observe a painted turn after both clicks, including navigation or popup effects.
+  await afterPaint(page)
+  page.off('framenavigated', onNavigated)
+  page.context().off('page', onPopup)
+  assert(
+    navigations.length === 0 &&
+      popups.length === 0 &&
+      !content.isDetached() &&
+      content.url() === 'about:srcdoc',
+    `links in the stored copy stay inert: ${JSON.stringify({ navigations, popups })}`,
+  )
+  await body.getByText('Kopian som skickades', { exact: true }).waitFor()
+  await copy.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  await copy.waitFor({ state: 'detached' })
+
+  await page
+    .getByRole('button', { name: 'Visa Mejl tre till ada@example.com', exact: true })
+    .click()
+  const purged = page.getByRole('dialog', { name: 'Mejl tre', exact: true })
+  await purged
+    .getByRole('alert')
+    .getByText('Kopian har rensats (äldre än 30 dagar).', { exact: true })
+    .waitFor()
+  assert((await purged.locator('iframe').count()) === 0, 'a purged copy renders no frame')
+  await purged.getByRole('button', { name: 'Stäng panel', exact: true }).click()
+  await purged.waitFor({ state: 'detached' })
+}
+
+async function settingsControl(page, action) {
   return page.evaluate(
-    async (action) => (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl(action),
+    async (action) => (await import('/tools/e2e/admin-harness.tsx')).settingsControl(action),
     action,
   )
 }
 
-async function verifyInitialHydration(page, kind, failLoad = false) {
+async function mountSettings(page, role, failLoad = false, holdFirstSave = false) {
   await page.goto(`${baseUrl}/tools/e2e/admin-harness.html`, { waitUntil: 'domcontentloaded' })
   await page.evaluate(
-    async ({ kind, failLoad }) =>
-      (await import('/tools/e2e/admin-harness.tsx')).mountAdminHydrationHarness(kind, failLoad),
-    { kind, failLoad },
+    async ({ role, failLoad, holdFirstSave }) =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountSettingsHarness(
+        role,
+        failLoad,
+        holdFirstSave,
+      ),
+    { role, failLoad, holdFirstSave },
   )
-  const control =
-    kind === 'site'
-      ? page.locator('label').filter({ hasText: 'About section' }).locator('select')
-      : page.locator('input[type="file"]')
-  await control.waitFor({ state: 'attached' })
-  assert(await control.isDisabled(), `${kind}: control enabled before authoritative load`)
-  if (kind === 'site')
-    assert(
-      await page.locator('#site-font-heading').locator('..').locator('select').first().isDisabled(),
-      'homepage draft editable before hydration',
+}
+
+async function verifySettingsCancellation(page, scenario) {
+  const heading = page.getByRole('heading', { name: 'Avbokningsfrist', exact: true })
+  const input = page.getByLabel('Avbokningsfrist (timmar)', { exact: true })
+  const save = page
+    .getByRole('form', { name: 'Avbokningsfrist', exact: true })
+    .getByRole('button', { name: 'Spara', exact: true })
+  const writeCount = async () => (await settingsControl(page, 'snapshot')).writes.length
+  if (scenario === 'revisit-during-save') {
+    await mountSettings(page, 'owner', false, true)
+    await settingsControl(page, 'load')
+    await page.waitForFunction(
+      () => globalThis.document.querySelector('#settings-cancel-hours')?.disabled === false,
     )
-  await hydrationControl(page, 'load')
-  if (failLoad) {
-    await page.getByText('Synthetic load failure', { exact: true }).first().waitFor()
-    assert(await control.isDisabled(), `${kind}: failed hydration enabled mutations`)
-    assert(
-      (await hydrationControl(page, 'snapshot')).writes === 0,
-      'write occurred despite failed hydration',
+    await input.fill('48')
+    await save.click()
+    await page.waitForFunction(() => globalThis.document.body.textContent?.includes('Sparar'))
+    await settingsControl(page, 'unmount')
+    await settingsControl(page, 'remount')
+    await input.waitFor()
+    // The revisit's load is queued behind the in-flight save: still disabled, no stale 24.
+    assert(await input.isDisabled(), 'revisit enabled the form before the pending save committed')
+    await settingsControl(page, 'release-save')
+    await page.waitForFunction(() => {
+      const field = globalThis.document.querySelector('#settings-cancel-hours')
+      return field?.disabled === false && field.value === '48'
+    })
+    await input.fill('72')
+    await save.click()
+    await page.getByText('Sparat.', { exact: true }).waitFor()
+    const { writes, stored } = await settingsControl(page, 'snapshot')
+    assert.deepEqual(
+      writes,
+      [
+        ['cancellation_policy_hours', '48'],
+        ['cancellation_policy_hours', '72'],
+      ],
+      'unexpected write order',
     )
+    assert.equal(stored, '72', 'the older save must not commit last')
     return
   }
-  await page.waitForFunction(() =>
-    [...globalThis.document.querySelectorAll('select,input[type="file"]')].some(
-      (input) => !input.disabled,
-    ),
-  )
-  if (kind === 'site') {
-    const readHydration = await page.evaluateHandle(
-      async () => (await import('/tools/e2e/admin-harness.tsx')).adminHydrationControl,
-    )
-    await control.selectOption('sm')
-    await page.waitForFunction((read) => read('snapshot').writes === 1, readHydration)
-    assert(await control.isDisabled(), 'About autosave permits out-of-order writes')
-    await hydrationControl(page, 'write')
-    await page.waitForFunction(
-      () =>
-        ![...globalThis.document.querySelectorAll('select')].find((select) => select.value === 'sm')
-          ?.disabled,
-    )
-    await control.selectOption('xl')
-    await page.waitForFunction((read) => read('snapshot').writes === 2, readHydration)
-    await readHydration.dispose()
-    assert(
-      (await hydrationControl(page, 'snapshot')).about === 'xl',
-      'published About size differs from final selection',
-    )
-    assert((await control.inputValue()) === 'xl', 'About size UI differs from published state')
-  } else {
-    await page.locator('#alt-salon').fill('New uploaded photo')
-    await control.setInputFiles({
-      name: 'new.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from('new'),
-    })
-    await page.locator('figure img[alt="New uploaded photo"]').waitFor()
-    assert(
-      (await hydrationControl(page, 'snapshot')).gallery === 1,
-      'gallery success lacks persisted upload',
-    )
-    await page.locator('figure').getByRole('button', { name: 'Remove', exact: true }).click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click()
-    await page.locator('figure').waitFor({ state: 'detached' })
-    assert(
-      (await hydrationControl(page, 'snapshot')).gallery === 0,
-      'gallery removal did not persist',
-    )
+  if (scenario === 'barber') {
+    await mountSettings(page, 'barber')
+    await page.getByRole('heading', { name: 'Inställningar', exact: true }).first().waitFor()
+    assert((await input.count()) === 0, 'barber sees the cancellation field')
+    assert((await heading.count()) === 0, 'barber sees the cancellation heading')
+    return
   }
+  await mountSettings(page, 'owner', scenario === 'load-failure')
+  await input.waitFor()
+  assert(await input.isDisabled(), 'input enabled before listSiteSettings resolved')
+  assert(await save.isDisabled(), 'Save enabled before listSiteSettings resolved')
+  await settingsControl(page, 'load')
+  if (scenario === 'load-failure') {
+    await page.getByText('Kunde inte läsa inställningar.', { exact: true }).waitFor()
+    assert(await input.isDisabled(), 'input enabled after a failed load')
+    assert(await save.isDisabled(), 'Save enabled after a failed load')
+    assert((await writeCount()) === 0, 'write after a failed load')
+    return
+  }
+  await page.waitForFunction(
+    () =>
+      globalThis.document.querySelector('#settings-cancel-hours')?.value === '24' &&
+      !globalThis.document.querySelector('#settings-cancel-hours')?.disabled,
+  )
+  // Only values a number input holds: the browser empties non-numeric text, which the empty case
+  // covers. The validator's non-numeric branch is pinned in tests/unit/cancellationWindow.test.ts.
+  const reasons = [
+    ['0', 'Ange 1–168 timmar.'],
+    ['169', 'Ange 1–168 timmar.'],
+    ['', 'Ange antal timmar.'],
+    ['2.5', 'Ange heltal med högst tre siffror.'],
+  ]
+  for (const [raw, reason] of reasons) {
+    await input.fill(raw)
+    await save.click()
+    await page.getByText(reason, { exact: true }).waitFor()
+    assert((await writeCount()) === 0, `"${raw}" sent a write`)
+  }
+  await input.fill('48')
+  await save.click()
+  await page.getByText('Sparat.', { exact: true }).waitFor()
+  const { writes } = await settingsControl(page, 'snapshot')
+  assert.deepEqual(
+    writes,
+    [['cancellation_policy_hours', '48']],
+    'expected exactly one write of 48',
+  )
 }
 
 async function contactControl(page, identity) {
@@ -1855,7 +1895,7 @@ async function verifyAdminSession(page, scenario) {
     (session) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
     adminSession(AUTH_USER_A),
   )
-  if (scenario === 'notification-gap' || scenario === 'late-reset-logout') {
+  if (scenario === 'late-reset-logout') {
     await page.addInitScript(() => {
       const NativeChannel = globalThis.BroadcastChannel
       globalThis.__heldAuthMessages = []
@@ -2031,10 +2071,7 @@ async function verifyAdminSession(page, scenario) {
       configured,
       'Admin source server requires fake VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY',
     )
-    await mountRealAdmin(
-      page,
-      queuedWrite ? 'site' : scenario === 'late-settings-password' ? 'settings' : 'bookings',
-    )
+    await mountRealAdmin(page, scenario === 'late-settings-password' ? 'settings' : 'bookings')
     if (scenario === 'late-reset-logout') {
       await data.waitFor()
       await page.evaluate(async () => {
@@ -2662,10 +2699,10 @@ const privacyCases = [
 export {
   verifyNavigation,
   verifyDelayedRestore,
-  verifyPresentationDraft,
   verifyAdminSession,
   verifyMutationReentry,
-  verifyInitialHydration,
+  verifyDeliveryStatus,
+  verifySettingsCancellation,
   verifyContactOwnership,
   verifyDelayedCatalog,
   verifyBookingTerms,

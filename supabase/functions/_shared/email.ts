@@ -1,6 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { validateEmailDesign, type EmailDesign } from '../../../shared/email-design.ts'
+import type { EmailSendOutcome } from '../../../shared/email-send-log.ts'
 import { uuid } from './http.ts'
+import {
+  emailSendRecordParams,
+  type EmailSendLogClient,
+  type PreparedEmail,
+} from './emailSendLog.ts'
 
 import type {
   EmailLanguage,
@@ -10,6 +16,8 @@ import type {
   EmailMessage,
 } from '../../../shared/email-render.ts'
 export { buildEmailMessage } from '../../../shared/email-render.ts'
+export { prepareEmail } from './emailSendLog.ts'
+export type { EmailSendLogClient, PreparedEmail } from './emailSendLog.ts'
 export type {
   EmailLanguage,
   EmailTemplateName,
@@ -345,7 +353,68 @@ export function defaultEmailTemplate(
   return DEFAULTS[template][lang]
 }
 
+/**
+ * Sends one message and records the attempt in the owner's delivery log. Recording happens after
+ * the provider answered and never changes the outcome: the provider's error is rethrown as is.
+ */
 export async function sendViaResend(
+  email: PreparedEmail,
+  apiKey: string,
+  idempotencyKey: string,
+  log: EmailSendLogClient,
+): Promise<void> {
+  try {
+    await postToResend(email.message, apiKey, idempotencyKey)
+  } catch (error) {
+    await recordEmailSend(log, email, idempotencyKey, {
+      status: 'failed',
+      errorCode: resendDeliveryFailureCode(error),
+    })
+    throw error
+  }
+  await recordEmailSend(log, email, idempotencyKey, { status: 'sent' })
+}
+
+/**
+ * How long a log write may hold up its send. The provider has already answered, and the caller
+ * still has to persist which recipients were reached before the dispatch can be reclaimed.
+ */
+const EMAIL_SEND_LOG_TIMEOUT_MS = 3_000
+
+/**
+ * A log write failure is reported without recipients, subjects or bodies, then dropped. A write
+ * still pending after the timeout is dropped the same way, with the code `timeout`.
+ */
+async function recordEmailSend(
+  log: EmailSendLogClient,
+  email: PreparedEmail,
+  idempotencyKey: string,
+  outcome: EmailSendOutcome,
+): Promise<void> {
+  let deadline: ReturnType<typeof setTimeout> | undefined
+  try {
+    const params = await emailSendRecordParams(email, idempotencyKey, outcome)
+    const timedOut = new Promise<{ readonly error: { readonly code: string } }>((resolve) => {
+      deadline = setTimeout(
+        () => resolve({ error: { code: 'timeout' } }),
+        EMAIL_SEND_LOG_TIMEOUT_MS,
+      )
+    })
+    const { error } = await Promise.race([log.rpc('internal_record_email_send', params), timedOut])
+    if (error !== null) {
+      console.error('email send log write failed', { kind: email.kind, code: error.code })
+    }
+  } catch (error) {
+    console.error('email send log write failed', {
+      kind: email.kind,
+      code: error instanceof Error ? error.name : 'unknown',
+    })
+  } finally {
+    clearTimeout(deadline)
+  }
+}
+
+async function postToResend(
   message: EmailMessage,
   apiKey: string,
   idempotencyKey: string,
