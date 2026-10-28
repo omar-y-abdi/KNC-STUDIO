@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { emptyDocument, type CmsPage } from '../../shared/cms'
+import { validateMarkup } from '../../shared/cms-markup'
+import { createSitePage, SITE_PAGE_CSS } from '../../shared/site-page'
 import { DEFAULT_BUSINESS, SCHEMA_DAYS, type BusinessOpeningHours } from '../../src/site/business'
 import worker, { renderContactMetadata } from '../../src/worker'
 
@@ -110,6 +112,50 @@ describe('Worker /terms colour scheme', () => {
     expect(html).not.toContain('cms-page-light')
     expect(sheet(html, 'cms-page-dark')).toMatch(/:root\{color:#f5f5f7;background:#1c1c1e\}$/)
     expect(html).toContain('<meta name="color-scheme" content="dark" />')
+  })
+})
+
+describe('Worker current pages containing shell lookalikes', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each([
+    '<main><!-- <div id="cms-site-shell"> --><p>Owner text</p></main>',
+    '<main title=\' id="cms-site-shell"\'><p>Owner text</p></main>',
+  ])('keeps the live header and site base for either language: %s', async (body) => {
+    expect(() =>
+      validateMarkup(body, '', {
+        siteOrigin: 'https://bladeblendstudio.se',
+        storageOrigin: 'https://fixture.invalid',
+      }),
+    ).not.toThrow()
+    for (const lang of ['sv', 'en'] as const) {
+      const page = createSitePage({
+        id: '10000000-0000-4000-8000-000000000099',
+        path: '/owner-page',
+        name: { sv: 'Ägarens sida', en: 'Owner page' },
+      })
+      page.content[lang].html = body
+      const presentation = { ...emptyDocument().presentation, pages: [page] }
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+        String(input).endsWith('/rpc/public_cms_presentation')
+          ? Response.json({ revision: 7, presentation })
+          : new Response(null, { status: 503 }),
+      )
+      const response = await worker.fetch(
+        new Request(`https://bladeblendstudio.se/owner-page?lang=${lang}&mode=dark`),
+        env,
+        noPublicContent,
+      )
+      expect(response.status).toBe(200)
+      const html = await response.text()
+      expect(html).toContain('<header id="cms-site-header">')
+      expect(html).toContain('<nav id="cms-site-menu"')
+      expect(html).toContain('Owner text')
+      expect(sheet(html, 'cms-base')).toBe(`${publicFile('/tokens.css')}\n${SITE_PAGE_CSS}`)
+      expect(html).toContain('data-cms-mode="dark"')
+    }
   })
 })
 

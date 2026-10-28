@@ -494,18 +494,22 @@ export interface SitePageRender {
   readonly css: Record<CmsMode, string>
 }
 
-/** A start tag carrying the frozen shell's id. Text cannot match: a `<` in a text node is stored
- * as `&lt;`. */
-const FROZEN_SHELL_TAG = /<[a-zA-Z][^<>]*\sid="cms-site-shell"/
+/** Most bodies never name the old shell. Parse only candidates so comments and quoted attribute
+ * values cannot impersonate an actual shell element. HTML ids remain case-sensitive. */
+function hasFrozenShell(html: string): boolean {
+  return (
+    html.includes('cms-site-shell') &&
+    find(parseFragment(html), (node) => attr(node, 'id') === 'cms-site-shell') !== undefined
+  )
+}
 
 /** A created page an earlier Studio stored with its own frozen header copy. The Worker serves it as
- * stored (it never migrates: that parse would cost more than the request budget); the Studio
- * migrates it on load with dropFrozenChrome. A regex over the markup only, no parse; case-sensitive
- * like HTML ids. */
+ * stored without migrating its markup; the Studio migrates it on load with dropFrozenChrome.
+ * The explicit legacy flag avoids inspecting either variant. */
 export const isFrozenSitePage = (page: CmsPage): boolean =>
   page.layout === 'independent' ||
-  FROZEN_SHELL_TAG.test(page.content.sv.html) ||
-  FROZEN_SHELL_TAG.test(page.content.en.html)
+  hasFrozenShell(page.content.sv.html) ||
+  hasFrozenShell(page.content.en.html)
 
 /** A created page in the current format: its stored body goes under the live header. */
 export const isLiveSitePage = (page: CmsPage): boolean =>
