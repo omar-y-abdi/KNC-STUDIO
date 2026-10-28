@@ -117,6 +117,8 @@ test('information-page comparison uses the editing canvas base and selected them
 test('resize cascade primitive resolves variables and layers without exporting probes', async ({
   page,
 }) => {
+  const pageErrors = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
@@ -128,6 +130,9 @@ test('resize cascade primitive resolves variables and layers without exporting p
       storageManager: false,
       cssIcons: '',
       telemetry: false,
+      // Native nested rules require both export and live mount to opt in. This primitive
+      // proves those integration seams before the resize implementation depends on them.
+      optsCss: { withNested: true },
       components:
         '<div id="holder"><div id="probe-card" class="probe-card">Card</div><div id="inherited">Inherited</div></div>',
       style:
@@ -140,10 +145,29 @@ test('resize cascade primitive resolves variables and layers without exporting p
       },
     })
     await new Promise((resolve) => editor.on('load', resolve))
+    editor.on('css:mount:before', (mount) => {
+      mount.css = mount.rule.toCSS({ important: mount.rule.get('important'), withNested: true })
+    })
     const doc = editor.Canvas.getDocument()
     const view = doc.defaultView
     const card = doc.getElementById('probe-card')
     const inherited = doc.getElementById('inherited')
+    const settleViewport = async (device, width) => {
+      editor.setDevice(device)
+      const deadline = globalThis.performance.now() + 5000
+      let stableFrames = 0
+      while (stableFrames < 2) {
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        const frameWidth = editor.Canvas.getFrameEl().getBoundingClientRect().width
+        stableFrames =
+          view.innerWidth === width && Math.abs(frameWidth - width) < 0.01 ? stableFrames + 1 : 0
+        if (globalThis.performance.now() > deadline) {
+          throw new Error(
+            `Device ${device} did not settle at ${width}px: viewport=${view.innerWidth}, frame=${frameWidth}`,
+          )
+        }
+      }
+    }
     const probe = () => {
       const names = [
         '--cms-internal-prototype-width',
@@ -208,16 +232,20 @@ test('resize cascade primitive resolves variables and layers without exporting p
     }
     const samples = []
     try {
-      for (const device of ['Wide', 'Narrow']) {
-        editor.setDevice(device)
-        await new Promise((resolve) =>
-          view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)),
-        )
+      for (const [device, width] of [
+        ['Wide', 1440],
+        ['Narrow', 820],
+      ]) {
+        // GJS animates the frame width for 350ms; two RAFs can still leave Wide media active.
+        await settleViewport(device, width)
         editor.clearDirtyCount()
         const before = JSON.stringify(editor.getProjectData())
         const exported = readCanvasCss(editor)
         samples.push({
           device,
+          viewportWidth: view.innerWidth,
+          frameWidth: editor.Canvas.getFrameEl().getBoundingClientRect().width,
+          wideMedia: view.matchMedia('(min-width: 1000px)').matches,
           ...probe(),
           unchanged:
             before === JSON.stringify(editor.getProjectData()) &&
@@ -225,10 +253,7 @@ test('resize cascade primitive resolves variables and layers without exporting p
           dirty: editor.getDirtyCount(),
         })
       }
-      editor.setDevice('Wide')
-      await new Promise((resolve) =>
-        view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)),
-      )
+      await settleViewport('Wide', 1440)
       const source = editor.Css.getAll().models.find((rule) =>
         rule.get('mediaText')?.includes('1000px'),
       )
@@ -236,7 +261,7 @@ test('resize cascade primitive resolves variables and layers without exporting p
         ...source.toJSON().style,
         ':where(&):is(#probe-card):where(#probe-card)': {
           '@media(min-width:769px)': {
-            ':is(&)': { width: '56%!important', zoom: '0.8!important' },
+            ':is(&)': { width: '56%!important' },
           },
         },
       })
@@ -246,16 +271,27 @@ test('resize cascade primitive resolves variables and layers without exporting p
       const afterReload = card.getBoundingClientRect().width
       return { samples, beforeReload, afterReload, serialized }
     } finally {
+      // ClassTagsView debounces style/device updates by one task. Let that work finish
+      // before destroy removes its selected-component model.
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
       editor.destroy()
       host.remove()
     }
   })
-  await test
-    .info()
-    .attach('resize-cascade-primitive', {
-      body: JSON.stringify(result, null, 2),
-      contentType: 'application/json',
-    })
+  await test.info().attach('resize-cascade-primitive', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  await page.evaluate(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
+  assert.deepEqual(pageErrors, [], 'Primitive teardown must not leave queued editor errors')
+  assert.deepEqual(
+    result.samples.map(({ viewportWidth, wideMedia }) => ({ viewportWidth, wideMedia })),
+    [
+      { viewportWidth: 1440, wideMedia: true },
+      { viewportWidth: 820, wideMedia: false },
+    ],
+  )
   assert.deepEqual(
     result.samples.map(({ width, usedWidth, inherited, inheritSelector, unchanged, dirty }) => ({
       width,
