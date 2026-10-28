@@ -36,7 +36,7 @@
     "preact": "^10.29.1",
     "wouter-preact": "^3.10.0",
     "zod": "4.6.6",
-    "grapesjs": "0.23.6",
+    "grapesjs": "0.23.8",
     "parse5": "8.0.1",
     "css-tree": "3.2.1",
     "fontkit": "2.0.4",
