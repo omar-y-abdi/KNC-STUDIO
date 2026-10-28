@@ -22,27 +22,6 @@ function ensureImageMagickReady(): Promise<void> {
   return imageMagickReady
 }
 
-function isGalleryRow(value: unknown): value is {
-  readonly id: string
-  readonly kind: 'salon' | 'cuts'
-  readonly storage_path: string
-  readonly alt: string
-  readonly sort_order: number
-} {
-  if (typeof value !== 'object' || value === null) return false
-
-  const row = value as Record<string, unknown>
-
-  return (
-    typeof row.id === 'string' &&
-    (row.kind === 'salon' || row.kind === 'cuts') &&
-    typeof row.storage_path === 'string' &&
-    typeof row.alt === 'string' &&
-    typeof row.sort_order === 'number' &&
-    Number.isInteger(row.sort_order)
-  )
-}
-
 function isDeletion(value: unknown): value is {
   readonly ok: true
   readonly bucket: 'gallery' | 'barber-photos'
@@ -239,35 +218,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const deletion = request.data
 
-    if (
-      (deletion.kind === 'gallery' || deletion.kind === 'site_logo') &&
-      profile.role !== 'owner'
-    ) {
+    if (profile.role !== 'owner' && profile.barber_id !== deletion.barberId) {
       return json({ ok: false, error: 'forbidden' }, 403)
     }
 
-    if (
-      deletion.kind === 'barber_photo' &&
-      profile.role !== 'owner' &&
-      profile.barber_id !== deletion.barberId
-    ) {
-      return json({ ok: false, error: 'forbidden' }, 403)
-    }
-
-    const queued =
-      deletion.kind === 'gallery'
-        ? await service.rpc('internal_delete_gallery_image', {
-            p_id: deletion.id,
-            p_expected_path: deletion.storagePath,
-          })
-        : deletion.kind === 'barber_photo'
-          ? await service.rpc('internal_delete_barber_photo', {
-              p_barber_id: deletion.barberId,
-              p_expected_path: deletion.storagePath,
-            })
-          : await service.rpc('internal_remove_homepage_logo', {
-              p_expected_path: deletion.storagePath,
-            })
+    const queued = await service.rpc('internal_delete_barber_photo', {
+      p_barber_id: deletion.barberId,
+      p_expected_path: deletion.storagePath,
+    })
 
     if (queued.error !== null) {
       console.error('upload-image: deletion transaction failed', queued.error.code)
@@ -335,12 +293,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'file_too_large' }, 413)
   }
 
-  if ((upload.kind === 'gallery' || upload.kind === 'site_logo') && profile.role !== 'owner') {
-    return json({ ok: false, error: 'forbidden' }, 403)
-  }
-
   if (
-    upload.kind === 'barber_photo' &&
     profile.role !== 'owner' &&
     (profile.barber_id !== upload.barberId || typeof profile.barber_id !== 'string')
   ) {
@@ -367,35 +320,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ ok: false, error: 'invalid_image' }, 422)
   }
 
-  const bucket = upload.kind === 'barber_photo' ? 'barber-photos' : 'gallery'
+  const bucket = 'barber-photos'
+  const path = `${upload.barberId}/${crypto.randomUUID()}.webp`
+  const previous = await caller
+    .from('barber_photos')
+    .select('storage_path')
+    .eq('barber_id', upload.barberId)
+    .maybeSingle()
 
-  const path =
-    upload.kind === 'gallery'
-      ? `${upload.galleryKind}/${crypto.randomUUID()}.webp`
-      : upload.kind === 'barber_photo'
-        ? `${upload.barberId}/${crypto.randomUUID()}.webp`
-        : `logo/${crypto.randomUUID()}.webp`
+  if (
+    previous.error !== null ||
+    (previous.data !== null && typeof previous.data.storage_path !== 'string')
+  ) {
+    console.error('upload-image: could not read existing barber photo', previous.error?.message)
 
-  let previousPath: string | null = null
-
-  if (upload.kind === 'barber_photo') {
-    const previous = await caller
-      .from('barber_photos')
-      .select('storage_path')
-      .eq('barber_id', upload.barberId)
-      .maybeSingle()
-
-    if (
-      previous.error !== null ||
-      (previous.data !== null && typeof previous.data.storage_path !== 'string')
-    ) {
-      console.error('upload-image: could not read existing barber photo', previous.error?.message)
-
-      return json({ ok: false, error: 'database_failed' }, 500)
-    }
-
-    previousPath = previous.data?.storage_path ?? null
+    return json({ ok: false, error: 'database_failed' }, 500)
   }
+
+  const previousPath = previous.data?.storage_path ?? null
 
   const stored = await service.storage.from(bucket).upload(path, processed, {
     contentType: 'image/webp',
@@ -406,91 +348,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (stored.error !== null) {
     console.error('upload-image: object upload failed', stored.error.message)
     return json({ ok: false, error: 'storage_failed' }, 500)
-  }
-
-  if (upload.kind === 'gallery') {
-    const inserted = await service.rpc('internal_insert_gallery_image', {
-      p_kind: upload.galleryKind,
-      p_storage_path: path,
-      p_alt: upload.alt,
-      p_sort_order: upload.sortOrder,
-    })
-
-    if (inserted.error !== null || !isGalleryRow(inserted.data)) {
-      console.error('upload-image: gallery row insert failed', inserted.error?.message)
-
-      await removeObject(bucket, path)
-
-      return json({ ok: false, error: 'database_failed' }, 500)
-    }
-
-    const publicUrl = createClient(publicSupabaseUrl, anonKey)
-      .storage.from(bucket)
-      .getPublicUrl(inserted.data.storage_path).data.publicUrl
-
-    return json(
-      {
-        ok: true,
-        kind: 'gallery',
-        row: inserted.data,
-        path: inserted.data.storage_path,
-        publicUrl,
-      },
-      200,
-    )
-  }
-
-  if (upload.kind === 'site_logo') {
-    const replaced = await service.rpc('internal_replace_homepage_logo', {
-      p_expected_path: upload.expectedPath,
-      p_new_path: path,
-    })
-
-    if (replaced.error !== null || !isReplacement(replaced.data)) {
-      console.error('upload-image: homepage logo replace failed', replaced.error?.code)
-
-      await removeObject(bucket, path)
-
-      const response =
-        typeof replaced.data === 'object' &&
-        replaced.data !== null &&
-        (replaced.data as Record<string, unknown>).error === 'conflict'
-          ? { status: 409, error: 'conflict' }
-          : { status: 500, error: 'database_failed' }
-
-      return json(
-        {
-          ok: false,
-          error: response.error,
-        },
-        response.status,
-      )
-    }
-
-    let cleanupPending = false
-
-    if (replaced.data.previous_path !== null && replaced.data.deletion_id !== null) {
-      cleanupPending = !(await removeObject(
-        bucket,
-        replaced.data.previous_path,
-        replaced.data.deletion_id,
-      ))
-    }
-
-    const publicUrl = createClient(publicSupabaseUrl, anonKey)
-      .storage.from(bucket)
-      .getPublicUrl(path).data.publicUrl
-
-    return json(
-      {
-        ok: true,
-        kind: 'site_logo',
-        path,
-        publicUrl,
-        cleanupPending,
-      },
-      200,
-    )
   }
 
   const replaced = await service.rpc('internal_replace_barber_photo', {

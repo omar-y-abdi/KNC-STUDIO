@@ -2,14 +2,13 @@
 // seeded owner and drives the REAL admin adapters end to end:
 //   * manage barbers: create, edit, toggle active (and the new row is readable).
 //   * edit about_content (upsert a cell, read it back).
-//   * gallery: upload an image to Storage + insert its row, then delete (row + object) — proving the
-//     owner-only Storage write policy and the row<->object lifecycle.
+//   * gallery: upload a CMS asset, publish and remove its placement, retaining registered bytes.
 //   * cancel ANY barber's booking via admin_cancel_booking.
 //   * available_slots reflects a schedule edit AND a time-off block (the public availability the
 //     booking flow consumes).
 //
 // Browser path: anon key + signInWithPassword, so RLS sees role='owner'. Mutations to the shared
-// seeded tables are restored after each test (and created barbers/gallery objects are cleaned up).
+// seeded tables are restored after each test. Registered CMS media stays in the library.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { getAdminClient } from '../../src/admin/adminClient'
@@ -24,6 +23,7 @@ import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
 import { cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
 import { setDayHours } from '../../src/admin/time'
+import { validateDocument, type CmsDocument, type CmsState } from '../../shared/cms'
 import { Client } from 'pg'
 import {
   OTHER_BARBER_ID,
@@ -149,45 +149,77 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     expect(read.data?.value).toBe(marker)
   })
 
-  it('uploads and removes a gallery placement while retaining CMS media bytes', async () => {
+  it('uploads and removes a gallery placement through CMS while retaining media bytes', async () => {
     const form = new FormData()
-    form.set('kind', 'gallery')
-    form.set('galleryKind', 'salon')
-    form.set('alt', `IT salon ${Date.now()}`)
-    form.set('sortOrder', '0')
+    form.set('kind', 'cms_asset')
+    form.set('purpose', 'salon')
     form.set('file', pngFile('it.png'))
     const uploadedResponse = await getAdminClient().functions.invoke('upload-image', { body: form })
     expect(uploadedResponse.error).toBeNull()
     const uploaded = uploadedResponse.data as {
-      row: { id: string; kind: string; storage_path: string }
-      publicUrl: string
+      asset: { id: string; bucket: 'gallery'; path: string }
     }
-    expect(uploaded.row.kind).toBe('salon')
-    expect(uploaded.publicUrl).toContain('/storage/v1/object/public/gallery/')
+    expect(uploaded.asset.bucket).toBe('gallery')
+    expect(uploaded.asset.path).toMatch(/^salon\/[0-9a-f-]+\.webp$/)
+    const url = getAdminClient()
+      .storage.from(uploaded.asset.bucket)
+      .getPublicUrl(uploaded.asset.path).data.publicUrl
 
     // The public URL actually serves the object (public-read bucket).
-    const head = await fetch(uploaded.publicUrl, { method: 'GET' })
+    const head = await fetch(url)
     expect(head.ok).toBe(true)
 
+    const state = async (): Promise<CmsState> => {
+      const result = await getAdminClient().functions.invoke('cms-studio', {
+        body: { operation: 'state' },
+      })
+      expect(result.error).toBeNull()
+      const value = result.data as CmsState
+      validateDocument(value.document)
+      return value
+    }
+    const publish = async (base: CmsState, document: CmsDocument): Promise<void> => {
+      const result = await getAdminClient().functions.invoke('cms-studio', {
+        body: {
+          operation: 'publish',
+          baseRevision: base.revision,
+          baseFingerprint: base.fingerprint,
+          requestId: crypto.randomUUID(),
+          document,
+        },
+      })
+      expect(result.error).toBeNull()
+    }
     const galleryIds = async (): Promise<readonly string[]> => {
       const listed = await getAdminClient().from('gallery_images').select('id').eq('kind', 'salon')
       expect(listed.error).toBeNull()
       return (listed.data ?? []).map((row) => row.id)
     }
-    expect(await galleryIds()).toContain(uploaded.row.id)
-
-    // Delete removes the gallery placement; CMS media bytes stay in the immutable asset registry.
-    const removed = await getAdminClient().functions.invoke('upload-image', {
-      body: {
-        action: 'delete',
-        kind: 'gallery',
-        id: uploaded.row.id,
-        storagePath: uploaded.row.storage_path,
-      },
+    const id = crypto.randomUUID()
+    const base = await state()
+    expect(base.assets.some((asset) => asset.id === uploaded.asset.id)).toBe(true)
+    expect(await galleryIds()).not.toContain(id)
+    const document = structuredClone(base.document)
+    document.gallery.push({
+      id,
+      kind: 'salon',
+      storage_path: uploaded.asset.path,
+      alt: 'IT salon',
+      sort_order: document.gallery.length,
     })
-    expect(removed.error).toBeNull()
-    expect(await galleryIds()).not.toContain(uploaded.row.id)
-    const retained = await fetch(uploaded.publicUrl, { method: 'GET' })
+    try {
+      await publish(base, document)
+      expect(await galleryIds()).toContain(id)
+    } finally {
+      const latest = await state()
+      if (latest.document.gallery.some((image) => image.id === id)) {
+        const cleaned = structuredClone(latest.document)
+        cleaned.gallery = cleaned.gallery.filter((image) => image.id !== id)
+        await publish(latest, cleaned)
+      }
+    }
+    expect(await galleryIds()).not.toContain(id)
+    const retained = await fetch(url)
     expect(retained.ok).toBe(true)
   })
 
