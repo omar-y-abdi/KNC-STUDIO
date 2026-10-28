@@ -75,6 +75,12 @@ const test = baseTest.extend({
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const frame = page.frameLocator('.gjs-frame').first()
     await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
+    // Stored pages open before optional capture completes. These upgrade cases need the
+    // Contact page that successful capture actually adopts, within the existing test deadline.
+    if (productionFixture)
+      await page.getByRole('button', { name: 'Kontakt', exact: true }).waitFor({
+        timeout: info.timeout,
+      })
     const shot = (suffix) =>
       page.screenshot({
         path: `${evidenceDir}/${browserName}-${info.title}-${suffix}.png`,
