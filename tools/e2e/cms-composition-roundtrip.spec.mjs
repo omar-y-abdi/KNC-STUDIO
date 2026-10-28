@@ -267,7 +267,31 @@ test('resize cascade primitive resolves variables and layers without exporting p
       })
       const beforeReload = card.getBoundingClientRect().width
       const serialized = readCanvasCss(editor)
-      const parsed = parseCanvasCss(serialized, editor)
+      const parserEvents = []
+      let parserInput = 'raw'
+      const recordParse = ({ input, output, error }) => {
+        parserEvents.push({
+          kind: parserInput,
+          input,
+          definitions: output.length,
+          error: error && { message: error.message, stack: error.stack },
+        })
+      }
+      let parsed
+      editor.on('parse:css', recordParse)
+      try {
+        editor.Parser.parseCss(serialized)
+        parserInput = 'plain-nesting-control'
+        editor.Parser.parseCss(
+          '#holder{width:800px}@media(min-width:1000px){#probe-card{width:70%!important;:where(&):is(#probe-card):where(#probe-card){width:56%!important}}}',
+        )
+        parserInput = 'nested-media-control'
+        editor.Parser.parseCss('#probe-card{@media(min-width:769px){:is(&){width:56%!important}}}')
+        parserInput = 'masked-helper'
+        parsed = parseCanvasCss(serialized, editor)
+      } finally {
+        editor.off('parse:css', recordParse)
+      }
       editor.Css.getAll().reset(structuredClone(parsed))
       const afterReload = card.getBoundingClientRect().width
       const inspectReload = () => ({
@@ -296,6 +320,7 @@ test('resize cascade primitive resolves variables and layers without exporting p
         beforeReload,
         afterReload,
         serialized,
+        parserEvents,
         parsed,
         immediate,
         settled,
