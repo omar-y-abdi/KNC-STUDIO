@@ -77,3 +77,57 @@ No production credentials are needed for test fixtures. Keep temporary test secr
 port overrides outside commits. Stop our services/profile at final handoff, including
 failure/blocked handoff. Final receipts go in the PR description to avoid a new source
 commit solely to record the preceding successful CI run.
+
+## Current checkpoint — 2026-10-30
+
+The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `c486e9b`.
+Fetched main remains `93ff329`; no recovery PR has been pushed yet. A and B's
+implementation is integrated. A's geometry synchronization branch has joined the
+aggregate without changing its accepted tree. C's browser-sampled cascade resolver,
+selector-preserving imports and mobile nested-style preservation are integrated;
+their final control/history acceptance remains open. The coordinator alone executes tests.
+
+Current ownership: A owns shared-preview CSS isolation in `composedCanvas.ts` and
+the focused `cms-preview-css-isolation.spec.mjs` regression. C owns native import
+priority, current resize baseline capture and the existing composition/hierarchy
+specs. D reviews independently. A's `responsiveStyles.ts` fixes are accepted and frozen.
+
+Verified local receipts, not final pushed-head acceptance:
+
+- `08e9d58`: 160 unit files / 1,865 tests passed (`/tmp/knc-wip-canvas-unit.log`).
+- `c81d63d`: full typecheck and all 18 composition cases passed across Chromium and
+  WebKit, split into the four focused import/cascade cases and the 14 remaining
+  composition/lifecycle cases (`/tmp/knc-wip-canvas-import-c81d63d.log` and
+  `/tmp/knc-wip-composition-c81d63d.log`). The independent import review is closed.
+- `08e9d58`: production harness build and all 14 startup cases passed
+  (`/tmp/knc-wip-startup-20261030.log`). Both engines enforce 3,000 ms readiness.
+  Real-fixture median readiness was 1,426.5 ms Chromium and 2,509 ms WebKit;
+  synchronous editor spans were 604.7 ms and 1,012 ms respectively. These spans
+  are browser instrumentation, not OS or Edge CPU measurements.
+- `4724666`: actual Edge/Storage acceptance passed, and all three customer browser
+  engines passed against the isolated stack. Discovery/report verification found
+  no missing, skipped or retried customer cases. Logs: `/tmp/knc-wip-asset-copy.log`
+  and `/tmp/knc-wip-customer-4724666.log`.
+- Earlier SQL/integration receipts remain separately bounded in
+  [the implementation ledger](WIP_IMPLEMENTATION.md).
+
+Subsequent bounded receipts: `c9c1029` passed full typecheck, ESLint and 49 focused
+resize/synchronization unit cases. At `d4bfb90`, the five focused import, selector,
+resolver and animation cases passed in each browser. Actual authored control tests
+then exposed remaining history/import defects; an incomplete red run is not acceptance.
+
+Remaining gates: preserve CSS priority across Undo/remount, isolate shared-preview
+rules from editable originals, resolve the initial resize snapshot race, and finish
+geometry/theme/language/publication/reload coverage. A standalone native WebKit probe
+reproduced the intrinsic-width result exactly: its physical text-size floor prevents
+strict proportional shrinking below that floor. That case needs native-browser parity,
+not owner font/width overrides or a relaxed tolerance. The mobile preservation counter
+also included read-only preview copies; scope it to the actual editable card IDs while
+retaining its original duplicate/preservation check. Full integrated checks and GitHub
+CI/CodeQL remain pending. Keep the existing CSS validator: unsupported Raw syntax and
+reserved internal properties are not reasons to broaden the admitted CSS language.
+
+The coordinator stopped its Supabase stack with backup and stopped Colima profile
+`knc-wip-20261028` on 2026-10-30 after the backend gates. `default` was independently
+verified still running. Frontend checks need no Colima. If a new backend failure
+requires restart, use only the coordinator's existing isolated profile and ports.
