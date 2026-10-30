@@ -8,6 +8,7 @@ import {
   type Atrule,
   type Block,
   type CssNode,
+  type Declaration,
   type Rule,
   type StyleSheet,
 } from 'css-tree'
@@ -111,7 +112,7 @@ interface LayoutLocation {
 }
 interface LayoutDeclaration {
   readonly location: LayoutLocation
-  readonly declaration: CssNode
+  readonly declaration: Declaration
 }
 interface LayoutChange {
   readonly location: LayoutLocation
@@ -224,8 +225,11 @@ function declarations(css: string): Declarations {
           const key = locationKey(location)
           const values = result.get(key) ?? new Map<string, LayoutDeclaration>()
           node.block.children.forEach((declaration) => {
-            if (declaration.type === 'Declaration' && isGeometry(declaration.property))
-              values.set(declaration.property, { declaration, location })
+            if (declaration.type !== 'Declaration' || !isGeometry(declaration.property)) return
+            const previous = values.get(declaration.property)?.declaration
+            // Within this selector/context, important beats normal; ties retain source order.
+            if (previous?.important && !declaration.important) return
+            values.set(declaration.property, { declaration, location })
           })
           result.set(key, values)
         }
@@ -316,12 +320,16 @@ function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): num
   return match ? siblings.indexOf(match) : -1
 }
 
-function matchingContexts(block: LayoutBlock, context: LayoutContext): (Rule | Atrule)[] {
+function matchingContexts(
+  block: LayoutBlock,
+  context: LayoutContext,
+  bounded = true,
+): (Rule | Atrule)[] {
   const siblings = block.children
     .toArray()
     .filter((node): node is Rule | Atrule => node.type === 'Rule' || node.type === 'Atrule')
-  const preceding = siblingIndex(siblings, context.preceding)
-  const following = siblingIndex(siblings, context.following)
+  const preceding = bounded ? siblingIndex(siblings, context.preceding) : -1
+  const following = bounded ? siblingIndex(siblings, context.following) : -1
   const matches = siblings.filter(
     (node, index) =>
       Boolean(node.block) &&
@@ -335,11 +343,15 @@ function matchingContexts(block: LayoutBlock, context: LayoutContext): (Rule | A
   return match ? [match] : []
 }
 
-function contextBlocks(block: LayoutBlock, path: LayoutContext[]): Block[] {
+function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true): Block[] {
   const [context, ...remaining] = path
   if (!context) return block.type === 'Block' ? [block] : []
-  return matchingContexts(block, context).flatMap((node) =>
-    node.block ? (remaining.length ? contextBlocks(node.block, remaining) : [node.block]) : [],
+  return matchingContexts(block, context, bounded).flatMap((node) =>
+    node.block
+      ? remaining.length
+        ? contextBlocks(node.block, remaining, bounded)
+        : [node.block]
+      : [],
   )
 }
 
@@ -468,7 +480,9 @@ function applyLayout(
   })
   for (const { location, values } of mapped.values()) {
     if (!location.path) continue
-    const blocks = contextBlocks(tree, location.path)
+    // A counterpart may combine guards. Remove the changed properties throughout the
+    // semantic context before choosing their source-ordered insertion destinations.
+    const blocks = contextBlocks(tree, location.path, false)
     for (const block of blocks)
       block.children.forEach((declaration, item) => {
         if (declaration.type === 'Declaration' && values.has(declaration.property))
@@ -476,7 +490,7 @@ function applyLayout(
       })
     const additions = [...values.values()].filter((value): value is CssNode => value !== null)
     if (additions.length) {
-      const block = blocks.at(-1) ?? ensureContext(tree, location.path)
+      const block = contextBlocks(tree, location.path).at(-1) ?? ensureContext(tree, location.path)
       for (const addition of additions) block.children.appendData(clone(addition))
     }
   }
