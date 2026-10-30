@@ -502,10 +502,9 @@ for (const [label, authored] of [
     page,
     context,
   }) => {
-    const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
     const undoEachGesture = ['percentage width', 'class width token'].includes(label)
-    let editTime = await page.evaluate(() => Date.now())
-    if (undoEachGesture) await page.clock.setFixedTime(editTime)
+    if (undoEachGesture) await page.clock.setSystemTime(Date.now())
+    const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
     await page.evaluate(
       async ({ selector, authored, label }) => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
@@ -547,9 +546,8 @@ for (const [label, authored] of [
         )
       if (undoEachGesture) {
         // Each preview switch flushes the previous gesture. Cross the draft's 800 ms
-        // grouping boundary through Date only; browser timers and layout stay real.
-        editTime += 1000
-        await page.clock.setFixedTime(editTime)
+        // grouping boundary without pausing Date or waiting for browser timers.
+        await page.clock.setSystemTime((await page.evaluate(() => Date.now())) + 1000)
       }
       await height(page, (selectedCard ? before.cards[0].rect.height : before.group.height) * 0.8)
       const after = await measure(frame)
