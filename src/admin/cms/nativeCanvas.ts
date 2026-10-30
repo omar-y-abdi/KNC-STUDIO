@@ -47,7 +47,11 @@ function canvasRules(editor: Editor): CssRule[] {
 
 const canvasStyleOptions = { withNested: true, allowEmpty: true }
 
-function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
+function canvasStyleCss(
+  style: CanvasStyle,
+  withinRule = false,
+  important: boolean | string[] = false,
+): string {
   return Object.entries(style)
     .map(([key, value]) => {
       if (typeof value === 'object' && !Array.isArray(value)) {
@@ -56,21 +60,45 @@ function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
           const frames =
             group.type === 'Atrule' &&
             ['keyframes', '-webkit-keyframes'].includes(ident.decode(group.name).toLowerCase())
-          return `${key}{${canvasStyleCss(value, frames ? false : withinRule)}}`
+          return `${key}{${canvasStyleCss(value, frames ? false : withinRule, important)}}`
         }
         if (!withinRule && !key.startsWith('& '))
           throw new Error('En absolut CSS-selektor saknar sin redigeringskodning.')
         const selector = withinRule ? key : key.slice(2)
-        return `${selector}{${canvasStyleCss(value, true)}}`
+        return `${selector}{${canvasStyleCss(value, true, important)}}`
       }
-      return (Array.isArray(value) ? value : [value]).map((item) => `${key}:${item};`).join('')
+      const priority = Array.isArray(important) ? important.includes(key) : important
+      return (Array.isArray(value) ? value : [value])
+        .map((item) => `${key}:${item}${priority ? ' !important' : ''};`)
+        .join('')
     })
     .join('')
 }
 
-/** A resize can serialize the previous dimensions for a temporary DOM measurement without
- * changing the composer model. Nested model values still belong to this same rule. */
-export function readCanvasRuleCss(rule: CssRule, style?: StyleProps): string {
+/** A resize can serialize the previous width/height for a temporary DOM measurement without
+ * changing the composer model or its nested declarations. */
+export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): string {
+  if (dimensions) {
+    const selectors = rule.selectorsToString()
+    if (!selectors || rule.get('singleAtRule'))
+      throw new Error('Storleksmålet saknar sin komponentselektor.')
+    const style: CanvasStyle = rule.toJSON().style ?? {}
+    for (const axis of ['width', 'height']) {
+      const value = dimensions[axis]
+      if (value === undefined) Reflect.deleteProperty(style, axis)
+      else if (
+        typeof value === 'string' ||
+        (Array.isArray(value) && value.every((entry) => typeof entry === 'string'))
+      )
+        style[axis] = value
+      else throw new Error('Komponentens tidigare storlek kunde inte bevaras.')
+    }
+    // Native toCSS forwards opts.style to nested models too. Serialize the deep JSON
+    // instead, so replacing only the root dimensions cannot replace a child's declarations.
+    const css = `${selectors}{${canvasStyleCss(style, true, rule.get('important') ?? false)}}`
+    const atRule = rule.getAtRule()
+    return atRule ? `${atRule}{${css}}` : css
+  }
   // These root envelopes preserve anonymous layer identity and complete keyframes.
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
@@ -78,7 +106,6 @@ export function readCanvasRuleCss(rule: CssRule, style?: StyleProps): string {
   return rule.toCSS({
     important: rule.get('important') ?? false,
     ...canvasStyleOptions,
-    ...(style ? { style } : {}),
   })
 }
 
@@ -452,6 +479,7 @@ export function parseCanvasCss(
 ): ReturnType<Editor['Parser']['parseCss']> {
   const declarations = new Map<string, { property: string; value: CanvasStyle[string] }>()
   const layerRoots = new Map<string, CanvasStyle>()
+  const selectorRoots = new Map<string, string>()
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
   walk(tree, (node) => {
@@ -462,8 +490,10 @@ export function parseCanvasCss(
     tree.children.forEach((node, item) => {
       let hasLayer = false
       walk(node, (child) => {
-        if (child.type !== 'Atrule') return
-        if (ident.decode(child.name).toLowerCase() === 'layer') hasLayer = true
+        if (child.type === 'Rule') return walk.skip
+        if (child.type === 'Atrule' && ident.decode(child.name).toLowerCase() === 'layer')
+          hasLayer = true
+        return undefined
       })
       if (
         node.type !== 'Atrule' ||
@@ -493,9 +523,31 @@ export function parseCanvasCss(
     visit: 'Block',
     enter(block) {
       if (!this.rule) return
+      const prelude = this.rule.prelude
+      if (
+        prelude.type === 'SelectorList' &&
+        prelude.children.some((branch) => generate(branch).includes(','))
+      ) {
+        // GJS comma-splits selector functions/strings. Its selectorsAdd field can
+        // preserve the complete prelude while simple editable IDs keep native metadata.
+        for (const branch of prelude.children)
+          if (!globalThis.CSS.supports(`selector(${generate(branch)})`))
+            throw new Error('En CSS-selektor stöds inte av webbläsaren. Källan har bevarats.')
+        const key = `--cms-internal-selector-${selectorRoots.size}`
+        selectorRoots.set(key, generate(prelude))
+        const placeholder = parse('html', { context: 'selectorList' })
+        if (placeholder.type !== 'SelectorList')
+          throw new Error('CSS-selektorns tillfälliga källa kunde inte förberedas.')
+        this.rule.prelude = placeholder
+        block.children.prependData(parse(`${key}:initial`, { context: 'declaration' }))
+      }
       block.children.forEach((declaration, item) => {
         const key = `--cms-internal-parse-${declarations.size}`
-        if (declaration.type === 'Declaration' && layerRoots.has(declaration.property)) return
+        if (
+          declaration.type === 'Declaration' &&
+          (layerRoots.has(declaration.property) || selectorRoots.has(declaration.property))
+        )
+          return
         if (declaration.type === 'Declaration') {
           declarations.set(key, {
             property: declaration.property,
@@ -527,9 +579,11 @@ export function parseCanvasCss(
   })
   const seen = new Set<string>()
   const seenLayers = new Set<string>()
+  const seenSelectors = new Set<string>()
   const restore = (style: Record<string, unknown>): CanvasStyle => {
     const restored: CanvasStyle = Object.create(null)
     for (const [key, value] of Object.entries(style)) {
+      if (selectorRoots.has(key)) continue
       const original = declarations.get(key)
       if (original) {
         seen.add(key)
@@ -563,13 +617,24 @@ export function parseCanvasCss(
           style,
         }
       }
-      return { ...rule, style: restore(rule['style'] ?? {}) }
+      const selectorKey = Object.keys(rule['style'] ?? {}).find((key) => selectorRoots.has(key))
+      const selector = selectorKey ? selectorRoots.get(selectorKey) : undefined
+      if (selectorKey) seenSelectors.add(selectorKey)
+      return {
+        ...rule,
+        ...(selector ? { selectors: [], selectorsAdd: selector, state: '' } : {}),
+        style: restore(rule['style'] ?? {}),
+      }
     })
   } finally {
     editor.off('parse:css', recordFailure)
   }
   if (failure) throw failure
-  if (seen.size !== declarations.size || seenLayers.size !== layerRoots.size)
+  if (
+    seen.size !== declarations.size ||
+    seenLayers.size !== layerRoots.size ||
+    seenSelectors.size !== selectorRoots.size
+  )
     throw new Error('Sidans CSS kunde inte läsas in utan att förlora regler. Källan har bevarats.')
   return rules
 }

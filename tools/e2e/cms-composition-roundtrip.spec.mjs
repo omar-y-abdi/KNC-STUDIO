@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
+import { parse, walk } from 'css-tree'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -230,7 +231,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       '@media(min-width:769px){@supports(display:cms-unsupported-layout){#nested-conditions{width:95%}}}' +
       '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
       '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
-      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}}}' +
+      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}@layer owner{&.active{width:70%}}}}' +
       '#priority-order{width:70%;zoom:2;all:initial!important;@media(min-width:769px){&{width:80%!important;zoom:.8!important}}display:block!important;height:40px!important}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
       '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
@@ -393,6 +394,98 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   })
   assert.ok(result.serialized.includes('#unused-owner{width:123px;}'))
   assert.deepEqual(pageErrors, [])
+})
+
+test('complex selector functions keep their ancestor constraint through production import', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      components:
+        '<div id="complex-holder"><section class="owner"><div id="inside-a" class="a">A</div><div id="inside-b" class="b">B</div><div id="inside-c" class="c">C</div></section><div id="outside-b" class="b">Outside</div><div id="--cms-internal-selector-0">Owner ID</div></div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const release = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const source =
+      '#complex-holder{width:600px}.owner{width:400px}.owner :is(.a,.b,.c){width:150px}#--cms-internal-selector-0{width:175px}'
+    validateMarkup('', source, policy)
+    const measure = () =>
+      ['inside-a', 'inside-b', 'inside-c', 'outside-b', '--cms-internal-selector-0'].map(
+        (id) => doc.getElementById(id).getBoundingClientRect().width,
+      )
+    try {
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(source, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const before = measure()
+      const exported = readCanvasCss(editor)
+      validateMarkup('', exported, policy)
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(exported, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restored = measure()
+      const plan = planDesktopCardResize(editor, [editor.Components.getById('inside-b')], 0.8)
+      plan.apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const resized = measure()
+      const finalCss = readCanvasCss(editor)
+      validateMarkup('', finalCss, policy)
+      return {
+        before,
+        restored,
+        resized,
+        exported,
+        finalCss,
+        ownerIdWidth: editor.Css.getIdRule('--cms-internal-selector-0', {
+          mediaText: '',
+        })?.getStyle()['width'],
+      }
+    } finally {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('complex-selector-import', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(result.before, [150, 150, 150, 600, 175])
+  assert.deepEqual(result.restored, result.before)
+  assert.deepEqual(result.resized, [150, 120, 150, 600, 175])
+  assert.ok(result.exported.includes('.owner :is(.a,.b,.c)'))
+  assert.ok(result.finalCss.includes('.owner :is(.a,.b,.c)'))
+  assert.equal(
+    result.ownerIdWidth,
+    '175px',
+    'An admitted owner selector ID remains distinct from a temporary property marker',
+  )
+  walk(parse(result.finalCss), (node) => {
+    if (node.type === 'Declaration') assert.ok(!node.property.startsWith('--cms-internal-'))
+  })
+  assert.deepEqual(errors, [])
 })
 
 test('resize styles use the native cascade and survive production import without probe state', async ({
@@ -607,6 +700,10 @@ test('resize styles use the native cascade and survive production import without
   assert.ok(result.serialized.includes('--owner-card-width:70%'))
   assert.ok(result.serialized.includes('width:var(--owner-card-width,60%)'))
   assert.ok(!result.serialized.includes('--cms-internal-resize-'))
+  assert.ok(
+    (result.serialized.match(/:where\(#probe-card\)/g)?.length ?? 0) <= 3,
+    'Repeated resizes update existing targeted declarations instead of nesting another override per event',
+  )
   assert.deepEqual(result.failure, {
     rejected: true,
     model: true,
