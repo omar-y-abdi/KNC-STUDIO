@@ -10,6 +10,7 @@ import {
   type EmailSendKind,
 } from '../../shared/email-send-log'
 import {
+  deliverEmailBatch,
   defaultEmailTemplate,
   ResendDeliveryError,
   sendViaResend,
@@ -30,7 +31,7 @@ import {
   type ExternalActionService,
 } from '../../supabase/functions/_shared/externalActions'
 
-const MIGRATION = 'supabase/migrations/20261025090000_email_send_log.sql'
+const MIGRATION = 'supabase/migrations/20261028100000_email_send_log.sql'
 
 const business: EmailBusiness = {
   name: 'Blade & Blend',
@@ -393,6 +394,44 @@ describe('sendViaResend delivery log', () => {
     expect([beforeBound, afterBound]).toEqual(['pending', 'rejected'])
     await expect(sending).rejects.toMatchObject({ name: 'ResendDeliveryError', kind: 'permanent' })
   })
+
+  it.each(['fails', 'times out'] as const)(
+    'persists a provider-accepted recipient when its log write %s',
+    async (failure) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      vi.spyOn(console, 'info').mockImplementation(() => undefined)
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      provider(accepted)
+      let started: () => void = () => undefined
+      const logStarted = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const log = recordingLog(() => {
+        started()
+        return failure === 'fails'
+          ? Promise.resolve({ error: { code: '23514' } })
+          : new Promise(() => undefined)
+      })
+      const persisted: string[] = []
+      const dispatch = deliverEmailBatch(
+        [{ kind: 'customer' }],
+        () => sendViaResend(email, 're_test', IDEMPOTENCY_KEY, log),
+        async (entry) => {
+          persisted.push(entry.kind)
+          return true
+        },
+      )
+
+      await logStarted
+      if (failure === 'times out') {
+        await vi.advanceTimersByTimeAsync(2_999)
+        expect(persisted).toEqual([])
+        await vi.advanceTimersByTimeAsync(1)
+      }
+      await expect(dispatch).resolves.toEqual({ sent: ['customer'], failureCode: null })
+      expect(persisted).toEqual(['customer'])
+    },
+  )
 
   it('accepts the service-role clients the senders pass', () => {
     expectTypeOf<SupabaseClient>().toExtend<EmailSendLogClient>()

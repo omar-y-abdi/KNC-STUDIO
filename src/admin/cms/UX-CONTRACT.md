@@ -24,15 +24,23 @@ Scope: salon owner's `/admin/cms`. Swedish controls, separate SV/EN content, dat
 ## Flow rules
 
 - Typing changes a draft. Publicera validates and publishes; errors preserve edits. Newer edits during a pending save remain unpublished.
-- Studio keeps the raw server head for publication and a normalized pristine snapshot for owner edits. Load-time normalization remains publishable but creates no backup, leave prompt or enabled Återställ control. Source upgrades migrate pristine and undo/redo together. Återställ returns to pristine; resolving a conflict adopts the normalized server head before applying the resolution.
+- Studio keeps the raw server head for publication and an independently migrated server baseline (`uneditedDocument`) for owner edits. `dirty` describes unpublished content; `hasEdits` excludes automatic migrations. Load-time normalization remains publishable but creates no backup, leave prompt or enabled Återställ control. Source upgrades migrate the baseline and undo/redo together. Återställ clones the prepared baseline; resolving a conflict adopts the normalized server head before applying the resolution.
 - Owner edits receive a local backup. The leave prompt uses cheap pending-edit and unsaved-backup flags; `beforeunload` does not export the canvas or start backup work. Cancel lets normal capture and backup finish; leaving can discard the latest unsaved work. `pagehide` and hidden-page handling flush and journal pending work for reload recovery. A closed tab's draft can replace this tab's draft only when this tab has no owner edits or unresolved conflict; normalization alone does not block Fortsätt här.
 - Changing page or workspace flushes canvas edits. Returning preserves selection and scroll. Opening a preview never publishes.
+- Page name, SEO and menu mutations flush pending canvas edits and read the latest draft page before applying metadata. A structural header/menu refresh cannot replace a pending body edit with stale props.
 - History review is read-only and follows the selected device. Restore copies a revision into the draft; Publicera creates a new revision.
 - Created pages expose Sidinställningar on desktop as well as mobile. New pages get the live homepage header (logo, contact, language, theme, page menu) in editor, preview and public output; only the authored body is stored. The header is locked in the page canvas and edited on the homepage. Pages saved with a frozen header copy are normalised on every load, restore and import. Deleting a page (Sidinställningar → Ta bort, confirmed) removes it from every page menu without republishing other pages.
-- `/contact` is a core information page alongside `/privacy` and `/terms`. Its body is editable; its address is fixed, and it cannot be deleted or duplicated. Core-page adoption preserves an existing contact body.
+- `/contact` is a core information page alongside `/privacy` and `/terms`. Its body is editable; its address is fixed, and it cannot be deleted or duplicated. Adoption preserves existing Contact bodies, including historical bodies with none or only some business slots. Newly captured templates carry `data-business-contact-page="1"` and require all managed Contact slots. The marker versions content, not authorization. Pre-Contact publications open their existing pages before optional source capture adds Contact. Information-page editor and locked preview use the public token/layout base and selected mode.
 - Resource uploads and metadata save directly to the resource library. Page references publish with the document. Historical references protect older files from deletion.
 - Mejl has two views: Mallar (template editing) and Leveransstatus. Leveransstatus lists failed booking emails first (customer, booking time, owed recipients, reason; Försök igen, Markera hanterad with a confirm dialog that closes before any error is shown), then the log of sent and failed emails from the last 30 days with Visa fler paging; Visa opens the stored copy in a sandboxed iframe with credential links shown as [dold länk]. Previewing templates never sends email.
 - Business settings and barber presentation are editable; operational booking constraints (the cancellation window) remain outside reversible CMS history and are edited under Inställningar in the admin.
+
+The database authority migration enforces publication as the authenticated content-write boundary:
+direct REST writes to site/About copy and email templates are revoked, and direct owner setting
+writes are limited to `cancellation_policy_hours`. Staff/profile/photo, schedule, service and booking
+operations retain their own boundaries. The app's email log is best effort and records provider
+acceptance, not inbox delivery; native Supabase Auth mail is outside it. Rollout and delivery details
+live in `docs/operations/CMS_RELEASE.md` and `docs/operations/EMAIL_DELIVERY.md`.
 
 ## Source boundaries
 
@@ -43,7 +51,7 @@ Native select/listbox ownership is explicit: browser select is canonical for sma
 ## Responsive and site styling contract
 
 - Desktop geometry applies above 768px, including screens wider than the editor canvas. Mobile geometry applies through 768px. Nudge, style manager and resizing use the same selected device scope.
-- Geometry edits synchronize between light/dark and between corresponding Swedish/English elements. Matching uses identical IDs or the language-independent part of authored `cms-body-<page UUID>-sv/en` and `cms-page-<page UUID>-sv/en-<index>` IDs. Text containers retain auto height so longer translations fit; text and colors stay independent across languages. Existing stored layout differences remain until the owner edits that geometry. Editing text on a shared component affects both responsive views.
+- Synchronization is limited to the geometry properties, selectors and element mappings recognized by `src/admin/cms/responsiveStyles.ts`. Matching uses identical IDs or the language-independent part of authored `cms-body-<page UUID>-sv/en` and `cms-page-<page UUID>-sv/en-<index>` IDs. The mapped text-container policy retains auto height for translations; text and colors stay independent across languages. Existing stored layout differences remain until the owner edits that geometry. Editing text on a shared component affects both responsive views within that language.
 - Matching original text bindings in the separate desktop/mobile shell trees synchronize text without copying geometry or replacing adjacent icons. Ambiguous repeated captions and SVG lettering remain independent.
 - Home composes the current About draft instead of preserving a stale embedded preview. Shared content links directly to its editing page.
 - Mobile editing retains the original scroll container and shared folding geometry; its temporary motion stylesheet never enters the saved component model. Locked preview runs the actual read-only public runtime.

@@ -197,7 +197,7 @@ select is(
 --   * UPDATE barbers — victor holds the table UPDATE grant but no owner policy matches his rows,
 --     so the USING filter hides every row -> the UPDATE is a silent 0-row NO-OP (not 42501).
 --     Proven by capturing the affected-row count (must be 0) AND that salman is unchanged.
---   * INSERT about_content/gallery_images — the owner WITH CHECK fails on insert -> 42501.
+--   * INSERT about_content/gallery_images — no browser INSERT grant remains -> 42501.
 with upd as (
   update public.barbers set name = 'Hacked' where id = 'salman' returning 1
 )
@@ -212,7 +212,7 @@ select isnt(
 );
 select throws_ok(
   $$insert into public.about_content (key, lang, value) values ('intro','sv','barber-edit')$$,
-  '42501', null, 'victor CANNOT write about_content (owner-only WITH CHECK)'
+  '42501', null, 'victor CANNOT write about_content outside CMS publication'
 );
 select throws_ok(
   $$insert into public.gallery_images (kind, storage_path) values ('salon','x')$$,
@@ -251,9 +251,9 @@ select is(
   public.admin_add_time_off('salman','2099-11-01','2099-11-02','') ->> 'ok',
   'true', 'owner CAN insert time off for any barber through the guarded RPC'
 );
-select lives_ok(
+select throws_ok(
   $$update public.about_content set value = 'Owner edit' where key='intro' and lang='sv'$$,
-  'owner CAN edit about_content'
+  '42501', null, 'owner CANNOT bypass CMS publication to edit about_content'
 );
 select throws_ok(
   $$insert into public.gallery_images (kind, storage_path, alt) values ('cuts','gallery/cuts/x.jpg','x')$$,

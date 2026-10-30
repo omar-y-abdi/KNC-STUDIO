@@ -459,8 +459,13 @@ async function verifyDeliveryStatus(page) {
     'a failed discard keeps its delivery listed',
   )
 
-  const sent = page.getByRole('list', { name: 'Skickade mejl', exact: true })
+  const sent = page.getByRole('list', { name: 'Mejllogg', exact: true })
   await sent.getByText('Mejl två', { exact: true }).waitFor()
+  await sent
+    .getByRole('listitem')
+    .filter({ hasText: 'Mejl två' })
+    .getByText('Misslyckat: Tillfälligt fel hos mejltjänsten eller anslutningen', { exact: true })
+    .waitFor()
   await page.getByRole('button', { name: 'Visa fler', exact: true }).click()
   await sent.getByText('Mejl tre', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Visa fler', exact: true }).waitFor({ state: 'detached' })
@@ -1878,7 +1883,7 @@ async function mountRealAdmin(page, tab = 'bookings') {
 
 async function verifyAdminSession(page, scenario) {
   const queuedWrite = ['queued-write', 'notification-gap'].includes(scenario)
-  const holds = { profile: gate(), logout: gate(), presentation: gate(), password: gate() }
+  const holds = { profile: gate(), logout: gate(), settingsWrite: gate(), password: gate() }
   const finished = { profile: gate(), password: gate() }
   const state = {
     enabled: true,
@@ -1886,7 +1891,7 @@ async function verifyAdminSession(page, scenario) {
     networkFailure: false,
     calls: [],
     errors: [],
-    settings: new Map([['business_name', 'Synthetic Studio']]),
+    settings: new Map([['cancellation_policy_hours', '24']]),
   }
   const origin = new URL(baseUrl).origin
   const count = (path) => state.calls.filter((call) => call.path === path).length
@@ -1895,7 +1900,7 @@ async function verifyAdminSession(page, scenario) {
     (session) => globalThis.localStorage.setItem('knc-admin-auth', JSON.stringify(session)),
     adminSession(AUTH_USER_A),
   )
-  if (scenario === 'late-reset-logout') {
+  if (scenario === 'late-reset-logout' || scenario === 'notification-gap') {
     await page.addInitScript(() => {
       const NativeChannel = globalThis.BroadcastChannel
       globalThis.__heldAuthMessages = []
@@ -2034,7 +2039,8 @@ async function verifyAdminSession(page, scenario) {
         if (url.pathname === '/rest/v1/site_settings') {
           if (request.method() === 'GET')
             return reply([...state.settings].map(([key, value]) => ({ key, value })))
-          if (Array.isArray(body) && queuedWrite) await holds.presentation.promise
+          if (queuedWrite && body?.key === 'cancellation_policy_hours' && body.value === '48')
+            await holds.settingsWrite.promise
           for (const row of Array.isArray(body) ? body : [body])
             state.settings.set(row.key, row.value)
           return reply(body)
@@ -2071,7 +2077,10 @@ async function verifyAdminSession(page, scenario) {
       configured,
       'Admin source server requires fake VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY',
     )
-    await mountRealAdmin(page, scenario === 'late-settings-password' ? 'settings' : 'bookings')
+    await mountRealAdmin(
+      page,
+      queuedWrite || scenario === 'late-settings-password' ? 'settings' : 'bookings',
+    )
     if (scenario === 'late-reset-logout') {
       await data.waitFor()
       await page.evaluate(async () => {
@@ -2189,19 +2198,43 @@ async function verifyAdminSession(page, scenario) {
         'Old password intent continued after account change',
       )
     } else if (queuedWrite) {
-      await page.getByLabel('Logotypstorlek').selectOption('xl')
-      await page.getByRole('button', { name: 'Publicera utseende', exact: true }).click()
-      await waitCall((call) => Array.isArray(call.body))
-      await page.getByLabel('Företagsnamn', { exact: true }).fill('OLD A INTENT')
-      await page
-        .getByLabel('Företagsnamn', { exact: true })
-        .locator('..')
+      const hours = page.getByLabel('Avbokningsfrist (timmar)', { exact: true })
+      const save = page
+        .getByRole('form', { name: 'Avbokningsfrist', exact: true })
         .getByRole('button', { name: 'Spara', exact: true })
-        .click()
+      await expect(save).toBeEnabled()
+      // The retained Settings form serializes its own saves. Seed a real in-flight operation on
+      // that shared resource, then queue the owner's next intent through the actual form.
+      await page.evaluate(async () => {
+        const { orderedAdminOperation } = await import('/src/admin/orderedOperations.ts')
+        const { saveSiteSetting } = await import('/src/admin/adapters/siteAdmin.ts')
+        void orderedAdminOperation('site:settings', () =>
+          saveSiteSetting('cancellation_policy_hours', '48'),
+        )
+      })
+      await waitCall(
+        (call) => call.body?.key === 'cancellation_policy_hours' && call.body.value === '48',
+      )
+      await hours.fill('72')
+      await save.click()
+      await expect(save).toBeDisabled()
       assert(
-        !state.calls.some((call) => call.body?.key === 'business_name'),
+        !state.calls.some(
+          (call) => call.body?.key === 'cancellation_policy_hours' && call.body.value === '72',
+        ),
         'A write was not queued',
       )
+      // A no-op queued after the form lets the test wait for both intents to settle, even if
+      // detecting the changed account unmounts the form before its button can become enabled.
+      await page.evaluate(async () => {
+        const { orderedAdminOperation } = await import('/src/admin/orderedOperations.ts')
+        globalThis.__queuedSettingsDrain = null
+        void orderedAdminOperation('site:settings', async () => ({ ok: true, value: null })).then(
+          (result) => {
+            globalThis.__queuedSettingsDrain = result
+          },
+        )
+      })
       if (scenario === 'notification-gap') {
         const other = await page.context().newPage()
         try {
@@ -2223,12 +2256,8 @@ async function verifyAdminSession(page, scenario) {
             ),
             'A tab cannot see the changed shared storage',
           )
-          holds.presentation.release()
-          const save = page
-            .getByLabel('Företagsnamn', { exact: true })
-            .locator('..')
-            .getByRole('button', { name: 'Spara', exact: true })
-          await expect(save, 'Queued intent never settled after the first write').toBeEnabled()
+          holds.settingsWrite.release()
+          await page.waitForFunction(() => globalThis.__queuedSettingsDrain !== null)
         } finally {
           await other.close()
         }
@@ -2239,21 +2268,27 @@ async function verifyAdminSession(page, scenario) {
           (await import('/src/admin/auth.ts')).signIn('b@audit.invalid', 'Synthetic-password-123!'),
         )
         assert(login.ok && login.value.userId === AUTH_USER_B, 'Second user never signed in')
-        await mountRealAdmin(page, 'site')
-        holds.presentation.release()
-        await page.getByLabel('Företagsnamn', { exact: true }).waitFor()
+        await mountRealAdmin(page, 'settings')
+        holds.settingsWrite.release()
+        await page.waitForFunction(() => globalThis.__queuedSettingsDrain !== null)
+        await expect(hours).toHaveValue('48')
+        await expect(save).toBeEnabled()
       }
       assert(
-        !state.calls.some((call) => call.body?.key === 'business_name'),
+        !state.calls.some(
+          (call) => call.body?.key === 'cancellation_policy_hours' && call.body.value === '72',
+        ),
         'Old A intent was sent under a later account',
       )
       assert(
-        state.settings.get('business_name') === 'Synthetic Studio',
+        state.settings.get('cancellation_policy_hours') === '48',
         'Old queued write mutated the inert ledger',
       )
       assert(
-        state.settings.get('homepage_logo_scale') === 'xl',
-        'In-flight A write was not reconciled before B read',
+        state.calls
+          .filter((call) => call.path === '/rest/v1/site_settings' && call.method === 'POST')
+          .every((call) => call.who === AUTH_USER_A && call.body.value === '48'),
+        'The accepted in-flight write lost its captured A identity',
       )
     } else {
       await data.waitFor()

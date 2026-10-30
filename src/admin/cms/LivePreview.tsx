@@ -2,7 +2,7 @@ import { siteThemeCss } from '../../../shared/site-theme'
 import type { JSX } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage, CmsPresentation } from '../../../shared/cms'
-import { nativeCanvas } from './nativeCanvas'
+import { legalCanvasBase, nativeCanvas } from './nativeCanvas'
 import {
   SITE_PAGE_CSS,
   dropFrozenChrome,
@@ -164,8 +164,11 @@ export function LivePreview({
     : site
       ? { html: site.html, css: `${SITE_PAGE_CSS}\n${site.css[mode]}` }
       : nativeCanvas(page.content[lang], mode)
-  // A created page sits on the token base the Worker inlines, in the previewed scheme.
-  const siteBase = sitePage ? '<link rel="stylesheet" href="/tokens.css">' : ''
+  // Match the editor and Worker's base sheets and pinned scheme for information pages too.
+  const base = sitePage
+    ? { styles: ['/tokens.css'], scheme: mode }
+    : legalCanvasBase(page.path, mode)
+  const baseLinks = base.styles.map((href) => `<link rel="stylesheet" href="${href}">`).join('')
   return (
     <div ref={host} class="cms-live-preview" aria-busy={native && status === 'loading'}>
       <div
@@ -217,7 +220,7 @@ export function LivePreview({
           }}
           {...(content
             ? {
-                srcDoc: `<!doctype html><html lang="${lang}"${sitePage ? ` style="color-scheme:${mode}"` : ''}><head>${siteBase}<style>${fontCss}${siteThemeCss(presentation, mode)}${content.css}</style></head><body>${content.html}</body></html>`,
+                srcDoc: `<!doctype html><html lang="${lang}"${base.scheme ? ` style="color-scheme:${base.scheme}"` : ''}><head>${baseLinks}<style>${fontCss}${siteThemeCss(presentation, mode)}${content.css}</style></head><body>${content.html}</body></html>`,
               }
             : { src: '/cms-public/source?preview=1' })}
         />

@@ -92,6 +92,13 @@ const pauseClock = async (page) =>
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
+// These lifecycle cases begin from an explicitly published head so later assertions isolate
+// the owner edit or recovered draft from the initial migration.
+const publishAdopted = async (page) => {
+  await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+  await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
+}
+
 // The sanitised production presentation: its draft serializes to about 1.4 million characters.
 const productionDocument = async () => ({
   ...emptyDocument(),
@@ -779,7 +786,7 @@ test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft'
 test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publication left', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   const delay = { operation: 'publish', started: gate(), done: gate() }
   const initial = await productionDocument()
   initial.settings.business_name = 'Salongen'
@@ -792,6 +799,10 @@ test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publicat
   )
   const backend = await nativeBackend(context, initial, [], undefined, { delay })
   await openStudio(page)
+  // The stored Home is usable before optional capture adds Contact to the actual draft.
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).waitFor({
+    timeout: testInfo.timeout,
+  })
   await page.getByRole('button', { name: /Företag & SEO/ }).click()
   const name = page.getByLabel('Visningsnamn', { exact: true })
   await name.fill('Tillfälligt namn')

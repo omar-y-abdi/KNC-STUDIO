@@ -189,8 +189,9 @@ export function ensureCorePages(
       next.presentation.pages.push(structuredClone(page))
       paths.add(page.path)
     } else {
-      // Contact is an authored body: an existing page must survive the upgrade byte-for-byte.
-      if (page.path === '/contact') continue
+      // Information pages are authored bodies, not native scenes. Keep their bytes intact;
+      // normalizeDocument separately handles the recognized legacy legal upgrade.
+      if (INFORMATION_PAGE_PATHS.includes(page.path)) continue
       const existing = next.presentation.pages.find((item) => item.path === page.path)
       if (existing)
         for (const lang of ['sv', 'en'] as const) {

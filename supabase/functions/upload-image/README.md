@@ -3,6 +3,23 @@
 Authenticated owner/barber uploads are decoded server-side, metadata-stripped, resized, and encoded
 as WebP before Storage receives them. Browser clients cannot insert or update bucket objects directly.
 
+## Supported writers
+
+`cms_asset` registers owner-uploaded media in the CMS library; Studio publication assigns gallery
+images and the homepage logo to the canonical public read models. `barber_photo` remains available
+to the owner and to the barber for their own profile, including exact-path deletion.
+
+The legacy `gallery` and `site_logo` upload and JSON-delete kinds are retired. Even an authenticated
+owner receives HTTP 400 `invalid_payload` for these old-client requests, before image decoding or
+Storage/metadata writes. Use the current Studio media library and publish the assignment instead.
+
+Deploy this gateway before applying `20261028182853_retire_legacy_owner_media_writers.sql`, which
+removes only the four exclusive legacy gallery/logo writer RPCs with `DROP FUNCTION ... RESTRICT`.
+The canonical `gallery_images` and `site_settings` tables, CMS asset registration, barber-photo
+helpers, generic Storage deletion queue, retention checks, orphan reconciliation and fenced worker
+dispatch remain available. Already-queued gallery and logo deletion jobs keep their payloads and
+can still be dispatched; retirement does not discard cleanup work or enqueue new deletions.
+
 `magick.wasm` is pinned from `@imagemagick/magick-wasm@0.0.42` and bundled through the function's
 `static_files` configuration. SHA-256:
 `c903248c3b66a550b74bac5ea25d359e84455b8d82aa945a16f75f6fd8be610a`. Upstream license and notice

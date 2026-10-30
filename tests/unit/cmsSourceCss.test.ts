@@ -70,6 +70,31 @@ it('validates the contact page with the client schema and both cms-studio Edge v
   }
 })
 
+it.each([
+  '<main>Owner contact</main>',
+  '<main><span data-business-name="">Ägarens företagsnamn</span></main>',
+  '<main><div id="contact-details">Ägarens kontaktuppgifter</div></main>',
+])('keeps an unmarked legacy contact publishable without rewriting its body: %s', (html) => {
+  const document = contactDocument()
+  const page = document.presentation.pages[0]
+  if (!page) throw new Error('Missing contact page')
+  page.layout = 'independent'
+  for (const lang of ['sv', 'en'] as const) page.content[lang].html = html
+  expect(() => validateCompleteDocument(document, document)).not.toThrow()
+  expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+  for (const lang of ['sv', 'en'] as const) expect(page.content[lang].html).toBe(html)
+})
+
+it('still applies the markup security boundary to an unmarked legacy contact', () => {
+  const document = contactDocument()
+  const page = document.presentation.pages[0]
+  if (!page) throw new Error('Missing contact page')
+  page.content.sv.html = '<main><p onclick="alert(1)">Owner contact</p></main>'
+  expect(() => validateDocumentMarkupPlacements(document, policy)).toThrow(
+    'Unsupported attribute onclick',
+  )
+})
+
 function contactDocument(page?: CmsPage) {
   const document = emptyDocument()
   const source = readFileSync(new URL('../../public/contact.html', import.meta.url), 'utf8')
@@ -93,6 +118,9 @@ function contactDocument(page?: CmsPage) {
 it('accepts the imported contact body and rejects deletion of its live business slots', () => {
   const document = contactDocument()
   expect(() => validateDocumentMarkupPlacements(document, policy)).not.toThrow()
+  expect(document.presentation.pages[0]?.content.sv.html).toContain(
+    'data-business-contact-page="1"',
+  )
   // Each pattern removes the whole attribute, whether serialized bare or with an empty value.
   for (const [attribute, slot] of [
     [/ id="contact-details"/g, '#contact-details'],
@@ -109,6 +137,13 @@ it('accepts the imported contact body and rejects deletion of its live business 
       `Contact page is missing required server-owned slot(s): ${slot}`,
     )
   }
+  const empty = structuredClone(document)
+  const page = empty.presentation.pages[0]
+  if (!page) throw new Error('Missing contact page')
+  page.content.sv.html = '<main data-business-contact-page="1">Ägarens kontakttext</main>'
+  expect(() => validateDocumentMarkupPlacements(empty, policy)).toThrow(
+    'Contact page is missing required server-owned slot(s): #contact-details, #contact-hours, [data-business-name], [data-business-city]',
+  )
 })
 
 it('parses safe custom properties and nested variable fallbacks', () => {

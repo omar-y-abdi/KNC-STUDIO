@@ -32,7 +32,8 @@ squashing remain owner-dependent. Native Auth emails remain outside delivery log
 ## Agent ownership and order
 
 1. A / wip_integration: recover baseline, reconcile #91, then CMS lifecycle/contact,
-   source import and public rendering. Branch `wip/complete-2026-10`.
+   source import and public rendering. Branch `wip/cms-lifecycle`; the coordinator
+   integrates into `wip/complete-2026-10`.
 2. B / wip_admin: admin single-writer cleanup, delivery log/backend boundaries.
    Branch `wip/admin-delivery`. Initial audit only; synchronize to recovered baseline
    before edits. Preserve current Zod boundary semantics and authorization.
@@ -56,13 +57,14 @@ publication authorization/retention repairs, Zod4/CSP, shell parser, all-engine 
 Calendar contract and operational documentation. No lowered budgets, relaxed assertions,
 retries or replacement screenshot baselines to obtain green.
 
-Coordinator first runs typecheck/lint/unit/build on the recovered checkpoint, then
-focused existing regressions for demonstrated failures. Final integrated verification:
-unit/static/build/bundle; CMS Chromium then WebKit; public/admin/visual; startup;
-local database pgTAP then integration and relevant Edge/Storage/customer journeys.
-Use actual discovery/report verification; missing/skipped/retried cases are not passes.
-GitHub's full configured pipeline and CodeQL verify the final pushed head. One background
-watcher per push; inspect failed logs, avoid repeated manual status polling.
+The coordinator runs local checks serially: static/unit/build gates and focused browser
+regressions for demonstrated failures, plus local pgTAP, adapter integration and actual
+Edge/Storage/customer journeys. Full configured CMS Chromium/WebKit, public/admin/visual,
+startup, Edge and historical database coverage runs in GitHub on the final pushed head;
+these suites need not be duplicated locally without a new risk or failure. Keep every
+configured case, threshold and engine. Use discovery/report verification; missing, skipped
+or retried expected cases are not passes. Final CI and CodeQL must pass before handoff.
+One background watcher per push; inspect failed logs, avoid manual status polling.
 
 ## Environment ownership
 

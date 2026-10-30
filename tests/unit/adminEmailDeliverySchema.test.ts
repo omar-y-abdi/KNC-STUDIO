@@ -71,6 +71,16 @@ describe('email send log admin contract', () => {
 
   it('rejects a failed entry without a reason and an unknown kind', () => {
     expect(emailSendLogEntryRow.safeParse({ ...entry, status: 'failed' }).success).toBe(false)
+    expect(
+      emailSendLogEntryRow.safeParse({ ...entry, error_code: 'send_failed_transient' }).success,
+    ).toBe(false)
     expect(emailSendLogEntryRow.safeParse({ ...entry, kind: 'newsletter' }).success).toBe(false)
   })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects an invalid attempt count %s',
+    (attempt_count) => {
+      expect(emailSendLogEntryRow.safeParse({ ...entry, attempt_count }).success).toBe(false)
+    },
+  )
 })

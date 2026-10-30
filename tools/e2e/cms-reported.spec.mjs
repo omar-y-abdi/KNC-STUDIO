@@ -75,6 +75,12 @@ const test = baseTest.extend({
     await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
     const frame = page.frameLocator('.gjs-frame').first()
     await frame.locator('[data-knc-surface="desktop-home"]').waitFor()
+    // Stored pages open before optional capture completes. These upgrade cases need the
+    // Contact page that successful capture actually adopts, within the existing test deadline.
+    if (productionFixture)
+      await page.getByRole('button', { name: 'Kontakt', exact: true }).waitFor({
+        timeout: info.timeout,
+      })
     const shot = (suffix) =>
       page.screenshot({
         path: `${evidenceDir}/${browserName}-${info.title}-${suffix}.png`,
@@ -134,6 +140,155 @@ test.use({
   viewport: { width: 1440, height: 1000 },
   colorScheme: 'light',
   contextOptions: { reducedMotion: 'reduce' },
+})
+
+for (const partial of [false, true])
+  test(`legacy owner Contact ${partial ? 'with a partial business slot' : 'without business slots'} survives validation and publication`, async ({
+    page,
+    context,
+  }) => {
+    const document = documentFixture()
+    const html =
+      '<main class="owner-contact"><h1>Owner contact</h1>' +
+      (partial ? '<p><span data-business-name="">Ägarens namn</span></p>' : '') +
+      '<p>Ägarens tidigare kontakttext</p></main>'
+    const variant = {
+      html,
+      css: { light: '.owner-contact{padding:24px}', dark: '.owner-contact{padding:24px}' },
+    }
+    const contact = {
+      id: '90000000-0000-4000-8000-000000000007',
+      path: '/contact',
+      kind: 'page',
+      layout: 'independent',
+      name: { sv: 'Tidigare kontakt', en: 'Earlier contact' },
+      title: { sv: 'Ägarens kontakt', en: 'Owner contact' },
+      description: { sv: '', en: '' },
+      inMenu: true,
+      content: { sv: globalThis.structuredClone(variant), en: globalThis.structuredClone(variant) },
+    }
+    document.presentation.pages = [contact]
+    const backend = await nativeBackend(context, document)
+    await page.goto(`${base}/tools/e2e/admin-harness.html?view=cms-studio`)
+    // This is the same shared validation pipeline used by the real cms-studio validate/publish
+    // handlers. An arbitrary legacy body must not depend on capturing a replacement template.
+    const validated = await page.evaluate(async (document) => {
+      const { cmsApi } = await import('/src/admin/cms/api.ts')
+      return cmsApi.validate(document)
+    }, document)
+    expect(validated.document.presentation.pages[0].content).toEqual(contact.content)
+    await page.evaluate(async () =>
+      (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+    )
+    await page.locator('.cms-canvas-shell').waitFor({ timeout: 90000 })
+    await page.getByRole('button', { name: 'Tidigare kontakt', exact: true }).click()
+    await page
+      .frameLocator('.gjs-frame')
+      .first()
+      .getByRole('heading', { name: 'Owner contact' })
+      .waitFor()
+    expect(backend.writes).toEqual([])
+    await page
+      .locator('.cms-page-meta')
+      .getByLabel('Namn', { exact: true })
+      .fill('Kontakt efter uppgradering')
+    await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+    await page.getByText('Publicerad · rev 2', { exact: true }).waitFor()
+    const published = backend.document.presentation.pages.find((item) => item.path === '/contact')
+    expect(published.content).toEqual(contact.content)
+    expect(published.id).toBe(contact.id)
+    expect(published.name.sv).toBe('Kontakt efter uppgradering')
+    expect(backend.writes).toEqual(['publish'])
+    expect(backend.requests.map(({ operation }) => operation)).toContain('validate')
+    expect(backend.requests.map(({ operation }) => operation)).toContain('publish')
+  })
+
+test('locked information previews match the editor and Worker layout, fonts and background in both modes', async ({
+  page,
+  context,
+  studio,
+}) => {
+  const document = await studio.capture()
+  const rendering = await loadWorker()
+  const visitor = await context.newPage()
+  const pages = [
+    ['/contact', 'Kontakt'],
+    ['/privacy', 'Integritetspolicy'],
+    ['/terms', 'Bokningsvillkor'],
+  ]
+  const paint = (main) =>
+    main.evaluate((element) => {
+      const doc = element.ownerDocument
+      const style = getComputedStyle(element)
+      const heading = getComputedStyle(element.querySelector('h1'))
+      const backgrounds = []
+      for (let current = element; current; current = current.parentElement)
+        backgrounds.push(getComputedStyle(current).backgroundColor)
+      return {
+        scheme: getComputedStyle(doc.documentElement).colorScheme,
+        background: backgrounds.find(
+          (color) => !['transparent', 'rgba(0, 0, 0, 0)'].includes(color),
+        ),
+        color: style.color,
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        maxWidth: style.maxWidth,
+        padding: style.padding,
+        lineHeight: style.lineHeight,
+        headingSize: heading.fontSize,
+      }
+    })
+  const loadedFonts = (main) =>
+    main.evaluate((element) => element.ownerDocument.fonts.ready.then(() => undefined))
+  try {
+    await routeWorkerDocuments(visitor, {
+      origin: new URL(base).origin,
+      paths: pages.map(([path]) => path),
+      worker: rendering.worker,
+      presentation: document.presentation,
+      shell: SOURCE_SHELL,
+    })
+    await page.bringToFront()
+    for (const [path, name] of pages) {
+      await page.getByRole('button', { name, exact: true }).click()
+      for (const [name, mode] of [
+        ['Mörk', 'dark'],
+        ['Ljus', 'light'],
+      ]) {
+        await page.getByRole('button', { name, exact: true }).click()
+        const editorMain = studio.frame.locator('main.bb-doc')
+        await editorMain.waitFor()
+        await loadedFonts(editorMain)
+        await expect
+          .poll(() => paint(editorMain))
+          .toMatchObject({
+            scheme: mode,
+            maxWidth: '736px',
+            background: mode === 'dark' ? 'rgb(28, 28, 30)' : 'rgb(255, 255, 255)',
+          })
+        const reference = await paint(editorMain)
+        expect(reference.fontFamily).toContain('Inter Variable')
+        await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+        const preview = page.frameLocator('.cms-live-preview iframe').locator('main.bb-doc')
+        await preview.waitFor()
+        await loadedFonts(preview)
+        await expect
+          .poll(() => paint(preview), { message: `locked ${path} in ${mode}` })
+          .toEqual(reference)
+        await visitor.goto(`${base}${path}?mode=${mode}`, { waitUntil: 'load' })
+        const publicMain = visitor.locator('#root main.bb-doc')
+        await loadedFonts(publicMain)
+        await expect
+          .poll(() => paint(publicMain), { message: `public ${path} in ${mode}` })
+          .toEqual(reference)
+        await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+      }
+    }
+    expect(studio.backend.writes).toEqual([])
+  } finally {
+    await visitor.close()
+    await rendering.close()
+  }
 })
 
 test.describe('contact upgrade', () => {
@@ -208,6 +363,7 @@ test.describe('contact upgrade', () => {
     expect(result.existingUnchanged).toBe(true)
     for (const variant of Object.values(result.contact.content)) {
       expect(variant.html).toContain('class="bb-page bb-doc"')
+      expect(variant.html).toContain('data-business-contact-page="1"')
       expect(variant.html).toContain('data-business-name')
       expect(variant.html).toContain('id="contact-details"')
       expect(variant.html).toContain('id="contact-hours"')
@@ -634,22 +790,6 @@ const legalContents = async (studio, expected) =>
       .map((page) => [page.path, page.content]),
   )
 
-// Import runs ensureCorePages, which writes each core page's html back as DOMParser body.innerHTML:
-// the whitespace before the first element is dropped and nothing else may change. Complete server
-// heads use withCorePages instead and retain that whitespace.
-const adoptedContents = (contents) =>
-  Object.fromEntries(
-    Object.entries(contents).map(([path, content]) => [
-      path,
-      Object.fromEntries(
-        Object.entries(content).map(([lang, variant]) => [
-          lang,
-          { ...variant, html: variant.html.replace(/^\s+/, '') },
-        ]),
-      ),
-    ]),
-  )
-
 // A local draft saved before the legal upgrade at the server's own revision is restored without a
 // merge; the recovered draft still gets the upgrade and keeps the owner's other edits.
 test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }) => {
@@ -684,7 +824,6 @@ test('legal upgrade survives a pre-upgrade local draft', async ({ page, studio }
 // An exported JSON draft from before the legal upgrade imports with the upgrade applied.
 test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, studio }) => {
   const { draft, expected } = preUpgradeDraft((await savedBackup(page)).document)
-  const imported = adoptedContents(expected)
   await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
   await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
     name: 'pre-upgrade.json',
@@ -694,7 +833,7 @@ test('legal upgrade applies to an imported pre-upgrade draft', async ({ page, st
   await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
   await expect
     .poll(() => legalContents(studio, expected), { message: 'the imported legal pages' })
-    .toEqual(imported)
+    .toEqual(expected)
 })
 
 // A server head still holding the legacy legal pages reaches the draft through a publish conflict.

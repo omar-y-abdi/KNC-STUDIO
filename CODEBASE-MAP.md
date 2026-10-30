@@ -3,6 +3,8 @@
 Start with the area row, then follow its entry file and focused tests. This map describes
 source ownership, not production deployment state. Paths are relative to the repository root.
 Backend setup and security boundaries live in `BACKEND.md`; local setup lives in `README.md`.
+The current recovered CMS/admin scope and rollout dependencies are indexed in
+[the WIP implementation ledger](docs/WIP_IMPLEMENTATION.md).
 
 ## Areas
 
@@ -107,6 +109,11 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
 ## Boundaries worth preserving
 
 - Booking rules, prices, permissions and publication validation belong on the server.
+- Studio owns page, site/About copy, business/appearance, gallery/logo and email-template publication.
+  The forward migration `supabase/migrations/20261028185110_cms_single_writer_authority.sql`
+  removes authenticated REST content writes and limits direct owner `site_settings` writes to
+  `cancellation_policy_hours`. That operational setting stays in `src/admin/views/SettingsView.tsx`
+  and outside CMS history/fingerprints. See `docs/operations/CMS_RELEASE.md` before rollout.
 - Public routes use the narrow REST/Realtime seams; the full Auth client belongs to admin.
 - Shared modules must not import src. CMS Studio must not import admin views.
 - Read-only source/preview ports live in `src/cms/homepageReplicaPorts.ts`; their write methods deny submission.
@@ -132,6 +139,8 @@ Search `useBarberMarquee` and `gaplessLoopFloor` to find the live strip and edit
   `docs/operations/BACKUP_RESTORE.md` owns encrypted backup/restore.
 - `src/admin/cms/UX-CONTRACT.md`, `src/admin/cms/DESIGN.md` and `docs/CMS_PARITY.md`
   retain the editor feature contract. `docs/REVIEW_FINDINGS.md` is archived evidence.
+- `docs/WIP_RECOVERY_PLAN.md` owns current recovery authorization and gates;
+  `docs/WIP_IMPLEMENTATION.md` maps the recovered features to source, tests and rollout dependencies.
 - `docs/REPO_IMPROVEMENT_PLAN.md` retains the owner decisions and historical batch scope.
 - Dependency version source: installed npm versions come from `package-lock.json`, not a registry
   lookup. Deno lock scope is `supabase/functions/deno.lock`; shared imports live in
