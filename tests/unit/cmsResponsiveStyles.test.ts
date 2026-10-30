@@ -283,6 +283,43 @@ describe('targeted cascade geometry', () => {
     expect(result).toContain('#unrelated{color:white}')
     expect(syncLayout(after, before, result)).not.toContain('width:56%')
   })
+
+  it('keeps separate width and zoom guards on their own sides of a later owner condition', () => {
+    const before =
+      '.owner{width:70%;color:red;@supports(display:grid){&:where(:hover){width:80%}}zoom:1}'
+    const after = before
+      .replace('width:70%;', 'width:70%;@media(min-width:769px){&:where(#card){width:56%}}')
+      .replace('zoom:1', 'zoom:1;@media(min-width:769px){&:where(#card){zoom:0.8}}')
+    const other = before.replace('color:red', 'color:blue')
+    // The two target rules have equal specificity to the later hover rule. Moving width
+    // beside zoom would make the counterpart keep 56% on hover while the source uses 80%.
+    expect(syncLayout(before, after, other)).toBe(
+      generate(parse(after.replace('color:red', 'color:blue'))),
+    )
+  })
+
+  it('keeps a missing anonymous layer ordinal stable across repeated important geometry edits', () => {
+    const before = '@layer{.appearance{color:red}}@layer{.card:where(#photo){width:40%!important}}'
+    const after = before.replace('40%', '56%')
+    const first = syncLayout(before, after, '.appearance{color:blue}')
+    expect(first).toBe(
+      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:56%!important}}',
+    )
+    const second = syncLayout(after, after.replace('56%', '64%'), first)
+    // Important declarations in the earlier layer would beat the next edit in the later
+    // layer, so retaining a stale 56% in the placeholder is observably wrong.
+    expect(second).toBe(
+      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:64%!important}}',
+    )
+  })
+
+  it('does not mistake equivalent flat media splitting for geometry edits', () => {
+    const before = '@media(min-width:769px){.card:where(#photo){width:70%;zoom:1;color:red}}'
+    const after =
+      '@media(min-width:769px){.card:where(#photo){width:70%;color:orange}}@media(min-width:769px){.card:where(#photo){zoom:1}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;color:blue}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
 })
 
 describe('site theme defaults and owner overrides', () => {
