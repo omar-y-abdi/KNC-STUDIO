@@ -61,7 +61,6 @@ interface Root {
   tree: StyleSheet
 }
 interface Source {
-  key: string
   root: Root
   scopes: Scope[]
   declaration: Declaration
@@ -83,7 +82,7 @@ const prefix = '--cms-internal-resize-'
 const probes = {
   horizontal: ['raw-h', 'width-h', 'source-h', 'fallback-h'],
   vertical: ['raw-v', 'width-v', 'source-v', 'fallback-v'],
-  zoom: ['zoom-source', 'zoom-fallback'],
+  zoom: ['zoom', 'zoom-source', 'zoom-fallback'],
   branches: ['width-branch', 'zoom-branch'],
 } as const
 const name = (suffix: string): string => prefix + suffix
@@ -183,10 +182,23 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
         register(suffix, index % 4 === 1 ? typedWidth : '*', index % 4 < 2 ? 'auto' : 'none'),
       )
       .join('') +
-    [...probes.zoom, ...probes.branches].map((suffix) => register(suffix, '*', 'none')).join('')
+    probes.zoom
+      .map((suffix, index) =>
+        register(
+          suffix,
+          index === 0 ? '<number> | <percentage> | normal' : '*',
+          index === 0 ? '1' : 'none',
+        ),
+      )
+      .join('') +
+    probes.branches.map((suffix) => register(suffix, '*', 'none')).join('')
   temporary.textContent = registration
   const instrument = (node: CssNode, original: CssNode, root: Root, scopes: Scope[]): void => {
     if (node.type === 'Rule' || node.type === 'Atrule') {
+      // Frames are animation data, not element selectors. Normal dimension edits
+      // leave active owner animations authoritative and edit only their underlying rules.
+      if (node.type === 'Atrule' && ['keyframes', '-webkit-keyframes'].includes(keyword(node.name)))
+        return
       if (original.type !== 'Rule' && original.type !== 'Atrule')
         throw new Error('Storleksregelns källträd ändrades.')
       scopes = [...scopes, original]
@@ -213,7 +225,7 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
         if (!horizontal && !vertical && !zoom) return
         if (!view.CSS.supports(property, value)) return
         const key = `r${sources.size}`
-        sources.set(key, { key, root, scopes, declaration: sourceNode })
+        sources.set(key, { root, scopes, declaration: sourceNode })
         const reset = ['revert', 'revert-layer'].includes(keyword(value)) ? value : key
         const extras: CssNode[] = []
         for (const axis of [
@@ -229,8 +241,9 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
             )
         if (zoom)
           extras.push(
-            declaration(name(probes.zoom[0]), reset, child.important),
-            declaration(name(probes.zoom[1]), key, child.important),
+            declaration(name(probes.zoom[0]), value, child.important),
+            declaration(name(probes.zoom[1]), reset, child.important),
+            declaration(name(probes.zoom[2]), key, child.important),
           )
         augmented.push(...extras)
       })
@@ -248,7 +261,9 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
     doc.body.appendChild(temporary)
     for (const root of roots) {
       const tree = clone(root.tree)
+      const count = sources.size
       instrument(tree, root.tree, root, [])
+      if (sources.size === count && root.model !== baseline?.target) continue
       restore.push({ element: root.element, css: root.element.textContent })
       root.element.textContent = generate(tree)
     }
@@ -263,8 +278,9 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
       const widthSource =
         sources.get(widthKey) ?? sources.get(computed.getPropertyValue(name(axis[3])).trim())
       const zoomSource =
-        sources.get(computed.getPropertyValue(name(probes.zoom[0])).trim()) ??
-        sources.get(computed.getPropertyValue(name(probes.zoom[1])).trim())
+        sources.get(computed.getPropertyValue(name(probes.zoom[1])).trim()) ??
+        sources.get(computed.getPropertyValue(name(probes.zoom[2])).trim())
+      const zoom = computed.getPropertyValue(name(probes.zoom[0])).trim()
       const raw = computed.getPropertyValue(name(axis[0])).trim()
       let width = computed.getPropertyValue(name(axis[1])).trim()
       if (!view.CSS.supports('width', raw)) width = 'auto'
@@ -278,7 +294,7 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
       return {
         component,
         width,
-        zoom: (parseFloat(computed.zoom) || 1) / (computed.zoom.endsWith('%') ? 100 : 1),
+        zoom: (parseFloat(zoom) || 1) / (zoom.endsWith('%') ? 100 : 1),
         horizontalInset:
           computed.boxSizing === 'border-box'
             ? 0

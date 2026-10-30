@@ -213,6 +213,78 @@ describe('independent device geometry', () => {
   })
 })
 
+describe('targeted cascade geometry', () => {
+  it('maps only matched component IDs while retaining selector branches, layers and conditions', () => {
+    const id = '10000000-0000-4000-8000-000000000001'
+    const before = createSitePage({ id, path: '/offers', name: { sv: 'Ny', en: 'New' } })
+    const frame = (lang: string) => `cms-body-${id}-${lang}-frame`
+    const card = (lang: string) => `cms-body-${id}-${lang}-card`
+    const css = (lang: string) =>
+      `@layer owners{@supports(display:grid){@container(min-width:300px){@media(min-width:769px){#foreign-sv #${frame(lang)} .card:where(#${card(lang)}){width:70%;color:blue}}}}}.owner{--owner-width:70%;color:var(--owner-color)}`
+    for (const lang of ['sv', 'en'] as const)
+      before.content[lang] = {
+        html: `<div id="${frame(lang)}" class="owner"><div id="${card(lang)}" class="card"><img src="/og-image.png"></div></div>`,
+        css: { light: css(lang), dark: css(lang) },
+      }
+    const edited = structuredClone(before)
+    edited.content.sv.css.light = edited.content.sv.css.light
+      .replace('width:70%;color:blue', 'width:56%;zoom:0.8!important;color:orange')
+      .concat('@media(min-width:769px){.card:where(#ghost-sv){width:1px}}')
+    const next = syncPageLayout(before, edited, 'sv', 'light')
+    for (const lang of ['sv', 'en'] as const)
+      for (const mode of ['light', 'dark'] as const) {
+        const result = generate(parse(next.content[lang].css[mode]))
+        expect(result).toContain(`#foreign-sv #${frame(lang)} .card:where(#${card(lang)})`)
+        expect(result).toContain(
+          '@layer owners{@supports (display:grid){@container (min-width:300px){@media (min-width:769px)',
+        )
+        expect(result).toContain('width:56%;zoom:0.8!important')
+        expect(result).toContain('--owner-width:70%')
+        if (lang !== 'sv' || mode !== 'light') {
+          expect(result).toContain('color:blue')
+          expect(result).not.toContain('orange')
+          expect(result).not.toContain('ghost-sv')
+        }
+        if (lang === 'en') expect(result).not.toContain(`#${card('sv')}`)
+      }
+    expect(next.content.en.html).toBe(before.content.en.html)
+  })
+
+  it('keeps repeated anonymous layers separate when one component override changes', () => {
+    const before =
+      '@layer{.card:where(#photo){width:70%!important;color:red}}@layer{.card:where(#photo){width:40%!important;color:gray}}'
+    const after = before.replace('70%', '56%')
+    const result = syncLayout(before, after, before.replace('red', 'blue').replace('gray', 'white'))
+    expect(result).toBe(
+      '@layer{.card:where(#photo){color:blue;width:56%!important}}@layer{.card:where(#photo){width:40%!important;color:white}}',
+    )
+  })
+
+  it('does not turn equivalent layer-order serialization into a geometry edit', () => {
+    const before = '@layer base,overrides;@layer base{.card:where(#photo){width:70%;color:red}}'
+    const after =
+      '@layer base{}@layer overrides{}@layer base{.card:where(#photo){width:70%;color:orange}}'
+    const other =
+      ' /* independent geometry */ @layer base{.card:where(#photo){width:90%;color:blue}}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
+
+  it('inserts a new nested override before later owner conditions in an existing media group', () => {
+    const before =
+      '@media(min-width:769px){.owner{width:70%;@supports(display:grid){&.later{width:80%}}}}'
+    const after =
+      '@media(min-width:769px){.owner{width:70%;@media(min-width:769px){&:where(#card){width:56%;zoom:0.8}}@supports(display:grid){&.later{width:80%}}}}'
+    const other =
+      '@media(min-width:769px){.owner{width:70%;color:blue;@supports(display:grid){&.later{width:80%}}}}@media(min-width:769px){#unrelated{color:white}}'
+    const result = syncLayout(before, after, other)
+    expect(result).toContain(
+      '.owner{width:70%;color:blue;@media (min-width:769px){&:where(#card){width:56%;zoom:0.8}}@supports (display:grid){&.later{width:80%}}}',
+    )
+    expect(result).toContain('#unrelated{color:white}')
+    expect(syncLayout(after, before, result)).not.toContain('width:56%')
+  })
+})
+
 describe('site theme defaults and owner overrides', () => {
   it('binds only mode-matched stored muted colors with byte-exact fallbacks', () => {
     const fixture: CmsPresentation = JSON.parse(

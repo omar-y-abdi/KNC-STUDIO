@@ -461,16 +461,16 @@ export function parseCanvasCss(
   if (tree.type === 'StyleSheet')
     tree.children.forEach((node, item) => {
       let hasLayer = false
-      let groups = 0
       walk(node, (child) => {
         if (child.type !== 'Atrule') return
-        groups++
         if (ident.decode(child.name).toLowerCase() === 'layer') hasLayer = true
       })
       if (
         node.type !== 'Atrule' ||
         (!hasLayer &&
-          groups < 2 &&
+          // Groups inside a qualified rule are already masked below. Keeping that
+          // rule native preserves the component's editable Desktop ID style.
+          !node.block?.children.some((child) => child.type === 'Atrule') &&
           !['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()))
       )
         return

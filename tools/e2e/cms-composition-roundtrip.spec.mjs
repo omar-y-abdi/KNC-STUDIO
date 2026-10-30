@@ -230,7 +230,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       '@media(min-width:769px){@supports(display:cms-unsupported-layout){#nested-conditions{width:95%}}}' +
       '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
       '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
-      '@media(min-width:1000px){#editable{width:25%}}' +
+      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}}}' +
       '#priority-order{width:70%;zoom:2;all:initial!important;@media(min-width:769px){&{width:80%!important;zoom:.8!important}}display:block!important;height:40px!important}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
       '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
@@ -614,6 +614,126 @@ test('resize styles use the native cascade and survive production import without
     history: true,
     probes: false,
   })
+  assert.deepEqual(errors, [])
+})
+
+test('resize edits underlying styles while paused owner keyframes remain authoritative', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, readCanvasCss, parseCanvasCss, parseCanvasSheet } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="animation-holder"><div id="animated-card">Edited</div><div id="animation-peer">Other animation user</div></div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const release = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const css =
+      '#animation-holder{width:800px}#animated-card,#animation-peer{width:70%;height:40px;zoom:1;animation:owner-size 10s linear paused;animation-delay:-5s}@keyframes owner-size{from{width:100%;zoom:1}to{width:50%;zoom:2}}'
+    validateMarkup('', css, policy)
+    editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(css, editor)))
+    const snapshot = () =>
+      ['animated-card', 'animation-peer'].map((id) => {
+        const element = doc.getElementById(id)
+        const rect = element.getBoundingClientRect()
+        return { width: rect.width, height: rect.height, zoom: view.getComputedStyle(element).zoom }
+      })
+    const keyframes = () =>
+      JSON.stringify(
+        parseCanvasSheet(readCanvasCss(editor))
+          .children.toArray()
+          .find((node) => node.type === 'Atrule' && node.name === 'keyframes'),
+      )
+    try {
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const before = snapshot()
+      const frames = keyframes()
+      const plan = planDesktopCardResize(editor, [editor.Components.getById('animated-card')], 0.8)
+      plan.apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const active = snapshot()
+      const framesUnchanged = frames === keyframes()
+      const exported = readCanvasCss(editor)
+      validateMarkup('', exported, policy)
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(exported, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restored = snapshot()
+      const target = editor.Css.getIdRule('animated-card', { mediaText: '' })
+      if (!target) throw new Error('The underlying component rule must remain editable')
+      target.addStyle({ animation: 'none!important' })
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      return {
+        before,
+        active,
+        restored,
+        removed: snapshot(),
+        framesUnchanged,
+        measurements: plan.measurements,
+        probes: readCanvasCss(editor).includes('--cms-internal-resize-'),
+      }
+    } finally {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('resize-owner-animation', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(
+    result.active,
+    result.before,
+    'Active owner animation keeps authority over normal dimension edits',
+  )
+  assert.deepEqual(
+    result.restored,
+    result.before,
+    'Production reimport preserves the paused animation',
+  )
+  assert.deepEqual(
+    result.measurements.map(({ width, zoom }) => ({ width, zoom })),
+    [{ width: '70%', zoom: 1 }],
+  )
+  assert.ok(
+    Math.abs(result.removed[0].width - 448) < 0.1,
+    'Removing the animation exposes the edited underlying percentage width',
+  )
+  assert.ok(
+    Math.abs(result.removed[0].height - 32) < 0.1,
+    'Removing the animation exposes the edited underlying zoom',
+  )
+  assert.deepEqual(
+    result.removed[1],
+    result.before[1],
+    'Other animation users retain their geometry',
+  )
+  assert.equal(result.framesUnchanged, true)
+  assert.equal(result.probes, false)
   assert.deepEqual(errors, [])
 })
 
