@@ -213,6 +213,213 @@ describe('independent device geometry', () => {
   })
 })
 
+describe('targeted cascade geometry', () => {
+  it('maps only matched component IDs while retaining selector branches, layers and conditions', () => {
+    const id = '10000000-0000-4000-8000-000000000001'
+    const before = createSitePage({ id, path: '/offers', name: { sv: 'Ny', en: 'New' } })
+    const frame = (lang: string) => `cms-body-${id}-${lang}-frame`
+    const card = (lang: string) => `cms-body-${id}-${lang}-card`
+    const css = (lang: string) =>
+      `@layer owners{@supports(display:grid){@container(min-width:300px){@media(min-width:769px){#foreign-sv #${frame(lang)} .card:where(#${card(lang)}){width:70%;color:blue}}}}}.owner{--owner-width:70%;color:var(--owner-color)}`
+    for (const lang of ['sv', 'en'] as const)
+      before.content[lang] = {
+        html: `<div id="${frame(lang)}" class="owner"><div id="${card(lang)}" class="card"><img src="/og-image.png"></div></div>`,
+        css: { light: css(lang), dark: css(lang) },
+      }
+    const edited = structuredClone(before)
+    edited.content.sv.css.light = edited.content.sv.css.light
+      .replace('width:70%;color:blue', 'width:56%;zoom:0.8!important;color:orange')
+      .concat('@media(min-width:769px){.card:where(#ghost-sv){width:1px}}')
+    const next = syncPageLayout(before, edited, 'sv', 'light')
+    for (const lang of ['sv', 'en'] as const)
+      for (const mode of ['light', 'dark'] as const) {
+        const result = generate(parse(next.content[lang].css[mode]))
+        expect(result).toContain(`#foreign-sv #${frame(lang)} .card:where(#${card(lang)})`)
+        expect(result).toContain(
+          '@layer owners{@supports (display:grid){@container (min-width:300px){@media (min-width:769px)',
+        )
+        expect(result).toContain('width:56%;zoom:0.8!important')
+        expect(result).toContain('--owner-width:70%')
+        if (lang !== 'sv' || mode !== 'light') {
+          expect(result).toContain('color:blue')
+          expect(result).not.toContain('orange')
+          expect(result).not.toContain('ghost-sv')
+        }
+        if (lang === 'en') expect(result).not.toContain(`#${card('sv')}`)
+      }
+    expect(next.content.en.html).toBe(before.content.en.html)
+  })
+
+  it('keeps repeated anonymous layers separate when one component override changes', () => {
+    const before =
+      '@layer{.card:where(#photo){width:70%!important;color:red}}@layer{.card:where(#photo){width:40%!important;color:gray}}'
+    const after = before.replace('70%', '56%')
+    const result = syncLayout(before, after, before.replace('red', 'blue').replace('gray', 'white'))
+    expect(result).toBe(
+      '@layer{.card:where(#photo){color:blue;width:56%!important}}@layer{.card:where(#photo){width:40%!important;color:white}}',
+    )
+  })
+
+  it('does not turn equivalent layer-order serialization into a geometry edit', () => {
+    const before = '@layer base,overrides;@layer base{.card:where(#photo){width:70%;color:red}}'
+    const after =
+      '@layer base{}@layer overrides{}@layer base{.card:where(#photo){width:70%;color:orange}}'
+    const other =
+      ' /* independent geometry */ @layer base{.card:where(#photo){width:90%;color:blue}}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
+
+  it('inserts a new nested override before later owner conditions in an existing media group', () => {
+    const before =
+      '@media(min-width:769px){.owner{width:70%;@supports(display:grid){&.later{width:80%}}}}'
+    const after =
+      '@media(min-width:769px){.owner{width:70%;@media(min-width:769px){&:where(#card){width:56%;zoom:0.8}}@supports(display:grid){&.later{width:80%}}}}'
+    const other =
+      '@media(min-width:769px){.owner{width:70%;color:blue;@supports(display:grid){&.later{width:80%}}}}@media(min-width:769px){#unrelated{color:white}}'
+    const result = syncLayout(before, after, other)
+    expect(result).toContain(
+      '.owner{width:70%;color:blue;@media (min-width:769px){&:where(#card){width:56%;zoom:0.8}}@supports (display:grid){&.later{width:80%}}}',
+    )
+    expect(result).toContain('#unrelated{color:white}')
+    expect(syncLayout(after, before, result)).not.toContain('width:56%')
+  })
+
+  it('keeps separate width and zoom guards on their own sides of a later owner condition', () => {
+    const before =
+      '.owner{width:70%;color:red;@supports(display:grid){&:where(:hover){width:80%}}zoom:1}'
+    const after = before
+      .replace('width:70%;', 'width:70%;@media(min-width:769px){&:where(#card){width:56%}}')
+      .replace('zoom:1', 'zoom:1;@media(min-width:769px){&:where(#card){zoom:0.8}}')
+    const other = before.replace('color:red', 'color:blue')
+    // The two target rules have equal specificity to the later hover rule. Moving width
+    // beside zoom would make the counterpart keep 56% on hover while the source uses 80%.
+    const tree = parse(syncLayout(before, after, other))
+    if (tree.type !== 'StyleSheet') throw new Error('The synced stylesheet is missing')
+    const owner = tree.children.first
+    if (owner?.type !== 'Rule') throw new Error('The owner rule is missing')
+    expect(generate(owner.prelude)).toBe('.owner')
+    const children = owner.block.children.toArray()
+    expect(
+      children
+        .filter(
+          (node) =>
+            node.type === 'Atrule' ||
+            (node.type === 'Declaration' && ['width', 'zoom'].includes(node.property)),
+        )
+        .map((node) => generate(node)),
+    ).toEqual([
+      'width:70%',
+      '@media (min-width:769px){&:where(#card){width:56%}}',
+      '@supports (display:grid){&:where(:hover){width:80%}}',
+      'zoom:1',
+      '@media (min-width:769px){&:where(#card){zoom:0.8}}',
+    ])
+    // Appearance stays independent; its placement relative to geometry is immaterial.
+    expect(
+      children.flatMap((node) =>
+        node.type === 'Declaration' && node.property === 'color' ? [generate(node.value)] : [],
+      ),
+    ).toEqual(['blue'])
+  })
+
+  it('keeps a missing anonymous layer ordinal stable across repeated important geometry edits', () => {
+    const before = '@layer{.appearance{color:red}}@layer{.card:where(#photo){width:40%!important}}'
+    const after = before.replace('40%', '56%')
+    const first = syncLayout(before, after, '.appearance{color:blue}')
+    expect(first).toBe(
+      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:56%!important}}',
+    )
+    const second = syncLayout(after, after.replace('56%', '64%'), first)
+    // Important declarations in the earlier layer would beat the next edit in the later
+    // layer, so retaining a stale 56% in the placeholder is observably wrong.
+    expect(second).toBe(
+      '.appearance{color:blue}@layer{}@layer{.card:where(#photo){width:64%!important}}',
+    )
+  })
+
+  it('does not mistake equivalent flat media splitting for geometry edits', () => {
+    const before = '@media(min-width:769px){.card:where(#photo){width:70%;zoom:1;color:red}}'
+    const after =
+      '@media(min-width:769px){.card:where(#photo){width:70%;color:orange}}@media(min-width:769px){.card:where(#photo){zoom:1}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;color:blue}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
+
+  it('synchronizes an earlier important geometry edit ahead of a later normal declaration', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%!important}}@media(min-width:769px){.card:where(#photo){width:40%}}'
+    const next = syncLayout(before, before.replace('70%', '56%'), before)
+    expect(next).toContain('width:56%!important')
+    expect(next).not.toContain('width:70%!important')
+  })
+
+  it('does not synchronize losing normal geometry edits over an earlier important declaration', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%!important}}@media(min-width:769px){.card:where(#photo){width:40%}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;color:blue}'
+    expect(syncLayout(before, before.replace('40%', '41%'), other)).toBe(other)
+  })
+
+  it('keeps source order for equally important geometry declarations', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%!important}}@media(min-width:769px){.card:where(#photo){width:40%!important}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;color:blue}'
+    expect(syncLayout(before, before.replace('70%', '56%'), other)).toBe(other)
+    expect(syncLayout(before, before.replace('40%', '56%'), before)).toContain(
+      'width:56%!important',
+    )
+  })
+
+  it('removes stale changed geometry from a combined counterpart guard before placing split edits', () => {
+    const before =
+      '.owner{width:70%;color:red;--owner-width:90%;@supports(display:grid){&:where(:hover){width:80%}}zoom:1}'
+    const after = before
+      .replace('width:70%;', 'width:70%;@media(min-width:769px){&:where(#card){width:56%}}')
+      .replace('zoom:1', 'zoom:1;@media(min-width:769px){&:where(#card){zoom:0.8}}')
+    const other = before
+      .replace('color:red', 'color:blue')
+      .replace('zoom:1', 'zoom:1;@media(min-width:769px){&:where(#card){width:90%;zoom:1.5}}')
+    const next = syncLayout(before, after, other)
+    const geometry: string[] = []
+    walk(parse(next), {
+      visit: 'Declaration',
+      enter(node) {
+        if (node.property === 'width' || node.property === 'zoom') geometry.push(generate(node))
+      },
+    })
+    expect(geometry).toEqual(['width:70%', 'width:56%', 'width:80%', 'zoom:1', 'zoom:0.8'])
+    expect(next).toContain('&:where(:hover)')
+    expect(next).toContain('color:blue')
+    expect(next).toContain('--owner-width:90%')
+  })
+
+  it('updates split-media geometry in a counterpart with repeated terminal target rules', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%}}@media(min-width:769px){.card:where(#photo){zoom:1}}'
+    const other =
+      '@media(min-width:769px){.card:where(#photo){width:90%}.card:where(#photo){zoom:1.5;color:blue}}'
+    const next = syncLayout(before, before.replace('zoom:1', 'zoom:0.8'), other)
+    const geometry: string[] = []
+    walk(parse(next), {
+      visit: 'Declaration',
+      enter(node) {
+        if (node.property === 'width' || node.property === 'zoom') geometry.push(generate(node))
+      },
+    })
+    expect(geometry).toEqual(['width:90%', 'zoom:0.8'])
+    expect(next).toContain('color:blue')
+  })
+
+  it('does not mistake terminal target-rule splitting for geometry edits in the reverse direction', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%}.card:where(#photo){zoom:1;color:red}}'
+    const after =
+      '@media(min-width:769px){.card:where(#photo){width:70%}}@media(min-width:769px){.card:where(#photo){zoom:1;color:orange}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;zoom:1.5;color:blue}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
+})
+
 describe('site theme defaults and owner overrides', () => {
   it('binds only mode-matched stored muted colors with byte-exact fallbacks', () => {
     const fixture: CmsPresentation = JSON.parse(

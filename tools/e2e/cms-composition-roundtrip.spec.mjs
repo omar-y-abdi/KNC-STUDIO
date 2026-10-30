@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
+import { generate, parse, walk } from 'css-tree'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -210,7 +211,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
+        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="priority-order">Priority order</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
     })
     const releaseStyles = connectCanvasStyles(editor)
     await new Promise((resolve) => editor.on('load', resolve))
@@ -230,7 +231,8 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       '@media(min-width:769px){@supports(display:cms-unsupported-layout){#nested-conditions{width:95%}}}' +
       '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
       '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
-      '@media(min-width:1000px){#editable{width:25%}}' +
+      '@media(min-width:1000px){#editable{width:25%;justify-self:end;@supports(display:grid){&.active{width:60%}}@layer owner{&.active{width:70%}}}}' +
+      '#priority-order{width:70%;zoom:2;all:initial!important;@media(min-width:769px){&{width:80%!important;zoom:.8!important}}display:block!important;height:40px!important}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
       '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
       '@KEYFRAMES owner-motion{from{opacity:.2}50%{opacity:.5}to{opacity:.8}}' +
@@ -258,6 +260,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
           'nested-conditions',
           'container-case',
           'editable',
+          'priority-order',
         ].map((id) => [id, doc.getElementById(id).getBoundingClientRect().width]),
       )
       const margin = view.getComputedStyle(doc.getElementById('margin'))
@@ -364,6 +367,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       'nested-conditions': 280,
       'container-case': 360,
       editable: 200,
+      'priority-order': 640,
     },
     margins: ['2px', '2px', '2px', '3px'],
     root: 'present',
@@ -392,16 +396,17 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   assert.deepEqual(pageErrors, [])
 })
 
-test('resize cascade primitive resolves variables and layers without exporting probes', async ({
+test('complex selector functions keep their ancestor constraint through production import', async ({
   page,
 }) => {
-  const pageErrors = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
   const result = await page.evaluate(async () => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-    const { connectCanvasStyles, readCanvasCss, parseCanvasCss } =
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
       await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
     const { validateMarkup } = await import('/shared/cms-markup.ts')
     const host = globalThis.document.createElement('div')
     globalThis.document.body.append(host)
@@ -410,10 +415,102 @@ test('resize cascade primitive resolves variables and layers without exporting p
       storageManager: false,
       cssIcons: '',
       telemetry: false,
+      avoidInlineStyle: true,
       components:
-        '<div id="holder"><div id="probe-card" class="probe-card">Card</div><div id="inherited">Inherited</div></div>',
-      style:
-        '#holder{width:800px}.probe-card{height:100px}@layer base,overrides;@layer base{.probe-card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%)}}@layer overrides{#probe-card{width:revert-layer}}#inherited{width:inherit}@media(min-width:1000px){#probe-card{width:var(--owner-card-width,60%)!important}}',
+        '<div id="complex-holder"><section class="owner"><div id="inside-a" class="a">A</div><div id="inside-b" class="b">B</div><div id="inside-c" class="c">C</div></section><div id="outside-b" class="b">Outside</div><div id="--cms-internal-selector-0">Owner ID</div></div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const release = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const source =
+      '#complex-holder{width:600px}.owner{width:400px}.owner :is(.a,.b,.c){width:150px}#--cms-internal-selector-0{width:175px}'
+    validateMarkup('', source, policy)
+    const measure = () =>
+      ['inside-a', 'inside-b', 'inside-c', 'outside-b', '--cms-internal-selector-0'].map(
+        (id) => doc.getElementById(id).getBoundingClientRect().width,
+      )
+    try {
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(source, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const before = measure()
+      const exported = readCanvasCss(editor)
+      validateMarkup('', exported, policy)
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(exported, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restored = measure()
+      const plan = planDesktopCardResize(editor, [editor.Components.getById('inside-b')], 0.8)
+      plan.apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const resized = measure()
+      const finalCss = readCanvasCss(editor)
+      validateMarkup('', finalCss, policy)
+      return {
+        before,
+        restored,
+        resized,
+        exported,
+        finalCss,
+        ownerIdWidth: editor.Css.getIdRule('--cms-internal-selector-0', {
+          mediaText: '',
+        })?.getStyle()['width'],
+      }
+    } finally {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('complex-selector-import', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(result.before, [150, 150, 150, 600, 175])
+  assert.deepEqual(result.restored, result.before)
+  assert.deepEqual(result.resized, [150, 120, 150, 600, 175])
+  assert.ok(result.exported.includes('.owner :is(.a,.b,.c)'))
+  assert.ok(result.finalCss.includes('.owner :is(.a,.b,.c)'))
+  assert.equal(
+    result.ownerIdWidth,
+    '175px',
+    'An admitted owner selector ID remains distinct from a temporary property marker',
+  )
+  walk(parse(result.finalCss), (node) => {
+    if (node.type === 'Declaration') assert.ok(!node.property.startsWith('--cms-internal-'))
+  })
+  assert.deepEqual(errors, [])
+})
+
+test('resize styles use the native cascade and survive production import without probe state', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, readCanvasCss, parseCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="holder" class="owner"><div id="probe-card" class="card">Card</div><div id="percent-parent"><div id="percent-inherit">Percent</div></div><div id="relative-parent"><div id="relative-inherit">Relative</div></div><div id="all-card">Reset</div><div id="ignored-card">Ignored</div><div id="invalid-card">Invalid var</div><div id="layer-holder"><div id="container-card" class="container-card">Container</div></div><div id="ordered-card">Ordered</div></div>',
       deviceManager: {
         devices: [
           { id: 'Wide', width: '1440px' },
@@ -425,191 +522,123 @@ test('resize cascade primitive resolves variables and layers without exporting p
     await new Promise((resolve) => editor.on('load', resolve))
     const doc = editor.Canvas.getDocument()
     const view = doc.defaultView
-    const card = doc.getElementById('probe-card')
-    const inherited = doc.getElementById('inherited')
-    const settleViewport = async (device, width) => {
+    const css =
+      '#holder{width:800px;font-size:20px}' +
+      '@layer base,overrides;' +
+      '@layer base{.owner .card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%);@supports(display:grid){&.special{width:80%}}}}' +
+      '@layer overrides{#probe-card{width:revert-layer}}' +
+      '@layer base{#layer-holder{width:200px;container-type:inline-size}}' +
+      '@layer overrides{#layer-holder{width:400px}@container(min-width:300px){.container-card{width:70%}}}' +
+      '@media(min-width:1000px){#probe-card{width:var(--owner-card-width,60%)!important}}' +
+      '#percent-parent{width:70%}#percent-inherit{width:inherit;font-size:10px}' +
+      '#relative-parent{font-size:20px;width:8em}#relative-inherit{font-size:10px;width:inherit}' +
+      '#all-card{width:70%;zoom:2;all:initial!important;display:block!important;height:40px!important}' +
+      '#ignored-card{width:70%;width:-1px!important}' +
+      '#invalid-card{--invalid-width:unsupported;width:70%;width:var(--invalid-width)}' +
+      '#ordered-card{width:70%;&.inactive{color:red}}' +
+      '@media(min-width:1000px){#ordered-card{width:90%}}'
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    validateMarkup('', css, policy)
+    editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(css, editor)))
+    const ids = [
+      'probe-card',
+      'percent-inherit',
+      'relative-inherit',
+      'all-card',
+      'ignored-card',
+      'invalid-card',
+      'container-card',
+      'ordered-card',
+    ]
+    const components = ids.map((id) => editor.Components.getById(id))
+    const measure = () => ids.map((id) => doc.getElementById(id).getBoundingClientRect().width)
+    const settle = async (device, width) => {
       editor.setDevice(device)
       const deadline = globalThis.performance.now() + 5000
-      let stableFrames = 0
-      while (stableFrames < 2) {
+      let stable = 0
+      while (stable < 2) {
         await new Promise((resolve) => view.requestAnimationFrame(resolve))
-        const frameWidth = editor.Canvas.getFrameEl().getBoundingClientRect().width
-        stableFrames =
-          view.innerWidth === width && Math.abs(frameWidth - width) < 0.01 ? stableFrames + 1 : 0
-        if (globalThis.performance.now() > deadline) {
-          throw new Error(
-            `Device ${device} did not settle at ${width}px: viewport=${view.innerWidth}, frame=${frameWidth}`,
-          )
-        }
-      }
-    }
-    const probe = () => {
-      const names = [
-        '--cms-internal-prototype-width',
-        '--cms-internal-prototype-source',
-        '--cms-internal-prototype-branch',
-      ]
-      const temporary = doc.createElement('style')
-      temporary.textContent = names
-        .map(
-          (name, index) =>
-            `@property ${name}{syntax:"*";inherits:false;initial-value:${index ? 'none' : 'auto'}}`,
-        )
-        .join('')
-      const cleanup = []
-      const sources = new Map()
-      const models = new Map(
-        editor.Css.getAll().models.map((model) => [model.getView()?.el?.sheet, model]),
-      )
-      const walk = (parent, model) => {
-        for (const rule of [...parent.cssRules]) {
-          if (rule.style?.getPropertyValue('width')) {
-            const style = rule.style
-            const previous = style.cssText
-            cleanup.push(() => {
-              style.cssText = previous
-            })
-            const value = style.getPropertyValue('width')
-            const priority = style.getPropertyPriority('width') ? '!important' : ''
-            const key = `r${sources.size}`
-            sources.set(key, { model, selector: rule.selectorText })
-            const marker = ['revert', 'revert-layer'].includes(value) ? value : key
-            style.cssText += `;${names[0]}:${value}${priority};${names[1]}:${marker}${priority}`
-          }
-          if (rule.cssRules) walk(rule, model)
-        }
-      }
-      try {
-        doc.head.append(temporary)
-        for (const sheet of [...doc.styleSheets]) walk(sheet, models.get(sheet))
-        const style = view.getComputedStyle(card)
-        const source = sources.get(style.getPropertyValue(names[1]).trim())
-        // This fixture's selector list has two simple branches, including an unmatched ID.
-        temporary.textContent += source.selector
-          .split(',')
-          .map((branch, index) => `${branch}:where(#probe-card){${names[2]}:b${index}}`)
-          .join('')
-        const child = view.getComputedStyle(inherited)
-        return {
-          width: style.getPropertyValue(names[0]).trim(),
-          usedWidth: parseFloat(style.width),
-          branch: view.getComputedStyle(card).getPropertyValue(names[2]).trim(),
-          selector: source.selector,
-          media: source.model.get('mediaText'),
-          type: source.model.get('atRuleType'),
-          inherited: child.getPropertyValue(names[0]).trim(),
-          inheritSelector: sources.get(child.getPropertyValue(names[1]).trim()).selector,
-        }
-      } finally {
-        for (const restore of cleanup.reverse()) restore()
-        temporary.remove()
+        stable =
+          view.innerWidth === width &&
+          Math.abs(editor.Canvas.getFrameEl().getBoundingClientRect().width - width) < 0.01
+            ? stable + 1
+            : 0
+        if (globalThis.performance.now() > deadline)
+          throw new Error(`Viewport did not settle at ${width}px`)
       }
     }
     const samples = []
     try {
       for (const [device, width] of [
+        ['Narrow', 820],
         ['Wide', 1440],
         ['Narrow', 820],
       ]) {
-        // GJS animates the frame width for 350ms; two RAFs can still leave Wide media active.
-        await settleViewport(device, width)
+        await settle(device, width)
         editor.clearDirtyCount()
-        const before = JSON.stringify(editor.getProjectData())
+        const model = JSON.stringify(editor.getProjectData())
         const exported = readCanvasCss(editor)
-        samples.push({
-          device,
-          viewportWidth: view.innerWidth,
-          frameWidth: editor.Canvas.getFrameEl().getBoundingClientRect().width,
-          wideMedia: view.matchMedia('(min-width: 1000px)').matches,
-          ...probe(),
-          unchanged:
-            before === JSON.stringify(editor.getProjectData()) &&
-            exported === readCanvasCss(editor),
+        const history = editor.UndoManager.getStack().length
+        const before = measure()
+        const plan = planDesktopCardResize(editor, components, 0.8)
+        const passive = {
+          model: model === JSON.stringify(editor.getProjectData()),
+          export: exported === readCanvasCss(editor),
+          history: history === editor.UndoManager.getStack().length,
           dirty: editor.getDirtyCount(),
-        })
+          probes: [...doc.querySelectorAll('style')].some((style) =>
+            style.textContent.includes('--cms-internal-resize-'),
+          ),
+        }
+        plan.apply()
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        const after = measure()
+        const serialized = readCanvasCss(editor)
+        validateMarkup('', serialized, policy)
+        editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(serialized, editor)))
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        const restored = measure()
+        samples.push({ device, before, after, restored, passive, measurements: plan.measurements })
       }
-      await settleViewport('Wide', 1440)
-      const source = editor.Css.getAll().models.find((rule) =>
-        rule.get('mediaText')?.includes('1000px'),
-      )
-      source.setStyle({
-        ...source.toJSON().style,
-        '&:where(#probe-card)': {
-          '@media(min-width:769px)': {
-            '&': { width: '56%!important' },
-          },
-        },
-      })
-      const beforeReload = card.getBoundingClientRect().width
       const serialized = readCanvasCss(editor)
-      validateMarkup('', serialized, {
-        siteOrigin: globalThis.location.origin,
-        storageOrigin: 'https://storage.example.test',
-      })
-      const parserEvents = []
-      let parserInput = 'raw'
-      const recordParse = ({ input, output, error }) => {
-        parserEvents.push({
-          kind: parserInput,
-          input,
-          definitions: output.length,
-          error: error && { message: error.message, stack: error.stack },
-        })
-      }
-      let parsed
-      editor.on('parse:css', recordParse)
+      const card = doc.getElementById('probe-card')
+      card.classList.add('special')
+      const laterConditionalWidth = card.getBoundingClientRect().width
+      card.classList.remove('special')
+      doc.getElementById('holder').classList.remove('owner')
+      const unmatchedWidth = card.getBoundingClientRect().width
+      const model = JSON.stringify(editor.getProjectData())
+      const exported = readCanvasCss(editor)
+      const history = editor.UndoManager.getStack().length
+      const original = components.at(-1).getEl
+      let rejected = false
       try {
-        editor.Parser.parseCss(serialized)
-        parserInput = 'plain-nesting-control'
-        editor.Parser.parseCss(
-          '#holder{width:800px}@media(min-width:1000px){#probe-card{width:70%!important;:where(&):is(#probe-card):where(#probe-card){width:56%!important}}}',
-        )
-        parserInput = 'nested-media-control'
-        editor.Parser.parseCss('#probe-card{@media(min-width:769px){:is(&){width:56%!important}}}')
-        parserInput = 'masked-helper'
-        parsed = parseCanvasCss(serialized, editor)
+        components.at(-1).getEl = () => undefined
+        planDesktopCardResize(editor, components, 0.8)
+      } catch {
+        rejected = true
       } finally {
-        editor.off('parse:css', recordParse)
+        components.at(-1).getEl = original
       }
-      editor.Css.getAll().reset(globalThis.structuredClone(parsed))
-      const afterReload = card.getBoundingClientRect().width
-      const inspectReload = () => ({
-        css: readCanvasCss(editor),
-        holderWidth: doc.getElementById('holder')?.getBoundingClientRect().width,
-        cardWidth: doc.getElementById('probe-card')?.getBoundingClientRect().width,
-        // Selector collections in GJS's shallow rule JSON retain live model references.
-        // Snapshot through its JSON protocol before later resets mutate those models.
-        rules: JSON.parse(JSON.stringify(editor.Css.getAll().toJSON())),
-        mounted: [...doc.styleSheets].map((sheet) =>
-          [...sheet.cssRules].map((rule) => rule.cssText).join(''),
-        ),
-      })
-      const immediate = inspectReload()
-      await new Promise((resolve) =>
-        view.requestAnimationFrame(() => view.requestAnimationFrame(resolve)),
-      )
-      const settled = inspectReload()
-      // Match the editor's structural import order as a separate diagnostic. A CSS-only
-      // collection reset above must still retain the same declarations and geometry.
-      const html = editor.getHtml()
-      editor.setComponents('')
-      editor.Css.getAll().reset(globalThis.structuredClone(parsed))
-      editor.setComponents(html)
-      const structural = inspectReload()
       return {
         samples,
-        beforeReload,
-        afterReload,
         serialized,
-        parserEvents,
-        parsed,
-        immediate,
-        settled,
-        structural,
+        laterConditionalWidth,
+        unmatchedWidth,
+        failure: {
+          rejected,
+          model: model === JSON.stringify(editor.getProjectData()),
+          export: exported === readCanvasCss(editor),
+          history: history === editor.UndoManager.getStack().length,
+          probes: [...doc.querySelectorAll('style')].some((style) =>
+            style.textContent.includes('--cms-internal-resize-'),
+          ),
+        },
       }
     } finally {
-      // ClassTagsView debounces style/device updates by one task. Let that work finish
-      // before destroy removes its selected-component model.
       await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
       await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
       releaseStyles()
@@ -617,65 +646,479 @@ test('resize cascade primitive resolves variables and layers without exporting p
       host.remove()
     }
   })
-  await test.info().attach('resize-cascade-primitive', {
+  await test.info().attach('resize-native-cascade', {
     body: JSON.stringify(result, null, 2),
     contentType: 'application/json',
   })
-  await page.evaluate(() => new Promise((resolve) => globalThis.setTimeout(resolve, 0)))
-  assert.deepEqual(pageErrors, [], 'Primitive teardown must not leave queued editor errors')
-  assert.deepEqual(
-    result.samples.map(({ viewportWidth, wideMedia }) => ({ viewportWidth, wideMedia })),
-    [
-      { viewportWidth: 1440, wideMedia: true },
-      { viewportWidth: 820, wideMedia: false },
-    ],
-  )
-  assert.deepEqual(
-    result.samples.map(({ width, usedWidth, inherited, inheritSelector, unchanged, dirty }) => ({
-      width,
-      usedWidth,
-      inherited,
-      inheritSelector,
-      unchanged,
-      dirty,
-    })),
-    [
-      {
-        width: '70%',
-        usedWidth: 560,
-        inherited: '800px',
-        inheritSelector: '#inherited',
-        unchanged: true,
-        dirty: 0,
-      },
-      {
-        width: '70%',
-        usedWidth: 560,
-        inherited: '800px',
-        inheritSelector: '#inherited',
-        unchanged: true,
-        dirty: 0,
-      },
-    ],
-  )
-  assert.equal(result.samples[0].type, 'media')
-  assert.ok(result.samples[0].media.includes('1000px'))
-  assert.equal(result.samples[1].type, 'layer')
-  assert.equal(result.samples[1].media, 'base')
+  for (const sample of result.samples) {
+    assert.deepEqual(sample.passive, {
+      model: true,
+      export: true,
+      history: true,
+      dirty: 0,
+      probes: false,
+    })
+    for (const [index, width] of sample.after.entries()) {
+      assert.ok(
+        Math.abs(width / sample.before[index] - 0.8) < 0.015,
+        `${sample.device} card ${index}: ${JSON.stringify(sample)}`,
+      )
+      assert.ok(
+        Math.abs(sample.restored[index] - width) < 0.1,
+        `Production reimport retains card ${index}`,
+      )
+    }
+  }
   assert.equal(
-    result.samples[1].branch,
-    'b0',
-    'The unmatched ID branch must not determine specificity',
+    result.samples[0].measurements[1].width,
+    '70%',
+    'Inherited percentages retain native computed-value semantics',
   )
-  assert.equal(result.beforeReload, 448)
   assert.equal(
-    result.afterReload,
-    result.beforeReload,
-    'GrapesJS CSS import must retain the nested conditional override',
+    result.samples[0].measurements[2].width,
+    '160px',
+    'Inherited em widths compute in the parent font context',
   )
-  assert.equal(result.settled.cardWidth, 448)
-  assert.equal(result.structural.cardWidth, 448)
-  assert.ok(!result.serialized.includes('--cms-internal-prototype'), 'No probe may be exported')
+  assert.equal(
+    result.samples[0].before[6],
+    280,
+    'Branch probes preserve the original layer order and active container',
+  )
+  assert.equal(
+    result.samples[1].before[7],
+    720,
+    'A later equal-specificity owner rule remains later when its viewport activates',
+  )
+  assert.ok(
+    Math.abs(result.laterConditionalWidth - 640) < 0.1,
+    'Later owner conditions keep their source order and selector specificity',
+  )
+  assert.ok(
+    Math.abs(result.unmatchedWidth - 800) < 0.1,
+    'A targeted override stops matching when its ancestor selector stops matching',
+  )
+  assert.ok(result.serialized.includes('--owner-card-width:70%'))
+  assert.ok(result.serialized.includes('width:var(--owner-card-width,60%)'))
+  assert.ok(!result.serialized.includes('--cms-internal-resize-'))
+  assert.ok(
+    (result.serialized.match(/:where\(#probe-card\)/g)?.length ?? 0) <= 3,
+    'Repeated resizes update existing targeted declarations instead of nesting another override per event',
+  )
+  assert.deepEqual(result.failure, {
+    rejected: true,
+    model: true,
+    export: true,
+    history: true,
+    probes: false,
+  })
+  assert.deepEqual(errors, [])
+})
+
+test('resize controls use current viewport geometry before deferred selection capture', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { connectHierarchicalResize } = await import('/src/admin/cms/hierarchicalResize.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      mediaCondition: 'min-width',
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="quick-group" data-knc-fold="barber-marquee" data-knc-source="quick-group">' +
+        [0, 1, 2, 3]
+          .map((index) => `<div id="quick-${index}" data-knc-source="quick-${index}">Card</div>`)
+          .join('') +
+        '</div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const releaseStyles = connectCanvasStyles(editor)
+    const releaseResize = connectHierarchicalResize(
+      editor,
+      () => false,
+      () => 'light',
+    )
+    await new Promise((resolve) => editor.on('load', resolve))
+    const frame = editor.Canvas.getFrameEl()
+    const view = frame.contentWindow
+    try {
+      editor.Css.getAll().reset(
+        globalThis.structuredClone(
+          parseCanvasCss(
+            '#quick-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}' +
+              '#quick-group>div{height:100px}' +
+              '@media(max-width:1000px){#quick-group{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+            editor,
+          ),
+        ),
+      )
+      editor.setDevice('Desktop')
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const group = editor.Components.getById('quick-group')
+      const cards = group.components().models
+      const read = () =>
+        cards.map((card) => {
+          const rect = card.getEl().getBoundingClientRect()
+          return { width: rect.width, height: rect.height }
+        })
+      const attempts = []
+      // Each change stays in this task: the iframe's resize event and the parent
+      // capture RAF cannot run between selection, the new viewport and the control.
+      for (const [component, width, axis] of [
+        [group, 820, 'height'],
+        [group, 1440, 'height'],
+        [cards[0], 820, 'width'],
+      ]) {
+        editor.select(component)
+        frame.parentElement.style.transition = 'none'
+        editor.Canvas.getFrame().set({ width: `${width}px` }, { noUndo: 1 })
+        // FrameWrapView applies this exact style from a zero-delay debounced listener.
+        // Apply its pending DOM width now so input can precede that listener/resize RAF.
+        frame.parentElement.style.width = `${width}px`
+        const frameWidth = frame.getBoundingClientRect().width
+        if (view.innerWidth !== width || Math.abs(frameWidth - width) > 0.01)
+          throw new Error(`The fixture viewport did not change: ${view.innerWidth}/${frameWidth}`)
+        const rect = component.getEl().getBoundingClientRect()
+        const before = read()
+        editor.getSelectedToStyle().addStyle({ [axis]: `${Math.round(rect[axis] * 0.8)}px` })
+        attempts.push({ width, axis, before, after: read() })
+      }
+      editor.select(cards[0])
+      cards[0].addStyle({ width: '75%' })
+      const before = read()
+      const rect = cards[0].getEl().getBoundingClientRect()
+      editor.getSelectedToStyle().addStyle({ height: `${Math.round(rect.height * 0.8)}px` })
+      attempts.push({ width: 820, axis: 'height', before, after: read() })
+      return { attempts, ownerWidth: cards[0].getStyle().width, css: readCanvasCss(editor) }
+    } finally {
+      releaseResize()
+      // GrapesJS schedules its selection/property refresh with a zero-delay debounce.
+      // Drain it while the editor is alive before releasing its selected collection.
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      releaseStyles()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('resize-current-viewport', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  for (const attempt of result.attempts)
+    for (const [index, after] of attempt.after.entries()) {
+      assert.ok(
+        Math.abs(after.width / attempt.before[index].width - 0.8) < 0.02,
+        `Current ${attempt.width}px ${attempt.axis} width: ${JSON.stringify(attempt)}`,
+      )
+      assert.ok(
+        Math.abs(after.height / attempt.before[index].height - 0.8) < 0.02,
+        `Current ${attempt.width}px ${attempt.axis} height: ${JSON.stringify(attempt)}`,
+      )
+    }
+  assert.equal(
+    result.ownerWidth,
+    '75%',
+    'Pre-proposal width replaces the earlier selection snapshot',
+  )
+})
+
+test('native dimension edits materialize inactive owner priorities before export and remount', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss, nativeCanvas, exportNativeCanvas } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-reset" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-late-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-untargeted" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
+      deviceManager: {
+        devices: [
+          { id: 'Wide', width: '1440px' },
+          { id: 'Narrow', width: '820px' },
+        ],
+      },
+    })
+    const releaseStyles = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const view = editor.Canvas.getDocument().defaultView
+    const cards = ['native-card', 'native-token', 'native-reset', 'native-late-token'].map((id) =>
+      editor.Components.getById(id),
+    )
+    const read = () =>
+      cards.map((card) => {
+        const rect = card.getEl().getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      })
+    const settle = async (device, width) => {
+      editor.setDevice(device)
+      const deadline = globalThis.performance.now() + 5000
+      while (view.innerWidth !== width) {
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        if (globalThis.performance.now() > deadline) throw new Error('Viewport did not settle')
+      }
+    }
+    try {
+      editor.Css.getAll().reset(
+        globalThis.structuredClone(
+          parseCanvasCss(
+            '#native-holder{width:800px}#native-holder>div{height:100px}' +
+              '#native-card{width:70%;zoom:0.8}' +
+              '.owner-token{--owner-card-width:70%;width:var(--owner-card-width)}' +
+              '#native-reset{width:70%;zoom:0.8}' +
+              '#native-untargeted{width:33%;zoom:0.9;color:blue}' +
+              '@media(min-width:1000px){#native-holder #native-card,#native-holder #native-token{color:red}#native-card{inline-size:90%;zoom:1.1}#native-reset{all:initial;display:block;height:100px}#native-late-token{all:initial;display:block;height:100px}}',
+            editor,
+          ),
+        ),
+      )
+      await settle('Narrow', 820)
+      const before = read()
+      const target = editor.Css.getIdRule('native-card', { mediaText: '' })
+      planDesktopCardResize(editor, cards, 0.8, {
+        target,
+        style: target.getStyle('', { withNested: true }),
+        mode: 'light',
+      }).apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const after = read()
+      const live = readCanvasCss(editor)
+      await settle('Wide', 1440)
+      const wide = read()
+      const exported = exportNativeCanvas(editor.getHtml({ cleanId: false }), live, 'light')
+      const restored = nativeCanvas(
+        { html: exported.html, css: { light: exported.css, dark: exported.css } },
+        'light',
+      )
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(restored.css, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restoredWide = read()
+      await settle('Narrow', 820)
+      const restoredNarrow = read()
+      return { before, after, wide, restoredWide, restoredNarrow, live }
+    } finally {
+      releaseStyles()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('native-resize-priorities', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  for (const [index, after] of result.after.entries()) {
+    assert.ok(Math.abs(after.width / result.before[index].width - 0.8) < 0.015)
+    assert.ok(Math.abs(after.height / result.before[index].height - 0.8) < 0.015)
+    const expected = [
+      { width: 720, height: 110 }, // A later logical declaration beats an earlier projection.
+      { width: 448, height: 80 }, // A fresh fallback has no competing wide rule.
+      { width: 800, height: 100 }, // A later all reset beats an earlier zoom projection.
+      { width: 800, height: 80 }, // A newly appended fallback follows the earlier all reset.
+    ][index]
+    assert.ok(
+      Math.abs(result.wide[index].width - expected.width) < 0.1,
+      'Inactive logical width or all reset becomes active',
+    )
+    assert.ok(
+      Math.abs(result.wide[index].height - expected.height) < 0.1,
+      'Inactive zoom or all reset becomes active',
+    )
+    assert.ok(Math.abs(result.restoredWide[index].width - result.wide[index].width) < 0.1)
+    assert.ok(Math.abs(result.restoredWide[index].height - result.wide[index].height) < 0.1)
+    assert.ok(Math.abs(result.restoredNarrow[index].width - after.width) < 0.1)
+    assert.ok(Math.abs(result.restoredNarrow[index].height - after.height) < 0.1)
+  }
+  assert.ok(result.live.includes('--owner-card-width:70%;width:var(--owner-card-width);'))
+  const priorities = []
+  const expectedUntouched = new Map([
+    ['.owner-token|--owner-card-width', '70%'],
+    ['.owner-token|width', 'var(--owner-card-width)'],
+    ['#native-untargeted|width', '33%'],
+    ['#native-untargeted|zoom', '0.9'],
+    ['#native-untargeted|color', 'blue'],
+    ['#native-holder #native-card|color', 'red'],
+    ['#native-holder #native-token|color', 'red'],
+  ])
+  const untouched = new Map()
+  walk(parse(result.live), {
+    visit: 'Rule',
+    enter(rule) {
+      if (rule.prelude.type !== 'SelectorList') return
+      for (const branch of rule.prelude.children) {
+        const selector = generate(branch)
+        for (const declaration of rule.block.children)
+          if (declaration.type === 'Declaration') {
+            if (
+              ['#native-card', '#native-token', '#native-reset', '#native-late-token'].includes(
+                selector,
+              ) &&
+              ['width', 'zoom', 'inline-size', 'all'].includes(declaration.property)
+            )
+              priorities.push(Boolean(declaration.important))
+            const key = `${selector}|${declaration.property}`
+            if (expectedUntouched.has(key)) {
+              const entries = untouched.get(key) ?? []
+              entries.push({
+                value: generate(declaration.value),
+                important: Boolean(declaration.important),
+              })
+              untouched.set(key, entries)
+            }
+          }
+      }
+    },
+  })
+  assert.ok(priorities.length >= 10)
+  assert.ok(
+    priorities.every(Boolean),
+    'Active and inactive native owner dimensions share persisted priority',
+  )
+  for (const [key, value] of expectedUntouched)
+    assert.deepEqual(
+      untouched.get(key),
+      [{ value, important: false }],
+      `${key}: the authored declaration exists once with its original value and priority`,
+    )
+})
+
+test('resize edits underlying styles while paused owner keyframes remain authoritative', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, readCanvasCss, parseCanvasCss, parseCanvasSheet } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="animation-holder"><div id="animated-card">Edited</div><div id="animation-peer">Other animation user</div></div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const release = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const css =
+      '#animation-holder{width:800px}#animated-card,#animation-peer{width:70%;height:40px;zoom:1;animation:owner-size 10s linear paused;animation-delay:-5s}@keyframes owner-size{from{width:100%;zoom:1}to{width:50%;zoom:2}}'
+    validateMarkup('', css, policy)
+    editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(css, editor)))
+    const snapshot = () =>
+      ['animated-card', 'animation-peer'].map((id) => {
+        const element = doc.getElementById(id)
+        const rect = element.getBoundingClientRect()
+        return { width: rect.width, height: rect.height, zoom: view.getComputedStyle(element).zoom }
+      })
+    const keyframes = () =>
+      JSON.stringify(
+        parseCanvasSheet(readCanvasCss(editor))
+          .children.toArray()
+          .find((node) => node.type === 'Atrule' && node.name === 'keyframes'),
+      )
+    try {
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const before = snapshot()
+      const frames = keyframes()
+      const plan = planDesktopCardResize(editor, [editor.Components.getById('animated-card')], 0.8)
+      plan.apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const active = snapshot()
+      const framesUnchanged = frames === keyframes()
+      const exported = readCanvasCss(editor)
+      validateMarkup('', exported, policy)
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(exported, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restored = snapshot()
+      const target = editor.Css.getIdRule('animated-card', { mediaText: '' })
+      if (!target) throw new Error('The underlying component rule must remain editable')
+      target.addStyle({ animation: 'none!important' })
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      return {
+        before,
+        active,
+        restored,
+        removed: snapshot(),
+        framesUnchanged,
+        measurements: plan.measurements,
+        probes: readCanvasCss(editor).includes('--cms-internal-resize-'),
+      }
+    } finally {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('resize-owner-animation', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  assert.deepEqual(
+    result.active,
+    result.before,
+    'Active owner animation keeps authority over normal dimension edits',
+  )
+  assert.deepEqual(
+    result.restored,
+    result.before,
+    'Production reimport preserves the paused animation',
+  )
+  assert.deepEqual(
+    result.measurements.map(({ width, zoom }) => ({ width, zoom })),
+    [{ width: '70%', zoom: 1 }],
+  )
+  assert.ok(
+    Math.abs(result.removed[0].width - 448) < 0.1,
+    'Removing the animation exposes the edited underlying percentage width',
+  )
+  assert.ok(
+    Math.abs(result.removed[0].height - 32) < 0.1,
+    'Removing the animation exposes the edited underlying zoom',
+  )
+  assert.deepEqual(
+    result.removed[1],
+    result.before[1],
+    'Other animation users retain their geometry',
+  )
+  assert.equal(result.framesUnchanged, true)
+  assert.equal(result.probes, false)
+  assert.deepEqual(errors, [])
 })
 
 // Freeze idle work without freezing input, animation frames or the editor's export timers.

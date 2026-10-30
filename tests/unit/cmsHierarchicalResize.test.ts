@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { desktopMarqueeCardStyle, scaledZoom } from '../../src/admin/cms/hierarchicalResize'
+import { scaledZoom } from '../../src/admin/cms/hierarchicalResize'
+import { desktopMarqueeCardStyle } from '../../src/admin/cms/resizeStyles'
 import { syncLayout } from '../../src/admin/cms/responsiveStyles'
 
 it('scales from the current measured geometry without cumulative drift', () => {

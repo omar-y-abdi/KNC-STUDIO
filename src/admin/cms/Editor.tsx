@@ -469,6 +469,7 @@ export function CmsEditor(props: Props): JSX.Element {
     const releaseResize = connectHierarchicalResize(
       editor,
       () => applying.current || latest.current.locked,
+      () => latest.current.mode,
     )
     const releaseTextHeight = connectTextAutoHeight(
       editor,

@@ -1,4 +1,17 @@
-import { generate, ident, parse, walk, type Atrule, type CssNode } from 'css-tree'
+import {
+  clone,
+  generate,
+  ident,
+  List,
+  parse,
+  walk,
+  type Atrule,
+  type Block,
+  type CssNode,
+  type Declaration,
+  type Rule,
+  type StyleSheet,
+} from 'css-tree'
 import { parseFragment, type DefaultTreeAdapterMap } from 'parse5'
 import type { CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import { isSitePage, normalizeSitePageContent } from '../../../shared/site-page'
@@ -68,7 +81,7 @@ function layoutSelector(prelude: CssNode): string | undefined {
 const mediaKeys = new WeakMap<Atrule, string>()
 /** Compare legacy rules in the scope visitors already see, without rewriting untouched CSS. */
 function layoutMedia(node: Atrule | null): string {
-  if (node?.name !== 'media' || !node.prelude) return ''
+  if (!node || ident.decode(node.name).toLowerCase() !== 'media' || !node.prelude) return ''
   const known = mediaKeys.get(node)
   if (known !== undefined) return known
   const media = isLegacyDesktopMedia(node) ? '(min-width:769px)' : generate(node.prelude)
@@ -76,33 +89,169 @@ function layoutMedia(node: Atrule | null): string {
   return media
 }
 
-function declarations(css: string): Map<string, Map<string, CssNode>> {
-  const result = new Map<string, Map<string, CssNode>>()
-  walk(parse(css), {
-    visit: 'Rule',
-    enter(rule) {
-      const selector = layoutSelector(rule.prelude)
-      if (!selector) return
-      const media = layoutMedia(this.atrule)
-      const key = JSON.stringify([selector, media])
-      const values = result.get(key) ?? new Map<string, CssNode>()
-      rule.block.children.forEach((declaration) => {
-        if (declaration.type === 'Declaration' && isGeometry(declaration.property))
-          values.set(declaration.property, declaration)
-      })
-      result.set(key, values)
-    },
-  })
-  return result
-}
-
 interface LayoutTarget {
   readonly selector: string
   readonly text: boolean
 }
 
-type Declarations = Map<string, Map<string, CssNode>>
-type LayoutChanges = Map<string, Map<string, CssNode | null>>
+interface LayoutSibling {
+  readonly header: string
+  readonly occurrence: number
+}
+interface LayoutContext {
+  readonly header: string
+  readonly position: number
+  readonly occurrence?: number
+  readonly preceding?: LayoutSibling
+  readonly following?: LayoutSibling
+}
+interface LayoutLocation {
+  readonly selector: string
+  readonly media: string
+  readonly path?: LayoutContext[]
+}
+interface LayoutDeclaration {
+  readonly location: LayoutLocation
+  readonly declaration: Declaration
+}
+interface LayoutChange {
+  readonly location: LayoutLocation
+  readonly values: Map<string, CssNode | null>
+}
+type Declarations = Map<string, Map<string, LayoutDeclaration>>
+type LayoutChanges = Map<string, LayoutChange>
+type LayoutBlock = Block | StyleSheet
+
+/** Resolver overrides end in one zero-specificity component anchor. The complete branch
+ * before it remains an owner constraint, including ancestor classes and pseudo-classes. */
+function anchoredSelector(prelude: CssNode): string | undefined {
+  if (prelude.type !== 'SelectorList' || prelude.children.size !== 1) return
+  const branch = prelude.children.first
+  if (branch?.type !== 'Selector') return
+  const suffix = branch.children.last
+  if (suffix?.type !== 'PseudoClassSelector' || ident.decode(suffix.name).toLowerCase() !== 'where')
+    return
+  const target = suffix.children?.first
+  return target ? layoutSelector(target) : undefined
+}
+
+function contextHeader(node: Rule | Atrule): string {
+  if (node.type === 'Rule') return generate(node.prelude)
+  const name = ident.decode(node.name).toLowerCase()
+  const prelude = name === 'media' ? layoutMedia(node) : node.prelude ? generate(node.prelude) : ''
+  return `@${name}${prelude ? ` ${prelude}` : ''}`
+}
+
+function locationKey(location: LayoutLocation): string {
+  // Ancestor occurrences distinguish authored scopes. A terminal target guard can be
+  // split across equivalent rules; its occurrence and positions only guide insertion.
+  return JSON.stringify([
+    location.selector,
+    location.path?.map(({ header, occurrence }, index, path) => [
+      header,
+      index === path.length - 1 ? null : (occurrence ?? null),
+    ]) ?? location.media,
+  ])
+}
+
+/** Placement belongs to a changed property, never to geometry equality. Adjacent equivalent
+ * media groups may be split or combined without becoming owner edits. */
+function placementKey(location: LayoutLocation): string {
+  return JSON.stringify([
+    locationKey(location),
+    location.path?.map(({ position, occurrence, preceding, following }) => [
+      position,
+      occurrence,
+      preceding,
+      following,
+    ]),
+  ])
+}
+
+function isLayerOrder(node: Rule | Atrule): boolean {
+  return (
+    node.type === 'Atrule' &&
+    ident.decode(node.name).toLowerCase() === 'layer' &&
+    Boolean(node.prelude) &&
+    (!node.block || node.block.children.isEmpty)
+  )
+}
+
+function declarations(css: string): Declarations {
+  const result: Declarations = new Map()
+  const visit = (block: LayoutBlock, path: LayoutContext[], media: Atrule | null): void => {
+    const occurrences = new Map<string, number>()
+    const siblings: {
+      node: Rule | Atrule
+      header: string
+      occurrence: number
+      preceding?: LayoutSibling
+      following?: LayoutSibling
+    }[] = []
+    block.children.forEach((node) => {
+      if (node.type !== 'Rule' && node.type !== 'Atrule') return
+      const header = contextHeader(node)
+      const occurrence = occurrences.get(header) ?? 0
+      if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+      siblings.push({ node, header, occurrence })
+    })
+    // Same-header neighbors can be harmless media splitting. Only a distinct owner
+    // condition bounds a guard; layer-order placeholders are not such conditions.
+    for (const direction of ['preceding', 'following'] as const) {
+      let previous: (typeof siblings)[number] | undefined
+      let boundary: LayoutSibling | undefined
+      for (const sibling of direction === 'preceding' ? siblings : [...siblings].reverse()) {
+        if (isLayerOrder(sibling.node)) continue
+        if (previous?.header !== sibling.header)
+          boundary = previous
+            ? { header: previous.header, occurrence: previous.occurrence }
+            : undefined
+        if (boundary) sibling[direction] = boundary
+        previous = sibling
+      }
+    }
+    siblings.forEach(({ node, header, occurrence, preceding, following }, position) => {
+      const ordered =
+        !isLayerOrder(node) &&
+        (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
+      const context: LayoutContext = {
+        header,
+        position,
+        ...(ordered ? { occurrence } : {}),
+        ...(!ordered && preceding ? { preceding } : {}),
+        ...(!ordered && following ? { following } : {}),
+      }
+      const nextPath = [...path, context]
+      if (node.type === 'Rule') {
+        const anchored = anchoredSelector(node.prelude)
+        const selector = anchored ?? layoutSelector(node.prelude)
+        if (selector) {
+          const location: LayoutLocation = {
+            selector,
+            media: layoutMedia(media),
+            ...(anchored ? { path: nextPath } : {}),
+          }
+          const key = locationKey(location)
+          const values = result.get(key) ?? new Map<string, LayoutDeclaration>()
+          node.block.children.forEach((declaration) => {
+            if (declaration.type !== 'Declaration' || !isGeometry(declaration.property)) return
+            const previous = values.get(declaration.property)?.declaration
+            // Within this selector/context, important beats normal; ties retain source order.
+            if (previous?.important && !declaration.important) return
+            values.set(declaration.property, { declaration, location })
+          })
+          result.set(key, values)
+        }
+        visit(node.block, nextPath, media)
+      } else if (node.block) visit(node.block, nextPath, node)
+    })
+  }
+  const tree = parse(css)
+  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  visit(tree, [], null)
+  return result
+}
+
 const textHeight = new Map([
   ['height', parse('height:auto!important', { context: 'declaration' })],
   ['max-height', parse('max-height:none!important', { context: 'declaration' })],
@@ -111,18 +260,186 @@ const textHeight = new Map([
 function layoutChanges(previous: Declarations, next: Declarations): LayoutChanges {
   const changes: LayoutChanges = new Map()
   for (const key of new Set([...previous.keys(), ...next.keys()])) {
-    const a = previous.get(key) ?? new Map()
-    const b = next.get(key) ?? new Map()
-    const changed = new Map<string, CssNode | null>()
+    const a = previous.get(key) ?? new Map<string, LayoutDeclaration>()
+    const b = next.get(key) ?? new Map<string, LayoutDeclaration>()
     for (const property of new Set([...a.keys(), ...b.keys()])) {
       const oldValue = a.get(property)
       const newValue = b.get(property)
-      if ((oldValue && generate(oldValue)) !== (newValue && generate(newValue)))
-        changed.set(property, newValue ?? null)
+      if (
+        (oldValue && generate(oldValue.declaration)) ===
+        (newValue && generate(newValue.declaration))
+      )
+        continue
+      const location = newValue?.location ?? oldValue?.location
+      if (!location) continue
+      const placement = placementKey(location)
+      const changed = changes.get(placement) ?? {
+        location,
+        values: new Map<string, CssNode | null>(),
+      }
+      changed.values.set(property, newValue?.declaration ?? null)
+      changes.set(placement, changed)
     }
-    if (changed.size) changes.set(key, changed)
   }
   return changes
+}
+
+function mapHeader(header: string, targets: ReadonlyMap<string, LayoutTarget>): string {
+  if (header.startsWith('@')) return header
+  const selector = parse(header, { context: 'selectorList' })
+  walk(selector, (node) => {
+    if (node.type === 'IdSelector') {
+      const target = targets.get(`#${ident.encode(ident.decode(node.name))}`)
+      if (target) node.name = target.selector.slice(1)
+    } else if (
+      node.type === 'AttributeSelector' &&
+      node.name.name === 'id' &&
+      node.matcher === '=' &&
+      node.value?.type === 'String'
+    ) {
+      const target = targets.get(`#${ident.encode(node.value.value)}`)
+      if (target) node.value.value = ident.decode(target.selector.slice(1))
+    }
+  })
+  return generate(selector)
+}
+
+function mapContext(
+  context: LayoutContext,
+  targets?: ReadonlyMap<string, LayoutTarget>,
+): LayoutContext {
+  if (!targets) return context
+  const mapSibling = (sibling: LayoutSibling): LayoutSibling => ({
+    ...sibling,
+    header: mapHeader(sibling.header, targets),
+  })
+  return {
+    ...context,
+    header: mapHeader(context.header, targets),
+    ...(context.preceding ? { preceding: mapSibling(context.preceding) } : {}),
+    ...(context.following ? { following: mapSibling(context.following) } : {}),
+  }
+}
+
+function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): number {
+  if (!sibling) return -1
+  const match = siblings.filter(
+    (node) => !isLayerOrder(node) && contextHeader(node) === sibling.header,
+  )[sibling.occurrence]
+  return match ? siblings.indexOf(match) : -1
+}
+
+function matchingContexts(
+  block: LayoutBlock,
+  context: LayoutContext,
+  bounded = true,
+): (Rule | Atrule)[] {
+  const siblings = block.children
+    .toArray()
+    .filter((node): node is Rule | Atrule => node.type === 'Rule' || node.type === 'Atrule')
+  const preceding = bounded ? siblingIndex(siblings, context.preceding) : -1
+  const following = bounded ? siblingIndex(siblings, context.following) : -1
+  const matches = siblings.filter(
+    (node, index) =>
+      Boolean(node.block) &&
+      !isLayerOrder(node) &&
+      contextHeader(node) === context.header &&
+      (preceding < 0 || index > preceding) &&
+      (following < 0 || index < following),
+  )
+  if (context.occurrence === undefined) return matches
+  const match = matches[context.occurrence]
+  return match ? [match] : []
+}
+
+function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true): Block[] {
+  const [context, ...remaining] = path
+  if (!context) return block.type === 'Block' ? [block] : []
+  const target =
+    !bounded && !remaining.length ? { header: context.header, position: context.position } : context
+  return matchingContexts(block, target, bounded).flatMap((node) =>
+    node.block
+      ? remaining.length
+        ? contextBlocks(node.block, remaining, bounded)
+        : [node.block]
+      : [],
+  )
+}
+
+function contextDepth(block: LayoutBlock, path: LayoutContext[]): number {
+  const [context, ...remaining] = path
+  if (!context) return 0
+  return Math.max(
+    0,
+    ...matchingContexts(block, context).map((node) =>
+      node.block ? 1 + contextDepth(node.block, remaining) : 0,
+    ),
+  )
+}
+
+function insertContext(block: LayoutBlock, context: LayoutContext): Block {
+  const node = parse(`${context.header}{}`, {
+    context: context.header.startsWith('@') ? 'atrule' : 'rule',
+  })
+  if ((node.type !== 'Rule' && node.type !== 'Atrule') || !node.block)
+    throw new Error('Layoutens CSS-villkor kunde inte bevaras.')
+  const children = block.children.toArray()
+  const siblings = children.filter(
+    (child): child is Rule | Atrule => child.type === 'Rule' || child.type === 'Atrule',
+  )
+  let position = context.position
+  const preceding = siblingIndex(siblings, context.preceding)
+  const following = siblingIndex(siblings, context.following)
+  if (preceding >= 0) position = Math.max(position, preceding + 1)
+  if (following >= 0) position = Math.min(position, following)
+  if (context.occurrence !== undefined) {
+    // Missing anonymous layers reserve real ordinal slots. Their populated successor
+    // must follow those placeholders even when their source insertion position is earlier.
+    const previous = siblings.findLast(
+      (child) => !isLayerOrder(child) && contextHeader(child) === context.header,
+    )
+    if (previous) position = Math.max(position, siblings.indexOf(previous) + 1)
+  }
+  const before = siblings[position]
+  const index = before ? children.indexOf(before) : children.length
+  children.splice(index, 0, node)
+  block.children = new List<CssNode>().fromArray(children)
+  return node.block
+}
+
+function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
+  const [context, ...remaining] = path
+  if (!context) {
+    if (block.type !== 'Block') throw new Error('Layouten saknar sitt CSS-block.')
+    return block
+  }
+  const candidates = matchingContexts(block, context)
+  // Prefer the existing complete path, even when equivalent media groups were split or
+  // combined differently between themes. Anonymous layers retain their own occurrence.
+  const candidate = candidates.reduce<Rule | Atrule | undefined>((best, current) => {
+    if (!current.block) return best
+    return !best?.block ||
+      contextDepth(current.block, remaining) >= contextDepth(best.block, remaining)
+      ? current
+      : best
+  }, undefined)
+  let next = candidate?.block
+  if (!next) {
+    if (context.occurrence !== undefined) {
+      const existing = block.children
+        .toArray()
+        .filter(
+          (node) =>
+            (node.type === 'Rule' || node.type === 'Atrule') &&
+            !isLayerOrder(node) &&
+            contextHeader(node) === context.header,
+        ).length
+      for (let index = existing; index < context.occurrence; index++)
+        insertContext(block, { ...context, position: context.position + index - existing })
+    }
+    next = insertContext(block, context)
+  }
+  return ensureContext(next, remaining)
 }
 
 /** Apply one delta to a theme or language. `source` only corrects clipping in the edited sheet. */
@@ -133,42 +450,72 @@ function applyLayout(
   source?: Declarations,
 ): string {
   const mapped: LayoutChanges = new Map()
-  for (const [key, values] of changes) {
-    const [selector, media] = JSON.parse(key) as [string, string]
-    const target = targets?.get(selector)
-    if (targets && !target && selector !== 'html body') continue
+  for (const { location, values } of changes.values()) {
+    const target = targets?.get(location.selector)
+    if (targets && !target && location.selector !== 'html body') continue
     const changed = source ? new Map<string, CssNode | null>() : new Map(values)
     if (target?.text && [...values.values()].some((value) => value !== null)) {
       for (const [property, value] of textHeight) {
-        const present = source?.get(key)?.get(property)
+        const present = source?.get(locationKey(location))?.get(property)?.declaration
         if (!source || !present || generate(present) !== generate(value))
           changed.set(property, value)
       }
     }
-    if (changed.size) mapped.set(JSON.stringify([target?.selector ?? selector, media]), changed)
+    const next: LayoutLocation = {
+      ...location,
+      selector: target?.selector ?? location.selector,
+      ...(location.path
+        ? { path: location.path.map((context) => mapContext(context, targets)) }
+        : {}),
+    }
+    if (changed.size) mapped.set(placementKey(next), { location: next, values: changed })
   }
   if (!mapped.size) return other
   const tree = parse(other)
+  if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
   walk(tree, {
     visit: 'Rule',
     enter(rule) {
-      const media = layoutMedia(this.atrule)
-      const changed = mapped.get(JSON.stringify([layoutSelector(rule.prelude), media]))
-      if (!changed) return
+      const changed = mapped.get(
+        placementKey({
+          selector: layoutSelector(rule.prelude) ?? '',
+          media: layoutMedia(this.atrule),
+        }),
+      )
+      if (!changed || changed.location.path) return
       rule.block.children.forEach((declaration, item) => {
-        if (declaration.type === 'Declaration' && changed.has(declaration.property))
+        if (declaration.type === 'Declaration' && changed.values.has(declaration.property))
           rule.block.children.remove(item)
       })
     },
   })
+  for (const { location, values } of mapped.values()) {
+    if (!location.path) continue
+    // A counterpart may combine guards. Remove the changed properties throughout the
+    // semantic context before choosing their source-ordered insertion destinations.
+    const blocks = contextBlocks(tree, location.path, false)
+    for (const block of blocks)
+      block.children.forEach((declaration, item) => {
+        if (declaration.type === 'Declaration' && values.has(declaration.property))
+          block.children.remove(item)
+      })
+    const additions = [...values.values()].filter((value): value is CssNode => value !== null)
+    if (additions.length) {
+      const block = contextBlocks(tree, location.path).at(-1) ?? ensureContext(tree, location.path)
+      for (const addition of additions) block.children.appendData(clone(addition))
+    }
+  }
   let result = generate(tree)
-  for (const [key, values] of mapped) {
-    const [selector, media] = JSON.parse(key) as [string, string]
+  for (const { location, values } of mapped.values()) {
+    if (location.path) continue
     const body = [...values.values()]
       .filter((v): v is CssNode => v !== null)
       .map((v) => generate(v))
       .join(';')
-    if (body) result += media ? `@media ${media}{${selector}{${body}}}` : `${selector}{${body}}`
+    if (body)
+      result += location.media
+        ? `@media ${location.media}{${location.selector}{${body}}}`
+        : `${location.selector}{${body}}`
   }
   return result
 }

@@ -1,5 +1,6 @@
 import type { Component, Editor } from 'grapesjs'
-import { generate, parse, walk } from 'css-tree'
+import type { CmsMode } from '../../../shared/cms'
+import { planDesktopCardResize } from './resizeStyles'
 
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
 export function barberScalePeers(component: Component): Component[] {
@@ -66,50 +67,6 @@ export function marqueeCardStyle(
   return next
 }
 
-/** Keep the existing grid track and the card's box model while zoom scales its contents. */
-export function desktopMarqueeCardStyle(
-  style: ReturnType<Component['getStyle']>,
-  scale: number,
-  geometry: {
-    width: string
-    zoom: number
-    horizontalInset: number
-    horizontalMargin: number
-    stretch: boolean
-  },
-): ReturnType<Component['getStyle']> {
-  const factor = scale / geometry.zoom
-  const sourceWidth = geometry.width.replace(/\s*!important\s*$/i, '').trim()
-  const important = /!important\s*$/i.test(geometry.width) ? '!important' : ''
-  let width: string | undefined
-  if (
-    sourceWidth &&
-    !['auto', 'initial', 'unset', 'revert', 'revert-layer'].includes(sourceWidth.toLowerCase())
-  ) {
-    const value = parse(sourceWidth, { context: 'value' })
-    let changed = false
-    walk(value, {
-      visit: 'Percentage',
-      enter(node) {
-        node.value = String(Number((Number(node.value) * factor).toFixed(6)))
-        changed = true
-      },
-    })
-    // Absolute lengths already scale with zoom. Percentage terms resolve against the track
-    // before zoom, so adjust only those, including on a second resize of our generated calc().
-    width = changed ? `${generate(value)}${important}` : geometry.width
-  } else if (geometry.stretch) {
-    const percent = `${Number((factor * 100).toFixed(6))}%`
-    const inset = geometry.horizontalInset + geometry.horizontalMargin
-    width = `${inset ? `calc(${percent} - ${Number(inset.toFixed(6))}px)` : percent}${important}`
-  }
-  return {
-    ...style,
-    ...(width === undefined ? {} : { width }),
-    zoom: String(scale),
-  }
-}
-
 export function scaledZoom(zoom: number, before: number, requested: number): number {
   if (![zoom, before, requested].every((value) => Number.isFinite(value) && value > 0)) return zoom
   return Math.max(0.1, Math.min(4, Number(((zoom * requested) / before).toFixed(6))))
@@ -118,11 +75,14 @@ export function scaledZoom(zoom: number, before: number, requested: number): num
 /** CSS zoom participates in layout, unlike transform:scale. Keep intrinsic child
  * geometry and let the browser scale text, portraits, padding and subsequent flow.
  * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
-export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
+export function connectHierarchicalResize(
+  editor: Editor,
+  disabled: () => boolean,
+  mode: () => CmsMode,
+): () => void {
   let snapshot:
     | {
         component: Component
-        style: ReturnType<Component['getStyle']>
         width: number
         height: number
         zoom: number
@@ -151,8 +111,6 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
-      // Component-first styling reads the existing device rule without creating one.
-      style: { ...component.getStyle() },
       width: rect.width,
       height: rect.height,
       zoom,
@@ -191,67 +149,63 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     }
     const cards = barberStripCards(before.component)
     const mobile = editor.getDevice() === 'Mobile'
-    const requestedScale = scaledZoom(
-      cards.length && mobile ? before.cardScale : before.zoom,
-      before[property],
-      requested,
-    )
+    const desktopCards = cards.length > 0 && !mobile
+    const requestedScale = desktopCards
+      ? 1
+      : scaledZoom(
+          cards.length && mobile ? before.cardScale : before.zoom,
+          before[property],
+          requested,
+        )
     // A short roster keeps its cards wide enough to loop; a frozen strip is never a valid size.
     const scale =
       cards.length && mobile ? Math.max(minLoopScale(cards.length), requestedScale) : requestedScale
-    if (!Number.isFinite(scale) || before[property] <= 0) return
+    if (!Number.isFinite(scale) || (!desktopCards && before[property] <= 0)) return
+    const style = { ...target.getStyle('', { withNested: true }) }
+    const previousStyle = target.previous('style')
+    if (!previousStyle || typeof previousStyle !== 'object' || Array.isArray(previousStyle))
+      throw new Error('Storlekskontrollens tidigare värden kunde inte läsas.')
+    // The new size is represented by layout zoom or card width, not a clipping height.
+    for (const axis of ['width', 'height'] as const) {
+      if (previousStyle[axis] === undefined) Reflect.deleteProperty(style, axis)
+      else style[axis] = previousStyle[axis]
+    }
     updating = true
     try {
-      const style = { ...target.getStyle() }
-      // The new size is represented by layout zoom or card width, not a clipping height.
-      for (const axis of ['width', 'height'] as const) {
-        if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
-        else style[axis] = before.style[axis]
-      }
+      // The dimension control has already written its proposal. Resolve every card from
+      // the previous dimensions in the DOM, before restoring or changing any model.
+      const plan = desktopCards
+        ? (() => {
+            if (!(target instanceof editor.Css.classes.CssRule))
+              throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
+            return planDesktopCardResize(editor, cards, 1, {
+              target,
+              style,
+              mode: mode(),
+              measurement: { component: before.component, axis: property, requested },
+            })
+          })()
+        : undefined
       target.setStyle(style)
-      if (cards.length)
+      if (plan) {
+        plan.apply()
+        editor.StyleManager.select(editor.StyleManager.getModelToStyle(before.component), {
+          component: before.component,
+        })
+      } else if (cards.length)
         for (const card of cards) {
-          const currentStyle = card.getStyle()
-          if (mobile) {
-            card.setStyle(marqueeCardStyle(currentStyle, scale))
-            continue
-          }
-          const element = card.getEl()
-          const computed = element?.ownerDocument.defaultView?.getComputedStyle(element)
-          const sourceWidth = currentStyle.width ?? card.getStyle({ mediaText: '' }).width
-          const rawZoom = computed?.zoom ?? '1'
-          const alignment =
-            computed?.justifySelf === 'auto'
-              ? element?.parentElement &&
-                element.ownerDocument.defaultView?.getComputedStyle(element.parentElement)
-                  .justifyItems
-              : computed?.justifySelf
-          const horizontalInset =
-            computed && computed.boxSizing !== 'border-box'
-              ? [
-                  computed.paddingLeft,
-                  computed.paddingRight,
-                  computed.borderLeftWidth,
-                  computed.borderRightWidth,
-                ].reduce((sum, value) => sum + (parseFloat(value) || 0), 0)
-              : 0
-          card.setStyle(
-            desktopMarqueeCardStyle(currentStyle, scale, {
-              width: String(
-                (Array.isArray(sourceWidth) ? sourceWidth.at(-1) : sourceWidth) ?? 'auto',
-              ),
-              zoom: (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1),
-              horizontalInset,
-              horizontalMargin:
-                (parseFloat(computed?.marginLeft ?? '') || 0) +
-                (parseFloat(computed?.marginRight ?? '') || 0),
-              stretch: !alignment || alignment === 'normal' || alignment === 'stretch',
-            }),
-          )
+          const rule = editor.Css.getIdRule(card.getId(), { state: editor.getModel().getState() })
+          const currentStyle = rule
+            ? rule.getStyle('', { withNested: true, skipResolve: true })
+            : card.getStyle()
+          card.setStyle(marqueeCardStyle(currentStyle, scale))
         }
       else
         for (const peer of barberScalePeers(before.component))
           peer.addStyle({ zoom: String(scale) })
+    } catch (error) {
+      target.setStyle(style)
+      throw error
     } finally {
       updating = false
     }
