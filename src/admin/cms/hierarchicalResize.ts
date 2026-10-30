@@ -185,7 +185,10 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
         })
       } else if (cards.length)
         for (const card of cards) {
-          const currentStyle = card.getStyle()
+          const rule = editor.Css.getIdRule(card.getId(), { state: editor.getModel().getState() })
+          const currentStyle = rule
+            ? rule.getStyle('', { withNested: true, skipResolve: true })
+            : card.getStyle()
           card.setStyle(marqueeCardStyle(currentStyle, scale))
         }
       else

@@ -183,6 +183,35 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await page.waitForFunction(
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
   )
+  await page.evaluate(async (selector) => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    for (const card of editor.getWrapper().find(selector)[0].components()) {
+      const rule = editor.Css.getIdRule(card.getId()) ?? editor.Css.setIdRule(card.getId(), {})
+      rule.addStyle({
+        '@supports(display:grid)': { '&.owner-inactive': { color: 'var(--owner-mobile-color)' } },
+      })
+    }
+  }, groupSelector)
+  // Commit the owner fixture separately so the following resize's undo keeps its source.
+  await page.getByRole('button', { name: 'Dator', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 1440,
+  )
+  await page.getByRole('button', { name: 'Mobil', exact: true }).click()
+  await page.waitForFunction(
+    () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
+  )
+  const ownerBlocks = () =>
+    page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      return (
+        readCanvasCss(cmsGrapes.editors.at(-1)).match(/color:var\(--owner-mobile-color\)/g)
+          ?.length ?? 0
+      )
+    })
+  assert.equal(await ownerBlocks(), 4, 'Mobile owner blocks survive viewport import')
   const before = await measure(frame)
   assert.equal(before.cards.length, 4)
   await select(page, groupSelector)
@@ -199,6 +228,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     'Group resize must scale its photographs, not crop them',
   )
   assertCardScale(after.cards, before.cards, 0.5, 'Group resize')
+  assert.equal(await ownerBlocks(), 4, 'Mobile group resize preserves nested owner CSS')
   assert.ok(
     after.next.top >= Math.max(...after.cards.map((card) => card.rect.bottom)) - 2,
     'Following content may not overlap cards',
@@ -217,6 +247,7 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
   await height(page, before.cards[0].rect.height * 0.75)
   const linked = await measure(frame)
   assertCardScale(linked.cards, before.cards, 0.75, 'Card resize')
+  assert.equal(await ownerBlocks(), 4, 'Mobile card resize preserves nested owner CSS')
   assert.ok(
     linked.cards.every((card) => Math.abs(card.rect.height - linked.cards[0].rect.height) < 2),
     'Every corresponding barber card shares its size',

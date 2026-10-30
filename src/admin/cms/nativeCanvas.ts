@@ -535,7 +535,10 @@ export function parseCanvasCss(
             throw new Error('En CSS-selektor stöds inte av webbläsaren. Källan har bevarats.')
         const key = `--cms-internal-selector-${selectorRoots.size}`
         selectorRoots.set(key, generate(prelude))
-        this.rule.prelude = parse('html', { context: 'selectorList' })
+        const placeholder = parse('html', { context: 'selectorList' })
+        if (placeholder.type !== 'SelectorList')
+          throw new Error('CSS-selektorns tillfälliga källa kunde inte förberedas.')
+        this.rule.prelude = placeholder
         block.children.prependData(parse(`${key}:initial`, { context: 'declaration' }))
       }
       block.children.forEach((declaration, item) => {
