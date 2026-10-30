@@ -103,7 +103,7 @@ const inspectGeometry = (page) =>
           rules: rules.slice(-8).map((rule) => ({
             selector: rule.selectorsToString(),
             media: rule.get('mediaText'),
-            style: rule.get('style'),
+            style: JSON.parse(JSON.stringify(rule.toJSON().style)),
           })),
         }
       }),
@@ -465,14 +465,15 @@ for (const [label, authored] of [
     'intrinsic width and alignment',
     { 'justify-self': 'start', 'margin-left': '10px', 'margin-right': '10px' },
   ],
+  ['class width token', { 'justify-self': 'end', 'margin-left': '10px', 'margin-right': '10px' }],
 ]) {
   test(`cms-hierarchical-resize: authored ${label} survive repeated viewport resizes`, async ({
     page,
     context,
   }) => {
-    const { frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+    const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
     await page.evaluate(
-      async ({ selector, authored }) => {
+      async ({ selector, authored, label }) => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
         const editor = cmsGrapes.editors.at(-1)
         editor
@@ -480,11 +481,18 @@ for (const [label, authored] of [
           .find(selector)[0]
           .components()
           .forEach((card) => card.addStyle(authored))
+        if (label === 'class width token')
+          editor.Css.setRule(`${selector} > [data-knc-source]`, {
+            '--owner-card-width': '70%',
+            width: 'var(--owner-card-width)',
+          })
       },
-      { selector: groupSelector, authored },
+      { selector: groupSelector, authored, label },
     )
     await select(page, groupSelector)
     let firstNarrow
+    let previousStep
+    let selectedCard = false
     for (const width of [820, 1440, 820]) {
       await page.getByRole('button', { name: 'Smal dator', exact: true }).click()
       await page.waitForFunction(
@@ -493,12 +501,17 @@ for (const [label, authored] of [
         width,
       )
       const before = await measure(frame)
+      previousStep = before
+      if (['percentage width', 'class width token'].includes(label) && width === 1440) {
+        await select(page, `${groupSelector} > div:first-child`)
+        selectedCard = true
+      }
       if (width === 820 && firstNarrow)
         assert.ok(
           Math.abs(before.cards[0].rect.width / firstNarrow.cards[0].rect.width - 0.8) < 0.05,
           `Returning to 820px preserves the authored width semantics: ${JSON.stringify({ firstNarrow, before })}`,
         )
-      await height(page, before.group.height * 0.8)
+      await height(page, (selectedCard ? before.cards[0].rect.height : before.group.height) * 0.8)
       const after = await measure(frame)
       await test.info().attach(`authored-${width}-geometry`, {
         body: JSON.stringify({ before, after, details: await inspectGeometry(page) }, null, 2),
@@ -534,6 +547,63 @@ for (const [label, authored] of [
               `${label}: ${property} stays authored`,
             )
       firstNarrow ??= after
+    }
+    if (['percentage width', 'class width token'].includes(label)) {
+      const reference = await measure(frame)
+      const ids = new Map([['sv', reference.cards.map((card) => card.id)]])
+      const retained = async (stage, expected = reference) => {
+        await page.locator('.cms-editor-canvas[aria-busy="false"]').waitFor()
+        await frame.locator(groupSelector).waitFor()
+        const current = await measure(frame)
+        for (const [index, card] of current.cards.entries()) {
+          assert.ok(
+            Math.abs(card.rect.width - expected.cards[index].rect.width) < 2,
+            `${stage}: card ${index} retains its Desktop width`,
+          )
+          assert.ok(
+            Math.abs(card.photo.height - expected.cards[index].photo.height) < 2,
+            `${stage}: portrait ${index} retains its Desktop size`,
+          )
+        }
+        return current
+      }
+      await page.getByRole('button', { name: 'Ångra', exact: true }).click()
+      await retained('Desktop undo', previousStep)
+      await page.getByRole('button', { name: 'Gör om', exact: true }).click()
+      await retained('Desktop redo')
+      for (const button of ['Mörk', 'EN', 'Ljus', 'SV']) {
+        await page.getByRole('button', { name: button, exact: true }).click()
+        const current = await retained(button)
+        if (button === 'EN')
+          ids.set(
+            'en',
+            current.cards.map((card) => card.id),
+          )
+      }
+      await page.getByRole('button', { name: 'Publicera', exact: true }).click()
+      await page.getByText('Publicerad · rev 2', { exact: true }).waitFor({ timeout: 15000 })
+      const about = backend.document.presentation.pages.find((page) => page.path === '/about')
+      if (label === 'class width token') {
+        assert.ok(about.content.sv.css.light.includes('--owner-card-width:70%'))
+        assert.ok(about.content.sv.css.light.includes('width:var(--owner-card-width)'))
+        for (const lang of ['sv', 'en'])
+          for (const mode of ['light', 'dark'])
+            for (const id of ids.get(lang))
+              assert.ok(
+                about.content[lang].css[mode].includes(`:where(#${id})`),
+                `${lang}/${mode}: #${id} targeted Desktop geometry is published`,
+              )
+      }
+      await page.reload()
+      await page.evaluate(async () =>
+        (await import('/tools/e2e/admin-harness.tsx')).mountCmsStudioHarness(),
+      )
+      await frame.locator(groupSelector).waitFor({ timeout: 15000 })
+      await page.getByRole('button', { name: 'Smal dator', exact: true }).click()
+      await page.waitForFunction(
+        () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 820,
+      )
+      await retained('Published reload')
     }
   })
 }

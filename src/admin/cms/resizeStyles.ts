@@ -351,6 +351,37 @@ interface Edit {
   declarations: Declaration[]
 }
 
+function projectedSource(source: Source, component: Component, property: string): boolean {
+  if (keyword(source.declaration.property) !== property) return false
+  if (
+    !source.scopes.some(
+      (scope) =>
+        scope.type === 'Atrule' &&
+        keyword(scope.name) === 'media' &&
+        scope.prelude &&
+        generate(scope.prelude).replace(/\s/g, '').toLowerCase() === '(min-width:769px)',
+    )
+  )
+    return false
+  const owner = source.scopes.at(-1)
+  if (
+    owner?.type !== 'Rule' ||
+    owner.prelude.type !== 'SelectorList' ||
+    owner.prelude.children.size !== 1
+  )
+    return false
+  const branch = owner.prelude.children.first
+  if (branch?.type !== 'Selector') return false
+  const suffix = branch.children.last
+  if (suffix?.type !== 'PseudoClassSelector' || keyword(suffix.name) !== 'where') return false
+  const targets = suffix.children?.first
+  if (targets?.type !== 'SelectorList' || targets.children.size !== 1) return false
+  const target = targets.children.first
+  if (target?.type !== 'Selector' || target.children.size !== 1) return false
+  const id = target.children.first
+  return id?.type === 'IdSelector' && ident.decode(id.name) === component.getId()
+}
+
 /** Plan all cards first. The probe edits only live style nodes and always restores them;
  * no composer model, undo stack, export or token definition participates in measurement. */
 export function planDesktopCardResize(
@@ -363,7 +394,7 @@ export function planDesktopCardResize(
     throw new Error('Storleksändringen saknar en giltig skala.')
   const samples = readSamples(editor, components, baseline)
   const edits = new Map<Declaration, Edit[]>()
-  const extra: string[] = []
+  const extra = new Map<string, Record<string, string>>()
   const roots = new Set<Root>()
   const add = (
     sample: Sample,
@@ -374,12 +405,18 @@ export function planDesktopCardResize(
   ): void => {
     const item = declaration(property, value, source?.declaration.important)
     if (!source) {
-      extra.push(
-        `@media(min-width:769px){#${ident.encode(sample.component.getId())}{${generate(item)}}}`,
-      )
+      const id = sample.component.getId()
+      const style = extra.get(id) ?? {}
+      style[property] = value
+      extra.set(id, style)
       return
     }
     roots.add(source.root)
+    if (projectedSource(source, sample.component, property)) {
+      source.declaration.value = item.value
+      source.declaration.important = item.important
+      return
+    }
     const entries = edits.get(source.declaration) ?? []
     const existing = entries.find((entry) => entry.sample === sample && entry.branch === branch)
     if (existing) existing.declarations.push(item)
@@ -450,7 +487,19 @@ export function planDesktopCardResize(
     rewriteBlock(root.tree)
     return { root, definitions: parseCanvasCss(root.tree, editor) }
   })
-  const additions = extra.length ? parseCanvasCss(extra.join(''), editor) : []
+  const additions = [...extra].map(([id, style]) => {
+    const css = Object.entries(style)
+      .map(([property, value]) => generate(declaration(property, value)))
+      .join(';')
+    const [definition] = parseCanvasCss(
+      `@media(min-width:769px){#${ident.encode(id)}{${css}}}`,
+      editor,
+    )
+    const mediaText: unknown = definition?.['mediaText']
+    if (typeof mediaText !== 'string')
+      throw new Error('Desktop-regelns villkor kunde inte förberedas.')
+    return { id, style, mediaText }
+  })
   return {
     measurements: samples.map(({ width, zoom, horizontalInset, horizontalMargin, stretch }) => ({
       width,
@@ -480,7 +529,11 @@ export function planDesktopCardResize(
           at: next ? collection.indexOf(next) : collection.length,
         })
       }
-      collection.add(structuredClone(additions))
+      for (const { id, style, mediaText } of additions) {
+        const existing = editor.Css.getIdRule(id, { mediaText, state: '' })
+        if (existing) existing.addStyle(style)
+        else editor.Css.setIdRule(id, style, { mediaText, state: '' })
+      }
     },
   }
 }
