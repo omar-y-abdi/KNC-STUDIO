@@ -80,11 +80,17 @@ commit solely to record the preceding successful CI run.
 
 ## Current checkpoint — 2026-10-30
 
-The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `08e9d58`.
+The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `c486e9b`.
 Fetched main remains `93ff329`; no recovery PR has been pushed yet. A and B's
-implementation is integrated. C's branch `wip/editor-layout` absorbed the aggregate
-through `c81d63d` without conflicts in merge `a472a2c`. Its remaining geometry and
-cascade-resolver work is unaccepted WIP; the coordinator alone executes tests.
+implementation is integrated. A's geometry synchronization branch has joined the
+aggregate without changing its accepted tree. C's browser-sampled cascade resolver,
+selector-preserving imports and mobile nested-style preservation are integrated;
+their final control/history acceptance remains open. The coordinator alone executes tests.
+
+Current ownership: A owns shared-preview CSS isolation in `composedCanvas.ts` and
+the focused `cms-preview-css-isolation.spec.mjs` regression. C owns native import
+priority, current resize baseline capture and the existing composition/hierarchy
+specs. D reviews independently. A's `responsiveStyles.ts` fixes are accepted and frozen.
 
 Verified local receipts, not final pushed-head acceptance:
 
@@ -105,12 +111,21 @@ Verified local receipts, not final pushed-head acceptance:
 - Earlier SQL/integration receipts remain separately bounded in
   [the implementation ledger](WIP_IMPLEMENTATION.md).
 
-Remaining gates: C's real production resolver and geometry/theme/language regressions;
-three nativeCanvas lint findings (interface declaration and two non-null assertions)
-returned to C; final integrated checks and full GitHub CI/CodeQL. The experimental
-cascade test does not prove the not-yet-integrated production resolver. Keep the
-existing CSS validator: unsupported Raw syntax and reserved internal properties are
-not reasons to broaden the admitted CSS language.
+Subsequent bounded receipts: `c9c1029` passed full typecheck, ESLint and 49 focused
+resize/synchronization unit cases. At `d4bfb90`, the five focused import, selector,
+resolver and animation cases passed in each browser. Actual authored control tests
+then exposed remaining history/import defects; an incomplete red run is not acceptance.
+
+Remaining gates: preserve CSS priority across Undo/remount, isolate shared-preview
+rules from editable originals, resolve the initial resize snapshot race, and finish
+geometry/theme/language/publication/reload coverage. A standalone native WebKit probe
+reproduced the intrinsic-width result exactly: its physical text-size floor prevents
+strict proportional shrinking below that floor. That case needs native-browser parity,
+not owner font/width overrides or a relaxed tolerance. The mobile preservation counter
+also included read-only preview copies; scope it to the actual editable card IDs while
+retaining its original duplicate/preservation check. Full integrated checks and GitHub
+CI/CodeQL remain pending. Keep the existing CSS validator: unsupported Raw syntax and
+reserved internal properties are not reasons to broaden the admitted CSS language.
 
 The coordinator stopped its Supabase stack with backup and stopped Colima profile
 `knc-wip-20261028` on 2026-10-30 after the backend gates. `default` was independently
