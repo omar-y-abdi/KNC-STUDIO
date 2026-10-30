@@ -103,7 +103,7 @@ const inspectGeometry = (page) =>
           rules: rules.slice(-8).map((rule) => ({
             selector: rule.selectorsToString(),
             media: rule.get('mediaText'),
-            style: JSON.parse(JSON.stringify(rule.toJSON().style)),
+            style: JSON.parse(JSON.stringify(rule.toJSON().style ?? {})),
           })),
         }
       }),
