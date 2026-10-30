@@ -293,9 +293,33 @@ describe('targeted cascade geometry', () => {
     const other = before.replace('color:red', 'color:blue')
     // The two target rules have equal specificity to the later hover rule. Moving width
     // beside zoom would make the counterpart keep 56% on hover while the source uses 80%.
-    expect(syncLayout(before, after, other)).toBe(
-      generate(parse(after.replace('color:red', 'color:blue'))),
-    )
+    const tree = parse(syncLayout(before, after, other))
+    if (tree.type !== 'StyleSheet') throw new Error('The synced stylesheet is missing')
+    const owner = tree.children.first
+    if (owner?.type !== 'Rule') throw new Error('The owner rule is missing')
+    expect(generate(owner.prelude)).toBe('.owner')
+    const children = owner.block.children.toArray()
+    expect(
+      children
+        .filter(
+          (node) =>
+            node.type === 'Atrule' ||
+            (node.type === 'Declaration' && ['width', 'zoom'].includes(node.property)),
+        )
+        .map((node) => generate(node)),
+    ).toEqual([
+      'width:70%',
+      '@media (min-width:769px){&:where(#card){width:56%}}',
+      '@supports (display:grid){&:where(:hover){width:80%}}',
+      'zoom:1',
+      '@media (min-width:769px){&:where(#card){zoom:0.8}}',
+    ])
+    // Appearance stays independent; its placement relative to geometry is immaterial.
+    expect(
+      children.flatMap((node) =>
+        node.type === 'Declaration' && node.property === 'color' ? [generate(node.value)] : [],
+      ),
+    ).toEqual(['blue'])
   })
 
   it('keeps a missing anonymous layer ordinal stable across repeated important geometry edits', () => {
