@@ -80,17 +80,21 @@ commit solely to record the preceding successful CI run.
 
 ## Current checkpoint — 2026-10-30
 
-The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `c486e9b`.
+The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `cd8b9f7`.
 Fetched main remains `93ff329`; no recovery PR has been pushed yet. A and B's
 implementation is integrated. A's geometry synchronization branch has joined the
 aggregate without changing its accepted tree. C's browser-sampled cascade resolver,
-selector-preserving imports and mobile nested-style preservation are integrated;
-their final control/history acceptance remains open. The coordinator alone executes tests.
+selector-preserving imports and mobile nested-style preservation are integrated.
+C's completed branch absorbed the latest aggregate without conflicts and with an
+identical tree; its native-priority, current-viewport and mobile/intrinsic gates pass.
+The coordinator alone executes tests.
 
-Current ownership: A owns shared-preview CSS isolation in `composedCanvas.ts` and
-the focused `cms-preview-css-isolation.spec.mjs` regression. C owns native import
-priority, current resize baseline capture and the existing composition/hierarchy
-specs. D reviews independently. A's `responsiveStyles.ts` fixes are accepted and frozen.
+Current ownership: A owns shared-preview CSS isolation in `composedCanvas.ts`, its
+focused regression, and the narrow render-projector wiring in `nativeCanvas.ts`,
+`Editor.tsx` and the temporary style paints in `resizeStyles.ts`. Canonical CssRule
+models and exported CSS must remain unchanged by preview rendering. C's resize
+algorithm and normalization adapter are frozen. D reviews independently.
+A's `responsiveStyles.ts` fixes are accepted and frozen.
 
 Verified local receipts, not final pushed-head acceptance:
 
@@ -116,16 +120,26 @@ resize/synchronization unit cases. At `d4bfb90`, the five focused import, select
 resolver and animation cases passed in each browser. Actual authored control tests
 then exposed remaining history/import defects; an incomplete red run is not acceptance.
 
-Remaining gates: preserve CSS priority across Undo/remount, isolate shared-preview
-rules from editable originals, resolve the initial resize snapshot race, and finish
-geometry/theme/language/publication/reload coverage. A standalone native WebKit probe
-reproduced the intrinsic-width result exactly: its physical text-size floor prevents
-strict proportional shrinking below that floor. That case needs native-browser parity,
-not owner font/width overrides or a relaxed tolerance. The mobile preservation counter
-also included read-only preview copies; scope it to the actual editable card IDs while
-retaining its original duplicate/preservation check. Full integrated checks and GitHub
-CI/CodeQL remain pending. Keep the existing CSS validator: unsupported Raw syntax and
-reserved internal properties are not reasons to broaden the admitted CSS language.
+The subsequent resize gates are green: full typecheck, both current-viewport regressions
+(`/tmp/knc-wip-native-policy-gate.log`), both native-priority/logical-width/all-reset
+roundtrips (`/tmp/knc-wip-native-policy-gate3.log`), and four full mobile/intrinsic cases
+(`/tmp/knc-wip-mobile-intrinsic-gate.log`). Native priority uses the existing complete
+normalization policy only for targeted native IDs, including inactive contexts.
+Current-frame measurements replace stale Desktop snapshot dimensions.
+
+A standalone native WebKit probe reproduced its physical text-size floor exactly.
+The intrinsic regression therefore checks native-browser parity below that floor,
+retaining owner font/width/alignment and the initial proportional assertion. The
+mobile preservation counter checks actual editable IDs and excludes preview copies.
+
+Remaining gates: isolate shared-preview rendering, then finish real control
+geometry/theme/language/Undo/publication/reload coverage, full integrated checks and
+GitHub CI/CodeQL. The preview regression fails correctly in both engines on old source
+(`/tmp/knc-wip-preview-red2.log`): duplicate global CSS changes owner width and derived
+copies lose layer geometry and local references. Render-only projection must preserve
+canonical ID model identity, direct declaration specificity, anonymous layer identity
+and the same CSS during resize probes. Keep the existing CSS validator: unsupported Raw
+syntax and reserved internal properties are not reasons to broaden the admitted language.
 
 The coordinator stopped its Supabase stack with backup and stopped Colima profile
 `knc-wip-20261028` on 2026-10-30 after the backend gates. `default` was independently
