@@ -71,6 +71,10 @@ const inspectGeometry = (page) =>
       'align-items',
       'gap',
       'padding',
+      'margin-left',
+      'margin-right',
+      'justify-self',
+      'justify-items',
       'border-width',
       'grid-template-columns',
       'grid-template-rows',
@@ -362,30 +366,44 @@ test('cms-hierarchical-resize: narrow Desktop saves the Desktop rule and no view
     return Buffer.concat(chunks).toString('utf8')
   }
   const narrow = page.getByRole('button', { name: 'Smal dator', exact: true })
+  const untouched = await exportBytes()
+  // Keep the selection across both viewport changes; a new selection would hide a stale snapshot.
+  await select(page, groupSelector)
   await narrow.click()
   await viewport(820)
   assert.equal(await narrow.getAttribute('aria-pressed'), 'true')
+  assert.equal(await exportBytes(), untouched, 'Narrow preview cannot create a saved style rule')
   const before = await measure(frame)
   const beforeDetails = await inspectGeometry(page)
-  await select(page, groupSelector)
   await height(page, before.group.height * 0.8)
   const after = await measure(frame)
+  const afterDetails = await inspectGeometry(page)
   await test.info().attach('narrow-desktop-geometry', {
-    body: JSON.stringify(
-      { before, after, beforeDetails, afterDetails: await inspectGeometry(page) },
-      null,
-      2,
-    ),
+    body: JSON.stringify({ before, after, beforeDetails, afterDetails }, null, 2),
     contentType: 'application/json',
   })
   assert.ok(
     Math.abs(after.cards[0].photo.height / before.cards[0].photo.height - 0.8) < 0.05,
     `Narrow Desktop portrait scale: ${JSON.stringify({ before, after })}`,
   )
-  const saved = await exportBytes()
+  for (const property of ['box-sizing', 'align-self', 'padding'])
+    assert.equal(
+      afterDetails.nodes[1].computed[property],
+      beforeDetails.nodes[1].computed[property],
+      `Resizing must preserve the card's ${property}`,
+    )
+  let saved = await exportBytes()
   await narrow.click()
   await viewport(1440)
   assert.equal(await exportBytes(), saved, 'Leaving narrow preview cannot change saved bytes')
+  const wideBefore = await measure(frame)
+  await height(page, wideBefore.group.height * 0.75)
+  const wideAfter = await measure(frame)
+  assert.ok(
+    Math.abs(wideAfter.cards[0].photo.height / wideBefore.cards[0].photo.height - 0.75) < 0.05,
+    `Wide Desktop portrait scale: ${JSON.stringify({ before: wideBefore, after: wideAfter })}`,
+  )
+  saved = await exportBytes()
   await narrow.click()
   await viewport(820)
   await page.getByRole('button', { name: 'Mobil', exact: true }).click()
@@ -425,3 +443,97 @@ test('cms-hierarchical-resize: narrow Desktop saves the Desktop rule and no view
     'The extra preview control must fit the compact toolbar',
   )
 })
+
+for (const [label, authored] of [
+  ['content-box margins', { 'margin-left': '10px', 'margin-right': '10px' }],
+  [
+    'fixed width and alignment',
+    {
+      width: '170px',
+      'box-sizing': 'border-box',
+      'justify-self': 'center',
+      'align-self': 'end',
+      'margin-left': '10px',
+      'margin-right': '10px',
+    },
+  ],
+  [
+    'percentage width',
+    { width: '70%', 'justify-self': 'end', 'margin-left': '10px', 'margin-right': '10px' },
+  ],
+  [
+    'intrinsic width and alignment',
+    { 'justify-self': 'start', 'margin-left': '10px', 'margin-right': '10px' },
+  ],
+]) {
+  test(`cms-hierarchical-resize: authored ${label} survive repeated viewport resizes`, async ({
+    page,
+    context,
+  }) => {
+    const { frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+    await page.evaluate(
+      async ({ selector, authored }) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        editor
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .forEach((card) => card.addStyle(authored))
+      },
+      { selector: groupSelector, authored },
+    )
+    await select(page, groupSelector)
+    let firstNarrow
+    for (const width of [820, 1440, 820]) {
+      await page.getByRole('button', { name: 'Smal dator', exact: true }).click()
+      await page.waitForFunction(
+        (width) =>
+          globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === width,
+        width,
+      )
+      const before = await measure(frame)
+      if (width === 820 && firstNarrow)
+        assert.ok(
+          Math.abs(before.cards[0].rect.width / firstNarrow.cards[0].rect.width - 0.8) < 0.05,
+          `Returning to 820px preserves the authored width semantics: ${JSON.stringify({ firstNarrow, before })}`,
+        )
+      await height(page, before.group.height * 0.8)
+      const after = await measure(frame)
+      await test.info().attach(`authored-${width}-geometry`, {
+        body: JSON.stringify({ before, after, details: await inspectGeometry(page) }, null, 2),
+        contentType: 'application/json',
+      })
+      for (const [index, card] of after.cards.entries()) {
+        assert.ok(
+          Math.abs(card.rect.width / before.cards[index].rect.width - 0.8) < 0.05,
+          `${label}: ${width}px card ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+        )
+        assert.ok(
+          Math.abs(card.photo.height / before.cards[index].photo.height - 0.8) < 0.05,
+          `${label}: ${width}px portrait ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+        )
+      }
+      const styles = await page.evaluate(async (selector) => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        return cmsGrapes.editors
+          .at(-1)
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .map((card) => card.getStyle())
+      }, groupSelector)
+      for (const style of styles)
+        for (const [property, value] of Object.entries(authored))
+          if (property !== 'width' || !String(value).includes('%'))
+            assert.equal(
+              String(style[property])
+                .replace(/\s*!important$/i, '')
+                .trim(),
+              value,
+              `${label}: ${property} stays authored`,
+            )
+      firstNarrow ??= after
+    }
+  })
+}
