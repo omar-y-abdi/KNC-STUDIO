@@ -395,6 +395,84 @@ test('canvas style imports retain layer precedence, root selectors and declarati
   assert.deepEqual(pageErrors, [])
 })
 
+test('complex selector functions keep their ancestor constraint through production import', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const { validateMarkup } = await import('/shared/cms-markup.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      components:
+        '<div id="complex-holder"><section class="owner"><div id="inside-a" class="a">A</div><div id="inside-b" class="b">B</div><div id="inside-c" class="c">C</div></section><div id="outside-b" class="b">Outside</div></div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const release = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const doc = editor.Canvas.getDocument()
+    const view = doc.defaultView
+    const policy = {
+      siteOrigin: globalThis.location.origin,
+      storageOrigin: 'https://storage.example.test',
+    }
+    const source =
+      '#complex-holder{width:600px}.owner{width:400px}.owner :is(.a,.b,.c){width:150px}'
+    validateMarkup('', source, policy)
+    const measure = () =>
+      ['inside-a', 'inside-b', 'inside-c', 'outside-b'].map(
+        (id) => doc.getElementById(id).getBoundingClientRect().width,
+      )
+    try {
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(source, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const before = measure()
+      const exported = readCanvasCss(editor)
+      validateMarkup('', exported, policy)
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(exported, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restored = measure()
+      const plan = planDesktopCardResize(editor, [editor.Components.getById('inside-b')], 0.8)
+      plan.apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const resized = measure()
+      const finalCss = readCanvasCss(editor)
+      validateMarkup('', finalCss, policy)
+      return { before, restored, resized, exported, finalCss }
+    } finally {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      release()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test
+    .info()
+    .attach('complex-selector-import', {
+      body: JSON.stringify(result, null, 2),
+      contentType: 'application/json',
+    })
+  assert.deepEqual(result.before, [150, 150, 150, 600])
+  assert.deepEqual(result.restored, result.before)
+  assert.deepEqual(result.resized, [150, 120, 150, 600])
+  assert.ok(result.exported.includes('.owner :is(.a,.b,.c)'))
+  assert.ok(result.finalCss.includes('.owner :is(.a,.b,.c)'))
+  assert.ok(!result.finalCss.includes('--cms-internal-'))
+  assert.deepEqual(errors, [])
+})
+
 test('resize styles use the native cascade and survive production import without probe state', async ({
   page,
 }) => {
