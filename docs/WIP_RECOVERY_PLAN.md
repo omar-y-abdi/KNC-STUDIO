@@ -77,3 +77,42 @@ No production credentials are needed for test fixtures. Keep temporary test secr
 port overrides outside commits. Stop our services/profile at final handoff, including
 failure/blocked handoff. Final receipts go in the PR description to avoid a new source
 commit solely to record the preceding successful CI run.
+
+## Current checkpoint — 2026-10-30
+
+The coordinator aggregate is `wip/complete-2026-10` at source checkpoint `08e9d58`.
+Fetched main remains `93ff329`; no recovery PR has been pushed yet. A and B's
+implementation is integrated. C's branch `wip/editor-layout` absorbed the aggregate
+through `c81d63d` without conflicts in merge `a472a2c`. Its remaining geometry and
+cascade-resolver work is unaccepted WIP; the coordinator alone executes tests.
+
+Verified local receipts, not final pushed-head acceptance:
+
+- `08e9d58`: 160 unit files / 1,865 tests passed (`/tmp/knc-wip-canvas-unit.log`).
+- `c81d63d`: full typecheck and all 18 composition cases passed across Chromium and
+  WebKit, split into the four focused import/cascade cases and the 14 remaining
+  composition/lifecycle cases (`/tmp/knc-wip-canvas-import-c81d63d.log` and
+  `/tmp/knc-wip-composition-c81d63d.log`). The independent import review is closed.
+- `08e9d58`: production harness build and all 14 startup cases passed
+  (`/tmp/knc-wip-startup-20261030.log`). Both engines enforce 3,000 ms readiness.
+  Real-fixture median readiness was 1,426.5 ms Chromium and 2,509 ms WebKit;
+  synchronous editor spans were 604.7 ms and 1,012 ms respectively. These spans
+  are browser instrumentation, not OS or Edge CPU measurements.
+- `4724666`: actual Edge/Storage acceptance passed, and all three customer browser
+  engines passed against the isolated stack. Discovery/report verification found
+  no missing, skipped or retried customer cases. Logs: `/tmp/knc-wip-asset-copy.log`
+  and `/tmp/knc-wip-customer-4724666.log`.
+- Earlier SQL/integration receipts remain separately bounded in
+  [the implementation ledger](WIP_IMPLEMENTATION.md).
+
+Remaining gates: C's real production resolver and geometry/theme/language regressions;
+three nativeCanvas lint findings (interface declaration and two non-null assertions)
+returned to C; final integrated checks and full GitHub CI/CodeQL. The experimental
+cascade test does not prove the not-yet-integrated production resolver. Keep the
+existing CSS validator: unsupported Raw syntax and reserved internal properties are
+not reasons to broaden the admitted CSS language.
+
+The coordinator stopped its Supabase stack with backup and stopped Colima profile
+`knc-wip-20261028` on 2026-10-30 after the backend gates. `default` was independently
+verified still running. Frontend checks need no Colima. If a new backend failure
+requires restart, use only the coordinator's existing isolated profile and ports.
