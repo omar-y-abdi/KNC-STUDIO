@@ -851,7 +851,7 @@ test('native dimension edits materialize inactive owner priorities before export
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-untargeted" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
+        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-reset" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-late-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-untargeted" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
       deviceManager: {
         devices: [
           { id: 'Wide', width: '1440px' },
@@ -862,7 +862,9 @@ test('native dimension edits materialize inactive owner priorities before export
     const releaseStyles = connectCanvasStyles(editor)
     await new Promise((resolve) => editor.on('load', resolve))
     const view = editor.Canvas.getDocument().defaultView
-    const cards = ['native-card', 'native-token'].map((id) => editor.Components.getById(id))
+    const cards = ['native-card', 'native-token', 'native-reset', 'native-late-token'].map((id) =>
+      editor.Components.getById(id),
+    )
     const read = () =>
       cards.map((card) => {
         const rect = card.getEl().getBoundingClientRect()
@@ -883,8 +885,9 @@ test('native dimension edits materialize inactive owner priorities before export
             '#native-holder{width:800px}#native-holder>div{height:100px}' +
               '#native-card{width:70%;zoom:0.8}' +
               '.owner-token{--owner-card-width:70%;width:var(--owner-card-width)}' +
+              '#native-reset{width:70%;zoom:0.8}' +
               '#native-untargeted{width:33%;zoom:0.9;color:blue}' +
-              '@media(min-width:1000px){#native-card,#native-token{color:red}#native-card{inline-size:90%;zoom:1.1}#native-token{all:initial;display:block;height:100px}}',
+              '@media(min-width:1000px){#native-holder #native-card,#native-holder #native-token{color:red}#native-card{inline-size:90%;zoom:1.1}#native-reset{all:initial;display:block;height:100px}#native-late-token{all:initial;display:block;height:100px}}',
             editor,
           ),
         ),
@@ -927,8 +930,10 @@ test('native dimension edits materialize inactive owner priorities before export
     assert.ok(Math.abs(after.width / result.before[index].width - 0.8) < 0.015)
     assert.ok(Math.abs(after.height / result.before[index].height - 0.8) < 0.015)
     const expected = [
-      { width: 720, height: 110 },
-      { width: 800, height: 100 },
+      { width: 720, height: 110 }, // A later logical declaration beats an earlier projection.
+      { width: 448, height: 80 }, // A fresh fallback has no competing wide rule.
+      { width: 800, height: 100 }, // A later all reset beats an earlier zoom projection.
+      { width: 800, height: 80 }, // A newly appended fallback follows the earlier all reset.
     ][index]
     assert.ok(
       Math.abs(result.wide[index].width - expected.width) < 0.1,
@@ -953,23 +958,30 @@ test('native dimension edits materialize inactive owner priorities before export
       for (const declaration of rule.block.children)
         if (declaration.type === 'Declaration') {
           if (
-            ['#native-card', '#native-token'].includes(selector) &&
+            ['#native-card', '#native-token', '#native-reset', '#native-late-token'].includes(
+              selector,
+            ) &&
             ['width', 'zoom', 'inline-size', 'all'].includes(declaration.property)
           )
             priorities.push(Boolean(declaration.important))
           else if (
-            ['.owner-token', '#native-untargeted', '#native-card,#native-token'].includes(selector)
+            [
+              '.owner-token',
+              '#native-untargeted',
+              '#native-holder #native-card',
+              '#native-holder #native-token',
+            ].includes(selector)
           )
             untouched.push(Boolean(declaration.important))
         }
     },
   })
-  assert.ok(priorities.length >= 6)
+  assert.ok(priorities.length >= 10)
   assert.ok(
     priorities.every(Boolean),
     'Active and inactive native owner dimensions share persisted priority',
   )
-  assert.ok(untouched.length >= 6)
+  assert.ok(untouched.length >= 7)
   assert.ok(
     untouched.every((important) => !important),
     'Class, complex and untargeted rules stay authored',
