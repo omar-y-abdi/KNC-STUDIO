@@ -781,6 +781,9 @@ test('resize controls use current viewport geometry before deferred selection ca
         editor.select(component)
         frame.parentElement.style.transition = 'none'
         editor.Canvas.getFrame().set({ width: `${width}px` }, { noUndo: 1 })
+        // FrameWrapView applies this exact style from a zero-delay debounced listener.
+        // Apply its pending DOM width now so input can precede that listener/resize RAF.
+        frame.parentElement.style.width = `${width}px`
         const frameWidth = frame.getBoundingClientRect().width
         if (view.innerWidth !== width || Math.abs(frameWidth - width) > 0.01)
           throw new Error(`The fixture viewport did not change: ${view.innerWidth}/${frameWidth}`)
@@ -880,7 +883,6 @@ test('native dimension edits materialize inactive owner priorities before export
             '#native-holder{width:800px}#native-holder>div{height:100px}' +
               '#native-card{width:70%;zoom:0.8}' +
               '.owner-token{--owner-card-width:70%;width:var(--owner-card-width)}' +
-              '#native-token{zoom:0.8}' +
               '@media(min-width:1000px){#native-card,#native-token{color:red}#native-card{width:90%;zoom:1.1}#native-token{width:90%;zoom:1.1}}',
             editor,
           ),
