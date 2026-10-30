@@ -42,13 +42,24 @@ function canvasRules(editor: Editor): CssRule[] {
 
 const canvasStyleOptions = { withNested: true, allowEmpty: true }
 
-function canvasStyleCss(style: CanvasStyle): string {
+function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
   return Object.entries(style)
-    .map(([key, value]) =>
-      typeof value === 'object' && !Array.isArray(value)
-        ? `${key}{${canvasStyleCss(value)}}`
-        : (Array.isArray(value) ? value : [value]).map((item) => `${key}:${item};`).join(''),
-    )
+    .map(([key, value]) => {
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        if (key.startsWith('@')) {
+          const group = parse(`${key}{}`, { context: 'atrule' })
+          const frames =
+            group.type === 'Atrule' &&
+            ['keyframes', '-webkit-keyframes'].includes(ident.decode(group.name).toLowerCase())
+          return `${key}{${canvasStyleCss(value, frames ? false : withinRule)}}`
+        }
+        if (!withinRule && !key.startsWith('& '))
+          throw new Error('En absolut CSS-selektor saknar sin redigeringskodning.')
+        const selector = withinRule ? key : key.slice(2)
+        return `${selector}{${canvasStyleCss(value, true)}}`
+      }
+      return (Array.isArray(value) ? value : [value]).map((item) => `${key}:${item};`).join('')
+    })
     .join('')
 }
 
@@ -385,9 +396,10 @@ function canvasNestedStyle(
             .join(',')
         else throw new Error('En CSS-selektor i ett lager kunde inte bevaras.')
       }
-      // GJS copies style objects into ordinary objects. These selector names must
-      // remain own data keys rather than special prototype/constructor properties.
-      if (envelope && ['__proto__', 'constructor', 'prototype'].includes(key)) key += ' '
+      // GJS renders once before css:mount:before. Prefix every absolute selector/frame
+      // key so it recognizes a nested model instead of coercing an object declaration.
+      // The envelope serializer removes exactly this prefix in the same context.
+      if (node.type === 'Rule' && envelope && (!withinRule || keyframes)) key = `& ${key}`
       if (
         node.type === 'Atrule' &&
         ![
@@ -478,18 +490,20 @@ export function parseCanvasCss(
           declaration.property = key
         } else if (
           declaration.type === 'Rule' ||
-          (declaration.type === 'Atrule' && declaration.block)
+          (declaration.type === 'Atrule' &&
+            (declaration.block || ident.decode(declaration.name).toLowerCase() === 'layer'))
         ) {
           const nested = canvasNestedStyle({
             ...block,
             children: new List<CssNode>().fromArray([declaration]),
           })
-          const property = Object.keys(nested)[0]!
-          declarations.set(key, { property, value: nested[property]! })
-          block.children.replace(
-            item,
-            block.children.createItem(parse(`${key}:initial`, { context: 'declaration' })),
-          )
+          const placeholders = new List<CssNode>()
+          for (const [property, value] of Object.entries(nested)) {
+            const placeholder = `--cms-internal-parse-${declarations.size}`
+            declarations.set(placeholder, { property, value })
+            placeholders.appendData(parse(`${placeholder}:initial`, { context: 'declaration' }))
+          }
+          block.children.replace(item, placeholders)
         }
       })
     },

@@ -285,13 +285,13 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       }
     }
     try {
-      editor.Css.getAll().reset(parsed)
+      editor.Css.getAll().reset(globalThis.structuredClone(parsed))
       await new Promise((resolve) => view.requestAnimationFrame(resolve))
       const before = snapshot()
       const serialized = readCanvasCss(editor)
       validateMarkup('', serialized, policy)
       const restored = parseCanvasCss(serialized, editor)
-      editor.Css.getAll().reset(restored)
+      editor.Css.getAll().reset(globalThis.structuredClone(restored))
       await new Promise((resolve) => view.requestAnimationFrame(resolve))
       const after = snapshot()
       const editable = editor.Css.getAll().models.find(
@@ -577,7 +577,9 @@ test('resize cascade primitive resolves variables and layers without exporting p
         css: readCanvasCss(editor),
         holderWidth: doc.getElementById('holder')?.getBoundingClientRect().width,
         cardWidth: doc.getElementById('probe-card')?.getBoundingClientRect().width,
-        rules: editor.Css.getAll().toJSON(),
+        // Selector collections in GJS's shallow rule JSON retain live model references.
+        // Snapshot through its JSON protocol before later resets mutate those models.
+        rules: JSON.parse(JSON.stringify(editor.Css.getAll().toJSON())),
         mounted: [...doc.styleSheets].map((sheet) =>
           [...sheet.cssRules].map((rule) => rule.cssText).join(''),
         ),
