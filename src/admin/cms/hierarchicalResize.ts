@@ -1,4 +1,5 @@
 import type { Component, Editor } from 'grapesjs'
+import type { CmsMode } from '../../../shared/cms'
 import { planDesktopCardResize } from './resizeStyles'
 
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
@@ -74,11 +75,14 @@ export function scaledZoom(zoom: number, before: number, requested: number): num
 /** CSS zoom participates in layout, unlike transform:scale. Keep intrinsic child
  * geometry and let the browser scale text, portraits, padding and subsequent flow.
  * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
-export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
+export function connectHierarchicalResize(
+  editor: Editor,
+  disabled: () => boolean,
+  mode: () => CmsMode,
+): () => void {
   let snapshot:
     | {
         component: Component
-        style: ReturnType<Component['getStyle']>
         width: number
         height: number
         zoom: number
@@ -107,8 +111,6 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
-      // Component-first styling reads the existing device rule without creating one.
-      style: { ...component.getStyle() },
       width: rect.width,
       height: rect.height,
       zoom,
@@ -147,36 +149,43 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     }
     const cards = barberStripCards(before.component)
     const mobile = editor.getDevice() === 'Mobile'
-    const requestedScale = scaledZoom(
-      cards.length && mobile ? before.cardScale : before.zoom,
-      before[property],
-      requested,
-    )
+    const desktopCards = cards.length > 0 && !mobile
+    const requestedScale = desktopCards
+      ? 1
+      : scaledZoom(
+          cards.length && mobile ? before.cardScale : before.zoom,
+          before[property],
+          requested,
+        )
     // A short roster keeps its cards wide enough to loop; a frozen strip is never a valid size.
     const scale =
       cards.length && mobile ? Math.max(minLoopScale(cards.length), requestedScale) : requestedScale
-    if (!Number.isFinite(scale) || before[property] <= 0) return
+    if (!Number.isFinite(scale) || (!desktopCards && before[property] <= 0)) return
     const style = { ...target.getStyle('', { withNested: true }) }
+    const previousStyle = target.previous('style')
+    if (!previousStyle || typeof previousStyle !== 'object' || Array.isArray(previousStyle))
+      throw new Error('Storlekskontrollens tidigare värden kunde inte läsas.')
     // The new size is represented by layout zoom or card width, not a clipping height.
     for (const axis of ['width', 'height'] as const) {
-      if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
-      else style[axis] = before.style[axis]
+      if (previousStyle[axis] === undefined) Reflect.deleteProperty(style, axis)
+      else style[axis] = previousStyle[axis]
     }
     updating = true
     try {
       // The dimension control has already written its proposal. Resolve every card from
       // the previous dimensions in the DOM, before restoring or changing any model.
-      const plan =
-        cards.length && !mobile
-          ? (() => {
-              if (!(target instanceof editor.Css.classes.CssRule))
-                throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
-              return planDesktopCardResize(editor, cards, scale / before.zoom, {
-                target,
-                style,
-              })
-            })()
-          : undefined
+      const plan = desktopCards
+        ? (() => {
+            if (!(target instanceof editor.Css.classes.CssRule))
+              throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
+            return planDesktopCardResize(editor, cards, 1, {
+              target,
+              style,
+              mode: mode(),
+              measurement: { component: before.component, axis: property, requested },
+            })
+          })()
+        : undefined
       target.setStyle(style)
       if (plan) {
         plan.apply()

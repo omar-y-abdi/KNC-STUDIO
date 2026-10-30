@@ -14,7 +14,13 @@ import {
   type StyleSheet,
 } from 'css-tree'
 import type { Component, CssRule, Editor, StyleProps } from 'grapesjs'
-import { parseCanvasCss, parseCanvasSheet, readCanvasRuleCss } from './nativeCanvas'
+import type { CmsMode } from '../../../shared/cms'
+import {
+  normalizeNativeOwnerRules,
+  parseCanvasCss,
+  parseCanvasSheet,
+  readCanvasRuleCss,
+} from './nativeCanvas'
 
 interface CardGeometry {
   width: string
@@ -59,6 +65,7 @@ interface Root {
   model: CssRule
   element: HTMLElement
   tree: StyleSheet
+  normalized: boolean
 }
 interface Source {
   root: Root
@@ -76,6 +83,8 @@ interface Sample extends CardGeometry {
 export interface ResizeBaseline {
   target: CssRule
   style: StyleProps
+  mode?: CmsMode
+  measurement?: { component: Component; axis: 'width' | 'height'; requested: number }
 }
 
 const prefix = '--cms-internal-resize-'
@@ -153,24 +162,56 @@ function branchProbe(source: Source, component: Component, property: string): st
   return body
 }
 
-function readSamples(editor: Editor, components: Component[], baseline?: ResizeBaseline): Sample[] {
+function readSamples(
+  editor: Editor,
+  components: Component[],
+  baseline?: ResizeBaseline,
+): { samples: Sample[]; normalizedRoots: Root[]; dimension?: number } {
   const doc = editor.Canvas.getDocument()
   const view = doc?.defaultView
   if (!doc?.body || !view) throw new Error('Redigeringsytan är inte redo att ändra storlek.')
+  const elements = components.map((component) => {
+    const element = component.getEl()
+    if (!element) throw new Error('Komponenten saknar sin redigeringsyta.')
+    return element
+  })
+  if (
+    !baseline?.mode &&
+    elements.some(
+      (element) =>
+        element.hasAttribute('data-knc-baseline') && element.closest('[data-knc-native="1"]'),
+    )
+  )
+    throw new Error('Sidans färgläge saknas för storleksändringen.')
   const roots: Root[] = editor.Css.getAll()
     .models.filter((model) => !model.isNested() && Object.keys(model.get('style') ?? {}).length)
     .map((model) => {
       const element = model.getView()?.el
       if (!element || element.nodeName !== 'STYLE')
         throw new Error('En storleksregel saknar sin redigeringsvy.')
-      return {
-        model,
-        element,
-        tree: parseCanvasSheet(
-          readCanvasRuleCss(model, model === baseline?.target ? baseline.style : undefined),
-        ),
-      }
+      const tree = parseCanvasSheet(
+        readCanvasRuleCss(model, model === baseline?.target ? baseline.style : undefined),
+      )
+      return { model, element, tree, normalized: false }
     })
+  if (baseline?.mode) {
+    const before = roots.map((root) => generate(root.tree))
+    // One originals map and declaration pass covers every root, including inactive
+    // owner contexts. The list references each root's nodes without moving them.
+    normalizeNativeOwnerRules(
+      {
+        type: 'StyleSheet',
+        children: new List<CssNode>().fromArray(
+          roots.flatMap((root) => root.tree.children.toArray()),
+        ),
+      },
+      elements,
+      baseline.mode,
+    )
+    roots.forEach((root, index) => {
+      root.normalized = before[index] !== generate(root.tree)
+    })
+  }
   const sources = new Map<string, Source>()
   const restore: { element: HTMLElement; css: string | null }[] = []
   const temporary = doc.createElement('style')
@@ -263,7 +304,7 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
       const tree = clone(root.tree)
       const count = sources.size
       instrument(tree, root.tree, root, [])
-      if (sources.size === count && root.model !== baseline?.target) continue
+      if (sources.size === count && !root.normalized && root.model !== baseline?.target) continue
       restore.push({ element: root.element, css: root.element.textContent })
       root.element.textContent = generate(tree)
     }
@@ -337,7 +378,15 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
         sample[axis] = Number(result.slice(1))
       }
     }
-    return samples
+    const measurement = baseline?.measurement
+    const dimension = measurement?.component.getEl()?.getBoundingClientRect()[measurement.axis]
+    if (measurement && (!dimension || !Number.isFinite(dimension) || dimension <= 0))
+      throw new Error('Komponentens aktuella storlek kunde inte mätas.')
+    return {
+      samples,
+      normalizedRoots: roots.filter((root) => root.normalized),
+      ...(dimension === undefined ? {} : { dimension }),
+    }
   } finally {
     for (const entry of restore.reverse()) entry.element.textContent = entry.css
     temporary.remove()
@@ -392,10 +441,26 @@ export function planDesktopCardResize(
 ): { measurements: CardGeometry[]; apply: () => void } {
   if (!Number.isFinite(factor) || factor <= 0)
     throw new Error('Storleksändringen saknar en giltig skala.')
-  const samples = readSamples(editor, components, baseline)
+  const { samples, normalizedRoots, dimension } = readSamples(editor, components, baseline)
+  if (baseline?.measurement) {
+    const zoom =
+      samples.find((sample) => sample.component === baseline.measurement?.component)?.zoom ??
+      samples[0]?.zoom
+    const requested = baseline.measurement.requested
+    if (
+      dimension === undefined ||
+      zoom === undefined ||
+      !Number.isFinite(zoom) ||
+      zoom <= 0 ||
+      !Number.isFinite(requested) ||
+      requested <= 0
+    )
+      throw new Error('Storleksändringen saknar en giltig mätning.')
+    factor = Math.max(0.1, Math.min(4, (zoom * requested) / dimension)) / zoom
+  }
   const edits = new Map<Declaration, Edit[]>()
   const extra = new Map<string, Record<string, string>>()
-  const roots = new Set<Root>()
+  const roots = new Set<Root>(normalizedRoots)
   const add = (
     sample: Sample,
     source: Source | undefined,
@@ -491,14 +556,30 @@ export function planDesktopCardResize(
     const css = Object.entries(style)
       .map(([property, value]) => generate(declaration(property, value)))
       .join(';')
-    const [definition] = parseCanvasCss(
-      `@media(min-width:769px){#${ident.encode(id)}{${css}}}`,
-      editor,
-    )
+    const tree = parseCanvasSheet(`@media(min-width:769px){#${ident.encode(id)}{${css}}}`)
+    if (baseline?.mode)
+      normalizeNativeOwnerRules(
+        tree,
+        components.flatMap((component) => {
+          const element = component.getEl()
+          return element ? [element] : []
+        }),
+        baseline.mode,
+      )
+    const [definition] = parseCanvasCss(tree, editor)
     const mediaText: unknown = definition?.['mediaText']
     if (typeof mediaText !== 'string')
       throw new Error('Desktop-regelns villkor kunde inte förberedas.')
-    return { id, style, mediaText }
+    const normalizedStyle = definition?.['style']
+    if (!normalizedStyle) throw new Error('Desktop-regelns stilar kunde inte förberedas.')
+    const plannedStyle = Object.fromEntries(
+      Object.entries(normalizedStyle).map(([key, value]) => {
+        if (typeof value !== 'string')
+          throw new Error('Desktop-regelns storleksvärde kunde inte förberedas.')
+        return [key, value]
+      }),
+    )
+    return { id, style: plannedStyle, mediaText }
   })
   return {
     measurements: samples.map(({ width, zoom, horizontalInset, horizontalMargin, stretch }) => ({

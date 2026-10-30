@@ -276,6 +276,25 @@ function normalizeNativeCss(
   return stylesheet
 }
 
+/** Live dimension controls can edit a native rule without remounting its page. Materialize
+ * the same owner priorities import/export will use, including currently inactive contexts. */
+export function normalizeNativeOwnerRules(
+  stylesheet: StyleSheet,
+  elements: readonly Element[],
+  mode: CmsMode,
+): StyleSheet {
+  const originals = new Map<string, CSSStyleDeclaration>()
+  const styles = new Map<string, NativeStyle>()
+  for (const element of elements)
+    if (
+      element.id &&
+      element.hasAttribute('data-knc-baseline') &&
+      element.closest('[data-knc-native="1"]')
+    )
+      originals.set(element.id, nativeStyle(element, mode, styles).style)
+  return normalizeNativeCss(stylesheet, originals, false)
+}
+
 export function nativeCanvasTree(variant: PageVariant, mode: CmsMode): CanvasTree {
   const stored = repairDesktopCss(parseCanvasSheet(variant.css[mode]))
   if (!variant.html.includes('data-knc-native="1"')) {
