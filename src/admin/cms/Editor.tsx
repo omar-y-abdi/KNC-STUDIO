@@ -51,6 +51,7 @@ import { nudgeStyle, resetNudgeStyle } from './position'
 import { cloneComponent } from './clone'
 import { captureViewState, restoreViewState, type CmsViewState } from './viewState'
 import {
+  connectCanvasStyles,
   exportNativeCanvas,
   legalCanvasBase,
   parseCanvasCss,
@@ -345,6 +346,13 @@ export function CmsEditor(props: Props): JSX.Element {
   const [compareScale, setCompareScale] = useState(1)
   const compareWidth = props.device === 'Desktop' ? 390 : 1440
   const compareHeight = props.device === 'Desktop' ? 844 : 900
+  const canvasBase = useMemo(
+    () =>
+      sitePage
+        ? { styles: ['/tokens.css'], scheme: props.mode }
+        : legalCanvasBase(props.page.path, props.mode),
+    [sitePage, props.page.path, props.mode],
+  )
   const comparison = useMemo(
     () =>
       props.active && props.compare
@@ -456,6 +464,7 @@ export function CmsEditor(props: Props): JSX.Element {
     // storageManager:false disables its target, not its autosave serialization in 0.23.6.
     // The CMS draft/backup owns persistence; never build a second project on every update.
     editor.Storage.setAutosave(false)
+    const releaseCanvasStyles = connectCanvasStyles(editor)
     instance.current = editor
     const releaseResize = connectHierarchicalResize(
       editor,
@@ -687,6 +696,7 @@ export function CmsEditor(props: Props): JSX.Element {
       releaseResourcePicker()
       releaseResize()
       releaseTextHeight()
+      releaseCanvasStyles()
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -980,9 +990,7 @@ export function CmsEditor(props: Props): JSX.Element {
     if (!editor || !props.active) return
     // A created page sits on the token base and SITE_PAGE_CSS the Worker inlines, in the edited
     // scheme, so the tokens follow Ljus/Mörk rather than the editor's OS.
-    const base = sitePage
-      ? { styles: ['/tokens.css'], scheme: props.mode }
-      : legalCanvasBase(props.page.path, props.mode)
+    const base = canvasBase
     // The canvas model's `styles` never reaches a rendered frame, so the links are kept in the frame
     // head directly. Every frame load replaces the document, not only the editor's first one, so the
     // base is applied again once GrapesJS has rendered the new head (before `load:head` it is empty).
@@ -1014,7 +1022,7 @@ export function CmsEditor(props: Props): JSX.Element {
     return () => {
       editor.off('canvas:frame:load:head', apply)
     }
-  }, [props.active, props.page.path, props.mode, sitePage])
+  }, [props.active, canvasBase, sitePage])
 
   useEffect(() => {
     const editor = instance.current
@@ -1181,7 +1189,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   transform: `scale(${compareScale})`,
                   transformOrigin: 'top left',
                 }}
-                srcDoc={`<!doctype html><html lang="${props.lang}"${sitePage ? ` style="color-scheme:${props.mode}"` : ''}><head>${sitePage ? '<link rel="stylesheet" href="/tokens.css">' : ''}<style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
+                srcDoc={`<!doctype html><html lang="${props.lang}"${canvasBase.scheme ? ` style="color-scheme:${canvasBase.scheme}"` : ''}><head>${canvasBase.styles.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}<style>html,body{margin:0}${props.fontCss}${siteThemeCss(props.presentation, props.mode)}${comparison.css}${sceneVisibilityCss(props.scene, props.mode)}${canvasScrollCss}</style></head><body>${comparison.html}</body></html>`}
               />
             </div>
           </div>

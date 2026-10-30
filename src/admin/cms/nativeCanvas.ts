@@ -1,8 +1,19 @@
 import { themeDeclarations } from '../../../shared/site-theme-declarations'
 import { modeCss } from '../../../shared/cms-mode-css'
 import { repairDesktopCss } from '../../../shared/cms-device-css'
-import { clone, generate, ident, List, parse, walk, type CssNode, type StyleSheet } from 'css-tree'
-import type { Editor } from 'grapesjs'
+import {
+  clone,
+  generate,
+  ident,
+  List,
+  parse,
+  walk,
+  type Atrule,
+  type Block,
+  type CssNode,
+  type StyleSheet,
+} from 'css-tree'
+import type { CssRule, Editor } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 import { INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 
@@ -18,14 +29,106 @@ export function legalCanvasBase(path: string, mode: CmsMode): { styles: string[]
 /** The CMS keeps every composer rule and uses avoidInlineStyle. Resolving each
  * component's style only to collect unused selector IDs makes full export quadratic. */
 export function readCanvasCss(editor: Editor): string {
-  return (
-    (editor.getConfig().protectedCss ?? '') +
-    editor.CodeManager.getCode(null, 'css', {
-      ...editor.getConfig().optsCss,
-      cssc: editor.Css,
-      keepUnusedStyles: true,
-    })
+  return (editor.getConfig().protectedCss ?? '') + canvasRules(editor).map(canvasRuleCss).join('')
+}
+
+function canvasRules(editor: Editor): CssRule[] {
+  // Keep every unused source rule, but selection can create empty component rules.
+  // Empty layers live inside a nonempty envelope and remain in the export.
+  return editor.Css.getAll().models.filter(
+    (rule) => !rule.isNested() && Object.keys(rule.get('style') ?? {}).length > 0,
   )
+}
+
+const canvasStyleOptions = { withNested: true, allowEmpty: true }
+
+function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
+  return Object.entries(style)
+    .map(([key, value]) => {
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        if (key.startsWith('@')) {
+          const group = parse(`${key}{}`, { context: 'atrule' })
+          const frames =
+            group.type === 'Atrule' &&
+            ['keyframes', '-webkit-keyframes'].includes(ident.decode(group.name).toLowerCase())
+          return `${key}{${canvasStyleCss(value, frames ? false : withinRule)}}`
+        }
+        if (!withinRule && !key.startsWith('& '))
+          throw new Error('En absolut CSS-selektor saknar sin redigeringskodning.')
+        const selector = withinRule ? key : key.slice(2)
+        return `${selector}{${canvasStyleCss(value, true)}}`
+      }
+      return (Array.isArray(value) ? value : [value]).map((item) => `${key}:${item};`).join('')
+    })
+    .join('')
+}
+
+function canvasRuleCss(rule: CssRule): string {
+  // These root envelopes preserve anonymous layer identity and complete keyframes.
+  // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
+  if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
+    return canvasStyleCss(rule.toJSON().style ?? {})
+  return rule.toCSS({ important: rule.get('important') ?? false, ...canvasStyleOptions })
+}
+
+/** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
+ * empty blocks too; keep canvas mounting and every export on the same options. */
+export function connectCanvasStyles(editor: Editor): () => void {
+  editor.getConfig().optsCss = { ...editor.getConfig().optsCss, ...canvasStyleOptions }
+  let active = true
+  let queued = false
+  let loaded = false
+  const owned = new Set<HTMLElement>()
+  const order = (): void => {
+    queued = false
+    if (!active) return
+    const doc = editor.Canvas.getDocument()
+    if (!doc?.body) return
+    const elements = canvasRules(editor).map((rule) => rule.getView()?.el)
+    if (elements.some((element) => !element || element.nodeName !== 'STYLE')) {
+      if (loaded) throw new Error('En CSS-regel saknar sin redigeringsvy.')
+      return
+    }
+    const current = new Set<HTMLElement>()
+    let next: Node | null = null
+    for (const element of [...elements].reverse()) {
+      if (!element) continue
+      current.add(element)
+      // FrameView has a separate component wrapper. Body styles follow linked bases.
+      if (element.parentNode !== doc.body || element.nextSibling !== next)
+        doc.body.insertBefore(element, next)
+      next = element
+    }
+    for (const element of owned) if (!current.has(element)) element.remove()
+    owned.clear()
+    for (const element of current) owned.add(element)
+  }
+  const schedule = (): void => {
+    if (queued || !active) return
+    queued = true
+    queueMicrotask(order)
+  }
+  const ready = (): void => {
+    loaded = true
+    schedule()
+  }
+  const mount = (event: { rule: CssRule; css: string }): void => {
+    event.css = event.rule.isNested() ? '' : canvasRuleCss(event.rule)
+  }
+  editor.on('css:mount:before', mount)
+  editor.on('css:mount', schedule)
+  editor.on('load canvas:frame:load', ready)
+  editor.Css.getAll().on('reset add remove', schedule)
+  schedule()
+  return () => {
+    active = false
+    editor.off('css:mount:before', mount)
+    editor.off('css:mount', schedule)
+    editor.off('load canvas:frame:load', ready)
+    editor.Css.getAll().off('reset add remove', schedule)
+    for (const element of owned) element.remove()
+    owned.clear()
+  }
 }
 
 const attributes = [
@@ -222,48 +325,232 @@ export function exportNativeCanvas(
   }
 }
 
-/** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands). */
+type CanvasStyle = { [key: string]: string | string[] | CanvasStyle }
+
+/** JS style objects need distinct keys where CSS permits repeated blocks. Whitespace before
+ * the opening brace/colon keeps the CSS identical, including separate anonymous layers. */
+function appendCanvasStyle(style: CanvasStyle, property: string, value: CanvasStyle[string]): void {
+  let key = property
+  const nested = typeof value === 'object' && !Array.isArray(value)
+  if (Object.hasOwn(style, key)) {
+    const keys = Object.keys(style)
+    if (!nested && keys.at(-1) === key) {
+      const previous = style[key]
+      if (
+        (typeof previous === 'string' || Array.isArray(previous)) &&
+        (typeof value === 'string' || Array.isArray(value))
+      ) {
+        style[key] = [previous, value].flat()
+        return
+      }
+    }
+    while (Object.hasOwn(style, key)) key += ' '
+  }
+  Object.defineProperty(style, key, { value, enumerable: true, configurable: true, writable: true })
+}
+
+function appendLayerOrder(style: CanvasStyle, node: Atrule): void {
+  const list = node.prelude?.type === 'AtrulePrelude' ? node.prelude.children.first : null
+  // css-tree's installed runtime supports LayerList/Layer; its type package is older.
+  if (!list || String(list.type) !== 'LayerList' || !('children' in list) || !list.children)
+    throw new Error('Ordningen på sidans CSS-lager kunde inte bevaras.')
+  list.children.forEach((layer) => {
+    appendCanvasStyle(style, `@layer ${generate(layer)}`, Object.create(null))
+  })
+}
+
+function canvasNestedStyle(
+  block: Block,
+  withinRule = true,
+  keyframes = false,
+  envelope = false,
+): CanvasStyle {
+  const style: CanvasStyle = Object.create(null)
+  block.children.forEach((node) => {
+    if (node.type === 'Declaration') {
+      appendCanvasStyle(
+        style,
+        node.property,
+        generate(node.value) + (node.important ? ' !important' : ''),
+      )
+    } else if (
+      node.type === 'Atrule' &&
+      ident.decode(node.name).toLowerCase() === 'layer' &&
+      !node.block
+    ) {
+      // Ordered empty named blocks establish exactly the same layer ordering.
+      appendLayerOrder(style, node)
+    } else if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) {
+      let key =
+        node.type === 'Rule'
+          ? generate(node.prelude)
+          : `@${node.name}${node.prelude ? ` ${generate(node.prelude)}` : ''}`
+      // GrapesJS recognizes nested style keys by punctuation. An explicit nesting
+      // selector preserves the descendant meaning of a bare type selector as well.
+      if (node.type === 'Rule' && !envelope && !keyframes && !/^[&.#:[>+~*]/.test(key)) {
+        if (withinRule) key = `& ${key}`
+        else if (node.prelude.type === 'SelectorList')
+          key = node.prelude.children
+            .toArray()
+            .map((branch) => `:is(${generate(branch)})`)
+            .join(',')
+        else throw new Error('En CSS-selektor i ett lager kunde inte bevaras.')
+      }
+      // GJS renders once before css:mount:before. Prefix every absolute selector/frame
+      // key so it recognizes a nested model instead of coercing an object declaration.
+      // The envelope serializer removes exactly this prefix in the same context.
+      if (node.type === 'Rule' && envelope && (!withinRule || keyframes)) key = `& ${key}`
+      if (
+        node.type === 'Atrule' &&
+        ![
+          'media',
+          'supports',
+          'container',
+          'layer',
+          'font-face',
+          'keyframes',
+          '-webkit-keyframes',
+        ].includes(ident.decode(node.name).toLowerCase())
+      )
+        throw new Error(`Kan inte bevara nästlad @${node.name} i sidans CSS.`)
+      appendCanvasStyle(
+        style,
+        key,
+        canvasNestedStyle(
+          node.block!,
+          node.type === 'Rule' || withinRule,
+          node.type === 'Atrule' &&
+            ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()),
+          envelope,
+        ),
+      )
+    } else throw new Error('Sidans CSS innehåller ett block som inte kan bevaras.')
+  })
+  return style
+}
+
+/** Preserve declarations that CSSOM expands to empty longhands (notably var/env shorthands).
+ * GrapesJS also assumes every nested CSSOM rule has `.style`; grouping rules do not. Mask
+ * nested blocks too, then restore their syntax from the prepared tree after selector parsing. */
 export function parseCanvasCss(
   css: string | CssNode,
   editor: Editor,
 ): ReturnType<Editor['Parser']['parseCss']> {
-  const declarations = new Map<string, { property: string; value: string }>()
+  const declarations = new Map<string, { property: string; value: CanvasStyle[string] }>()
+  const layerRoots = new Map<string, CanvasStyle>()
   // Masking declaration names is destructive; retain the prepared tree for deferred previews.
   const tree = typeof css === 'string' ? parseCanvasSheet(css) : clone(css)
+  walk(tree, (node) => {
+    if (node.type === 'Raw')
+      throw new Error('Sidans CSS innehåller syntax som inte kan bevaras. Källan har bevarats.')
+  })
+  if (tree.type === 'StyleSheet')
+    tree.children.forEach((node, item) => {
+      let hasLayer = false
+      let groups = 0
+      walk(node, (child) => {
+        if (child.type !== 'Atrule') return
+        groups++
+        if (ident.decode(child.name).toLowerCase() === 'layer') hasLayer = true
+      })
+      if (
+        node.type !== 'Atrule' ||
+        (!hasLayer &&
+          groups < 2 &&
+          !['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()))
+      )
+        return
+      const key = `--cms-internal-layer-${layerRoots.size}`
+      layerRoots.set(
+        key,
+        canvasNestedStyle(
+          { type: 'Block', children: new List<CssNode>().fromArray([node]) },
+          false,
+          false,
+          true,
+        ),
+      )
+      tree.children.replace(
+        item,
+        tree.children.createItem(parse(`html{${key}:initial}`, { context: 'rule' })),
+      )
+    })
   walk(tree, {
     visit: 'Block',
     enter(block) {
       if (!this.rule) return
-      block.children.forEach((declaration) => {
-        if (declaration.type !== 'Declaration') return
+      block.children.forEach((declaration, item) => {
         const key = `--cms-internal-parse-${declarations.size}`
-        declarations.set(key, {
-          property: declaration.property,
-          value: generate(declaration.value) + (declaration.important ? ' !important' : ''),
-        })
-        declaration.property = key
+        if (declaration.type === 'Declaration' && layerRoots.has(declaration.property)) return
+        if (declaration.type === 'Declaration') {
+          declarations.set(key, {
+            property: declaration.property,
+            value: generate(declaration.value) + (declaration.important ? ' !important' : ''),
+          })
+          declaration.property = key
+        } else if (
+          declaration.type === 'Rule' ||
+          (declaration.type === 'Atrule' &&
+            (declaration.block || ident.decode(declaration.name).toLowerCase() === 'layer'))
+        ) {
+          const nested = canvasNestedStyle({
+            ...block,
+            children: new List<CssNode>().fromArray([declaration]),
+          })
+          const placeholders = new List<CssNode>()
+          for (const [property, value] of Object.entries(nested)) {
+            const placeholder = `--cms-internal-parse-${declarations.size}`
+            declarations.set(placeholder, { property, value })
+            placeholders.appendData(parse(`${placeholder}:initial`, { context: 'declaration' }))
+          }
+          block.children.replace(item, placeholders)
+        }
       })
     },
   })
-  const restore = (style: Record<string, unknown>): Record<string, unknown> => {
-    const restored: Record<string, unknown> = {}
+  const seen = new Set<string>()
+  const seenLayers = new Set<string>()
+  const restore = (style: Record<string, unknown>): CanvasStyle => {
+    const restored: CanvasStyle = Object.create(null)
     for (const [key, value] of Object.entries(style)) {
       const original = declarations.get(key)
       if (original) {
-        const previous = restored[original.property]
-        restored[original.property] =
-          previous === undefined ? original.value : [previous, original.value].flat()
+        seen.add(key)
+        appendCanvasStyle(restored, original.property, original.value)
       } else {
-        restored[key] =
+        const restoredValue =
           value && typeof value === 'object' && !Array.isArray(value)
             ? restore(value as Record<string, unknown>)
             : value
+        appendCanvasStyle(restored, key, restoredValue as CanvasStyle[string])
       }
     }
     return restored
   }
-  return editor.Parser.parseCss(generate(tree)).map((rule) => ({
-    ...rule,
-    style: restore(rule['style'] ?? {}),
-  }))
+  let failure: unknown
+  const recordFailure = (event: { error?: unknown }): void => {
+    failure = event.error
+  }
+  editor.on('parse:css', recordFailure)
+  let rules: ReturnType<Editor['Parser']['parseCss']>
+  try {
+    rules = editor.Parser.parseCss(generate(tree)).map((rule) => {
+      const layerKey = Object.keys(rule['style'] ?? {}).find((key) => layerRoots.has(key))
+      if (layerKey) {
+        seenLayers.add(layerKey)
+        return {
+          selectors: [],
+          singleAtRule: true,
+          style: layerRoots.get(layerKey)!,
+        }
+      }
+      return { ...rule, style: restore(rule['style'] ?? {}) }
+    })
+  } finally {
+    editor.off('parse:css', recordFailure)
+  }
+  if (failure) throw failure
+  if (seen.size !== declarations.size || seenLayers.size !== layerRoots.size)
+    throw new Error('Sidans CSS kunde inte läsas in utan att förlora regler. Källan har bevarats.')
+  return rules
 }

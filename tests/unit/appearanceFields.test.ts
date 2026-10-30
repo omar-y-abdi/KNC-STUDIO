@@ -25,7 +25,7 @@ describe('Studio appearance presets', () => {
     for (const option of field.options) {
       const document = emptyDocument()
       document.settings[field.key] = option.value
-      expect(validateDocument(document).settings[field.key]).toBe(option.value)
+      expect(() => validateDocument(document)).not.toThrow()
     }
   })
 

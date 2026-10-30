@@ -1,4 +1,5 @@
 import type { Component, Editor } from 'grapesjs'
+import { generate, parse, walk } from 'css-tree'
 
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
 export function barberScalePeers(component: Component): Component[] {
@@ -65,6 +66,50 @@ export function marqueeCardStyle(
   return next
 }
 
+/** Keep the existing grid track and the card's box model while zoom scales its contents. */
+export function desktopMarqueeCardStyle(
+  style: ReturnType<Component['getStyle']>,
+  scale: number,
+  geometry: {
+    width: string
+    zoom: number
+    horizontalInset: number
+    horizontalMargin: number
+    stretch: boolean
+  },
+): ReturnType<Component['getStyle']> {
+  const factor = scale / geometry.zoom
+  const sourceWidth = geometry.width.replace(/\s*!important\s*$/i, '').trim()
+  const important = /!important\s*$/i.test(geometry.width) ? '!important' : ''
+  let width: string | undefined
+  if (
+    sourceWidth &&
+    !['auto', 'initial', 'unset', 'revert', 'revert-layer'].includes(sourceWidth.toLowerCase())
+  ) {
+    const value = parse(sourceWidth, { context: 'value' })
+    let changed = false
+    walk(value, {
+      visit: 'Percentage',
+      enter(node) {
+        node.value = String(Number((Number(node.value) * factor).toFixed(6)))
+        changed = true
+      },
+    })
+    // Absolute lengths already scale with zoom. Percentage terms resolve against the track
+    // before zoom, so adjust only those, including on a second resize of our generated calc().
+    width = changed ? `${generate(value)}${important}` : geometry.width
+  } else if (geometry.stretch) {
+    const percent = `${Number((factor * 100).toFixed(6))}%`
+    const inset = geometry.horizontalInset + geometry.horizontalMargin
+    width = `${inset ? `calc(${percent} - ${Number(inset.toFixed(6))}px)` : percent}${important}`
+  }
+  return {
+    ...style,
+    ...(width === undefined ? {} : { width }),
+    zoom: String(scale),
+  }
+}
+
 export function scaledZoom(zoom: number, before: number, requested: number): number {
   if (![zoom, before, requested].every((value) => Number.isFinite(value) && value > 0)) return zoom
   return Math.max(0.1, Math.min(4, Number(((zoom * requested) / before).toFixed(6))))
@@ -74,11 +119,9 @@ export function scaledZoom(zoom: number, before: number, requested: number): num
  * geometry and let the browser scale text, portraits, padding and subsequent flow.
  * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
 export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
-  type Styled = NonNullable<ReturnType<Editor['getSelectedToStyle']>>
   let snapshot:
     | {
         component: Component
-        model: Styled
         style: ReturnType<Component['getStyle']>
         width: number
         height: number
@@ -88,12 +131,12 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     | undefined
   let updating = false
   let frame = 0
+  let viewport: Window | null = null
   const capture = (): void => {
     if (disabled() || updating) return
     const component = editor.getSelected()
-    const model = editor.getSelectedToStyle()
     const element = component?.getEl()
-    if (!component || !model || !element || !barberScalePeers(component).length) {
+    if (!component || !element || !barberScalePeers(component).length) {
       snapshot = undefined
       return
     }
@@ -108,8 +151,8 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
-      model,
-      style: { ...model.getStyle() },
+      // Component-first styling reads the existing device rule without creating one.
+      style: { ...component.getStyle() },
       width: rect.width,
       height: rect.height,
       zoom,
@@ -120,14 +163,23 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(capture)
   }
+  const watchViewport = (): void => {
+    viewport?.removeEventListener('resize', remember)
+    viewport = editor.Canvas.getFrameEl()?.contentWindow ?? null
+    viewport?.addEventListener('resize', remember)
+    remember()
+  }
   const change = (model: unknown, property: string): void => {
     const before = snapshot
-    if (updating || disabled() || !before || model !== before.model) return
+    if (updating || disabled() || !before || editor.getSelected() !== before.component) return
+    // An actual style change already has its target; do not retain a rule from a former device.
+    const target = editor.getSelectedToStyle()
+    if (!target || model !== target) return
     if (property !== 'width' && property !== 'height') {
       remember()
       return
     }
-    const value = String(before.model.getStyle()[property] ?? '')
+    const value = String(target.getStyle()[property] ?? '')
       .replace(/!important$/, '')
       .trim()
     // Only dimension controls in pixels participate; arbitrary CSS units keep their CSS meaning.
@@ -150,30 +202,53 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     if (!Number.isFinite(scale) || before[property] <= 0) return
     updating = true
     try {
-      const style = { ...before.model.getStyle() }
+      const style = { ...target.getStyle() }
       // The new size is represented by layout zoom or card width, not a clipping height.
       for (const axis of ['width', 'height'] as const) {
         if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
         else style[axis] = before.style[axis]
       }
-      before.model.setStyle(style)
+      target.setStyle(style)
       if (cards.length)
-        for (const card of cards)
+        for (const card of cards) {
+          const currentStyle = card.getStyle()
+          if (mobile) {
+            card.setStyle(marqueeCardStyle(currentStyle, scale))
+            continue
+          }
+          const element = card.getEl()
+          const computed = element?.ownerDocument.defaultView?.getComputedStyle(element)
+          const sourceWidth = currentStyle.width ?? card.getStyle({ mediaText: '' }).width
+          const rawZoom = computed?.zoom ?? '1'
+          const alignment =
+            computed?.justifySelf === 'auto'
+              ? element?.parentElement &&
+                element.ownerDocument.defaultView?.getComputedStyle(element.parentElement)
+                  .justifyItems
+              : computed?.justifySelf
+          const horizontalInset =
+            computed && computed.boxSizing !== 'border-box'
+              ? [
+                  computed.paddingLeft,
+                  computed.paddingRight,
+                  computed.borderLeftWidth,
+                  computed.borderRightWidth,
+                ].reduce((sum, value) => sum + (parseFloat(value) || 0), 0)
+              : 0
           card.setStyle(
-            mobile
-              ? marqueeCardStyle(card.getStyle(), scale)
-              : {
-                  ...card.getStyle(),
-                  // Zooming the auto-fit grid reflows it; auto/percentage widths do not zoom.
-                  // Scale each card within its existing track without saving a viewport width.
-                  width: `${Number((scale * 100).toFixed(6))}%`,
-                  'box-sizing': 'border-box',
-                  // Let the flex column's square portrait determine its height. Stretching a
-                  // zoomed grid item can give WebKit a row-height override and shrink the photo.
-                  'align-self': 'start',
-                  zoom: String(scale),
-                },
+            desktopMarqueeCardStyle(currentStyle, scale, {
+              width: String(
+                (Array.isArray(sourceWidth) ? sourceWidth.at(-1) : sourceWidth) ?? 'auto',
+              ),
+              zoom: (parseFloat(rawZoom) || 1) / (rawZoom.endsWith('%') ? 100 : 1),
+              horizontalInset,
+              horizontalMargin:
+                (parseFloat(computed?.marginLeft ?? '') || 0) +
+                (parseFloat(computed?.marginRight ?? '') || 0),
+              stretch: !alignment || alignment === 'normal' || alignment === 'stretch',
+            }),
           )
+        }
       else
         for (const peer of barberScalePeers(before.component))
           peer.addStyle({ zoom: String(scale) })
@@ -186,10 +261,14 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
   editor.on('component:selected component:resize:start', capture)
   editor.on('styleable:change', change)
   editor.on('undo redo canvas:frame:load', remember)
+  editor.on('load canvas:frame:load', watchViewport)
+  watchViewport()
   return () => {
     cancelAnimationFrame(frame)
     editor.off('component:selected component:resize:start', capture)
     editor.off('styleable:change', change)
     editor.off('undo redo canvas:frame:load', remember)
+    editor.off('load canvas:frame:load', watchViewport)
+    viewport?.removeEventListener('resize', remember)
   }
 }
