@@ -779,8 +779,11 @@ test('resize controls use current viewport geometry before deferred selection ca
         [cards[0], 820, 'width'],
       ]) {
         editor.select(component)
-        frame.style.width = `${width}px`
-        if (view.innerWidth !== width) throw new Error('The fixture viewport did not change')
+        frame.parentElement.style.transition = 'none'
+        editor.Canvas.getFrame().set({ width: `${width}px` }, { noUndo: 1 })
+        const frameWidth = frame.getBoundingClientRect().width
+        if (view.innerWidth !== width || Math.abs(frameWidth - width) > 0.01)
+          throw new Error(`The fixture viewport did not change: ${view.innerWidth}/${frameWidth}`)
         const rect = component.getEl().getBoundingClientRect()
         const before = read()
         editor.getSelectedToStyle().addStyle({ [axis]: `${Math.round(rect[axis] * 0.8)}px` })
@@ -795,6 +798,10 @@ test('resize controls use current viewport geometry before deferred selection ca
       return { attempts, ownerWidth: cards[0].getStyle().width, css: readCanvasCss(editor) }
     } finally {
       releaseResize()
+      // GrapesJS schedules its selection/property refresh with a zero-delay debounce.
+      // Drain it while the editor is alive before releasing its selected collection.
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
       releaseStyles()
       editor.destroy()
       host.remove()
