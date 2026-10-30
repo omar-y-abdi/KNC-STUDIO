@@ -8,6 +8,7 @@ import {
   type Atrule,
   type Block,
   type CssNode,
+  type Declaration,
   type Rule,
   type StyleSheet,
 } from 'css-tree'
@@ -93,25 +94,31 @@ interface LayoutTarget {
   readonly text: boolean
 }
 
+interface LayoutSibling {
+  readonly header: string
+  readonly occurrence: number
+}
 interface LayoutContext {
   readonly header: string
   readonly position: number
   readonly occurrence?: number
+  readonly preceding?: LayoutSibling
+  readonly following?: LayoutSibling
 }
 interface LayoutLocation {
   readonly selector: string
   readonly media: string
   readonly path?: LayoutContext[]
 }
-interface LayoutEntry {
+interface LayoutDeclaration {
   readonly location: LayoutLocation
-  readonly values: Map<string, CssNode>
+  readonly declaration: Declaration
 }
 interface LayoutChange {
   readonly location: LayoutLocation
   readonly values: Map<string, CssNode | null>
 }
-type Declarations = Map<string, LayoutEntry>
+type Declarations = Map<string, Map<string, LayoutDeclaration>>
 type LayoutChanges = Map<string, LayoutChange>
 type LayoutBlock = Block | StyleSheet
 
@@ -136,10 +143,28 @@ function contextHeader(node: Rule | Atrule): string {
 }
 
 function locationKey(location: LayoutLocation): string {
-  // Positions guide insertion into a counterpart. They are not geometry changes themselves.
+  // Ancestor occurrences distinguish authored scopes. A terminal target guard can be
+  // split across equivalent rules; its occurrence and positions only guide insertion.
   return JSON.stringify([
     location.selector,
-    location.path?.map(({ header, occurrence }) => [header, occurrence ?? null]) ?? location.media,
+    location.path?.map(({ header, occurrence }, index, path) => [
+      header,
+      index === path.length - 1 ? null : (occurrence ?? null),
+    ]) ?? location.media,
+  ])
+}
+
+/** Placement belongs to a changed property, never to geometry equality. Adjacent equivalent
+ * media groups may be split or combined without becoming owner edits. */
+function placementKey(location: LayoutLocation): string {
+  return JSON.stringify([
+    locationKey(location),
+    location.path?.map(({ position, occurrence, preceding, following }) => [
+      position,
+      occurrence,
+      preceding,
+      following,
+    ]),
   ])
 }
 
@@ -156,19 +181,45 @@ function declarations(css: string): Declarations {
   const result: Declarations = new Map()
   const visit = (block: LayoutBlock, path: LayoutContext[], media: Atrule | null): void => {
     const occurrences = new Map<string, number>()
-    let position = 0
+    const siblings: {
+      node: Rule | Atrule
+      header: string
+      occurrence: number
+      preceding?: LayoutSibling
+      following?: LayoutSibling
+    }[] = []
     block.children.forEach((node) => {
       if (node.type !== 'Rule' && node.type !== 'Atrule') return
       const header = contextHeader(node)
+      const occurrence = occurrences.get(header) ?? 0
+      if (!isLayerOrder(node)) occurrences.set(header, occurrence + 1)
+      siblings.push({ node, header, occurrence })
+    })
+    // Same-header neighbors can be harmless media splitting. Only a distinct owner
+    // condition bounds a guard; layer-order placeholders are not such conditions.
+    for (const direction of ['preceding', 'following'] as const) {
+      let previous: (typeof siblings)[number] | undefined
+      let boundary: LayoutSibling | undefined
+      for (const sibling of direction === 'preceding' ? siblings : [...siblings].reverse()) {
+        if (isLayerOrder(sibling.node)) continue
+        if (previous?.header !== sibling.header)
+          boundary = previous
+            ? { header: previous.header, occurrence: previous.occurrence }
+            : undefined
+        if (boundary) sibling[direction] = boundary
+        previous = sibling
+      }
+    }
+    siblings.forEach(({ node, header, occurrence, preceding, following }, position) => {
       const ordered =
         !isLayerOrder(node) &&
         (node.type === 'Rule' || ident.decode(node.name).toLowerCase() === 'layer')
-      const occurrence = occurrences.get(header) ?? 0
-      if (ordered) occurrences.set(header, occurrence + 1)
       const context: LayoutContext = {
         header,
-        position: position++,
+        position,
         ...(ordered ? { occurrence } : {}),
+        ...(!ordered && preceding ? { preceding } : {}),
+        ...(!ordered && following ? { following } : {}),
       }
       const nextPath = [...path, context]
       if (node.type === 'Rule') {
@@ -181,12 +232,15 @@ function declarations(css: string): Declarations {
             ...(anchored ? { path: nextPath } : {}),
           }
           const key = locationKey(location)
-          const values = result.get(key)?.values ?? new Map<string, CssNode>()
+          const values = result.get(key) ?? new Map<string, LayoutDeclaration>()
           node.block.children.forEach((declaration) => {
-            if (declaration.type === 'Declaration' && isGeometry(declaration.property))
-              values.set(declaration.property, declaration)
+            if (declaration.type !== 'Declaration' || !isGeometry(declaration.property)) return
+            const previous = values.get(declaration.property)?.declaration
+            // Within this selector/context, important beats normal; ties retain source order.
+            if (previous?.important && !declaration.important) return
+            values.set(declaration.property, { declaration, location })
           })
-          result.set(key, { location, values })
+          result.set(key, values)
         }
         visit(node.block, nextPath, media)
       } else if (node.block) visit(node.block, nextPath, node)
@@ -206,29 +260,33 @@ const textHeight = new Map([
 function layoutChanges(previous: Declarations, next: Declarations): LayoutChanges {
   const changes: LayoutChanges = new Map()
   for (const key of new Set([...previous.keys(), ...next.keys()])) {
-    const before = previous.get(key)
-    const after = next.get(key)
-    const a = before?.values ?? new Map()
-    const b = after?.values ?? new Map()
-    const changed = new Map<string, CssNode | null>()
+    const a = previous.get(key) ?? new Map<string, LayoutDeclaration>()
+    const b = next.get(key) ?? new Map<string, LayoutDeclaration>()
     for (const property of new Set([...a.keys(), ...b.keys()])) {
       const oldValue = a.get(property)
       const newValue = b.get(property)
-      if ((oldValue && generate(oldValue)) !== (newValue && generate(newValue)))
-        changed.set(property, newValue ?? null)
+      if (
+        (oldValue && generate(oldValue.declaration)) ===
+        (newValue && generate(newValue.declaration))
+      )
+        continue
+      const location = newValue?.location ?? oldValue?.location
+      if (!location) continue
+      const placement = placementKey(location)
+      const changed = changes.get(placement) ?? {
+        location,
+        values: new Map<string, CssNode | null>(),
+      }
+      changed.values.set(property, newValue?.declaration ?? null)
+      changes.set(placement, changed)
     }
-    const location = after?.location ?? before?.location
-    if (changed.size && location) changes.set(key, { location, values: changed })
   }
   return changes
 }
 
-function mapContext(
-  context: LayoutContext,
-  targets?: ReadonlyMap<string, LayoutTarget>,
-): LayoutContext {
-  if (!targets || context.header.startsWith('@')) return context
-  const selector = parse(context.header, { context: 'selectorList' })
+function mapHeader(header: string, targets: ReadonlyMap<string, LayoutTarget>): string {
+  if (header.startsWith('@')) return header
+  const selector = parse(header, { context: 'selectorList' })
   walk(selector, (node) => {
     if (node.type === 'IdSelector') {
       const target = targets.get(`#${ident.encode(ident.decode(node.name))}`)
@@ -243,29 +301,68 @@ function mapContext(
       if (target) node.value.value = ident.decode(target.selector.slice(1))
     }
   })
-  return { ...context, header: generate(selector) }
+  return generate(selector)
 }
 
-function matchingContexts(block: LayoutBlock, context: LayoutContext): (Rule | Atrule)[] {
-  const matches = block.children
+function mapContext(
+  context: LayoutContext,
+  targets?: ReadonlyMap<string, LayoutTarget>,
+): LayoutContext {
+  if (!targets) return context
+  const mapSibling = (sibling: LayoutSibling): LayoutSibling => ({
+    ...sibling,
+    header: mapHeader(sibling.header, targets),
+  })
+  return {
+    ...context,
+    header: mapHeader(context.header, targets),
+    ...(context.preceding ? { preceding: mapSibling(context.preceding) } : {}),
+    ...(context.following ? { following: mapSibling(context.following) } : {}),
+  }
+}
+
+function siblingIndex(siblings: (Rule | Atrule)[], sibling?: LayoutSibling): number {
+  if (!sibling) return -1
+  const match = siblings.filter(
+    (node) => !isLayerOrder(node) && contextHeader(node) === sibling.header,
+  )[sibling.occurrence]
+  return match ? siblings.indexOf(match) : -1
+}
+
+function matchingContexts(
+  block: LayoutBlock,
+  context: LayoutContext,
+  bounded = true,
+): (Rule | Atrule)[] {
+  const siblings = block.children
     .toArray()
-    .filter(
-      (node): node is Rule | Atrule =>
-        (node.type === 'Rule' || node.type === 'Atrule') &&
-        Boolean(node.block) &&
-        !isLayerOrder(node) &&
-        contextHeader(node) === context.header,
-    )
+    .filter((node): node is Rule | Atrule => node.type === 'Rule' || node.type === 'Atrule')
+  const preceding = bounded ? siblingIndex(siblings, context.preceding) : -1
+  const following = bounded ? siblingIndex(siblings, context.following) : -1
+  const matches = siblings.filter(
+    (node, index) =>
+      Boolean(node.block) &&
+      !isLayerOrder(node) &&
+      contextHeader(node) === context.header &&
+      (preceding < 0 || index > preceding) &&
+      (following < 0 || index < following),
+  )
   if (context.occurrence === undefined) return matches
   const match = matches[context.occurrence]
   return match ? [match] : []
 }
 
-function contextBlocks(block: LayoutBlock, path: LayoutContext[]): Block[] {
+function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true): Block[] {
   const [context, ...remaining] = path
   if (!context) return block.type === 'Block' ? [block] : []
-  return matchingContexts(block, context).flatMap((node) =>
-    node.block ? (remaining.length ? contextBlocks(node.block, remaining) : [node.block]) : [],
+  const target =
+    !bounded && !remaining.length ? { header: context.header, position: context.position } : context
+  return matchingContexts(block, target, bounded).flatMap((node) =>
+    node.block
+      ? remaining.length
+        ? contextBlocks(node.block, remaining, bounded)
+        : [node.block]
+      : [],
   )
 }
 
@@ -287,9 +384,23 @@ function insertContext(block: LayoutBlock, context: LayoutContext): Block {
   if ((node.type !== 'Rule' && node.type !== 'Atrule') || !node.block)
     throw new Error('Layoutens CSS-villkor kunde inte bevaras.')
   const children = block.children.toArray()
-  const before = children.filter((child) => child.type === 'Rule' || child.type === 'Atrule')[
-    context.position
-  ]
+  const siblings = children.filter(
+    (child): child is Rule | Atrule => child.type === 'Rule' || child.type === 'Atrule',
+  )
+  let position = context.position
+  const preceding = siblingIndex(siblings, context.preceding)
+  const following = siblingIndex(siblings, context.following)
+  if (preceding >= 0) position = Math.max(position, preceding + 1)
+  if (following >= 0) position = Math.min(position, following)
+  if (context.occurrence !== undefined) {
+    // Missing anonymous layers reserve real ordinal slots. Their populated successor
+    // must follow those placeholders even when their source insertion position is earlier.
+    const previous = siblings.findLast(
+      (child) => !isLayerOrder(child) && contextHeader(child) === context.header,
+    )
+    if (previous) position = Math.max(position, siblings.indexOf(previous) + 1)
+  }
+  const before = siblings[position]
   const index = before ? children.indexOf(before) : children.length
   children.splice(index, 0, node)
   block.children = new List<CssNode>().fromArray(children)
@@ -339,13 +450,13 @@ function applyLayout(
   source?: Declarations,
 ): string {
   const mapped: LayoutChanges = new Map()
-  for (const [key, { location, values }] of changes) {
+  for (const { location, values } of changes.values()) {
     const target = targets?.get(location.selector)
     if (targets && !target && location.selector !== 'html body') continue
     const changed = source ? new Map<string, CssNode | null>() : new Map(values)
     if (target?.text && [...values.values()].some((value) => value !== null)) {
       for (const [property, value] of textHeight) {
-        const present = source?.get(key)?.values.get(property)
+        const present = source?.get(locationKey(location))?.get(property)?.declaration
         if (!source || !present || generate(present) !== generate(value))
           changed.set(property, value)
       }
@@ -357,7 +468,7 @@ function applyLayout(
         ? { path: location.path.map((context) => mapContext(context, targets)) }
         : {}),
     }
-    if (changed.size) mapped.set(locationKey(next), { location: next, values: changed })
+    if (changed.size) mapped.set(placementKey(next), { location: next, values: changed })
   }
   if (!mapped.size) return other
   const tree = parse(other)
@@ -366,7 +477,10 @@ function applyLayout(
     visit: 'Rule',
     enter(rule) {
       const changed = mapped.get(
-        JSON.stringify([layoutSelector(rule.prelude), layoutMedia(this.atrule)]),
+        placementKey({
+          selector: layoutSelector(rule.prelude) ?? '',
+          media: layoutMedia(this.atrule),
+        }),
       )
       if (!changed || changed.location.path) return
       rule.block.children.forEach((declaration, item) => {
@@ -377,7 +491,9 @@ function applyLayout(
   })
   for (const { location, values } of mapped.values()) {
     if (!location.path) continue
-    const blocks = contextBlocks(tree, location.path)
+    // A counterpart may combine guards. Remove the changed properties throughout the
+    // semantic context before choosing their source-ordered insertion destinations.
+    const blocks = contextBlocks(tree, location.path, false)
     for (const block of blocks)
       block.children.forEach((declaration, item) => {
         if (declaration.type === 'Declaration' && values.has(declaration.property))
@@ -385,7 +501,7 @@ function applyLayout(
       })
     const additions = [...values.values()].filter((value): value is CssNode => value !== null)
     if (additions.length) {
-      const block = blocks.at(-1) ?? ensureContext(tree, location.path)
+      const block = contextBlocks(tree, location.path).at(-1) ?? ensureContext(tree, location.path)
       for (const addition of additions) block.children.appendData(clone(addition))
     }
   }
