@@ -950,30 +950,42 @@ test('native dimension edits materialize inactive owner priorities before export
   }
   assert.ok(result.live.includes('--owner-card-width:70%;width:var(--owner-card-width);'))
   const priorities = []
-  const untouched = []
+  const expectedUntouched = new Map([
+    ['.owner-token|--owner-card-width', '70%'],
+    ['.owner-token|width', 'var(--owner-card-width)'],
+    ['#native-untargeted|width', '33%'],
+    ['#native-untargeted|zoom', '0.9'],
+    ['#native-untargeted|color', 'blue'],
+    ['#native-holder #native-card|color', 'red'],
+    ['#native-holder #native-token|color', 'red'],
+  ])
+  const untouched = new Map()
   walk(parse(result.live), {
     visit: 'Rule',
     enter(rule) {
-      const selector = generate(rule.prelude)
-      for (const declaration of rule.block.children)
-        if (declaration.type === 'Declaration') {
-          if (
-            ['#native-card', '#native-token', '#native-reset', '#native-late-token'].includes(
-              selector,
-            ) &&
-            ['width', 'zoom', 'inline-size', 'all'].includes(declaration.property)
-          )
-            priorities.push(Boolean(declaration.important))
-          else if (
-            [
-              '.owner-token',
-              '#native-untargeted',
-              '#native-holder #native-card',
-              '#native-holder #native-token',
-            ].includes(selector)
-          )
-            untouched.push(Boolean(declaration.important))
-        }
+      if (rule.prelude.type !== 'SelectorList') return
+      for (const branch of rule.prelude.children) {
+        const selector = generate(branch)
+        for (const declaration of rule.block.children)
+          if (declaration.type === 'Declaration') {
+            if (
+              ['#native-card', '#native-token', '#native-reset', '#native-late-token'].includes(
+                selector,
+              ) &&
+              ['width', 'zoom', 'inline-size', 'all'].includes(declaration.property)
+            )
+              priorities.push(Boolean(declaration.important))
+            const key = `${selector}|${declaration.property}`
+            if (expectedUntouched.has(key)) {
+              const entries = untouched.get(key) ?? []
+              entries.push({
+                value: generate(declaration.value),
+                important: Boolean(declaration.important),
+              })
+              untouched.set(key, entries)
+            }
+          }
+      }
     },
   })
   assert.ok(priorities.length >= 10)
@@ -981,11 +993,12 @@ test('native dimension edits materialize inactive owner priorities before export
     priorities.every(Boolean),
     'Active and inactive native owner dimensions share persisted priority',
   )
-  assert.ok(untouched.length >= 7)
-  assert.ok(
-    untouched.every((important) => !important),
-    'Class, complex and untargeted rules stay authored',
-  )
+  for (const [key, value] of expectedUntouched)
+    assert.deepEqual(
+      untouched.get(key),
+      [{ value, important: false }],
+      `${key}: the authored declaration exists once with its original value and priority`,
+    )
 })
 
 test('resize edits underlying styles while paused owner keyframes remain authoritative', async ({
