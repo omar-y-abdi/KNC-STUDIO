@@ -392,6 +392,32 @@ describe('targeted cascade geometry', () => {
     expect(next).toContain('color:blue')
     expect(next).toContain('--owner-width:90%')
   })
+
+  it('updates split-media geometry in a counterpart with repeated terminal target rules', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%}}@media(min-width:769px){.card:where(#photo){zoom:1}}'
+    const other =
+      '@media(min-width:769px){.card:where(#photo){width:90%}.card:where(#photo){zoom:1.5;color:blue}}'
+    const next = syncLayout(before, before.replace('zoom:1', 'zoom:0.8'), other)
+    const geometry: string[] = []
+    walk(parse(next), {
+      visit: 'Declaration',
+      enter(node) {
+        if (node.property === 'width' || node.property === 'zoom') geometry.push(generate(node))
+      },
+    })
+    expect(geometry).toEqual(['width:90%', 'zoom:0.8'])
+    expect(next).toContain('color:blue')
+  })
+
+  it('does not mistake terminal target-rule splitting for geometry edits in the reverse direction', () => {
+    const before =
+      '@media(min-width:769px){.card:where(#photo){width:70%}.card:where(#photo){zoom:1;color:red}}'
+    const after =
+      '@media(min-width:769px){.card:where(#photo){width:70%}}@media(min-width:769px){.card:where(#photo){zoom:1;color:orange}}'
+    const other = ' /* independent geometry */ .card:where(#photo){width:90%;zoom:1.5;color:blue}'
+    expect(syncLayout(before, after, other)).toBe(other)
+  })
 })
 
 describe('site theme defaults and owner overrides', () => {
