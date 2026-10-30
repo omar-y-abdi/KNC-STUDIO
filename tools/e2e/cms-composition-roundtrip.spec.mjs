@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
-import { parse, walk } from 'css-tree'
+import { generate, parse, walk } from 'css-tree'
 import { emptyDocument } from '../../shared/cms.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -712,6 +712,233 @@ test('resize styles use the native cascade and survive production import without
     probes: false,
   })
   assert.deepEqual(errors, [])
+})
+
+test('resize controls use current viewport geometry before deferred selection capture', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { connectHierarchicalResize } = await import('/src/admin/cms/hierarchicalResize.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      mediaCondition: 'min-width',
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="quick-group" data-knc-fold="barber-marquee" data-knc-source="quick-group">' +
+        [0, 1, 2, 3]
+          .map((index) => `<div id="quick-${index}" data-knc-source="quick-${index}">Card</div>`)
+          .join('') +
+        '</div>',
+      deviceManager: { devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }] },
+    })
+    const releaseStyles = connectCanvasStyles(editor)
+    const releaseResize = connectHierarchicalResize(
+      editor,
+      () => false,
+      () => 'light',
+    )
+    await new Promise((resolve) => editor.on('load', resolve))
+    const frame = editor.Canvas.getFrameEl()
+    const view = frame.contentWindow
+    try {
+      editor.Css.getAll().reset(
+        globalThis.structuredClone(
+          parseCanvasCss(
+            '#quick-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}' +
+              '#quick-group>div{height:100px}' +
+              '@media(max-width:1000px){#quick-group{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+            editor,
+          ),
+        ),
+      )
+      editor.setDevice('Desktop')
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const group = editor.Components.getById('quick-group')
+      const cards = group.components().models
+      const read = () =>
+        cards.map((card) => {
+          const rect = card.getEl().getBoundingClientRect()
+          return { width: rect.width, height: rect.height }
+        })
+      const attempts = []
+      // Each change stays in this task: the iframe's resize event and the parent
+      // capture RAF cannot run between selection, the new viewport and the control.
+      for (const [component, width, axis] of [
+        [group, 820, 'height'],
+        [group, 1440, 'height'],
+        [cards[0], 820, 'width'],
+      ]) {
+        editor.select(component)
+        frame.style.width = `${width}px`
+        if (view.innerWidth !== width) throw new Error('The fixture viewport did not change')
+        const rect = component.getEl().getBoundingClientRect()
+        const before = read()
+        editor.getSelectedToStyle().addStyle({ [axis]: `${Math.round(rect[axis] * 0.8)}px` })
+        attempts.push({ width, axis, before, after: read() })
+      }
+      editor.select(cards[0])
+      cards[0].addStyle({ width: '75%' })
+      const before = read()
+      const rect = cards[0].getEl().getBoundingClientRect()
+      editor.getSelectedToStyle().addStyle({ height: `${Math.round(rect.height * 0.8)}px` })
+      attempts.push({ width: 820, axis: 'height', before, after: read() })
+      return { attempts, ownerWidth: cards[0].getStyle().width, css: readCanvasCss(editor) }
+    } finally {
+      releaseResize()
+      releaseStyles()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('resize-current-viewport', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  for (const attempt of result.attempts)
+    for (const [index, after] of attempt.after.entries()) {
+      assert.ok(
+        Math.abs(after.width / attempt.before[index].width - 0.8) < 0.02,
+        `Current ${attempt.width}px ${attempt.axis} width: ${JSON.stringify(attempt)}`,
+      )
+      assert.ok(
+        Math.abs(after.height / attempt.before[index].height - 0.8) < 0.02,
+        `Current ${attempt.width}px ${attempt.axis} height: ${JSON.stringify(attempt)}`,
+      )
+    }
+  assert.equal(
+    result.ownerWidth,
+    '75%',
+    'Pre-proposal width replaces the earlier selection snapshot',
+  )
+})
+
+test('native dimension edits materialize inactive owner priorities before export and remount', async ({
+  page,
+}) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const { connectCanvasStyles, parseCanvasCss, readCanvasCss, nativeCanvas, exportNativeCanvas } =
+      await import('/src/admin/cms/nativeCanvas.ts')
+    const { planDesktopCardResize } = await import('/src/admin/cms/resizeStyles.ts')
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const editor = cmsGrapes.init({
+      container: host,
+      storageManager: false,
+      cssIcons: '',
+      telemetry: false,
+      avoidInlineStyle: true,
+      selectorManager: { componentFirst: true },
+      components:
+        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
+      deviceManager: {
+        devices: [
+          { id: 'Wide', width: '1440px' },
+          { id: 'Narrow', width: '820px' },
+        ],
+      },
+    })
+    const releaseStyles = connectCanvasStyles(editor)
+    await new Promise((resolve) => editor.on('load', resolve))
+    const view = editor.Canvas.getDocument().defaultView
+    const cards = ['native-card', 'native-token'].map((id) => editor.Components.getById(id))
+    const read = () =>
+      cards.map((card) => {
+        const rect = card.getEl().getBoundingClientRect()
+        return { width: rect.width, height: rect.height }
+      })
+    const settle = async (device, width) => {
+      editor.setDevice(device)
+      const deadline = globalThis.performance.now() + 5000
+      while (view.innerWidth !== width) {
+        await new Promise((resolve) => view.requestAnimationFrame(resolve))
+        if (globalThis.performance.now() > deadline) throw new Error('Viewport did not settle')
+      }
+    }
+    try {
+      editor.Css.getAll().reset(
+        globalThis.structuredClone(
+          parseCanvasCss(
+            '#native-holder{width:800px}#native-holder>div{height:100px}' +
+              '#native-card{width:70%;zoom:0.8}' +
+              '.owner-token{--owner-card-width:70%;width:var(--owner-card-width)}' +
+              '#native-token{zoom:0.8}' +
+              '@media(min-width:1000px){#native-card,#native-token{color:red}#native-card{width:90%;zoom:1.1}#native-token{width:90%;zoom:1.1}}',
+            editor,
+          ),
+        ),
+      )
+      await settle('Narrow', 820)
+      const before = read()
+      const target = editor.Css.getIdRule('native-card', { mediaText: '' })
+      planDesktopCardResize(editor, cards, 0.8, {
+        target,
+        style: target.getStyle('', { withNested: true }),
+        mode: 'light',
+      }).apply()
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const after = read()
+      const live = readCanvasCss(editor)
+      await settle('Wide', 1440)
+      const wide = read()
+      const exported = exportNativeCanvas(editor.getHtml({ cleanId: false }), live, 'light')
+      const restored = nativeCanvas(
+        { html: exported.html, css: { light: exported.css, dark: exported.css } },
+        'light',
+      )
+      editor.Css.getAll().reset(globalThis.structuredClone(parseCanvasCss(restored.css, editor)))
+      await new Promise((resolve) => view.requestAnimationFrame(resolve))
+      const restoredWide = read()
+      await settle('Narrow', 820)
+      const restoredNarrow = read()
+      return { before, after, wide, restoredWide, restoredNarrow, live }
+    } finally {
+      releaseStyles()
+      editor.destroy()
+      host.remove()
+    }
+  })
+  await test.info().attach('native-resize-priorities', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
+  for (const [index, after] of result.after.entries()) {
+    assert.ok(Math.abs(after.width / result.before[index].width - 0.8) < 0.015)
+    assert.ok(Math.abs(after.height / result.before[index].height - 0.8) < 0.015)
+    assert.ok(Math.abs(result.wide[index].width - 720) < 0.1, 'Inactive owner width becomes active')
+    assert.ok(Math.abs(result.wide[index].height - 110) < 0.1, 'Inactive owner zoom becomes active')
+    assert.ok(Math.abs(result.restoredWide[index].width - result.wide[index].width) < 0.1)
+    assert.ok(Math.abs(result.restoredWide[index].height - result.wide[index].height) < 0.1)
+    assert.ok(Math.abs(result.restoredNarrow[index].width - after.width) < 0.1)
+    assert.ok(Math.abs(result.restoredNarrow[index].height - after.height) < 0.1)
+  }
+  assert.ok(result.live.includes('--owner-card-width:70%;width:var(--owner-card-width);'))
+  const priorities = []
+  walk(parse(result.live), {
+    visit: 'Rule',
+    enter(rule) {
+      if (!['#native-card', '#native-token'].includes(generate(rule.prelude))) return
+      for (const declaration of rule.block.children)
+        if (declaration.type === 'Declaration' && ['width', 'zoom'].includes(declaration.property))
+          priorities.push(Boolean(declaration.important))
+    },
+  })
+  assert.ok(priorities.length >= 7)
+  assert.ok(
+    priorities.every(Boolean),
+    'Active and inactive native owner dimensions share persisted priority',
+  )
 })
 
 test('resize edits underlying styles while paused owner keyframes remain authoritative', async ({
