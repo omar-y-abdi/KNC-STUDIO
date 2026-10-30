@@ -13,7 +13,7 @@ import {
   type Selector,
   type StyleSheet,
 } from 'css-tree'
-import type { Component, CssRule, Editor } from 'grapesjs'
+import type { Component, CssRule, Editor, StyleProps } from 'grapesjs'
 import { parseCanvasCss, parseCanvasSheet, readCanvasRuleCss } from './nativeCanvas'
 
 interface CardGeometry {
@@ -27,10 +27,10 @@ interface CardGeometry {
 /** Zoom scales fixed lengths. Percentages resolve against the unzoomed containing block,
  * so scale their coefficients too, including on subsequent edits of the generated calc(). */
 export function desktopMarqueeCardStyle(
-  style: ReturnType<Component['getStyle']>,
+  style: StyleProps,
   scale: number,
   geometry: CardGeometry,
-): ReturnType<Component['getStyle']> {
+): StyleProps {
   const factor = scale / geometry.zoom
   const sourceWidth = geometry.width.replace(/\s*!important\s*$/i, '').trim()
   const important = /!important\s*$/i.test(geometry.width) ? '!important' : ''
@@ -76,7 +76,7 @@ interface Sample extends CardGeometry {
 
 export interface ResizeBaseline {
   target: CssRule
-  style: ReturnType<CssRule['getStyle']>
+  style: StyleProps
 }
 
 const prefix = '--cms-internal-resize-'
@@ -92,7 +92,11 @@ const cssWide = new Set(['initial', 'inherit', 'unset', 'revert', 'revert-layer'
 const typedWidth =
   '<length-percentage> | auto | min-content | max-content | fit-content | stretch | contain'
 
-function declaration(property: string, value: string, important = false): Declaration {
+function declaration(
+  property: string,
+  value: string,
+  important: Declaration['important'] = false,
+): Declaration {
   const result = parse(`${property}:${value}${important ? '!important' : ''}`, {
     context: 'declaration',
     parseCustomProperty: true,
@@ -104,7 +108,8 @@ function declaration(property: string, value: string, important = false): Declar
 function anchor(branch: Selector, id: string): Selector {
   const result = clone(branch)
   const target = parse(`:where(#${ident.encode(id)})`, { context: 'selector' })
-  if (target.type !== 'Selector') throw new Error('Komponenten saknar ett giltigt storleksmål.')
+  if (result.type !== 'Selector' || target.type !== 'Selector')
+    throw new Error('Komponenten saknar ett giltigt storleksmål.')
   result.children.appendList(target.children)
   return result
 }
@@ -140,6 +145,8 @@ function branchProbe(source: Source, component: Component, property: string): st
   // the browser chooses the matching branch with the winning specificity.
   for (const scope of source.scopes.slice(0, -1).reverse()) {
     const wrapper = clone(scope)
+    if (wrapper.type !== 'Rule' && wrapper.type !== 'Atrule')
+      throw new Error('Ett storleksvillkor saknar sin CSS-källa.')
     if (!wrapper.block) throw new Error('Ett storleksvillkor saknar sitt CSS-block.')
     wrapper.block.children = parseCanvasSheet(body).children
     body = generate(wrapper)
@@ -237,7 +244,8 @@ function readSamples(editor: Editor, components: Component[], baseline?: ResizeB
     }
   }
   try {
-    doc.head.append(temporary)
+    // Branch probes must not declare a named layer before the owner's first declaration.
+    doc.body.appendChild(temporary)
     for (const root of roots) {
       const tree = clone(root.tree)
       instrument(tree, root.tree, root, [])
@@ -364,9 +372,10 @@ export function planDesktopCardResize(
   }
   for (const sample of samples) {
     const style = desktopMarqueeCardStyle({}, Number((sample.zoom * factor).toFixed(6)), sample)
-    if (typeof style.width === 'string' && style.width !== sample.width)
-      add(sample, sample.widthSource, sample.widthBranch, 'width', style.width)
-    add(sample, sample.zoomSource, sample.zoomBranch, 'zoom', String(style.zoom))
+    const width = style['width']
+    if (typeof width === 'string' && width !== sample.width)
+      add(sample, sample.widthSource, sample.widthBranch, 'width', width)
+    add(sample, sample.zoomSource, sample.zoomBranch, 'zoom', String(style['zoom']))
   }
   const guards = (entries: Edit[], implicit: boolean): CssNode[] =>
     entries.map((entry) => {
@@ -437,7 +446,6 @@ export function planDesktopCardResize(
     apply: () => {
       const collection = editor.Css.getAll()
       for (const { root, definitions } of replacements) {
-        const index = collection.indexOf(root.model)
         const descendants = collection.models.filter((rule) => {
           let parent = rule.parentRule
           while (parent) {
@@ -446,8 +454,15 @@ export function planDesktopCardResize(
           }
           return false
         })
+        const next = collection.models
+          .slice(collection.indexOf(root.model) + 1)
+          .find((rule) => !rule.isNested())
         collection.remove([root.model, ...descendants])
-        collection.add(structuredClone(definitions), { at: index })
+        // Nested models can precede their root in GJS's flat collection. Removing them
+        // changes numeric indexes; anchor the replacement to the next surviving root.
+        collection.add(structuredClone(definitions), {
+          at: next ? collection.indexOf(next) : collection.length,
+        })
       }
       collection.add(structuredClone(additions))
     },

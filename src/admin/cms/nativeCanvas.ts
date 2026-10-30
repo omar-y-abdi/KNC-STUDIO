@@ -13,7 +13,7 @@ import {
   type CssNode,
   type StyleSheet,
 } from 'css-tree'
-import type { CssRule, Editor } from 'grapesjs'
+import type { CssRule, Editor, StyleProps } from 'grapesjs'
 import type { CmsMode, PageVariant } from '../../../shared/cms'
 import { INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 
@@ -70,7 +70,7 @@ function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
 
 /** A resize can serialize the previous dimensions for a temporary DOM measurement without
  * changing the composer model. Nested model values still belong to this same rule. */
-export function readCanvasRuleCss(rule: CssRule, style?: ReturnType<CssRule['getStyle']>): string {
+export function readCanvasRuleCss(rule: CssRule, style?: StyleProps): string {
   // These root envelopes preserve anonymous layer identity and complete keyframes.
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
@@ -502,6 +502,9 @@ export function parseCanvasCss(
             value: generate(declaration.value) + (declaration.important ? ' !important' : ''),
           })
           declaration.property = key
+          // CSSOM enumerates important custom properties last. Priority is already
+          // saved above; equal-priority placeholders preserve the prepared-tree order.
+          declaration.important = false
         } else if (
           declaration.type === 'Rule' ||
           (declaration.type === 'Atrule' &&

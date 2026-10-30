@@ -169,7 +169,7 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       const plan =
         cards.length && !mobile
           ? (() => {
-              if (!('getAtRule' in target))
+              if (!(target instanceof editor.Css.classes.CssRule))
                 throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
               return planDesktopCardResize(editor, cards, scale / before.zoom, {
                 target,
@@ -180,7 +180,9 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
       target.setStyle(style)
       if (plan) {
         plan.apply()
-        editor.StyleManager.select(before.component)
+        editor.StyleManager.select(editor.StyleManager.getModelToStyle(before.component), {
+          component: before.component,
+        })
       } else if (cards.length)
         for (const card of cards) {
           const currentStyle = card.getStyle()

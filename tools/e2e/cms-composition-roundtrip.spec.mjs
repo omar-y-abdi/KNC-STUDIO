@@ -210,7 +210,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
+        '<div id="holder"><div id="card">Card</div><div id="important">Important</div><div id="anonymous">Anonymous</div><div id="conditioned">Conditioned</div><div id="nested">Nested</div><div id="mixed">Mixed</div><div id="uppercase">Uppercase</div><div id="nested-conditions">Conditions</div><div id="container-case">Container</div><div id="editable">Editable</div><div id="priority-order">Priority order</div><div id="margin">Margin</div><div id="animated">Animated</div><div id="prefixed">Prefixed</div></div>',
     })
     const releaseStyles = connectCanvasStyles(editor)
     await new Promise((resolve) => editor.on('load', resolve))
@@ -231,6 +231,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       '@media(min-width:769px){@container(min-width:700px){#container-case{width:45%}}}' +
       '@media(min-width:769px){@container(min-width:900px){#container-case{width:95%}}}' +
       '@media(min-width:1000px){#editable{width:25%}}' +
+      '#priority-order{width:70%;zoom:2;all:initial!important;@media(min-width:769px){&{width:80%!important;zoom:.8!important}}display:block!important;height:40px!important}' +
       '#margin{margin-left:1px;margin:2px;margin-left:3px}' +
       '@layer roots{html{--owner-layer-root:present}html body{padding-left:17px}body::before{content:"owner"}}' +
       '@KEYFRAMES owner-motion{from{opacity:.2}50%{opacity:.5}to{opacity:.8}}' +
@@ -258,6 +259,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
           'nested-conditions',
           'container-case',
           'editable',
+          'priority-order',
         ].map((id) => [id, doc.getElementById(id).getBoundingClientRect().width]),
       )
       const margin = view.getComputedStyle(doc.getElementById('margin'))
@@ -364,6 +366,7 @@ test('canvas style imports retain layer precedence, root selectors and declarati
       'nested-conditions': 280,
       'container-case': 360,
       editable: 200,
+      'priority-order': 640,
     },
     margins: ['2px', '2px', '2px', '3px'],
     root: 'present',
@@ -414,7 +417,7 @@ test('resize styles use the native cascade and survive production import without
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="holder" class="owner"><div id="probe-card" class="card">Card</div><div id="percent-parent"><div id="percent-inherit">Percent</div></div><div id="relative-parent"><div id="relative-inherit">Relative</div></div><div id="all-card">Reset</div><div id="ignored-card">Ignored</div><div id="invalid-card">Invalid var</div></div>',
+        '<div id="holder" class="owner"><div id="probe-card" class="card">Card</div><div id="percent-parent"><div id="percent-inherit">Percent</div></div><div id="relative-parent"><div id="relative-inherit">Relative</div></div><div id="all-card">Reset</div><div id="ignored-card">Ignored</div><div id="invalid-card">Invalid var</div><div id="layer-holder"><div id="container-card" class="container-card">Container</div></div><div id="ordered-card">Ordered</div></div>',
       deviceManager: {
         devices: [
           { id: 'Wide', width: '1440px' },
@@ -431,12 +434,16 @@ test('resize styles use the native cascade and survive production import without
       '@layer base,overrides;' +
       '@layer base{.owner .card,#unmatched{--owner-card-width:70%;width:var(--owner-card-width,60%);@supports(display:grid){&.special{width:80%}}}}' +
       '@layer overrides{#probe-card{width:revert-layer}}' +
+      '@layer base{#layer-holder{width:200px;container-type:inline-size}}' +
+      '@layer overrides{#layer-holder{width:400px}@container(min-width:300px){.container-card{width:70%}}}' +
       '@media(min-width:1000px){#probe-card{width:var(--owner-card-width,60%)!important}}' +
       '#percent-parent{width:70%}#percent-inherit{width:inherit;font-size:10px}' +
       '#relative-parent{font-size:20px;width:8em}#relative-inherit{font-size:10px;width:inherit}' +
       '#all-card{width:70%;zoom:2;all:initial!important;display:block!important;height:40px!important}' +
       '#ignored-card{width:70%;width:-1px!important}' +
-      '#invalid-card{--invalid-width:unsupported;width:70%;width:var(--invalid-width)}'
+      '#invalid-card{--invalid-width:unsupported;width:70%;width:var(--invalid-width)}' +
+      '#ordered-card{width:70%;&.inactive{color:red}}' +
+      '@media(min-width:1000px){#ordered-card{width:90%}}'
     const policy = {
       siteOrigin: globalThis.location.origin,
       storageOrigin: 'https://storage.example.test',
@@ -450,6 +457,8 @@ test('resize styles use the native cascade and survive production import without
       'all-card',
       'ignored-card',
       'invalid-card',
+      'container-card',
+      'ordered-card',
     ]
     const components = ids.map((id) => editor.Components.getById(id))
     const measure = () => ids.map((id) => doc.getElementById(id).getBoundingClientRect().width)
@@ -544,12 +553,10 @@ test('resize styles use the native cascade and survive production import without
       host.remove()
     }
   })
-  await test
-    .info()
-    .attach('resize-native-cascade', {
-      body: JSON.stringify(result, null, 2),
-      contentType: 'application/json',
-    })
+  await test.info().attach('resize-native-cascade', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  })
   for (const sample of result.samples) {
     assert.deepEqual(sample.passive, {
       model: true,
@@ -578,6 +585,16 @@ test('resize styles use the native cascade and survive production import without
     result.samples[0].measurements[2].width,
     '160px',
     'Inherited em widths compute in the parent font context',
+  )
+  assert.equal(
+    result.samples[0].before[6],
+    280,
+    'Branch probes preserve the original layer order and active container',
+  )
+  assert.equal(
+    result.samples[1].before[7],
+    720,
+    'A later equal-specificity owner rule remains later when its viewport activates',
   )
   assert.ok(
     Math.abs(result.laterConditionalWidth - 640) < 0.1,
