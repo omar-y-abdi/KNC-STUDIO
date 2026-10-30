@@ -851,7 +851,7 @@ test('native dimension edits materialize inactive owner priorities before export
       avoidInlineStyle: true,
       selectorManager: { componentFirst: true },
       components:
-        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
+        '<div id="native-holder" data-knc-native="1"><div id="native-card" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-token" class="owner-token" data-knc-baseline="{}" data-knc-light="height:100px"></div><div id="native-untargeted" data-knc-baseline="{}" data-knc-light="height:100px"></div></div>',
       deviceManager: {
         devices: [
           { id: 'Wide', width: '1440px' },
@@ -883,7 +883,8 @@ test('native dimension edits materialize inactive owner priorities before export
             '#native-holder{width:800px}#native-holder>div{height:100px}' +
               '#native-card{width:70%;zoom:0.8}' +
               '.owner-token{--owner-card-width:70%;width:var(--owner-card-width)}' +
-              '@media(min-width:1000px){#native-card,#native-token{color:red}#native-card{width:90%;zoom:1.1}#native-token{width:90%;zoom:1.1}}',
+              '#native-untargeted{width:33%;zoom:0.9;color:blue}' +
+              '@media(min-width:1000px){#native-card,#native-token{color:red}#native-card{inline-size:90%;zoom:1.1}#native-token{all:initial;display:block;height:100px}}',
             editor,
           ),
         ),
@@ -925,8 +926,18 @@ test('native dimension edits materialize inactive owner priorities before export
   for (const [index, after] of result.after.entries()) {
     assert.ok(Math.abs(after.width / result.before[index].width - 0.8) < 0.015)
     assert.ok(Math.abs(after.height / result.before[index].height - 0.8) < 0.015)
-    assert.ok(Math.abs(result.wide[index].width - 720) < 0.1, 'Inactive owner width becomes active')
-    assert.ok(Math.abs(result.wide[index].height - 110) < 0.1, 'Inactive owner zoom becomes active')
+    const expected = [
+      { width: 720, height: 110 },
+      { width: 800, height: 100 },
+    ][index]
+    assert.ok(
+      Math.abs(result.wide[index].width - expected.width) < 0.1,
+      'Inactive logical width or all reset becomes active',
+    )
+    assert.ok(
+      Math.abs(result.wide[index].height - expected.height) < 0.1,
+      'Inactive zoom or all reset becomes active',
+    )
     assert.ok(Math.abs(result.restoredWide[index].width - result.wide[index].width) < 0.1)
     assert.ok(Math.abs(result.restoredWide[index].height - result.wide[index].height) < 0.1)
     assert.ok(Math.abs(result.restoredNarrow[index].width - after.width) < 0.1)
@@ -934,19 +945,34 @@ test('native dimension edits materialize inactive owner priorities before export
   }
   assert.ok(result.live.includes('--owner-card-width:70%;width:var(--owner-card-width);'))
   const priorities = []
+  const untouched = []
   walk(parse(result.live), {
     visit: 'Rule',
     enter(rule) {
-      if (!['#native-card', '#native-token'].includes(generate(rule.prelude))) return
+      const selector = generate(rule.prelude)
       for (const declaration of rule.block.children)
-        if (declaration.type === 'Declaration' && ['width', 'zoom'].includes(declaration.property))
-          priorities.push(Boolean(declaration.important))
+        if (declaration.type === 'Declaration') {
+          if (
+            ['#native-card', '#native-token'].includes(selector) &&
+            ['width', 'zoom', 'inline-size', 'all'].includes(declaration.property)
+          )
+            priorities.push(Boolean(declaration.important))
+          else if (
+            ['.owner-token', '#native-untargeted', '#native-card,#native-token'].includes(selector)
+          )
+            untouched.push(Boolean(declaration.important))
+        }
     },
   })
-  assert.ok(priorities.length >= 7)
+  assert.ok(priorities.length >= 6)
   assert.ok(
     priorities.every(Boolean),
     'Active and inactive native owner dimensions share persisted priority',
+  )
+  assert.ok(untouched.length >= 6)
+  assert.ok(
+    untouched.every((important) => !important),
+    'Class, complex and untargeted rules stay authored',
   )
 })
 
