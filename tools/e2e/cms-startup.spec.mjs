@@ -228,7 +228,6 @@ test('stored-page-independent-of-source', async ({ newContext }, testInfo) => {
 
 test('real-fixture startup uses median in-page CPU and longest-task budgets', async ({
   newContext,
-  browserName,
 }, testInfo) => {
   const doc = await startupDocument()
   const metrics = await startupSamples(newContext, doc)
@@ -244,13 +243,7 @@ test('real-fixture startup uses median in-page CPU and longest-task budgets', as
     metrics.samples.every((sample) => sample.passes >= 5),
     'Heavy passes must yield separately',
   )
-  // Owner uses desktop Chrome: keep Chromium at 3000 ms (1505 ms isolated). Supplied WebKit
-  // medians: 3153/4228 ms in full gates; 2376 ms isolated (2288, 2376, 3923 ms samples).
-  const readyBudget = browserName === 'webkit' ? 4500 : 3000
-  assert.ok(
-    metrics.readyMs < readyBudget,
-    `Median real startup: ${metrics.readyMs}ms; budget ${readyBudget}ms`,
-  )
+  assert.ok(metrics.readyMs < 3000, `Median real startup: ${metrics.readyMs}ms; budget 3000ms`)
   assert.ok(metrics.cpuMs < 2500, `Median active editor work: ${metrics.cpuMs}ms; budget 2500ms`)
   if (metrics.longestTaskMs !== null)
     assert.ok(
