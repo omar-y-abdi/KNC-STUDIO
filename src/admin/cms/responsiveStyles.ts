@@ -143,10 +143,14 @@ function contextHeader(node: Rule | Atrule): string {
 }
 
 function locationKey(location: LayoutLocation): string {
-  // Positions guide insertion into a counterpart. They are not geometry changes themselves.
+  // Ancestor occurrences distinguish authored scopes. A terminal target guard can be
+  // split across equivalent rules; its occurrence and positions only guide insertion.
   return JSON.stringify([
     location.selector,
-    location.path?.map(({ header, occurrence }) => [header, occurrence ?? null]) ?? location.media,
+    location.path?.map(({ header, occurrence }, index, path) => [
+      header,
+      index === path.length - 1 ? null : (occurrence ?? null),
+    ]) ?? location.media,
   ])
 }
 
@@ -155,7 +159,12 @@ function locationKey(location: LayoutLocation): string {
 function placementKey(location: LayoutLocation): string {
   return JSON.stringify([
     locationKey(location),
-    location.path?.map(({ position, preceding, following }) => [position, preceding, following]),
+    location.path?.map(({ position, occurrence, preceding, following }) => [
+      position,
+      occurrence,
+      preceding,
+      following,
+    ]),
   ])
 }
 
@@ -346,7 +355,9 @@ function matchingContexts(
 function contextBlocks(block: LayoutBlock, path: LayoutContext[], bounded = true): Block[] {
   const [context, ...remaining] = path
   if (!context) return block.type === 'Block' ? [block] : []
-  return matchingContexts(block, context, bounded).flatMap((node) =>
+  const target =
+    !bounded && !remaining.length ? { header: context.header, position: context.position } : context
+  return matchingContexts(block, target, bounded).flatMap((node) =>
     node.block
       ? remaining.length
         ? contextBlocks(node.block, remaining, bounded)
