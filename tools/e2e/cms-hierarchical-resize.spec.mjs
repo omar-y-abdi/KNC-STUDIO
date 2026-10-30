@@ -45,6 +45,42 @@ const measure = (frame) =>
       next: rect(group.nextElementSibling),
     }
   })
+const intrinsicGeometry = (frame, factor = 1) =>
+  frame.locator(groupSelector).evaluate((group, factor) => {
+    const cards = [...group.children]
+    const view = group.ownerDocument.defaultView
+    const original = cards.map((card) => card.getAttribute('style'))
+    const zoom = (card) => {
+      const value = view.getComputedStyle(card).zoom
+      return (parseFloat(value) || 1) / (value.endsWith('%') ? 100 : 1)
+    }
+    try {
+      if (factor !== 1)
+        for (const card of cards)
+          card.style.setProperty('zoom', String(zoom(card) * factor), 'important')
+      return cards.map((card) => {
+        const photo =
+          card.querySelector('img') ??
+          card.querySelector('[data-knc-surface]') ??
+          card.firstElementChild
+        const description = card.querySelector('p')
+        if (!description) throw new Error('The intrinsic card description is missing')
+        return {
+          width: card.getBoundingClientRect().width,
+          photoHeight: photo.getBoundingClientRect().height,
+          zoom: zoom(card),
+          fontSize: parseFloat(view.getComputedStyle(description).fontSize),
+          sourceFont: description.getAttribute('data-knc-light'),
+        }
+      })
+    } finally {
+      if (factor !== 1)
+        for (const [index, card] of cards.entries()) {
+          if (original[index] === null) card.removeAttribute('style')
+          else card.setAttribute('style', original[index])
+        }
+    }
+  }, factor)
 const inspectGeometry = (page) =>
   page.evaluate(async (selector) => {
     const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
@@ -203,14 +239,28 @@ test('cms-hierarchical-resize', async ({ page, context, browserName, evidenceDir
     () => globalThis.document.querySelector('.gjs-frame')?.contentWindow.innerWidth === 390,
   )
   const ownerBlocks = () =>
-    page.evaluate(async () => {
+    page.evaluate(async (selector) => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
-      return (
-        readCanvasCss(cmsGrapes.editors.at(-1)).match(/color:var\(--owner-mobile-color\)/g)
-          ?.length ?? 0
+      const { readCanvasRuleCss } = await import('/src/admin/cms/nativeCanvas.ts')
+      const editor = cmsGrapes.editors.at(-1)
+      const ids = new Set(
+        editor
+          .getWrapper()
+          .find(selector)[0]
+          .components()
+          .map((card) => card.getId()),
       )
-    })
+      // The Home preview can mirror these blocks under preview-shared IDs after
+      // an import. Count the editable cards' rules, including any real duplicates.
+      const css = editor.Css.getAll()
+        .filter(
+          (rule) =>
+            !rule.isNested() && rule.getSelectors().some((item) => ids.has(item.get('name'))),
+        )
+        .map((rule) => readCanvasRuleCss(rule))
+        .join('')
+      return css.match(/color:var\(--owner-mobile-color\)/g)?.length ?? 0
+    }, groupSelector)
   assert.equal(await ownerBlocks(), 4, 'Mobile owner blocks survive viewport import')
   const before = await measure(frame)
   assert.equal(before.cards.length, 4)
@@ -549,21 +599,41 @@ for (const [label, authored] of [
         // grouping boundary without pausing Date or waiting for browser timers.
         await page.clock.setSystemTime((await page.evaluate(() => Date.now())) + 1000)
       }
+      // WebKit's native minimum physical font size can hold an intrinsic card's
+      // glyph width steady at small zooms. Compare the unchanged owner content
+      // against the browser's own zoom layout before exercising the real control.
+      const intrinsicBefore =
+        label === 'intrinsic width and alignment' ? await intrinsicGeometry(frame) : null
+      const nativeExpected = intrinsicBefore ? await intrinsicGeometry(frame, 0.8) : null
       await height(page, (selectedCard ? before.cards[0].rect.height : before.group.height) * 0.8)
       const after = await measure(frame)
+      const nativeActual = intrinsicBefore ? await intrinsicGeometry(frame) : null
       await test.info().attach(`authored-${width}-geometry`, {
-        body: JSON.stringify({ before, after, details: await inspectGeometry(page) }, null, 2),
+        body: JSON.stringify(
+          { before, after, nativeExpected, nativeActual, details: await inspectGeometry(page) },
+          null,
+          2,
+        ),
         contentType: 'application/json',
       })
       for (const [index, card] of after.cards.entries()) {
-        assert.ok(
-          Math.abs(card.rect.width / before.cards[index].rect.width - 0.8) < 0.05,
-          `${label}: ${width}px card ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
-        )
-        assert.ok(
-          Math.abs(card.photo.height / before.cards[index].photo.height - 0.8) < 0.05,
-          `${label}: ${width}px portrait ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
-        )
+        if (!nativeExpected || !firstNarrow) {
+          assert.ok(
+            Math.abs(card.rect.width / before.cards[index].rect.width - 0.8) < 0.05,
+            `${label}: ${width}px card ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+          )
+          assert.ok(
+            Math.abs(card.photo.height / before.cards[index].photo.height - 0.8) < 0.05,
+            `${label}: ${width}px portrait ${index} scales proportionally: ${JSON.stringify({ before, after })}`,
+          )
+        }
+        if (nativeExpected) {
+          assert.ok(Math.abs(card.rect.width - nativeExpected[index].width) < 1)
+          assert.ok(Math.abs(card.photo.height - nativeExpected[index].photoHeight) < 1)
+          assert.ok(Math.abs(nativeActual[index].zoom / intrinsicBefore[index].zoom - 0.8) < 0.005)
+          assert.ok(Math.abs(nativeActual[index].fontSize - nativeExpected[index].fontSize) < 0.02)
+          assert.equal(nativeActual[index].sourceFont, intrinsicBefore[index].sourceFont)
+        }
       }
       const styles = await page.evaluate(async (selector) => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
@@ -584,6 +654,9 @@ for (const [label, authored] of [
               value,
               `${label}: ${property} stays authored`,
             )
+      if (nativeExpected)
+        for (const style of styles)
+          assert.equal(style.width, undefined, 'The owner intrinsic width remains automatic')
       firstNarrow ??= after
     }
     if (undoEachGesture) {
