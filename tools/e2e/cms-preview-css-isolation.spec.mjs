@@ -50,7 +50,7 @@ for (const layered of [false, true]) {
         '.card::before{content:"owner-paint";display:block;width:7px;height:7px;color:var(--owner-paint)}' +
         '.card-fill{clip-path:url(#owner-clip)}' +
         'body:has(.card.active){--owner-active:1}' +
-        '.card.active{:is(body):has(&){--owner-nested-active:1}}' +
+        'body{&:has(.card.active){--owner-nested-active:1}}' +
         '@keyframes owner-still{from{opacity:.8}to{opacity:.8}}' +
         '.card{animation:owner-still 10s linear paused}'
       validateMarkup(homeHtml, '', policy, { native: true })
