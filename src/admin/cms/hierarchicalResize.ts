@@ -1,4 +1,5 @@
 import type { Component, Editor } from 'grapesjs'
+import { planDesktopCardResize } from './resizeStyles'
 
 /** Only the repeated barber presentation participates; never names, data or callbacks. */
 export function barberScalePeers(component: Component): Component[] {
@@ -74,11 +75,9 @@ export function scaledZoom(zoom: number, before: number, requested: number): num
  * geometry and let the browser scale text, portraits, padding and subsequent flow.
  * The mobile strip is the exception: its cards are Embla slides and get a layout width. */
 export function connectHierarchicalResize(editor: Editor, disabled: () => boolean): () => void {
-  type Styled = NonNullable<ReturnType<Editor['getSelectedToStyle']>>
   let snapshot:
     | {
         component: Component
-        model: Styled
         style: ReturnType<Component['getStyle']>
         width: number
         height: number
@@ -88,12 +87,12 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     | undefined
   let updating = false
   let frame = 0
+  let viewport: Window | null = null
   const capture = (): void => {
     if (disabled() || updating) return
     const component = editor.getSelected()
-    const model = editor.getSelectedToStyle()
     const element = component?.getEl()
-    if (!component || !model || !element || !barberScalePeers(component).length) {
+    if (!component || !element || !barberScalePeers(component).length) {
       snapshot = undefined
       return
     }
@@ -108,8 +107,8 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     const cardWidth = card?.getEl()?.getBoundingClientRect().width ?? 0
     snapshot = {
       component,
-      model,
-      style: { ...model.getStyle() },
+      // Component-first styling reads the existing device rule without creating one.
+      style: { ...component.getStyle() },
       width: rect.width,
       height: rect.height,
       zoom,
@@ -120,14 +119,23 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(capture)
   }
+  const watchViewport = (): void => {
+    viewport?.removeEventListener('resize', remember)
+    viewport = editor.Canvas.getFrameEl()?.contentWindow ?? null
+    viewport?.addEventListener('resize', remember)
+    remember()
+  }
   const change = (model: unknown, property: string): void => {
     const before = snapshot
-    if (updating || disabled() || !before || model !== before.model) return
+    if (updating || disabled() || !before || editor.getSelected() !== before.component) return
+    // An actual style change already has its target; do not retain a rule from a former device.
+    const target = editor.getSelectedToStyle()
+    if (!target || model !== target) return
     if (property !== 'width' && property !== 'height') {
       remember()
       return
     }
-    const value = String(before.model.getStyle()[property] ?? '')
+    const value = String(target.getStyle()[property] ?? '')
       .replace(/!important$/, '')
       .trim()
     // Only dimension controls in pixels participate; arbitrary CSS units keep their CSS meaning.
@@ -148,35 +156,42 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
     const scale =
       cards.length && mobile ? Math.max(minLoopScale(cards.length), requestedScale) : requestedScale
     if (!Number.isFinite(scale) || before[property] <= 0) return
+    const style = { ...target.getStyle('', { withNested: true }) }
+    // The new size is represented by layout zoom or card width, not a clipping height.
+    for (const axis of ['width', 'height'] as const) {
+      if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
+      else style[axis] = before.style[axis]
+    }
     updating = true
     try {
-      const style = { ...before.model.getStyle() }
-      // The new size is represented by layout zoom or card width, not a clipping height.
-      for (const axis of ['width', 'height'] as const) {
-        if (before.style[axis] === undefined) Reflect.deleteProperty(style, axis)
-        else style[axis] = before.style[axis]
-      }
-      before.model.setStyle(style)
-      if (cards.length)
-        for (const card of cards)
-          card.setStyle(
-            mobile
-              ? marqueeCardStyle(card.getStyle(), scale)
-              : {
-                  ...card.getStyle(),
-                  // Zooming the auto-fit grid reflows it; auto/percentage widths do not zoom.
-                  // Scale each card within its existing track without saving a viewport width.
-                  width: `${Number((scale * 100).toFixed(6))}%`,
-                  'box-sizing': 'border-box',
-                  // Let the flex column's square portrait determine its height. Stretching a
-                  // zoomed grid item can give WebKit a row-height override and shrink the photo.
-                  'align-self': 'start',
-                  zoom: String(scale),
-                },
-          )
+      // The dimension control has already written its proposal. Resolve every card from
+      // the previous dimensions in the DOM, before restoring or changing any model.
+      const plan =
+        cards.length && !mobile
+          ? (() => {
+              if (!('getAtRule' in target))
+                throw new Error('Storlekskontrollen saknar sitt CSS-mål.')
+              return planDesktopCardResize(editor, cards, scale / before.zoom, {
+                target,
+                style,
+              })
+            })()
+          : undefined
+      target.setStyle(style)
+      if (plan) {
+        plan.apply()
+        editor.StyleManager.select(before.component)
+      } else if (cards.length)
+        for (const card of cards) {
+          const currentStyle = card.getStyle()
+          card.setStyle(marqueeCardStyle(currentStyle, scale))
+        }
       else
         for (const peer of barberScalePeers(before.component))
           peer.addStyle({ zoom: String(scale) })
+    } catch (error) {
+      target.setStyle(style)
+      throw error
     } finally {
       updating = false
     }
@@ -186,10 +201,14 @@ export function connectHierarchicalResize(editor: Editor, disabled: () => boolea
   editor.on('component:selected component:resize:start', capture)
   editor.on('styleable:change', change)
   editor.on('undo redo canvas:frame:load', remember)
+  editor.on('load canvas:frame:load', watchViewport)
+  watchViewport()
   return () => {
     cancelAnimationFrame(frame)
     editor.off('component:selected component:resize:start', capture)
     editor.off('styleable:change', change)
     editor.off('undo redo canvas:frame:load', remember)
+    editor.off('load canvas:frame:load', watchViewport)
+    viewport?.removeEventListener('resize', remember)
   }
 }

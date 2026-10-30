@@ -29,7 +29,12 @@ export function legalCanvasBase(path: string, mode: CmsMode): { styles: string[]
 /** The CMS keeps every composer rule and uses avoidInlineStyle. Resolving each
  * component's style only to collect unused selector IDs makes full export quadratic. */
 export function readCanvasCss(editor: Editor): string {
-  return (editor.getConfig().protectedCss ?? '') + canvasRules(editor).map(canvasRuleCss).join('')
+  return (
+    (editor.getConfig().protectedCss ?? '') +
+    canvasRules(editor)
+      .map((rule) => readCanvasRuleCss(rule))
+      .join('')
+  )
 }
 
 function canvasRules(editor: Editor): CssRule[] {
@@ -63,12 +68,18 @@ function canvasStyleCss(style: CanvasStyle, withinRule = false): string {
     .join('')
 }
 
-function canvasRuleCss(rule: CssRule): string {
+/** A resize can serialize the previous dimensions for a temporary DOM measurement without
+ * changing the composer model. Nested model values still belong to this same rule. */
+export function readCanvasRuleCss(rule: CssRule, style?: ReturnType<CssRule['getStyle']>): string {
   // These root envelopes preserve anonymous layer identity and complete keyframes.
   // Their frame keys need not fit GrapesJS's punctuation-only nested-key heuristic.
   if (rule.get('singleAtRule') && !rule.getAtRule() && !rule.selectorsToString())
     return canvasStyleCss(rule.toJSON().style ?? {})
-  return rule.toCSS({ important: rule.get('important') ?? false, ...canvasStyleOptions })
+  return rule.toCSS({
+    important: rule.get('important') ?? false,
+    ...canvasStyleOptions,
+    ...(style ? { style } : {}),
+  })
 }
 
 /** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
@@ -113,7 +124,7 @@ export function connectCanvasStyles(editor: Editor): () => void {
     schedule()
   }
   const mount = (event: { rule: CssRule; css: string }): void => {
-    event.css = event.rule.isNested() ? '' : canvasRuleCss(event.rule)
+    event.css = event.rule.isNested() ? '' : readCanvasRuleCss(event.rule)
   }
   editor.on('css:mount:before', mount)
   editor.on('css:mount', schedule)
@@ -325,7 +336,9 @@ export function exportNativeCanvas(
   }
 }
 
-type CanvasStyle = { [key: string]: string | string[] | CanvasStyle }
+interface CanvasStyle {
+  [key: string]: string | string[] | CanvasStyle
+}
 
 /** JS style objects need distinct keys where CSS permits repeated blocks. Whitespace before
  * the opening brace/colon keeps the CSS identical, including separate anonymous layers. */
@@ -381,6 +394,7 @@ function canvasNestedStyle(
       // Ordered empty named blocks establish exactly the same layer ordering.
       appendLayerOrder(style, node)
     } else if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) {
+      if (!node.block) throw new Error('Ett nästlat CSS-block saknas.')
       let key =
         node.type === 'Rule'
           ? generate(node.prelude)
@@ -417,7 +431,7 @@ function canvasNestedStyle(
         style,
         key,
         canvasNestedStyle(
-          node.block!,
+          node.block,
           node.type === 'Rule' || withinRule,
           node.type === 'Atrule' &&
             ['keyframes', '-webkit-keyframes'].includes(ident.decode(node.name).toLowerCase()),
@@ -537,11 +551,13 @@ export function parseCanvasCss(
     rules = editor.Parser.parseCss(generate(tree)).map((rule) => {
       const layerKey = Object.keys(rule['style'] ?? {}).find((key) => layerRoots.has(key))
       if (layerKey) {
+        const style = layerRoots.get(layerKey)
+        if (!style) throw new Error('Ett CSS-lager saknar sin bevarade källa.')
         seenLayers.add(layerKey)
         return {
           selectors: [],
           singleAtRule: true,
-          style: layerRoots.get(layerKey)!,
+          style,
         }
       }
       return { ...rule, style: restore(rule['style'] ?? {}) }
