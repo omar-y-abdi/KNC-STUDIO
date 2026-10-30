@@ -503,6 +503,9 @@ for (const [label, authored] of [
     context,
   }) => {
     const { backend, frame } = await openStudio(page, context, ['a', 'b', 'c', 'd'])
+    const undoEachGesture = ['percentage width', 'class width token'].includes(label)
+    let editTime = await page.evaluate(() => Date.now())
+    if (undoEachGesture) await page.clock.setFixedTime(editTime)
     await page.evaluate(
       async ({ selector, authored, label }) => {
         const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
@@ -533,7 +536,7 @@ for (const [label, authored] of [
       )
       const before = await measure(frame)
       previousStep = before
-      if (['percentage width', 'class width token'].includes(label) && width === 1440) {
+      if (undoEachGesture && width === 1440) {
         await select(page, `${groupSelector} > div:first-child`)
         selectedCard = true
       }
@@ -542,6 +545,12 @@ for (const [label, authored] of [
           Math.abs(before.cards[0].rect.width / firstNarrow.cards[0].rect.width - 0.8) < 0.05,
           `Returning to 820px preserves the authored width semantics: ${JSON.stringify({ firstNarrow, before })}`,
         )
+      if (undoEachGesture) {
+        // Each preview switch flushes the previous gesture. Cross the draft's 800 ms
+        // grouping boundary through Date only; browser timers and layout stay real.
+        editTime += 1000
+        await page.clock.setFixedTime(editTime)
+      }
       await height(page, (selectedCard ? before.cards[0].rect.height : before.group.height) * 0.8)
       const after = await measure(frame)
       await test.info().attach(`authored-${width}-geometry`, {
@@ -579,17 +588,32 @@ for (const [label, authored] of [
             )
       firstNarrow ??= after
     }
-    if (['percentage width', 'class width token'].includes(label)) {
+    if (undoEachGesture) {
       const reference = await measure(frame)
       const ids = new Map([['sv', reference.cards.map((card) => card.id)]])
       const retained = async (stage, expected = reference) => {
         await page.locator('.cms-editor-canvas[aria-busy="false"]').waitFor()
         await frame.locator(groupSelector).waitFor()
         const current = await measure(frame)
+        if (
+          current.cards.some(
+            (card, index) =>
+              Math.abs(card.rect.width - expected.cards[index].rect.width) >= 2 ||
+              Math.abs(card.photo.height - expected.cards[index].photo.height) >= 2,
+          )
+        )
+          await test.info().attach(`retained-${stage}-geometry`, {
+            body: JSON.stringify(
+              { expected, current, details: await inspectGeometry(page) },
+              null,
+              2,
+            ),
+            contentType: 'application/json',
+          })
         for (const [index, card] of current.cards.entries()) {
           assert.ok(
             Math.abs(card.rect.width - expected.cards[index].rect.width) < 2,
-            `${stage}: card ${index} retains its Desktop width`,
+            `${stage}: card ${index} retains its Desktop width (${card.rect.width} vs ${expected.cards[index].rect.width})`,
           )
           assert.ok(
             Math.abs(card.photo.height - expected.cards[index].photo.height) < 2,
