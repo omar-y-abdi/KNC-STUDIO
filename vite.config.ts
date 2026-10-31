@@ -107,6 +107,12 @@ export default defineConfig(({ command, mode }) => {
           entryFileNames: 'assets/[hash].js',
           chunkFileNames: 'assets/[hash].js',
           assetFileNames: 'assets/[hash][extname]',
+          // Keep realtime-js and phoenix off the boot path: index.html must not preload them.
+          codeSplitting: {
+            groups: [
+              { name: 'realtime', test: /node_modules\/@supabase\/(realtime-js|phoenix)\// },
+            ],
+          },
         },
       },
     },
