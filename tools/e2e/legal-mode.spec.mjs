@@ -444,6 +444,7 @@ test.describe('legal source preparation', () => {
           async ({ presentation, templates, missingLayouts }) => {
             const { emptyDocument } = await import('/shared/cms.ts')
             const {
+              canOpenStoredPages,
               ensureCorePages,
               hasCorePageLayouts,
               needsCorePageSource,
@@ -467,7 +468,7 @@ test.describe('legal source preparation', () => {
               )
             const originalLegal = globalThis.structuredClone(legal(document.presentation.pages))
             const before = {
-              hasLayouts: hasCorePageLayouts(document),
+              hasLayouts: canOpenStoredPages(document),
               needsSource: needsCorePageSource(document),
             }
             await prepareCorePageSource(document)
