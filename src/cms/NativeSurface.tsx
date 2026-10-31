@@ -1,14 +1,16 @@
-import { mediaUrl } from '../../shared/cms'
+import { cmsFontFaceCss } from '../../shared/cms'
 import { SUPABASE_URL } from '../backend/config'
 import { siteThemeCss, themeStyleValue } from '../../shared/site-theme'
 import { repairDesktopCss } from '../../shared/cms-device-css'
-import { createInstanceScope, nativeNodeId, type InstanceScope } from './instanceScope'
+import { nativeNodeId } from '../../shared/cms-native-id'
+import type { createInstanceScope, InstanceScope } from './instanceScope'
 import { createContext, Fragment, h, isValidElement } from 'preact'
 import type { ComponentChild, ComponentChildren, JSX, VNode } from 'preact'
 import { useLocation } from 'wouter-preact'
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks'
 import {
   validatePresentation,
+  isSitePage,
   type CmsLang,
   type CmsMode,
   type CmsPresentation,
@@ -38,10 +40,7 @@ export function useNativeSource(): boolean {
 export function useCmsPageLinks(): readonly CmsPage[] {
   return (
     useContext(NativeContext)?.presentation?.pages.filter(
-      (page) =>
-        page.inMenu &&
-        page.kind === 'page' &&
-        !['/', '/about', '/booking', '/my-bookings', '/privacy', '/terms'].includes(page.path),
+      (page) => page.inMenu && isSitePage(page),
     ) ?? []
   )
 }
@@ -251,12 +250,7 @@ export function NativeSiteProvider({
     return () => controller.abort()
   }, [presentation, source, publicNativeRoute, published, retryCount])
   const current = presentation === undefined ? published : presentation
-  const fonts = Object.entries(current?.fonts ?? {})
-    .map(
-      ([id, font]) =>
-        `@font-face{font-family:"CMSFont-${id}";src:url("${mediaUrl(font.ref, SUPABASE_URL ?? '')}") format("woff2");font-display:swap}`,
-    )
-    .join('\n')
+  const fonts = cmsFontFaceCss(current?.fonts, SUPABASE_URL ?? '')
   if (publicNativeRoute && publishedState !== 'ready') {
     return (
       <PublicPresentationGate
@@ -582,12 +576,17 @@ export function projectNativeTree(
   return visit(template)
 }
 
+/** Instanced regions supply their scope from their lazy feature chunk. */
+export type NativeInstanceOptions =
+  | { instance?: undefined; scopeFactory?: undefined }
+  | { instance: string; scopeFactory: typeof createInstanceScope }
+
 export function useNativeSurface(
   source: ComponentChild,
   surface: string,
   lang: CmsLang,
   mode: CmsMode,
-  instance?: string,
+  instanceOptions: NativeInstanceOptions = {},
 ): JSX.Element {
   const context = useContext(NativeContext)
   const path = surface.startsWith('my-booking')
@@ -606,8 +605,11 @@ export function useNativeSurface(
       .querySelector(`[data-knc-surface="${surface}"]`)
   }, [html, surface])
   const scope = useMemo(
-    () => (instance === undefined ? null : createInstanceScope(surface, instance, template)),
-    [surface, instance, template],
+    () =>
+      instanceOptions.instance === undefined
+        ? null
+        : instanceOptions.scopeFactory(surface, instanceOptions.instance, template),
+    [surface, instanceOptions.instance, template, instanceOptions.scopeFactory],
   )
   if (
     !context ||
@@ -633,13 +635,12 @@ export function NativeRegion({
   surface,
   lang,
   mode,
-  instance,
+  ...instanceOptions
 }: {
   children: JSX.Element
   surface: string
   lang: CmsLang
   mode: CmsMode
-  instance?: string
-}): JSX.Element {
-  return useNativeSurface(children, surface, lang, mode, instance)
+} & NativeInstanceOptions): JSX.Element {
+  return useNativeSurface(children, surface, lang, mode, instanceOptions)
 }

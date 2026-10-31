@@ -19,4 +19,5 @@ export const CMS_OWNER_SCENARIOS = [
   'history-review',
   'resource-lifecycle',
   'upload-place-publish',
+  'appearance',
 ]

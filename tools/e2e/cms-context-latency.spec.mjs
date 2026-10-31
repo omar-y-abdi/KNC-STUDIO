@@ -1,9 +1,51 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 1000 } })
+
+// What a stylesheet declares: each block with its declarations in order and the at-rules and
+// selectors around it, as a sorted list. getCss groups rules under one at-rule and keeps a leading
+// `& ` that readCanvasCss removes, and canvasRules leaves out empty component rules, so an empty
+// rule outside any other rule is no leaf here. Equal lists prove the same declarations in the same
+// context, in any order; they do not prove equal bytes or an equal cascade between rules of equal
+// specificity.
+function styleLeaves(source) {
+  const leaves = []
+  const enclosing = []
+  const declarationsOf = (node) =>
+    node.block.children
+      .toArray()
+      .filter((child) => child.type !== 'Rule' && child.type !== 'Atrule')
+      .map((child) => generate(child))
+  walk(parse(source), {
+    enter(node) {
+      if (node.type === 'Atrule') {
+        const head = `@${node.name} ${node.prelude ? generate(node.prelude) : ''}`.trim()
+        if (node.block) {
+          const declarations = declarationsOf(node)
+          if (declarations.length > 0)
+            leaves.push(JSON.stringify([...enclosing, head, declarations]))
+          enclosing.push(head)
+        } else leaves.push(JSON.stringify([...enclosing, head]))
+      }
+      if (node.type === 'Rule') {
+        const selector = generate(node.prelude).replace(/^& /, '')
+        const nested = enclosing.some((head) => !head.startsWith('@'))
+        if (nested || !node.block.children.isEmpty)
+          leaves.push(JSON.stringify([...enclosing, selector, declarationsOf(node)]))
+        enclosing.push(selector)
+      }
+    },
+    leave(node) {
+      if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) enclosing.pop()
+    },
+  })
+  return leaves.sort()
+}
+
 test('cms-context-latency', async ({ page, context, evidenceDir }) => {
   await page.clock.install()
   const base = harnessOrigin
@@ -35,13 +77,20 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
       elapsedMs: Date.now() - start,
       ...(await page.evaluate(() => globalThis.cmsCost)),
     }
-    const cssMatches = await page.evaluate(async () => {
+    const css = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
       const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
-      return readCanvasCss(editor) === editor.getCss({ keepUnusedStyles: true })
+      return {
+        canvas: readCanvasCss(editor),
+        exported: editor.getCss({ keepUnusedStyles: true }),
+      }
     })
-    assert.equal(cssMatches, true, `${label}: complete exported CSS must remain byte-identical`)
+    assert.deepEqual(
+      styleLeaves(css.canvas),
+      styleLeaves(css.exported),
+      `${label}: canvas CSS must match the complete export rule for rule, apart from empty top-level rules and rule order`,
+    )
     results.push(result)
     return result
   }
@@ -157,7 +206,8 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
     })
     const patchContract = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
-      const { updateNativeCanvas } = await import('/src/admin/cms/updateCanvas.ts')
+      const { updateNativeCanvas, updateSiteHeader } =
+        await import('/src/admin/cms/updateCanvas.ts')
       const host = globalThis.document.createElement('div')
       globalThis.document.body.append(host)
       const isolated = cmsGrapes.init({
@@ -195,7 +245,7 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
           next.replace('<p ', '<section ').replace('</p>', '</section>'),
           css,
         )
-        return {
+        const native = {
           reused,
           roundtrip,
           policyChange,
@@ -208,6 +258,47 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
           removedTitle: !content.includes('title="old"'),
           classes: copy.getClasses(),
           css: isolated.getCss({ keepUnusedStyles: true }),
+        }
+        const header =
+          '<header id="cms-site-header"><a href="/">Brand</a><nav id="cms-site-menu"><a href="/context-test">Old label</a></nav></header>'
+        isolated.setComponents(`${header}<div id="cms-site-content"><h1>Keep body</h1></div>`)
+        const headerModel = isolated.Components.getById('cms-site-header')
+        const linkModel = headerModel.components().at(1).components().at(0)
+        const bodyModel = isolated.Components.getById('cms-site-content')
+        isolated.select(bodyModel.components().at(0))
+        const selected = isolated.getSelected()
+        const styles = isolated.getCss({ keepUnusedStyles: true })
+        const undoCount = isolated.UndoManager.getStack().length
+        let creates = 0
+        isolated.on('component:create', () => creates++)
+        const headerReused = updateSiteHeader(
+          isolated,
+          header.replace('Old label', 'New &amp; &lt;literal&gt;'),
+        )
+        const updated = isolated.getHtml({ cleanId: false })
+        // A late mismatch must not apply earlier text changes from the same plan.
+        const headerStructural = updateSiteHeader(
+          isolated,
+          header
+            .replace('Brand', 'Must not apply')
+            .replace('</nav>', '<a href="/new">New</a></nav>'),
+        )
+        return {
+          ...native,
+          header: {
+            reused: headerReused,
+            creates,
+            sameHeader: headerModel === isolated.Components.getById('cms-site-header'),
+            sameLink: linkModel === headerModel.components().at(1).components().at(0),
+            sameBody: bodyModel === isolated.Components.getById('cms-site-content'),
+            sameSelection:
+              selected === bodyModel.components().at(0) && selected === isolated.getSelected(),
+            sameCss: styles === isolated.getCss({ keepUnusedStyles: true }),
+            sameUndo: undoCount === isolated.UndoManager.getStack().length,
+            escaped: updated.includes('New &amp; &lt;literal&gt;'),
+            structural: headerStructural,
+            unchangedOnFallback: updated === isolated.getHtml({ cleanId: false }),
+          },
         }
       } finally {
         isolated.destroy()
@@ -225,6 +316,19 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
     assert.equal(patchContract.text, true)
     assert.equal(patchContract.removedTitle, true)
     assert.deepEqual(patchContract.classes, ['new'])
+    assert.deepEqual(patchContract.header, {
+      reused: true,
+      creates: 0,
+      sameHeader: true,
+      sameLink: true,
+      sameBody: true,
+      sameSelection: true,
+      sameCss: true,
+      sameUndo: true,
+      escaped: true,
+      structural: false,
+      unchangedOnFallback: true,
+    })
     assert.match(patchContract.css, /unused/)
     assert.match(patchContract.css, /max-width:\s*600px/)
     await measure('unchanged-view', () => button('SV').click())
@@ -291,17 +395,45 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
         'Independent page contexts must reuse unchanged compiled styles',
       )
     }
+    await page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const editor = cmsGrapes.editors.at(-1)
+      globalThis.metadataBefore = {
+        models: editor.getWrapper().find('*'),
+        body: editor.Components.getById('cms-site-content').toHTML(),
+      }
+    })
     const metadata = await measure('authored:metadata', () =>
       page
         .locator('.cms-page-meta')
         .getByLabel('Namn', { exact: true })
         .fill('New navigation label'),
     )
-    assert.equal(metadata.creates, 0)
+    assert.equal(metadata.creates, 0, 'A navigation label edit must reuse every canvas component')
     assert.equal(
       metadata.cssParses,
       0,
-      'Independent page metadata does not change its authored canvas',
+      'A navigation label edit must not recompile the authored page CSS',
+    )
+    await frame
+      .locator('#cms-site-menu')
+      .getByRole('link', { name: 'New navigation label', exact: true })
+      .waitFor()
+    assert.equal(
+      await page.evaluate(async () => {
+        const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+        const editor = cmsGrapes.editors.at(-1)
+        const models = editor.getWrapper().find('*')
+        return (
+          models.length === globalThis.metadataBefore.models.length &&
+          models.every((model, i) => model === globalThis.metadataBefore.models[i]) &&
+          editor.Components.getById('cms-site-content').toHTML() ===
+            globalThis.metadataBefore.body &&
+          editor.Components.getById('cms-site-header').get('selectable') === false
+        )
+      }),
+      true,
+      'The live label changes without replacing models, changing the body or unlocking the header',
     )
     await writeFile(`${out}/context-cost.json`, JSON.stringify(results, null, 2))
     for (const result of results) {

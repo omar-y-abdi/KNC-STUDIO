@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { gunzipSync } from 'node:zlib'
 import { emptyDocument } from '../../shared/cms.ts'
+import { createSitePage } from '../../shared/site-page.ts'
 import { nativeBackend } from './cms-backend.mjs'
 import { attachTabState } from './cms-tab-state.mjs'
 import { expect, test } from './fixtures.mjs'
@@ -86,14 +87,17 @@ const editCanvas = (page, text) =>
 
 // From here the page clock moves only when the test resumes it, so the editor's 180 ms and the
 // backup's 500 ms timers cannot fire: only the lifecycle handlers can save the edit.
-const pauseClock = async (page) =>
-  page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+const pauseClock = async (page) => {
+  await page
+    .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+    .waitFor({ state: 'attached', timeout: 90000 })
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+}
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
-// The production capture holds legacy legal pages and marquee zoom, which the studio adopts on load
-// into an unpublished draft (cms-marquee-zoom.spec.mjs); "Fortsätt här" waits for a clean draft.
-// Publishing the adopted head first makes the next tab start clean, as after a real rollout.
+// These lifecycle cases begin from an explicitly published head so later assertions isolate
+// the owner edit or recovered draft from the initial migration.
 const publishAdopted = async (page) => {
   await page.getByRole('button', { name: 'Publicera', exact: true }).click()
   await expect(page.locator('.cms-status')).toHaveText(/^Publicerad/, { timeout: 45000 })
@@ -259,6 +263,87 @@ test('cms-lifecycle an immediate Studio exit preserves a trusted pending canvas 
   await page.frameLocator('.gjs-frame').first().getByText(text, { exact: true }).first().waitFor()
 })
 
+test('cms-lifecycle normalization is publishable but only owner edits prompt and become offers', async ({
+  page,
+  context,
+}) => {
+  const document = await productionDocument()
+  const legacy = createSitePage({
+    id: '10000000-0000-4000-8000-000000000099',
+    path: '/pristine',
+    name: { sv: 'Äldre sida', en: 'Legacy page' },
+  })
+  legacy.layout = 'independent'
+  document.presentation.pages.push(legacy)
+  await nativeBackend(context, document)
+  await page.clock.install()
+  await openStudio(page)
+  await expect(page.locator('.cms-status')).toHaveText('Opublicerade ändringar')
+  await expect(page.getByRole('button', { name: 'Publicera', exact: true })).toBeEnabled()
+  await expect(page.locator('.cms-revert')).toBeDisabled()
+  // Let the backup debounce elapse, then freeze it for the immediate owner edit below.
+  await pauseClock(page)
+  const asksToLeave = (tab) =>
+    tab.evaluate(() => {
+      const leaving = new Event('beforeunload', { cancelable: true })
+      globalThis.dispatchEvent(leaving)
+      return leaving.defaultPrevented
+    })
+  assert.equal(await asksToLeave(page), false)
+  assert.deepEqual(await storedDrafts(page), [])
+  await page.close()
+  await context.clock.resume()
+
+  const edited = await context.newPage()
+  await openStudio(edited)
+  await expect(edited.getByRole('button', { name: 'Visa utkast', exact: true })).toHaveCount(0)
+  await expect(edited.getByText(/Ett lokalt utkast från .* återställdes\./)).toHaveCount(0)
+  await pauseClock(edited)
+  const name = 'Äkta ägarändring'
+  await nameField(edited).fill(name)
+  await expect(edited.locator('.cms-revert')).toBeEnabled()
+  assert.equal(await asksToLeave(edited), true)
+  // Asking to leave saves nothing; the edit reaches IndexedDB through the backup's 500 ms debounce.
+  await edited.clock.runFor(600)
+  await expect.poll(() => storedDrafts(edited)).toEqual([name])
+  await edited.close()
+  await context.clock.resume()
+
+  // This head still needs normalization; its own migration must not block recovery.
+  const recovery = await context.newPage()
+  await openStudio(recovery)
+  await recovery.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  const offers = recovery.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
+  const blocked = recovery.getByText(
+    'Publicera eller återställ ändringarna i den här fliken innan du fortsätter med ett annat utkast. Vill du behålla en kopia, välj Export och sedan Återställ.',
+    { exact: true },
+  )
+  const resume = offers.getByRole('button', { name: 'Fortsätt här', exact: true })
+  await expect(offers.getByRole('listitem')).toHaveCount(1)
+  await expect(blocked).toHaveCount(0)
+  await expect(resume).toBeEnabled()
+  await expect(recovery.locator('.cms-mobile-revert')).toBeDisabled()
+  const closeBackup = () =>
+    recovery
+      .getByRole('dialog', { name: 'Utkast & backup', exact: true })
+      .getByRole('button', { name: 'Stäng panel', exact: true })
+      .click()
+  await closeBackup()
+  await nameField(recovery).fill('Ändring i den här fliken')
+  await recovery.getByRole('button', { name: /Utkast & backup/ }).click()
+  await expect(blocked).toBeVisible()
+  await expect(resume).toBeDisabled()
+  await expect(recovery.locator('.cms-mobile-revert')).toBeEnabled()
+  await closeBackup()
+  await recovery.locator('.cms-revert').click()
+  await expect(recovery.locator('.cms-status')).toHaveText('Opublicerade ändringar')
+  await expect(recovery.locator('.cms-revert')).toBeDisabled()
+  await recovery.getByRole('button', { name: 'Visa utkast', exact: true }).click()
+  await expect(resume).toBeEnabled()
+  await resume.click()
+  await expect(nameField(recovery)).toHaveValue(name)
+})
+
 test('cms-lifecycle closed tabs keep their drafts until the owner acts', async ({ context }) => {
   await nativeBackend(context)
   // Publish the seeded site first, so every tab starts from a clean draft.
@@ -395,7 +480,6 @@ test('cms-lifecycle a canvas edit reaches IndexedDB when the tab is hidden, then
   await nativeBackend(context, await productionDocument())
   await page.clock.install()
   await openStudio(page)
-  await publishAdopted(page)
   await pauseClock(page)
   const text = 'Ändrad i canvas innan fliken doldes'
   await editCanvas(page, text)
@@ -708,21 +792,37 @@ test('cms-lifecycle a pending source upgrade cannot overwrite a recovered draft'
 test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publication left', async ({
   page,
   context,
-}) => {
+}, testInfo) => {
   const delay = { operation: 'publish', started: gate(), done: gate() }
   const initial = await productionDocument()
   initial.settings.business_name = 'Salongen'
   // A site has every settings key: the server changes a value during the request, never adds a key
   // (publication requires every key the server holds).
   initial.settings.business_legal_name = 'Salongen AB'
+  assert.equal(
+    initial.presentation.pages.some((item) => item.path === '/contact'),
+    false,
+  )
   const backend = await nativeBackend(context, initial, [], undefined, { delay })
   await openStudio(page)
+  // The stored Home is usable before optional capture adds Contact to the actual draft.
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).waitFor({
+    timeout: testInfo.timeout,
+  })
   await page.getByRole('button', { name: /Företag & SEO/ }).click()
   const name = page.getByLabel('Visningsnamn', { exact: true })
   await name.fill('Tillfälligt namn')
   const publish = page.getByRole('button', { name: 'Publicera', exact: true })
+  const publication = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname.endsWith('/functions/v1/cms-studio') &&
+      request.method() === 'POST' &&
+      request.postDataJSON()?.operation === 'publish',
+  )
   await publish.click()
   await delay.started.promise
+  const submitted = (await publication).postDataJSON().document
+  assert.equal(submitted.presentation.pages.filter((item) => item.path === '/contact').length, 1)
   await name.fill('Salongen')
   backend.document.settings.business_legal_name = 'Serverns AB'
   const source = '**/cms-public/source?preview=1'
@@ -734,6 +834,8 @@ test('cms-lifecycle a 409 merge keeps layouts stale that an edit during publicat
       { exact: true },
     )
     .waitFor({ timeout: 45000 })
+  await expect(page.getByLabel('Juridiskt namn', { exact: true })).toHaveValue('Serverns AB')
+  await expect(page.getByRole('button', { name: 'Kontakt', exact: true })).toHaveCount(1)
   await publish.click()
   await page
     .getByText(/^Inget publicerades: startsidan och Om oss kunde inte uppdateras/)

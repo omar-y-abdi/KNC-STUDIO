@@ -3,13 +3,10 @@
 
 export type { AdminStyles as AdminStylesBundle } from '../adminStyles'
 export type {
-  AboutKey,
   AdminBarber,
   AdminBarberId,
   AdminBooking,
   AdminService,
-  GalleryImage,
-  GalleryKind,
   RecurringBreak,
   SlotBlock,
   TimeOff,

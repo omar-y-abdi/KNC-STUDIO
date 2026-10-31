@@ -24,28 +24,28 @@ beforeEach(() => {
 })
 
 describe('site setting writes', () => {
-  it('returns database-normalized values to keep the editor consistent with persisted CMS data', async () => {
+  it('returns the persisted cancellation value after database normalization', async () => {
     single.mockResolvedValue({
-      data: { key: 'business_postal_code', value: '411 34' },
+      data: { key: 'cancellation_policy_hours', value: '48' },
       error: null,
     })
 
-    await expect(saveSiteSetting('business_postal_code', '41134')).resolves.toEqual({
+    await expect(saveSiteSetting('cancellation_policy_hours', ' 48 ')).resolves.toEqual({
       ok: true,
-      value: '411 34',
+      value: '48',
     })
     expect(from).toHaveBeenCalledWith('site_settings')
     expect(upsert).toHaveBeenCalledWith(
-      { key: 'business_postal_code', value: '41134' },
+      { key: 'cancellation_policy_hours', value: ' 48 ' },
       { onConflict: 'key' },
     )
     expect(select).toHaveBeenCalledWith('key,value')
   })
 
   it('fails closed when returned setting shape is malformed', async () => {
-    single.mockResolvedValue({ data: { key: 'business_postal_code' }, error: null })
+    single.mockResolvedValue({ data: { key: 'cancellation_policy_hours' }, error: null })
 
-    await expect(saveSiteSetting('business_postal_code', '41134')).resolves.toMatchObject({
+    await expect(saveSiteSetting('cancellation_policy_hours', '48')).resolves.toMatchObject({
       ok: false,
       error: { kind: 'malformed' },
     })
@@ -57,7 +57,7 @@ describe('site setting writes', () => {
       error: null,
     })
 
-    await expect(saveSiteSetting('business_postal_code', '41134')).resolves.toMatchObject({
+    await expect(saveSiteSetting('cancellation_policy_hours', '48')).resolves.toMatchObject({
       ok: false,
       error: { kind: 'malformed' },
     })

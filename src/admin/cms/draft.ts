@@ -145,7 +145,7 @@ export class CmsDraft {
   }
 
   revert(): void {
-    if (!this.dirty) return
+    if (!this.hasEdits) return
     this.undoStack.push(this.document)
     // Reset author edits to the prepared server snapshot. The raw publication stays the base,
     // and automatic source upgrades already migrated the retained history when they arrived.
@@ -167,10 +167,16 @@ export class CmsDraft {
     return request
   }
 
-  acknowledge(document: CmsDocument, revision: number, fingerprint: string): void {
-    this.document = mergeCmsDocuments(this.submitted ?? document, this.document, document).document
+  acknowledge(
+    document: CmsDocument,
+    revision: number,
+    fingerprint: string,
+    adopted: CmsDocument = document,
+  ): void {
+    this.document = mergeCmsDocuments(this.submitted ?? adopted, this.document, adopted).document
     this.base = structuredClone(document)
-    this.editingBase = this.base
+    // Normalize the acknowledged server independently of any newer local edits in the merge.
+    this.editingBase = structuredClone(adopted)
     this.editingBaseSource = this.base
     this.revision = revision
     this.fingerprint = fingerprint

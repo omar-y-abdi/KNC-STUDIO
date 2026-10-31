@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import {
-  buildEmailMessage,
   loadEmailBusiness,
   loadEmailTemplate,
+  prepareEmail,
   sendViaResend,
 } from '../_shared/email.ts'
 import { corsHeaders, corsJson as json, parse } from '../_shared/http.ts'
@@ -71,18 +71,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const copy = await loadEmailTemplate(service, 'auth_email_change', lang)
     const business = await loadEmailBusiness(service)
     const link = `https://bladeblendstudio.se/auth/confirm?token_hash=${encodeURIComponent(generated.data.properties.hashed_token)}&type=email_change`
-    const message = buildEmailMessage({
-      to: newEmail,
-      lang,
-      copy,
-      variables: { new_email: newEmail },
-      ctaHref: link,
-      business,
-    })
+    const message = prepareEmail(
+      'auth_email_change',
+      { to: newEmail, lang, copy, variables: { new_email: newEmail }, ctaHref: link, business },
+      null,
+    )
     await sendViaResend(
       message,
       resendKey,
       `auth-email-change/${generated.data.properties.hashed_token.slice(0, 48)}`,
+      service,
     )
     return json({ ok: true })
   } catch (error) {

@@ -1,11 +1,13 @@
-import { generate, parse, walk } from 'css-tree'
+import { generate, parse, walk, type StyleSheet } from 'css-tree'
 import type { CmsMode } from './cms.ts'
 
 /** Captured legal styles use OS color-scheme queries. A CMS variant has an explicit
  * selected mode, which must not change with the editor's or visitor's OS setting. */
-export function modeCss(css: string, mode: CmsMode): string {
-  if (!css.includes('prefers-color-scheme')) return css
-  const tree = parse(css)
+export function modeCss(css: string, mode: CmsMode): string
+export function modeCss(css: StyleSheet, mode: CmsMode): StyleSheet
+export function modeCss(css: string | StyleSheet, mode: CmsMode): string | StyleSheet {
+  if (typeof css === 'string' && !css.includes('prefers-color-scheme')) return css
+  const tree = typeof css === 'string' ? (parse(css) as StyleSheet) : css
   walk(tree, {
     visit: 'Atrule',
     enter(node, item, list) {
@@ -16,5 +18,5 @@ export function modeCss(css: string, mode: CmsMode): string {
       list.remove(item)
     },
   })
-  return generate(tree)
+  return typeof css === 'string' ? generate(tree) : tree
 }

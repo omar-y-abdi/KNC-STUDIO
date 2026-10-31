@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { emptyDocument, type CmsPage } from '../../shared/cms'
+import { INFORMATION_PAGE_PATHS, emptyDocument, type CmsPage } from '../../shared/cms'
 import { resolveBusinessSettings } from '../../src/site/business'
 import {
   CMS_REVISION_ATTRIBUTE,
@@ -55,6 +55,11 @@ const offers: CmsPage = {
   name: { sv: 'Erbjudanden', en: 'Offers' },
   title: { sv: 'Erbjudanden', en: 'Offers' },
   content: { sv: variant('Erbjudanden'), en: variant('Offers') },
+}
+const contact: CmsPage = {
+  ...offers,
+  path: '/contact',
+  content: { sv: variant('Kontakt'), en: variant('Contact') },
 }
 const presentationWith = (...pages: CmsPage[]) => ({ ...emptyDocument().presentation, pages })
 const publishedWith =
@@ -182,29 +187,29 @@ describe('requests that cannot be CMS pages', () => {
 })
 
 describe('CMS page reads that do not depend on each other', () => {
-  it('reads discovery while it looks up /terms in the CMS', async () => {
+  it.each([terms, contact])('reads discovery while it looks up $path in the CMS', async (page) => {
     const flight = createFlight()
-    const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS }, flight)
+    const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS })
     stubRpcs(
       {
-        public_cms_presentation: publishedWith(terms),
+        public_cms_presentation: publishedWith(page),
         public_business_discovery: () => Response.json(DISCOVERY),
       },
       flight,
     )
     const response = await worker.fetch(
-      new Request(`${SITE}/terms`),
+      new Request(`${SITE}${page.path}`),
       createEnv(files.assets),
       noPublicContent,
     )
     expect(response.status).toBe(200)
-    expect(await response.text()).toContain('<h1>Bokningsvillkor</h1>')
+    expect(await response.text()).toContain(page.content.sv.html)
     expect(flight.peak).toBeGreaterThanOrEqual(2)
   })
 
   it('reads the shell and discovery together once the lookup found a created page', async () => {
     const flight = createFlight()
-    const files = createAssets({ '/index.html': SHELL }, flight)
+    const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS }, flight)
     stubRpcs(
       {
         public_cms_presentation: publishedWith(offers),
@@ -250,6 +255,26 @@ describe('CMS page reads that do not depend on each other', () => {
     expect(response.status).toBe(200)
     expect(calls).toEqual(['public_cms_presentation'])
     expect(files.requested.filter((path) => path in LEGAL_SHEETS)).toEqual([])
+  })
+
+  it('reads the created-page base sheet for GET and never for a HEAD request', async () => {
+    const read = async (method: string): Promise<string[]> => {
+      const files = createAssets({ '/index.html': SHELL, ...LEGAL_SHEETS })
+      stubRpcs({
+        public_cms_presentation: publishedWith(offers),
+        public_business_discovery: () => Response.json(DISCOVERY),
+      })
+      const response = await worker.fetch(
+        new Request(`${SITE}/offers`, { method }),
+        createEnv(files.assets),
+        noPublicContent,
+      )
+      expect(response.status).toBe(200)
+      return files.requested.filter((path) => path in LEGAL_SHEETS)
+    }
+    // HEAD first, so no earlier GET can have left anything for it to reuse.
+    expect(await read('HEAD')).toEqual([])
+    expect(await read('GET')).toEqual(['/tokens.css'])
   })
 })
 
@@ -556,7 +581,7 @@ describe('static asset layer', () => {
     expect(everywhere.some((line) => line.startsWith('Cache-Control'))).toBe(false)
   })
 
-  it('serves info.css from the asset layer and still runs the Worker for the legal pages', () => {
+  it('serves the information base sheets from assets and keeps information pages on the Worker', () => {
     const source = read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, '')
     const config = JSON.parse(source.replace(/,\s*([}\]])/g, '$1')) as {
       readonly assets: { readonly run_worker_first: readonly string[] }
@@ -564,10 +589,11 @@ describe('static asset layer', () => {
     const runFirst = config.assets.run_worker_first
     expect(runFirst[0]).toBe('/*')
     expect(runFirst).toContain('!/info.css')
+    expect(runFirst).toContain('!/tokens.css')
     expect(existsSync(new URL('../../public/info.css', import.meta.url))).toBe(true)
-    for (const legal of ['terms', 'privacy']) {
-      expect(runFirst).not.toContain(`!/${legal}`)
-      expect(runFirst).not.toContain(`!/${legal}.html`)
+    for (const path of INFORMATION_PAGE_PATHS) {
+      expect(runFirst).not.toContain(`!${path}`)
+      expect(runFirst).not.toContain(`!${path}.html`)
     }
   })
 })

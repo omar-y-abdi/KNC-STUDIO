@@ -1,17 +1,17 @@
 // Admin integration — the OWNER role (ADMIN_SPEC §7). Signs the shared admin client in as the
 // seeded owner and drives the REAL admin adapters end to end:
 //   * manage barbers: create, edit, toggle active (and the new row is readable).
-//   * edit about_content (upsert a cell, read it back).
-//   * gallery: upload an image to Storage + insert its row, then delete (row + object) — proving the
-//     owner-only Storage write policy and the row<->object lifecycle.
+//   * reject direct content writes; publish through CMS while cancellation stays operational.
+//   * gallery: upload a CMS asset, publish and remove its placement, retaining registered bytes.
 //   * cancel ANY barber's booking via admin_cancel_booking.
 //   * available_slots reflects a schedule edit AND a time-off block (the public availability the
 //     booking flow consumes).
 //
 // Browser path: anon key + signInWithPassword, so RLS sees role='owner'. Mutations to the shared
-// seeded tables are restored after each test (and created barbers/gallery objects are cleaned up).
+// seeded tables are restored after each test. Registered CMS media stays in the library.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { getAdminClient } from '../../src/admin/adminClient'
 import {
   createBarber,
@@ -19,13 +19,13 @@ import {
   setBarberActive,
   updateBarber,
 } from '../../src/admin/adapters/barbersAdmin'
-import { listAbout, saveAbout } from '../../src/admin/adapters/aboutAdmin'
-import { deleteImage, listGallery, uploadImage } from '../../src/admin/adapters/galleryAdmin'
 import { removeBarberPhoto, uploadBarberPhoto } from '../../src/admin/adapters/barberPhotoAdmin'
 import { availableSlotsFor, readWeek, saveWeek } from '../../src/admin/adapters/schedulesAdmin'
 import { addTimeOff } from '../../src/admin/adapters/timeOffAdmin'
 import { cancelBooking } from '../../src/admin/adapters/bookingsAdmin'
+import { saveSiteSetting } from '../../src/admin/adapters/siteAdmin'
 import { setDayHours } from '../../src/admin/time'
+import { validateDocument, type CmsDocument, type CmsState } from '../../shared/cms'
 import { Client } from 'pg'
 import {
   OTHER_BARBER_ID,
@@ -47,6 +47,36 @@ function pngFile(name: string): File {
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return new File([bytes], name, { type: 'image/png' })
+}
+
+async function readCmsState(): Promise<CmsState> {
+  const result = await getAdminClient().functions.invoke('cms-studio', {
+    body: { operation: 'state' },
+  })
+  expect(result.error).toBeNull()
+  const value = result.data as CmsState
+  validateDocument(value.document)
+  return value
+}
+
+async function publishCms(base: CmsState, document: CmsDocument): Promise<void> {
+  const result = await getAdminClient().functions.invoke('cms-studio', {
+    body: {
+      operation: 'publish',
+      baseRevision: base.revision,
+      baseFingerprint: base.fingerprint,
+      requestId: crypto.randomUUID(),
+      document,
+    },
+  })
+  const detail =
+    result.error instanceof FunctionsHttpError
+      ? JSON.stringify({
+          status: result.error.context.status,
+          body: await result.error.context.clone().json(),
+        })
+      : result.error?.message
+  expect(result.error, detail).toBeNull()
 }
 
 /** Delete a barber row directly (superuser) — for cleaning up a created test barber. */
@@ -134,44 +164,173 @@ describe.skipIf(!adminBackendReady())('admin adapters — owner role (integratio
     expect(found?.active).toBe(false)
   })
 
-  it('edits about_content (upsert + read back)', async () => {
-    const marker = `IT intro ${Date.now()}`
-    const saved = await saveAbout('intro', 'sv', marker)
-    expect(saved.ok).toBe(true)
+  it('requires CMS publication for content and preserves operational cancellation writes', async () => {
+    const marker = `IT CMS authority ${Date.now()}`
+    const client = getAdminClient()
+    const base = await readCmsState()
+    const cancellation = await client
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'cancellation_policy_hours')
+      .maybeSingle()
+    expect(cancellation.error).toBeNull()
+    try {
+      const siteWrite = await client
+        .from('site_content')
+        .upsert({ key: 'kicker', lang: 'sv', value: 'Bypass' })
+      expect(siteWrite.error?.code).toBe('42501')
+      const aboutWrite = await client
+        .from('about_content')
+        .upsert({ key: 'intro', lang: 'sv', value: 'Bypass' })
+      expect(aboutWrite.error?.code).toBe('42501')
+      const emailWrite = await client.from('email_templates').upsert({
+        template: 'customer_confirmation',
+        lang: 'sv',
+        subject: 'Bypass',
+        preheader: 'Preheader',
+        title: 'Title',
+        intro: 'Intro',
+        note: 'Note',
+        cta_label: 'Open',
+      })
+      expect(emailWrite.error?.code).toBe('42501')
+      const settingWrite = await client
+        .from('site_settings')
+        .upsert({ key: 'business_name', value: 'Bypass' })
+      expect(settingWrite.error?.code).toBe('42501')
+      const denied = await readCmsState()
+      expect(denied.fingerprint).toBe(base.fingerprint)
+      expect(denied.revision).toBe(base.revision)
 
-    const all = await listAbout()
-    expect(all.ok).toBe(true)
-    if (!all.ok) return
-    const cell = all.value.find((r) => r.key === 'intro' && r.lang === 'sv')
-    expect(cell?.value).toBe(marker)
+      await expect(saveSiteSetting('cancellation_policy_hours', '48')).resolves.toEqual({
+        ok: true,
+        value: '48',
+      })
+      const operational = await readCmsState()
+      expect(operational.fingerprint).toBe(base.fingerprint)
+      expect(operational.revision).toBe(base.revision)
+      expect(operational.document.settings).not.toHaveProperty('cancellation_policy_hours')
+      const document = structuredClone(operational.document)
+      // Edit an existing override: a newly added key becomes required by complete-document
+      // validation and cannot be removed by publishing the original document during cleanup.
+      expect(document.site.confirmSent?.sv).toBeTypeOf('string')
+      document.site.confirmSent = { ...document.site.confirmSent, sv: marker }
+      document.about.intro = { ...document.about.intro, sv: marker }
+      document.settings.business_name = marker
+      document.emails = document.emails.map((email) =>
+        email.template === 'customer_confirmation' && email.lang === 'sv'
+          ? { ...email, subject: marker }
+          : email,
+      )
+      await publishCms(operational, document)
+      const published = await readCmsState()
+      expect(published.revision).toBe(base.revision + 1)
+      const site = await client
+        .from('site_content')
+        .select('value')
+        .eq('key', 'confirmSent')
+        .eq('lang', 'sv')
+        .single()
+      const about = await client
+        .from('about_content')
+        .select('value')
+        .eq('key', 'intro')
+        .eq('lang', 'sv')
+        .single()
+      const email = await client
+        .from('email_templates')
+        .select('subject')
+        .eq('template', 'customer_confirmation')
+        .eq('lang', 'sv')
+        .single()
+      const settings = await client
+        .from('site_settings')
+        .select('key,value')
+        .in('key', ['business_name', 'cancellation_policy_hours'])
+      expect([site.error, about.error, email.error, settings.error]).toEqual([
+        null,
+        null,
+        null,
+        null,
+      ])
+      expect(site.data?.value).toBe(marker)
+      expect(about.data?.value).toBe(marker)
+      expect(email.data?.subject).toBe(marker)
+      expect(new Map(settings.data?.map((row) => [row.key, row.value]))).toEqual(
+        new Map([
+          ['business_name', marker],
+          ['cancellation_policy_hours', '48'],
+        ]),
+      )
+    } finally {
+      const latest = await readCmsState()
+      if (latest.fingerprint !== base.fingerprint) {
+        await publishCms(latest, base.document)
+        expect((await readCmsState()).fingerprint).toBe(base.fingerprint)
+      }
+      if (cancellation.data) {
+        const restored = await saveSiteSetting('cancellation_policy_hours', cancellation.data.value)
+        expect(restored.ok).toBe(true)
+      } else {
+        const removed = await client
+          .from('site_settings')
+          .delete()
+          .eq('key', 'cancellation_policy_hours')
+        expect(removed.error).toBeNull()
+      }
+    }
   })
 
-  it('uploads and removes a gallery placement while retaining CMS media bytes', async () => {
-    const alt = `IT salon ${Date.now()}`
-    const uploaded = await uploadImage('salon', pngFile('it.png'), alt, 0)
-    expect(uploaded.ok).toBe(true)
-    if (!uploaded.ok) return
-    expect(uploaded.value.kind).toBe('salon')
-    expect(uploaded.value.url).toContain('/storage/v1/object/public/gallery/')
+  it('uploads and removes a gallery placement through CMS while retaining media bytes', async () => {
+    const form = new FormData()
+    form.set('kind', 'cms_asset')
+    form.set('purpose', 'salon')
+    form.set('file', pngFile('it.png'))
+    const uploadedResponse = await getAdminClient().functions.invoke('upload-image', { body: form })
+    expect(uploadedResponse.error).toBeNull()
+    const uploaded = uploadedResponse.data as {
+      asset: { id: string; bucket: 'gallery'; path: string }
+    }
+    expect(uploaded.asset.bucket).toBe('gallery')
+    expect(uploaded.asset.path).toMatch(/^salon\/[0-9a-f-]+\.webp$/)
+    const url = getAdminClient()
+      .storage.from(uploaded.asset.bucket)
+      .getPublicUrl(uploaded.asset.path).data.publicUrl
 
     // The public URL actually serves the object (public-read bucket).
-    const head = await fetch(uploaded.value.url, { method: 'GET' })
+    const head = await fetch(url)
     expect(head.ok).toBe(true)
 
-    // It appears in the listing.
-    const listed = await listGallery('salon')
-    expect(listed.ok).toBe(true)
-    if (!listed.ok) return
-    expect(listed.value.some((i) => i.id === uploaded.value.id)).toBe(true)
-
-    // Delete removes the gallery placement; CMS media bytes stay in the immutable asset registry.
-    const removed = await deleteImage(uploaded.value)
-    expect(removed.ok).toBe(true)
-    const after = await listGallery('salon')
-    expect(after.ok).toBe(true)
-    if (!after.ok) return
-    expect(after.value.some((i) => i.id === uploaded.value.id)).toBe(false)
-    const retained = await fetch(uploaded.value.url, { method: 'GET' })
+    const galleryIds = async (): Promise<readonly string[]> => {
+      const listed = await getAdminClient().from('gallery_images').select('id').eq('kind', 'salon')
+      expect(listed.error).toBeNull()
+      return (listed.data ?? []).map((row) => row.id)
+    }
+    const id = crypto.randomUUID()
+    const base = await readCmsState()
+    expect(base.assets.some((asset) => asset.id === uploaded.asset.id)).toBe(true)
+    expect(await galleryIds()).not.toContain(id)
+    const document = structuredClone(base.document)
+    document.gallery.push({
+      id,
+      kind: 'salon',
+      storage_path: uploaded.asset.path,
+      alt: 'IT salon',
+      sort_order: document.gallery.length,
+    })
+    try {
+      await publishCms(base, document)
+      expect(await galleryIds()).toContain(id)
+    } finally {
+      const latest = await readCmsState()
+      if (latest.document.gallery.some((image) => image.id === id)) {
+        const cleaned = structuredClone(latest.document)
+        cleaned.gallery = cleaned.gallery.filter((image) => image.id !== id)
+        await publishCms(latest, cleaned)
+      }
+    }
+    expect(await galleryIds()).not.toContain(id)
+    const retained = await fetch(url)
     expect(retained.ok).toBe(true)
   })
 
