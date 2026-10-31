@@ -2201,7 +2201,7 @@ async function verifyAdminSession(page, scenario) {
       const hours = page.getByLabel('Avbokningsfrist (timmar)', { exact: true })
       const save = page
         .getByRole('form', { name: 'Avbokningsfrist', exact: true })
-        .getByRole('button', { name: 'Spara', exact: true })
+        .getByRole('button', { name: /^Spara(?:r …)?$/ })
       await expect(save).toBeEnabled()
       // The retained Settings form serializes its own saves. Seed a real in-flight operation on
       // that shared resource, then queue the owner's next intent through the actual form.
