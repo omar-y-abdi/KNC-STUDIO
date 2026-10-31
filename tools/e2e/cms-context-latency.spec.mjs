@@ -1,9 +1,51 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { generate, parse, walk } from 'css-tree'
 import { nativeBackend } from './cms-backend.mjs'
 import { test } from './fixtures.mjs'
 import { harnessOrigin } from './origins.mjs'
 test.use({ viewport: { width: 1440, height: 1000 } })
+
+// What a stylesheet declares: each block with its declarations in order and the at-rules and
+// selectors around it, as a sorted list. getCss groups rules under one at-rule and keeps a leading
+// `& ` that readCanvasCss removes, and canvasRules leaves out empty component rules, so an empty
+// rule outside any other rule is no leaf here. Equal lists prove the same declarations in the same
+// context, in any order; they do not prove equal bytes or an equal cascade between rules of equal
+// specificity.
+function styleLeaves(source) {
+  const leaves = []
+  const enclosing = []
+  const declarationsOf = (node) =>
+    node.block.children
+      .toArray()
+      .filter((child) => child.type !== 'Rule' && child.type !== 'Atrule')
+      .map((child) => generate(child))
+  walk(parse(source), {
+    enter(node) {
+      if (node.type === 'Atrule') {
+        const head = `@${node.name} ${node.prelude ? generate(node.prelude) : ''}`.trim()
+        if (node.block) {
+          const declarations = declarationsOf(node)
+          if (declarations.length > 0)
+            leaves.push(JSON.stringify([...enclosing, head, declarations]))
+          enclosing.push(head)
+        } else leaves.push(JSON.stringify([...enclosing, head]))
+      }
+      if (node.type === 'Rule') {
+        const selector = generate(node.prelude).replace(/^& /, '')
+        const nested = enclosing.some((head) => !head.startsWith('@'))
+        if (nested || !node.block.children.isEmpty)
+          leaves.push(JSON.stringify([...enclosing, selector, declarationsOf(node)]))
+        enclosing.push(selector)
+      }
+    },
+    leave(node) {
+      if (node.type === 'Rule' || (node.type === 'Atrule' && node.block)) enclosing.pop()
+    },
+  })
+  return leaves.sort()
+}
+
 test('cms-context-latency', async ({ page, context, evidenceDir }) => {
   await page.clock.install()
   const base = harnessOrigin
@@ -35,13 +77,20 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
       elapsedMs: Date.now() - start,
       ...(await page.evaluate(() => globalThis.cmsCost)),
     }
-    const cssMatches = await page.evaluate(async () => {
+    const css = await page.evaluate(async () => {
       const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
       const { readCanvasCss } = await import('/src/admin/cms/nativeCanvas.ts')
       const editor = cmsGrapes.editors.at(-1)
-      return readCanvasCss(editor) === editor.getCss({ keepUnusedStyles: true })
+      return {
+        canvas: readCanvasCss(editor),
+        exported: editor.getCss({ keepUnusedStyles: true }),
+      }
     })
-    assert.equal(cssMatches, true, `${label}: complete exported CSS must remain byte-identical`)
+    assert.deepEqual(
+      styleLeaves(css.canvas),
+      styleLeaves(css.exported),
+      `${label}: canvas CSS must match the complete export rule for rule, apart from empty top-level rules and rule order`,
+    )
     results.push(result)
     return result
   }
