@@ -20,6 +20,7 @@ import {
   parseCanvasCss,
   parseCanvasSheet,
   readCanvasRuleCss,
+  renderCanvasCss,
 } from './nativeCanvas'
 
 interface CardGeometry {
@@ -306,7 +307,7 @@ function readSamples(
       instrument(tree, root.tree, root, [])
       if (sources.size === count && !root.normalized && root.model !== baseline?.target) continue
       restore.push({ element: root.element, css: root.element.textContent })
-      root.element.textContent = generate(tree)
+      root.element.textContent = renderCanvasCss(editor, generate(tree))
     }
     const samples: Sample[] = components.map((component) => {
       const element = component.getEl()
@@ -361,7 +362,7 @@ function readSamples(
         [sample.zoomSource, probes.branches[1]],
       ] as const)
         if (source) branches.push(branchProbe(source, sample.component, name(suffix)))
-    temporary.textContent = registration + branches.join('')
+    temporary.textContent = renderCanvasCss(editor, registration + branches.join(''))
     for (const sample of samples) {
       const element = sample.component.getEl()
       if (!element) throw new Error('Komponenten försvann under storleksmätningen.')
@@ -422,6 +423,10 @@ function projectedSource(source: Source, component: Component, property: string)
   const branch = owner.prelude.children.first
   if (branch?.type !== 'Selector') return false
   const suffix = branch.children.last
+  // Theme and language sync replaces a plain component declaration wherever its counterpart
+  // keeps it. A guard could land before that counterpart and lose to the stale value.
+  if (property === 'zoom' && branch.children.size === 1 && suffix?.type === 'IdSelector')
+    return ident.decode(suffix.name) === component.getId()
   if (suffix?.type !== 'PseudoClassSelector' || keyword(suffix.name) !== 'where') return false
   const targets = suffix.children?.first
   if (targets?.type !== 'SelectorList' || targets.children.size !== 1) return false
