@@ -117,6 +117,14 @@ export function connectHierarchicalResize(
       cardScale: view && cardWidth > 0 ? cardWidth / (view.innerWidth - 24) : 1,
     }
   }
+  /** GrapesJS refreshes its style target after a zero-delay debounce. A dimension control
+   * must not write the former selection's rule while that refresh is pending. */
+  const select = (): void => {
+    capture()
+    const component = editor.getSelected()
+    if (component && snapshot?.component === component)
+      editor.StyleManager.select(editor.StyleManager.getModelToStyle(component), { component })
+  }
   const remember = (): void => {
     cancelAnimationFrame(frame)
     frame = requestAnimationFrame(capture)
@@ -212,14 +220,16 @@ export function connectHierarchicalResize(
     editor.refresh()
     remember()
   }
-  editor.on('component:selected component:resize:start', capture)
+  editor.on('component:selected', select)
+  editor.on('component:resize:start', capture)
   editor.on('styleable:change', change)
   editor.on('undo redo canvas:frame:load', remember)
   editor.on('load canvas:frame:load', watchViewport)
   watchViewport()
   return () => {
     cancelAnimationFrame(frame)
-    editor.off('component:selected component:resize:start', capture)
+    editor.off('component:selected', select)
+    editor.off('component:resize:start', capture)
     editor.off('styleable:change', change)
     editor.off('undo redo canvas:frame:load', remember)
     editor.off('load canvas:frame:load', watchViewport)

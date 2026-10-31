@@ -9,6 +9,7 @@ import {
   type Block,
   type CssNode,
   type Declaration,
+  type ListItem,
   type Rule,
   type StyleSheet,
 } from 'css-tree'
@@ -442,6 +443,69 @@ function ensureContext(block: LayoutBlock, path: LayoutContext[]): Block {
   return ensureContext(next, remaining)
 }
 
+/** A guard nested in its component's own rule ties with that rule's declarations, so source
+ * order alone decides. A sync can deliver either side first, even in one edit: a declaration
+ * behind the guard replacing it moves directly ahead of that guard. Only rules under identical
+ * media conditions compare, so a move never changes when the declaration applies. */
+function keepGuardsLast(
+  tree: StyleSheet,
+  selectors: ReadonlySet<string>,
+  shrunk: Set<List<CssNode>>,
+): void {
+  const guards = new Map<string, { children: List<CssNode>; item: ListItem<CssNode> }>()
+  const visit = (block: LayoutBlock, scope: string): void => {
+    block.children.forEach((node) => {
+      if (node.type === 'Atrule') {
+        if (node.block && ident.decode(node.name).toLowerCase() === 'media')
+          visit(node.block, `${scope}${contextHeader(node)}{`)
+        return
+      }
+      if (node.type !== 'Rule') return
+      const selector = layoutSelector(node.prelude)
+      if (!selector || !selectors.has(selector)) return
+      const { children } = node.block
+      children.forEach((child, item) => {
+        if (child.type === 'Declaration') {
+          const guard = guards.get(`${scope}${selector}{${child.property}`)
+          if (!guard) return
+          children.remove(item)
+          shrunk.add(children)
+          guard.children.insertData(child, guard.item)
+          return
+        }
+        walk(child, {
+          visit: 'Rule',
+          enter(rule) {
+            if (anchoredSelector(rule.prelude) !== selector) return
+            rule.block.children.forEach((declaration) => {
+              if (declaration.type !== 'Declaration' || !isGeometry(declaration.property)) return
+              const key = `${scope}${selector}{${declaration.property}`
+              if (!guards.has(key)) guards.set(key, { children, item })
+            })
+          },
+        })
+      })
+    })
+  }
+  visit(tree, '')
+}
+
+/** Rules a sync emptied leave the sheet with their emptied conditions. Authored empty blocks
+ * and every layer stay: a layer holds its ordinal even with nothing inside it. */
+function dropEmptied(tree: StyleSheet, shrunk: Set<List<CssNode>>): void {
+  walk(tree, {
+    leave(node: CssNode, item: ListItem<CssNode>, list: List<CssNode>) {
+      if (node.type !== 'Rule' && node.type !== 'Atrule') return
+      if (node.type === 'Atrule' && ident.decode(node.name).toLowerCase() === 'layer') return
+      const children = node.block?.children
+      if (children?.isEmpty && shrunk.has(children) && item && list) {
+        list.remove(item)
+        shrunk.add(list)
+      }
+    },
+  })
+}
+
 /** Apply one delta to a theme or language. `source` only corrects clipping in the edited sheet. */
 function applyLayout(
   changes: LayoutChanges,
@@ -473,6 +537,7 @@ function applyLayout(
   if (!mapped.size) return other
   const tree = parse(other)
   if (tree.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+  const shrunk = new Set<List<CssNode>>()
   walk(tree, {
     visit: 'Rule',
     enter(rule) {
@@ -484,8 +549,10 @@ function applyLayout(
       )
       if (!changed || changed.location.path) return
       rule.block.children.forEach((declaration, item) => {
-        if (declaration.type === 'Declaration' && changed.values.has(declaration.property))
+        if (declaration.type === 'Declaration' && changed.values.has(declaration.property)) {
           rule.block.children.remove(item)
+          shrunk.add(rule.block.children)
+        }
       })
     },
   })
@@ -496,8 +563,10 @@ function applyLayout(
     const blocks = contextBlocks(tree, location.path, false)
     for (const block of blocks)
       block.children.forEach((declaration, item) => {
-        if (declaration.type === 'Declaration' && values.has(declaration.property))
+        if (declaration.type === 'Declaration' && values.has(declaration.property)) {
           block.children.remove(item)
+          shrunk.add(block.children)
+        }
       })
     const additions = [...values.values()].filter((value): value is CssNode => value !== null)
     if (additions.length) {
@@ -505,19 +574,25 @@ function applyLayout(
       for (const addition of additions) block.children.appendData(clone(addition))
     }
   }
-  let result = generate(tree)
   for (const { location, values } of mapped.values()) {
     if (location.path) continue
     const body = [...values.values()]
       .filter((v): v is CssNode => v !== null)
       .map((v) => generate(v))
       .join(';')
-    if (body)
-      result += location.media
+    if (!body) continue
+    const added = parse(
+      location.media
         ? `@media ${location.media}{${location.selector}{${body}}}`
-        : `${location.selector}{${body}}`
+        : `${location.selector}{${body}}`,
+    )
+    if (added.type !== 'StyleSheet') throw new Error('Sidans layout saknar sitt CSS-träd.')
+    tree.children.appendList(added.children)
   }
-  return result
+  const selectors = new Set([...mapped.values()].map(({ location }) => location.selector))
+  keepGuardsLast(tree, selectors, shrunk)
+  dropEmptied(tree, shrunk)
+  return generate(tree)
 }
 
 /** Copy only changed geometry, preserving independent colors and untouched layout drift. */
