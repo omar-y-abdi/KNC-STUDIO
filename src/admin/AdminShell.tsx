@@ -1,6 +1,6 @@
 // The admin shell: left nav (tabs) + a content area and one clean top bar. Role drives the nav: a
-// barber sees operational tabs plus Settings; the owner sees those PLUS {Alla bokningar, Barberare,
-// Om oss} and a barber selector to act on any barber.
+// barber sees operational tabs plus Settings; the owner sees those PLUS {Alla bokningar, Barberare}
+// and a barber selector to act on any barber.
 //
 // Identity is kept human: a barber sees just their first name in the top bar — they
 // know their own email and job title. The owner instead sees the barber selector (in the controls
@@ -49,17 +49,8 @@ const ServicesView = lazy(() =>
 const ProfileView = lazy(() =>
   import('./views/ProfileView').then((module) => ({ default: module.ProfileView })),
 )
-const SiteView = lazy(() =>
-  import('./views/SiteView').then((module) => ({ default: module.SiteView })),
-)
-const AboutView = lazy(() =>
-  import('./views/AboutView').then((module) => ({ default: module.AboutView })),
-)
 const SettingsView = lazy(() =>
   import('./views/SettingsView').then((module) => ({ default: module.SettingsView })),
-)
-const MailView = lazy(() =>
-  import('./views/MailView').then((module) => ({ default: module.MailView })),
 )
 
 export interface AdminShellProps {
@@ -72,17 +63,7 @@ export interface AdminShellProps {
 }
 
 /** The tabs a barber can see; the owner gets all of them. */
-type Tab =
-  | 'bookings'
-  | 'schedule'
-  | 'services'
-  | 'profile'
-  | 'allBookings'
-  | 'barbers'
-  | 'site'
-  | 'about'
-  | 'settings'
-  | 'mail'
+type Tab = 'bookings' | 'schedule' | 'services' | 'profile' | 'allBookings' | 'barbers' | 'settings'
 
 interface TabDef {
   readonly id: Tab
@@ -104,9 +85,6 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     { id: 'profile', label: t.tabProfile, ownerOnly: false },
     { id: 'allBookings', label: t.tabAllBookings, ownerOnly: true },
     { id: 'barbers', label: t.tabBarbers, ownerOnly: true },
-    { id: 'site', label: t.tabSite, ownerOnly: true },
-    { id: 'about', label: t.tabAbout, ownerOnly: true },
-    { id: 'mail', label: t.tabMail, ownerOnly: true },
     { id: 'settings', label: t.tabSettings, ownerOnly: false },
   ]
 
@@ -325,14 +303,8 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             barberName={effectiveBarberName}
           />
         )
-      case 'site':
-        return <SiteView dark={props.dark} lang={props.lang} s={s} />
-      case 'about':
-        return <AboutView dark={props.dark} lang={props.lang} s={s} />
       case 'settings':
         return <SettingsView dark={props.dark} lang={props.lang} s={s} profile={profile} />
-      case 'mail':
-        return <MailView dark={props.dark} lang={props.lang} s={s} />
     }
   }
 

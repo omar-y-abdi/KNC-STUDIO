@@ -1,15 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 import {
-  buildEmailMessage,
   deliverEmailBatch,
   defaultEmailTemplate,
   loadEmailBusiness,
   loadEmailTemplate,
+  prepareEmail,
   sendViaResend,
   type EmailDetailRow,
   type EmailBusiness,
-  type EmailMessage,
   type EmailTemplateName,
+  type PreparedEmail,
 } from '../_shared/email.ts'
 import { timingSafeEqual } from '../_shared/calendar.ts'
 import { retainTaskUntilSettled } from '../_shared/backgroundTask.ts'
@@ -209,22 +209,26 @@ async function message(
   rows: readonly EmailDetailRow[],
   business: EmailBusiness,
   ctaHref: string,
-): Promise<EmailMessage> {
+): Promise<PreparedEmail> {
   const client = serviceClient()
   const lang = templateName.startsWith('barber_') ? 'sv' : booking.lang
   const copy =
     client === null
       ? defaultEmailTemplate(templateName, lang)
       : await loadEmailTemplate(client, templateName, lang)
-  return buildEmailMessage({
-    to,
-    lang,
-    copy,
-    variables: variables(booking, business),
-    rows,
-    ctaHref,
-    business,
-  })
+  return prepareEmail(
+    templateName,
+    {
+      to,
+      lang,
+      copy,
+      variables: variables(booking, business),
+      rows,
+      ctaHref,
+      business,
+    },
+    booking.id,
+  )
 }
 
 function accessTokenRecord(value: unknown): { ciphertext: string; generation: number } | null {
@@ -285,12 +289,12 @@ async function buildMessages(
   event: BookingEmailEvent,
   booking: BookingRow,
   business: EmailBusiness,
-): Promise<readonly { kind: DeliveryKind; message: EmailMessage }[]> {
+): Promise<readonly { kind: DeliveryKind; message: PreparedEmail }[]> {
   const customerCtaHref =
     booking.email !== null && (event === 'booking_confirmed' || event === 'booking_reminder')
       ? await customerAccessHref(booking)
       : 'https://bladeblendstudio.se'
-  const candidates: Array<Promise<{ kind: DeliveryKind; message: EmailMessage }> | null> =
+  const candidates: Array<Promise<{ kind: DeliveryKind; message: PreparedEmail }> | null> =
     event === 'booking_confirmed'
       ? [
           booking.email === null
@@ -351,7 +355,7 @@ async function buildMessages(
           ]
   return Promise.all(
     candidates.filter(
-      (candidate): candidate is Promise<{ kind: DeliveryKind; message: EmailMessage }> =>
+      (candidate): candidate is Promise<{ kind: DeliveryKind; message: PreparedEmail }> =>
         candidate !== null,
     ),
   )
@@ -371,7 +375,8 @@ async function handleRequest(req: Request): Promise<Response> {
   }
   const parsed = parseRequest(raw)
   if (!parsed.ok) return json({ ok: false, error: 'invalid_payload', detail: parsed.error }, 400)
-  if (serviceClient() === null) return json({ ok: false, error: 'not_configured' }, 503)
+  const service = serviceClient()
+  if (service === null) return json({ ok: false, error: 'not_configured' }, 503)
 
   let bookingId = parsed.id
   let event = parsed.event
@@ -397,7 +402,7 @@ async function handleRequest(req: Request): Promise<Response> {
     return json({ ok: true, skipped: 'state_changed' }, 200)
   }
 
-  let messages: readonly { kind: DeliveryKind; message: EmailMessage }[]
+  let messages: readonly { kind: DeliveryKind; message: PreparedEmail }[]
   try {
     const client = serviceClient()
     if (client === null) throw new Error('service client unavailable')
@@ -441,7 +446,8 @@ async function handleRequest(req: Request): Promise<Response> {
         : 'booking-reminder'
   const batch = await deliverEmailBatch(
     messagesToSend,
-    (entry) => sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`),
+    (entry) =>
+      sendViaResend(entry.message, apiKey, `${scope}/${entry.kind}/${booking.id}`, service),
     (entry) =>
       parsed.deliveryId === null
         ? Promise.resolve(true)

@@ -13,33 +13,12 @@ export interface AdminStrings {
   readonly tabBookings: string
   readonly tabAllBookings: string
   readonly tabBarbers: string
-  readonly tabAbout: string
   readonly tabServices: string
-  readonly tabSite: string
   readonly tabProfile: string
   readonly tabSettings: string
-  readonly tabMail: string
   readonly lazyLoading: string
   readonly lazyError: string
   readonly lazyReload: string
-  // Mail (owner-only transactional email copy)
-  readonly mailTitle: string
-  readonly mailLead: string
-  readonly mailLoading: string
-  readonly mailPlaceholderHelp: string
-  readonly mailSwedish: string
-  readonly mailEnglish: string
-  readonly mailSubject: string
-  readonly mailPreheader: string
-  readonly mailHeading: string
-  readonly mailIntro: string
-  readonly mailSectionTitle: string
-  readonly mailNote: string
-  readonly mailButton: string
-  readonly mailContact: string
-  readonly mailSave: string
-  readonly mailSaving: string
-  readonly mailSaved: string
   // Settings (authenticated owner/barber account)
   readonly settingsTitle: string
   readonly settingsLead: string
@@ -72,54 +51,6 @@ export interface AdminStrings {
   readonly profileError: string
   readonly profileDeleteTitle: string
   readonly profileDeleteBody: string
-  // Startsida (homepage chrome) view.
-  readonly siteTextTitle: string
-  readonly siteTextLead: string
-  readonly siteBusinessTitle: string
-  readonly siteBusinessLead: string
-  readonly siteFieldBusinessName: string
-  readonly siteFieldBusinessEmail: string
-  readonly siteFieldBusinessPhoneDisplay: string
-  readonly siteFieldBusinessPhoneTel: string
-  readonly siteFieldBusinessStreet: string
-  readonly siteFieldBusinessPostalCode: string
-  readonly siteFieldBusinessCity: string
-  readonly siteFieldBusinessMapsUrl: string
-  readonly siteFieldCancellationPolicyHours: string
-  readonly siteSeoTitle: string
-  readonly siteSeoLead: string
-  readonly siteFieldSeoTitle: string
-  readonly siteFieldSeoDescription: string
-  readonly siteFieldKicker: string
-  readonly siteFieldHours: string
-  readonly siteBookingTextTitle: string
-  readonly siteBookingTextLead: string
-  readonly siteBookingDetailsGroup: string
-  readonly siteBookingConfirmationGroup: string
-  readonly siteFieldYourDetails: string
-  readonly siteFieldSummary: string
-  readonly siteFieldBarberLabel: string
-  readonly siteFieldWhenLabel: string
-  readonly siteFieldServiceLabel: string
-  readonly siteFieldTotalLabel: string
-  readonly siteFieldNameLabel: string
-  readonly siteFieldNamePlaceholder: string
-  readonly siteFieldPhoneLabel: string
-  readonly siteFieldPhonePlaceholder: string
-  readonly siteFieldPolicy: string
-  readonly siteFieldBookedTitle: string
-  readonly siteFieldConfirmSent: string
-  readonly siteFieldAddToCal: string
-  readonly siteFontTitle: string
-  readonly siteFontLead: string
-  readonly siteFontHomepage: string
-  readonly siteFontAbout: string
-  readonly siteSizeSm: string
-  readonly siteSizeMd: string
-  readonly siteSizeLg: string
-  readonly siteSizeXl: string
-  readonly siteLoading: string
-  readonly siteSaveError: string
   // Services (per-barber menu) view.
   readonly servicesTitle: string
   readonly servicesLead: string
@@ -414,39 +345,6 @@ export interface AdminStrings {
   readonly barbersAuthCleanupPending: string
   readonly barbersExternalCleanupPending: string
   readonly barbersDeliveryPending: string
-  // AboutView — text editor headings + controls
-  readonly aboutTextTitle: string
-  readonly aboutTextLead: string
-  readonly aboutLoading: string
-  readonly aboutLangSwedish: string
-  readonly aboutLangEnglish: string
-  readonly aboutSave: string
-  readonly aboutSaving: string
-  readonly aboutSaved: string
-  // AboutView — the 7 editable about_content field labels
-  readonly aboutFieldEyebrow: string
-  readonly aboutFieldHeading: string
-  readonly aboutFieldIntro: string
-  readonly aboutFieldGalleryTitle: string
-  readonly aboutFieldCutsTitle: string
-  readonly aboutFieldStylistsTitle: string
-  readonly aboutFieldReviewsTitle: string
-  // AboutView — gallery managers (salon + cuts)
-  readonly aboutGallerySalonTitle: string
-  readonly aboutGalleryCutsTitle: string
-  readonly aboutGalleryLead: string
-  readonly aboutGalleryAltLabel: string
-  readonly aboutGalleryFileLabel: string
-  readonly aboutGalleryUploading: string
-  readonly aboutGalleryLoading: string
-  readonly aboutGalleryEmpty: string
-  readonly aboutGalleryUploadedOk: string
-  readonly aboutGalleryDeletedOk: string
-  readonly aboutGalleryDeletionPending: string
-  readonly aboutGalleryRemove: string
-  readonly aboutGalleryDeleteTitle: string
-  readonly aboutGalleryDeleteBody: string
-  readonly aboutGalleryDeleteCancel: string
   // --- Auth area: /login + password screens ------------------------------------------------------
   // LoginPage (`/login`)
   readonly loginErrorEmptyFields: string
@@ -530,33 +428,12 @@ const SV: AdminStrings = {
   tabBookings: 'Mina bokningar',
   tabAllBookings: 'Alla bokningar',
   tabBarbers: 'Barberare',
-  tabAbout: 'Om oss',
   tabServices: 'Tjänster',
-  tabSite: 'Startsida',
   tabProfile: 'Profil',
   tabSettings: 'Inställningar',
-  tabMail: 'Mejl',
   lazyLoading: 'Laddar adminpanelen …',
   lazyError: 'Kunde inte ladda adminpanelen.',
   lazyReload: 'Ladda om',
-  mailTitle: 'Mejlmallar',
-  mailLead:
-    'Redigera all fast text som kunder och barberare ser. Varumärket, kontaktuppgifterna och bokningens faktiska uppgifter är låsta.',
-  mailLoading: 'Laddar mejlmallar …',
-  mailPlaceholderHelp: 'Dynamiska värden',
-  mailSwedish: 'Svenska',
-  mailEnglish: 'Engelska',
-  mailSubject: 'Ämnesrad',
-  mailPreheader: 'Förhandsvisning i inkorgen',
-  mailHeading: 'Huvudrubrik',
-  mailIntro: 'Inledning',
-  mailSectionTitle: 'Rubrik ovanför bokningsuppgifterna',
-  mailNote: 'Information under bokningsuppgifterna',
-  mailButton: 'Knapptext',
-  mailContact: 'Text före telefonnumret',
-  mailSave: 'Spara mall',
-  mailSaving: 'Sparar …',
-  mailSaved: 'Sparat',
   settingsTitle: 'Inställningar',
   settingsLead: 'Hantera inloggningsuppgifterna för ditt konto.',
   settingsEmailTitle: 'E‑post',
@@ -589,58 +466,6 @@ const SV: AdminStrings = {
   profileError: 'Kunde inte spara. Försök igen.',
   profileDeleteTitle: 'Ta bort profilbild?',
   profileDeleteBody: 'Bilden tas bort och platshållaren visas igen på hemsidan.',
-  siteTextTitle: 'Startsidans text',
-  siteTextLead:
-    'Redigera texten på startsidan. Tomt fält återgår till standardtexten. Loggan och knapptexterna ändras inte här.',
-  siteBusinessTitle: 'Företagsuppgifter',
-  siteBusinessLead:
-    'Visas på hemsidan, i bokningens kalenderlänkar och i strukturerad sökdata. Telefonnummer för länk ska vara siffror med valfritt + i början.',
-  siteFieldBusinessName: 'Företagsnamn',
-  siteFieldBusinessEmail: 'Kontaktadress för e-post',
-  siteFieldBusinessPhoneDisplay: 'Telefonnummer som visas',
-  siteFieldBusinessPhoneTel: 'Telefonnummer för ringlänk',
-  siteFieldBusinessStreet: 'Gatuadress',
-  siteFieldBusinessPostalCode: 'Postnummer',
-  siteFieldBusinessCity: 'Ort',
-  siteFieldBusinessMapsUrl: 'Kartlänk',
-  siteFieldCancellationPolicyHours: 'Avbokning senast (timmar före besöket)',
-  siteSeoTitle: 'SEO',
-  siteSeoLead:
-    'Titlar och beskrivningar uppdaterar sidans metadata när besökaren väljer språk. Håll titlar korta och beskrivningar tydliga.',
-  siteFieldSeoTitle: 'Sidtitel',
-  siteFieldSeoDescription: 'Metabeskrivning',
-  siteFieldKicker: 'Underrubrik (t.ex. "BARBERSHOP · GÖTEBORG")',
-  siteFieldHours: 'Öppettider',
-  siteBookingTextTitle: 'Bokningens popuptexter',
-  siteBookingTextLead:
-    'Redigera alla synliga texter utom knappar. Barberare, Tid och Behandling används i båda rutorna. Behåll {email} och {phone} där kundens uppgifter ska visas.',
-  siteBookingDetailsGroup: 'Före bokning',
-  siteBookingConfirmationGroup: 'Efter bokning',
-  siteFieldYourDetails: 'Popupens rubrik',
-  siteFieldSummary: 'Bokningssammanfattningens rubrik',
-  siteFieldBarberLabel: 'Etikett: Barberare (båda rutorna)',
-  siteFieldWhenLabel: 'Etikett: Tid (båda rutorna)',
-  siteFieldServiceLabel: 'Etikett: Behandling (båda rutorna)',
-  siteFieldTotalLabel: 'Etikett: Att betala',
-  siteFieldNameLabel: 'Etikett: Namn',
-  siteFieldNamePlaceholder: 'Platshållare: Namn',
-  siteFieldPhoneLabel: 'Etikett: Telefon',
-  siteFieldPhonePlaceholder: 'Platshållare: Telefon',
-  siteFieldPolicy: 'Meddelande före bokning',
-  siteFieldBookedTitle: 'Bekräftelserubrik',
-  siteFieldConfirmSent: 'Bokningsbekräftelse ({email} = kundens e-post, {phone} = kundens nummer)',
-  siteFieldAddToCal: 'Rubrik ovanför kalenderalternativen',
-  siteFontTitle: 'Textstorlek',
-  siteFontLead:
-    'Välj textstorlek för startsidan och Om oss-sektionen. Alla val håller sig inom layouten.',
-  siteFontHomepage: 'Startsidans text',
-  siteFontAbout: 'Om oss-sektionen',
-  siteSizeSm: 'Liten',
-  siteSizeMd: 'Mellan',
-  siteSizeLg: 'Stor',
-  siteSizeXl: 'Extra stor',
-  siteLoading: 'Laddar startsidan …',
-  siteSaveError: 'Kunde inte spara. Försök igen.',
   servicesTitle: 'Tjänster',
   servicesLead:
     'Lägg till behandlingar, sätt pris och längd, och ordna listan. Kunderna ser dina aktiva tjänster när de bokar. En rabatt är bara en egen tjänst (t.ex. "Studentklippning").',
@@ -913,37 +738,7 @@ const SV: AdminStrings = {
   barbersExternalCleanupPending:
     'Google Calendar rensas säkert i bakgrunden ({count} händelser). Försök radera barberaren igen om en stund.',
   barbersDeliveryPending:
-    'Barberaren har bokningsmejl som måste levereras eller hanteras under Mejl innan radering.',
-  aboutTextTitle: 'Om oss · text',
-  aboutTextLead: 'Redigera sektionstexterna på svenska och engelska. Varje fält sparas för sig.',
-  aboutLoading: 'Laddar innehåll …',
-  aboutLangSwedish: 'Svenska',
-  aboutLangEnglish: 'Engelska',
-  aboutSave: 'Spara',
-  aboutSaving: 'Sparar …',
-  aboutSaved: 'Sparat',
-  aboutFieldEyebrow: 'Etikett (eyebrow)',
-  aboutFieldHeading: 'Rubrik',
-  aboutFieldIntro: 'Intro',
-  aboutFieldGalleryTitle: 'Galleri-titel (salong)',
-  aboutFieldCutsTitle: 'Galleri-titel (klippningar)',
-  aboutFieldStylistsTitle: 'Barberar-titel',
-  aboutFieldReviewsTitle: 'Omdömen-titel',
-  aboutGallerySalonTitle: 'Galleri · I salongen',
-  aboutGalleryCutsTitle: 'Galleri · Jobb vi gjort',
-  aboutGalleryLead: 'Ladda upp bilder till galleriet och ta bort dem du inte vill visa.',
-  aboutGalleryAltLabel: 'Alt-text (beskrivning)',
-  aboutGalleryFileLabel: 'Bildfil',
-  aboutGalleryUploading: 'Laddar upp …',
-  aboutGalleryLoading: 'Laddar galleri …',
-  aboutGalleryEmpty: 'Inga bilder ännu.',
-  aboutGalleryUploadedOk: 'Bild uppladdad.',
-  aboutGalleryDeletedOk: 'Bild borttagen.',
-  aboutGalleryDeletionPending: 'Bilden är dold. Lagringsrensning försöks igen automatiskt.',
-  aboutGalleryRemove: 'Ta bort',
-  aboutGalleryDeleteTitle: 'Ta bort bilden?',
-  aboutGalleryDeleteBody: 'Bilden tas bort från galleriet och lagringen. Detta går inte att ångra.',
-  aboutGalleryDeleteCancel: 'Avbryt',
+    'Barberaren har bokningsmejl som måste levereras eller hanteras i Studio → Mejl → Leveransstatus innan radering.',
   loginErrorEmptyFields: 'Fyll i både e‑post och lösenord.',
   loginNotConfiguredPre:
     'Adminpanelen kräver den live-backend som inte är konfigurerad i den här miljön. Sätt',
@@ -1022,33 +817,12 @@ const EN: AdminStrings = {
   tabBookings: 'My bookings',
   tabAllBookings: 'All bookings',
   tabBarbers: 'Barbers',
-  tabAbout: 'About us',
   tabServices: 'Services',
-  tabSite: 'Home page',
   tabProfile: 'Profile',
   tabSettings: 'Settings',
-  tabMail: 'Mail',
   lazyLoading: 'Loading admin panel …',
   lazyError: 'Could not load the admin panel.',
   lazyReload: 'Reload',
-  mailTitle: 'Email templates',
-  mailLead:
-    'Edit all fixed copy customers and barbers see. Brand, contact details, and actual booking data remain locked.',
-  mailLoading: 'Loading email templates …',
-  mailPlaceholderHelp: 'Dynamic values',
-  mailSwedish: 'Swedish',
-  mailEnglish: 'English',
-  mailSubject: 'Subject',
-  mailPreheader: 'Inbox preview',
-  mailHeading: 'Main heading',
-  mailIntro: 'Introduction',
-  mailSectionTitle: 'Heading above booking details',
-  mailNote: 'Information below booking details',
-  mailButton: 'Button label',
-  mailContact: 'Copy before phone number',
-  mailSave: 'Save template',
-  mailSaving: 'Saving …',
-  mailSaved: 'Saved',
   settingsTitle: 'Settings',
   settingsLead: 'Manage your account sign-in details.',
   settingsEmailTitle: 'Email',
@@ -1081,59 +855,6 @@ const EN: AdminStrings = {
   profileError: 'Could not save. Please try again.',
   profileDeleteTitle: 'Remove profile photo?',
   profileDeleteBody: 'The photo is removed and the placeholder shows again on the site.',
-  siteTextTitle: 'Home page text',
-  siteTextLead:
-    'Edit the text on the home page. An empty field falls back to the default. The logo and button labels are not changed here.',
-  siteBusinessTitle: 'Business details',
-  siteBusinessLead:
-    'Shown on the site, in booking calendar links, and in structured search data. The phone link value must contain digits with an optional leading +.',
-  siteFieldBusinessName: 'Business name',
-  siteFieldBusinessEmail: 'Contact email address',
-  siteFieldBusinessPhoneDisplay: 'Displayed phone number',
-  siteFieldBusinessPhoneTel: 'Phone number for call link',
-  siteFieldBusinessStreet: 'Street address',
-  siteFieldBusinessPostalCode: 'Postal code',
-  siteFieldBusinessCity: 'City',
-  siteFieldBusinessMapsUrl: 'Map URL',
-  siteFieldCancellationPolicyHours: 'Cancellation deadline (hours before appointment)',
-  siteSeoTitle: 'SEO',
-  siteSeoLead:
-    'Titles and descriptions update the page metadata when a visitor selects a language. Keep titles concise and descriptions clear.',
-  siteFieldSeoTitle: 'Page title',
-  siteFieldSeoDescription: 'Meta description',
-  siteFieldKicker: 'Sub-heading (e.g. "BARBERSHOP · GOTHENBURG")',
-  siteFieldHours: 'Opening hours',
-  siteBookingTextTitle: 'Booking pop-up text',
-  siteBookingTextLead:
-    'Edit every visible string except buttons. Barber, Time and Service are shared by both dialogs. Keep {email} and {phone} where the customer details should appear.',
-  siteBookingDetailsGroup: 'Before booking',
-  siteBookingConfirmationGroup: 'After booking',
-  siteFieldYourDetails: 'Pop-up heading',
-  siteFieldSummary: 'Booking summary heading',
-  siteFieldBarberLabel: 'Label: Barber (both dialogs)',
-  siteFieldWhenLabel: 'Label: Time (both dialogs)',
-  siteFieldServiceLabel: 'Label: Service (both dialogs)',
-  siteFieldTotalLabel: 'Label: Total',
-  siteFieldNameLabel: 'Label: Name',
-  siteFieldNamePlaceholder: 'Placeholder: Name',
-  siteFieldPhoneLabel: 'Label: Phone',
-  siteFieldPhonePlaceholder: 'Placeholder: Phone',
-  siteFieldPolicy: 'Notice before booking',
-  siteFieldBookedTitle: 'Confirmation heading',
-  siteFieldConfirmSent:
-    'Booking confirmation ({email} = customer email, {phone} = customer number)',
-  siteFieldAddToCal: 'Heading above calendar options',
-  siteFontTitle: 'Text size',
-  siteFontLead:
-    'Choose the text size for the home page and the About section. Every option stays within the layout.',
-  siteFontHomepage: 'Home page text',
-  siteFontAbout: 'About section',
-  siteSizeSm: 'Small',
-  siteSizeMd: 'Medium',
-  siteSizeLg: 'Large',
-  siteSizeXl: 'Extra large',
-  siteLoading: 'Loading home page …',
-  siteSaveError: 'Could not save. Please try again.',
   servicesTitle: 'Services',
   servicesLead:
     'Add services, set price and length, and order the list. Customers see your active services when booking. A discount is just its own service (e.g. "Student cut").',
@@ -1406,38 +1127,7 @@ const EN: AdminStrings = {
   barbersExternalCleanupPending:
     'Google Calendar is being cleaned safely in the background ({count} events). Try deleting the barber again shortly.',
   barbersDeliveryPending:
-    'This barber has booking emails that must be delivered or handled under Mail before deletion.',
-  aboutTextTitle: 'About us · text',
-  aboutTextLead: 'Edit the section texts in Swedish and English. Each field is saved separately.',
-  aboutLoading: 'Loading content …',
-  aboutLangSwedish: 'Swedish',
-  aboutLangEnglish: 'English',
-  aboutSave: 'Save',
-  aboutSaving: 'Saving …',
-  aboutSaved: 'Saved',
-  aboutFieldEyebrow: 'Label (eyebrow)',
-  aboutFieldHeading: 'Heading',
-  aboutFieldIntro: 'Intro',
-  aboutFieldGalleryTitle: 'Gallery title (salon)',
-  aboutFieldCutsTitle: 'Gallery title (cuts)',
-  aboutFieldStylistsTitle: 'Barbers title',
-  aboutFieldReviewsTitle: 'Reviews title',
-  aboutGallerySalonTitle: 'Gallery · In the salon',
-  aboutGalleryCutsTitle: 'Gallery · Work we did',
-  aboutGalleryLead: 'Upload images to the gallery and remove the ones you do not want to show.',
-  aboutGalleryAltLabel: 'Alt text (description)',
-  aboutGalleryFileLabel: 'Image file',
-  aboutGalleryUploading: 'Uploading …',
-  aboutGalleryLoading: 'Loading gallery …',
-  aboutGalleryEmpty: 'No images yet.',
-  aboutGalleryUploadedOk: 'Image uploaded.',
-  aboutGalleryDeletedOk: 'Image removed.',
-  aboutGalleryDeletionPending: 'The image is hidden. Storage cleanup will retry automatically.',
-  aboutGalleryRemove: 'Remove',
-  aboutGalleryDeleteTitle: 'Remove image?',
-  aboutGalleryDeleteBody:
-    'The image will be removed from the gallery and storage. This cannot be undone.',
-  aboutGalleryDeleteCancel: 'Cancel',
+    'This barber has booking emails that must be delivered or handled in Studio → Mejl → Leveransstatus before deletion.',
   loginErrorEmptyFields: 'Fill in both email and password.',
   loginNotConfiguredPre:
     'The admin panel requires the live backend, which is not configured in this environment. Set',

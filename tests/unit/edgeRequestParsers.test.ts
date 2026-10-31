@@ -420,71 +420,62 @@ describe('upload-image request', () => {
     return data
   }
   const image = new File(['x'], 'a.png', { type: 'image/png' })
-  const gallery = {
-    kind: 'gallery',
+  const profile = {
+    kind: 'barber_photo',
     file: image,
-    galleryKind: 'salon',
-    alt: ' Salong ',
-    sortOrder: '-3',
+    barberId: 'hassan',
   }
 
-  it('accepts the three upload kinds', () => {
-    const parsed = uploadSchema.safeParse(formFields(form(gallery)))
-    expect(parsed.success && parsed.data).toMatchObject({
-      galleryKind: 'salon',
-      alt: 'Salong',
-      sortOrder: -3,
-    })
-    expect(
-      uploadSchema.safeParse(
-        formFields(form({ kind: 'barber_photo', file: image, barberId: 'hassan' })),
-      ).success,
-    ).toBe(true)
-    expect(
-      uploadSchema.safeParse(formFields(form({ kind: 'site_logo', file: image, expectedPath: '' })))
-        .success,
-    ).toBe(true)
-    expect(
-      uploadSchema.safeParse(
-        formFields(form({ kind: 'site_logo', file: image, expectedPath: `logo/${ID}.webp` })),
-      ).success,
-    ).toBe(true)
+  it('accepts a scoped barber photo upload', () => {
+    const parsed = uploadSchema.safeParse(formFields(form(profile)))
+    expect(parsed.success && parsed.data).toEqual(profile)
   })
 
   it.each<[string, FormData]>([
-    ['an unknown field', form({ ...gallery, extra: 'x' })],
-    ['an empty file', form({ ...gallery, file: new File([], 'a.png') })],
-    ['a repeated field', form(gallery, [['alt', 'again']])],
-    ['a missing file', form({ kind: 'gallery', galleryKind: 'salon', alt: '', sortOrder: '1' })],
-    ['a decimal sort order', form({ ...gallery, sortOrder: '1.5' })],
-    ['a padded sort order', form({ ...gallery, sortOrder: '01' })],
-    ['an out-of-range sort order', form({ ...gallery, sortOrder: '2147483648' })],
-    ['an unknown gallery kind', form({ ...gallery, galleryKind: 'logo' })],
-    ['a long alt text', form({ ...gallery, alt: 'x'.repeat(2001) })],
+    ['an unknown field', form({ ...profile, extra: 'x' })],
+    ['an empty file', form({ ...profile, file: new File([], 'a.png') })],
+    ['a repeated field', form(profile, [['barberId', 'victor']])],
+    ['a missing file', form({ kind: 'barber_photo', barberId: 'hassan' })],
     ['the cms_asset kind', form({ kind: 'cms_asset', file: image })],
-    ['a bad barber id', form({ kind: 'barber_photo', file: image, barberId: 'Bad Id' })],
-    ['a bad logo path', form({ kind: 'site_logo', file: image, expectedPath: 'logo/x.webp' })],
+    ['a bad barber id', form({ ...profile, barberId: 'Bad Id' })],
+    [
+      'the retired gallery upload',
+      form({ kind: 'gallery', file: image, galleryKind: 'salon', alt: 'Salong', sortOrder: '0' }),
+    ],
+    ['the retired logo upload', form({ kind: 'site_logo', file: image, expectedPath: '' })],
+    [
+      'the retired logo replacement',
+      form({ kind: 'site_logo', file: image, expectedPath: `logo/${ID}.webp` }),
+    ],
   ])('rejects %s', (_name, data) => {
     expect(uploadSchema.safeParse(formFields(data)).success).toBe(false)
   })
 
-  it.each([
-    { action: 'delete', kind: 'gallery', id: ID, storagePath: 'salon/a.webp' },
-    { action: 'delete', kind: 'barber_photo', barberId: 'hassan', storagePath: 'hassan/a.webp' },
-    { action: 'delete', kind: 'site_logo', storagePath: `logo/${ID}.webp` },
-  ])('accepts the deletion %j', (raw) => {
+  it('accepts a scoped barber photo deletion', () => {
+    const raw = {
+      action: 'delete',
+      kind: 'barber_photo',
+      barberId: 'hassan',
+      storagePath: 'hassan/a.webp',
+    }
     expect(deleteSchema.safeParse(raw).success).toBe(true)
   })
 
   it.each([
-    { action: 'delete', kind: 'gallery', id: ID, storagePath: 'a', extra: 1 },
-    { action: 'delete', kind: 'gallery', id: 'x', storagePath: 'a' },
-    { action: 'delete', kind: 'gallery', id: ID, storagePath: '' },
-    { action: 'delete', kind: 'gallery', id: ID, storagePath: 'x'.repeat(301) },
-    { action: 'remove', kind: 'gallery', id: ID, storagePath: 'a' },
+    { action: 'delete', kind: 'gallery', id: ID, storagePath: 'salon/a.webp' },
+    { action: 'delete', kind: 'site_logo', storagePath: `logo/${ID}.webp` },
+    {
+      action: 'delete',
+      kind: 'barber_photo',
+      barberId: 'hassan',
+      storagePath: 'hassan/a.webp',
+      extra: 1,
+    },
+    { action: 'delete', kind: 'barber_photo', barberId: 'hassan', storagePath: '' },
+    { action: 'delete', kind: 'barber_photo', barberId: 'hassan', storagePath: 'x'.repeat(301) },
+    { action: 'remove', kind: 'barber_photo', barberId: 'hassan', storagePath: 'hassan/a.webp' },
     { action: 'delete', kind: 'barber_photo', barberId: 'hassan', storagePath: 'victor/a.webp' },
-    { action: 'delete', kind: 'site_logo', storagePath: 'logo/x.webp' },
-    { action: 'delete', kind: 'site_logo' },
+    { action: 'delete', kind: 'barber_photo', barberId: 'hassan' },
     null,
   ])('rejects the deletion %j', (raw) => {
     expect(deleteSchema.safeParse(raw).success).toBe(false)

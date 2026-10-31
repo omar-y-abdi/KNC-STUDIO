@@ -10,6 +10,8 @@ import {
   type CmsEmail,
   type CmsLang,
 } from '../../../shared/cms'
+import { APPEARANCE_FIELDS } from './appearanceFields'
+import { DeliveryStatus } from './DeliveryStatus'
 import { renderEmailPreview } from './emailPreview'
 import { CmsIcon } from './Icon'
 
@@ -130,6 +132,29 @@ export function BusinessPanel({
           </div>
         </fieldset>
       ))}
+      <fieldset class="cms-business-group">
+        <legend>Utseende</legend>
+        <p>
+          Storlek och stil för logotypen och texterna på startsidan. Normal lämnar sidan som den är.
+        </p>
+        <div class="cms-domain-grid">
+          {APPEARANCE_FIELDS.map((field) => (
+            <label key={field.key}>
+              {field.label}
+              <select
+                value={document.settings[field.key] || field.fallback}
+                onChange={(event) => set(field.key, event.currentTarget.value)}
+              >
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <h2>Barberare</h2>
       {document.barbers.length === 0 && (
         <p class="cms-inline-empty">
@@ -174,17 +199,40 @@ function replaceEmail(document: CmsDocument, email: CmsEmail): CmsDocument {
   return next
 }
 
-export function EmailPanel({
-  document,
-  lang,
-  assets,
-  onChange,
-}: {
+interface EmailPanelProps {
   document: CmsDocument
   lang: CmsLang
   assets: readonly CmsAsset[]
   onChange: (document: CmsDocument) => void
-}): JSX.Element {
+}
+
+/** The Mejl workspace: template editing, or what was actually sent (Leveransstatus). */
+export function EmailPanel(props: EmailPanelProps): JSX.Element {
+  const [view, setView] = useState<'templates' | 'delivery'>('templates')
+  return (
+    <div class="cms-email-panel">
+      <div class="cms-segment cms-email-switch" role="group" aria-label="Mejlvy">
+        <button
+          type="button"
+          aria-pressed={view === 'templates'}
+          onClick={() => setView('templates')}
+        >
+          Mallar
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === 'delivery'}
+          onClick={() => setView('delivery')}
+        >
+          Leveransstatus
+        </button>
+      </div>
+      {view === 'templates' ? <EmailTemplates {...props} /> : <DeliveryStatus />}
+    </div>
+  )
+}
+
+function EmailTemplates({ document, lang, assets, onChange }: EmailPanelProps): JSX.Element {
   const [previewWidth, setPreviewWidth] = useState<'desktop' | 'mobile'>('desktop')
   const [selectedTemplate, setSelectedTemplate] =
     useState<CmsEmail['template']>('customer_confirmation')

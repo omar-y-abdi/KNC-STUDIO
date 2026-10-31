@@ -107,6 +107,7 @@ async function repeatedCards(page) {
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
     const { nativeTree, NativeRegion, NativeSiteProvider } =
       await import('/src/cms/NativeSurface.tsx')
+    const { createInstanceScope } = await import('/src/cms/instanceScope.ts')
     const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
     const { emptyDocument } = await import('/shared/cms.ts')
     const { validateMarkup } = await import('/shared/cms-markup.ts')
@@ -163,7 +164,14 @@ async function repeatedCards(page) {
           (instance) =>
             h(
               NativeRegion,
-              { key: instance, surface, instance, lang: 'sv', mode: 'light' },
+              {
+                key: instance,
+                surface,
+                instance,
+                scopeFactory: createInstanceScope,
+                lang: 'sv',
+                mode: 'light',
+              },
               make(),
             ),
         ),
@@ -342,6 +350,61 @@ test('Missing scene upgrade preserves owner CSS precedence and is idempotent', a
   })
   assert.deepEqual(actual, { color: 'rgb(0, 128, 0)', stable: true, originalUnchanged: true })
 })
+test('Raw and adopted CSS preserve native canvas output in both schemes', async ({ page }) => {
+  await page.goto(`${base}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { emptyDocument } = await import('/shared/cms.ts')
+    const { normalizeDocument } = await import('/src/admin/cms/normalizeDocument.ts')
+    const { nativeCanvas } = await import('/src/admin/cms/nativeCanvas.ts')
+    const html =
+      '<main data-knc-native="1"><section id="owner-offset" data-knc-baseline="{}" ' +
+      'data-knc-light="padding:2px;color:#123456" data-knc-dark="padding:3px;color:#abcdef">Owner wording</section></main>'
+    const css = '@media(max-width:1440px){#owner-offset{translate:12px 0!important}}'
+    const repaired = '@media (min-width:769px){#owner-offset{translate:12px 0!important}}'
+    const document = emptyDocument()
+    document.presentation.pages = [
+      {
+        id: '10000000-0000-4000-8000-000000000002',
+        path: '/about',
+        kind: 'page',
+        name: { sv: 'Om oss', en: 'About' },
+        title: { sv: '', en: '' },
+        description: { sv: '', en: '' },
+        inMenu: true,
+        content: {
+          sv: { html, css: { light: css, dark: css } },
+          en: { html, css: { light: css, dark: css } },
+        },
+      },
+    ]
+    const adopted = normalizeDocument(document)
+    const variant = adopted.presentation.pages[0].content.en
+    return {
+      stored: variant.css,
+      original: document.presentation.pages[0].content.en.css,
+      rawOutputs: ['light', 'dark'].map((mode) =>
+        nativeCanvas(document.presentation.pages[0].content.en, mode),
+      ),
+      outputs: ['light', 'dark'].map((mode) => nativeCanvas(variant, mode)),
+      previous: ['light', 'dark'].map((mode) =>
+        nativeCanvas({ html, css: { light: repaired, dark: repaired } }, mode),
+      ),
+    }
+  })
+  assert.ok(result.stored.light.includes('(min-width:769px)'))
+  assert.ok(result.stored.dark.includes('(min-width:769px)'))
+  assert.ok(result.original.light.includes('(max-width:1440px)'))
+  assert.deepEqual(result.outputs, result.previous)
+  assert.deepEqual(result.rawOutputs, result.previous)
+  assert.deepEqual(
+    result.outputs.map((output) => output.css),
+    [
+      '#owner-offset{padding:2px;color:#123456}@media (min-width:769px){#owner-offset{translate:12px 0!important}}',
+      '#owner-offset{padding:3px;color:#abcdef}@media (min-width:769px){#owner-offset{translate:12px 0!important}}',
+    ],
+  )
+})
+
 test('Repeated templates preserve edits below the identity hash boundary', async ({ page }) => {
   page.setDefaultTimeout(15000)
   assert.deepEqual((await repeatedCards(page)).deep, [
@@ -371,6 +434,7 @@ test('Nested component instances retain hooks, refs and local label targets', as
     const { createRef, useState } = await import('/tools/e2e/cms-resources-harness.tsx')
     const { useNativeChild, NativeRegion, NativeSiteProvider } =
       await import('/src/cms/NativeSurface.tsx')
+    const { createInstanceScope } = await import('/src/cms/instanceScope.ts')
     const { snapshotNative } = await import('/src/admin/cms/nativePages.ts')
     const { emptyDocument } = await import('/shared/cms.ts')
     function Child({ reference }) {
@@ -436,7 +500,14 @@ test('Nested component instances retain hooks, refs and local label targets', as
           ['a/b', 'a_b'].map((instance, i) =>
             h(
               NativeRegion,
-              { key: instance, surface, instance, lang: 'sv', mode: 'light' },
+              {
+                key: instance,
+                surface,
+                instance,
+                scopeFactory: createInstanceScope,
+                lang: 'sv',
+                mode: 'light',
+              },
               make(references[i]),
             ),
           ),

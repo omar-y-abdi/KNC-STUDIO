@@ -38,6 +38,34 @@ this live check, so PR builds can validate an undeployed backend change.
 Keep JWT verification enabled. The preflight exposes only a source digest; state, validation,
 publication, history and resources still require a verified owner.
 
+## Content write authority
+
+Apply `20261028185110_cms_single_writer_authority.sql` after
+`20261028182853_retire_legacy_owner_media_writers.sql`. The earlier retirement requires the updated
+`upload-image` gateway first; its README records that deployment order and the old media requests
+that now return HTTP 400. These migrations require their own reviewed rollout.
+
+Authenticated browser sessions, including the owner, cannot insert, update, delete or upsert
+`site_content`, `about_content` or `email_templates` directly. Their content is published through
+the validated `cms-studio` gateway and the existing service-role-only `internal_cms_publish`
+function, which enforces the owner, expected revision and content fingerprint. Existing public
+site/About reads and owner email-template reads remain available. Native Auth delivery and the
+email delivery log are separate from template publication.
+
+Direct owner writes to `site_settings` are limited to `cancellation_policy_hours`, used by the
+retained Settings form. This operational rule is excluded from the reversible CMS document, so
+changing it neither changes the CMS fingerprint nor advances a revision. Both old and proposed
+keys are checked for updates; renaming a setting or using an upsert cannot cross this boundary.
+The existing value validator still requires 1–168 whole hours. CMS business, appearance, logo and
+SEO settings are written through publication. Read policies and existing service-role capabilities
+are unchanged; staff, profile, photo, schedule, service and booking operations keep their existing
+boundaries.
+
+Old cached editors that issue direct content writes receive permission errors. An update or delete
+of a CMS setting can instead affect zero rows under RLS; a successful HTTP response alone does not
+establish that a write occurred. Use the current Studio, publish, and verify the persisted revision
+and public result. Do not restore legacy table write grants to make an old editor work.
+
 ## Incident: 21 September 2026
 
 PR #67 shipped an updated frontend while production `cms-studio` v3 still contained old shared
@@ -116,25 +144,29 @@ not fix stale validators, panel stacking or discarded styles.
 
 These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mjs` and `app.mjs`:
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
-Booking/auth components remain native to Blade & Blend. `shared/site-page.ts` follows O-Y-A's
-layout wrapper for legacy custom pages: when a page has no independent layout, the editor, locked
-preview and public Worker derive its header/logo, contact strip and About footer from the site's
-current pages. On first edit, that chrome is materialized into a page-owned layout in both
-languages and themes. New independent pages persist the complete authored HTML and CSS, including
-header, menu, content and footer; public rendering returns that saved layout instead of
-recomposing it from Home and About. Older records without the layout flag remain supported and
-continue using the derived renderer until materialized.
+Booking/auth components remain native to Blade & Blend. Current created pages persist only their
+authored body and CSS. `shared/site-page.ts` renders the live homepage logo, current business
+contact links, language/theme controls and page menu around that body in the editor, locked preview
+and public Worker. The header is locked in a created page's canvas; it is not materialized into
+another page-owned copy. Menus use the current draft in Studio and the published presentation in
+public responses.
 
-The independent layout flag is part of the validated CMS document. Update `shared/cms-release.ts`
-with the shared validator and deploy the matching `cms-studio` Function before deploying a
-frontend that publishes this field. Do not treat the frontend release stamp or fixture publication
-as proof that the production Function has been updated. Derived menu links use metadata from the
-current presentation: the editor uses its draft, while the public Worker uses the published
-presentation. A materialized page owns its menu markup and styles.
+Legacy pages with `layout: 'independent'` or an actual frozen shell remain readable. Studio drops
+their frozen chrome on load, restore and import while preserving body content and its styles;
+publication is explicit. The Worker serves still-frozen publications as stored and does not perform
+that migration. Comments and quoted attribute values naming the old shell do not mark a live page
+as frozen. Existing owner Contact bodies remain supported. New managed Contact templates opt into
+their required slots with `data-business-contact-page="1"`; information pages use the token/layout
+base, not created-page chrome.
+
+Update `shared/cms-release.ts` with shared validator changes and deploy the matching `cms-studio`
+Function before the frontend. A source stamp or fixture publication does not prove that the
+production Function or database has been updated. The recovered feature and migration ledger is
+`docs/WIP_IMPLEMENTATION.md`.
 
 The editor's screenshot-driven visual contract lives in `src/admin/cms/DESIGN.md` and
-`UX-CONTRACT.md`. Chrome stays light when editing a dark website. Page settings appear in the
-right inspector when nothing is selected; fit considers viewport height as well as width.
+`UX-CONTRACT.md`. Chrome stays light when editing a dark website. Sidinställningar clears selection
+and opens page metadata in the right inspector; fit considers viewport height as well as width.
 
 Email preview imports `shared/email-render.ts`, the same pure renderer re-exported by
 `supabase/functions/_shared/email.ts`. It expands sample variables and shows actual booking rows,

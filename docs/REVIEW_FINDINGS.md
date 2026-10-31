@@ -181,7 +181,7 @@ EXISTS`), unlike the guarded CHECK-drop above it. Clean push is fine (verified);
 
 - N1 truthy null-checks (`main.tsx:7`, `App.tsx:70`) vs the codebase's `=== null` discipline.
 - N2 theme-color `<meta>` sync duplicated (`App.tsx:66-76` + `admin/useTheme.ts:31-42`), no unmount cleanup.
-- N3 redundant type annotation `admin/views/AboutView.tsx:100`.
+- N3 redundant type annotation in the retired About admin view (historical; current presentation owner: `src/admin/cms/DomainPanels.tsx`).
 - N4 magic placeholder-id arrays rebuilt per render `about/AboutSection.tsx:275-276`.
 - N5 `prefers-reduced-motion` sampled once, no re-subscribe (`GalleryMarquee.tsx:82`, Dialog). Edge.
 - N6 marquee keyboard-focused tile keeps auto-scrolling (only selection pauses) `GalleryMarquee.tsx:217-221`. a11y polish.

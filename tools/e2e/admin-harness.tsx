@@ -22,7 +22,6 @@ import { ServicesView, type ServicesViewPort } from '../../src/admin/views/Servi
 import { ProfileView, type ProfileViewPort } from '../../src/admin/views/ProfileView'
 import { BookingsView, type BookingsViewPort } from '../../src/admin/views/BookingsView'
 import type { AdminBooking, AdminResult, AdminService } from '../../src/admin/types'
-import { GalleryManager, type GalleryManagerPort } from '../../src/admin/views/AboutView'
 import { AdminShell } from '../../src/admin/AdminShell'
 import { AdminApp } from '../../src/admin/AdminApp'
 import { CmsStudio } from '../../src/admin/cms/Studio'
@@ -30,16 +29,13 @@ import { App } from '../../src/app/App'
 import { buildAdminStyles } from '../../src/admin/adminStyles'
 import { palette } from '../../src/booking/bookingStyles'
 import { err, ok } from '../../src/admin/types'
-import { SiteView, type SiteViewPort } from '../../src/admin/views/SiteView'
+import { SettingsView, type SettingsViewPort } from '../../src/admin/views/SettingsView'
+import { DeliveryStatus, type DeliveryStatusPort } from '../../src/admin/cms/DeliveryStatus'
 import { CalendarConnectButton } from '../../src/admin/calendar/CalendarConnectButton'
 import type { CalendarStatus, CalendarSyncPort } from '../../src/admin/calendar/port'
 import { useCalendarSync, type UseCalendarSync } from '../../src/admin/calendar/useCalendarSync'
 
 export { h, render }
-
-interface HarnessWindow extends Window {
-  __adminHarnessWrites?: readonly ReadonlyMap<string, string>[]
-}
 
 function root(): Element {
   const target = document.querySelector('#root')
@@ -475,25 +471,163 @@ export function mountAdminNavigationHarness(role: 'owner' | 'barber'): void {
   )
 }
 
-export function mountSiteViewHarness(): void {
-  const writes: ReadonlyMap<string, string>[] = []
-  ;(window as HarnessWindow).__adminHarnessWrites = writes
-  const port: SiteViewPort = {
-    listContent: () => Promise.resolve(ok([])),
-    listSettings: () => Promise.resolve(ok(new Map())),
-    saveContent: (key, lang, value) => Promise.resolve(ok({ key, lang, value })),
-    saveSetting: (_key, value) => Promise.resolve(ok(value)),
-    saveSettings: (values) => {
-      const saved = new Map(values.map(({ key, value }) => [key, value]))
-      writes.push(saved)
-      return Promise.resolve(ok(saved))
+/**
+ * Stored copy whose body and links the e2e check finds inside the sandboxed iframe: the relative
+ * placeholder a secret link becomes, and an absolute link as plain kinds keep it.
+ */
+export const DELIVERY_COPY_HTML =
+  '<!doctype html><html><head><title>Kopia</title></head><body><p id="stored-copy">Kopian som skickades</p><a href="[dold länk]">Välj nytt lösenord</a> <a href="https://example.invalid/bokning">Visa bokningen</a></body></html>'
+
+let deliveryCursors: (string | null)[] = []
+
+/** The `before` cursor of every log page the harness was asked for, in order. */
+export function deliveryStatusCursors(): readonly (string | null)[] {
+  return deliveryCursors
+}
+
+export function mountDeliveryStatusHarness(): void {
+  deliveryCursors = []
+  const delivery = (id: string, customerName: string) => ({
+    id,
+    bookingId: `booking-${id.slice(0, 2)}`,
+    event: 'booking_confirmed' as const,
+    attemptCount: 5,
+    errorCode: 'send_failed_permanent' as const,
+    failedAt: null,
+    sentKinds: ['barber'] as const,
+    customerName,
+    customerEmail: `${customerName.split(' ')[0]?.toLowerCase()}@example.com`,
+    customerPhone: '0701234567',
+    bookingStartAt: '2096-01-02T09:00:00+00:00',
+    barberName: 'Hassan',
+    barberEmail: 'hassan@example.com',
+  })
+  const entry = (id: string, subject: string, createdAt: string, failed = false) => ({
+    id,
+    createdAt,
+    kind: 'auth_recovery' as const,
+    recipient: 'ada@example.com',
+    subject,
+    outcome: failed
+      ? { status: 'failed' as const, errorCode: 'send_failed_transient' as const }
+      : { status: 'sent' as const },
+    attemptCount: 1,
+  })
+  const firstPage = [
+    entry('55555555-5555-4555-8555-555555555551', 'Mejl ett', '2096-01-03T10:00:00.000003+00:00'),
+    entry(
+      '55555555-5555-4555-8555-555555555552',
+      'Mejl två',
+      '2096-01-03T09:00:00.000002+00:00',
+      true,
+    ),
+  ]
+  const port: DeliveryStatusPort = {
+    listFailed: () =>
+      Promise.resolve(
+        ok([
+          delivery('11111111-1111-4111-8111-111111111111', 'Ada Kund'),
+          delivery('22222222-2222-4222-8222-222222222222', 'Bea Kund'),
+        ]),
+      ),
+    retry: () => Promise.resolve(ok(true)),
+    discard: () => Promise.resolve(err('network', 'Kunde inte uppdatera mejlleveransen.')),
+    listLog: (cursor) => {
+      deliveryCursors = [...deliveryCursors, cursor?.before ?? null]
+      return Promise.resolve(
+        cursor === null
+          ? ok({
+              entries: firstPage,
+              next: { before: firstPage[1]?.createdAt ?? '', beforeId: firstPage[1]?.id ?? '' },
+            })
+          : ok({
+              entries: [
+                entry(
+                  '55555555-5555-4555-8555-555555555553',
+                  'Mejl tre',
+                  '2096-01-03T08:00:00.000001+00:00',
+                ),
+              ],
+              next: null,
+            }),
+      )
+    },
+    readCopy: (id) =>
+      Promise.resolve(
+        id === '55555555-5555-4555-8555-555555555553'
+          ? err('not_found', 'Kopian har rensats (äldre än 30 dagar).')
+          : ok({
+              subject: 'Mejl ett',
+              html: DELIVERY_COPY_HTML,
+              text: 'Välj nytt lösenord: [dold länk]',
+            }),
+      ),
+  }
+  render(h(DeliveryStatus, { port }), root())
+}
+
+type SettingsAction = 'load' | 'release-save' | 'unmount' | 'remount' | 'snapshot'
+let settingsHarness:
+  | {
+      control: (action: SettingsAction) => void
+      snapshot: () => { writes: readonly (readonly [string, string])[]; stored: string }
+    }
+  | undefined
+
+export function settingsControl(action: SettingsAction) {
+  if (settingsHarness === undefined) throw new Error('settings harness not mounted')
+  settingsHarness.control(action)
+  return settingsHarness.snapshot()
+}
+
+// The fake backend commits a save only when the save call completes, like the database does.
+// `holdFirstSave` keeps that first commit pending so a revisit can race it.
+export function mountSettingsHarness(
+  role: 'owner' | 'barber',
+  failLoad = false,
+  holdFirstSave = false,
+): void {
+  const loadGate = deferred()
+  const saveGate = deferred()
+  const writes: [string, string][] = []
+  let stored = '24'
+  let lists = 0
+  const port: SettingsViewPort = {
+    list: async () => {
+      lists += 1
+      if (lists === 1) await loadGate.promise
+      return failLoad
+        ? err('network', 'Kunde inte läsa inställningar.')
+        : ok(new Map([['cancellation_policy_hours', stored]]))
+    },
+    save: async (key, value) => {
+      writes.push([key, value])
+      if (holdFirstSave && writes.length === 1) await saveGate.promise
+      stored = value
+      return ok(value)
     },
   }
-  const target = root()
-  render(
-    h(SiteView, { dark: false, lang: 'en', s: buildAdminStyles(palette(false), false), port }),
-    target,
-  )
+  const mountView = (): void =>
+    render(
+      h(SettingsView, {
+        dark: false,
+        lang: 'sv',
+        s: buildAdminStyles(palette(false), false),
+        profile: role === 'owner' ? owner : barber,
+        port,
+      }),
+      root(),
+    )
+  settingsHarness = {
+    control: (action) => {
+      if (action === 'load') loadGate.release()
+      if (action === 'release-save') saveGate.release()
+      if (action === 'unmount') render(null, root())
+      if (action === 'remount') mountView()
+    },
+    snapshot: () => ({ writes: [...writes], stored }),
+  }
+  mountView()
 }
 
 // Deferred calls model the commit itself, so a stale UI response cannot masquerade as a safe write.
@@ -648,90 +782,6 @@ export function mountAdminMutationHarness(
           })
   }
   render(h(Harness, {}), root())
-}
-
-let hydrationHarness:
-  | {
-      releaseLoad: () => void
-      releaseWrite: () => void
-      snapshot: () => { writes: number; about: string; gallery: number }
-    }
-  | undefined
-export function adminHydrationControl(action: 'load' | 'write' | 'snapshot') {
-  if (hydrationHarness === undefined) throw new Error('hydration harness not mounted')
-  if (action === 'load') hydrationHarness.releaseLoad()
-  if (action === 'write') hydrationHarness.releaseWrite()
-  return hydrationHarness.snapshot()
-}
-export function mountAdminHydrationHarness(kind: 'site' | 'gallery', failLoad = false): void {
-  const load = deferred(),
-    write = deferred()
-  let writes = 0,
-    about = 'md',
-    gallery = 0
-  hydrationHarness = {
-    releaseLoad: load.release,
-    releaseWrite: write.release,
-    snapshot: () => ({ writes, about, gallery }),
-  }
-  const props = { dark: false, lang: 'en' as const, s: buildAdminStyles(palette(false), false) }
-  const port: SiteViewPort = {
-    listContent: async () => {
-      await load.promise
-      if (failLoad) return err('network', 'Synthetic load failure')
-      return ok([])
-    },
-    listSettings: async () => {
-      await load.promise
-      return ok(
-        new Map([
-          ['homepage_scale', 'md'],
-          ['about_scale', 'md'],
-        ]),
-      )
-    },
-    saveContent: async () => {
-      throw new Error('unexpected save content')
-    },
-    saveSetting: async (_key, value) => {
-      if (++writes === 1) await write.promise
-      about = value
-      return ok(value)
-    },
-    saveSettings: async () => {
-      throw new Error('unexpected presentation save')
-    },
-  }
-  const galleryPort: GalleryManagerPort = {
-    listGallery: async () => {
-      await load.promise
-      if (failLoad) return err('network', 'Synthetic load failure')
-      return ok([])
-    },
-    uploadImage: async (imageKind, _file, alt, sortOrder) => {
-      writes++
-      gallery++
-      return ok({
-        id: 'new-image',
-        kind: imageKind,
-        alt,
-        sortOrder,
-        storagePath: 'new.png',
-        url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
-      })
-    },
-    deleteImage: async () => {
-      writes++
-      gallery--
-      return ok({ pending: false })
-    },
-  }
-  render(
-    kind === 'site'
-      ? h(SiteView, { ...props, port })
-      : h(GalleryManager, { ...props, kind: 'salon', title: 'Gallery', port: galleryPort }),
-    root(),
-  )
 }
 
 const publicPorts: DesktopSitePreviewPorts = {

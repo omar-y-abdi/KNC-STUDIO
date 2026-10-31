@@ -1,5 +1,6 @@
 import { generate, parse, walk } from 'css-tree'
 import type { CmsDocument, CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
+import { APPEARANCE_FIELDS } from './appearanceFields'
 import { mergeModes, mobileBarberCss, snapshotNative } from './nativePages'
 
 function preserveOverrides(html: string, previous: string): string {
@@ -193,6 +194,11 @@ export function resourceLayoutsChanged(before: CmsDocument, after: CmsDocument):
 
 function visualSettings(document: CmsDocument): [string, string][] {
   return Object.entries(document.settings)
-    .filter(([key]) => key === 'homepage_logo_path' || key.startsWith('business_'))
+    .filter(
+      ([key]) =>
+        key === 'homepage_logo_path' ||
+        key.startsWith('business_') ||
+        APPEARANCE_FIELDS.some((field) => field.key === key),
+    )
     .sort(([a], [b]) => a.localeCompare(b))
 }

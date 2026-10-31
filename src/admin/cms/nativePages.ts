@@ -1,12 +1,19 @@
 import type { CmsLang, CmsMode, CmsPage } from '../../../shared/cms'
 import privacyTemplate from '../../../public/privacy.html?raw'
 import termsTemplate from '../../../public/terms.html?raw'
+import contactTemplate from '../../../public/contact.html?raw'
+import { INFORMATION_PAGE_PATHS } from '../../../shared/cms'
 import { CORE_PAGE_IDS } from './corePages'
+import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
 
 const attrs = ['class', 'title', 'href', 'target', 'rel', 'src', 'alt', 'aria-label', 'placeholder']
-const legalTemplates = { privacy: privacyTemplate, terms: termsTemplate }
-/** Base sheets the Worker inlines before a legal page's stored CSS (src/worker.ts). */
-const legalBaseSheets = ['/tokens.css', '/info.css']
+const informationTemplates: Readonly<Record<string, string>> = {
+  '/privacy': privacyTemplate,
+  '/terms': termsTemplate,
+  '/contact': contactTemplate,
+}
+/** Base sheets the Worker inlines before an information page's stored CSS (src/worker.ts). */
+const informationBaseSheets = ['/tokens.css', '/info.css']
 const responsive =
   '@media(max-width:768px){[data-knc-surface^="desktop-"]{display:none!important}}@media(min-width:769px){[data-knc-surface^="mobile-"]{display:none!important}}'
 
@@ -199,7 +206,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     'position:fixed;left:0;top:0;width:1440px;height:900px;opacity:0;pointer-events:none;z-index:-1;border:0'
   frame.src = '/cms-public/source'
   document.body.appendChild(frame)
-  const paths = ['/', '/about', '/booking', '/my-bookings'] as const
+  const paths = NATIVE_PUBLIC_PATHS
   const data = new Map<string, PageSources>(
     paths.map((path) => [
       path,
@@ -276,6 +283,7 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
     ['Mina bokningar', 'My bookings'],
     ['Integritetspolicy', 'Privacy policy'],
     ['Bokningsvillkor', 'Booking terms'],
+    ['Kontakt', 'Contact'],
   ] as const
   const pages: CmsPage[] = []
   for (const [index, path] of paths.entries()) {
@@ -329,27 +337,29 @@ export async function readCorePageSource(): Promise<CmsPage[]> {
       content,
     })
   }
-  for (const [index, kind] of (['privacy', 'terms'] as const).entries()) {
+  for (const [index, path] of INFORMATION_PAGE_PATHS.entries()) {
     // Public aliases redirect to owner-published pages inside the generated app shell. Source
     // capture uses the shipped templates; ensureCorePages preserves existing authored content.
-    const doc = new DOMParser().parseFromString(legalTemplates[kind], 'text/html')
+    const template = informationTemplates[path]
+    if (!template) throw new Error('Informationssidans källmall saknas.')
+    const doc = new DOMParser().parseFromString(template, 'text/html')
     // The Worker inlines the base sheets; the page stores only its own rules (STY-7). Its token
     // class sits on an element inside <body>, so body.innerHTML keeps it.
     for (const link of doc.querySelectorAll('link[rel="stylesheet"]'))
-      if (!legalBaseSheets.includes(link.getAttribute('href') ?? ''))
-        throw new Error('Den juridiska sidan länkar en okänd stil.')
+      if (!informationBaseSheets.includes(link.getAttribute('href') ?? ''))
+        throw new Error('Informationssidan länkar en okänd stil.')
     const css = [...doc.querySelectorAll('style')]
       .map((style) => style.textContent ?? '')
       .join('\n')
     for (const script of doc.querySelectorAll('script')) script.remove()
     const name = names[index + 4]
     const id = CORE_PAGE_IDS[index + 4]
-    if (!name || !id) throw new Error('Den juridiska sidans identitet saknas')
+    if (!name || !id) throw new Error('Informationssidans identitet saknas')
     const variant = { html: doc.body.innerHTML, css: { light: css, dark: css } }
     pages.push({
       id,
-      path: `/${kind}`,
-      kind,
+      path,
+      kind: path === '/privacy' ? 'privacy' : path === '/terms' ? 'terms' : 'page',
       name: { sv: name[0], en: name[1] },
       title: { sv: name[0], en: name[1] },
       description: { sv: '', en: '' },
