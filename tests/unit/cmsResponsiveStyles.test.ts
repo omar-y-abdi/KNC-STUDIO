@@ -420,6 +420,88 @@ describe('targeted cascade geometry', () => {
   })
 })
 
+describe('resize guards on a component rule', () => {
+  // A guard ties with its component rule on specificity and importance, so the last one wins.
+  const valuesOf = (css: string, property: string): string[] => {
+    const values: string[] = []
+    walk(parse(css), {
+      visit: 'Declaration',
+      enter(node) {
+        if (node.property === property) values.push(generate(node.value))
+      },
+    })
+    return values
+  }
+  const guard = (id: string, width: string): string =>
+    `@media (min-width:769px){&:where(#${id}){width:${width}!important}}`
+
+  it('keeps every sheet ordered when one edit delivers the authored width and its guard', () => {
+    const id = '10000000-0000-4000-8000-000000000001'
+    const card = (lang: string): string => `cms-body-${id}-${lang}-card`
+    let page = createSitePage({ id, path: '/offers', name: { sv: 'Ny', en: 'New' } })
+    for (const lang of ['sv', 'en'] as const)
+      page.content[lang] = {
+        html: `<div id="${card(lang)}"><img src="/og-image.png"></div>`,
+        css: { light: '#native{color:red}', dark: '#native{color:blue}' },
+      }
+    for (const [width, zoom] of [
+      ['56%', '.8'],
+      ['44.8%', '.64'],
+      ['35.84%', '.512'],
+    ] as const) {
+      const edited = structuredClone(page)
+      edited.content.sv.css.light = `#native{color:red}@media (min-width:769px){#${card('sv')}{width:70%!important;${guard(card('sv'), width)}justify-self:end!important;zoom:${zoom}!important}}`
+      page = syncPageLayout(page, edited, 'sv', 'light')
+      for (const lang of ['sv', 'en'] as const)
+        for (const mode of ['light', 'dark'] as const) {
+          const sheet = page.content[lang].css[mode]
+          expect(valuesOf(sheet, 'width')).toEqual(['70%', width])
+          expect(valuesOf(sheet, 'zoom')).toEqual([zoom])
+          expect(valuesOf(sheet, 'justify-self')).toEqual(['end'])
+          expect(sheet).not.toContain('{}')
+        }
+    }
+  })
+
+  it('moves an authored width that arrives after its guard ahead of that guard', () => {
+    const before = `@media(min-width:769px){#card{color:red;${guard('card', '40%')}}}`
+    const after = before.replace('color:red;', 'color:red;width:71%!important;')
+    const result = syncLayout(before, after, before.replace('color:red', 'color:blue'))
+    expect(valuesOf(result, 'width')).toEqual(['71%', '40%'])
+    expect(result).toContain('color:blue')
+    expect(result).not.toContain('{}')
+  })
+
+  it('repairs a stored guard that precedes its authored width on the next resize', () => {
+    const before = `@media(min-width:769px){#card{width:70%!important;${guard('card', '40%')}}}`
+    const stored = `@media (min-width:769px){#card{${guard('card', '40%')}}}@media (min-width:769px){#card{width:70%!important}}@media (min-width:769px){#card{justify-self:end!important}}`
+    const result = syncLayout(before, before.replace('40%', '32%'), stored)
+    expect(valuesOf(result, 'width')).toEqual(['70%', '32%'])
+    expect(valuesOf(result, 'justify-self')).toEqual(['end'])
+    expect(result).not.toContain('{}')
+  })
+
+  it('never moves a declaration across a media condition', () => {
+    const before = `@media(min-width:769px){#card{width:70%!important;${guard('card', '40%')}}}`
+    const other = `${before}@media(max-width:768px){#card{width:50%!important}}`
+    const result = syncLayout(before, before.replace('40%', '32%'), other)
+    expect(result).toContain('@media (max-width:768px){#card{width:50%!important}}')
+    expect(valuesOf(result, 'width')).toEqual(['70%', '32%', '50%'])
+  })
+
+  it('removes only the rules a sync emptied', () => {
+    const before = '@media(min-width:769px){#card{zoom:1}}'
+    const result = syncLayout(
+      before,
+      before.replace('zoom:1', 'zoom:.8'),
+      `${before}#authored{}@layer{#card{color:blue}}`,
+    )
+    expect(result).toBe(
+      '#authored{}@layer{#card{color:blue}}@media (min-width:769px){#card{zoom:.8}}',
+    )
+  })
+})
+
 describe('site theme defaults and owner overrides', () => {
   it('binds only mode-matched stored muted colors with byte-exact fallbacks', () => {
     const fixture: CmsPresentation = JSON.parse(
