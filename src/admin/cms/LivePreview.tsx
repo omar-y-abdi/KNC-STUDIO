@@ -14,6 +14,7 @@ import {
   type SitePageRender,
 } from '../../../shared/site-page'
 import { resolveBusinessSettings } from '../../site/business'
+import { renderContactFragment } from '../../site/contactPage'
 import type { CmsScene } from '../../cms/Scene'
 import { NATIVE_PUBLIC_PATHS } from '../../site/routeMetadata'
 
@@ -149,21 +150,23 @@ export function LivePreview({
       )
     return () => clearTimeout(deadline.current)
   }, [connected, native, page.path, presentation, draft, lang, mode, device, scene, attempt])
+  const business = resolveBusinessSettings(new Map(Object.entries(draft?.settings ?? {})))
   const sitePage = isSitePage(page)
-  const site = sitePage
-    ? previewSitePage(
-        presentation,
-        page,
-        lang,
-        mode,
-        resolveBusinessSettings(new Map(Object.entries(draft?.settings ?? {}))),
-      )
-    : null
+  const site = sitePage ? previewSitePage(presentation, page, lang, mode, business) : null
+  // lazy dev: the draft holds no schedule, so #contact-hours shows its fallback; fetch public
+  // discovery if owners need the hours here.
+  const variant =
+    page.path === '/contact'
+      ? {
+          ...page.content[lang],
+          html: renderContactFragment(page.content[lang].html, business, lang),
+        }
+      : page.content[lang]
   const content = native
     ? null
     : site
       ? { html: site.html, css: `${SITE_PAGE_CSS}\n${site.css[mode]}` }
-      : nativeCanvas(page.content[lang], mode)
+      : nativeCanvas(variant, mode)
   // Match the editor and Worker's base sheets and pinned scheme for information pages too.
   const base = sitePage
     ? { styles: ['/tokens.css'], scheme: mode }

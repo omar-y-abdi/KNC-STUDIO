@@ -775,6 +775,10 @@ for (const scenario of CMS_OWNER_SCENARIOS) {
             .locator('#cms-site-menu')
             .getByRole('link', { name: 'Boka tid', exact: true })
             .waitFor()
+          await frame
+            .locator('#cms-site-footer')
+            .getByRole('link', { name: 'Integritetspolicy', exact: true })
+            .waitFor()
           const padding = () => main.evaluate((node) => globalThis.getComputedStyle(node).padding)
           assert.equal(
             await padding(),

@@ -32,6 +32,8 @@ const protectedIds = new Set([
   'cancellation-policy-sv',
   'cancellation-policy-en',
 ])
+const contactSlotIds = new Set(['contact-title', 'contact-details', 'contact-hours'])
+const contactSlotAttributes = ['data-business-name', 'data-business-city']
 
 // The marquee code moves these nodes or measures them; the individual transform
 // properties are transforms too. The gallery loop math also owns its tile sizes.
@@ -209,6 +211,31 @@ export const styleSectors = [
   },
 ]
 
+/** A Contact slot the Worker fills on every request. The name and city count only inside the Contact
+ * page, because the legal pages carry the same attributes and stay editable. This runs for every
+ * component on load, so it reads the raw attributes; getAttributes also resolves styles and ids. */
+function isContactSlot(component: Component): boolean {
+  const attrs = component.get('attributes') ?? {}
+  if (contactSlotIds.has(String(attrs['id'] ?? ''))) return true
+  if (!contactSlotAttributes.some((name) => attrs[name] !== undefined)) return false
+  let parent = component.parent()
+  while (parent) {
+    if (parent.getAttributes()['data-business-contact-page'] === '1') return true
+    parent = parent.parent()
+  }
+  return false
+}
+
+/** Filled by the Worker: the component or one of its ancestors is a Contact slot. */
+export function isServerOwned(component: Component): boolean {
+  let current: Component | undefined = component
+  while (current) {
+    if (isContactSlot(current)) return true
+    current = current.parent()
+  }
+  return false
+}
+
 export function isProtected(component: Component): boolean {
   let current: Component | undefined = component
   while (current) {
@@ -216,6 +243,7 @@ export function isProtected(component: Component): boolean {
     if (
       protectedIds.has(String(attrs['id'] ?? '')) ||
       attrs['data-knc-slot'] ||
+      isContactSlot(current) ||
       (current === component && attrs['data-knc-required'] === 'true')
     )
       return true
@@ -244,6 +272,8 @@ export function configureComponent(component: Component, options: { silent?: boo
     Boolean(component.parent()?.getAttributes()['data-editor-about-slot'])
   const protectedComponent = isProtected(component) || compositionBoundary
   const readOnly = isReadOnlyPreview(component)
+  // Every server-owned component is protected, so the others skip this second ancestor walk.
+  const serverOwned = protectedComponent && isServerOwned(component)
   const role = runtimeOwnedRole(attrs, component.parent()?.getAttributes())
   // The model search also works for text nodes and components not yet mounted in the canvas.
   const retainedChildren = component.findFirstType((child) => {
@@ -251,13 +281,17 @@ export function configureComponent(component: Component, options: { silent?: boo
     return Boolean(
       attributes['data-knc-slot'] ||
       attributes['data-knc-required'] === 'true' ||
-      protectedIds.has(String(attributes['id'] ?? '')),
+      protectedIds.has(String(attributes['id'] ?? '')) ||
+      isContactSlot(child),
     )
   })
+  // A paragraph holding a slot would drop rich-text edits on its span, which the Worker overwrites.
+  const holdsSlot = retainedChildren && isContactSlot(retainedChildren)
   component.set(
     {
       // An unstylable array overrides stylable:false in GrapesJS; never set it on previews.
       ...(readOnly ? { editable: false, stylable: false } : {}),
+      ...(serverOwned || holdsSlot ? { editable: false } : {}),
       ...(!readOnly && role ? { unstylable: [...role.denied] } : {}),
       // GrapesJS hides inner SVG nodes by default, including the actual logo lettering.
       ...(!readOnly && component.is('svg-in')
@@ -283,7 +317,7 @@ export function configureComponent(component: Component, options: { silent?: boo
     },
     options,
   )
-  if (readOnly) component.setTraits([])
+  if (readOnly || serverOwned) component.setTraits([])
   // The image inspector already owns the accessible alt-text field. Keep one
   // editor for that attribute instead of exposing a second, unsynchronized trait.
   else if (tag === 'img') component.removeTrait('alt')
