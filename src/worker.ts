@@ -6,6 +6,13 @@ import {
   renderPublicMarkdown,
   type InformationPage,
 } from './site/agentContent'
+import {
+  contactDefaults,
+  escapeAttribute,
+  escapeElementText,
+  renderContactFragment,
+  renderContactPage,
+} from './site/contactPage'
 import { repairDesktopCss } from '../shared/cms-device-css'
 import { siteThemeCss } from '../shared/site-theme'
 import { themeDeclarations } from '../shared/site-theme-declarations'
@@ -44,11 +51,9 @@ import {
   EMPTY_BUSINESS_FACTS,
   buildBusinessStructuredData,
   formatBusinessAddress,
-  openingHours,
   resolveBusinessSettings,
   type BusinessDiscoveryFacts,
   type BusinessSettings,
-  type SchemaDay,
 } from './site/business'
 
 interface StaticAssets {
@@ -324,18 +329,6 @@ async function loadDiscovery(env: Env): Promise<BusinessDiscovery | null> {
   } catch {
     return null
   }
-}
-
-function escapeAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-}
-
-function escapeElementText(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 function tagBounds(
@@ -687,111 +680,15 @@ export function renderHomepageMetadata(
   )
 }
 
-function contactHours(facts: BusinessDiscoveryFacts): string {
-  const days: Readonly<Record<SchemaDay, string>> = {
-    Monday: 'Måndag',
-    Tuesday: 'Tisdag',
-    Wednesday: 'Onsdag',
-    Thursday: 'Torsdag',
-    Friday: 'Fredag',
-    Saturday: 'Lördag',
-    Sunday: 'Söndag',
-  }
-  const hours = openingHours(facts)
-  if (hours.length === 0)
-    return '<p>Se aktuella tider i <a href="/booking">bokningen</a> eller kontakta salongen.</p>'
-  return (
-    '<dl>' +
-    hours
-      .map(
-        ({ dayOfWeek, opens, closes }) =>
-          `<dt>${dayOfWeek.map((day) => days[day]).join(', ')}</dt><dd>${opens}–${closes}</dd>`,
-      )
-      .join('') +
-    '</dl>'
-  )
-}
-
-/** Studio may add attributes or nested markup to a slot. Match its identity in the parsed tree,
- * retaining the owner's element and styling while replacing only the authoritative content. */
-function contactSlots(
-  html: string,
-  business: BusinessSettings,
-  details: string,
-  hours: string,
-): string {
-  const fragment = parseFragment(html)
-  const ids = new Map([
-    ['contact-title', escapeElementText('Kontakta ' + business.name)],
-    ['contact-details', details],
-    ['contact-hours', hours],
-  ])
-  const attributes = new Map([
-    ['data-business-name', escapeElementText(business.name)],
-    ['data-business-city', escapeElementText(business.city)],
-  ])
-  const visit = (node: DefaultTreeAdapterMap['node']): void => {
-    if ('attrs' in node) {
-      const content = node.attrs
-        .map((attr) => (attr.name === 'id' ? ids.get(attr.value) : attributes.get(attr.name)))
-        .find((value) => value !== undefined)
-      if (content !== undefined) {
-        node.childNodes = parseFragment(content).childNodes
-        for (const child of node.childNodes) child.parentNode = node
-        return
-      }
-    }
-    if ('childNodes' in node) node.childNodes.forEach(visit)
-  }
-  visit(fragment)
-  return serialize(fragment)
-}
-
-export function renderContactFragment(
-  html: string,
-  business: BusinessSettings,
-  facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
-): string {
-  const phone = business.phoneTel
-    ? '<dt>Telefon</dt><dd><a href="tel:' +
-      escapeAttribute(business.phoneTel) +
-      '">' +
-      escapeElementText(business.phoneDisplay) +
-      '</a></dd>'
-    : ''
-  const email =
-    '<dt>E-post</dt><dd><a href="mailto:' +
-    escapeAttribute(business.email) +
-    '">' +
-    escapeElementText(business.email) +
-    '</a></dd>'
-  const address =
-    '<dt>Besöksadress</dt><dd>' + escapeElementText(formatBusinessAddress(business)) + '</dd>'
-  return contactSlots(
-    html,
-    business,
-    '<dl>' + address + phone + email + '</dl>',
-    contactHours(facts),
-  )
-}
-
 /** The fallback owns its head metadata; only its body passes through the fragment parser. */
 export function renderContactMetadata(
   html: string,
   business: BusinessSettings,
   facts: BusinessDiscoveryFacts = EMPTY_BUSINESS_FACTS,
 ): string {
-  const title = 'Kontakta ' + business.name + ' – barbershop i ' + business.city
-  let rendered = replaceElementText(html, 'contact-meta-title', title)
-  rendered = replaceMetaContent(
-    rendered,
-    'contact-description',
-    'Officiell kontakt, adress och bokningsinformation för ' +
-      business.name +
-      ' i ' +
-      business.city +
-      '.',
-  )
+  const defaults = contactDefaults(business, 'sv')
+  let rendered = replaceElementText(html, 'contact-meta-title', defaults.title)
+  rendered = replaceMetaContent(rendered, 'contact-description', defaults.description)
   const opening = /<body\b[^>]*>/i.exec(rendered)
   const end = rendered.lastIndexOf('</body>')
   if (!opening || end < opening.index + opening[0].length)
@@ -799,7 +696,7 @@ export function renderContactMetadata(
   const start = opening.index + opening[0].length
   return (
     rendered.slice(0, start) +
-    renderContactFragment(rendered.slice(start, end), business, facts) +
+    renderContactFragment(rendered.slice(start, end), business, 'sv', facts) +
     rendered.slice(end)
   )
 }
@@ -1246,23 +1143,19 @@ async function fetchPublicContent(request: Request, env: Env): Promise<Response>
       headers.delete('ETag')
       headers.delete('Last-Modified')
       headers.set('Cache-Control', 'no-store')
+      if (informationPath !== null) {
+        varyAccept(headers)
+        headers.set('Link', '</llms.txt>; rel="describedby"')
+      }
       // Fill only the authored fragment. The SPA shell must never be parsed or reserialised here.
       const page =
         cmsPage.path === '/contact'
-          ? {
-              ...cmsPage,
-              content: {
-                ...cmsPage.content,
-                [lang]: {
-                  ...cmsPage.content[lang],
-                  html: renderContactFragment(
-                    cmsPage.content[lang].html,
-                    discovery?.business ?? DEFAULT_BUSINESS,
-                    discovery?.facts ?? EMPTY_BUSINESS_FACTS,
-                  ),
-                },
-              },
-            }
+          ? renderContactPage(
+              cmsPage,
+              lang,
+              discovery?.business ?? DEFAULT_BUSINESS,
+              discovery?.facts ?? EMPTY_BUSINESS_FACTS,
+            )
           : cmsPage
       let body = renderCmsPage(
         await index.text(),

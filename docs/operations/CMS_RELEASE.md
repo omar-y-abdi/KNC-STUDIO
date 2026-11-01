@@ -146,10 +146,10 @@ These fixes follow O-Y-A's `src/cms/client/editor.mjs`, `dom.mjs`, `inspector.mj
 CSS-before-HTML import, native dialogs, explicit image picking and direct element controls.
 Booking/auth components remain native to Blade & Blend. Current created pages persist only their
 authored body and CSS. `shared/site-page.ts` renders the live homepage logo, current business
-contact links, language/theme controls and page menu around that body in the editor, locked preview
-and public Worker. The header is locked in a created page's canvas; it is not materialized into
-another page-owned copy. Menus use the current draft in Studio and the published presentation in
-public responses.
+contact links, language/theme controls and page menu around that body, and the live privacy and
+terms footer below it, in the editor, locked preview and public Worker. The header and footer are
+locked in a created page's canvas; neither is materialized into another page-owned copy. Menus use
+the current draft in Studio and the published presentation in public responses.
 
 Legacy pages with `layout: 'independent'` or an actual frozen shell remain readable. Studio drops
 their frozen chrome on load, restore and import while preserving body content and its styles;
