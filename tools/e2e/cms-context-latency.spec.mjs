@@ -138,6 +138,9 @@ test('cms-context-latency', async ({ page, context, evidenceDir }) => {
         },
         [width, height],
       )
+      // The installed clock fakes requestAnimationFrame, so a frame wait cannot show the iframe's
+      // real resize event was delivered. Wait for the event itself.
+      await page.waitForFunction(() => globalThis.deviceSizes.length > 0)
       await page.evaluate(
         () =>
           new Promise((resolve) =>
