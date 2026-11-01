@@ -15,6 +15,7 @@ import {
   isLiveSitePage,
   menuLinks,
   renderSitePage,
+  sitePageBody,
   withoutFrozenChromeCss,
   type SiteContact,
 } from '../../shared/site-page'
@@ -167,6 +168,27 @@ describe('a created page is its body under the live homepage header', () => {
     expect(dark).toContain('class="cms-site-action-theme" href="/hemsida?lang=en&amp;mode=light"')
     expect(dark).toContain('class="cms-site-action-language" href="/hemsida?lang=sv&amp;mode=dark"')
   })
+
+  it('ends with a live footer linking the privacy policy and booking terms, never stored', () => {
+    const page = created('/hemsida', 'Ny sida')
+    const presentation = presentationWith(page)
+    const labels = {
+      sv: ['Integritetspolicy', 'Bokningsvillkor'],
+      en: ['Privacy policy', 'Booking terms'],
+    } as const
+    for (const lang of ['sv', 'en'] as const) {
+      for (const mode of ['light', 'dark', null] as const) {
+        const render = renderSitePage(presentation, page, lang, mode, contact)
+        const query = `?lang=${lang}${mode ? `&amp;mode=${mode}` : ''}`
+        expect(render.html).toContain(
+          `<footer id="cms-site-footer"><a href="/privacy${query}">${labels[lang][0]}</a><a href="/terms${query}">${labels[lang][1]}</a></footer>`,
+        )
+        expect(withId(render.html, 'cms-site-footer')).toHaveLength(1)
+        // The stored body is what capture keeps: the header, the wrapper and the footer all drop out.
+        expect(sitePageBody(render.html)).toBe(page.content[lang].html)
+      }
+    }
+  })
 })
 
 /** A page as the Studio stored it before the live header: frozen chrome around an owner body. */
@@ -213,11 +235,14 @@ describe('frozen chrome of pages made before the live header', () => {
     expect(dropFrozenChrome(plain)).toBe(plain)
   })
 
-  it('renders a migrated frozen page with the live header only', () => {
+  it('renders a migrated frozen page with the live header and footer only', () => {
     const page = dropFrozenChrome(frozenPage(ownerBody))
     const html = renderSitePage(presentationWith(page), page, 'sv', 'light', contact).html
-    expect(html).not.toMatch(/Old logo|cms-site-shell|cms-site-footer|Integritetspolicy/)
+    expect(html).not.toMatch(/Old logo|cms-site-shell|\/sida-a/)
+    expect(html).not.toContain('<a href="/privacy">Integritetspolicy</a>')
     expect(html.match(/id="cms-site-header"/g)).toHaveLength(1)
+    expect(withId(html, 'cms-site-footer')).toHaveLength(1)
+    expect(html.match(/href="\/privacy/g)).toHaveLength(1)
     expect(html).toContain(`<div id="cms-site-content">${ownerBody}</div>`)
   })
 
@@ -564,15 +589,15 @@ describe('which created pages the Worker treats as frozen', () => {
 })
 
 describe('the preview of a created page (history review included)', () => {
-  it('shows one live header and no footer for a frozen page from an old revision', () => {
+  it('shows one live header and one live footer for a frozen page from an old revision', () => {
     const frozen = frozenPage(ownerBody)
     const presentation = presentationWith(frozen)
     for (const lang of ['sv', 'en'] as const) {
       const html = previewSitePage(presentation, frozen, lang, 'dark', contact).html
       expect(withId(html, 'cms-site-header')).toHaveLength(1)
       expect(withId(html, 'cms-site-menu')).toHaveLength(1)
-      expect(withId(html, 'cms-site-footer')).toHaveLength(0)
-      expect(html).not.toMatch(/Old logo|Integritetspolicy|cms-site-shell/)
+      expect(withId(html, 'cms-site-footer')).toHaveLength(1)
+      expect(html).not.toMatch(/Old logo|cms-site-shell/)
       expect(html).toContain('cms-site-bar')
     }
     const current = created('/hemsida', 'Ny sida')

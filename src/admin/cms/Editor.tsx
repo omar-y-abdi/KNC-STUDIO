@@ -26,6 +26,7 @@ import {
   deniedProperty,
   isProtected,
   isReadOnlyPreview,
+  isServerOwned,
   runtimeOwnedRole,
   styleSectors,
 } from './editorPolicy'
@@ -223,8 +224,10 @@ function editorContextKey(props: Props, chrome: string): string {
   return `${props.page.id}:${props.lang}:${props.mode}${bookingContext}${homeDevice}:${sharedChromeKey}`
 }
 
-/** The live header is edited on the homepage: a created page's canvas shows it, never picks it. */
-function lockSiteHeader(editor: Editor): void {
+/** The live header is edited on the homepage and the live footer is generated: a created page's
+ * canvas shows both, never picks them. By model, because `find` reads rendered views, which a
+ * remounted editor's first load can reach before its frame has any. */
+function lockSiteChrome(editor: Editor): void {
   const lock = (component: Component): void => {
     component.set(
       {
@@ -245,7 +248,10 @@ function lockSiteHeader(editor: Editor): void {
     )
     component.components().forEach(lock)
   }
-  editor.getWrapper()?.find('#cms-site-header').forEach(lock)
+  for (const id of ['cms-site-header', 'cms-site-footer']) {
+    const chrome = editor.Components.getById(id)
+    if (chrome) lock(chrome)
+  }
 }
 
 /** The comparison frame's created page: the live header, the base sheet and the page's own CSS. */
@@ -741,7 +747,7 @@ export function CmsEditor(props: Props): JSX.Element {
       // pending body edits or clear selection just to update the read-only header.
       applying.current = true
       const reused = updateSiteHeader(editor, chrome)
-      if (reused) lockSiteHeader(editor)
+      if (reused) lockSiteChrome(editor)
       applying.current = false
       if (reused) {
         rendered.current = { ...previous, key: contextKey, chrome }
@@ -884,7 +890,7 @@ export function CmsEditor(props: Props): JSX.Element {
       }
       if (!reused) editor.getWrapper()?.components().forEach(configure)
       // After the configure pass, which makes SVG parts selectable, on both import paths.
-      if (sitePage) lockSiteHeader(editor)
+      if (sitePage) lockSiteChrome(editor)
       deferredAbout.current = content.aboutPreview ?? null
       // Layers and restored IDs may reach the inactive surface before idle completion.
       // The tab can change while the first load yields, so read the current request.
@@ -1148,6 +1154,7 @@ export function CmsEditor(props: Props): JSX.Element {
 
   const attributes = selected?.getAttributes() ?? {}
   const tag = String(selected?.get('tagName') ?? '').toLowerCase()
+  const serverOwned = selected ? isServerOwned(selected) : false
   const textLike =
     selected &&
     (['text', 'textnode', 'link'].includes(String(selected.get('type'))) || tag === 'text')
@@ -1155,7 +1162,7 @@ export function CmsEditor(props: Props): JSX.Element {
     ?.components()
     .some((child: Component) => !child.is('textnode') && child.get('tagName') !== 'br')
   const mixedTextNodes =
-    selected && hasElementChildren
+    selected && hasElementChildren && !serverOwned
       ? selected.components().filter((child: Component) => child.is('textnode'))
       : []
   const readOnly = selected ? isReadOnlyPreview(selected) : false
@@ -1331,7 +1338,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   Ta bort
                 </button>
               </div>
-              {textLike && !hasElementChildren && (
+              {textLike && !hasElementChildren && !serverOwned && (
                 <label>
                   Text
                   <CmsTextarea
@@ -1390,7 +1397,7 @@ export function CmsEditor(props: Props): JSX.Element {
                   />
                 </label>
               ))}
-              {tag === 'a' && (
+              {tag === 'a' && !serverOwned && (
                 <label>
                   Länk
                   <input
@@ -1474,8 +1481,9 @@ export function CmsEditor(props: Props): JSX.Element {
               </div>
               {isProtected(selected) && (
                 <p class="cms-lock-note">
-                  Funktionsblocket är skyddat. Utseendet får ändras; kopplingen till runtime
-                  bevaras.
+                  {serverOwned
+                    ? 'Uppgiften hämtas från Företag & SEO och bokningsschemat. Utseendet får ändras.'
+                    : 'Funktionsblocket är skyddat. Utseendet får ändras; kopplingen till runtime bevaras.'}
                 </p>
               )}
             </section>

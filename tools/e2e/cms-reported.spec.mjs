@@ -370,6 +370,9 @@ test.describe('contact upgrade', () => {
       expect(variant.html).not.toMatch(/<script|<link|<html|<body/)
       expect(variant.css).toEqual({ light: '', dark: '' })
     }
+    expect(result.contact.title).toEqual({ sv: '', en: '' })
+    expect(result.contact.content.en.html).toContain('Visiting')
+    expect(result.contact.content.sv.html).toContain('Besöksadress')
     testInfo.annotations.push({
       type: 'contact-upgrade-bytes',
       description: JSON.stringify(result.bytes),
@@ -536,6 +539,109 @@ test('contact remains core after import with another id, a name edit and menu vi
   await expect(
     page.frameLocator('.cms-live-preview iframe').locator('#cms-site-shell'),
   ).toHaveCount(0)
+})
+
+test('contact slots are server-owned in Studio and the locked preview fills them', async ({
+  page,
+  studio,
+}) => {
+  const document = await studio.capture()
+  Object.assign(document.settings, {
+    business_name: 'Salongen Kontakt',
+    business_phone_display: '031-555 12 34',
+    business_phone_tel: '+46315551234',
+  })
+  await page.getByRole('button', { name: 'Utkast & backup', exact: true }).click()
+  await page.locator('input[type=file][accept="application/json,.json"]').setInputFiles({
+    name: 'contact-slots.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(document)),
+  })
+  await page.getByText('JSON-utkastet importerades', { exact: false }).waitFor()
+  await page.getByRole('button', { name: 'Avbryt', exact: true }).click()
+  await page.getByRole('button', { name: 'Kontakt', exact: true }).click()
+  await studio.frame.locator('#contact-title').waitFor()
+  const inspector = page.locator('#cms-inspector')
+  for (const selector of ['#contact-title', '#contact-details']) {
+    await select(page, selector)
+    await expect(
+      inspector.getByText('Uppgiften hämtas från Företag & SEO', { exact: false }),
+    ).toBeVisible()
+    await expect(inspector.getByLabel('Text', { exact: true })).toHaveCount(0)
+    await expect(inspector.getByRole('button', { name: 'Ta bort', exact: true })).toBeDisabled()
+  }
+  await select(page, '#contact-booking-title')
+  await expect(inspector.getByLabel('Text', { exact: true })).toBeVisible()
+  await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    editor.select(editor.getWrapper().find('[data-business-name]')[0].parent())
+  })
+  await expect(inspector.getByLabel(/^Text( \d)?$/).first()).toBeVisible()
+  const models = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    const find = (selector) => editor.getWrapper().find(selector)[0]
+    return {
+      title: find('#contact-title').get('editable'),
+      name: find('[data-business-name]').get('editable'),
+      paragraph: find('[data-business-name]').parent().get('editable'),
+      detail: find('#contact-details dd').get('editable'),
+      booking: find('#contact-booking-title').get('editable'),
+    }
+  })
+  expect(models.title).toBe(false)
+  expect(models.name).toBe(false)
+  expect(models.paragraph).toBe(false)
+  expect(models.detail).toBe(false)
+  expect(models.booking).not.toBe(false)
+  await page.getByRole('button', { name: 'Lås vy', exact: true }).click()
+  const preview = page.frameLocator('.cms-live-preview iframe')
+  await expect(preview.locator('#contact-title')).toHaveText('Kontakta Salongen Kontakt')
+  await expect(preview.locator('#contact-details')).toContainText('031-555 12 34')
+  await page.getByRole('button', { name: 'Lås upp', exact: true }).click()
+  await page.getByRole('button', { name: 'Integritetspolicy', exact: true }).click()
+  await studio.frame.locator('[data-business-name]').first().waitFor()
+  const legal = await page.evaluate(async () => {
+    const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+    const editor = cmsGrapes.editors.at(-1)
+    return editor
+      .getWrapper()
+      .find('[data-business-name]')
+      .map((node) => node.get('editable'))
+  })
+  expect(legal.length).toBeGreaterThan(0)
+  expect(legal.every((editable) => editable !== false)).toBe(true)
+})
+
+test('the live footer stays locked through a rebuild and out of the stored body', async ({
+  page,
+  studio,
+}) => {
+  await create(page)
+  const locks = () =>
+    page.evaluate(async () => {
+      const { cmsGrapes } = await import('/tools/e2e/admin-harness.tsx')
+      const footer = cmsGrapes.editors.at(-1).Components.getById('cms-site-footer')
+      return [footer, ...footer.components().models].flatMap((node) =>
+        ['selectable', 'editable', 'droppable', 'removable'].map((name) => node.get(name)),
+      )
+    })
+  const footer = studio.frame.locator('#cms-site-footer')
+  await footer.getByRole('link', { name: 'Integritetspolicy', exact: true }).waitFor()
+  expect(new Set(await locks())).toEqual(new Set([false]))
+  await page.getByRole('button', { name: 'EN', exact: true }).click()
+  await footer.getByRole('link', { name: 'Privacy policy', exact: true }).waitFor()
+  expect(new Set(await locks())).toEqual(new Set([false]))
+  await select(page, '#cms-site-content h1')
+  await page
+    .locator('#cms-inspector')
+    .getByLabel('Text', { exact: true })
+    .fill('Owner edited heading')
+  const document = await studio.capture()
+  const created = document.presentation.pages.find((item) => item.path === '/reported-page')
+  expect(created.content.en.html).toContain('Owner edited heading')
+  expect(created.content.en.html).not.toContain('cms-site-footer')
 })
 
 // The published legal page as the Worker serves it to a visitor who has not picked a mode: the
