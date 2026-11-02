@@ -737,3 +737,120 @@ for (const [label, authored] of [
     }
   })
 }
+
+test('cms-hierarchical-resize: a grouped rule never carries a resize guard past it', async ({
+  page,
+}) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const result = await page.evaluate(async () => {
+    const { syncPageLayout } = await import('/src/admin/cms/responsiveStyles.ts')
+    const { createSitePage } = await import('/shared/site-page.ts')
+    const id = '10000000-0000-4000-8000-000000000002'
+    const guard = (width) => `@media (min-width:769px){&:where(#card){width:${width}!important}}`
+    const sheet = (middle, last) =>
+      `#card{width:70%!important;${guard('40%')}}${middle}#card{width:${last}!important}`
+    const fixture = (last) => sheet('#card, :where(#unused){width:80%!important}', last)
+    const pageWith = (css) => {
+      const next = createSitePage({ id, path: '/offers', name: { sv: 'Ny', en: 'New' } })
+      for (const lang of ['sv', 'en'])
+        next.content[lang] = {
+          html: '<div id="card"><div></div></div>',
+          css: { light: css, dark: css },
+        }
+      return next
+    }
+    // Each variant renders in an iframe of the exact breakpoint width, with no body margin.
+    const measure = (css, size) => {
+      const frame = globalThis.document.createElement('iframe')
+      frame.style.width = `${size}px`
+      frame.style.height = '200px'
+      frame.style.border = '0'
+      globalThis.document.body.append(frame)
+      const doc = frame.contentDocument
+      doc.open()
+      doc.write(
+        `<!doctype html><html><head><style>html,body{margin:0}${css}</style></head><body><div id="card"><div></div></div></body></html>`,
+      )
+      doc.close()
+      const card = doc.getElementById('card')
+      const measured = {
+        ratio:
+          card.getBoundingClientRect().width / card.parentElement.getBoundingClientRect().width,
+        marginLeft: doc.defaultView.getComputedStyle(card).marginLeft,
+      }
+      frame.remove()
+      return measured
+    }
+    const base = pageWith(fixture('90%'))
+    const withMargin = globalThis.structuredClone(base)
+    withMargin.content.sv.css.light += '@media (min-width:769px){#card{margin-left:10px}}'
+    const edit = (before, after) => {
+      const current = pageWith(before)
+      const edited = globalThis.structuredClone(current)
+      edited.content.sv.css.light = after
+      return syncPageLayout(current, edited, 'sv', 'light')
+    }
+    const widen = (middle) => edit(sheet(middle, '90%'), sheet(middle, '95%'))
+    const mobile = (width) =>
+      `${sheet('', '90%')}@media (max-width:768px){#card{width:${width}!important}}`
+    const guardEdit = (width) =>
+      `#card{width:70%!important;${guard(width)}}#card{width:90%!important}`
+    const twoGuards = (width, middle = '') =>
+      `#card{width:70%!important;${guard('40%')}}${middle}#card{width:${width}!important;${guard('32%')}}`
+    const supported = (width) =>
+      `#card{width:70%!important;${guard('40%')}}@supports (display:grid){#card{width:${width}!important}}`
+    const mobileRule = '@media (max-width:768px){#card{width:50%!important}}'
+    const repeatResize = (last) =>
+      `#card{width:70%!important;${guard('40%')}}${mobileRule}#card{width:90%!important;${guard(last)}}`
+    const everywhere = (ratio) => ({ 390: ratio, 1440: ratio })
+    const runs = [
+      ['margin', syncPageLayout(base, withMargin, 'sv', 'light'), everywhere(0.9)],
+      ['widened', edit(fixture('90%'), fixture('95%')), everywhere(0.95)],
+      ['widened after empty middle', widen(''), everywhere(0.95)],
+      [
+        'widened after media group',
+        widen('@media (min-width:769px){#card, :where(#unused){width:80%!important}}'),
+        everywhere(0.95),
+      ],
+      [
+        'widened after supports group',
+        widen('@supports (display:grid){#card, :where(#unused){width:80%!important}}'),
+        everywhere(0.95),
+      ],
+      ['mobile', edit(mobile('50%'), mobile('55%')), { 390: 0.55, 1440: 0.9 }],
+      ['guard edit', edit(guardEdit('40%'), guardEdit('32%')), everywhere(0.9)],
+      ['two guards', edit(twoGuards('90%'), twoGuards('95%')), { 390: 0.95, 1440: 0.32 }],
+      [
+        'two guards around mobile',
+        edit(twoGuards('90%', mobileRule), twoGuards('95%', mobileRule)),
+        { 390: 0.95, 1440: 0.32 },
+      ],
+      ['width inside supports', edit(supported('90%'), supported('95%')), everywhere(0.95)],
+      ['repeat resize', edit(repeatResize('32%'), repeatResize('30%')), { 390: 0.9, 1440: 0.3 }],
+    ]
+    const report = []
+    for (const [name, next, ratios] of runs)
+      for (const lang of ['sv', 'en'])
+        for (const mode of ['light', 'dark'])
+          for (const size of [390, 1440])
+            report.push({
+              name,
+              lang,
+              mode,
+              size,
+              expected: ratios[size],
+              ...measure(next.content[lang].css[mode], size),
+            })
+    return report
+  })
+  assert.deepEqual(errors, [])
+  assert.equal(result.length, 88)
+  for (const row of result) {
+    const context = JSON.stringify(row)
+    assert.ok(Math.abs(row.ratio - row.expected) < 0.001, context)
+    if (row.name === 'margin')
+      assert.equal(row.marginLeft, row.size === 1440 ? '10px' : '0px', context)
+  }
+})
