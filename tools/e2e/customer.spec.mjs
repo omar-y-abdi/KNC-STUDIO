@@ -152,9 +152,12 @@ test('customer access, booking, CMS publication and HTTPS cookie contracts', asy
         .filter({ hasText: 'Customer E2E Barber' })
         .click()
       const date = new Date(Date.now() + 2 * 86400000)
-      const fmt = (options) =>
-        new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(date)
+      const fmt = (options, day = date) =>
+        new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', ...options }).format(day)
       const dateLabel = `${fmt({ weekday: 'long' })} ${fmt({ day: 'numeric' })} ${fmt({ month: 'long' })} ${fmt({ year: 'numeric' })}`
+      const monthFormat = { year: 'numeric', month: 'numeric' }
+      if (fmt(monthFormat) !== fmt(monthFormat, new Date()))
+        await page.getByRole('button', { name: 'Nästa månad', exact: true }).click()
       await page.getByRole('button', { name: dateLabel, exact: true }).click()
       await page
         .getByTestId('booking-service-option')
