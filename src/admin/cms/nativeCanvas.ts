@@ -46,6 +46,12 @@ function canvasRules(editor: Editor): CssRule[] {
 }
 
 const canvasStyleOptions = { withNested: true, allowEmpty: true }
+const canvasStyleProjectors = new WeakMap<Editor, (css: string) => string>()
+
+/** Apply an editor-only style projection to DOM paint, never to model or export CSS. */
+export function renderCanvasCss(editor: Editor, css: string): string {
+  return canvasStyleProjectors.get(editor)?.(css) ?? css
+}
 
 function canvasStyleCss(
   style: CanvasStyle,
@@ -111,7 +117,8 @@ export function readCanvasRuleCss(rule: CssRule, dimensions?: StyleProps): strin
 
 /** GrapesJS defaults both nested and empty blocks off. Layer ordering requires the
  * empty blocks too; keep canvas mounting and every export on the same options. */
-export function connectCanvasStyles(editor: Editor): () => void {
+export function connectCanvasStyles(editor: Editor, project?: (css: string) => string): () => void {
+  if (project) canvasStyleProjectors.set(editor, project)
   editor.getConfig().optsCss = { ...editor.getConfig().optsCss, ...canvasStyleOptions }
   let active = true
   let queued = false
@@ -151,7 +158,7 @@ export function connectCanvasStyles(editor: Editor): () => void {
     schedule()
   }
   const mount = (event: { rule: CssRule; css: string }): void => {
-    event.css = event.rule.isNested() ? '' : readCanvasRuleCss(event.rule)
+    event.css = event.rule.isNested() ? '' : renderCanvasCss(editor, readCanvasRuleCss(event.rule))
   }
   editor.on('css:mount:before', mount)
   editor.on('css:mount', schedule)
@@ -160,6 +167,7 @@ export function connectCanvasStyles(editor: Editor): () => void {
   schedule()
   return () => {
     active = false
+    canvasStyleProjectors.delete(editor)
     editor.off('css:mount:before', mount)
     editor.off('css:mount', schedule)
     editor.off('load canvas:frame:load', ready)
