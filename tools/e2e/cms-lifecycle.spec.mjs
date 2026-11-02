@@ -87,8 +87,12 @@ const editCanvas = (page, text) =>
 
 // From here the page clock moves only when the test resumes it, so the editor's 180 ms and the
 // backup's 500 ms timers cannot fire: only the lifecycle handlers can save the edit.
-const pauseClock = async (page) =>
-  page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+const pauseClock = async (page) => {
+  await page
+    .locator('.cms-editor-canvas[data-cms-about-preview-ready="true"]')
+    .waitFor({ state: 'attached', timeout: 90000 })
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 2_000)
+}
 
 const nameField = (page) => page.getByRole('textbox', { name: 'Namn', exact: true })
 
@@ -299,6 +303,8 @@ test('cms-lifecycle normalization is publishable but only owner edits prompt and
   await nameField(edited).fill(name)
   await expect(edited.locator('.cms-revert')).toBeEnabled()
   assert.equal(await asksToLeave(edited), true)
+  // Asking to leave saves nothing; the edit reaches IndexedDB through the backup's 500 ms debounce.
+  await edited.clock.runFor(600)
   await expect.poll(() => storedDrafts(edited)).toEqual([name])
   await edited.close()
   await context.clock.resume()
@@ -309,7 +315,7 @@ test('cms-lifecycle normalization is publishable but only owner edits prompt and
   await recovery.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   const offers = recovery.getByRole('region', { name: 'Utkast från stängda flikar', exact: true })
   const blocked = recovery.getByText(
-    'Publicera, återställ eller exportera utkastet i den här fliken innan du fortsätter med ett annat.',
+    'Publicera eller återställ ändringarna i den här fliken innan du fortsätter med ett annat utkast. Vill du behålla en kopia, välj Export och sedan Återställ.',
     { exact: true },
   )
   const resume = offers.getByRole('button', { name: 'Fortsätt här', exact: true })
