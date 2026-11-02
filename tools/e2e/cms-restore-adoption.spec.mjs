@@ -17,8 +17,19 @@ const legacyDocument = async () => ({
 
 async function mountStudio(page) {
   await page.evaluate(async () => {
+    const { CmsDraft } = await import('/src/admin/cms/draft.ts')
     const { h, render } = await import('/tools/e2e/admin-harness.tsx')
     const { CmsStudio } = await import('/src/admin/cms/Studio.tsx')
+    // A migration-only draft writes no backup, so the test reads the live draft that migrated.
+    if (!CmsDraft.prototype.migrate.recordsDraft) {
+      const migrate = CmsDraft.prototype.migrate
+      CmsDraft.prototype.migrate = function (...args) {
+        migrate.apply(this, args)
+        globalThis.cmsMigratedDraft = this
+      }
+      CmsDraft.prototype.migrate.recordsDraft = true
+    }
+    globalThis.cmsMigratedDraft = undefined
     const root = globalThis.document.querySelector('#root')
     render(h(CmsStudio, { onExit: () => render(null, root) }), root)
   })
@@ -59,6 +70,12 @@ const ownBackup = (page) =>
     await session.flush()
     return session.own()
   })
+// The document and publication base of the Studio's live draft after its source upgrade.
+const liveDraft = (page) =>
+  page.evaluate(() => {
+    const draft = globalThis.cmsMigratedDraft
+    return draft && { document: draft.document, base: draft.base }
+  })
 
 async function closedDraft(context, name) {
   const tab = await context.newPage()
@@ -70,6 +87,8 @@ async function closedDraft(context, name) {
   // Let the donor finish its background source imports before closing its WebKit page.
   // The receiving Studio is still mounted only after this donor tab is closed.
   await waitForSourceUpgrade(tab)
+  // The donor has owner edits, so the recipient's offer is this backup, not the live draft.
+  await waitForSourceUpgrade(tab, ownBackup)
   await tab.close()
 }
 
@@ -83,7 +102,8 @@ test('cms-restore-adoption untouched legacy publication can adopt without publis
   const recipient = await context.newPage()
   await openStudio(recipient)
   await expect(recipient.locator('.cms-status')).toHaveText('Opublicerade ändringar')
-  const migrated = await ownBackup(recipient)
+  await waitForSourceUpgrade(recipient)
+  const migrated = await liveDraft(recipient)
   assert.deepEqual(migrated.base, initial, 'The raw server snapshot remains the publication base')
   const changedLegalPages = initial.presentation.pages
     .filter((page) => ['/privacy', '/terms'].includes(page.path))
@@ -115,14 +135,15 @@ test('cms-restore-adoption untouched legacy publication can adopt without publis
   assert.equal(backend.requests.filter((request) => request.operation === 'publish').length, 0)
 })
 
-async function waitForSourceUpgrade(page) {
+// Only a draft with owner edits has a backup to read; see mountStudio.
+async function waitForSourceUpgrade(page, read = liveDraft) {
   await page
     .locator('iframe[title="Läser den befintliga webbplatsen"]')
     .waitFor({ state: 'detached', timeout: 90000 })
   await expect
     .poll(
       async () =>
-        (await ownBackup(page))?.document.presentation.pages
+        (await read(page))?.document.presentation.pages
           .find((item) => item.path === '/booking')
           ?.content.sv.html.includes('data-knc-fold="booking-flow"'),
       { timeout: 90000 },
@@ -200,7 +221,7 @@ test('cms-restore-adoption preserves owner edits across source migration, export
     await expect(continueHere(recipient)).toBeDisabled()
 
     source.done.release()
-    await waitForSourceUpgrade(recipient)
+    await waitForSourceUpgrade(recipient, ownBackup)
     await expect(continueHere(recipient)).toBeDisabled()
     assert.equal((await ownBackup(recipient)).document.presentation.pages[0].name.sv, editedName)
     await closeBackup(recipient)
@@ -303,7 +324,7 @@ test('cms-restore-adoption flushes a trusted pending canvas edit when opening th
   try {
     await inspector.fill(text)
     assert.equal(
-      JSON.stringify((await ownBackup(recipient)).document).includes(text),
+      JSON.stringify((await liveDraft(recipient)).document).includes(text),
       false,
       'The trusted edit must still be waiting for the frozen capture timer',
     )
@@ -330,8 +351,8 @@ async function checkAutosaveRecovery(context, reopen) {
   await expect(setup.locator('.cms-status')).toHaveText(/^Publicerad/)
   assert.equal(await ownBackup(setup), null)
   await setup.close()
-  // Isolate one automatic source upgrade. After migration this current native layout is complete,
-  // so the recovered document itself no longer requests source on the next Studio load.
+  // Isolate one automatic source upgrade. A migration-only draft keeps no backup, so each Studio
+  // load repeats it on the stored head; after it this current native layout is complete.
   for (const page of backend.document.presentation.pages)
     if (page.path === '/booking')
       for (const variant of Object.values(page.content))
@@ -344,12 +365,11 @@ async function checkAutosaveRecovery(context, reopen) {
   await waitForSourceUpgrade(recipient)
   assert.equal(
     await recipient.evaluate(async () => {
-      const session = await (await import('/src/admin/cms/backup.ts')).cmsBackups()
       const { needsCorePageSource } = await import('/src/admin/cms/corePages.ts')
-      return needsCorePageSource((await session.own()).document)
+      return needsCorePageSource(globalThis.cmsMigratedDraft.document)
     }),
     false,
-    'The persisted automatic source upgrade must be complete before reopening',
+    'The live draft must hold the complete automatic source upgrade before reopening',
   )
   await recipient.getByRole('button', { name: 'Visa utkast', exact: true }).click()
   await expect(continueHere(recipient)).toBeEnabled()

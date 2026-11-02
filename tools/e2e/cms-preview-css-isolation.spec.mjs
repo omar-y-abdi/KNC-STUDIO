@@ -98,13 +98,15 @@ for (const layered of [false, true]) {
             cssIcons: '',
             telemetry: false,
             avoidInlineStyle: true,
+            protectedCss: '',
+            mediaCondition: 'min-width',
             selectorManager: { componentFirst: true },
             components: canvas.html,
             deviceManager: {
               devices: [{ id: 'Desktop', width: '1440px', widthMedia: '769px' }],
             },
           })
-          const release = connectCanvasStyles(editor)
+          const release = connectCanvasStyles(editor, canvas.projectStyles)
           await new Promise((resolve) => editor.on('load', resolve))
           editor.setDevice('Desktop')
           const doc = editor.Canvas.getDocument()
@@ -176,8 +178,15 @@ for (const layered of [false, true]) {
             capture('undone')
             const html = editor.getHtml({ cleanId: false })
             const css = canonicalizeCmsRootStyles(readCanvasCss(editor), wrapperId)
-            const extracted = extractComposedAbout(html, css, about.content.sv.html)
-            const stripped = stripComposedCanvas(html, css)
+            const storedHome = home.content.sv.css.light
+            const extracted = extractComposedAbout(html, css, about.content.sv.html, {
+              about: about.content.sv.css.light,
+              home: storedHome,
+            })
+            const stripped = stripComposedCanvas(html, css, 'default', {
+              about: extracted.css,
+              home: storedHome,
+            })
             validateMarkup(extracted.html, extracted.css, policy, { native: true })
             validateMarkup(stripped.html, stripped.css, policy, { native: true })
             run.persisted.push({ undoable, about: extracted, home: stripped })
@@ -251,3 +260,133 @@ for (const layered of [false, true]) {
     assert.deepEqual(errors, [])
   })
 }
+
+test('Home saves keep owner CSS and match the public About cascade', async ({ page }) => {
+  await page.goto(`${harnessOrigin}/tools/e2e/admin-harness.html`)
+  const orphans = [
+    '@layer{.orphan-layer{color:red}}',
+    '@media (min-width:1px){.orphan-media{color:red}}',
+    '@supports (display:grid){.orphan-supports{color:red}}',
+    '@layer home-order{}',
+    '@layer{html body{--home-layer-root:1}}',
+    'html body{--home-root:1}',
+  ]
+  const result = await page.evaluate(async (orphans) => {
+    const { emptyDocument } = await import('/shared/cms.ts')
+    const { composedCanvas, extractComposedAbout, stripComposedCanvas } =
+      await import('/src/admin/cms/composedCanvas.ts')
+    const homeHtml =
+      '<div data-knc-native="1"><div data-knc-surface="desktop-home"><h1 id="home-heading" class="shared">Home</h1><div data-knc-slot="desktop-about"><section aria-labelledby="about-heading"></section></div></div><div data-knc-surface="mobile-home"><div data-knc-slot="mobile-about"><section aria-labelledby="about-heading"></section></div></div></div>'
+    const aboutHtml =
+      '<div data-knc-native="1"><section id="about-root" data-knc-surface="about" aria-labelledby="about-heading"><h2 id="about-heading">About</h2><div id="owner-card" class="card shared"></div></section></div>'
+    const homeCss =
+      orphans.join('') +
+      '.shared{width:30%;@media (min-width:1px){&:where(#home-heading){width:50%}&:where(#owner-card){width:60%}}}'
+    const aboutCss =
+      '@layer{.card{width:70%!important;@media (min-width:1px){&:where(#owner-card){width:40%!important}}}}' +
+      '@layer{.card{width:90%!important}}' +
+      '.only{&:where(#owner-card){color:red}}' +
+      'html body{--about-root:1}'
+    const make = (path, html, css) => ({
+      id: path,
+      path,
+      kind: 'page',
+      name: { sv: path, en: path },
+      title: { sv: '', en: '' },
+      description: { sv: '', en: '' },
+      inMenu: true,
+      content: {
+        sv: { html, css: { light: css, dark: css } },
+        en: { html, css: { light: css, dark: css } },
+      },
+    })
+    const presentation = (home, about) => ({
+      ...emptyDocument().presentation,
+      pages: [home, about],
+    })
+    const cardWidth = (sheets) => {
+      const frame = globalThis.document.createElement('iframe')
+      frame.style.width = '1000px'
+      globalThis.document.body.append(frame)
+      const doc = frame.contentDocument
+      doc.body.innerHTML =
+        '<div style="width:500px"><div id="owner-card" class="card shared"></div></div>'
+      for (const css of sheets) {
+        const style = doc.createElement('style')
+        style.textContent = css
+        doc.body.append(style)
+      }
+      const width = doc.getElementById('owner-card').getBoundingClientRect().width
+      frame.remove()
+      return width
+    }
+    const home = make('/', homeHtml, homeCss)
+    const about = make('/about', aboutHtml, aboutCss)
+    const pages = presentation(home, about)
+    const saves = []
+    for (let round = 0; round < 4; round++) {
+      const canvas = composedCanvas(home, pages, 'sv', 'light')
+      const storedHome = home.content.sv.css.light
+      const extracted = extractComposedAbout(canvas.html, canvas.css, about.content.sv.html, {
+        about: about.content.sv.css.light,
+        home: storedHome,
+      })
+      const owners = { about: extracted.css, home: storedHome }
+      const stripped = stripComposedCanvas(canvas.html, canvas.css, 'default', owners)
+      const repeated = stripComposedCanvas(stripped.html, stripped.css, 'default', owners)
+      const partial = stripComposedCanvas(canvas.html, canvas.css).css
+      home.content.sv = { html: stripped.html, css: { light: stripped.css, dark: stripped.css } }
+      about.content.sv = {
+        html: extracted.html,
+        css: { light: extracted.css, dark: extracted.css },
+      }
+      saves.push({
+        home: stripped.css,
+        about: extracted.css,
+        partial,
+        stable: JSON.stringify(stripped) === JSON.stringify(repeated),
+        published: cardWidth([stripped.css, extracted.css]),
+        preview: cardWidth([composedCanvas(home, pages, 'sv', 'light').css]),
+      })
+    }
+    const legacyHome = make('/', homeHtml, '@layer{.card{width:90%!important}}')
+    const legacyAbout = make('/about', aboutHtml, aboutCss)
+    const legacy = composedCanvas(
+      legacyHome,
+      presentation(legacyHome, legacyAbout),
+      'sv',
+      'light',
+    ).css
+    return {
+      saves,
+      aboutOnly: cardWidth([aboutCss]),
+      legacyPublished: cardWidth([legacyHome.content.sv.css.light, aboutCss]),
+      legacyPreview: cardWidth([legacy]),
+    }
+  }, orphans)
+  assert.equal(result.aboutOnly, 200)
+  // A stored layer copy changes the public page, so the preview must show it, not hide it.
+  assert.equal(result.legacyPublished, 450)
+  assert.equal(result.legacyPreview, 450)
+  const emptied = /@(media|supports)[^{]*\{\}|@layer\{\}|\.only\{\}/
+  for (const [round, save] of result.saves.entries()) {
+    const context = JSON.stringify(save)
+    assert.ok(save.home.startsWith(orphans.join('')), context)
+    for (const orphan of orphans) assert.ok(!save.about.includes(orphan), context)
+    assert.ok(save.about.includes('--about-root'), context)
+    if (round) {
+      assert.equal(save.home, result.saves[round - 1].home, context)
+      assert.equal(save.about, result.saves[round - 1].about, context)
+    }
+    assert.ok(save.home.includes('&:where(#home-heading)'), context)
+    assert.ok(!save.home.includes('#owner-card'), context)
+    assert.ok(save.about.includes('&:where(#owner-card)'), context)
+    assert.ok(!save.about.includes('#home-heading'), context)
+    for (const css of [save.home, save.about, save.partial])
+      assert.doesNotMatch(css, emptied, context)
+    assert.ok(!save.partial.includes('.only'), context)
+    assert.equal(save.stable, true, context)
+    assert.equal(save.published, 200, context)
+    assert.equal(save.preview, 200, context)
+  }
+})
