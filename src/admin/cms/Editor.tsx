@@ -58,7 +58,6 @@ import {
   parseCanvasSheet,
   readCanvasCss,
   yieldCanvasTask,
-  type CanvasTree,
 } from './nativeCanvas'
 import { bindCmsRootStyles, canonicalizeCmsRootStyles } from './cmsRootStyles'
 import { CmsModal } from './Modal'
@@ -271,7 +270,8 @@ export function CmsEditor(props: Props): JSX.Element {
   latest.current = props
   const applying = useRef(false)
   const flushCanvas = useRef<(() => void) | null>(null)
-  const deferredAbout = useRef<(() => CanvasTree) | null>(null)
+  const deferredAbout = useRef<(() => string) | null>(null)
+  const projectCanvasStyles = useRef<ComposedCanvasTree['projectStyles']>(undefined)
   const aboutPreviewBuilt = useRef(false)
   const cancelAboutIdle = useRef<(() => void) | null>(null)
   const startup = useRef<{ key: string; html: string; css: string } | null>(null)
@@ -299,7 +299,7 @@ export function CmsEditor(props: Props): JSX.Element {
       sourceCss: string
       wrapperId: string
       deferAbout: boolean
-      content: { html: string; aboutPreview?: () => CanvasTree }
+      content: Pick<ComposedCanvasTree, 'html' | 'aboutPreview' | 'projectStyles'>
       rules: ReturnType<typeof parseCanvasCss>
     }[]
   >([])
@@ -365,6 +365,7 @@ export function CmsEditor(props: Props): JSX.Element {
               props.mode,
               props.scene,
               props.device === 'Desktop' ? 'Mobile' : 'Desktop',
+              true,
             )
         : null,
     [
@@ -464,7 +465,10 @@ export function CmsEditor(props: Props): JSX.Element {
     // storageManager:false disables its target, not its autosave serialization in 0.23.6.
     // The CMS draft/backup owns persistence; never build a second project on every update.
     editor.Storage.setAutosave(false)
-    const releaseCanvasStyles = connectCanvasStyles(editor)
+    const releaseCanvasStyles = connectCanvasStyles(
+      editor,
+      (css) => projectCanvasStyles.current?.(css) ?? css,
+    )
     instance.current = editor
     const releaseResize = connectHierarchicalResize(
       editor,
@@ -578,6 +582,9 @@ export function CmsEditor(props: Props): JSX.Element {
       const wrapperId = editor.getWrapper()?.getId() ?? ''
       const composedScene = current.page.path === '/booking' ? current.scene : 'default'
       const nativeExport = exportNativeCanvas(html, css, current.mode)
+      // Stored sheets name the real body, so both pages compare ownership on that basis.
+      const exportedCss = canonicalizeCmsRootStyles(nativeExport.css, wrapperId)
+      const storedHome = baseVariant.css[current.mode]
       const aboutOwner =
         current.page.path === '/'
           ? current.presentation.pages.find((page) => page.path === '/about')
@@ -585,16 +592,22 @@ export function CmsEditor(props: Props): JSX.Element {
       const aboutExport = aboutOwner
         ? extractComposedAbout(
             nativeExport.html,
-            nativeExport.css,
+            exportedCss,
             aboutOwner.content[current.lang].html,
+            { about: aboutOwner.content[current.lang].css[current.mode], home: storedHome },
           )
         : null
-      const exported = stripComposedCanvas(nativeExport.html, nativeExport.css, composedScene)
+      const exported = stripComposedCanvas(
+        nativeExport.html,
+        exportedCss,
+        composedScene,
+        aboutExport ? { about: aboutExport.css, home: storedHome } : undefined,
+      )
       const fragment = pageFragment(exported.html, wrapperId)
       const persisted = {
         // A created page stores only its body; the live header is rendered, never saved.
         html: isSitePage(current.page) ? sitePageBody(fragment) : fragment,
-        css: canonicalizeCmsRootStyles(exported.css, wrapperId),
+        css: exported.css,
       }
       next.content[current.lang] = {
         html: persisted.html,
@@ -698,6 +711,7 @@ export function CmsEditor(props: Props): JSX.Element {
       releaseResize()
       releaseTextHeight()
       releaseCanvasStyles()
+      projectCanvasStyles.current = undefined
       window.removeEventListener('keydown', keydown)
       editor.destroy()
       instance.current = null
@@ -834,6 +848,7 @@ export function CmsEditor(props: Props): JSX.Element {
           content: {
             html: content.html,
             ...(content.aboutPreview ? { aboutPreview: content.aboutPreview } : {}),
+            ...(content.projectStyles ? { projectStyles: content.projectStyles } : {}),
           },
           rules: parseCanvasCss(bindCmsRootStyles(content.sheet, wrapperId), editor),
         }
@@ -844,6 +859,7 @@ export function CmsEditor(props: Props): JSX.Element {
       }
       yield
       const { content } = compilation
+      projectCanvasStyles.current = content.projectStyles
       // GrapesJS owns its imported definitions; never hand it the cached originals.
       const rules = structuredClone(compilation.rules)
       editor.select()
