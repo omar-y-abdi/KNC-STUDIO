@@ -91,11 +91,14 @@ test('native CMS shards cover every case exactly once for all events', () => {
   const { load } = createRequire(import.meta.url)('js-yaml')
   const workflow = load(readFileSync('.github/workflows/ci.yml', 'utf8'))
   const cms = workflow.jobs.cms
-  assert.deepEqual(cms.strategy.matrix, { engine: ['chromium', 'webkit'], shard: [1, 2, 3, 4] })
+  assert.deepEqual(cms.strategy.matrix, {
+    engine: ['chromium', 'webkit'],
+    shard: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  })
   const steps = cms.steps.filter((step) => step.run?.startsWith('npx playwright test '))
   assert.equal(steps.length, 2)
   const args =
-    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/4'
+    'npx playwright test --project=cms-${{ matrix.engine }} --shard=${{ matrix.shard }}/9'
   assert.equal(steps[0].name, 'Discover every assigned CMS case')
   assert.equal(steps[0].run, `${args} --list --reporter=json > .ci-expected.json`)
   assert.equal(steps[1].name, 'Exercise the unchanged CMS domain contracts')
@@ -110,7 +113,7 @@ test('native CMS shards cover every case exactly once for all events', () => {
     assert.ok(selected.length > 0)
     const assignedSpecs = []
     const assigned = cms.strategy.matrix.shard.flatMap((shard) =>
-      list([`--project=${project}`, `--shard=${shard}/4`], assignedSpecs),
+      list([`--project=${project}`, `--shard=${shard}/9`], assignedSpecs),
     )
     assert.equal(new Set(assigned).size, assigned.length, `${project}: duplicate cases`)
     assert.deepEqual(
